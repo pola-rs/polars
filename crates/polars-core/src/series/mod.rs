@@ -547,34 +547,25 @@ impl Series {
             },
             (D::Int64, D::Time) => feature_gated!("dtype-time", Ok(self.clone().into_time())),
 
-            (D::List(_), D::List(to)) => Ok(self
-                .list()
-                .unwrap()
-                .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
-                .into_series()),
+            (D::List(_), D::List(to)) => unsafe {
+                self.list()
+                    .unwrap()
+                    .from_physical_unchecked(to.as_ref().clone())
+                    .map(|ca| ca.into_series())
+            },
             #[cfg(feature = "dtype-array")]
-            (D::Array(_, lw), D::Array(to, rw)) if lw == rw => Ok(self
-                .array()
-                .unwrap()
-                .apply_to_inner(&|inner| unsafe { inner.from_physical_unchecked(to) })?
-                .into_series()),
+            (D::Array(_, lw), D::Array(to, rw)) if lw == rw => unsafe {
+                self.array()
+                    .unwrap()
+                    .from_physical_unchecked(to.as_ref().clone())
+                    .map(|ca| ca.into_series())
+            },
             #[cfg(feature = "dtype-struct")]
-            (D::Struct(_), D::Struct(to)) => {
-                let slf = self.struct_().unwrap();
-
-                let length = slf.len();
-
-                let fields = slf
-                    .fields_as_series()
-                    .iter()
-                    .zip(to)
-                    .map(|(f, to)| unsafe { f.from_physical_unchecked(to.dtype()) })
-                    .collect::<PolarsResult<Vec<_>>>()?;
-
-                let mut out =
-                    StructChunked::from_series(slf.name().clone(), length, fields.iter())?;
-                out.zip_outer_validity(slf);
-                Ok(out.into_series())
+            (D::Struct(_), D::Struct(to)) => unsafe {
+                self.struct_()
+                    .unwrap()
+                    .from_physical_unchecked(to.as_slice())
+                    .map(|ca| ca.into_series())
             },
 
             _ => panic!("invalid from_physical({dtype:?}) for {:?}", self.dtype()),

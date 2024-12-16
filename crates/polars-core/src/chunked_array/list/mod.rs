@@ -36,6 +36,55 @@ impl ListChunked {
         fld.coerce(DataType::List(Box::new(inner_dtype)))
     }
 
+    /// Convert a non-logical [`ListChunked`] back into a logical [`ListChunked`] without casting.
+    ///
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn from_physical_unchecked(
+        &self,
+        to_inner_dtype: DataType,
+    ) -> PolarsResult<ListChunked> {
+        debug_assert!(!self.inner_dtype().is_logical());
+
+        let inner_chunks = self
+            .downcast_iter()
+            .map(|chunk| chunk.values())
+            .cloned()
+            .collect();
+
+        let inner = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                inner_chunks,
+                self.inner_dtype(),
+            )
+        };
+        let inner = unsafe { inner.from_physical_unchecked(&to_inner_dtype) }?;
+
+        let chunks: Vec<_> = self
+            .downcast_iter()
+            .zip(inner.into_chunks())
+            .map(|(chunk, values)| {
+                LargeListArray::new(
+                    ArrowDataType::LargeList(Box::new(ArrowField::new(
+                        PlSmallStr::from_static("item"),
+                        values.dtype().clone(),
+                        true,
+                    ))),
+                    chunk.offsets().clone(),
+                    values,
+                    chunk.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect();
+
+        let name = self.name().clone();
+        let dtype = DataType::List(Box::new(to_inner_dtype));
+        Ok(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
+    }
+
     /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
         let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
