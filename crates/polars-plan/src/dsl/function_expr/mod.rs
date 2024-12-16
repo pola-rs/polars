@@ -939,7 +939,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             },
             #[cfg(feature = "index_of")]
             IndexOf => {
-                wrap!(index_of::index_of)
+                map_as_slice!(index_of::index_of)
             },
             #[cfg(feature = "search_sorted")]
             SearchSorted(side) => {
