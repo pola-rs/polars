@@ -22,6 +22,7 @@ use super::schema_inference::{check_decimal_comma, infer_file_schema};
 #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
 use super::utils::decompress;
 use super::CsvParseOptions;
+use crate::csv::read::parser::skip_this_line_naive;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
 #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
@@ -606,7 +607,7 @@ pub fn find_starting_point(
 
     // skip 'n' leading rows
     if skip_rows_before_header > 0 {
-        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char, comment_prefix);
         let mut current_line = &bytes[..0];
 
         for _ in 0..skip_rows_before_header {
@@ -623,7 +624,7 @@ pub fn find_starting_point(
 
     // skip lines that are comments
     while is_comment_line(bytes, comment_prefix) {
-        bytes = skip_this_line(bytes, quote_char, eol_char);
+        bytes = skip_this_line_naive(bytes, eol_char);
     }
 
     // skip header row
@@ -632,7 +633,7 @@ pub fn find_starting_point(
     }
     // skip 'n' rows following the header
     if skip_rows_after_header > 0 {
-        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char);
+        let mut split_lines = SplitLines::new(bytes, quote_char, eol_char, comment_prefix);
         let mut current_line = &bytes[..0];
 
         for _ in 0..skip_rows_after_header {
