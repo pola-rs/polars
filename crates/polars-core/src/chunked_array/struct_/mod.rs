@@ -139,6 +139,34 @@ impl StructChunked {
         constructor(name, length, new_fields.iter())
     }
 
+    /// Convert a non-logical [`StructChunked`] back into a logical [`StructChunked`] without casting.
+    ///
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn from_physical_unchecked(
+        &self,
+        to_fields: &[Field],
+    ) -> PolarsResult<StructChunked> {
+        if cfg!(debug_assertions) {
+            for f in self.struct_fields() {
+                assert!(!f.dtype().is_logical());
+            }
+        }
+
+        let length = self.len();
+        let fields = self
+            .fields_as_series()
+            .iter()
+            .zip(to_fields)
+            .map(|(f, to)| unsafe { f.from_physical_unchecked(to.dtype()) })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let mut out = StructChunked::from_series(self.name().clone(), length, fields.iter())?;
+        out.zip_outer_validity(self);
+        Ok(out)
+    }
+
     pub fn struct_fields(&self) -> &[Field] {
         let DataType::Struct(fields) = self.dtype() else {
             unreachable!()
