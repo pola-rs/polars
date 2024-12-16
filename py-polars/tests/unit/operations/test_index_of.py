@@ -35,18 +35,13 @@ def assert_index_of(
             expected_index = None
     if expected_index == -1:
         expected_index = None
+
+    if convert_to_literal:
+        value = pl.lit(value, dtype=series.dtype)
+
     # Eager API:
     assert series.index_of(value) == expected_index
     # Lazy API:
-    assert pl.LazyFrame({"series": series}).select(
-        pl.col("series").index_of(value)
-    ).collect().get_column("series").to_list() == [expected_index]
-
-    # With matching dtype:
-    if not convert_to_literal:
-        return
-    value = pl.lit(value, dtype=series.dtype)
-    assert series.index_of(value) == expected_index
     assert pl.LazyFrame({"series": series}).select(
         pl.col("series").index_of(value)
     ).collect().get_column("series").to_list() == [expected_index]
