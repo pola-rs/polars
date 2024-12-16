@@ -1195,6 +1195,25 @@ mod test {
     }
 
     #[test]
+    fn roundtrip_list_logical_20311() {
+        let list = ListChunked::from_chunk_iter(
+            PlSmallStr::from_static("a"),
+            [ListArray::new(
+                ArrowDataType::LargeList(Box::new(ArrowField::new(
+                    PlSmallStr::from_static("item"),
+                    ArrowDataType::Int32,
+                    true,
+                ))),
+                unsafe { Offsets::new_unchecked(vec![0, 1]) }.into(),
+                PrimitiveArray::new(ArrowDataType::Int32, vec![1i32].into(), None).to_boxed(),
+                None,
+            )],
+        );
+        let list = unsafe { list.from_physical_unchecked(DataType::Date) }.unwrap();
+        assert_eq!(list.dtype(), &DataType::List(Box::new(DataType::Date)));
+    }
+
+    #[test]
     #[cfg(feature = "dtype-struct")]
     fn new_series_from_empty_structs() {
         let dtype = DataType::Struct(vec![]);
