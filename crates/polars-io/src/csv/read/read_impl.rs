@@ -14,8 +14,8 @@ use rayon::prelude::*;
 use super::buffer::init_buffers;
 use super::options::{CommentPrefix, CsvEncoding, NullValuesCompiled};
 use super::parser::{
-    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_lines_naive, CountLines,
-    SplitLines,
+    is_comment_line, parse_lines, skip_bom, skip_line_ending, skip_lines_naive, skip_this_line,
+    CountLines, SplitLines,
 };
 use super::reader::prepare_csv_schema;
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
@@ -629,7 +629,7 @@ pub fn find_starting_point(
 
     // skip header row
     if has_header {
-        bytes = skip_this_line_naive(bytes, eol_char);
+        bytes = skip_this_line(bytes, quote_char, eol_char);
     }
     // skip 'n' rows following the header
     if skip_rows_after_header > 0 {
