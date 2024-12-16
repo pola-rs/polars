@@ -360,9 +360,6 @@ impl Decoder for BooleanDecoder {
                             values.len() - skipped_values - truncated_values,
                         );
 
-                        let skipped_values = skipped.set_bits();
-                        let values = values.sliced(skipped_values, values.len() - skipped_values);
-
                         decode_optional_plain(values, target, page_validity)
                     },
                     (Some(Filter::Mask(mask)), None) => {
