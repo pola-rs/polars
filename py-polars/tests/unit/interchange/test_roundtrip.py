@@ -14,6 +14,10 @@ from polars._utils.various import parse_version
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
+skip_if_broken_pandas_version = pytest.mark.skipif(
+    pd.__version__.startswith('2'), reason="bug. see #20316"
+)
+
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
@@ -140,6 +144,7 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df)
 
 
+@skip_if_broken_pandas_version
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
@@ -156,6 +161,7 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@skip_if_broken_pandas_version
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
