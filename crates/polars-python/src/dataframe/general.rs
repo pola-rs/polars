@@ -684,7 +684,7 @@ impl PyDataFrame {
     ) -> PyResult<PySeries> {
         py.allow_threads(|| {
             let name = PlSmallStr::from_static("row_enc");
-            let is_unordered = opts.first().map_or(false, |(_, _, v)| *v);
+            let is_unordered = opts.first().is_some_and(|(_, _, v)| *v);
 
             let ca = if is_unordered {
                 _get_rows_encoded_ca_unordered(name, self.df.get_columns())
