@@ -48,6 +48,7 @@ def roundtrip_series_re(
     df=dataframes(
         excluded_dtypes=[
             pl.Categorical,
+            pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
         ]
     )
 )

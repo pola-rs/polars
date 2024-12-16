@@ -8,7 +8,7 @@ import functools
 from typing import Any, Literal, Optional, Union
 
 import pytest
-from hypothesis import given
+from hypothesis import given, example, settings, Phase
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -36,18 +36,20 @@ def elem_order_sign(
     lhs: Element, rhs: Element, *, descending: bool, nulls_last: bool
 ) -> OrderSign:
     if isinstance(lhs, pl.Series) and isinstance(rhs, pl.Series):
-        if lhs.equals(rhs):
+        if lhs.is_null().equals(rhs.is_null()) and lhs.equals(rhs):
             return 0
 
-        lhs = list(lhs)
-        rhs = list(rhs)
+        lhs = lhs.to_list()
+        rhs = rhs.to_list()
 
-    if lhs == rhs:
+    if lhs is None and rhs is None:
         return 0
     elif lhs is None:
         return 1 if nulls_last else -1
     elif rhs is None:
         return -1 if nulls_last else 1
+    elif lhs == rhs:
+        return 0
     elif isinstance(lhs, bool) and isinstance(rhs, bool):
         return -1 if (lhs < rhs) ^ descending else 1
     elif isinstance(lhs, datetime.date) and isinstance(rhs, datetime.date):
@@ -121,10 +123,17 @@ def tuple_order(
 
 @given(
     s=series(
-        excluded_dtypes=[pl.Categorical],
+        excluded_dtypes=[
+            pl.Float32, # We cannot really deal with totalOrder
+            pl.Float64, # We cannot really deal with totalOrder
+            pl.Categorical,
+            pl.Enum, # We cannot properly deal with physical order
+            pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
+        ],
         max_size=5,
     )
 )
+@example(s = pl.Series('col0', [None, [None]], pl.List(pl.Int64)))
 def test_series_sort_parametric(s: pl.Series) -> None:
     for descending in [False, True]:
         for nulls_last in [False, True]:
@@ -154,7 +163,13 @@ def test_series_sort_parametric(s: pl.Series) -> None:
 
 @given(
     df=dataframes(
-        excluded_dtypes=[pl.Categorical],
+        excluded_dtypes=[
+            pl.Float32, # We cannot really deal with totalOrder
+            pl.Float64, # We cannot really deal with totalOrder
+            pl.Categorical, 
+            pl.Enum, # We cannot properly deal with physical order
+            pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
+        ],
         max_cols=3,
         max_size=5,
     )
