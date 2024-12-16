@@ -2421,3 +2421,10 @@ def test_csv_skip_lines() -> None:
 
     fh.seek(0)
     assert_frame_equal(pl.scan_csv(fh, has_header=True, skip_lines=3).collect(), df)
+
+
+def test_csv_invalid_quoted_comment_line() -> None:
+    # Comment quotes should be ignored.
+    assert pl.read_csv(
+        b'#"Comment\nColA\tColB\n1\t2', separator="\t", comment_prefix="#"
+    ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}

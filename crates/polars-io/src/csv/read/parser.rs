@@ -93,7 +93,7 @@ pub fn count_rows_from_slice(
 
     let iter = file_chunks.into_par_iter().map(|(start, stop)| {
         let local_bytes = &bytes[start..stop];
-        let row_iterator = SplitLines::new(local_bytes, quote_char, eol_char);
+        let row_iterator = SplitLines::new(local_bytes, quote_char, eol_char, comment_prefix);
         if comment_prefix.is_some() {
             Ok(row_iterator
                 .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
@@ -124,9 +124,10 @@ pub(super) fn skip_bom(input: &[u8]) -> &[u8] {
 /// Checks if a line in a CSV file is a comment based on the given comment prefix configuration.
 ///
 /// This function is used during CSV parsing to determine whether a line should be ignored based on its starting characters.
+#[inline]
 pub(super) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
     match comment_prefix {
-        Some(CommentPrefix::Single(c)) => line.starts_with(&[*c]),
+        Some(CommentPrefix::Single(c)) => line.first() == Some(c),
         Some(CommentPrefix::Multi(s)) => line.starts_with(s.as_bytes()),
         None => false,
     }
@@ -216,7 +217,7 @@ pub(super) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let mut lines = SplitLines::new(new_input, quote_char, eol_char);
+        let mut lines = SplitLines::new(new_input, quote_char, eol_char, None);
         let line = lines.next();
 
         match (line, expected_fields) {
@@ -355,6 +356,7 @@ pub(super) struct SplitLines<'a> {
     previous_valid_eols: u64,
     total_index: usize,
     quoting: bool,
+    comment_prefix: Option<&'a CommentPrefix>,
 }
 
 #[cfg(feature = "simd")]
@@ -369,7 +371,12 @@ use polars_utils::clmul::prefix_xorsum_inclusive;
 type SimdVec = u8x64;
 
 impl<'a> SplitLines<'a> {
-    pub(super) fn new(slice: &'a [u8], quote_char: Option<u8>, eol_char: u8) -> Self {
+    pub(super) fn new(
+        slice: &'a [u8],
+        quote_char: Option<u8>,
+        eol_char: u8,
+        comment_prefix: Option<&'a CommentPrefix>,
+    ) -> Self {
         let quoting = quote_char.is_some();
         let quote_char = quote_char.unwrap_or(b'\"');
         #[cfg(feature = "simd")]
@@ -388,18 +395,19 @@ impl<'a> SplitLines<'a> {
             previous_valid_eols: 0,
             total_index: 0,
             quoting,
+            comment_prefix,
         }
     }
 }
 
-impl<'a> Iterator for SplitLines<'a> {
-    type Item = &'a [u8];
-
-    #[inline]
-    #[cfg(not(feature = "simd"))]
-    fn next(&mut self) -> Option<&'a [u8]> {
+impl<'a> SplitLines<'a> {
+    // scalar as in non-simd
+    fn next_scalar(&mut self) -> Option<&'a [u8]> {
         if self.v.is_empty() {
             return None;
+        }
+        if is_comment_line(self.v, self.comment_prefix) {
+            return self.next_comment_line();
         }
         {
             let mut pos = 0u32;
@@ -443,6 +451,31 @@ impl<'a> Iterator for SplitLines<'a> {
             }
         }
     }
+    fn next_comment_line(&mut self) -> Option<&'a [u8]> {
+        if let Some(pos) = next_line_position_naive(self.v, self.eol_char) {
+            unsafe {
+                // return line up to this position
+                let ret = Some(self.v.get_unchecked(..(pos - 1)));
+                // skip the '\n' token and update slice.
+                self.v = self.v.get_unchecked(pos..);
+                ret
+            }
+        } else {
+            let remainder = self.v;
+            self.v = &[];
+            Some(remainder)
+        }
+    }
+}
+
+impl<'a> Iterator for SplitLines<'a> {
+    type Item = &'a [u8];
+
+    #[inline]
+    #[cfg(not(feature = "simd"))]
+    fn next(&mut self) -> Option<&'a [u8]> {
+        self.next_scalar()
+    }
 
     #[inline]
     #[cfg(feature = "simd")]
@@ -464,6 +497,9 @@ impl<'a> Iterator for SplitLines<'a> {
         }
         if self.v.is_empty() {
             return None;
+        }
+        if self.comment_prefix.is_some() {
+            return self.next_scalar();
         }
 
         self.total_index = 0;
@@ -729,6 +765,15 @@ pub(super) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &
     }
 }
 
+#[inline]
+pub(super) fn skip_this_line_naive(input: &[u8], eol_char: u8) -> &[u8] {
+    if let Some(pos) = next_line_position_naive(input, eol_char) {
+        unsafe { input.get_unchecked(pos..) }
+    } else {
+        &[]
+    }
+}
+
 /// Parse CSV.
 ///
 /// # Arguments
@@ -780,7 +825,7 @@ pub(super) fn parse_lines(
             return Ok(original_bytes_len);
         } else if is_comment_line(bytes, parse_options.comment_prefix.as_ref()) {
             // deal with comments
-            let bytes_rem = skip_this_line(bytes, parse_options.quote_char, parse_options.eol_char);
+            let bytes_rem = skip_this_line_naive(bytes, parse_options.eol_char);
             bytes = bytes_rem;
             continue;
         }
@@ -923,13 +968,13 @@ mod test {
     #[test]
     fn test_splitlines() {
         let input = "1,\"foo\n\"\n2,\"foo\n\"\n";
-        let mut lines = SplitLines::new(input.as_bytes(), Some(b'"'), b'\n');
+        let mut lines = SplitLines::new(input.as_bytes(), Some(b'"'), b'\n', None);
         assert_eq!(lines.next(), Some("1,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), Some("2,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), None);
 
         let input2 = "1,'foo\n'\n2,'foo\n'\n";
-        let mut lines2 = SplitLines::new(input2.as_bytes(), Some(b'\''), b'\n');
+        let mut lines2 = SplitLines::new(input2.as_bytes(), Some(b'\''), b'\n', None);
         assert_eq!(lines2.next(), Some("1,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), Some("2,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), None);
