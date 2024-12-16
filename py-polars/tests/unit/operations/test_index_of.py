@@ -66,6 +66,7 @@ def test_float(dtype: pl.DataType) -> None:
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
+            assert_index_of(s, value, convert_to_literal=False)
         for value in extra_values:  # type: ignore[assignment]
             assert_index_of(s, value)
 
@@ -120,6 +121,7 @@ def test_integer(dtype: pl.DataType) -> None:
         value: NonNestedLiteral | IntoExpr | None
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
+            assert_index_of(s, value, convert_to_literal=False)
         for value in extra_values:  # type: ignore[assignment]
             assert_index_of(s, value)
 
@@ -250,6 +252,9 @@ def test_other_types(
     for s in series_variants:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=True)
+            assert_index_of(s, value, convert_to_literal=False)
+        # Extra values may not be expressible as literal of correct dtype, so
+        # don't try:
         for value in extra_values:
             assert_index_of(s, value)
 
