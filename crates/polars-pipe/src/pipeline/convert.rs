@@ -137,7 +137,10 @@ where
                                     self.p.evaluate_io(df)
                                 }
 
-                                fn collect_live_columns(&self, live_columns: &mut PlIndexSet<PlSmallStr>) {
+                                fn collect_live_columns(
+                                    &self,
+                                    live_columns: &mut PlIndexSet<PlSmallStr>,
+                                ) {
                                     self.p.collect_live_columns(live_columns);
                                 }
 

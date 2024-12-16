@@ -47,12 +47,13 @@ impl<T: Copy, E, F: FnMut() -> Result<T, E>> LazyTryCell<T, E, F> {
 pub trait ScanExec {
     fn read(&mut self) -> PolarsResult<DataFrame>;
     fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize>;
+    fn schema(&mut self) -> PolarsResult<Schema>;
 }
 
 pub struct HiveExec {
     sources: ScanSources,
     file_info: FileInfo,
-    hive_parts: Arc<Vec<HivePartitions>>,
+    hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     file_options: FileScanOptions,
     scan_type: FileScan,
@@ -62,7 +63,7 @@ impl HiveExec {
     pub fn new(
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Arc<Vec<HivePartitions>>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         file_options: FileScanOptions,
         scan_type: FileScan,
@@ -83,14 +84,18 @@ impl HiveExec {
 
         // Create a index set of the hive columns.
         let mut hive_column_set = PlIndexSet::default();
-        if let Some(fst_hive_part) = self.hive_parts.first() {
-            hive_column_set.extend(
-                fst_hive_part
-                    .get_statistics()
-                    .column_stats()
-                    .iter()
-                    .map(|c| c.field_name().clone()),
-            );
+        if let Some(hive_parts) = &self.hive_parts {
+            assert_eq!(self.sources.len(), hive_parts.len());
+
+            if let Some(fst_hive_part) = hive_parts.first() {
+                hive_column_set.extend(
+                    fst_hive_part
+                        .get_statistics()
+                        .column_stats()
+                        .iter()
+                        .map(|c| c.field_name().clone()),
+                );
+            }
         }
 
         // Look through the predicate and assess whether hive columns are being used in it.
@@ -105,22 +110,26 @@ impl HiveExec {
         }
 
         // Remove the hive columns for each file load.
-        let mut file_with_columns = self.file_options.with_columns.clone();
+        let mut file_with_columns = self.file_options.with_columns.take();
         if let Some(with_columns) = &self.file_options.with_columns {
             file_with_columns = Some(
                 with_columns
                     .iter()
-                    .filter_map(|c| (!hive_column_set.contains(c)).then(|| c.clone()))
+                    .filter(|&c| !hive_column_set.contains(c))
+                    .cloned()
                     .collect(),
             );
         }
 
+        let allow_missing_columns = self.file_options.allow_missing_columns;
+        self.file_options.allow_missing_columns = false;
         let mut row_index = self.file_options.row_index.take();
         let mut slice = self.file_options.slice.take();
 
-        assert_eq!(self.sources.len(), self.hive_parts.len());
+        let current_schema = self.file_info.schema.clone();
+        let output_schema = current_schema.clone();
+        let mut missing_columns = Vec::new();
 
-        assert!(!self.file_options.allow_missing_columns, "NYI");
         assert!(slice.is_none_or(|s| s.0 >= 0), "NYI");
 
         #[cfg(feature = "parquet")]
@@ -139,7 +148,8 @@ impl HiveExec {
 
             let mut const_columns = PlHashMap::new();
 
-            for (source, hive_part) in self.sources.iter().zip(self.hive_parts.iter()) {
+            for (i, source) in self.sources.iter().enumerate() {
+                let hive_part = self.hive_parts.as_ref().and_then(|h| h.get(i));
                 if slice.is_some_and(|s| s.1 == 0) {
                     break;
                 }
@@ -149,6 +159,7 @@ impl HiveExec {
                 // used.
                 let mut file_predicate = predicate.clone();
                 if has_live_hive_columns {
+                    let hive_part = hive_part.unwrap();
                     let predicate = predicate.as_ref().unwrap();
                     const_columns.clear();
                     for (idx, column) in hive_column_set.iter().enumerate() {
@@ -199,14 +210,72 @@ impl HiveExec {
                     );
                 }
 
-                let mut file_options = self.file_options.clone();
-                file_options.with_columns = file_with_columns.clone();
-                file_options.row_index = row_index.clone();
-
                 // @TODO: There are cases where we can ignore reading. E.g. no row index + empty with columns + no predicate
                 let mut exec = ParquetExec::new(
-                    part_source,
+                    part_source.clone(),
                     self.file_info.clone(),
+                    None,
+                    file_predicate.clone(),
+                    options.clone(),
+                    cloud_options.clone(),
+                    self.file_options.clone(),
+                    None,
+                );
+
+                let mut schema = exec.schema()?;
+                let mut extra_columns = Vec::new();
+
+                if let Some(file_with_columns) = &file_with_columns {
+                    if allow_missing_columns {
+                        schema = schema.try_project(
+                            file_with_columns
+                                .iter()
+                                .filter(|c| schema.contains(c.as_str())),
+                        )?;
+                    } else {
+                        schema = schema.try_project(file_with_columns.iter())?;
+                    }
+                }
+
+                if allow_missing_columns {
+                    missing_columns.clear();
+                    extra_columns.clear();
+
+                    current_schema.as_ref().field_compare(
+                        &schema,
+                        &mut missing_columns,
+                        &mut extra_columns,
+                    );
+
+                    if !extra_columns.is_empty() {
+                        // @TODO: Better error
+                        polars_bail!(InvalidOperation: "More schema in file after first");
+                    }
+                }
+
+                let mut file_options = self.file_options.clone();
+                // @TODO: We should really supply a bitmask to the readers instead of supplying
+                // the column names. It just leads to way less confusion about what the reader is
+                // supposed to do.
+                file_options.with_columns = if allow_missing_columns {
+                    file_with_columns
+                        .as_ref()
+                        .map(|_| schema.iter_names().cloned().collect())
+                } else {
+                    file_with_columns.clone()
+                };
+                file_options.row_index = row_index.clone();
+
+                let mut file_info = self.file_info.clone();
+                // @TODO: Directly read parquet arrow schema
+                file_info.reader_schema = Some(arrow::Either::Left(Arc::new(
+                    schema.to_arrow(CompatLevel::newest()),
+                )));
+                file_info.schema = Arc::new(schema);
+
+                let mut exec = ParquetExec::new(
+                    part_source,
+                    file_info,
                     None,
                     file_predicate.clone(),
                     options.clone(),
@@ -214,7 +283,6 @@ impl HiveExec {
                     file_options,
                     None,
                 );
-
                 let mut num_unfiltered_rows = LazyTryCell::new(|| exec.num_unfiltered_rows());
 
                 let mut do_skip_file = false;
@@ -245,11 +313,6 @@ impl HiveExec {
                     do_skip_file |= allow_predicate_skip;
                 }
 
-                // Update the row_index to the proper offset.
-                if let Some(row_index) = row_index.as_mut() {
-                    row_index.offset += num_unfiltered_rows.get()?;
-                }
-
                 if do_skip_file {
                     // Update the row_index to the proper offset.
                     if let Some(row_index) = row_index.as_mut() {
@@ -268,8 +331,6 @@ impl HiveExec {
                 let num_unfiltered_rows = num_unfiltered_rows.get()?;
                 let mut df = exec.read()?;
 
-                println!("{}", &df);
-
                 // Update the row_index to the proper offset.
                 if let Some(row_index) = row_index.as_mut() {
                     row_index.offset += num_unfiltered_rows;
@@ -280,34 +341,29 @@ impl HiveExec {
                     slice.1 = slice.1.saturating_sub(num_unfiltered_rows as usize);
                 }
 
-                if let Some(with_columns) = &self.file_options.with_columns {
-                    df = match &row_index {
-                        None => df.select(with_columns.iter().cloned())?,
-                        Some(ri) => df.select(
-                            std::iter::once(ri.name.clone()).chain(with_columns.iter().cloned()),
-                        )?,
+                // Add all the missing columns.
+                if allow_missing_columns && !missing_columns.is_empty() {
+                    for (_, (name, field)) in &missing_columns {
+                        df.with_column(Column::full_null((*name).clone(), df.height(), field))?;
                     }
                 }
-
-                // Materialize the hive columns and add them basic in.
-                let hive_df: DataFrame = hive_part
-                    .get_statistics()
-                    .column_stats()
-                    .iter()
-                    .map(|hive_col| {
-                        ScalarColumn::from_single_value_series(
-                            hive_col
-                                .to_min()
-                                .unwrap()
-                                .clone()
-                                .with_name(hive_col.field_name().clone()),
-                            df.height(),
-                        )
-                        .into_column()
-                    })
-                    .collect();
-                let mut df = hive_df.hstack(df.get_columns())?;
-
+                // Materialize the hive columns and add them back in.
+                if let Some(hive_part) = hive_part {
+                    for hive_col in hive_part.get_statistics().column_stats() {
+                        df.with_column(
+                            ScalarColumn::from_single_value_series(
+                                hive_col
+                                    .to_min()
+                                    .unwrap()
+                                    .clone()
+                                    .with_name(hive_col.field_name().clone()),
+                                df.height(),
+                            )
+                            .into_column(),
+                        )?;
+                    }
+                }
+                // Add the `include_file_paths` column
                 if let Some(include_file_paths) = &include_file_paths {
                     df.with_column(ScalarColumn::new(
                         include_file_paths.clone(),
@@ -316,6 +372,8 @@ impl HiveExec {
                     ))?;
                 }
 
+                // Project to ensure that all DataFrames have the proper order.
+                df = df.select(output_schema.iter_names().cloned())?;
                 dfs.push(df);
             }
 

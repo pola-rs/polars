@@ -519,12 +519,29 @@ impl ParquetExec {
 
 impl ScanExec for ParquetExec {
     fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
-        // @FIXME! This is extremely inefficient.
-        self.read_with_num_unfiltered_rows().map(|(n, _)| n)
+        assert_eq!(self.sources.len(), 1);
+
+        let memslice = self.sources.get(0).unwrap().to_memslice()?;
+        ParquetReader::new(std::io::Cursor::new(memslice))
+            .num_rows()
+            .map(|v| v as IdxSize)
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
+        assert_eq!(self.sources.len(), 1);
+
         self.read_with_num_unfiltered_rows().map(|(_, df)| df)
+    }
+
+    fn schema(&mut self) -> PolarsResult<Schema> {
+        assert_eq!(self.sources.len(), 1);
+
+        let memslice = self.sources.get(0).unwrap().to_memslice()?;
+        let arrow_schema = ParquetReader::new(std::io::Cursor::new(memslice)).schema()?;
+
+        Ok(Schema::from_iter(arrow_schema.iter().map(
+            |(name, field)| (name.clone(), DataType::from_arrow_field(field)),
+        )))
     }
 }
 

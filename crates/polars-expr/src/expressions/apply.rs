@@ -447,7 +447,7 @@ impl PhysicalExpr for ApplyExpr {
                         new_inputs.extend(self.inputs[..i].iter().cloned());
                         new_inputs.push(new);
                         break;
-                    }
+                    },
                 }
             }
 

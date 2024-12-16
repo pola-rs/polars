@@ -270,19 +270,21 @@ impl ParquetSourceNode {
                 .as_ref()
                 .unwrap()
                 .collect_live_columns(&mut live_columns);
-            let v = (!live_columns.is_empty()).then(|| {
-                let out = live_columns
-                    .iter()
-                    // Can be `None` - if the column is e.g. a hive column, or the row index column.
-                    .filter_map(|x| projected_arrow_schema.index_of(x))
-                    .collect::<Vec<_>>();
+            let v = (!live_columns.is_empty())
+                .then(|| {
+                    let out = live_columns
+                        .iter()
+                        // Can be `None` - if the column is e.g. a hive column, or the row index column.
+                        .filter_map(|x| projected_arrow_schema.index_of(x))
+                        .collect::<Vec<_>>();
 
-                // There is at least one non-predicate column, or pre-filtering was
-                // explicitly requested (only useful for testing).
-                (out.len() < projected_arrow_schema.len()
-                    || matches!(self.options.parallel, ParallelStrategy::Prefiltered))
-                .then_some(out)
-            }).flatten();
+                    // There is at least one non-predicate column, or pre-filtering was
+                    // explicitly requested (only useful for testing).
+                    (out.len() < projected_arrow_schema.len()
+                        || matches!(self.options.parallel, ParallelStrategy::Prefiltered))
+                    .then_some(out)
+                })
+                .flatten();
 
             use_prefiltered &= v.is_some();
 

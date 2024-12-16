@@ -148,7 +148,7 @@ impl PhysicalExpr for LiteralExpr {
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
     }
-    
+
     fn collect_live_columns(&self, _lv: &mut PlIndexSet<PlSmallStr>) {}
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {

@@ -640,7 +640,7 @@ impl PhysicalExpr for WindowExpr {
     fn is_scalar(&self) -> bool {
         false
     }
-    
+
     fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
         for i in &self.group_by {
             i.collect_live_columns(lv);

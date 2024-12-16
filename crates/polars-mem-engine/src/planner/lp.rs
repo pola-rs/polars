@@ -329,10 +329,9 @@ fn create_physical_plan_impl(
                     cloud_options,
                     metadata,
                 } => {
-                    if hive_parts.is_some()
-                        && std::env::var("POLARS_NEW_HIVE").as_deref() == Ok("1")
+                    if sources.len() > 1
+                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
                     {
-                        let hive_parts = hive_parts.unwrap();
                         Ok(Box::new(executors::HiveExec::new(
                             sources,
                             file_info,
