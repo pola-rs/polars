@@ -5,14 +5,13 @@ use polars::export::arrow::bitmap::MutableBitmap;
 use polars::prelude::*;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
-use polars_row::RowEncodingOptions;
 use pyo3::exceptions::PyIndexError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyList;
 use pyo3::IntoPyObjectExt;
 
-use self::row_encode::get_row_encoding_dictionary;
+use self::row_encode::{_get_rows_encoded_ca, _get_rows_encoded_ca_unordered};
 use super::PyDataFrame;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
@@ -684,45 +683,25 @@ impl PyDataFrame {
         opts: Vec<(bool, bool, bool)>,
     ) -> PyResult<PySeries> {
         py.allow_threads(|| {
-            let mut df = self.df.clone();
-            df.rechunk_mut();
+            let name = PlSmallStr::from_static("row_enc");
+            let is_unordered = opts.first().map_or(false, |(_, _, v)| *v);
 
-            let dicts = df
-                .get_columns()
-                .iter()
-                .map(|c| get_row_encoding_dictionary(c.dtype()))
-                .collect::<Vec<_>>();
+            let ca = if is_unordered {
+                _get_rows_encoded_ca_unordered(name, self.df.get_columns())
+            } else {
+                let descending = opts.iter().map(|(v, _, _)| *v).collect::<Vec<_>>();
+                let nulls_last = opts.iter().map(|(_, v, _)| *v).collect::<Vec<_>>();
 
-            assert_eq!(df.width(), opts.len());
-
-            let chunks = df
-                .get_columns()
-                .iter()
-                .map(|c| c.as_materialized_series().to_physical_repr().chunks()[0].to_boxed())
-                .collect::<Vec<_>>();
-            let opts = opts
-                .into_iter()
-                .map(|(descending, nulls_last, no_order)| {
-                    let mut opt = RowEncodingOptions::default();
-
-                    opt.set(RowEncodingOptions::DESCENDING, descending);
-                    opt.set(RowEncodingOptions::NULLS_LAST, nulls_last);
-                    opt.set(RowEncodingOptions::NO_ORDER, no_order);
-
-                    opt
-                })
-                .collect::<Vec<_>>();
-
-            let rows = polars_row::convert_columns(df.height(), &chunks, &opts, &dicts);
-
-            Ok(unsafe {
-                Series::from_chunks_and_dtype_unchecked(
-                    PlSmallStr::from_static("row_enc"),
-                    vec![rows.into_array().boxed()],
-                    &DataType::BinaryOffset,
+                _get_rows_encoded_ca(
+                    name,
+                    self.df.get_columns(),
+                    descending.as_slice(),
+                    nulls_last.as_slice(),
                 )
             }
-            .into())
+            .map_err(PyPolarsErr::from)?;
+
+            Ok(ca.into_series().into())
         })
     }
 }

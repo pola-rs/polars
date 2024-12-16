@@ -5,7 +5,6 @@ use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::PlRandomState;
 use polars_core::series::Series;
 use polars_utils::hashing::HashPartitioner;
-use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
 
@@ -20,12 +19,8 @@ pub enum HashKeys {
 impl HashKeys {
     pub fn from_df(df: &DataFrame, random_state: PlRandomState, force_row_encoding: bool) -> Self {
         if df.width() > 1 || force_row_encoding {
-            let keys = df
-                .get_columns()
-                .iter()
-                .map(|c| c.as_materialized_series().clone())
-                .collect_vec();
-            let keys_encoded = _get_rows_encoded_unordered(&keys[..]).unwrap().into_array();
+            let keys = df.get_columns();
+            let keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
             assert!(keys_encoded.len() == df.height());
 
             // TODO: use vechash? Not supported yet for lists.
