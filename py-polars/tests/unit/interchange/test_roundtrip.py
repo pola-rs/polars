@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
 
 skip_if_broken_pandas_version = pytest.mark.skipif(
-    pd.__version__.startswith('2'), reason="bug. see #20316"
+    pd.__version__.startswith("2"), reason="bug. see #20316"
 )
 
 if TYPE_CHECKING:

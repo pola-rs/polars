@@ -8,7 +8,7 @@ import functools
 from typing import Any, Literal, Optional, Union
 
 import pytest
-from hypothesis import given, example, settings, Phase
+from hypothesis import given, example
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
@@ -124,16 +124,16 @@ def tuple_order(
 @given(
     s=series(
         excluded_dtypes=[
-            pl.Float32, # We cannot really deal with totalOrder
-            pl.Float64, # We cannot really deal with totalOrder
+            pl.Float32,  # We cannot really deal with totalOrder
+            pl.Float64,  # We cannot really deal with totalOrder
             pl.Categorical,
-            pl.Enum, # We cannot properly deal with physical order
-            pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
+            pl.Enum,  # We cannot properly deal with physical order
+            pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
         ],
         max_size=5,
     )
 )
-@example(s = pl.Series('col0', [None, [None]], pl.List(pl.Int64)))
+@example(s=pl.Series("col0", [None, [None]], pl.List(pl.Int64)))
 def test_series_sort_parametric(s: pl.Series) -> None:
     for descending in [False, True]:
         for nulls_last in [False, True]:
@@ -164,13 +164,13 @@ def test_series_sort_parametric(s: pl.Series) -> None:
 @given(
     df=dataframes(
         excluded_dtypes=[
-            pl.Float32, # We cannot really deal with totalOrder
-            pl.Float64, # We cannot really deal with totalOrder
-            pl.Categorical, 
-            pl.Enum, # We cannot properly deal with physical order
-            pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
-            pl.List, # I am not sure what is broken here.
-            pl.Array, # I am not sure what is broken here.
+            pl.Float32,  # We cannot really deal with totalOrder
+            pl.Float64,  # We cannot really deal with totalOrder
+            pl.Categorical,
+            pl.Enum,  # We cannot properly deal with physical order
+            pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
+            pl.List,  # I am not sure what is broken here.
+            pl.Array,  # I am not sure what is broken here.
         ],
         max_cols=3,
         max_size=5,
