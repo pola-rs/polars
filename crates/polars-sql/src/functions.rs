@@ -424,7 +424,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     StrPos,
     /// SQL 'substr' function
-    /// Returns a portion of the data (first character = 0) in the range.
+    /// Returns a portion of the data (first character = 1) in the range.
     ///   \[start, start + length]
     /// ```sql
     /// SELECT SUBSTR(column_1, 3, 5) FROM df;
