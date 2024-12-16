@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -63,6 +63,9 @@ def test_looks_like_url(url: str, result: bool) -> None:
     assert looks_like_url(url) == result
 
 
-def test_filename_in_err() -> None:
-    for scan in [pl.scan_csv, pl.scan_parquet, pl.scan_ndjson, pl.scan_ipc]:
-        pytest.raises(scan("does not exist").collect(), match=r".*does not exist")
+@pytest.mark.parametrize(
+    "scan", [pl.scan_csv, pl.scan_parquet, pl.scan_ndjson, pl.scan_ipc]
+)
+def test_filename_in_err(scan: Any) -> None:
+    with pytest.raises(FileNotFoundError, match=r".*does not exist"):
+        scan("does not exist").collect()
