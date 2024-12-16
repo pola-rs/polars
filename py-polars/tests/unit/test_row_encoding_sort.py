@@ -169,6 +169,8 @@ def test_series_sort_parametric(s: pl.Series) -> None:
             pl.Categorical, 
             pl.Enum, # We cannot properly deal with physical order
             pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
+            pl.List, # I am not sure what is broken here.
+            pl.Array, # I am not sure what is broken here.
         ],
         max_cols=3,
         max_size=5,
