@@ -103,6 +103,14 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         ));
     }
 
+    if series.dtype().is_enum() {
+        unimplemented!("Enum index_of() can give incorrect result until https://github.com/pola-rs/polars/issues/20320 is fixed")
+    }
+
+    if series.dtype().is_categorical() {
+        unimplemented!("Categorical index_of() can give incorrect result until https://github.com/pola-rs/polars/issues/20318 is fixed")
+    }
+
     // For non-numeric dtypes, we convert to row-encoding, which essentially has
     // us searching the physical representation of the data as a series of
     // bytes.

@@ -286,7 +286,12 @@ def test_error_on_multiple_values() -> None:
 @pytest.mark.parametrize(
     "convert_to_literal",
     [
-        True,
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(
+                reason="https://github.com/pola-rs/polars/issues/20320"
+            ),
+        ),
         pytest.param(
             False,
             marks=pytest.mark.xfail(
