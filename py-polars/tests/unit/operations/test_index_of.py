@@ -308,7 +308,9 @@ def test_enum(convert_to_literal: bool) -> None:
     [
         pytest.param(
             True,
-            marks=pytest.mark.xfail(reason="TODO fix or file an issue"),
+            marks=pytest.mark.xfail(
+                reason="https://github.com/pola-rs/polars/issues/20318"
+            ),
         ),
         pytest.param(
             False,
