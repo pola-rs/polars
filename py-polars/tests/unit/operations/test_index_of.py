@@ -264,13 +264,23 @@ def test_other_types(
 
 # Before the output type would be list[idx-type] when no item was found
 def test_non_found_correct_type() -> None:
-    df = pl.DataFrame([
-        pl.Series('a', [0, 1], pl.Int32),
-        pl.Series('b', [1, 2], pl.Int32),
-    ])
+    df = pl.DataFrame(
+        [
+            pl.Series("a", [0, 1], pl.Int32),
+            pl.Series("b", [1, 2], pl.Int32),
+        ]
+    )
 
     assert_frame_equal(
-        df.group_by('a', maintain_order=True).agg(pl.col.b.index_of(1)),
-        pl.DataFrame({ 'a': [0, 1], 'b': [0, None] }),
+        df.group_by("a", maintain_order=True).agg(pl.col.b.index_of(1)),
+        pl.DataFrame({"a": [0, 1], "b": [0, None]}),
         check_dtypes=False,
     )
+
+
+def test_error_on_multiple_values() -> None:
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="needle of `index_of` can only contain",
+    ):
+        pl.Series("a", [1, 2, 3]).index_of(pl.Series([2, 3]))

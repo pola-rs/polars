@@ -13,7 +13,11 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     };
 
     let needle_s = &s[1];
-    polars_ensure!(needle_s.len() == 1, InvalidOperation: "needle of `index_of` can only contain a single value, found {} values", needle_s.len());
+    polars_ensure!(
+        needle_s.len() == 1,
+        InvalidOperation: "needle of `index_of` can only contain a single value, found {} values",
+        needle_s.len()
+    );
     let needle = needle_s.get(0).unwrap().into_static();
 
     let is_sorted_flag = series.is_sorted_flag();
