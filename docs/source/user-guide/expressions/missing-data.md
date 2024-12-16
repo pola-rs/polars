@@ -136,9 +136,11 @@ instead of the function `fill_null`:
 
 ## Not a Number, or `NaN` values
 
-Missing data in a series is represented by the value `null`, regardless of the data type of the
-series. However, in columns that have a floating point data type, the value `NaN` can be used. These
-values can be created directly:
+Missing data in a series is only ever represented by the value `null`, regardless of the data type
+of the series. Columns with a floating point data type can sometimes have the value `NaN`, which
+might be confused with `null`.
+
+The special value `NaN` can be created directly:
 
 {{code_block('user-guide/expressions/missing-data','nan',['DataFrame'])}}
 
@@ -146,7 +148,7 @@ values can be created directly:
 --8<-- "python/user-guide/expressions/missing-data.py:nan"
 ```
 
-The special value `NaN` might also arise as the result of a computation:
+And it might also arise as the result of a computation:
 
 {{code_block('user-guide/expressions/missing-data','nan-computed',[])}}
 
@@ -180,3 +182,6 @@ can be avoided by replacing the occurrences of the value `NaN` with the value `n
 ```python exec="on" result="text" session="user-guide/missing-data"
 --8<-- "python/user-guide/expressions/missing-data.py:nanfill"
 ```
+
+You can learn more about the value `NaN` in
+[the section about floating point number data types](../concepts/data-types-and-structures.md#floating-point-numbers).
