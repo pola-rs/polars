@@ -1195,6 +1195,7 @@ mod test {
     }
 
     #[test]
+    #[cfg(feature = "dtype-date")]
     fn roundtrip_list_logical_20311() {
         let list = ListChunked::from_chunk_iter(
             PlSmallStr::from_static("a"),
