@@ -115,8 +115,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
     // us searching the physical representation of the data as a series of
     // bytes.
     let value_as_column = Column::new_scalar(PlSmallStr::EMPTY, needle, 1);
-    let value_as_row_encoded_ca =
-        encode_rows_unordered(&[value_as_column])?;
+    let value_as_row_encoded_ca = encode_rows_unordered(&[value_as_column])?;
     let value = value_as_row_encoded_ca
         .first()
         .expect("Shouldn't have nulls in a row-encoded result");
