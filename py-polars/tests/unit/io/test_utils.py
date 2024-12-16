@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+import polars as pl
 from polars.io._utils import looks_like_url, parse_columns_arg, parse_row_index_args
 
 if TYPE_CHECKING:
@@ -60,3 +61,8 @@ def test_parse_row_index_args() -> None:
 )
 def test_looks_like_url(url: str, result: bool) -> None:
     assert looks_like_url(url) == result
+
+
+def test_filename_in_err() -> None:
+    for scan in [pl.scan_csv, pl.scan_parquet, pl.scan_ndjson, pl.scan_ipc]:
+        pytest.raises(scan("does not exist").collect(), match=r".*does not exist")

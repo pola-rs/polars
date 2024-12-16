@@ -12,6 +12,7 @@ use std::sync::Arc;
 use polars::io::mmap::MmapBytesReader;
 use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
+use polars_utils::create_file;
 use polars_utils::mmap::MemSlice;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -350,7 +351,7 @@ fn get_either_buffer_or_path(
         if let Ok(s) = py_f.extract::<Cow<str>>() {
             let file_path = resolve_homedir(&&*s);
             let f = if write {
-                File::create(&file_path)?
+                create_file(&file_path).map_err(PyPolarsErr::from)?
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
