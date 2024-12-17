@@ -53,6 +53,7 @@ version_check = { workspace = true }
 debugging = []
 python = ["dep:pyo3", "polars-utils/python"]
 serde = [
+  "ir_serde",
   "dep:serde",
   "polars-core/serde-lazy",
   "polars-time/serde",
