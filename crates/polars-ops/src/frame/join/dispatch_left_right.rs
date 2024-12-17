@@ -212,7 +212,7 @@ fn materialize_left_join_idx_left(
                 args.maintain_order,
                 MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
             ) || args.how == JoinType::Left
-                && !matches(
+                && !matches!(
                     args.maintain_order,
                     MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
                 ),
