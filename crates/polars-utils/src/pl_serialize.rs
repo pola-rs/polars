@@ -26,6 +26,8 @@ pub struct SerializeOptions {
 impl SerializeOptions {
     /// Defaults for the final level of serialization
     pub fn default_outer() -> Self {
+        // We already compress DataFrames inside their serialization using the IpcWriter. This
+        // assumes the plan itself isn't that big compared to the DataFrame.
         Self { compression: false }
     }
 
