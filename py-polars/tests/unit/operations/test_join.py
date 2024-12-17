@@ -1336,30 +1336,34 @@ def test_join_numeric_type_upcast_15338(
 
     assert_frame_equal(
         left.join(right, on="a", how="left").collect(),
-        pl.select(
-            a=pl.Series([1, 1, 3]).cast(supertype), b=pl.Series(["A", "A", None])
-        ),
+        pl.select(a=pl.Series([1, 1, 3]).cast(ltype), b=pl.Series(["A", "A", None])),
     )
 
     assert_frame_equal(
-        right.join(left, on="a", how="full", coalesce=True).collect(),
-        pl.select(
-            a=pl.Series([1, 1, 3]).cast(supertype), b=pl.Series(["A", "A", None])
-        ),
+        left.join(right, on="a", how="left", coalesce=False).drop("a_right").collect(),
+        pl.select(a=pl.Series([1, 1, 3]).cast(ltype), b=pl.Series(["A", "A", None])),
     )
 
     assert_frame_equal(
-        right.join(left, on="a", how="full").collect(),
+        left.join(right, on="a", how="full").collect(),
         pl.select(
-            a=pl.Series([1, 1, None]).cast(supertype),
+            a=pl.Series([1, 1, 3]).cast(ltype),
+            a_right=pl.Series([1, 1, None]).cast(rtype),
             b=pl.Series(["A", "A", None]),
-            a_right=pl.Series([1, 1, 3]).cast(supertype),
+        ),
+    )
+
+    assert_frame_equal(
+        left.join(right, on="a", how="full", coalesce=True).collect(),
+        pl.select(
+            a=pl.Series([1, 1, 3]).cast(supertype),
+            b=pl.Series(["A", "A", None]),
         ),
     )
 
     assert_frame_equal(
         left.join(right, on="a", how="semi").collect(),
-        pl.select(a=pl.Series([1, 1]).cast(supertype)),
+        pl.select(a=pl.Series([1, 1]).cast(ltype)),
     )
 
 

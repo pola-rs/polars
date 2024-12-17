@@ -76,10 +76,10 @@ pub fn resolve_join(
         );
     }
 
-    let input_left = input_left.map_right(Ok).right_or_else(|input| {
+    let mut input_left = input_left.map_right(Ok).right_or_else(|input| {
         to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join left)))
     })?;
-    let input_right = input_right.map_right(Ok).right_or_else(|input| {
+    let mut input_right = input_right.map_right(Ok).right_or_else(|input| {
         to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join right)))
     })?;
 
@@ -89,8 +89,8 @@ pub fn resolve_join(
     let schema = det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
         .map_err(|e| e.context(failed_here!(join schema resolving)))?;
 
-    let left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
-    let right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
+    let mut left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
+    let mut right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
     let mut joined_on = PlHashSet::new();
 
     #[cfg(feature = "iejoin")]
@@ -131,8 +131,9 @@ pub fn resolve_join(
 
     let mut to_cast_left = vec![];
     let mut to_cast_right = vec![];
+    let mut to_cast_indices = vec![];
 
-    for (lnode, rnode) in left_on.iter().zip(right_on.iter()) {
+    for (i, (lnode, rnode)) in left_on.iter().zip(right_on.iter()).enumerate() {
         let ltype = get_dtype!(lnode, &schema_left)?;
         let rtype = get_dtype!(rnode, &schema_right)?;
 
@@ -165,6 +166,8 @@ pub fn resolve_join(
                     ))
                 };
 
+                to_cast_indices.push(i);
+
                 continue;
             }
         }
@@ -192,27 +195,41 @@ pub fn resolve_join(
     let schema_left = schema_left.into_owned();
     let schema_right = schema_right.into_owned();
 
-    let input_left = if to_cast_left.is_empty() {
-        input_left
-    } else {
-        ctxt.lp_arena.add(IR::HStack {
-            input: input_left,
-            exprs: to_cast_left,
-            schema: schema_left,
-            options: ProjectionOptions::default(),
-        })
-    };
+    let key_cols_coalesced =
+        options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
 
-    let input_right = if to_cast_right.is_empty() {
-        input_right
+    if key_cols_coalesced {
+        input_left = if to_cast_left.is_empty() {
+            input_left
+        } else {
+            ctxt.lp_arena.add(IR::HStack {
+                input: input_left,
+                exprs: to_cast_left,
+                schema: schema_left,
+                options: ProjectionOptions::default(),
+            })
+        };
+
+        input_right = if to_cast_right.is_empty() {
+            input_right
+        } else {
+            ctxt.lp_arena.add(IR::HStack {
+                input: input_right,
+                exprs: to_cast_right,
+                schema: schema_right,
+                options: ProjectionOptions::default(),
+            })
+        };
     } else {
-        ctxt.lp_arena.add(IR::HStack {
-            input: input_right,
-            exprs: to_cast_right,
-            schema: schema_right,
-            options: ProjectionOptions::default(),
-        })
-    };
+        for ((i, ir_left), ir_right) in to_cast_indices
+            .into_iter()
+            .zip(to_cast_left)
+            .zip(to_cast_right)
+        {
+            left_on[i] = ir_left;
+            right_on[i] = ir_right;
+        }
+    }
 
     let lp = IR::Join {
         input_left,
