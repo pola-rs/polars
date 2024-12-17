@@ -27,10 +27,11 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
+bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
-ciborium = { workspace = true }
 either = { workspace = true }
+flate2 = { workspace = true }
 itoa = { workspace = true }
 libc = { workspace = true }
 ndarray = { workspace = true }

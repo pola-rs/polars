@@ -112,10 +112,10 @@ pub enum IR {
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
         schema: SchemaRef,
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
+        apply: Option<Arc<dyn DataFrameUdf>>,
     },
     Join {
         input_left: Node,

@@ -7,10 +7,12 @@ use super::Series;
 /// At the moment this just conditionally tracks where it was created so that materialization
 /// problems can be tracked down.
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct SeriesColumn {
     inner: Series,
 
     #[cfg(debug_assertions)]
+    #[cfg_attr(feature = "serde", serde(skip))]
     materialized_at: Option<std::sync::Arc<std::backtrace::Backtrace>>,
 }
 

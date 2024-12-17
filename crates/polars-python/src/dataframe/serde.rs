@@ -1,8 +1,9 @@
-use std::io::{BufReader, BufWriter, Cursor};
+use std::io::{BufReader, BufWriter};
 use std::ops::Deref;
 
 use polars::prelude::*;
 use polars_io::mmap::ReaderBytes;
+use polars_utils::pl_serialize;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -17,29 +18,26 @@ impl PyDataFrame {
     #[cfg(feature = "ipc_streaming")]
     fn __getstate__<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
         // Used in pickle/pickling
-        let mut buf: Vec<u8> = vec![];
-        IpcStreamWriter::new(&mut buf)
-            .with_compat_level(CompatLevel::newest())
-            .finish(&mut self.df.clone())
-            .expect("ipc writer");
-        PyBytes::new(py, &buf)
+        PyBytes::new(
+            py,
+            &pl_serialize::SerializeOptions::default()
+                .with_compression(true)
+                .serialize_to_bytes(&self.df)
+                .unwrap(),
+        )
     }
 
     #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<PyBackedBytes>() {
-            Ok(s) => {
-                let c = Cursor::new(&*s);
-                let reader = IpcStreamReader::new(c);
-
-                reader
-                    .finish()
-                    .map(|df| {
-                        self.df = df;
-                    })
-                    .map_err(|e| PyPolarsErr::from(e).into())
-            },
+            Ok(s) => pl_serialize::SerializeOptions::default()
+                .with_compression(true)
+                .deserialize_from_reader(&*s)
+                .map(|df| {
+                    self.df = df;
+                })
+                .map_err(|e| PyPolarsErr::from(e).into()),
             Err(e) => Err(e),
         }
     }
@@ -48,7 +46,9 @@ impl PyDataFrame {
     fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        ciborium::into_writer(&self.df, writer)
+        pl_serialize::SerializeOptions::default()
+            .with_compression(true)
+            .serialize_into_writer(writer, &self.df)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
@@ -65,8 +65,10 @@ impl PyDataFrame {
     #[staticmethod]
     fn deserialize_binary(py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
-        let reader = BufReader::new(file);
-        let df = ciborium::from_reader::<DataFrame, _>(reader)
+        let file = BufReader::new(file);
+        let df: DataFrame = pl_serialize::SerializeOptions::default()
+            .with_compression(true)
+            .deserialize_from_reader(file)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(df.into())
     }

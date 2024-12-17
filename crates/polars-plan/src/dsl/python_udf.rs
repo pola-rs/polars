@@ -51,6 +51,8 @@ impl PythonUdfExpression {
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn ColumnsUdf>> {
         // Handle byte mark
+
+        use polars_utils::pl_serialize;
         debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
         let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
@@ -72,7 +74,7 @@ impl PythonUdfExpression {
         // Load UDF metadata
         let mut reader = Cursor::new(buf);
         let (output_type, is_elementwise, returns_scalar): (Option<DataType>, bool, bool) =
-            ciborium::de::from_reader(&mut reader).map_err(map_err)?;
+            pl_serialize::deserialize_from_reader(&mut reader)?;
 
         let remainder = &buf[reader.position() as usize..];
 
@@ -132,6 +134,8 @@ impl ColumnsUdf for PythonUdfExpression {
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
         // Write byte marks
+
+        use polars_utils::pl_serialize;
         buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
 
         Python::with_gil(|py| {
@@ -160,15 +164,14 @@ impl ColumnsUdf for PythonUdfExpression {
             buf.extend_from_slice(&*PYTHON3_VERSION);
 
             // Write UDF metadata
-            ciborium::ser::into_writer(
+            pl_serialize::serialize_into_writer(
+                &mut *buf,
                 &(
                     self.output_type.clone(),
                     self.is_elementwise,
                     self.returns_scalar,
                 ),
-                &mut *buf,
-            )
-            .unwrap();
+            )?;
 
             // Write UDF
             let dumped = dumped.extract::<PyBackedBytes>().unwrap();
@@ -191,12 +194,13 @@ impl PythonGetOutput {
     #[cfg(feature = "serde")]
     pub(crate) fn try_deserialize(buf: &[u8]) -> PolarsResult<Arc<dyn FunctionOutputField>> {
         // Skip header.
+
+        use polars_utils::pl_serialize;
         debug_assert!(buf.starts_with(PYTHON_SERDE_MAGIC_BYTE_MARK));
         let buf = &buf[PYTHON_SERDE_MAGIC_BYTE_MARK.len()..];
 
         let mut reader = Cursor::new(buf);
-        let return_dtype: Option<DataType> =
-            ciborium::de::from_reader(&mut reader).map_err(map_err)?;
+        let return_dtype: Option<DataType> = pl_serialize::deserialize_from_reader(&mut reader)?;
 
         Ok(Arc::new(Self::new(return_dtype)) as Arc<dyn FunctionOutputField>)
     }
@@ -220,9 +224,10 @@ impl FunctionOutputField for PythonGetOutput {
 
     #[cfg(feature = "serde")]
     fn try_serialize(&self, buf: &mut Vec<u8>) -> PolarsResult<()> {
+        use polars_utils::pl_serialize;
+
         buf.extend_from_slice(PYTHON_SERDE_MAGIC_BYTE_MARK);
-        ciborium::ser::into_writer(&self.return_dtype, &mut *buf).unwrap();
-        Ok(())
+        pl_serialize::serialize_into_writer(&mut *buf, &self.return_dtype)
     }
 }
 

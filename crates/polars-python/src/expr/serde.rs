@@ -1,6 +1,7 @@
 use std::io::{BufReader, BufWriter, Cursor};
 
 use polars::lazy::prelude::Expr;
+use polars_utils::pl_serialize;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -15,7 +16,9 @@ impl PyExpr {
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
-        ciborium::ser::into_writer(&self.inner, &mut writer)
+        pl_serialize::SerializeOptions::default()
+            .with_compression(true)
+            .serialize_into_writer(&mut writer, &self.inner)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
         Ok(PyBytes::new(py, &writer))
@@ -23,10 +26,13 @@ impl PyExpr {
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
+
         let bytes = state.extract::<PyBackedBytes>()?;
         let cursor = Cursor::new(&*bytes);
-        self.inner =
-            ciborium::de::from_reader(cursor).map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+        self.inner = pl_serialize::SerializeOptions::default()
+            .with_compression(true)
+            .deserialize_from_reader(cursor)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
         Ok(())
     }
 
@@ -34,7 +40,9 @@ impl PyExpr {
     fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        ciborium::into_writer(&self.inner, writer)
+        pl_serialize::SerializeOptions::default()
+            .with_compression(true)
+            .serialize_into_writer(writer, &self.inner)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
@@ -52,7 +60,9 @@ impl PyExpr {
     fn deserialize_binary(py_f: PyObject) -> PyResult<PyExpr> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
-        let expr = ciborium::from_reader::<Expr, _>(reader)
+        let expr: Expr = pl_serialize::SerializeOptions::default()
+            .with_compression(true)
+            .deserialize_from_reader(reader)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(expr.into())
     }

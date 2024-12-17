@@ -27,10 +27,9 @@ ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
-bytes = { workspace = true }
+bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-ciborium = { workspace = true, optional = true }
 either = { workspace = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
@@ -52,8 +51,9 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "ciborium", "polars-utils/python"]
+python = ["dep:pyo3", "polars-utils/python"]
 serde = [
+  "ir_serde",
   "dep:serde",
   "polars-core/serde-lazy",
   "polars-time/serde",
@@ -189,7 +189,7 @@ month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
-polars_cloud = ["serde", "ciborium"]
+polars_cloud = ["serde"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
 panic_on_schema = []
@@ -279,7 +279,6 @@ features = [
   "replace",
   "dtype-u16",
   "regex",
-  "ciborium",
   "dtype-decimal",
   "arg_where",
   "business",

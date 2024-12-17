@@ -111,10 +111,6 @@ pub enum ArrowDataType {
     LargeList(Box<Field>),
     /// A nested [`ArrowDataType`] with a given number of [`Field`]s.
     Struct(Vec<Field>),
-    /// A nested datatype that can represent slots of differing types.
-    /// Third argument represents mode
-    #[cfg_attr(feature = "serde", serde(skip))]
-    Union(Vec<Field>, Option<Vec<i32>>, UnionMode),
     /// A nested type that is represented as
     ///
     /// List<entries: Struct<key: K, value: V>>
@@ -176,6 +172,10 @@ pub enum ArrowDataType {
     Utf8View,
     /// A type unknown to Arrow.
     Unknown,
+    /// A nested datatype that can represent slots of differing types.
+    /// Third argument represents mode
+    #[cfg_attr(feature = "serde", serde(skip))]
+    Union(Vec<Field>, Option<Vec<i32>>, UnionMode),
 }
 
 /// Mode of [`ArrowDataType::Union`]

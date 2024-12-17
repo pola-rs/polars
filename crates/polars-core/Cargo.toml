@@ -42,7 +42,7 @@ thiserror = { workspace = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
-bincode = { version = "1" }
+bincode = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -123,7 +123,15 @@ dtype-struct = []
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
-serde = ["dep:serde", "bitflags/serde", "polars-schema/serde", "polars-utils/serde"]
+serde = [
+  "dep:serde",
+  "bitflags/serde",
+  "polars-schema/serde",
+  "polars-utils/serde",
+  "arrow/io_ipc",
+  "arrow/io_ipc_compression",
+  "serde_json",
+]
 serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
 
 docs-selection = [
@@ -143,6 +151,7 @@ docs-selection = [
   "row_hash",
   "rolling_window",
   "rolling_window_by",
+  "serde",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
