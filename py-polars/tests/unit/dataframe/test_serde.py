@@ -34,6 +34,7 @@ def test_df_serde_roundtrip_json(df: pl.DataFrame) -> None:
 
     if isinstance(dt := df.to_series(0).dtype, pl.Decimal):
         if dt.precision is None:
+            # This gets converted to precision 38 upon `to_arrow()`
             pytest.skip("precision None")
 
     assert_frame_equal(result, df, categorical_as_str=True)

@@ -1,9 +1,8 @@
-use std::io::Cursor;
-
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_row::RowEncodingOptions;
+use polars_utils::pl_serialize;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -389,40 +388,28 @@ impl PySeries {
         Wrap(result).into_pyobject(py)
     }
 
-    #[cfg(feature = "ipc_streaming")]
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
-        // IPC only support DataFrames so we need to convert it
-        let mut df = self.series.clone().into_frame();
-        IpcStreamWriter::new(&mut buf)
-            .with_compat_level(CompatLevel::newest())
-            .finish(&mut df)
-            .expect("ipc writer");
+
+        pl_serialize::SerializeOptions::default_outer()
+            .serialize_into_writer(&mut buf, &self.series)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+
         Ok(PyBytes::new(py, &buf))
     }
 
-    #[cfg(feature = "ipc_streaming")]
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         // Used in pickle/pickling
 
         use pyo3::pybacked::PyBackedBytes;
         match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let c = Cursor::new(&s);
-                let reader = IpcStreamReader::new(c);
-                let mut df = reader.finish().map_err(PyPolarsErr::from)?;
-
-                df.pop()
-                    .map(|s| {
-                        self.series = s.take_materialized_series();
-                    })
-                    .ok_or_else(|| {
-                        PyPolarsErr::from(PolarsError::NoData(
-                            "No columns found in IPC byte stream".into(),
-                        ))
-                        .into()
-                    })
+                let s: Series = pl_serialize::SerializeOptions::default_outer()
+                    .deserialize_from_reader(&*s)
+                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+                self.series = s;
+                Ok(())
             },
             Err(e) => Err(e),
         }
