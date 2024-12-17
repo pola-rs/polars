@@ -16,7 +16,7 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
 pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;
 
-    if l == r {
+    if l == r || matches!(l, Unknown(_)) || matches!(r, Unknown(_)) {
         None
     } else if l.is_float() && r.is_float() {
         match (l, r) {

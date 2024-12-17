@@ -605,7 +605,7 @@ impl DataType {
         )
     }
 
-    /// Check if this [`DataType`] is an integer.
+    /// Check if this [`DataType`] is an integer. Note, this also includes `Unknown(UnknownKind::Int)`.
     pub fn is_integer(&self) -> bool {
         matches!(
             self,
