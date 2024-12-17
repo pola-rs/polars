@@ -7,10 +7,9 @@ import decimal
 import functools
 from typing import Any, Literal, Optional, Union, cast
 
-import pytest
-from hypothesis import given, example
-
 import polars as pl
+import pytest
+from hypothesis import example, given
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes, series
 
