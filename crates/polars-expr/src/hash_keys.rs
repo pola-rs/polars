@@ -31,9 +31,12 @@ impl HashKeys {
         if df.width() > 1 || force_row_encoding {
             let keys = df.get_columns();
             let mut keys_encoded = _get_rows_encoded_unordered(keys).unwrap().into_array();
-            
+
             if !null_is_valid {
-                let validities = keys.iter().map(|c| c.as_materialized_series().rechunk_validity()).collect_vec();
+                let validities = keys
+                    .iter()
+                    .map(|c| c.as_materialized_series().rechunk_validity())
+                    .collect_vec();
                 let combined = combine_validities_and_many(&validities);
                 keys_encoded.set_validity(combined);
             }
