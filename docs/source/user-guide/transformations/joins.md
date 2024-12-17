@@ -269,10 +269,10 @@ The broker has another dataframe called `df_quotes` showing prices it has quoted
 --8<-- "python/user-guide/transformations/joins.py:df_quotes"
 ```
 
-You want to produce a dataframe showing for each trade the most recent quote provided _before_ the
-trade. You do this with `join_asof` (using the default `strategy = "backward"`). To avoid joining
-between trades on one stock with a quote on another you must specify an exact preliminary join on
-the stock column with `by="stock"`.
+You want to produce a dataframe showing for each trade the most recent quote provided _on or before_
+the time of the trade. You do this with `join_asof` (using the default `strategy = "backward"`). To
+avoid joining between trades on one stock with a quote on another you must specify an exact
+preliminary join on the stock column with `by="stock"`.
 
 {{code_block('user-guide/transformations/joins','asof', [], ['join_asof'], ['join_asof_by'])}}
 
