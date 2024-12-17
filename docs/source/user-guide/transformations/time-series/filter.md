@@ -16,8 +16,7 @@ In the following example we use a time series of Apple stock prices.
 
 ## Filtering by single dates
 
-We can filter by a single date by casting the desired date string to a `Date` object in a filter
-expression:
+We can filter by a single date using an equality comparison in a filter expression:
 
 {{code_block('user-guide/transformations/time-series/filter','filter',['filter'])}}
 

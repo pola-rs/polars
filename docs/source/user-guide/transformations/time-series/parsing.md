@@ -44,8 +44,7 @@ calling the string `str.to_date` method and passing the format of the date strin
 
 ## Extracting date features from a date column
 
-You can extract data features such as the year or day from a date column using the `.dt` namespace
-on a date column:
+You can extract data features such as the year or day from a date column using the `.dt` namespace:
 
 {{code_block('user-guide/transformations/time-series/parsing','extract',['dt.year'])}}
 
