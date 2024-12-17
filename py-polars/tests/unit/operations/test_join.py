@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+import warnings
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Literal
 
@@ -976,7 +977,10 @@ def test_join_raise_on_redundant_keys() -> None:
 def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with pytest.raises(InvalidOperationError, match="already joined on"):
+    with (
+        pytest.raises(InvalidOperationError, match="already joined on"),
+        warnings.catch_warnings(action="ignore", category=UserWarning),
+    ):
         left.join(
             right, on=[pl.col("a"), pl.col("a") % 2], how="full", coalesce=coalesce
         )
