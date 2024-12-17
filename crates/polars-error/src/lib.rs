@@ -28,7 +28,7 @@ static ERROR_STRATEGY: LazyLock<ErrorStrategy> = LazyLock::new(|| {
     }
 });
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ErrString(Cow<'static, str>);
 
 impl ErrString {
@@ -74,7 +74,7 @@ impl Display for ErrString {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, thiserror::Error)]
 pub enum PolarsError {
     #[error("not found: {0}")]
     ColumnNotFound(ErrString),

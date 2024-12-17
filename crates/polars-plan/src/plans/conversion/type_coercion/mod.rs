@@ -528,10 +528,7 @@ fn raise_supertype(
 ) -> PolarsResult<()> {
     let dtypes = inputs
         .iter()
-        .map(|e| {
-            let ae = expr_arena.get(e.node());
-            ae.to_dtype(input_schema, Context::Default, expr_arena)
-        })
+        .map(|e| e.dtype(input_schema, Context::Default, expr_arena).cloned())
         .collect::<PolarsResult<Vec<_>>>()?;
 
     let st = dtypes
