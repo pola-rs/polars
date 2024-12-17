@@ -392,7 +392,8 @@ impl PySeries {
         // Used in pickle/pickling
         let mut buf: Vec<u8> = vec![];
 
-        pl_serialize::SerializeOptions::default_outer()
+        pl_serialize::SerializeOptions::default()
+            .with_compression(true)
             .serialize_into_writer(&mut buf, &self.series)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
@@ -405,7 +406,8 @@ impl PySeries {
         use pyo3::pybacked::PyBackedBytes;
         match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let s: Series = pl_serialize::SerializeOptions::default_outer()
+                let s: Series = pl_serialize::SerializeOptions::default()
+                    .with_compression(true)
                     .deserialize_from_reader(&*s)
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 self.series = s;

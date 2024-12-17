@@ -20,7 +20,8 @@ impl PyDataFrame {
         // Used in pickle/pickling
         PyBytes::new(
             py,
-            &pl_serialize::SerializeOptions::default_outer()
+            &pl_serialize::SerializeOptions::default()
+                .with_compression(true)
                 .serialize_to_bytes(&self.df)
                 .unwrap(),
         )
@@ -30,7 +31,8 @@ impl PyDataFrame {
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
         match state.extract::<PyBackedBytes>() {
-            Ok(s) => pl_serialize::SerializeOptions::default_outer()
+            Ok(s) => pl_serialize::SerializeOptions::default()
+                .with_compression(true)
                 .deserialize_from_reader(&*s)
                 .map(|df| {
                     self.df = df;
@@ -44,7 +46,8 @@ impl PyDataFrame {
     fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        pl_serialize::SerializeOptions::default_outer()
+        pl_serialize::SerializeOptions::default()
+            .with_compression(true)
             .serialize_into_writer(writer, &self.df)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
@@ -63,7 +66,8 @@ impl PyDataFrame {
     fn deserialize_binary(py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let file = BufReader::new(file);
-        let df: DataFrame = pl_serialize::SerializeOptions::default_outer()
+        let df: DataFrame = pl_serialize::SerializeOptions::default()
+            .with_compression(true)
             .deserialize_from_reader(file)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(df.into())

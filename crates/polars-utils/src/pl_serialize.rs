@@ -24,11 +24,9 @@ pub struct SerializeOptions {
 }
 
 impl SerializeOptions {
-    /// Defaults for the final level of serialization
-    pub fn default_outer() -> Self {
-        // We already compress DataFrames inside their serialization using the IpcWriter. This
-        // assumes the plan itself isn't that big compared to the DataFrame.
-        Self { compression: false }
+    pub fn with_compression(mut self, compression: bool) -> Self {
+        self.compression = compression;
+        self
     }
 
     pub fn serialize_into_writer<W, T>(&self, writer: W, value: &T) -> PolarsResult<()>
@@ -65,6 +63,12 @@ impl SerializeOptions {
         self.serialize_into_writer(&mut v, value)?;
 
         Ok(v)
+    }
+}
+
+impl Default for SerializeOptions {
+    fn default() -> Self {
+        Self { compression: false }
     }
 }
 
@@ -123,10 +127,10 @@ mod tests {
         assert_eq!(r, v);
 
         let v = Enum::A;
-        let b = super::SerializeOptions::default_outer()
+        let b = super::SerializeOptions::default()
             .serialize_to_bytes(&v)
             .unwrap();
-        let r: Enum = super::SerializeOptions::default_outer()
+        let r: Enum = super::SerializeOptions::default()
             .deserialize_from_reader(b.as_slice())
             .unwrap();
 

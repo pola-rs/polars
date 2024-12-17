@@ -18,7 +18,8 @@ impl PyLazyFrame {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
 
-        pl_serialize::SerializeOptions::default_outer()
+        pl_serialize::SerializeOptions::default()
+            .with_compression(true)
             .serialize_into_writer(&mut writer, &self.ldf.logical_plan)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
@@ -29,7 +30,8 @@ impl PyLazyFrame {
         // Used in pickle/pickling
         match state.extract::<PyBackedBytes>(py) {
             Ok(s) => {
-                let lp: DslPlan = pl_serialize::SerializeOptions::default_outer()
+                let lp: DslPlan = pl_serialize::SerializeOptions::default()
+                    .with_compression(true)
                     .deserialize_from_reader(&*s)
                     .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
                 self.ldf = LazyFrame::from(lp);
@@ -43,7 +45,8 @@ impl PyLazyFrame {
     fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        pl_serialize::SerializeOptions::default_outer()
+        pl_serialize::SerializeOptions::default()
+            .with_compression(true)
             .serialize_into_writer(writer, &self.ldf.logical_plan)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
@@ -62,7 +65,8 @@ impl PyLazyFrame {
     fn deserialize_binary(py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
-        let lp: DslPlan = pl_serialize::SerializeOptions::default_outer()
+        let lp: DslPlan = pl_serialize::SerializeOptions::default()
+            .with_compression(true)
             .deserialize_from_reader(reader)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(LazyFrame::from(lp).into())
