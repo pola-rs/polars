@@ -185,7 +185,6 @@ impl BuildState {
                     track_unmatchable,
                 );
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
-
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
                     p.frames.push((
                         morsel.seq(),
@@ -234,7 +233,6 @@ impl BuildState {
 
                     combined.sort_unstable_by_key(|c| c.0);
                     for (seq, hash_keys, frame) in combined {
-
                         // Zero-sized chunks can get deleted, so skip entirely to avoid messing
                         // up the chunk counter.
                         if frame.height() == 0 {
