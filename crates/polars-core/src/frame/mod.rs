@@ -396,7 +396,7 @@ impl DataFrame {
             .iter_fields()
             .map(|f| Column::full_null(f.name.clone(), height, f.dtype()))
             .collect();
-        DataFrame { height, columns }
+        unsafe { DataFrame::new_no_checks(height, columns) }
     }
 
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
