@@ -66,6 +66,7 @@ impl SerializeOptions {
     }
 }
 
+#[allow(clippy::derivable_impls)]
 impl Default for SerializeOptions {
     fn default() -> Self {
         Self { compression: false }
