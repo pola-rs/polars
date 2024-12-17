@@ -129,6 +129,7 @@ serde = [
   "polars-schema/serde",
   "polars-utils/serde",
   "arrow/io_ipc",
+  "arrow/io_ipc_compression",
   "serde_json",
 ]
 serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]

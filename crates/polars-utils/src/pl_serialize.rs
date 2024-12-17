@@ -24,8 +24,9 @@ pub struct SerializeOptions {
 }
 
 impl SerializeOptions {
-    pub fn new(compression: bool) -> Self {
-        Self { compression }
+    /// Defaults for the final level of serialization
+    pub fn default_outer() -> Self {
+        Self { compression: false }
     }
 
     pub fn serialize_into_writer<W, T>(&self, writer: W, value: &T) -> PolarsResult<()>
@@ -120,10 +121,10 @@ mod tests {
         assert_eq!(r, v);
 
         let v = Enum::A;
-        let b = super::SerializeOptions::new(true)
+        let b = super::SerializeOptions::default_outer()
             .serialize_to_bytes(&v)
             .unwrap();
-        let r: Enum = super::SerializeOptions::new(true)
+        let r: Enum = super::SerializeOptions::default_outer()
             .deserialize_from_reader(b.as_slice())
             .unwrap();
 

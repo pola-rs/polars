@@ -27,7 +27,7 @@ impl PyExpr {
 
         let bytes = state.extract::<PyBackedBytes>()?;
         let cursor = Cursor::new(&*bytes);
-        self.inner = pl_serialize::SerializeOptions::new(true)
+        self.inner = pl_serialize::SerializeOptions::default_outer()
             .deserialize_from_reader(cursor)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
         Ok(())
@@ -37,7 +37,7 @@ impl PyExpr {
     fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        pl_serialize::SerializeOptions::new(true)
+        pl_serialize::SerializeOptions::default_outer()
             .serialize_into_writer(writer, &self.inner)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
@@ -56,7 +56,7 @@ impl PyExpr {
     fn deserialize_binary(py_f: PyObject) -> PyResult<PyExpr> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
-        let expr: Expr = pl_serialize::SerializeOptions::new(true)
+        let expr: Expr = pl_serialize::SerializeOptions::default_outer()
             .deserialize_from_reader(reader)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(expr.into())

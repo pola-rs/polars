@@ -12,7 +12,6 @@ use crate::prelude::*;
 use crate::utils::accumulate_dataframes_vertical;
 
 const FLAGS_KEY: PlSmallStr = PlSmallStr::from_static("_PL_FLAGS");
-const DTYPE_KEY: PlSmallStr = PlSmallStr::from_static("_PL_DTYPE");
 
 impl Serialize for Series {
     fn serialize<S>(
@@ -38,7 +37,7 @@ impl Serialize for Series {
             &mut bytes,
             WriteOptions {
                 // Compression should be done on an outer level
-                compression: None,
+                compression: Some(arrow::io::ipc::write::Compression::ZSTD),
             },
         );
 
@@ -46,29 +45,18 @@ impl Serialize for Series {
             DataFrame::new_no_checks_height_from_first(vec![self.rechunk().into_column()])
         };
 
-        ipc_writer.set_custom_schema_metadata(Arc::new(Metadata::from([
-            (
-                FLAGS_KEY,
-                PlSmallStr::from(std::str::from_utf8(&[self.get_flags().bits()]).unwrap()),
-            ),
-            (
-                // Post-deserialize cast for:
-                // * Categorical ordering physical / lexical
-                // * Decimal precision of "None"
-                DTYPE_KEY,
-                serde_json::to_string(self.dtype())
-                    .map_err(S::Error::custom)?
-                    .into(),
-            ),
-        ])));
+        ipc_writer.set_custom_schema_metadata(Arc::new(Metadata::from([(
+            FLAGS_KEY,
+            PlSmallStr::from(self.get_flags().bits().to_string()),
+        )])));
 
         ipc_writer
             .start(
-                &ArrowSchema::from_iter([ArrowField::new(
-                    self.name().clone(),
-                    self.dtype().to_arrow(CompatLevel::newest()),
-                    true, // is_nullable
-                )]),
+                &ArrowSchema::from_iter([Field {
+                    name: self.name().clone(),
+                    dtype: self.dtype().clone(),
+                }
+                .to_arrow(CompatLevel::newest())]),
                 None,
             )
             .map_err(S::Error::custom)?;
@@ -132,31 +120,12 @@ impl<'de> Deserialize<'de> for Series {
 
                 if let Some(custom_metadata) = custom_metadata {
                     if let Some(flags) = custom_metadata.get(&FLAGS_KEY) {
-                        if let [v] = flags.as_bytes() {
-                            if let Some(flags) = MetadataFlags::from_bits(*v) {
+                        if let Ok(v) = flags.parse::<u8>() {
+                            if let Some(flags) = MetadataFlags::from_bits(v) {
                                 s.set_flags(flags);
                             }
                         } else if config::verbose() {
-                            eprintln!(
-                                "Series::Deserialize: Expected length-1 for flags, got: {:?}",
-                                flags
-                            )
-                        }
-                    }
-
-                    if let Some(dtype_json) = custom_metadata.get(&DTYPE_KEY) {
-                        // Ensure we round-trip `ordering` of the Categorical type
-                        match serde_json::from_str::<DataType>(dtype_json).map_err(E::custom) {
-                            Ok(dtype) => s = s.cast(&dtype).map_err(E::custom)?,
-                            Err(e) => {
-                                if config::verbose() {
-                                    eprintln!(
-                                        "Series::Deserialize: Couldn't deserialize dtype string \
-                                        {:?} (err = {})",
-                                        dtype_json, e
-                                    )
-                                }
-                            },
+                            eprintln!("Series::Deserialize: Failed to parse as u8: {:?}", flags)
                         }
                     }
                 }

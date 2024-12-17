@@ -25,20 +25,17 @@ def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@given(
-    df=dataframes(
-        excluded_dtypes=[
-            pl.Float32,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
-            pl.Float64,  # Bug, see: https://github.com/pola-rs/polars/issues/17211
-            pl.Struct,  # Outer nullability not supported
-        ],
-    )
-)
+@given(df=dataframes())
 @example(df=pl.DataFrame({"a": [None, None]}, schema={"a": pl.Null}))
 @example(df=pl.DataFrame(schema={"a": pl.List(pl.String)}))
 def test_df_serde_roundtrip_json(df: pl.DataFrame) -> None:
     serialized = df.serialize(format="json")
     result = pl.DataFrame.deserialize(io.StringIO(serialized), format="json")
+
+    if isinstance(dt := df.to_series(0).dtype, pl.Decimal):
+        if dt.precision is None:
+            pytest.skip("precision None")
+
     assert_frame_equal(result, df, categorical_as_str=True)
 
 

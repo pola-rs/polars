@@ -3588,10 +3588,10 @@ mod test {
             "successful parse invalid data: lengths don't match: could not create a new DataFrame:",
         ));
 
-        let serialized = pl_serialize::SerializeOptions::new(true)
+        let serialized = pl_serialize::SerializeOptions::default_outer()
             .serialize_to_bytes(&df)
             .unwrap();
-        let err = pl_serialize::SerializeOptions::new(true)
+        let err = pl_serialize::SerializeOptions::default_outer()
             .deserialize_from_reader::<DataFrame, _>(serialized.as_slice())
             .unwrap_err();
 
