@@ -151,6 +151,7 @@ docs-selection = [
   "row_hash",
   "rolling_window",
   "rolling_window_by",
+  "serde",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
