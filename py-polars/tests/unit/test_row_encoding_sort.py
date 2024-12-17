@@ -38,13 +38,15 @@ def elem_order_sign(
     if isinstance(lhs, pl.Series) and isinstance(rhs, pl.Series):
         assert lhs.dtype == rhs.dtype
 
-        if isinstance(lhs.dtype, pl.Enum) or lhs.dtype == pl.Categorical(ordering='physical'):
+        if isinstance(lhs.dtype, pl.Enum) or lhs.dtype == pl.Categorical(
+            ordering="physical"
+        ):
             lhs = cast(Element, lhs.to_physical())
             rhs = cast(Element, rhs.to_physical())
             assert isinstance(lhs, pl.Series)
             assert isinstance(rhs, pl.Series)
 
-        if lhs.dtype == pl.Categorical(ordering='lexical'):
+        if lhs.dtype == pl.Categorical(ordering="lexical"):
             lhs = cast(Element, lhs.cast(pl.String))
             rhs = cast(Element, rhs.cast(pl.String))
             assert isinstance(lhs, pl.Series)
@@ -138,15 +140,15 @@ def tuple_order(
 @given(
     s=series(
         excluded_dtypes=[
-            pl.Float32, # We cannot really deal with totalOrder
-            pl.Float64, # We cannot really deal with totalOrder
-            pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
+            pl.Float32,  # We cannot really deal with totalOrder
+            pl.Float64,  # We cannot really deal with totalOrder
+            pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
             pl.Categorical,
         ],
         max_size=5,
     )
 )
-@example(s = pl.Series('col0', [None, [None]], pl.List(pl.Int64)))
+@example(s=pl.Series("col0", [None, [None]], pl.List(pl.Int64)))
 def test_series_sort_parametric(s: pl.Series) -> None:
     for descending in [False, True]:
         for nulls_last in [False, True]:
@@ -177,11 +179,11 @@ def test_series_sort_parametric(s: pl.Series) -> None:
 @given(
     df=dataframes(
         excluded_dtypes=[
-            pl.Float32, # We cannot really deal with totalOrder
-            pl.Float64, # We cannot really deal with totalOrder
-            pl.Decimal, # Bug: see https://github.com/pola-rs/polars/issues/20308
-            pl.List, # I am not sure what is broken here.
-            pl.Array, # I am not sure what is broken here.
+            pl.Float32,  # We cannot really deal with totalOrder
+            pl.Float64,  # We cannot really deal with totalOrder
+            pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
+            pl.List,  # I am not sure what is broken here.
+            pl.Array,  # I am not sure what is broken here.
             pl.Enum,
             pl.Categorical,
         ],
