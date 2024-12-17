@@ -152,6 +152,7 @@ pub fn set_estimated_row_counts(
                 schema,
                 left_on,
                 right_on,
+                non_equi_predicates,
             } = lp_arena.take(root)
             {
                 let mut_options = Arc::make_mut(&mut options);
@@ -199,6 +200,7 @@ pub fn set_estimated_row_counts(
                         schema,
                         left_on,
                         right_on,
+                        non_equi_predicates,
                     },
                 );
                 out

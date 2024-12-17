@@ -293,6 +293,7 @@ impl<'a> IRBuilder<'a> {
             schema,
             left_on,
             right_on,
+            non_equi_predicates: vec![],
             options,
         };
 

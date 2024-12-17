@@ -191,8 +191,13 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                 schema,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 options,
             } if options.args.how.is_cross() => {
+                if !non_equi_predicates.is_empty() {
+                    // TODO: Could add new preds?
+                    continue;
+                }
                 if predicates.is_empty() {
                     continue;
                 }
@@ -482,6 +487,7 @@ pub fn insert_fitting_join(
         schema,
         left_on,
         right_on,
+        non_equi_predicates: vec![],
         options: Arc::new(options),
     };
 

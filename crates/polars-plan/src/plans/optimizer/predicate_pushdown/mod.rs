@@ -509,6 +509,7 @@ impl PredicatePushDown<'_> {
                 input_right,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 schema,
                 options,
             } => process_join(
@@ -519,6 +520,7 @@ impl PredicatePushDown<'_> {
                 input_right,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 schema,
                 options,
                 acc_predicates,

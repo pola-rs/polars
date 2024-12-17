@@ -62,6 +62,7 @@ impl IR {
             Join {
                 schema,
                 left_on,
+                right_on,
                 options,
                 ..
             } => Join {
@@ -69,7 +70,8 @@ impl IR {
                 input_right: inputs[1],
                 schema: schema.clone(),
                 left_on: exprs[..left_on.len()].to_vec(),
-                right_on: exprs[left_on.len()..].to_vec(),
+                right_on: exprs[left_on.len()..left_on.len() + right_on.len()].to_vec(),
+                non_equi_predicates: exprs[left_on.len() + right_on.len()..].to_vec(),
                 options: options.clone(),
             },
             Sort {

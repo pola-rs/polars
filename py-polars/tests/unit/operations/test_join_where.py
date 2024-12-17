@@ -655,3 +655,30 @@ def test_join_predicate_pushdown_19580() -> None:
     )
 
     assert_frame_equal(expect, q.collect(), check_row_order=False)
+
+
+def test_join_with_not_equal_condition() -> None:
+    left = pl.DataFrame(
+        {
+            "a": [1, 2, 1, 3],
+            "b": [1, 2, 3, 4],
+        }
+    )
+    right = pl.DataFrame(
+        {
+            "c": [4, 1, 2],
+            "d": [1, 2, 3],
+        }
+    )
+
+    actual = left.join_where(right, pl.col("a") != pl.col("c"))
+
+    expected = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2, 1, 1, 3, 3, 3],
+            "b": [1, 1, 2, 2, 3, 3, 4, 4, 4],
+            "c": [4, 2, 4, 1, 4, 2, 4, 1, 2],
+            "d": [1, 3, 1, 2, 1, 3, 1, 2, 3],
+        }
+    )
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)

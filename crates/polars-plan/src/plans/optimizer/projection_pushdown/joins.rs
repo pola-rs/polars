@@ -198,6 +198,7 @@ pub(super) fn process_join(
     input_right: Node,
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
+    _non_equi_predicates: Vec<ExprIR>,
     mut options: Arc<JoinOptions>,
     acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<PlSmallStr>,
@@ -206,6 +207,7 @@ pub(super) fn process_join(
     expr_arena: &mut Arena<AExpr>,
     join_schema: &Schema,
 ) -> PolarsResult<IR> {
+    // TODO: Handle non-equi predicates
     #[cfg(feature = "asof_join")]
     if matches!(options.args.how, JoinType::AsOf(_)) {
         return process_asof_join(

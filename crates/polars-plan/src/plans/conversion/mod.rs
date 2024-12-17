@@ -202,6 +202,7 @@ impl IR {
                 schema: _,
                 left_on,
                 right_on,
+                non_equi_predicates,
                 options,
             } => {
                 let i_l = convert_to_lp(input_left, lp_arena);
@@ -209,13 +210,14 @@ impl IR {
 
                 let left_on = expr_irs_to_exprs(left_on, expr_arena);
                 let right_on = expr_irs_to_exprs(right_on, expr_arena);
+                let predicates = expr_irs_to_exprs(non_equi_predicates, expr_arena);
 
                 DslPlan::Join {
                     input_left: Arc::new(i_l),
                     input_right: Arc::new(i_r),
-                    predicates: Default::default(),
                     left_on,
                     right_on,
+                    predicates,
                     options,
                 }
             },
