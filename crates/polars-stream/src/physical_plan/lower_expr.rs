@@ -648,10 +648,7 @@ pub fn compute_output_schema(
         .iter()
         .map(|e| {
             let name = e.output_name().clone();
-            let dtype =
-                expr_arena
-                    .get(e.node())
-                    .to_dtype(input_schema, Context::Default, expr_arena)?;
+            let dtype = e.dtype(input_schema, Context::Default, expr_arena)?.clone();
             PolarsResult::Ok(Field::new(name, dtype))
         })
         .try_collect()?;
