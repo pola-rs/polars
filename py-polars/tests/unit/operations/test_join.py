@@ -979,8 +979,9 @@ def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
     with (
         pytest.raises(InvalidOperationError, match="already joined on"),
-        warnings.catch_warnings(action="ignore", category=UserWarning),
+        warnings.catch_warnings(),
     ):
+        warnings.simplefilter(action="ignore", category=UserWarning)
         left.join(
             right, on=[pl.col("a"), pl.col("a") % 2], how="full", coalesce=coalesce
         )
