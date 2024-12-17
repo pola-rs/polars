@@ -58,7 +58,7 @@ pub struct ExprIR {
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
-    #[serde(skip)]
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
     output_dtype: OnceLock<DataType>,
 }
 
