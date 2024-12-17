@@ -528,8 +528,6 @@ impl ScanExec for ParquetExec {
     }
 
     fn read(&mut self) -> PolarsResult<DataFrame> {
-        assert_eq!(self.sources.len(), 1);
-
         self.read_with_num_unfiltered_rows().map(|(_, df)| df)
     }
 

@@ -7,6 +7,8 @@ use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
 use polars_io::predicates::BatchStats;
+use polars_io::prelude::ParquetReader;
+use polars_io::SerReader;
 
 use super::Executor;
 use crate::executors::ParquetExec;
@@ -78,6 +80,48 @@ impl HiveExec {
         }
     }
 
+    pub fn resolve_negative_slice(
+        &self,
+        offset: i64,
+        length: usize,
+    ) -> PolarsResult<(usize, usize)> {
+        // Walk the files in reverse until we find the first file, and then translate the
+        // slice into a positive-offset equivalent.
+        let mut offset_remaining = -offset as usize;
+
+        for i in (0..self.sources.len()).rev() {
+            let source = self.sources.get(i).unwrap();
+
+            #[cfg(feature = "parquet")]
+            {
+                let FileScan::Parquet {
+                    options: _,
+                    cloud_options: _,
+                    metadata: _,
+                } = self.scan_type.clone()
+                else {
+                    todo!()
+                };
+
+                // @TODO: Support cloud
+                let num_rows =
+                    ParquetReader::new(std::io::Cursor::new(source.to_memslice()?)).num_rows()?;
+
+                if num_rows >= offset_remaining {
+                    return Ok((i, num_rows - offset_remaining));
+                }
+                offset_remaining -= num_rows;
+            }
+
+            #[cfg(not(feature = "parquet"))]
+            {
+                todo!()
+            }
+        }
+
+        Ok((0, length - offset_remaining))
+    }
+
     pub fn read(&mut self) -> PolarsResult<DataFrame> {
         let include_file_paths = self.file_options.include_file_paths.take();
         let predicate = self.predicate.take();
@@ -111,26 +155,40 @@ impl HiveExec {
 
         // Remove the hive columns for each file load.
         let mut file_with_columns = self.file_options.with_columns.take();
-        if let Some(with_columns) = &self.file_options.with_columns {
-            file_with_columns = Some(
-                with_columns
-                    .iter()
-                    .filter(|&c| !hive_column_set.contains(c))
-                    .cloned()
-                    .collect(),
-            );
+        if self.hive_parts.is_some() {
+            if let Some(with_columns) = &self.file_options.with_columns {
+                file_with_columns = Some(
+                    with_columns
+                        .iter()
+                        .filter(|&c| !hive_column_set.contains(c))
+                        .cloned()
+                        .collect(),
+                );
+            }
         }
 
         let allow_missing_columns = self.file_options.allow_missing_columns;
         self.file_options.allow_missing_columns = false;
         let mut row_index = self.file_options.row_index.take();
-        let mut slice = self.file_options.slice.take();
+        let slice = self.file_options.slice.take();
 
         let current_schema = self.file_info.schema.clone();
         let output_schema = current_schema.clone();
         let mut missing_columns = Vec::new();
 
-        assert!(slice.is_none_or(|s| s.0 >= 0), "NYI");
+        let mut first_slice_file = None;
+        let mut slice = match slice {
+            None => None,
+            Some((offset, length)) => Some({
+                if offset >= 0 {
+                    (offset as usize, length)
+                } else {
+                    let (first_file, offset) = self.resolve_negative_slice(offset, length)?;
+                    first_slice_file = Some(first_file);
+                    (offset, length)
+                }
+            }),
+        };
 
         #[cfg(feature = "parquet")]
         {
@@ -264,6 +322,7 @@ impl HiveExec {
                 } else {
                     file_with_columns.clone()
                 };
+                file_options.slice = slice.map(|(offset, length)| (offset as i64, length));
                 file_options.row_index = row_index.clone();
 
                 let mut file_info = self.file_info.clone();
@@ -287,7 +346,11 @@ impl HiveExec {
 
                 let mut do_skip_file = false;
                 if let Some(slice) = &slice {
-                    let allow_slice_skip = slice.0 >= num_unfiltered_rows.get()? as i64;
+                    let allow_slice_skip = match first_slice_file {
+                        None => slice.0 as IdxSize >= num_unfiltered_rows.get()?,
+                        Some(f) => i < f,
+                    };
+
                     if allow_slice_skip && verbose {
                         eprintln!(
                             "Slice allows skipping of '{}'",
@@ -320,7 +383,9 @@ impl HiveExec {
                     }
                     // Update the slice offset.
                     if let Some(slice) = slice.as_mut() {
-                        slice.0 = slice.0.saturating_sub(num_unfiltered_rows.get()? as i64);
+                        if first_slice_file.is_none_or(|f| i >= f) {
+                            slice.0 = slice.0.saturating_sub(num_unfiltered_rows.get()? as usize);
+                        }
                     }
 
                     continue;
@@ -337,8 +402,12 @@ impl HiveExec {
                 }
                 // Update the slice.
                 if let Some(slice) = slice.as_mut() {
-                    slice.0 = slice.0.saturating_sub(num_unfiltered_rows as i64);
-                    slice.1 = slice.1.saturating_sub(num_unfiltered_rows as usize);
+                    if first_slice_file.is_none_or(|f| i >= f) {
+                        slice.1 = slice
+                            .1
+                            .saturating_sub(num_unfiltered_rows as usize - slice.0);
+                        slice.0 = slice.0.saturating_sub(num_unfiltered_rows as usize);
+                    }
                 }
 
                 // Add all the missing columns.
