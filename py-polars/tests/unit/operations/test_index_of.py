@@ -12,13 +12,13 @@ from hypothesis import strategies as st
 import polars as pl
 
 if TYPE_CHECKING:
-    from polars._typing import IntoExpr, NonNestedLiteral
+    from polars._typing import IntoExpr
 from polars.testing import assert_frame_equal
 
 
 def assert_index_of(
     series: pl.Series,
-    value: NonNestedLiteral | IntoExpr | None,
+    value: IntoExpr,
     convert_to_literal: bool = False,
 ) -> None:
     """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
@@ -118,7 +118,7 @@ def test_integer(dtype: pl.DataType) -> None:
         np.float64(3.1),
     ]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
-        value: NonNestedLiteral | IntoExpr | None
+        value: IntoExpr
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
             assert_index_of(s, value, convert_to_literal=False)

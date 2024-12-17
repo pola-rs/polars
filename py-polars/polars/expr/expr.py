@@ -75,7 +75,6 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         MapElementsStrategy,
-        NonNestedLiteral,
         NullBehavior,
         NumericLiteral,
         PolarsDataType,
@@ -2312,7 +2311,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.arg_min())
 
-    def index_of(self, element: NonNestedLiteral | IntoExpr | None) -> Expr:
+    def index_of(self, element: IntoExpr) -> Expr:
         """
         Get the index of the first occurrence of a value, or ``None`` if it's not found.
 

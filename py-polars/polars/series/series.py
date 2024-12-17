@@ -4749,7 +4749,7 @@ class Series:
         self._s.scatter(indices._s, values._s)
         return self
 
-    def index_of(self, element: NonNestedLiteral | IntoExpr | None) -> int | None:
+    def index_of(self, element: IntoExpr) -> int | None:
         """
         Get the index of the first occurrence of a value, or ``None`` if it's not found.
 
