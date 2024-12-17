@@ -202,6 +202,7 @@ fn materialize_left_join_idx_left(
     } else {
         left_idx
     };
+
     unsafe {
         left._create_left_df_from_slice(
             left_idx,
@@ -210,7 +211,11 @@ fn materialize_left_join_idx_left(
             matches!(
                 args.maintain_order,
                 MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
-            ),
+            ) || args.how == JoinType::Left
+                && !matches(
+                    args.maintain_order,
+                    MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft,
+                ),
         )
     }
 }
