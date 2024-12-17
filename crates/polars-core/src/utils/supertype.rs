@@ -12,6 +12,76 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     )
 }
 
+/// Returns a numeric supertype that `l` and `r` can be safely upcasted to if it exists.
+pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
+    use DataType::*;
+
+    if l == r || matches!(l, Unknown(_)) || matches!(r, Unknown(_)) {
+        None
+    } else if l.is_float() && r.is_float() {
+        match (l, r) {
+            (Float64, _) | (_, Float64) => Some(Float64),
+            v => {
+                // Did we add a new float type?
+                if cfg!(debug_assertions) {
+                    panic!("{:?}", v)
+                } else {
+                    None
+                }
+            },
+        }
+    } else if l.is_signed_integer() && r.is_signed_integer() {
+        match (l, r) {
+            (Int128, _) | (_, Int128) => Some(Int128),
+            (Int64, _) | (_, Int64) => Some(Int64),
+            (Int32, _) | (_, Int32) => Some(Int32),
+            (Int16, _) | (_, Int16) => Some(Int16),
+            (Int8, _) | (_, Int8) => Some(Int8),
+            v => {
+                if cfg!(debug_assertions) {
+                    panic!("{:?}", v)
+                } else {
+                    None
+                }
+            },
+        }
+    } else if l.is_unsigned_integer() && r.is_unsigned_integer() {
+        match (l, r) {
+            (UInt64, _) | (_, UInt64) => Some(UInt64),
+            (UInt32, _) | (_, UInt32) => Some(UInt32),
+            (UInt16, _) | (_, UInt16) => Some(UInt16),
+            (UInt8, _) | (_, UInt8) => Some(UInt8),
+            v => {
+                if cfg!(debug_assertions) {
+                    panic!("{:?}", v)
+                } else {
+                    None
+                }
+            },
+        }
+    } else if l.is_integer() && r.is_integer() {
+        // One side is signed, the other is unsigned. We just need to upcast the
+        // unsigned side to a signed integer with the next-largest bit width.
+        match (l, r) {
+            (UInt64, _) | (_, UInt64) | (Int128, _) | (_, Int128) => Some(Int128),
+            (UInt32, _) | (_, UInt32) | (Int64, _) | (_, Int64) => Some(Int64),
+            (UInt16, _) | (_, UInt16) | (Int32, _) | (_, Int32) => Some(Int32),
+            (UInt8, _) | (_, UInt8) | (Int16, _) | (_, Int16) => Some(Int16),
+            v => {
+                // One side was UInt and we should have already matched against
+                // all the UInt types
+                if cfg!(debug_assertions) {
+                    panic!("{:?}", v)
+                } else {
+                    None
+                }
+            },
+        }
+    } else {
+        None
+    }
+}
+
 bitflags! {
     #[repr(transparent)]
     #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]

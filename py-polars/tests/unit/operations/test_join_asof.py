@@ -137,7 +137,7 @@ def test_join_asof_mismatched_dtypes() -> None:
         {"a": pl.Series([1, 2, 3], dtype=pl.Int64), "b": ["a", "b", "c"]}
     )
     df2 = pl.DataFrame(
-        {"a": pl.Series([1, 2, 3], dtype=pl.Int32), "c": ["d", "e", "f"]}
+        {"a": pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64), "c": ["d", "e", "f"]}
     )
 
     with pytest.raises(

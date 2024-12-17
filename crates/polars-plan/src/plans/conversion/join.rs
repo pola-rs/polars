@@ -1,6 +1,8 @@
 use arrow::legacy::error::PolarsResult;
 use either::Either;
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
+use polars_core::utils::get_numeric_upcast_supertype_lossless;
 
 use super::*;
 use crate::dsl::Expr;
@@ -74,10 +76,10 @@ pub fn resolve_join(
         );
     }
 
-    let input_left = input_left.map_right(Ok).right_or_else(|input| {
+    let mut input_left = input_left.map_right(Ok).right_or_else(|input| {
         to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join left)))
     })?;
-    let input_right = input_right.map_right(Ok).right_or_else(|input| {
+    let mut input_right = input_right.map_right(Ok).right_or_else(|input| {
         to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join right)))
     })?;
 
@@ -87,8 +89,8 @@ pub fn resolve_join(
     let schema = det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
         .map_err(|e| e.context(failed_here!(join schema resolving)))?;
 
-    let left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
-    let right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
+    let mut left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
+    let mut right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
     let mut joined_on = PlHashSet::new();
 
     #[cfg(feature = "iejoin")]
@@ -118,14 +120,58 @@ pub fn resolve_join(
         .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_right)
         .map_err(|e| e.context("'join' failed".into()))?;
 
-    let get_dtype = |expr: &ExprIR, schema: &SchemaRef| {
-        ctxt.expr_arena
-            .get(expr.node())
-            .get_type(schema, Context::Default, ctxt.expr_arena)
-    };
-    for (lnode, rnode) in left_on.iter().zip(right_on.iter()) {
-        let ltype = get_dtype(lnode, &schema_left)?;
-        let rtype = get_dtype(rnode, &schema_right)?;
+    // Not a closure to avoid borrow issues because we mutate expr_arena as well.
+    macro_rules! get_dtype {
+        ($expr:expr, $schema:expr) => {
+            ctxt.expr_arena
+                .get($expr.node())
+                .get_type($schema, Context::Default, ctxt.expr_arena)
+        };
+    }
+
+    let mut to_cast_left = vec![];
+    let mut to_cast_right = vec![];
+    let mut to_cast_indices = vec![];
+
+    for (i, (lnode, rnode)) in left_on.iter().zip(right_on.iter()).enumerate() {
+        let ltype = get_dtype!(lnode, &schema_left)?;
+        let rtype = get_dtype!(rnode, &schema_right)?;
+
+        if let (AExpr::Column(lname), AExpr::Column(rname)) = (
+            ctxt.expr_arena.get(lnode.node()).clone(),
+            ctxt.expr_arena.get(rnode.node()).clone(),
+        ) {
+            if let Some(dtype) = get_numeric_upcast_supertype_lossless(&ltype, &rtype) {
+                {
+                    let expr = ctxt.expr_arena.add(AExpr::Column(lname.clone()));
+                    to_cast_left.push(ExprIR::new(
+                        ctxt.expr_arena.add(AExpr::Cast {
+                            expr,
+                            dtype: dtype.clone(),
+                            options: CastOptions::Strict,
+                        }),
+                        OutputName::ColumnLhs(lname),
+                    ))
+                };
+
+                {
+                    let expr = ctxt.expr_arena.add(AExpr::Column(rname.clone()));
+                    to_cast_right.push(ExprIR::new(
+                        ctxt.expr_arena.add(AExpr::Cast {
+                            expr,
+                            dtype: dtype.clone(),
+                            options: CastOptions::Strict,
+                        }),
+                        OutputName::ColumnLhs(rname),
+                    ))
+                };
+
+                to_cast_indices.push(i);
+
+                continue;
+            }
+        }
+
         polars_ensure!(
             ltype == rtype,
             SchemaMismatch: "datatypes of join keys don't match - `{}`: {} on left does not match `{}`: {} on right",
@@ -144,6 +190,46 @@ pub fn resolve_join(
         all_elementwise(&left_on) && all_elementwise(&right_on),
         InvalidOperation: "all join key expressions must be elementwise."
     );
+
+    // These are Arc<Schema>, into_owned is free.
+    let schema_left = schema_left.into_owned();
+    let schema_right = schema_right.into_owned();
+
+    let key_cols_coalesced =
+        options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
+
+    if key_cols_coalesced {
+        input_left = if to_cast_left.is_empty() {
+            input_left
+        } else {
+            ctxt.lp_arena.add(IR::HStack {
+                input: input_left,
+                exprs: to_cast_left,
+                schema: schema_left,
+                options: ProjectionOptions::default(),
+            })
+        };
+
+        input_right = if to_cast_right.is_empty() {
+            input_right
+        } else {
+            ctxt.lp_arena.add(IR::HStack {
+                input: input_right,
+                exprs: to_cast_right,
+                schema: schema_right,
+                options: ProjectionOptions::default(),
+            })
+        };
+    } else {
+        for ((i, ir_left), ir_right) in to_cast_indices
+            .into_iter()
+            .zip(to_cast_left)
+            .zip(to_cast_right)
+        {
+            left_on[i] = ir_left;
+            right_on[i] = ir_right;
+        }
+    }
 
     let lp = IR::Join {
         input_left,
