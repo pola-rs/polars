@@ -166,7 +166,7 @@ def test_string_cache_eager_lazy() -> None:
         ).with_columns(pl.col("region_ids").cast(pl.Categorical))
 
         result = df1.join(df2, left_on="region_ids", right_on="seq_name", how="left")
-        assert_frame_equal(result, expected)
+        assert_frame_equal(result, expected, check_row_order=False)
 
         # also check row-wise categorical insert.
         # (column-wise is preferred, but this shouldn't fail)

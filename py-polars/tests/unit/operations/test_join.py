@@ -69,11 +69,22 @@ def test_join_same_cat_src() -> None:
         schema=[("column", pl.Categorical), ("more", pl.Int32)],
     )
     df_agg = df.group_by("column").agg(pl.col("more").mean())
-    assert df.join(df_agg, on="column").to_dict(as_series=False) == {
-        "column": ["a", "a", "b"],
-        "more": [1, 2, 3],
-        "more_right": [1.5, 1.5, 3.0],
-    }
+    assert_frame_equal(
+        df.join(df_agg, on="column"),
+        pl.DataFrame(
+            {
+                "column": ["a", "a", "b"],
+                "more": [1, 2, 3],
+                "more_right": [1.5, 1.5, 3.0],
+            },
+            schema=[
+                ("column", pl.Categorical),
+                ("more", pl.Int32),
+                ("more_right", pl.Float64),
+            ],
+        ),
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -108,12 +119,13 @@ def test_sorted_merge_joins(reverse: bool) -> None:
                 how=how,
             )
 
-            assert_frame_equal(out_hash_join, out_sorted_merge_join)
+            assert_frame_equal(
+                out_hash_join, out_sorted_merge_join, check_row_order=False
+            )
 
 
 def test_join_negative_integers() -> None:
-    expected = {"a": [-6, -1, 0], "b": [-6, -1, 0]}
-
+    expected = pl.DataFrame({"a": [-6, -1, 0], "b": [-6, -1, 0]})
     df1 = pl.DataFrame(
         {
             "a": [-1, -6, -3, 0],
@@ -128,11 +140,12 @@ def test_join_negative_integers() -> None:
     )
 
     for dt in [pl.Int8, pl.Int16, pl.Int32, pl.Int64]:
-        assert (
-            df1.with_columns(pl.all().cast(dt))
-            .join(df2.with_columns(pl.all().cast(dt)), on="a", how="inner")
-            .to_dict(as_series=False)
-            == expected
+        assert_frame_equal(
+            df1.with_columns(pl.all().cast(dt)).join(
+                df2.with_columns(pl.all().cast(dt)), on="a", how="inner"
+            ),
+            expected.select(pl.all().cast(dt)),
+            check_row_order=False,
         )
 
 
@@ -153,9 +166,11 @@ def test_join_on_expressions() -> None:
 
     df_b = pl.DataFrame({"b": [1, 4, 9, 9, 0]})
 
-    assert df_a.join(
-        df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b")
-    ).to_dict(as_series=False) == {"a": [1, 2, 3, 3], "b": [1, 4, 9, 9]}
+    assert_frame_equal(
+        df_a.join(df_b, left_on=(pl.col("a") ** 2).cast(int), right_on=pl.col("b")),
+        pl.DataFrame({"a": [1, 2, 3, 3], "b": [1, 4, 9, 9]}),
+        check_row_order=False,
+    )
 
 
 def test_join_lazy_frame_on_expression() -> None:
@@ -353,14 +368,12 @@ def test_jit_sort_joins() -> None:
         pd_result.columns = pd.Index(["a", "b", "b_right"])
 
         # left key sorted right is not
-        pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(
-            ["a", "b"], maintain_order=True
-        )
+        pl_result = dfa_pl.join(dfb_pl, on="a", how=how).sort(["a", "b", "b_right"])
 
         a = (
             pl.from_pandas(pd_result)
             .with_columns(pl.all().cast(int))
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
         )
         assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
@@ -368,14 +381,12 @@ def test_jit_sort_joins() -> None:
         # left key sorted right is not
         pd_result = dfb.merge(dfa, on="a", how=how)
         pd_result.columns = pd.Index(["a", "b", "b_right"])
-        pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(
-            ["a", "b"], maintain_order=True
-        )
+        pl_result = dfb_pl.join(dfa_pl, on="a", how=how).sort(["a", "b", "b_right"])
 
         a = (
             pl.from_pandas(pd_result)
             .with_columns(pl.all().cast(int))
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
         )
         assert_frame_equal(a, pl_result)
         assert pl_result["a"].flags["SORTED_ASC"]
@@ -1117,7 +1128,7 @@ def test_left_join_slice_pushdown_19405(set_sorted: bool) -> None:
         left = left.set_sorted("k")
         right = right.set_sorted("k")
 
-    q = left.join(right, on="k", how="left").head(5)
+    q = left.join(right, on="k", how="left", maintain_order="left_right").head(5)
     assert_frame_equal(q.collect(), pl.DataFrame({"k": [1, 1, 1, 1, 2]}))
 
 
