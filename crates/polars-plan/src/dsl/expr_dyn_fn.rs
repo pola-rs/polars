@@ -31,7 +31,31 @@ impl Serialize for SpecialEq<Arc<dyn ColumnsUdf>> {
         self.0
             .try_serialize(&mut buf)
             .map_err(|e| S::Error::custom(format!("{e}")))?;
-        Vec::<u8>::serialize(&buf, serializer)
+        serializer.serialize_bytes(&buf)
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<T: Serialize + Clone> Serialize for LazySerde<T> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Deserialized(t) => t.serialize(serializer),
+            Self::Bytes(b) => serializer.serialize_bytes(b),
+        }
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'a, T: Deserialize<'a> + Clone> Deserialize<'a> for LazySerde<T> {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'a>,
+    {
+        let buf = Vec::<u8>::deserialize(deserializer)?;
+        Ok(Self::Bytes(bytes::Bytes::from(buf)))
     }
 }
 
@@ -48,12 +72,8 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
             let buf = Vec::<u8>::deserialize(deserializer)?;
 
             if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                let udf = python_udf::PythonUdfExpression::try_deserialize(&buf).map_err(|e| {
-                    D::Error::custom(format!(
-                        "error @ SpecialEq<Arc<dyn ColumnsUdf>>::deserialize: {e}"
-                    ))
-                })?;
-
+                let udf = python_udf::PythonUdfExpression::try_deserialize(&buf)
+                    .map_err(|e| D::Error::custom(format!("{e}")))?;
                 Ok(SpecialEq::new(udf))
             } else {
                 Err(D::Error::custom(
@@ -68,55 +88,6 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Err(D::Error::custom(
                 "deserialization not supported for this 'opaque' function",
             ))
-        }
-    }
-}
-
-#[cfg(feature = "serde")]
-mod serde_impl {
-    use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-    use super::LazySerde;
-
-    #[derive(Serialize, Deserialize)]
-    enum LazySerdeWrap<T: Clone + Serialize> {
-        Deserialized(T),
-        Bytes(bytes::Bytes),
-    }
-
-    impl<T: Clone + Serialize> From<LazySerde<T>> for LazySerdeWrap<T> {
-        fn from(value: LazySerde<T>) -> Self {
-            match value {
-                LazySerde::Deserialized(v) => Self::Deserialized(v),
-                LazySerde::Bytes(v) => Self::Bytes(v),
-            }
-        }
-    }
-
-    impl<T: Clone + Serialize> From<LazySerdeWrap<T>> for LazySerde<T> {
-        fn from(value: LazySerdeWrap<T>) -> Self {
-            match value {
-                LazySerdeWrap::Deserialized(v) => Self::Deserialized(v),
-                LazySerdeWrap::Bytes(v) => Self::Bytes(v),
-            }
-        }
-    }
-
-    impl<T: Serialize + Clone> Serialize for LazySerde<T> {
-        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where
-            S: Serializer,
-        {
-            LazySerdeWrap::from(self.clone()).serialize(serializer)
-        }
-    }
-
-    impl<'a, T: Deserialize<'a> + Clone + Serialize> Deserialize<'a> for LazySerde<T> {
-        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where
-            D: Deserializer<'a>,
-        {
-            LazySerdeWrap::deserialize(deserializer).map(|x| x.into())
         }
     }
 }
@@ -224,8 +195,7 @@ impl Serialize for SpecialEq<Arc<DslPlan>> {
     where
         S: Serializer,
     {
-        let v: &DslPlan = self.0.as_ref();
-        DslPlan::serialize(v, serializer)
+        self.0.serialize(serializer)
     }
 }
 
@@ -414,7 +384,7 @@ impl Serialize for GetOutput {
         self.0
             .try_serialize(&mut buf)
             .map_err(|e| S::Error::custom(format!("{e}")))?;
-        Vec::<u8>::serialize(&buf, serializer)
+        serializer.serialize_bytes(&buf)
     }
 }
 
