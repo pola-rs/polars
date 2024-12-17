@@ -6,7 +6,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
 use polars_expr::hash_keys::HashKeys;
-use polars_ops::frame::{JoinArgs, JoinType};
+use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_ops::prelude::TakeChunked;
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
@@ -185,6 +185,7 @@ impl BuildState {
                     track_unmatchable,
                 );
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
+
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
                     p.frames.push((
                         morsel.seq(),
@@ -233,6 +234,7 @@ impl BuildState {
 
                     combined.sort_unstable_by_key(|c| c.0);
                     for (seq, hash_keys, frame) in combined {
+
                         // Zero-sized chunks can get deleted, so skip entirely to avoid messing
                         // up the chunk counter.
                         if frame.height() == 0 {
@@ -641,11 +643,17 @@ impl EquiJoinNode {
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
     ) -> PolarsResult<Self> {
-        // TODO: expose as a parameter, and let you choose the primary order to preserve.
-        let preserve_order = std::env::var("POLARS_JOIN_IGNORE_ORDER").as_deref() != Ok("1");
-
-        // TODO: use cardinality estimation to determine this when not order-preserving.
-        let left_is_build = args.how != JoinType::Left;
+        let left_is_build = match args.maintain_order {
+            // TODO: use cardinality estimation to determine build side when not order-preserving.
+            MaintainOrderJoin::None => args.how != JoinType::Left,
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => false,
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => true,
+        };
+        let preserve_order_probe = args.maintain_order != MaintainOrderJoin::None;
+        let preserve_order_build = matches!(
+            args.maintain_order,
+            MaintainOrderJoin::LeftRight | MaintainOrderJoin::RightLeft
+        );
 
         let left_payload_select = compute_payload_selector(
             &left_input_schema,
@@ -677,8 +685,8 @@ impl EquiJoinNode {
             num_pipelines: 0,
             params: EquiJoinParams {
                 left_is_build,
-                preserve_order_build: preserve_order,
-                preserve_order_probe: preserve_order,
+                preserve_order_build,
+                preserve_order_probe,
                 left_key_schema,
                 left_key_selectors,
                 right_key_selectors,
@@ -727,13 +735,6 @@ impl ComputeNode for EquiJoinNode {
             if recv[probe_idx] == PortState::Done {
                 if self.params.emit_unmatched_build() {
                     if self.params.preserve_order_build {
-                        self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
-                            partitions: core::mem::take(&mut probe_state.table_per_partition),
-                            active_partition_idx: 0,
-                            offset_in_active_p: 0,
-                            morsel_seq: probe_state.max_seq_sent.successor(),
-                        });
-                    } else {
                         let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                         let unmatched = probe_state.ordered_unmatched(&partitioner, &self.params);
                         let mut src = InMemorySourceNode::new(
@@ -742,6 +743,13 @@ impl ComputeNode for EquiJoinNode {
                         );
                         src.initialize(self.num_pipelines);
                         self.state = EquiJoinState::EmitUnmatchedBuildInOrder(src);
+                    } else {
+                        self.state = EquiJoinState::EmitUnmatchedBuild(EmitUnmatchedState {
+                            partitions: core::mem::take(&mut probe_state.table_per_partition),
+                            active_partition_idx: 0,
+                            offset_in_active_p: 0,
+                            morsel_seq: probe_state.max_seq_sent.successor(),
+                        });
                     }
                 } else {
                     self.state = EquiJoinState::Done;
@@ -872,7 +880,9 @@ impl ComputeNode for EquiJoinNode {
                 ));
             },
             EquiJoinState::EmitUnmatchedBuildInOrder(src_node) => {
-                src_node.spawn(scope, recv_ports, send_ports, state, join_handles);
+                assert!(recv_ports[build_idx].is_none());
+                assert!(recv_ports[probe_idx].is_none());
+                src_node.spawn(scope, &mut [], send_ports, state, join_handles);
             },
             EquiJoinState::Done => unreachable!(),
         }

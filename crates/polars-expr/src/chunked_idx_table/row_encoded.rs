@@ -271,6 +271,7 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
     ) -> IdxSize {
         out.clear();
 
+        let mut keys_processed = 0;
         if (offset as usize) < self.null_keys.len() {
             out.extend(
                 self.null_keys[offset as usize..]
@@ -278,13 +279,16 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
                     .copied()
                     .take(limit as usize),
             );
-            return out.len() as IdxSize;
+            keys_processed += out.len() as IdxSize;
+            offset += out.len() as IdxSize;
+            if out.len() >= limit as usize {
+                return keys_processed;
+            }
         }
 
         offset -= self.null_keys.len() as IdxSize;
 
-        let mut keys_processed = 0;
-        while let Some((_, _, chunk_ids)) = self.idx_map.get_index(offset + keys_processed) {
+        while let Some((_, _, chunk_ids)) = self.idx_map.get_index(offset) {
             let first_chunk_id = unsafe { chunk_ids.get_unchecked(0) };
             let first_chunk_val = first_chunk_id.load(Ordering::Acquire);
             if first_chunk_val >> 63 == 0 {
@@ -296,6 +300,7 @@ impl ChunkedIdxTable for RowEncodedChunkedIdxTable {
             }
 
             keys_processed += 1;
+            offset += 1;
             if out.len() >= limit as usize {
                 break;
             }

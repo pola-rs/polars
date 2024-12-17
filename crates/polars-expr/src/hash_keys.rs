@@ -15,7 +15,7 @@ use polars_utils::IdxSize;
 /// Represents a DataFrame plus a hash per row, intended for keys in grouping
 /// or joining. The hashes may or may not actually be physically pre-computed,
 /// this depends per type.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum HashKeys {
     RowEncoded(RowEncodedKeys),
     Single(SingleKeys),
@@ -145,7 +145,7 @@ impl HashKeys {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RowEncodedKeys {
     pub hashes: UInt64Array,
     pub keys: BinaryArray<i64>,
@@ -235,7 +235,7 @@ impl RowEncodedKeys {
 
 /// Single keys. Does not pre-hash for boolean & integer types, only for strings
 /// and nested types.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SingleKeys {
     pub random_state: PlRandomState,
     pub hashes: Option<Vec<u64>>,
