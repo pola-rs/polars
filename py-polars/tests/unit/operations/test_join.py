@@ -1232,7 +1232,6 @@ def test_join_preserve_order_full() -> None:
     right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
 
     full_left = left.join(right, on="a", how="full", maintain_order="left").collect()
-    print(full_left)
     assert full_left.get_column("a").cast(pl.UInt32).to_list()[:5] == [
         None,
         2,
@@ -1274,3 +1273,102 @@ def test_join_preserve_order_full() -> None:
         None,
         5,
     ]
+
+
+@pytest.mark.parametrize(
+    "dtypes",
+    [
+        ["Int128" , "Int128" , "Int64"  ],
+        ["Int128" , "Int128" , "Int32"  ],
+        ["Int128" , "Int128" , "Int16"  ],
+        ["Int128" , "Int128" , "Int8"   ],
+        ["Int128" , "UInt64" , "Int128" ],
+        ["Int128" , "UInt64" , "Int64"  ],
+        ["Int128" , "UInt64" , "Int32"  ],
+        ["Int128" , "UInt64" , "Int16"  ],
+        ["Int128" , "UInt64" , "Int8"   ],
+        ["Int128" , "UInt32" , "Int128" ],
+        ["Int128" , "UInt16" , "Int128" ],
+        ["Int128" , "UInt8"  , "Int128" ],
+
+        ["Int64"  , "Int64"  , "Int32"  ],
+        ["Int64"  , "Int64"  , "Int16"  ],
+        ["Int64"  , "Int64"  , "Int8"   ],
+        ["Int64"  , "UInt32" , "Int64"  ],
+        ["Int64"  , "UInt32" , "Int32"  ],
+        ["Int64"  , "UInt32" , "Int16"  ],
+        ["Int64"  , "UInt32" , "Int8"   ],
+        ["Int64"  , "UInt16" , "Int64"  ],
+        ["Int64"  , "UInt8"  , "Int64"  ],
+
+        ["Int32"  , "Int32"  , "Int16"  ],
+        ["Int32"  , "Int32"  , "Int8"   ],
+        ["Int32"  , "UInt16" , "Int32"  ],
+        ["Int32"  , "UInt16" , "Int16"  ],
+        ["Int32"  , "UInt16" , "Int8"   ],
+        ["Int32"  , "UInt8"  , "Int32"  ],
+
+        ["Int16"  , "Int16"  , "Int8"   ],
+        ["Int16"  , "UInt8"  , "Int16"  ],
+        ["Int16"  , "UInt8"  , "Int8"   ],
+
+        ["UInt64" , "UInt64" , "UInt32" ],
+        ["UInt64" , "UInt64" , "UInt16" ],
+        ["UInt64" , "UInt64" , "UInt8"  ],
+
+        ["UInt32" , "UInt32" , "UInt16" ],
+        ["UInt32" , "UInt32" , "UInt8"  ],
+
+        ["UInt16" , "UInt16" , "UInt8"  ],
+
+        ["Float64", "Float64", "Float32"],
+    ],
+)  # fmt: skip
+@pytest.mark.parametrize("swap", [True, False])
+def test_join_numeric_type_upcast_15338(
+    dtypes: tuple[str, str, str], swap: bool
+) -> None:
+    supertype, ltype, rtype = (getattr(pl, x) for x in dtypes)
+    ltype, rtype = (rtype, ltype) if swap else (ltype, rtype)
+
+    left = pl.select(pl.Series("a", [1, 1, 3]).cast(ltype)).lazy()
+    right = pl.select(pl.Series("a", [1]).cast(rtype), b=pl.lit("A")).lazy()
+
+    assert_frame_equal(
+        left.join(right, on="a", how="left").collect(),
+        pl.select(
+            a=pl.Series([1, 1, 3]).cast(supertype), b=pl.Series(["A", "A", None])
+        ),
+    )
+
+    assert_frame_equal(
+        right.join(left, on="a", how="full", coalesce=True).collect(),
+        pl.select(
+            a=pl.Series([1, 1, 3]).cast(supertype), b=pl.Series(["A", "A", None])
+        ),
+    )
+
+    assert_frame_equal(
+        right.join(left, on="a", how="full").collect(),
+        pl.select(
+            a=pl.Series([1, 1, None]).cast(supertype),
+            b=pl.Series(["A", "A", None]),
+            a_right=pl.Series([1, 1, 3]).cast(supertype),
+        ),
+    )
+
+    assert_frame_equal(
+        left.join(right, on="a", how="semi").collect(),
+        pl.select(a=pl.Series([1, 1]).cast(supertype)),
+    )
+
+
+def test_join_numeric_type_upcast_forbid_float_int() -> None:
+    ltype = pl.Float64
+    rtype = pl.Int32
+
+    left = pl.LazyFrame(schema={"a": ltype})
+    right = pl.LazyFrame(schema={"a": rtype})
+
+    with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
+        left.join(right, on="a", how="left").collect()
