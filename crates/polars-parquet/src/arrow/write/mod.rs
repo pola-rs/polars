@@ -93,7 +93,6 @@ pub struct WriteOptions {
 }
 
 use arrow::compute::aggregate::estimated_bytes_size;
-use arrow::match_integer_type;
 pub use file::FileWriter;
 pub use pages::{array_to_columns, arrays_to_columns, Nested};
 use polars_error::{polars_bail, PolarsResult};
@@ -311,15 +310,14 @@ pub fn array_to_pages(
     mut encoding: Encoding,
 ) -> PolarsResult<DynIter<'static, PolarsResult<Page>>> {
     if let ArrowDataType::Dictionary(key_type, _, _) = primitive_array.dtype().to_logical_type() {
-        return match_integer_type!(key_type, |$T| {
-            dictionary::array_to_pages::<$T>(
-                primitive_array.as_any().downcast_ref().unwrap(),
-                type_,
-                &nested,
-                options,
-                encoding,
-            )
-        });
+        assert_eq!(key_type, &IntegerType::UInt32);
+        return dictionary::array_to_pages(
+            primitive_array.as_any().downcast_ref().unwrap(),
+            type_,
+            nested,
+            options,
+            encoding,
+        );
     };
     if let Encoding::RleDictionary = encoding {
         // Only take this path for primitive columns

@@ -35,6 +35,10 @@ pub trait RangedUniqueKernel {
 
     /// Returns whether all the values in the whole range are in the state
     fn has_seen_all(&self) -> bool;
+    /// Returns whether all the values in the whole range are in the state ignoring nulls.
+    fn has_seen_all_ignore_null(&self) -> bool;
+    /// Returns whether null has been seen
+    fn has_seen_null(&self) -> bool;
 
     /// Append an `Array`'s values to the `State`
     fn append(&mut self, array: &Self::Array);

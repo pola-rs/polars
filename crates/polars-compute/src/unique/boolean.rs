@@ -22,6 +22,14 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
         self.seen == 0b111
     }
 
+    fn has_seen_all_ignore_null(&self) -> bool {
+        self.seen & 0b011 == 0b011
+    }
+
+    fn has_seen_null(&self) -> bool {
+        self.seen & 0b100 != 0
+    }
+
     fn append(&mut self, array: &Self::Array) {
         if array.len() == 0 {
             return;

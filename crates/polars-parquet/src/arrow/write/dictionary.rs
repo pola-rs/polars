@@ -1,29 +1,24 @@
 use arrow::array::{
     Array, BinaryViewArray, DictionaryArray, DictionaryKey, PrimitiveArray, Splitable,
-    Utf8ViewArray,
+    Utf8ViewArray, ViewType,
 };
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, IntegerType, PhysicalType};
 use arrow::legacy::utils::CustomIterTools;
+use arrow::scalar::{BinaryViewScalar, PrimitiveScalar};
 use arrow::trusted_len::TrustMyLength;
 use arrow::types::NativeType;
 use polars_compute::min_max::MinMaxKernel;
+use polars_compute::unique::{DictionaryRangedUniqueState, RangedUniqueKernel};
 use polars_error::{polars_bail, PolarsResult};
 
-use super::binary::{
-    build_statistics as binary_build_statistics, encode_plain as binary_encode_plain,
-};
-use super::fixed_size_binary::{
-    build_statistics as fixed_binary_build_statistics, encode_plain as fixed_binary_encode_plain,
-};
+use super::fixed_size_binary::encode_plain as fixed_binary_encode_plain;
 use super::pages::PrimitiveNested;
-use super::primitive::{
-    build_statistics as primitive_build_statistics, encode_plain as primitive_encode_plain,
-};
+use super::primitive::encode_plain as primitive_encode_plain;
 use super::{
     binview, estimated_byte_size_to_values_per_page, nested, EncodeNullability, Nested,
-    WriteOptions,
+    StatisticsOptions, WriteOptions,
 };
 use crate::arrow::read::schema::is_nullable;
 use crate::arrow::write::{slice_nested_leaf, utils};
@@ -31,7 +26,7 @@ use crate::parquet::encoding::hybrid_rle::encode;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::page::{DictPage, Page};
 use crate::parquet::schema::types::PrimitiveType;
-use crate::parquet::statistics::ParquetStatistics;
+use crate::parquet::statistics::{BinaryStatistics, ParquetStatistics, PrimitiveStatistics};
 use crate::parquet::CowBuffer;
 use crate::write::DynIter;
 
@@ -352,10 +347,155 @@ fn normalized_validity<K: DictionaryKey>(array: &DictionaryArray<K>) -> Option<B
     }
 }
 
-fn serialize_keys_flat<K: DictionaryKey>(
-    array: &DictionaryArray<K>,
+fn parquet_statistics_from_ranged_state(
+    null_count: Option<i64>,
     type_: PrimitiveType,
-    _statistics: Option<ParquetStatistics>,
+    state: &DictionaryRangedUniqueState,
+    options: StatisticsOptions,
+) -> ParquetStatistics {
+    macro_rules! primitive_stats {
+        ($dtype:ty, $prim:ty) => {{
+            let distinct_count = state.finalize_n_unique_non_null();
+            let (min_value, max_value) =
+                if distinct_count == 0 || (!options.min_value && !options.max_value) {
+                    (None, None)
+                } else {
+                    let min_max = state.value_min_max();
+                    match min_max {
+                        None => (None, None),
+                        Some((l, r)) => (
+                            Some(
+                                l.as_any()
+                                    .downcast_ref::<PrimitiveScalar<$dtype>>()
+                                    .unwrap()
+                                    .value()
+                                    .unwrap() as $prim,
+                            ),
+                            Some(
+                                r.as_any()
+                                    .downcast_ref::<PrimitiveScalar<$dtype>>()
+                                    .unwrap()
+                                    .value()
+                                    .unwrap() as $prim,
+                            ),
+                        ),
+                    }
+                };
+
+            let min_value = min_value.filter(|_| options.min_value);
+            let max_value = max_value.filter(|_| options.max_value);
+            let distinct_count = Some(distinct_count as i64).filter(|_| options.distinct_count);
+
+            PrimitiveStatistics::<$prim> {
+                primitive_type: type_,
+                null_count,
+                distinct_count,
+                min_value,
+                max_value,
+            }
+            .serialize()
+        }};
+    }
+
+    macro_rules! view_stats {
+        ($dtype:ty, $prim:ty, $stats:ident) => {{
+            let distinct_count = state.finalize_n_unique_non_null();
+            let (min_value, max_value) =
+                if distinct_count == 0 || (!options.min_value && !options.max_value) {
+                    (None, None)
+                } else {
+                    let min_max = state.value_min_max();
+                    match min_max {
+                        None => (None, None),
+                        Some((l, r)) => (
+                            Some(
+                                ViewType::to_bytes(
+                                    l.as_any()
+                                        .downcast_ref::<BinaryViewScalar<$dtype>>()
+                                        .unwrap()
+                                        .value()
+                                        .unwrap(),
+                                )
+                                .to_vec(),
+                            ),
+                            Some(
+                                ViewType::to_bytes(
+                                    r.as_any()
+                                        .downcast_ref::<BinaryViewScalar<$dtype>>()
+                                        .unwrap()
+                                        .value()
+                                        .unwrap(),
+                                )
+                                .to_vec(),
+                            ),
+                        ),
+                    }
+                };
+
+            let min_value = min_value.filter(|_| options.min_value);
+            let max_value = max_value.filter(|_| options.max_value);
+            let distinct_count = Some(distinct_count as i64).filter(|_| options.distinct_count);
+
+            $stats {
+                primitive_type: type_,
+                null_count,
+                distinct_count,
+                min_value,
+                max_value,
+            }
+            .serialize()
+        }};
+    }
+
+    use ArrowDataType as D;
+    match state.values().dtype() {
+        D::Int8 => primitive_stats!(i8, i32),
+        D::Int16 => primitive_stats!(i16, i32),
+        D::Int32 => primitive_stats!(i32, i32),
+        D::Int64 => primitive_stats!(i64, i64),
+        D::UInt8 => primitive_stats!(u8, i32),
+        D::UInt16 => primitive_stats!(u16, i32),
+        D::UInt32 => primitive_stats!(u32, i32),
+        D::UInt64 => primitive_stats!(u64, i64),
+        D::Float32 => primitive_stats!(f32, f32),
+        D::Float64 => primitive_stats!(f64, f64),
+        D::Timestamp(_, _) => primitive_stats!(i64, i64),
+        D::Date32 => primitive_stats!(i32, i32),
+        D::Date64 => primitive_stats!(i64, i64),
+        D::Time32(_) => primitive_stats!(i32, i32),
+        D::Time64(_) => primitive_stats!(i64, i64),
+        D::Duration(_) => primitive_stats!(i64, i64),
+        D::BinaryView => view_stats!([u8], Vec<u8>, BinaryStatistics),
+        D::Utf8View => view_stats!(str, Vec<u8>, BinaryStatistics),
+
+        D::Null => unreachable!(),
+        D::Boolean => unreachable!(),
+
+        D::Int128 => todo!(),
+        D::Float16 => todo!(),
+        D::Extension(_, _, _) => todo!(),
+        D::Interval(_) => todo!(),
+        D::Decimal(_, _) => todo!(),
+        D::Decimal256(_, _) => todo!(),
+        D::Binary => todo!(),
+        D::FixedSizeBinary(_) => todo!(),
+        D::LargeBinary => todo!(),
+        D::Utf8 => todo!(),
+        D::LargeUtf8 => todo!(),
+        D::List(_) => todo!(),
+        D::FixedSizeList(_, _) => todo!(),
+        D::LargeList(_) => todo!(),
+        D::Struct(_) => todo!(),
+        D::Union(_, _, _) => todo!(),
+        D::Map(_, _) => todo!(),
+        D::Dictionary(_, _, _) => todo!(),
+        D::Unknown => todo!(),
+    }
+}
+
+fn serialize_keys_flat(
+    array: &DictionaryArray<u32>,
+    type_: PrimitiveType,
     options: WriteOptions,
 ) -> PolarsResult<Vec<Page>> {
     // Parquet only accepts a single validity - we "&" the validities into a single one
@@ -384,6 +524,19 @@ fn serialize_keys_flat<K: DictionaryKey>(
         let page_array;
         (page_array, array) = array.split_at(num_page_rows);
 
+        // Calculate the statistics.
+        let mut page_state = DictionaryRangedUniqueState::new(array.values().clone());
+        page_state.append(&page_array);
+        let statistics = parquet_statistics_from_ranged_state(
+            options
+                .statistics
+                .null_count
+                .then(|| page_array.null_count() as i64),
+            type_.clone(),
+            &page_state,
+            options.statistics,
+        );
+
         let mut buffer = vec![];
 
         let is_optional = is_nullable(&type_.field_info);
@@ -405,7 +558,7 @@ fn serialize_keys_flat<K: DictionaryKey>(
             page_array.null_count(),
             0, // flat means no repetition values
             definition_levels_byte_length,
-            None, // we don't support writing page level statistics atm
+            Some(statistics),
             type_.clone(),
             options,
             Encoding::RleDictionary,
@@ -416,11 +569,10 @@ fn serialize_keys_flat<K: DictionaryKey>(
     Ok(data_pages)
 }
 
-fn serialize_keys_nested<K: DictionaryKey>(
-    array: &DictionaryArray<K>,
+fn serialize_keys_nested(
+    array: &DictionaryArray<u32>,
     type_: PrimitiveType,
     nested: &[Nested],
-    statistics: Option<ParquetStatistics>,
     options: WriteOptions,
 ) -> PolarsResult<Vec<Page>> {
     let mut buffer = vec![];
@@ -453,6 +605,16 @@ fn serialize_keys_nested<K: DictionaryKey>(
     let num_values = array.len();
     let num_rows = nested[0].len();
 
+    // Calculate the statistics.
+    let mut row_group_state = DictionaryRangedUniqueState::new(array.values().clone());
+    row_group_state.append(&array);
+    let statistics = parquet_statistics_from_ranged_state(
+        Some(array.null_count() as i64),
+        type_.clone(),
+        &row_group_state,
+        options.statistics,
+    );
+
     let page = utils::build_plain_page(
         buffer,
         num_values,
@@ -460,7 +622,7 @@ fn serialize_keys_nested<K: DictionaryKey>(
         array.clone().null_count(),
         repetition_levels_byte_length,
         definition_levels_byte_length,
-        statistics,
+        Some(statistics),
         type_,
         options,
         Encoding::RleDictionary,
@@ -468,47 +630,75 @@ fn serialize_keys_nested<K: DictionaryKey>(
     Ok(vec![Page::Data(page)])
 }
 
-fn serialize_keys<K: DictionaryKey>(
-    array: &DictionaryArray<K>,
+fn serialize_keys(
+    array: &DictionaryArray<u32>,
     type_: PrimitiveType,
     nested: &[Nested],
-    statistics: Option<ParquetStatistics>,
     options: WriteOptions,
 ) -> PolarsResult<Vec<Page>> {
     if nested.len() == 1 {
-        serialize_keys_flat(array, type_, statistics, options)
+        serialize_keys_flat(array, type_, options)
     } else {
-        serialize_keys_nested(array, type_, nested, statistics, options)
+        serialize_keys_nested(array, type_, nested, options)
     }
 }
 
 macro_rules! dyn_prim {
-    ($from:ty, $to:ty, $array:expr, $options:expr, $type_:expr) => {{
-        let values = $array.values().as_any().downcast_ref().unwrap();
-
-        let buffer =
-            primitive_encode_plain::<$from, $to>(values, EncodeNullability::new(false), vec![]);
-
-        let stats: Option<ParquetStatistics> = if !$options.statistics.is_empty() {
-            let mut stats = primitive_build_statistics::<$from, $to>(
-                values,
-                $type_.clone(),
-                &$options.statistics,
-            );
-            stats.null_count = Some($array.null_count() as i64);
-            Some(stats.serialize())
-        } else {
-            None
-        };
-        (
-            DictPage::new(CowBuffer::Owned(buffer), values.len(), false),
-            stats,
-        )
+    ($from:ty, $to:ty, $array:expr) => {{
+        let values = $array.as_any().downcast_ref().unwrap();
+        primitive_encode_plain::<$from, $to>(values, EncodeNullability::new(false), vec![])
     }};
 }
 
-pub fn array_to_pages<K: DictionaryKey>(
-    array: &DictionaryArray<K>,
+fn encode_dict_page(array: &dyn Array) -> PolarsResult<DictPage> {
+    use ArrowDataType as D;
+    let buffer = match array.dtype().to_logical_type() {
+        D::Int8 => dyn_prim!(i8, i32, array),
+        D::Int16 => dyn_prim!(i16, i32, array),
+        D::Int32 | D::Date32 | D::Time32(_) => dyn_prim!(i32, i32, array),
+        D::Int64 | D::Date64 | D::Time64(_) | D::Timestamp(_, _) | D::Duration(_) => {
+            dyn_prim!(i64, i64, array)
+        },
+        D::UInt8 => dyn_prim!(u8, i32, array),
+        D::UInt16 => dyn_prim!(u16, i32, array),
+        D::UInt32 => dyn_prim!(u32, i32, array),
+        D::UInt64 => dyn_prim!(u64, i64, array),
+        D::Float32 => dyn_prim!(f32, f32, array),
+        D::Float64 => dyn_prim!(f64, f64, array),
+        D::BinaryView => {
+            let array = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            let mut buffer = vec![];
+            binview::encode_plain(array, EncodeNullability::Required, &mut buffer);
+            buffer
+        },
+        D::Utf8View => {
+            let array = array
+                .as_any()
+                .downcast_ref::<Utf8ViewArray>()
+                .unwrap()
+                .to_binview();
+            let mut buffer = vec![];
+            binview::encode_plain(&array, EncodeNullability::Required, &mut buffer);
+            buffer
+        },
+        D::FixedSizeBinary(_) => {
+            let mut buffer = vec![];
+            let array = array.as_any().downcast_ref().unwrap();
+            fixed_binary_encode_plain(array, EncodeNullability::Required, &mut buffer);
+            buffer
+        },
+        other => {
+            polars_bail!(
+                nyi = "Writing dictionary arrays to parquet only support data type {other:?}"
+            )
+        },
+    };
+
+    Ok(DictPage::new(CowBuffer::Owned(buffer), array.len(), false))
+}
+
+pub fn array_to_pages(
+    array: &DictionaryArray<u32>,
     type_: PrimitiveType,
     nested: &[Nested],
     options: WriteOptions,
@@ -517,151 +707,9 @@ pub fn array_to_pages<K: DictionaryKey>(
     match encoding {
         Encoding::PlainDictionary | Encoding::RleDictionary => {
             // write DictPage
-            let (dict_page, mut statistics): (_, Option<ParquetStatistics>) = match array
-                .values()
-                .dtype()
-                .to_logical_type()
-            {
-                ArrowDataType::Int8 => dyn_prim!(i8, i32, array, options, type_),
-                ArrowDataType::Int16 => dyn_prim!(i16, i32, array, options, type_),
-                ArrowDataType::Int32 | ArrowDataType::Date32 | ArrowDataType::Time32(_) => {
-                    dyn_prim!(i32, i32, array, options, type_)
-                },
-                ArrowDataType::Int64
-                | ArrowDataType::Date64
-                | ArrowDataType::Time64(_)
-                | ArrowDataType::Timestamp(_, _)
-                | ArrowDataType::Duration(_) => dyn_prim!(i64, i64, array, options, type_),
-                ArrowDataType::UInt8 => dyn_prim!(u8, i32, array, options, type_),
-                ArrowDataType::UInt16 => dyn_prim!(u16, i32, array, options, type_),
-                ArrowDataType::UInt32 => dyn_prim!(u32, i32, array, options, type_),
-                ArrowDataType::UInt64 => dyn_prim!(u64, i64, array, options, type_),
-                ArrowDataType::Float32 => dyn_prim!(f32, f32, array, options, type_),
-                ArrowDataType::Float64 => dyn_prim!(f64, f64, array, options, type_),
-                ArrowDataType::LargeUtf8 => {
-                    let array = polars_compute::cast::cast(
-                        array.values().as_ref(),
-                        &ArrowDataType::LargeBinary,
-                        Default::default(),
-                    )
-                    .unwrap();
-                    let array = array.as_any().downcast_ref().unwrap();
-
-                    let mut buffer = vec![];
-                    binary_encode_plain::<i64>(array, EncodeNullability::Required, &mut buffer);
-                    let stats = if options.has_statistics() {
-                        Some(binary_build_statistics(
-                            array,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
-                    } else {
-                        None
-                    };
-                    (
-                        DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
-                        stats,
-                    )
-                },
-                ArrowDataType::BinaryView => {
-                    let array = array
-                        .values()
-                        .as_any()
-                        .downcast_ref::<BinaryViewArray>()
-                        .unwrap();
-                    let mut buffer = vec![];
-                    binview::encode_plain(array, EncodeNullability::Required, &mut buffer);
-
-                    let stats = if options.has_statistics() {
-                        Some(binview::build_statistics(
-                            array,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
-                    } else {
-                        None
-                    };
-                    (
-                        DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
-                        stats,
-                    )
-                },
-                ArrowDataType::Utf8View => {
-                    let array = array
-                        .values()
-                        .as_any()
-                        .downcast_ref::<Utf8ViewArray>()
-                        .unwrap()
-                        .to_binview();
-                    let mut buffer = vec![];
-                    binview::encode_plain(&array, EncodeNullability::Required, &mut buffer);
-
-                    let stats = if options.has_statistics() {
-                        Some(binview::build_statistics(
-                            &array,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
-                    } else {
-                        None
-                    };
-                    (
-                        DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
-                        stats,
-                    )
-                },
-                ArrowDataType::LargeBinary => {
-                    let values = array.values().as_any().downcast_ref().unwrap();
-
-                    let mut buffer = vec![];
-                    binary_encode_plain::<i64>(values, EncodeNullability::Required, &mut buffer);
-                    let stats = if options.has_statistics() {
-                        Some(binary_build_statistics(
-                            values,
-                            type_.clone(),
-                            &options.statistics,
-                        ))
-                    } else {
-                        None
-                    };
-                    (
-                        DictPage::new(CowBuffer::Owned(buffer), values.len(), false),
-                        stats,
-                    )
-                },
-                ArrowDataType::FixedSizeBinary(_) => {
-                    let mut buffer = vec![];
-                    let array = array.values().as_any().downcast_ref().unwrap();
-                    fixed_binary_encode_plain(array, EncodeNullability::Required, &mut buffer);
-                    let stats = if options.has_statistics() {
-                        let stats = fixed_binary_build_statistics(
-                            array,
-                            type_.clone(),
-                            &options.statistics,
-                        );
-                        Some(stats.serialize())
-                    } else {
-                        None
-                    };
-                    (
-                        DictPage::new(CowBuffer::Owned(buffer), array.len(), false),
-                        stats,
-                    )
-                },
-                other => {
-                    polars_bail!(
-                        nyi =
-                            "Writing dictionary arrays to parquet only support data type {other:?}"
-                    )
-                },
-            };
-
-            if let Some(stats) = &mut statistics {
-                stats.null_count = Some(array.null_count() as i64)
-            }
-
+            let dict_page = encode_dict_page(array.values().as_ref())?;
             // write DataPage pointing to DictPage
-            let data_pages = serialize_keys(array, type_, nested, statistics, options)?;
+            let data_pages = serialize_keys(array, type_, nested, options)?;
 
             Ok(DynIter::new(
                 std::iter::once(Page::Dict(dict_page))
