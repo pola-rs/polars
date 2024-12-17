@@ -602,6 +602,7 @@ impl DataType {
     }
 
     /// Check if this [`DataType`] is a basic floating point type (excludes Decimal).
+    /// Note, this also includes `Unknown(UnknownKind::Float)`.
     pub fn is_float(&self) -> bool {
         matches!(
             self,
@@ -609,7 +610,7 @@ impl DataType {
         )
     }
 
-    /// Check if this [`DataType`] is an integer.
+    /// Check if this [`DataType`] is an integer. Note, this also includes `Unknown(UnknownKind::Int)`.
     pub fn is_integer(&self) -> bool {
         matches!(
             self,

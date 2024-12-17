@@ -7,8 +7,9 @@ import pytest
 from hypothesis import given
 
 import polars as pl
-from polars.testing import assert_frame_equal
-from polars.testing.parametric import dataframes
+from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing.parametric import dataframes, series
+from polars.testing.parametric.strategies.dtype import dtypes
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -48,6 +49,7 @@ def roundtrip_series_re(
     df=dataframes(
         excluded_dtypes=[
             pl.Categorical,
+            pl.Decimal,  # Bug: see https://github.com/pola-rs/polars/issues/20308
         ]
     )
 )
@@ -337,4 +339,37 @@ def test_int_after_null() -> None:
             ]
         ),
         [(False, True, False), (False, True, False)],
+    )
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS)
+@given(s=series(allow_null=False, allow_chunks=False, excluded_dtypes=[pl.Categorical]))
+def test_optional_eq_non_optional_20320(
+    field: tuple[bool, bool, bool], s: pl.Series
+) -> None:
+    with_null = s.extend(pl.Series([None], dtype=s.dtype))
+
+    re_without_null = s.to_frame()._row_encode([field])
+    re_with_null = with_null.to_frame()._row_encode([field])
+
+    re_without_null = re_without_null.cast(pl.Binary)
+    re_with_null = re_with_null.cast(pl.Binary)
+
+    assert_series_equal(re_with_null.head(s.len()), re_without_null)
+
+
+@pytest.mark.parametrize("field", FIELD_COMBS)
+@given(dtype=dtypes(excluded_dtypes=[pl.Categorical]))
+def test_null(
+    field: tuple[bool, bool, bool],
+    dtype: pl.DataType,
+) -> None:
+    s = pl.Series("a", [None], dtype)
+
+    assert_series_equal(
+        s.to_frame()
+        ._row_encode([field])
+        ._row_decode([("a", dtype)], [field])
+        .to_series(),
+        s,
     )

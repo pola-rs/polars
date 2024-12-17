@@ -64,7 +64,7 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde", "polars-utils/serde"]
+serde = ["polars-core/serde", "polars-utils/serde", "ir_serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",

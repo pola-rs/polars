@@ -108,7 +108,6 @@ pub unsafe fn encode_iter(
                         .copy_from_slice(null_value.to_be_bytes()[4 - num_bytes..].as_uninit());
                 },
                 Some(v) => {
-                    let v = v | ((32 - v.leading_zeros()) << ((num_bytes * 8) - 6));
                     let v = (v ^ invert_mask) | valid_mask;
                     unsafe { buffer.get_unchecked_mut(*offset..*offset + num_bytes) }
                         .copy_from_slice(v.to_be_bytes()[4 - num_bytes..].as_uninit());

@@ -212,9 +212,6 @@ pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
     pub collect_groups: ApplyOptions,
-    // used for formatting, (only for anonymous functions)
-    #[cfg_attr(feature = "serde", serde(skip_deserializing))]
-    pub fmt_str: &'static str,
 
     /// Options used when deciding how to cast the arguments of the function.
     pub cast_options: FunctionCastOptions,
@@ -223,6 +220,10 @@ pub struct FunctionOptions {
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
     pub flags: FunctionFlags,
+
+    // used for formatting, (only for anonymous functions)
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub fmt_str: &'static str,
 }
 
 impl FunctionOptions {
@@ -281,11 +282,10 @@ pub struct PythonOptions {
     pub with_columns: Option<Arc<[PlSmallStr]>>,
     // Which interface is the python function.
     pub python_source: PythonScanSource,
-    /// Optional predicate the reader must apply.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub predicate: PythonPredicate,
     /// A `head` call passed to the reader.
     pub n_rows: Option<usize>,
+    /// Optional predicate the reader must apply.
+    pub predicate: PythonPredicate,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -298,6 +298,7 @@ pub enum PythonScanSource {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum PythonPredicate {
     // A pyarrow predicate python expression
     // can be evaluated with python.eval

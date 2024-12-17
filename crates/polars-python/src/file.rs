@@ -386,8 +386,7 @@ fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     py_f
 }
 
-/// Create reader from PyBytes or a file-like object. To get BytesIO to have
-/// better performance, use read_if_bytesio() before calling this.
+/// Create reader from PyBytes or a file-like object.
 pub fn get_mmap_bytes_reader(py_f: &Bound<PyAny>) -> PyResult<Box<dyn MmapBytesReader>> {
     get_mmap_bytes_reader_and_path(py_f).map(|t| t.0)
 }

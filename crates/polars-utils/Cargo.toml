@@ -12,9 +12,11 @@ description = "Private utils for the Polars DataFrame library"
 polars-error = { workspace = true }
 
 ahash = { workspace = true }
+bincode = { workspace = true, optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
 compact_str = { workspace = true }
+flate2 = { workspace = true, default-features = true, optional = true }
 hashbrown = { workspace = true }
 indexmap = { workspace = true }
 libc = { workspace = true }
@@ -26,6 +28,7 @@ rand = { workspace = true }
 raw-cpuid = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
 stacker = { workspace = true }
 sysinfo = { version = "0.32", default-features = false, features = ["system"], optional = true }
 
@@ -40,5 +43,5 @@ mmap = ["memmap"]
 bigidx = []
 nightly = []
 ir_serde = ["serde"]
-serde = ["dep:serde", "serde/derive"]
+serde = ["dep:serde", "serde/derive", "dep:bincode", "dep:flate2", "dep:serde_json"]
 python = ["pyo3"]

@@ -807,6 +807,9 @@ name = "bytes"
 version = "1.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "325918d6fe32f23b19878fe4b34794ae41fc19ddbe53b10571a4874d44ffd39b"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bytes-utils"
@@ -3390,7 +3393,6 @@ dependencies = [
  "bytes",
  "chrono",
  "chrono-tz",
- "ciborium",
  "either",
  "futures",
  "hashbrown 0.15.2",
@@ -3425,10 +3427,11 @@ version = "0.45.1"
 dependencies = [
  "ahash",
  "arboard",
+ "bincode",
  "bytemuck",
  "bytes",
- "ciborium",
  "either",
+ "flate2",
  "itoa",
  "libc",
  "ndarray",
@@ -3552,9 +3555,11 @@ name = "polars-utils"
 version = "0.45.1"
 dependencies = [
  "ahash",
+ "bincode",
  "bytemuck",
  "bytes",
  "compact_str",
+ "flate2",
  "hashbrown 0.15.2",
  "indexmap",
  "libc",
@@ -3567,6 +3572,7 @@ dependencies = [
  "raw-cpuid",
  "rayon",
  "serde",
+ "serde_json",
  "stacker",
  "sysinfo",
  "version_check",

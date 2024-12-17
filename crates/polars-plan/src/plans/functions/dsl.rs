@@ -21,9 +21,10 @@ pub struct OpaquePythonUdf {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum DslFunction {
-    // Function that is already converted to IR.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    FunctionIR(FunctionIR),
+    RowIndex {
+        name: PlSmallStr,
+        offset: Option<IdxSize>,
+    },
     // This is both in DSL and IR because we want to be able to serialize it.
     #[cfg(feature = "python")]
     OpaquePython(OpaquePythonUdf),
@@ -35,10 +36,6 @@ pub enum DslFunction {
     Unpivot {
         args: UnpivotArgsDSL,
     },
-    RowIndex {
-        name: PlSmallStr,
-        offset: Option<IdxSize>,
-    },
     Rename {
         existing: Arc<[PlSmallStr]>,
         new: Arc<[PlSmallStr]>,
@@ -49,6 +46,9 @@ pub enum DslFunction {
     /// FillValue
     FillNan(Expr),
     Drop(DropFunction),
+    // Function that is already converted to IR.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    FunctionIR(FunctionIR),
 }
 
 #[derive(Clone)]
