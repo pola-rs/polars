@@ -500,7 +500,6 @@ def test_non_coalesce_multi_key_join_projection_pushdown_16554(
             coalesce=False,
         )
         .select("a", "b", "c")
-        .sort("a")
         .collect()
     )
 
@@ -516,7 +515,7 @@ def test_non_coalesce_multi_key_join_projection_pushdown_16554(
         .collect()
     )
 
-    assert_frame_equal(out.sort("a"), expect)
+    assert_frame_equal(out, expect, check_row_order=False)
 
 
 @pytest.mark.parametrize("how", ["semi", "anti"])

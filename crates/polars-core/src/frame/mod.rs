@@ -390,6 +390,15 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(0, cols) }
     }
 
+    /// Create a new `DataFrame` with the given schema, only containing nulls.
+    pub fn full_null(schema: &Schema, height: usize) -> Self {
+        let columns = schema
+            .iter_fields()
+            .map(|f| Column::full_null(f.name.clone(), height, f.dtype()))
+            .collect();
+        unsafe { DataFrame::new_no_checks(height, columns) }
+    }
+
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
     ///
     /// # Example
@@ -734,7 +743,7 @@ impl DataFrame {
     /// - The length of each appended column matches the height of the [`DataFrame`]. For
     ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
     ///   with [`DataFrame::set_height`].
-    pub unsafe fn column_extend_unchecked(&mut self, iter: impl Iterator<Item = Column>) {
+    pub unsafe fn column_extend_unchecked(&mut self, iter: impl IntoIterator<Item = Column>) {
         unsafe { self.get_columns_mut() }.extend(iter)
     }
 
@@ -1941,11 +1950,15 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
-    pub(crate) unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
         self.take_slice_unchecked_impl(idx, true)
     }
 
-    unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {

@@ -107,6 +107,7 @@ def test_string_cache_decorator_mixed_with_enable() -> None:
     sc(True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_string_cache_join() -> None:
     df1 = pl.DataFrame({"a": ["foo", "bar", "ham"], "b": [1, 2, 3]})
     df2 = pl.DataFrame({"a": ["eggs", "spam", "foo"], "c": [2, 2, 3]})
@@ -165,7 +166,7 @@ def test_string_cache_eager_lazy() -> None:
         ).with_columns(pl.col("region_ids").cast(pl.Categorical))
 
         result = df1.join(df2, left_on="region_ids", right_on="seq_name", how="left")
-        assert_frame_equal(result, expected)
+        assert_frame_equal(result, expected, check_row_order=False)
 
         # also check row-wise categorical insert.
         # (column-wise is preferred, but this shouldn't fail)

@@ -374,16 +374,30 @@ def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
     )
 
     result_inner = df_a.join(df_b, on="a", how="inner")
-    assert result_inner.to_dict(as_series=False) == {
-        "index": [1, 2, 3, 5],
-        "a": [-2, 3, 3, 10],
-    }
+    assert_frame_equal(
+        result_inner,
+        pl.DataFrame(
+            {
+                "index": [1, 2, 3, 5],
+                "a": [-2, 3, 3, 10],
+            },
+            schema={"index": pl.UInt32, "a": dtype},
+        ),
+        check_row_order=False,
+    )
 
     result_left = df_a.join(df_b, on="a", how="left")
-    assert result_left.to_dict(as_series=False) == {
-        "index": [0, 1, 2, 3, 4, 5],
-        "a": [-5, -2, 3, 3, 9, 10],
-    }
+    assert_frame_equal(
+        result_left,
+        pl.DataFrame(
+            {
+                "index": [0, 1, 2, 3, 4, 5],
+                "a": [-5, -2, 3, 3, 9, 10],
+            },
+            schema={"index": pl.UInt32, "a": dtype},
+        ),
+        check_row_order=False,
+    )
 
 
 def test_sorted_fast_paths() -> None:
@@ -578,7 +592,11 @@ def test_sorted_join_query_5406() -> None:
     out = df1.join(filter1, on="RowId", how="left").select(
         pl.exclude(["Datetime_right", "Group_right"])
     )
-    assert out["Value_right"].to_list() == [1, None, 2, 1, 2, None]
+    assert_series_equal(
+        out["Value_right"],
+        pl.Series("Value_right", [1, None, 2, 1, 2, None]),
+        check_order=False,
+    )
 
 
 def test_sort_by_in_over_5499() -> None:
