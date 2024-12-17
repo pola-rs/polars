@@ -3,7 +3,7 @@ use crate::series::implementations::null::NullChunked;
 
 macro_rules! unpack_chunked_err {
     ($series:expr => $name:expr) => {
-        polars_err!(SchemaMismatch: "invalid series dtype: expected `{}`, got `{}`", $name, $series.dtype())
+        polars_err!(SchemaMismatch: "invalid series dtype: expected `{}`, got `{}` for series with name `{}`", $name, $series.dtype(), $series.name())
     };
 }
 
