@@ -977,7 +977,7 @@ def test_join_raise_on_redundant_keys() -> None:
 def test_join_raise_on_repeated_expression_key_names(coalesce: bool) -> None:
     left = pl.DataFrame({"a": [1, 2, 3], "b": [3, 4, 5], "c": [5, 6, 7]})
     right = pl.DataFrame({"a": [2, 3, 4], "c": [4, 5, 6]})
-    with (
+    with (  # noqa: PT012
         pytest.raises(InvalidOperationError, match="already joined on"),
         warnings.catch_warnings(),
     ):
