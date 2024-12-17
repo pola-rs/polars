@@ -14,6 +14,7 @@ pub mod cardinality_sketch;
 pub mod cell;
 pub mod chunks;
 pub mod clmul;
+mod config;
 pub mod cpuid;
 mod error;
 pub mod floor_divmod;
@@ -57,3 +58,6 @@ pub use io::*;
 
 #[cfg(feature = "python")]
 pub mod python_function;
+
+#[cfg(feature = "serde")]
+pub mod pl_serialize;

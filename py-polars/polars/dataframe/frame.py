@@ -2636,7 +2636,7 @@ class DataFrame:
         ... )
         >>> bytes = df.serialize()
         >>> bytes  # doctest: +ELLIPSIS
-        b'\xa1gcolumns\x82\xa4dnamecfoohdatatypeeInt64lbit_settings\x00fvalues\x83...'
+        b'\x02\x00\x00\x00\x00\x00...'
 
         The bytes can later be deserialized back into a DataFrame.
 

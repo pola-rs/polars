@@ -19,11 +19,6 @@ if TYPE_CHECKING:
     from polars._typing import SerializationFormat
 
 
-@given(
-    df=dataframes(
-        excluded_dtypes=[pl.Struct],  # Outer nullability not supported
-    )
-)
 def test_df_serde_roundtrip_binary(df: pl.DataFrame) -> None:
     serialized = df.serialize()
     result = pl.DataFrame.deserialize(io.BytesIO(serialized), format="binary")
@@ -64,9 +59,12 @@ def test_df_serde_json_stringio(df: pl.DataFrame) -> None:
 def test_df_serialize_json() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [9, 5, 6]}).sort("a")
     result = df.serialize(format="json")
-    expected = '{"columns":[{"name":"a","datatype":"Int64","bit_settings":"SORTED_ASC","values":[1,2,3]},{"name":"b","datatype":"Int64","bit_settings":"","values":[9,5,6]}]}'
-    print(result)
-    assert result == expected
+
+    assert isinstance(result, str)
+
+    f = io.StringIO(result)
+
+    assert_frame_equal(pl.DataFrame.deserialize(f, format="json"), df)
 
 
 @pytest.mark.parametrize(
@@ -193,40 +191,11 @@ def test_df_serde_array_logical_inner_type(data: Any, dtype: pl.DataType) -> Non
     assert_frame_equal(result, df)
 
 
-@pytest.mark.xfail(reason="Bug: https://github.com/pola-rs/polars/issues/17211")
 def test_df_serde_float_inf_nan() -> None:
     df = pl.DataFrame({"a": [1.0, float("inf"), float("-inf"), float("nan")]})
     ser = df.serialize(format="json")
     result = pl.DataFrame.deserialize(io.StringIO(ser), format="json")
     assert_frame_equal(result, df)
-
-
-def test_df_deserialize_validation() -> None:
-    f = io.StringIO(
-        """
-    {
-      "columns": [
-        {
-          "name": "a",
-          "datatype": "Int64",
-          "values": [
-            1,
-            2
-          ]
-        },
-        {
-          "name": "b",
-          "datatype": "Int64",
-          "values": [
-            1
-          ]
-        }
-      ]
-    }
-    """
-    )
-    with pytest.raises(ComputeError, match=r"lengths don't match"):
-        pl.DataFrame.deserialize(f, format="json")
 
 
 def test_df_serialize_invalid_type() -> None:

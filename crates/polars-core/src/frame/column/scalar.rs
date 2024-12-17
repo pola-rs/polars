@@ -307,3 +307,71 @@ impl From<ScalarColumn> for Column {
         Self::Scalar(value)
     }
 }
+
+#[cfg(feature = "serde")]
+mod serde_impl {
+    use std::sync::OnceLock;
+
+    use polars_error::PolarsError;
+    use polars_utils::pl_str::PlSmallStr;
+
+    use super::ScalarColumn;
+    use crate::frame::{Scalar, Series};
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct SerializeWrap {
+        name: PlSmallStr,
+        /// Unit-length series for dispatching to IPC serialize
+        unit_series: Series,
+        length: usize,
+    }
+
+    impl From<&ScalarColumn> for SerializeWrap {
+        fn from(value: &ScalarColumn) -> Self {
+            Self {
+                name: value.name.clone(),
+                unit_series: value.scalar.clone().into_series(PlSmallStr::EMPTY),
+                length: value.length,
+            }
+        }
+    }
+
+    impl TryFrom<SerializeWrap> for ScalarColumn {
+        type Error = PolarsError;
+
+        fn try_from(value: SerializeWrap) -> Result<Self, Self::Error> {
+            let slf = Self {
+                name: value.name,
+                scalar: Scalar::new(
+                    value.unit_series.dtype().clone(),
+                    value.unit_series.get(0)?.into_static(),
+                ),
+                length: value.length,
+                materialized: OnceLock::new(),
+            };
+
+            Ok(slf)
+        }
+    }
+
+    impl serde::ser::Serialize for ScalarColumn {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            SerializeWrap::from(self).serialize(serializer)
+        }
+    }
+
+    impl<'de> serde::de::Deserialize<'de> for ScalarColumn {
+        fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de>,
+        {
+            use serde::de::Error;
+
+            SerializeWrap::deserialize(deserializer)
+                .and_then(|x| ScalarColumn::try_from(x).map_err(D::Error::custom))
+        }
+    }
+}

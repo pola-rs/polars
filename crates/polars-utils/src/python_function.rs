@@ -45,11 +45,11 @@ impl serde::Serialize for PythonFunction {
         S: serde::Serializer,
     {
         use serde::ser::Error;
-        serializer.serialize_bytes(
-            self.try_serialize_to_bytes()
-                .map_err(|e| S::Error::custom(e.to_string()))?
-                .as_slice(),
-        )
+        let bytes = self
+            .try_serialize_to_bytes()
+            .map_err(|e| S::Error::custom(e.to_string()))?;
+
+        Vec::<u8>::serialize(&bytes, serializer)
     }
 }
 
@@ -61,7 +61,9 @@ impl<'a> serde::Deserialize<'a> for PythonFunction {
     {
         use serde::de::Error;
         let bytes = Vec::<u8>::deserialize(deserializer)?;
-        Self::try_deserialize_bytes(bytes.as_slice()).map_err(|e| D::Error::custom(e.to_string()))
+        let v = Self::try_deserialize_bytes(bytes.as_slice())
+            .map_err(|e| D::Error::custom(e.to_string()));
+        v
     }
 }
 

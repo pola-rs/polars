@@ -37,8 +37,6 @@ mod series;
 /// 2. A [`ScalarColumn`] that repeats a single [`Scalar`]
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-#[cfg_attr(feature = "serde", serde(from = "Series"))]
-#[cfg_attr(feature = "serde", serde(into = "_SerdeSeries"))]
 pub enum Column {
     Series(SeriesColumn),
     Partitioned(PartitionedColumn),
