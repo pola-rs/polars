@@ -332,7 +332,7 @@ fn create_physical_plan_impl(
                     if sources.len() > 1
                         && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
                     {
-                        Ok(Box::new(executors::HiveExec::new(
+                        Ok(Box::new(executors::MultiScanExec::new(
                             sources,
                             file_info,
                             hive_parts,

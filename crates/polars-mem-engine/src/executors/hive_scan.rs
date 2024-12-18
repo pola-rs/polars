@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::OnceCell;
 
 use hive::HivePartitions;
 use polars_core::config;
@@ -7,69 +8,136 @@ use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
 use polars_io::predicates::BatchStats;
-use polars_io::prelude::ParquetReader;
-use polars_io::SerReader;
+use polars_io::prelude::FileMetadata;
+use polars_io::RowIndex;
 
 use super::Executor;
 use crate::executors::ParquetExec;
 use crate::prelude::*;
 
-struct LazyTryCell<T, E, F> {
-    f: F,
-    evaluated: Option<T>,
-    _pd: std::marker::PhantomData<E>,
-}
-
-impl<T, E, F> LazyTryCell<T, E, F> {
-    fn new(f: F) -> Self {
-        Self {
-            f,
-            evaluated: None,
-            _pd: std::marker::PhantomData,
-        }
-    }
-}
-
-impl<T: Copy, E, F: FnMut() -> Result<T, E>> LazyTryCell<T, E, F> {
-    fn get(&mut self) -> Result<T, E> {
-        if let Some(evaluated) = self.evaluated.as_ref() {
-            return Ok(*evaluated);
-        }
-
-        match (self.f)() {
-            Ok(v) => {
-                self.evaluated = Some(v);
-                self.get()
-            },
-            Err(e) => Err(e),
-        }
-    }
+pub trait IOFileMetadata: Send + Sync {
+    fn as_any(&self) -> &dyn std::any::Any;
+    fn num_rows(&self) -> PolarsResult<IdxSize>;
+    fn schema(&self) -> PolarsResult<Schema>;
 }
 
 pub trait ScanExec {
-    fn read(&mut self) -> PolarsResult<DataFrame>;
-    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize>;
-    fn schema(&mut self) -> PolarsResult<Schema>;
+    fn read(
+        &mut self,
+        with_columns: Option<Arc<[PlSmallStr]>>,
+        slice: Option<(usize, usize)>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        row_index: Option<RowIndex>,
+        metadata: Option<Box<dyn IOFileMetadata>>,
+        schema: Schema,
+    ) -> PolarsResult<DataFrame>;
+
+    fn metadata(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>>;
 }
 
-pub struct HiveExec {
+fn source_to_scan_exec(
+    source: ScanSourceRef,
+    scan_type: &FileScan,
+    file_info: &FileInfo,
+    file_options: &FileScanOptions,
+    metadata: Option<&dyn IOFileMetadata>,
+) -> PolarsResult<Box<dyn ScanExec>> {
+    let source = match source {
+        ScanSourceRef::Path(path) => ScanSources::Paths([path.to_path_buf()].into()),
+        ScanSourceRef::File(_) | ScanSourceRef::Buffer(_) => {
+            ScanSources::Buffers([source.to_memslice()?].into())
+        },
+    };
+
+    Ok(match scan_type {
+        FileScan::Parquet {
+            options,
+            cloud_options,
+            ..
+        } => Box::new(ParquetExec::new(
+            source,
+            file_info.clone(),
+            None,
+            None,
+            options.clone(),
+            cloud_options.clone(),
+            file_options.clone(),
+            metadata.map(|md| {
+                md.as_any()
+                    .downcast_ref::<Arc<FileMetadata>>()
+                    .unwrap()
+                    .clone()
+            }),
+        )) as _,
+        _ => todo!(),
+    })
+}
+
+pub struct Source {
+    scan_exec: Box<dyn ScanExec>,
+    metadata: OnceCell<Box<dyn IOFileMetadata>>,
+}
+
+impl Source {
+    fn new(
+        source: ScanSourceRef,
+        scan_type: &FileScan,
+        file_info: &FileInfo,
+        file_options: &FileScanOptions,
+        metadata: Option<&dyn IOFileMetadata>,
+    ) -> PolarsResult<Self> {
+        let scan_exec = source_to_scan_exec(source, scan_type, file_info, file_options, metadata)?;
+        Ok(Self {
+            scan_exec,
+            metadata: OnceCell::new(),
+        })
+    }
+
+    fn get_metadata(&mut self) -> PolarsResult<&dyn IOFileMetadata> {
+        match self.metadata.get() {
+            None => {
+                let metadata = self.scan_exec.metadata()?;
+                Ok(self.metadata.get_or_init(|| metadata).as_ref())
+            },
+            Some(metadata) => Ok(metadata.as_ref()),
+        }
+    }
+
+    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
+        self.get_metadata()?.num_rows()
+    }
+
+    fn schema(&mut self) -> PolarsResult<Schema> {
+        self.get_metadata()?.schema()
+    }
+}
+
+/// Scan over multiple sources and combine their results.
+pub struct MultiScanExec {
     sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<Arc<dyn PhysicalExpr>>,
     file_options: FileScanOptions,
     scan_type: FileScan,
+
+    first_file_metadata: Option<Box<dyn IOFileMetadata>>,
 }
 
-impl HiveExec {
+impl MultiScanExec {
     pub fn new(
         sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         file_options: FileScanOptions,
-        scan_type: FileScan,
+        mut scan_type: FileScan,
     ) -> Self {
+        let first_file_metadata = match &mut scan_type {
+            FileScan::Parquet { metadata, .. } => metadata.take().map(|md| Box::new(md) as _),
+            _ => None,
+        };
+
         Self {
             sources,
             file_info,
@@ -77,11 +145,12 @@ impl HiveExec {
             predicate,
             file_options,
             scan_type,
+            first_file_metadata,
         }
     }
 
     pub fn resolve_negative_slice(
-        &self,
+        &mut self,
         offset: i64,
         length: usize,
     ) -> PolarsResult<(usize, usize)> {
@@ -91,32 +160,20 @@ impl HiveExec {
 
         for i in (0..self.sources.len()).rev() {
             let source = self.sources.get(i).unwrap();
+            let mut exec_source = Source::new(
+                source,
+                &self.scan_type,
+                &self.file_info,
+                &self.file_options,
+                self.first_file_metadata.as_deref().filter(|_| i == 0),
+            )?;
 
-            #[cfg(feature = "parquet")]
-            {
-                let FileScan::Parquet {
-                    options: _,
-                    cloud_options: _,
-                    metadata: _,
-                } = self.scan_type.clone()
-                else {
-                    todo!()
-                };
+            let num_rows = exec_source.num_unfiltered_rows()? as usize;
 
-                // @TODO: Support cloud
-                let num_rows =
-                    ParquetReader::new(std::io::Cursor::new(source.to_memslice()?)).num_rows()?;
-
-                if num_rows >= offset_remaining {
-                    return Ok((i, num_rows - offset_remaining));
-                }
-                offset_remaining -= num_rows;
+            if num_rows >= offset_remaining {
+                return Ok((i, num_rows - offset_remaining));
             }
-
-            #[cfg(not(feature = "parquet"))]
-            {
-                todo!()
-            }
+            offset_remaining -= num_rows;
         }
 
         Ok((0, length - offset_remaining))
@@ -190,279 +247,241 @@ impl HiveExec {
             }),
         };
 
-        #[cfg(feature = "parquet")]
-        {
-            let FileScan::Parquet {
-                options,
-                cloud_options,
-                metadata: _,
-            } = self.scan_type.clone()
-            else {
-                todo!()
-            };
+        let verbose = config::verbose();
+        let mut dfs = Vec::with_capacity(self.sources.len());
 
-            let verbose = config::verbose();
-            let mut dfs = Vec::with_capacity(self.sources.len());
+        let mut const_columns = PlHashMap::new();
 
-            let mut const_columns = PlHashMap::new();
+        // @TODO: This should be moved outside of the FileScan::Parquet
+        let use_statistics = match &self.scan_type {
+            FileScan::Parquet { options, .. } => options.use_statistics,
+            _ => true,
+        };
 
-            for (i, source) in self.sources.iter().enumerate() {
-                let hive_part = self.hive_parts.as_ref().and_then(|h| h.get(i));
-                if slice.is_some_and(|s| s.1 == 0) {
-                    break;
+        for (i, source) in self.sources.iter().enumerate() {
+            let hive_part = self.hive_parts.as_ref().and_then(|h| h.get(i));
+            if slice.is_some_and(|s| s.1 == 0) {
+                break;
+            }
+
+            let mut exec_source = Source::new(
+                source,
+                &self.scan_type,
+                &self.file_info,
+                &self.file_options,
+                self.first_file_metadata.as_deref().filter(|_| i == 0),
+            )?;
+
+            // Insert the hive partition values into the predicate. This allows the predicate
+            // to function even when there is a combination of hive and non-hive columns being
+            // used.
+            let mut file_predicate = predicate.clone();
+            if has_live_hive_columns {
+                let hive_part = hive_part.unwrap();
+                let predicate = predicate.as_ref().unwrap();
+                const_columns.clear();
+                for (idx, column) in hive_column_set.iter().enumerate() {
+                    let value = hive_part.get_statistics().column_stats()[idx]
+                        .to_min()
+                        .unwrap()
+                        .get(0)
+                        .unwrap()
+                        .into_static();
+                    const_columns.insert(column.clone(), value);
                 }
+                file_predicate = predicate.replace_elementwise_const_columns(&const_columns);
 
-                // Insert the hive partition values into the predicate. This allows the predicate
-                // to function even when there is a combination of hive and non-hive columns being
-                // used.
-                let mut file_predicate = predicate.clone();
-                if has_live_hive_columns {
-                    let hive_part = hive_part.unwrap();
-                    let predicate = predicate.as_ref().unwrap();
-                    const_columns.clear();
-                    for (idx, column) in hive_column_set.iter().enumerate() {
-                        let value = hive_part.get_statistics().column_stats()[idx]
-                            .to_min()
-                            .unwrap()
-                            .get(0)
-                            .unwrap()
-                            .into_static();
-                        const_columns.insert(column.clone(), value);
-                    }
-                    file_predicate = predicate.replace_elementwise_const_columns(&const_columns);
+                // @TODO: Set predicate to `None` if it's constant evaluated to true.
 
-                    // @TODO: Set predicate to `None` if it's constant evaluated to true.
-
-                    // At this point the file_predicate should not contain any references to the
-                    // hive columns anymore.
-                    //
-                    // Note that, replace_elementwise_const_columns does not actually guarantee the
-                    // replacement of all reference to the const columns. But any expression which
-                    // does not guarantee this should not be pushed down as an IO predicate.
-                    if cfg!(debug_assertions) {
-                        let mut live_columns = PlIndexSet::new();
-                        file_predicate
-                            .as_ref()
-                            .unwrap()
-                            .collect_live_columns(&mut live_columns);
-                        for hive_column in hive_part.get_statistics().column_stats() {
-                            assert!(
-                                !live_columns.contains(hive_column.field_name()),
-                                "Predicate still contains hive column"
-                            );
-                        }
+                // At this point the file_predicate should not contain any references to the
+                // hive columns anymore.
+                //
+                // Note that, replace_elementwise_const_columns does not actually guarantee the
+                // replacement of all reference to the const columns. But any expression which
+                // does not guarantee this should not be pushed down as an IO predicate.
+                if cfg!(debug_assertions) {
+                    let mut live_columns = PlIndexSet::new();
+                    file_predicate
+                        .as_ref()
+                        .unwrap()
+                        .collect_live_columns(&mut live_columns);
+                    for hive_column in hive_part.get_statistics().column_stats() {
+                        assert!(
+                            !live_columns.contains(hive_column.field_name()),
+                            "Predicate still contains hive column"
+                        );
                     }
                 }
+            }
 
-                let part_source = match source {
-                    ScanSourceRef::Path(path) => ScanSources::Paths([path.to_path_buf()].into()),
-                    ScanSourceRef::File(_) | ScanSourceRef::Buffer(_) => {
-                        ScanSources::Buffers([source.to_memslice()?].into())
-                    },
+            if verbose {
+                eprintln!(
+                    "Multi-file / Hive read: currently reading '{}'",
+                    source.to_include_path_name()
+                );
+            }
+
+            // @TODO: There are cases where we can ignore reading. E.g. no row index + empty with columns + no predicate
+            let mut schema = exec_source.schema()?;
+            let mut extra_columns = Vec::new();
+
+            if let Some(file_with_columns) = &file_with_columns {
+                if allow_missing_columns {
+                    schema = schema.try_project(
+                        file_with_columns
+                            .iter()
+                            .filter(|c| schema.contains(c.as_str())),
+                    )?;
+                } else {
+                    schema = schema.try_project(file_with_columns.iter())?;
+                }
+            }
+
+            if allow_missing_columns {
+                missing_columns.clear();
+                extra_columns.clear();
+
+                current_schema.as_ref().field_compare(
+                    &schema,
+                    &mut missing_columns,
+                    &mut extra_columns,
+                );
+
+                if !extra_columns.is_empty() {
+                    // @TODO: Better error
+                    polars_bail!(InvalidOperation: "More schema in file after first");
+                }
+            }
+
+            let mut do_skip_file = false;
+            if let Some(slice) = &slice {
+                let allow_slice_skip = match first_slice_file {
+                    None => slice.0 as IdxSize >= exec_source.num_unfiltered_rows()?,
+                    Some(f) => i < f,
                 };
 
-                if verbose {
+                if allow_slice_skip && verbose {
                     eprintln!(
-                        "Multi-file / Hive read: currently reading '{}'",
+                        "Slice allows skipping of '{}'",
                         source.to_include_path_name()
                     );
                 }
-
-                // @TODO: There are cases where we can ignore reading. E.g. no row index + empty with columns + no predicate
-                let mut exec = ParquetExec::new(
-                    part_source.clone(),
-                    self.file_info.clone(),
-                    None,
-                    file_predicate.clone(),
-                    options.clone(),
-                    cloud_options.clone(),
-                    self.file_options.clone(),
-                    None,
-                );
-
-                let mut schema = exec.schema()?;
-                let mut extra_columns = Vec::new();
-
-                if let Some(file_with_columns) = &file_with_columns {
-                    if allow_missing_columns {
-                        schema = schema.try_project(
-                            file_with_columns
-                                .iter()
-                                .filter(|c| schema.contains(c.as_str())),
-                        )?;
-                    } else {
-                        schema = schema.try_project(file_with_columns.iter())?;
-                    }
-                }
-
-                if allow_missing_columns {
-                    missing_columns.clear();
-                    extra_columns.clear();
-
-                    current_schema.as_ref().field_compare(
-                        &schema,
-                        &mut missing_columns,
-                        &mut extra_columns,
-                    );
-
-                    if !extra_columns.is_empty() {
-                        // @TODO: Better error
-                        polars_bail!(InvalidOperation: "More schema in file after first");
-                    }
-                }
-
-                let mut file_options = self.file_options.clone();
-                // @TODO: We should really supply a bitmask to the readers instead of supplying
-                // the column names. It just leads to way less confusion about what the reader is
-                // supposed to do.
-                file_options.with_columns = if allow_missing_columns {
-                    file_with_columns
-                        .as_ref()
-                        .map(|_| schema.iter_names().cloned().collect())
-                } else {
-                    file_with_columns.clone()
-                };
-                file_options.slice = slice.map(|(offset, length)| (offset as i64, length));
-                file_options.row_index = row_index.clone();
-
-                let mut file_info = self.file_info.clone();
-                // @TODO: Directly read parquet arrow schema
-                file_info.reader_schema = Some(arrow::Either::Left(Arc::new(
-                    schema.to_arrow(CompatLevel::newest()),
-                )));
-                file_info.schema = Arc::new(schema);
-
-                let mut exec = ParquetExec::new(
-                    part_source,
-                    file_info,
-                    None,
-                    file_predicate.clone(),
-                    options.clone(),
-                    cloud_options.clone(),
-                    file_options,
-                    None,
-                );
-                let mut num_unfiltered_rows = LazyTryCell::new(|| exec.num_unfiltered_rows());
-
-                let mut do_skip_file = false;
-                if let Some(slice) = &slice {
-                    let allow_slice_skip = match first_slice_file {
-                        None => slice.0 as IdxSize >= num_unfiltered_rows.get()?,
-                        Some(f) => i < f,
-                    };
-
-                    if allow_slice_skip && verbose {
-                        eprintln!(
-                            "Slice allows skipping of '{}'",
-                            source.to_include_path_name()
-                        );
-                    }
-                    do_skip_file |= allow_slice_skip;
-                }
-
-                let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
-                let stats_evaluator = stats_evaluator.filter(|_| options.use_statistics);
-
-                if let Some(stats_evaluator) = stats_evaluator {
-                    let allow_predicate_skip = !stats_evaluator
-                        .should_read(&BatchStats::default())
-                        .unwrap_or(true);
-                    if allow_predicate_skip && verbose {
-                        eprintln!(
-                            "File statistics allows skipping of '{}'",
-                            source.to_include_path_name()
-                        );
-                    }
-                    do_skip_file |= allow_predicate_skip;
-                }
-
-                if do_skip_file {
-                    // Update the row_index to the proper offset.
-                    if let Some(row_index) = row_index.as_mut() {
-                        row_index.offset += num_unfiltered_rows.get()?;
-                    }
-                    // Update the slice offset.
-                    if let Some(slice) = slice.as_mut() {
-                        if first_slice_file.is_none_or(|f| i >= f) {
-                            slice.0 = slice.0.saturating_sub(num_unfiltered_rows.get()? as usize);
-                        }
-                    }
-
-                    continue;
-                }
-
-                // Read the DataFrame and needed metadata.
-                // @TODO: these should be merged into one call
-                let num_unfiltered_rows = num_unfiltered_rows.get()?;
-                let mut df = exec.read()?;
-
-                // Update the row_index to the proper offset.
-                if let Some(row_index) = row_index.as_mut() {
-                    row_index.offset += num_unfiltered_rows;
-                }
-                // Update the slice.
-                if let Some(slice) = slice.as_mut() {
-                    if first_slice_file.is_none_or(|f| i >= f) {
-                        slice.1 = slice
-                            .1
-                            .saturating_sub(num_unfiltered_rows as usize - slice.0);
-                        slice.0 = slice.0.saturating_sub(num_unfiltered_rows as usize);
-                    }
-                }
-
-                // Add all the missing columns.
-                if allow_missing_columns && !missing_columns.is_empty() {
-                    for (_, (name, field)) in &missing_columns {
-                        df.with_column(Column::full_null((*name).clone(), df.height(), field))?;
-                    }
-                }
-                // Materialize the hive columns and add them back in.
-                if let Some(hive_part) = hive_part {
-                    for hive_col in hive_part.get_statistics().column_stats() {
-                        df.with_column(
-                            ScalarColumn::from_single_value_series(
-                                hive_col
-                                    .to_min()
-                                    .unwrap()
-                                    .clone()
-                                    .with_name(hive_col.field_name().clone()),
-                                df.height(),
-                            )
-                            .into_column(),
-                        )?;
-                    }
-                }
-                // Add the `include_file_paths` column
-                if let Some(include_file_paths) = &include_file_paths {
-                    df.with_column(ScalarColumn::new(
-                        include_file_paths.clone(),
-                        PlSmallStr::from_str(source.to_include_path_name()).into(),
-                        df.height(),
-                    ))?;
-                }
-
-                // Project to ensure that all DataFrames have the proper order.
-                df = df.select(output_schema.iter_names().cloned())?;
-                dfs.push(df);
+                do_skip_file |= allow_slice_skip;
             }
 
-            let out = if cfg!(debug_assertions) {
-                accumulate_dataframes_vertical(dfs)?
+            let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
+            let stats_evaluator = stats_evaluator.filter(|_| use_statistics);
+
+            if let Some(stats_evaluator) = stats_evaluator {
+                let allow_predicate_skip = !stats_evaluator
+                    .should_read(&BatchStats::default())
+                    .unwrap_or(true);
+                if allow_predicate_skip && verbose {
+                    eprintln!(
+                        "File statistics allows skipping of '{}'",
+                        source.to_include_path_name()
+                    );
+                }
+                do_skip_file |= allow_predicate_skip;
+            }
+
+            if do_skip_file {
+                // Update the row_index to the proper offset.
+                if let Some(row_index) = row_index.as_mut() {
+                    row_index.offset += exec_source.num_unfiltered_rows()?;
+                }
+                // Update the slice offset.
+                if let Some(slice) = slice.as_mut() {
+                    if first_slice_file.is_none_or(|f| i >= f) {
+                        slice.0 = slice
+                            .0
+                            .saturating_sub(exec_source.num_unfiltered_rows()? as usize);
+                    }
+                }
+
+                continue;
+            }
+
+            let with_columns = if allow_missing_columns {
+                file_with_columns
+                    .as_ref()
+                    .map(|_| schema.iter_names().cloned().collect())
             } else {
-                accumulate_dataframes_vertical_unchecked(dfs)
+                file_with_columns.clone()
             };
 
-            Ok(out)
+            // Read the DataFrame and needed metadata.
+            let num_unfiltered_rows = exec_source.num_unfiltered_rows()?;
+            let mut df = exec_source.scan_exec.read(
+                with_columns,
+                slice,
+                file_predicate,
+                row_index.clone(),
+                exec_source.metadata.take(),
+                schema,
+            )?;
+
+            // Update the row_index to the proper offset.
+            if let Some(row_index) = row_index.as_mut() {
+                row_index.offset += num_unfiltered_rows;
+            }
+            // Update the slice.
+            if let Some(slice) = slice.as_mut() {
+                if first_slice_file.is_none_or(|f| i >= f) {
+                    slice.1 = slice
+                        .1
+                        .saturating_sub(num_unfiltered_rows as usize - slice.0);
+                    slice.0 = slice.0.saturating_sub(num_unfiltered_rows as usize);
+                }
+            }
+
+            // Add all the missing columns.
+            if allow_missing_columns && !missing_columns.is_empty() {
+                for (_, (name, field)) in &missing_columns {
+                    df.with_column(Column::full_null((*name).clone(), df.height(), field))?;
+                }
+            }
+            // Materialize the hive columns and add them back in.
+            if let Some(hive_part) = hive_part {
+                for hive_col in hive_part.get_statistics().column_stats() {
+                    df.with_column(
+                        ScalarColumn::from_single_value_series(
+                            hive_col
+                                .to_min()
+                                .unwrap()
+                                .clone()
+                                .with_name(hive_col.field_name().clone()),
+                            df.height(),
+                        )
+                        .into_column(),
+                    )?;
+                }
+            }
+            // Add the `include_file_paths` column
+            if let Some(include_file_paths) = &include_file_paths {
+                df.with_column(ScalarColumn::new(
+                    include_file_paths.clone(),
+                    PlSmallStr::from_str(source.to_include_path_name()).into(),
+                    df.height(),
+                ))?;
+            }
+
+            // Project to ensure that all DataFrames have the proper order.
+            df = df.select(output_schema.iter_names().cloned())?;
+            dfs.push(df);
         }
 
-        #[cfg(not(feature = "parquet"))]
-        {
-            todo!()
-        }
+        let out = if cfg!(debug_assertions) {
+            accumulate_dataframes_vertical(dfs)?
+        } else {
+            accumulate_dataframes_vertical_unchecked(dfs)
+        };
+
+        Ok(out)
     }
 }
 
-impl Executor for HiveExec {
+impl Executor for MultiScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
             let mut ids = vec![self.sources.id()];

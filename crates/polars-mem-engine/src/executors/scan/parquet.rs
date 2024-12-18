@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use hive::HivePartitions;
 use polars_core::config;
 #[cfg(feature = "cloud")]
@@ -7,7 +9,7 @@ use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::utils::slice::split_slice_at_file;
-use polars_io::RowIndex;
+use polars_io::{pl_async, RowIndex};
 
 use super::*;
 
@@ -515,31 +517,95 @@ impl ParquetExec {
         }
         Ok((num_unfiltered_rows, out))
     }
+
+    fn metadata_sync(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>> {
+        Ok(Box::new(match &self.metadata {
+            None => {
+                let memslice = self.sources.get(0).unwrap().to_memslice()?;
+                ParquetReader::new(std::io::Cursor::new(memslice))
+                    .get_metadata()?
+                    .clone()
+            },
+            Some(md) => md.clone(),
+        }) as _)
+    }
+
+    async fn metadata_async(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>> {
+        let ScanSourceRef::Path(path) = self.sources.get(0).unwrap() else {
+            unreachable!();
+        };
+
+        Ok(Box::new(match &self.metadata {
+            None => {
+                let mut reader = ParquetAsyncReader::from_uri(
+                    path.to_str().unwrap(),
+                    self.cloud_options.as_ref(),
+                    None,
+                )
+                .await?;
+
+                reader.get_metadata().await?.clone()
+            },
+            Some(md) => md.clone(),
+        }) as _)
+    }
 }
 
-impl ScanExec for ParquetExec {
-    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
-        assert_eq!(self.sources.len(), 1);
-
-        let memslice = self.sources.get(0).unwrap().to_memslice()?;
-        ParquetReader::new(std::io::Cursor::new(memslice))
-            .num_rows()
-            .map(|v| v as IdxSize)
+impl IOFileMetadata for Arc<FileMetadata> {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
     }
 
-    fn read(&mut self) -> PolarsResult<DataFrame> {
-        self.read_with_num_unfiltered_rows().map(|(_, df)| df)
+    fn num_rows(&self) -> PolarsResult<IdxSize> {
+        Ok(self.num_rows as IdxSize)
     }
 
-    fn schema(&mut self) -> PolarsResult<Schema> {
-        assert_eq!(self.sources.len(), 1);
-
-        let memslice = self.sources.get(0).unwrap().to_memslice()?;
-        let arrow_schema = ParquetReader::new(std::io::Cursor::new(memslice)).schema()?;
-
+    fn schema(&self) -> PolarsResult<Schema> {
+        let arrow_schema = polars_io::parquet::read::infer_schema(self)?;
         Ok(Schema::from_iter(arrow_schema.iter().map(
             |(name, field)| (name.clone(), DataType::from_arrow_field(field)),
         )))
+    }
+}
+
+impl ScanExec for ParquetExec {
+    fn read(
+        &mut self,
+        with_columns: Option<Arc<[PlSmallStr]>>,
+        slice: Option<(usize, usize)>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        row_index: Option<RowIndex>,
+        metadata: Option<Box<dyn IOFileMetadata>>,
+        schema: Schema,
+    ) -> PolarsResult<DataFrame> {
+        self.file_options.with_columns = with_columns;
+        self.file_options.slice = slice.map(|(o, l)| (o as i64, l));
+        self.predicate = predicate;
+        self.file_options.row_index = row_index;
+
+        self.file_info.reader_schema = Some(arrow::Either::Left(Arc::new(
+            schema.to_arrow(CompatLevel::newest()),
+        )));
+        self.file_info.schema = Arc::new(schema);
+        if let Some(metadata) = metadata {
+            self.metadata = Some(
+                metadata
+                    .as_any()
+                    .downcast_ref::<Arc<FileMetadata>>()
+                    .unwrap()
+                    .clone(),
+            );
+        }
+
+        self.read_with_num_unfiltered_rows().map(|(_, df)| df)
+    }
+
+    fn metadata(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>> {
+        if self.sources.is_cloud_url() {
+            pl_async::get_runtime().block_on_potential_spawn(self.metadata_async())
+        } else {
+            self.metadata_sync()
+        }
     }
 }
 
@@ -556,6 +622,9 @@ impl Executor for ParquetExec {
             Cow::Borrowed("")
         };
 
-        state.record(|| self.read(), profile_name)
+        state.record(
+            || self.read_with_num_unfiltered_rows().map(|(_, df)| df),
+            profile_name,
+        )
     }
 }
