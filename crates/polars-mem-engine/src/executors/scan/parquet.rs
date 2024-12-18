@@ -1,5 +1,3 @@
-use std::path::PathBuf;
-
 use hive::HivePartitions;
 use polars_core::config;
 #[cfg(feature = "cloud")]

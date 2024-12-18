@@ -21,6 +21,25 @@ pub trait IOFileMetadata: Send + Sync {
     fn schema(&self) -> PolarsResult<Schema>;
 }
 
+pub(super) struct BasicFileMetadata {
+    pub schema: Schema,
+    pub num_rows: IdxSize,
+}
+
+impl IOFileMetadata for BasicFileMetadata {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
+    fn num_rows(&self) -> PolarsResult<IdxSize> {
+        Ok(self.num_rows)
+    }
+
+    fn schema(&self) -> PolarsResult<Schema> {
+        Ok(self.schema.clone())
+    }
+}
+
 pub trait ScanExec {
     fn read(
         &mut self,
