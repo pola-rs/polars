@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from polars._utils.unstable import unstable
 from polars.dataframe import DataFrame
 from polars.datatypes.constants import N_INFER_DEFAULT
+from unicodedata import normalize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -29,11 +30,11 @@ def _simple_json_normalize(
                 data=data, separator=separator, max_level=max_level
             )
         elif isinstance(data, list):
-            normalised_json_list = [
+            normalized_json_list = [
                 _simple_json_normalize(row, separator=separator, max_level=max_level)
                 for row in data
             ]
-            return normalised_json_list
+            return normalized_json_list
         return normalized_json_object
     else:
         return data
@@ -58,7 +59,7 @@ def _normalize_json_ordered(
 
     Returns
     -------
-    dict or list of dicts, matching `normalised_json_object`
+    dict or list of dicts, matching `normalized_json_object`
     """
     top_dict_ = {k: v for k, v in data.items() if not isinstance(v, dict)}
     nested_dict_ = normalize_json(
