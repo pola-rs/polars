@@ -902,6 +902,51 @@ impl DataType {
             },
         }
     }
+
+    pub fn byte_size(&self) -> Option<usize> {
+        match self {
+            DataType::Boolean => Some(1),
+            DataType::UInt8 => Some(1),
+            DataType::UInt16 => Some(2),
+            DataType::UInt32 => Some(4),
+            DataType::UInt64 => Some(8),
+            DataType::Int8 => Some(1),
+            DataType::Int16 => Some(2),
+            DataType::Int32 => Some(4),
+            DataType::Int64 => Some(8),
+            DataType::Int128 => Some(16),
+            DataType::Float32 => Some(4),
+            DataType::Float64 => Some(8),
+            DataType::Decimal(_, _) => Some(16),
+            DataType::String => None,
+            DataType::Binary => None,
+            DataType::BinaryOffset => None,
+            DataType::Date => todo!(),
+            DataType::Datetime(_, _) => Some(8),
+            DataType::Duration(_) => Some(8),
+            DataType::Time => Some(8),
+            DataType::Array(data_type, size) => {
+                data_type.byte_size().map(|v| v * size)
+            }
+            DataType::List(_) => None,
+            DataType::Object(_, arc) => None,
+            DataType::Null => Some(0),
+            DataType::Categorical(arc, categorical_ordering) => None,
+            DataType::Enum(arc, categorical_ordering) => None,
+            DataType::Struct(vec) => {
+                let mut total_size = 0usize;
+                for field in vec.iter() {
+                    if let Some(byte_size) = field.dtype.byte_size() {
+                        total_size += byte_size;
+                    } else {
+                        return None;
+                    }
+                }
+                return Some(total_size)
+            },
+            DataType::Unknown(unknown_kind) => None,
+        }
+    }
 }
 
 impl Display for DataType {

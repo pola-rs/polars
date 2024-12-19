@@ -209,6 +209,64 @@ def test_reinterpret(
 
         assert_frame_equal(result, expected_df)
 
+@pytest.mark.parametrize(
+    ("dtype", "inner_type_size", "struct_type"),
+    [
+        (pl.Array(pl.Int8, 2), 1, "b"),
+        # (pl.UInt8, 1, "B"),
+        # (pl.Int16, 2, "h"),
+        # (pl.UInt16, 2, "H"),
+        # (pl.Int32, 4, "i"),
+        # (pl.UInt32, 4, "I"),
+        # (pl.Int64, 8, "q"),
+        # (pl.UInt64, 8, "Q"),
+        # (pl.Float32, 4, "f"),
+        # (pl.Float64, 8, "d"),
+    ],
+)
+def test_reinterpret_list(
+    dtype: pl.Array,
+    inner_type_size: int,
+    struct_type: str,
+) -> None:
+    # Make test reproducible
+    random.seed(42)
+
+    type_size = inner_type_size
+    shape = dtype.shape
+    if isinstance(shape, int):
+        shape = (shape,)
+    for dim_size in dtype.shape:
+        type_size *= dim_size
+
+    print(shape)
+    print(type_size)
+
+    byte_arr = [random.randbytes(type_size) for _ in range(3)]
+    df = pl.DataFrame({"x": byte_arr})
+
+    for endianness in ["little", "big"]:
+        result = df.select(
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
+
+        # So that mypy doesn't complain
+        struct_endianness = "<" if endianness == "little" else ">"
+        expected = []
+        for elem_bytes in byte_arr:
+            print(elem_bytes)
+            vals = [
+                struct.unpack_from(f"{struct_endianness}{struct_type}", elem_bytes[idx:idx + inner_type_size])[0]
+                for idx in range(0, type_size, inner_type_size)
+            ]
+            print(vals)
+            expected.append(vals)
+        print(expected)
+        expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
+
+
+        assert_frame_equal(result, expected_df)
+
 
 @pytest.mark.parametrize(
     ("dtype", "type_size"),

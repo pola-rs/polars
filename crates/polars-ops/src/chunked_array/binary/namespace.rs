@@ -1,7 +1,13 @@
 #[cfg(feature = "binary_encoding")]
 use std::borrow::Cow;
 
+#[cfg(feature = "binary_encoding")]
+use arrow::array::Array;
+use arrow::array::ListArray;
+use arrow::offset::{Offsets, OffsetsBuffer};
 use arrow::with_match_primitive_type;
+#[cfg(feature = "binary_encoding")]
+use arrow::datatypes::PhysicalType;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
@@ -9,6 +15,8 @@ use base64::Engine as _;
 use memchr::memmem::find;
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
+
+use crate::prelude::AsList;
 
 use super::cast_binary_to_numerical::cast_binview_to_primitive_dyn;
 use super::*;
@@ -133,25 +141,65 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     #[cfg(feature = "binary_encoding")]
     #[allow(clippy::wrong_self_convention)]
     fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
-        let ca = self.as_binary();
-        let arrow_type = dtype.to_arrow(CompatLevel::newest());
+        unsafe {
+            Ok(
+                Series::from_chunks_and_dtype_unchecked(
+                    self.as_binary().name().clone(),
+                    self._from_buffer_inner(&dtype, is_little_endian)?,
+                    dtype
+                )
+            )
+        }
+    }
 
-        match arrow_type.to_physical_type() {
-            arrow::datatypes::PhysicalType::Primitive(ty) => {
+    fn _from_buffer_inner(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Vec<Box<dyn Array>>> {
+        let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
+        let ca = self.as_binary();
+
+        match arrow_data_type.to_physical_type() {
+            PhysicalType::Primitive(ty) => {
                 with_match_primitive_type!(ty, |$T| {
                     unsafe {
-                        Ok(Series::from_chunks_and_dtype_unchecked(
-                            ca.name().clone(),
-                            ca.chunks().iter().map(|chunk| {
-                                cast_binview_to_primitive_dyn::<$T>(
-                                    &**chunk,
-                                    &arrow_type,
-                                    is_little_endian,
-                                )
-                            }).collect::<PolarsResult<Vec<_>>>()?,
-                            dtype
-                        ))
+                        ca.chunks().iter().map(|chunk| {
+                            cast_binview_to_primitive_dyn::<$T>(
+                                &**chunk,
+                                &arrow_data_type,
+                                is_little_endian,
+                            )
+                        }).collect()
                     }
+                })
+            },
+            PhysicalType::FixedSizeList => {
+                // unwrap is safe since all lists have inner type
+                // let inner_dtype = dtype.inner_dtype().unwrap();
+
+                let (inner_dtype, offsets): (_, OffsetsBuffer<i64>) = if let DataType::Array(inner_dtype, size) = dtype {
+                    // TODO: Nicer way of doing this when I'm online
+                    let mut offsets = Vec::with_capacity(*size);
+                    let mut idx = 0;
+                    let type_size = inner_dtype.byte_size().unwrap();
+                    while idx < *size {
+                        offsets.push((idx * type_size) as i64);
+                        idx += 1
+                    }
+                    (
+                        inner_dtype,
+                        offsets.try_into().unwrap()
+                    )
+                } else {
+                    todo!("Some reasonable error here.")
+                };
+                // ChunkedArray::as_list()
+                self._from_buffer_inner(inner_dtype, is_little_endian).map(|arr_vec| {
+                    arr_vec.into_iter().map(|arr| {
+                        LargeListArray::new(
+                            inner_dtype.to_arrow(CompatLevel::newest()),
+                            offsets.clone(),
+                            arr,
+                            None,
+                        ).boxed()
+                    }).collect()
                 })
             },
             _ => Err(
