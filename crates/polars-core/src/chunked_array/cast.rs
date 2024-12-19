@@ -4,7 +4,7 @@ use polars_compute::cast::CastOptionsImpl;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 
-use crate::chunked_array::metadata::MetadataProperties;
+use super::flags::StatisticsFlags;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
@@ -380,15 +380,14 @@ impl BinaryChunked {
     pub unsafe fn to_string_unchecked(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| arr.to_utf8view_unchecked().boxed())
+            .map(|arr| unsafe { arr.to_utf8view_unchecked() }.boxed())
             .collect();
         let field = Arc::new(Field::new(self.name().clone(), DataType::String));
 
         let mut ca = StringChunked::new_with_compute_len(field, chunks);
 
-        use MetadataProperties as P;
-        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
-
+        use StatisticsFlags as F;
+        ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
         ca
     }
 }
@@ -403,9 +402,8 @@ impl StringChunked {
 
         let mut ca = BinaryChunked::new_with_compute_len(field, chunks);
 
-        use MetadataProperties as P;
-        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
-
+        use StatisticsFlags as F;
+        ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
         ca
     }
 }

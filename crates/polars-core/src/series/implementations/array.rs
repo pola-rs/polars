@@ -3,7 +3,7 @@ use std::borrow::Cow;
 
 use self::compare_inner::{TotalEqInner, TotalOrdInner};
 use self::sort::arg_sort_row_fmt;
-use super::{private, MetadataFlags};
+use super::{private, StatisticsFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::AsSinglePtr;
@@ -23,11 +23,11 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
         self.0.ref_field().dtype()
     }
 
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
 

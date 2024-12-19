@@ -319,7 +319,9 @@ impl PhysicalExpr for ApplyExpr {
     }
 
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        dbg!(&self.as_expression());
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate(df, state);
+        dbg!(&df);
         let mut inputs = if self.allow_threading && self.inputs.len() > 1 {
             POOL.install(|| {
                 self.inputs
@@ -336,12 +338,12 @@ impl PhysicalExpr for ApplyExpr {
                 .collect::<PolarsResult<Vec<_>>>()
         }?;
 
-        if self.allow_rename {
+        dbg!(if self.allow_rename {
             self.eval_and_flatten(&mut inputs)
         } else {
             let in_name = inputs[0].name().clone();
             Ok(self.eval_and_flatten(&mut inputs)?.with_name(in_name))
-        }
+        })
     }
 
     fn evaluate_inline_impl(&self, depth_limit: u8) -> Option<Column> {

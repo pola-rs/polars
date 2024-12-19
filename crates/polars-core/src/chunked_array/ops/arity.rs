@@ -5,7 +5,7 @@ use arrow::compute::utils::combine_validities_and;
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::chunked_array::metadata::MetadataProperties;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::{ArrayCollectIterExt, ArrayFromIter};
 use crate::prelude::{ChunkedArray, CompatLevel, PolarsDataType, Series, StringChunked};
 use crate::utils::{align_chunks_binary, align_chunks_binary_owned, align_chunks_ternary};
@@ -540,12 +540,11 @@ where
 
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     ca
 }
@@ -596,11 +595,11 @@ where
         .collect::<Result<Vec<_>, E>>()?;
     let mut ca = lhs.copy_with_chunks(chunks);
 
-    use MetadataProperties as P;
-    let mut properties = P::empty();
-    properties.set(P::SORTED, keep_sorted);
-    properties.set(P::FAST_EXPLODE_LIST, keep_fast_explode);
-    ca.copy_metadata(&lhs, properties);
+    let mut retain_flags = StatisticsFlags::empty();
+    use StatisticsFlags as F;
+    retain_flags.set(F::IS_SORTED_ANY, keep_sorted);
+    retain_flags.set(F::CAN_FAST_EXPLODE_LIST, keep_fast_explode);
+    ca.retain_flags_from(lhs.as_ref(), retain_flags);
 
     Ok(ca)
 }

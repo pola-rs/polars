@@ -4,7 +4,7 @@ pub mod series;
 
 #[cfg(test)]
 mod test {
-    use crate::chunked_array::metadata::MetadataFlags;
+    use crate::chunked_array::flags::StatisticsFlags;
     use crate::prelude::*;
     use crate::series::IsSorted;
 
@@ -56,7 +56,7 @@ mod test {
             let json = serde_json::to_string(&column).unwrap();
             let out = serde_json::from_reader::<_, Column>(json.as_bytes()).unwrap();
             let f = out.get_flags();
-            assert_ne!(f, MetadataFlags::empty());
+            assert_ne!(f, StatisticsFlags::empty());
             assert_eq!(column.get_flags(), out.get_flags());
         }
     }

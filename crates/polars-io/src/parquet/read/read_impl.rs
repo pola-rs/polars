@@ -10,18 +10,13 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{accumulate_dataframes_vertical, split_df};
 use polars_core::{config, POOL};
-use polars_parquet::parquet::error::ParquetResult;
-use polars_parquet::parquet::statistics::Statistics;
-use polars_parquet::read::{
-    self, ColumnChunkMetadata, FileMetadata, Filter, PhysicalType, RowGroupMetadata,
-};
+use polars_parquet::read::{self, ColumnChunkMetadata, FileMetadata, Filter, RowGroupMetadata};
 use rayon::prelude::*;
 
 #[cfg(feature = "cloud")]
 use super::async_impl::FetchRowGroupsFromObjectStore;
 use super::mmap::{mmap_columns, ColumnStore};
 use super::predicates::read_this_row_group;
-use super::to_metadata::ToMetadata;
 use super::utils::materialize_empty_df;
 use super::{mmap, ParallelStrategy};
 use crate::hive::{self, materialize_hive_partitions};
@@ -122,8 +117,6 @@ fn column_idx_to_series(
     file_schema: &ArrowSchema,
     store: &mmap::ColumnStore,
 ) -> PolarsResult<Series> {
-    let did_filter = filter.is_some();
-
     let field = file_schema.get_at_index(column_i).unwrap().1;
 
     #[cfg(debug_assertions)]
@@ -131,69 +124,8 @@ fn column_idx_to_series(
         assert_dtypes(field.dtype())
     }
     let columns = mmap_columns(store, field_md);
-    let stats = columns
-        .iter()
-        .map(|(col_md, _)| col_md.statistics().transpose())
-        .collect::<ParquetResult<Vec<Option<Statistics>>>>();
     let array = mmap::to_deserializer(columns, field.clone(), filter)?;
-    let mut series = Series::try_from((field, array))?;
-
-    // We cannot really handle nested metadata at the moment. Just skip it.
-    use ArrowDataType as AD;
-    match field.dtype() {
-        AD::List(_) | AD::LargeList(_) | AD::Struct(_) | AD::FixedSizeList(_, _) => {
-            return Ok(series)
-        },
-        _ => {},
-    }
-
-    // We cannot trust the statistics if we filtered the parquet already.
-    if did_filter {
-        return Ok(series);
-    }
-
-    // See if we can find some statistics for this series. If we cannot find anything just return
-    // the series as is.
-    let Ok(Some(stats)) = stats.map(|mut s| s.pop().flatten()) else {
-        return Ok(series);
-    };
-
-    let series_trait = series.as_ref();
-
-    macro_rules! match_dtypes_into_metadata {
-        ($(($dtype:pat, $phystype:pat) => ($stats:ident, $pldtype:ty),)+) => {
-            match (series_trait.dtype(), stats.physical_type()) {
-                $(
-                ($dtype, $phystype) => {
-                    series.try_set_metadata(
-                        ToMetadata::<$pldtype>::to_metadata(stats.$stats())
-                    );
-                })+
-                _ => {},
-            }
-        };
-    }
-
-    // Match the data types used by the Series and by the Statistics. If we find a match, set some
-    // Metadata for the underlying ChunkedArray.
-    use {DataType as D, PhysicalType as P};
-    match_dtypes_into_metadata! {
-        (D::Boolean, P::Boolean  ) => (expect_as_boolean, BooleanType),
-        (D::UInt8,   P::Int32    ) => (expect_as_int32,   UInt8Type  ),
-        (D::UInt16,  P::Int32    ) => (expect_as_int32,   UInt16Type ),
-        (D::UInt32,  P::Int32    ) => (expect_as_int32,   UInt32Type ),
-        (D::UInt64,  P::Int64    ) => (expect_as_int64,   UInt64Type ),
-        (D::Int8,    P::Int32    ) => (expect_as_int32,   Int8Type   ),
-        (D::Int16,   P::Int32    ) => (expect_as_int32,   Int16Type  ),
-        (D::Int32,   P::Int32    ) => (expect_as_int32,   Int32Type  ),
-        (D::Int64,   P::Int64    ) => (expect_as_int64,   Int64Type  ),
-        (D::Float32, P::Float    ) => (expect_as_float,   Float32Type),
-        (D::Float64, P::Double   ) => (expect_as_double,  Float64Type),
-        (D::String,  P::ByteArray) => (expect_as_binary,  StringType ),
-        (D::Binary,  P::ByteArray) => (expect_as_binary,  BinaryType ),
-    }
-
-    Ok(series)
+    Series::try_from((field, array))
 }
 
 #[allow(clippy::too_many_arguments)]
