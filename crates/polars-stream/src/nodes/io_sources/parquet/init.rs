@@ -12,11 +12,11 @@ use polars_io::prelude::_internal::PrefilterMaskSetting;
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetSourceNode};
-use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
+use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
 
 impl ParquetSourceNode {
     /// # Panics
@@ -70,7 +70,8 @@ impl ParquetSourceNode {
 
         let use_statistics = self.options.use_statistics;
 
-        let (mut raw_morsel_sender, raw_morsel_receivers) = distributor_channel(self.config.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+        let (mut raw_morsel_sender, raw_morsel_receivers) =
+            distributor_channel(self.config.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
         if let Some((_, 0)) = self.file_options.slice {
             return (
                 raw_morsel_receivers,

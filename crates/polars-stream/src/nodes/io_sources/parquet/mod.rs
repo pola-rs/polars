@@ -253,7 +253,7 @@ impl ComputeNode for ParquetSourceNode {
                         if morsel_tx.send(morsel).await.is_err() {
                             break;
                         }
-                        
+
                         wait_group.wait().await;
                         if source_token.stop_requested() {
                             break;
