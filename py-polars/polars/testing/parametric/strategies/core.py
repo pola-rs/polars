@@ -9,8 +9,9 @@ from hypothesis.errors import InvalidArgument
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
-from polars.datatypes import DataType, DataTypeClass, Null
+from polars.datatypes import DataType, DataTypeClass, Null, List, Array, Struct, Boolean
 from polars.series import Series
+from polars import select, when
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
 from polars.testing.parametric.strategies.data import data
@@ -42,6 +43,7 @@ def series(
     strategy: SearchStrategy[Any] | None = None,
     allow_null: bool = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     unique: bool = False,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
@@ -74,6 +76,8 @@ def series(
         Allow nulls as possible values and allow the `Null` data type by default.
     allow_chunks : bool
         Allow the Series to contain multiple chunks.
+    allow_masked_out : bool
+        Allow the nulls to contain masked out elements.
     unique : bool, optional
         indicate whether Series values should all be distinct.
     allowed_dtypes : {list,set}, optional
@@ -200,6 +204,17 @@ def series(
     if isinstance(name, st.SearchStrategy):
         name = draw(name)
 
+    do_mask_out = (
+        allow_masked_out
+        and allow_null
+        and (
+            isinstance(dtype, List)
+            or isinstance(dtype, Array)
+            or isinstance(dtype, Struct)
+        )
+        and draw(st.booleans())
+    )
+
     if size == 0:
         values = []
     else:
@@ -207,7 +222,7 @@ def series(
         if strategy is None:
             strategy = data(
                 dtype,  # type: ignore[arg-type]
-                allow_null=allow_null,
+                allow_null=allow_null and not do_mask_out,
                 **kwargs,
             )
 
@@ -221,6 +236,20 @@ def series(
         )
 
     s = Series(name=name, values=values, dtype=dtype)
+
+    # Apply masking out of values
+    if do_mask_out:
+        values = draw(
+            st.lists(
+                st.booleans(),
+                min_size=size,
+                max_size=size,
+                unique_by=(flexhash if unique else None),
+            )
+        )
+
+        mask = Series(name=None, values=values, dtype=Boolean)
+        s = select(when(mask).then(s).alias(s.name)).to_series()
 
     # Apply chunking
     if allow_chunks and size > 1 and draw(st.booleans()):
