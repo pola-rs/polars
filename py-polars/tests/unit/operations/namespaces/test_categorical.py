@@ -263,6 +263,12 @@ def test_starts_ends_with() -> None:
         s.cat.starts_with("nu"), pl.Series("a", [False, True, True, False, None])
     )
 
+    with pytest.raises(TypeError, match="'prefix' must be a string; found"):
+        s.cat.starts_with(None)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="'suffix' must be a string; found"):
+        s.cat.ends_with(None)  # type: ignore[arg-type]
+
     df = pl.DataFrame(
         {
             "a": pl.Series(
@@ -286,7 +292,7 @@ def test_starts_ends_with() -> None:
     )
 
     with pytest.raises(TypeError, match="'prefix' must be a string; found"):
-        df.select(pl.col("a").cat.starts_with(None))
+        df.select(pl.col("a").cat.starts_with(None))  # type: ignore[arg-type]
 
     with pytest.raises(TypeError, match="'suffix' must be a string; found"):
-        df.select(pl.col("a").cat.ends_with(None))
+        df.select(pl.col("a").cat.ends_with(None))  # type: ignore[arg-type]

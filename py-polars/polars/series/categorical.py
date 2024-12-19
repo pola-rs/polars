@@ -186,7 +186,7 @@ class CatNameSpace:
         ]
         """
 
-    def starts_with(self, prefix: str | None) -> Series:
+    def starts_with(self, prefix: str) -> Series:
         """
         Check if string representations of values start with a substring.
 
@@ -213,7 +213,7 @@ class CatNameSpace:
         ]
         """
 
-    def ends_with(self, suffix: str | None) -> Series:
+    def ends_with(self, suffix: str) -> Series:
         """
         Check if string representations of values end with a substring.
 

@@ -185,7 +185,7 @@ class ExprCatNameSpace:
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_starts_with(prefix))
 
-    def ends_with(self, suffix: str | None) -> Expr:
+    def ends_with(self, suffix: str) -> Expr:
         """
         Check if string representations of values end with a substring.
 
