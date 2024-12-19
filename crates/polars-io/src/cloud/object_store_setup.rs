@@ -32,7 +32,7 @@ fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn Obje
 /// Get the key of a url for object store registration.
 fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     struct C {
         max_retries: usize,
         #[cfg(feature = "file_cache")]
@@ -43,7 +43,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
     }
 
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
     struct S {
         url_base: PlSmallStr,
         cloud_options: Option<C>,
