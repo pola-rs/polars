@@ -171,7 +171,7 @@ impl Inner {
             file.lock_exclusive().unwrap();
             if let Err(e) = file.allocate(remote_metadata.size) {
                 let msg = format!(
-                    "failed to allocate {} bytes to download uri = {}: {:?}",
+                    "failed to reserve {} bytes on disk to download uri = {}: {:?}",
                     remote_metadata.size,
                     self.uri.as_ref(),
                     e
