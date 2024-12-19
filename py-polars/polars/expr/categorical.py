@@ -180,6 +180,9 @@ class ExprCatNameSpace:
         │ apple  │
         └────────┘
         """
+        if not isinstance(prefix, str):
+            msg = f"'prefix' must be a string; found {type(prefix)!r}"
+            raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_starts_with(prefix))
 
     def ends_with(self, suffix: str | None) -> Expr:
@@ -230,4 +233,7 @@ class ExprCatNameSpace:
         │ mango  │
         └────────┘
         """
+        if not isinstance(suffix, str):
+            msg = f"'suffix' must be a string; found {type(suffix)!r}"
+            raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_ends_with(suffix))

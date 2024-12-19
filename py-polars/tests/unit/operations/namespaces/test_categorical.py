@@ -284,3 +284,9 @@ def test_starts_ends_with() -> None:
         ).to_dict(as_series=False)
         == expected
     )
+
+    with pytest.raises(TypeError, match="'prefix' must be a string; found"):
+        df.select(pl.col("a").cat.starts_with(None))
+
+    with pytest.raises(TypeError, match="'suffix' must be a string; found"):
+        df.select(pl.col("a").cat.ends_with(None))
