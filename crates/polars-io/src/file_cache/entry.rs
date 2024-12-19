@@ -151,14 +151,6 @@ impl Inner {
                 .truncate(true)
                 .open(data_file_path)
                 .map_err(PolarsError::from)?;
-            file.lock_exclusive().unwrap();
-            if file.allocate(remote_metadata.size).is_err() {
-                polars_bail!(
-                    ComputeError: "failed to allocate {} bytes to download uri = {}",
-                    remote_metadata.size,
-                    self.uri.as_ref()
-                );
-            }
         }
         self.file_fetcher.fetch(data_file_path)?;
 
