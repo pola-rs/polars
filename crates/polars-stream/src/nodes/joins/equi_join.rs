@@ -202,7 +202,7 @@ impl BuildState {
     }
 
     fn finalize(&mut self, params: &EquiJoinParams, table: &dyn ChunkedIdxTable) -> ProbeState {
-        // Tranpose.
+        // Transpose.
         let num_workers = self.partitions_per_worker.len();
         let num_partitions = self.partitions_per_worker[0].len();
         let mut results_per_partition = (0..num_partitions)
