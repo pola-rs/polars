@@ -82,7 +82,7 @@ pub enum MaintainOrderJoin {
 }
 
 impl MaintainOrderJoin {
-    pub fn flip(&self) -> Self {
+    pub(super) fn flip(&self) -> Self {
         match self {
             MaintainOrderJoin::None => MaintainOrderJoin::None,
             MaintainOrderJoin::Left => MaintainOrderJoin::Right,
