@@ -7,7 +7,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
-from polars._utils.parse import parse_into_expression
+from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
@@ -389,6 +389,100 @@ class ExprDateTimeNameSpace:
             every = parse_as_duration_string(every)
         every = parse_into_expression(every, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_round(every))
+
+    def replace(
+        self,
+        *,
+        year: int | IntoExpr | None = None,
+        month: int | IntoExpr | None = None,
+        day: int | IntoExpr | None = None,
+        hour: int | IntoExpr | None = None,
+        minute: int | IntoExpr | None = None,
+        second: int | IntoExpr | None = None,
+        microsecond: int | IntoExpr | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
+    ) -> Expr:
+        """
+        Replace time unit.
+
+        Parameters
+        ----------
+        year
+            Column or literal.
+        month
+            Column or literal, ranging from 1-12.
+        day
+            Column or literal, ranging from 1-31.
+        hour
+            Column or literal, ranging from 0-23.
+        minute
+            Column or literal, ranging from 0-59.
+        second
+            Column or literal, ranging from 0-59.
+        microsecond
+            Column or literal, ranging from 0-999999.
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime` with the
+            specified time units replaced.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [date(2024, 4, 1), date(2025, 3, 16)],
+        ...         "new_day": [10, 15],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("date").dt.replace(day="new_day").alias("replaced"))
+        shape: (2, 3)
+        ┌────────────┬─────────┬────────────┐
+        │ date       ┆ new_day ┆ replaced   │
+        │ ---        ┆ ---     ┆ ---        │
+        │ date       ┆ i64     ┆ date       │
+        ╞════════════╪═════════╪════════════╡
+        │ 2024-04-01 ┆ 10      ┆ 2024-04-10 │
+        │ 2025-03-16 ┆ 15      ┆ 2025-03-15 │
+        └────────────┴─────────┴────────────┘
+        >>> df.with_columns(pl.col("date").dt.replace(year=1800).alias("replaced"))
+        shape: (2, 3)
+        ┌────────────┬─────────┬────────────┐
+        │ date       ┆ new_day ┆ replaced   │
+        │ ---        ┆ ---     ┆ ---        │
+        │ date       ┆ i64     ┆ date       │
+        ╞════════════╪═════════╪════════════╡
+        │ 2024-04-01 ┆ 10      ┆ 1800-04-01 │
+        │ 2025-03-16 ┆ 15      ┆ 1800-03-16 │
+        └────────────┴─────────┴────────────┘
+        """
+        day, month, year, hour, minute, second, microsecond = (
+            parse_into_list_of_expressions(
+                day, month, year, hour, minute, second, microsecond
+            )
+        )
+        ambiguous_expr = parse_into_expression(ambiguous, str_as_lit=True)
+        return wrap_expr(
+            self._pyexpr.dt_replace(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                microsecond,
+                ambiguous_expr,
+            )
+        )
 
     def combine(self, time: dt.time | Expr, time_unit: TimeUnit = "us") -> Expr:
         """
