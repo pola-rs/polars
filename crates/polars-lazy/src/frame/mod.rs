@@ -601,11 +601,15 @@ impl LazyFrame {
             opt_state &= !OptFlags::COMM_SUBPLAN_ELIM;
         }
 
-        // The new streaming engine can't deal with the way the common
-        // subexpression elimination adds length-incorrect with_columns.
         #[cfg(feature = "cse")]
         if new_streaming {
+            // The new streaming engine can't deal with the way the common
+            // subexpression elimination adds length-incorrect with_columns.
             opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
+
+            // The new streaming engine can't yet deal with the cache nodes
+            // introduced by common subplan elimination.
+            opt_state &= !OptFlags::COMM_SUBPLAN_ELIM;
         }
 
         let lp_top = optimize(
