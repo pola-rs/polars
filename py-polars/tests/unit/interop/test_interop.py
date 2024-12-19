@@ -616,6 +616,33 @@ def test_series_from_repr() -> None:
     )
     assert_series_equal(s, pl.Series("flt", [], dtype=pl.Float32))
 
+    s = cast(
+        pl.Series,
+        pl.from_repr(
+            """
+            Series: 'flt' [f64]
+            [
+                null
+                +inf
+                -inf
+                inf
+                0.0
+                NaN
+            ]
+            >>> print("stuff")
+            """
+        ),
+    )
+    inf, nan = float("inf"), float("nan")
+    assert_series_equal(
+        s,
+        pl.Series(
+            name="flt",
+            dtype=pl.Float64,
+            values=[None, inf, -inf, inf, 0.0, nan],
+        ),
+    )
+
 
 def test_dataframe_from_repr_custom_separators() -> None:
     # repr created with custom digit-grouping

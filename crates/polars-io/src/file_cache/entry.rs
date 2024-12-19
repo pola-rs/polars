@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use fs4::fs_std::FileExt;
+use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
@@ -151,13 +152,38 @@ impl Inner {
                 .truncate(true)
                 .open(data_file_path)
                 .map_err(PolarsError::from)?;
+
+            static IGNORE_ERR: Lazy<bool> = Lazy::new(|| {
+                let v =
+                    std::env::var("POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR").as_deref() == Ok("1");
+                if config::verbose() {
+                    eprintln!(
+                        "[file_cache]: POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR: {}",
+                        v
+                    );
+                }
+                v
+            });
+
+            // Initialize it to get the verbose print
+            let _ = *IGNORE_ERR;
+
             file.lock_exclusive().unwrap();
-            if file.allocate(remote_metadata.size).is_err() {
-                polars_bail!(
-                    ComputeError: "failed to allocate {} bytes to download uri = {}",
+            if let Err(e) = file.allocate(remote_metadata.size) {
+                let msg = format!(
+                    "failed to reserve {} bytes on disk to download uri = {}: {:?}",
                     remote_metadata.size,
-                    self.uri.as_ref()
+                    self.uri.as_ref(),
+                    e
                 );
+
+                if *IGNORE_ERR {
+                    if config::verbose() {
+                        eprintln!("[file_cache]: warning: {}", msg)
+                    }
+                } else {
+                    polars_bail!(ComputeError: msg);
+                }
             }
         }
         self.file_fetcher.fetch(data_file_path)?;

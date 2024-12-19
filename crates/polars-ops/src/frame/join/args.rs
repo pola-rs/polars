@@ -81,6 +81,18 @@ pub enum MaintainOrderJoin {
     RightLeft,
 }
 
+impl MaintainOrderJoin {
+    pub(super) fn flip(&self) -> Self {
+        match self {
+            MaintainOrderJoin::None => MaintainOrderJoin::None,
+            MaintainOrderJoin::Left => MaintainOrderJoin::Right,
+            MaintainOrderJoin::Right => MaintainOrderJoin::Left,
+            MaintainOrderJoin::LeftRight => MaintainOrderJoin::RightLeft,
+            MaintainOrderJoin::RightLeft => MaintainOrderJoin::LeftRight,
+        }
+    }
+}
+
 impl Default for JoinArgs {
     fn default() -> Self {
         Self {

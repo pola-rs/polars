@@ -760,7 +760,12 @@ def _from_dataframe_repr(m: re.Match[str]) -> DataFrame:
                 buf = io.BytesIO()
                 df.write_csv(file=buf)
                 buf.seek(0)
-                df = read_csv(buf, new_columns=df.columns, try_parse_dates=True)
+                df = read_csv(
+                    buf,
+                    new_columns=df.columns,
+                    try_parse_dates=True,
+                    infer_schema_length=None,
+                )
             return df
     elif schema and not data:
         return df.cast(schema)  # type: ignore[arg-type]
@@ -786,8 +791,16 @@ def _from_series_repr(m: re.Match[str]) -> Series:
         ]
         if string_values == ["[", "]"]:
             string_values = []
-        elif string_values and string_values[0].lstrip("#> ") == "[":
-            string_values = string_values[1:]
+        else:
+            start: int | None = None
+            end: int | None = None
+            for idx, v in enumerate(string_values):
+                if start is None and v.lstrip("#> ") == "[":
+                    start = idx
+                if v.lstrip("#> ") == "]":
+                    end = idx
+            if start is not None and end is not None:
+                string_values = string_values[start + 1 : end]
 
     values = string_values[:length] if length > 0 else string_values
     values = [(None if v == "null" else v) for v in values if v not in ("…", "...")]

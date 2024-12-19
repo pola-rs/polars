@@ -297,6 +297,8 @@ def _cast_repr_strings_with_schema(
                 msg = f"DataFrame should contain only String repr data; found {tp!r}"
                 raise TypeError(msg)
 
+    special_floats = {"-inf", "+inf", "inf", "nan"}
+
     # duration string scaling
     ns_sec = 1_000_000_000
     duration_scaling = {
@@ -366,8 +368,11 @@ def _cast_repr_strings_with_schema(
                 integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
                 fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
                 cast_cols[c] = (
-                    # check for empty string and/or integer format
-                    pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
+                    # check for empty string, special floats, or integer format
+                    pl.when(
+                        F.col(c).str.contains(r"^[+-]?\d*$")
+                        | F.col(c).str.to_lowercase().is_in(special_floats)
+                    )
                     .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
                     # check for scientific notation
                     .when(F.col(c).str.contains("[eE]"))

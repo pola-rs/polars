@@ -21,11 +21,12 @@ pub(super) fn right_join_from_series(
     right: DataFrame,
     s_left: &Series,
     s_right: &Series,
-    args: JoinArgs,
+    mut args: JoinArgs,
     verbose: bool,
     drop_names: Option<Vec<PlSmallStr>>,
 ) -> PolarsResult<DataFrame> {
     // Swap the order of tables to do a right join.
+    args.maintain_order = args.maintain_order.flip();
     let (df_right, df_left) = materialize_left_join_from_series(
         right, left, s_right, s_left, &args, verbose, drop_names,
     )?;
