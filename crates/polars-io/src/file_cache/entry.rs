@@ -145,7 +145,7 @@ impl Inner {
         // This could be left from an aborted process.
         let _ = std::fs::remove_file(data_file_path);
         if !self.file_fetcher.fetches_as_symlink() {
-            let _ = std::fs::OpenOptions::new()
+            std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
