@@ -160,7 +160,13 @@ def test_is_in_join_blocked() -> None:
     lf2 = pl.LazyFrame(
         {"values22": [1, 2, None, 4, 5, 6], "values20": [1, 2, 3, 4, 5, 6]}
     )
-    lf_all = lf2.join(lf1, left_on="values20", right_on="values0", how="left")
+    lf_all = lf2.join(
+        lf1,
+        left_on="values20",
+        right_on="values0",
+        how="left",
+        maintain_order="right_left",
+    )
 
     result = lf_all.filter(~pl.col("Groups").is_in(["A", "B", "F"]))
 

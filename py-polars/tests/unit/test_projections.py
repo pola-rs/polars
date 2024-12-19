@@ -500,7 +500,6 @@ def test_non_coalesce_multi_key_join_projection_pushdown_16554(
             coalesce=False,
         )
         .select("a", "b", "c")
-        .sort("a")
         .collect()
     )
 
@@ -516,7 +515,7 @@ def test_non_coalesce_multi_key_join_projection_pushdown_16554(
         .collect()
     )
 
-    assert_frame_equal(out.sort("a"), expect)
+    assert_frame_equal(out, expect, check_row_order=False)
 
 
 @pytest.mark.parametrize("how", ["semi", "anti"])
@@ -619,3 +618,15 @@ a,b,c,d,e
 def test_projection_pushdown_height_20221() -> None:
     q = pl.LazyFrame({"a": range(5)}).select("a", b=pl.col("a").first()).select("b")
     assert_frame_equal(q.collect(), pl.DataFrame({"b": [0, 0, 0, 0, 0]}))
+
+
+def test_select_len_20337() -> None:
+    strs = [str(i) for i in range(3)]
+    q = pl.LazyFrame({"a": strs, "b": strs, "c": strs, "d": range(3)})
+
+    q = q.group_by(pl.col("c")).agg(
+        (pl.col("d") * j).alias(f"mult {j}") for j in [1, 2]
+    )
+
+    q = q.with_row_index("foo")
+    assert q.select(pl.len()).collect().item() == 3

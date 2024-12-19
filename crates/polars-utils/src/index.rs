@@ -192,7 +192,7 @@ pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
     swizzled: u64,
 }
 
-impl Debug for ChunkId {
+impl<const CHUNK_BITS: u64> Debug for ChunkId<CHUNK_BITS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.is_null() {
             write!(f, "NULL")
@@ -227,15 +227,22 @@ impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     #[allow(clippy::unnecessary_cast)]
     pub fn extract(self) -> (IdxSize, IdxSize) {
         let row = (self.swizzled >> CHUNK_BITS) as IdxSize;
-
-        let mask: IdxSize = IdxSize::MAX << CHUNK_BITS;
-        let chunk = (self.swizzled as IdxSize) & !mask;
+        let mask = (1u64 << CHUNK_BITS) - 1;
+        let chunk = (self.swizzled & mask) as IdxSize;
         (chunk, row)
     }
 
     #[inline(always)]
     pub fn inner_mut(&mut self) -> &mut u64 {
         &mut self.swizzled
+    }
+
+    pub fn from_inner(inner: u64) -> Self {
+        Self { swizzled: inner }
+    }
+
+    pub fn into_inner(self) -> u64 {
+        self.swizzled
     }
 }
 

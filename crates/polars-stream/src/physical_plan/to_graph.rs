@@ -22,6 +22,7 @@ use slotmap::{SecondaryMap, SlotMap};
 use super::{PhysNode, PhysNodeKey, PhysNodeKind};
 use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
+use crate::morsel::MorselSeq;
 use crate::nodes;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -92,7 +93,7 @@ fn to_graph_rec<'a>(
     let node = &ctx.phys_sm[phys_node_key];
     let graph_key = match &node.kind {
         InMemorySource { df } => ctx.graph.add_node(
-            nodes::in_memory_source::InMemorySourceNode::new(df.clone()),
+            nodes::in_memory_source::InMemorySourceNode::new(df.clone(), MorselSeq::default()),
             [],
         ),
 
@@ -502,6 +503,49 @@ fn to_graph_rec<'a>(
                         executor.lock().execute(&mut state)
                     }),
                 ),
+                [left_input_key, right_input_key],
+            )
+        },
+
+        EquiJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
+        } => {
+            let args = args.clone();
+            let left_input_key = to_graph_rec(*input_left, ctx)?;
+            let right_input_key = to_graph_rec(*input_right, ctx)?;
+            let left_input_schema = ctx.phys_sm[*input_left].output_schema.clone();
+            let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
+
+            let left_key_schema =
+                compute_output_schema(&left_input_schema, left_on, ctx.expr_arena)?
+                    .materialize_unknown_dtypes()?;
+            let right_key_schema =
+                compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?
+                    .materialize_unknown_dtypes()?;
+
+            let left_key_selectors = left_on
+                .iter()
+                .map(|e| create_stream_expr(e, ctx, &left_input_schema))
+                .try_collect_vec()?;
+            let right_key_selectors = right_on
+                .iter()
+                .map(|e| create_stream_expr(e, ctx, &right_input_schema))
+                .try_collect_vec()?;
+
+            ctx.graph.add_node(
+                nodes::joins::equi_join::EquiJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    Arc::new(left_key_schema),
+                    Arc::new(right_key_schema),
+                    left_key_selectors,
+                    right_key_selectors,
+                    args,
+                )?,
                 [left_input_key, right_input_key],
             )
         },

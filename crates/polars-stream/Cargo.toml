@@ -47,6 +47,7 @@ csv = ["polars-mem-engine/csv", "polars-plan/csv", "polars-io/csv"]
 json = ["polars-mem-engine/json", "polars-plan/json", "polars-io/json"]
 cloud = ["polars-mem-engine/cloud", "polars-plan/cloud", "polars-io/cloud"]
 dtype-categorical = ["polars-core/dtype-categorical"]
+object = ["polars-ops/object"]
 python = ["polars-plan/python"]
 
 # We need to specify default features here to match workspace defaults.

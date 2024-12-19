@@ -29,6 +29,7 @@ classifiers = [
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
 ]
+dynamic = ["version"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
