@@ -11,7 +11,7 @@ use polars_io::predicates::BatchStats;
 use polars_io::prelude::FileMetadata;
 use polars_io::RowIndex;
 
-use super::Executor;
+use super::{CsvExec, Executor};
 use crate::executors::ParquetExec;
 use crate::prelude::*;
 
@@ -88,6 +88,13 @@ fn source_to_scan_exec(
                     .clone()
             }),
         )) as _,
+        FileScan::Csv { options, .. } => Box::new(CsvExec {
+            sources: source,
+            file_info: file_info.clone(),
+            options: options.clone(),
+            file_options: file_options.clone(),
+            predicate: None,
+        }),
         _ => todo!(),
     })
 }

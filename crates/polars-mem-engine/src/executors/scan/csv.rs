@@ -224,10 +224,9 @@ impl ScanExec for CsvExec {
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 
-        self.file_info.reader_schema = Some(arrow::Either::Left(Arc::new(
-            schema.to_arrow(CompatLevel::newest()),
-        )));
-        self.file_info.schema = Arc::new(schema);
+        let schema = Arc::new(schema);
+        self.file_info.reader_schema = Some(arrow::Either::Right(schema.clone()));
+        self.file_info.schema = schema.clone();
 
         self.options.schema.take();
         // self.options.schema_overwrite.take();
@@ -260,20 +259,15 @@ impl ScanExec for CsvExec {
         )? as IdxSize;
         let schema = infer_file_schema(
             &get_reader_bytes(&mut std::io::Cursor::new(bytes))?,
-            popt.separator,
+            self.options.parse_options.as_ref(),
             self.options.infer_schema_length,
             self.options.has_header,
             self.options.schema_overwrite.as_deref(),
             self.options.skip_rows,
+            self.options.skip_lines,
             self.options.skip_rows_after_header,
-            popt.comment_prefix.as_ref(),
-            popt.quote_char,
-            popt.eol_char,
-            popt.null_values.as_ref(),
-            popt.try_parse_dates,
             self.options.raise_if_empty,
             &mut self.options.n_threads,
-            popt.decimal_comma,
         )?
         .0;
 

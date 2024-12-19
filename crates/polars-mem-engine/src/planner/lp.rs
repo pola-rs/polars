@@ -302,13 +302,28 @@ fn create_physical_plan_impl(
 
             match scan_type.clone() {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
-                    sources,
-                    file_info,
-                    options,
-                    predicate,
-                    file_options,
-                })),
+                FileScan::Csv { options, .. } => {
+                    if sources.len() > 1
+                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
+                    {
+                        Ok(Box::new(executors::MultiScanExec::new(
+                            sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            file_options,
+                            scan_type,
+                        )))
+                    } else {
+                        Ok(Box::new(executors::CsvExec {
+                            sources,
+                            file_info,
+                            options,
+                            predicate,
+                            file_options,
+                        }))
+                    }
+                },
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc {
                     options,
