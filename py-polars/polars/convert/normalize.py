@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING, Any
 from polars._utils.unstable import unstable
 from polars.dataframe import DataFrame
 from polars.datatypes.constants import N_INFER_DEFAULT
-from unicodedata import normalize
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
