@@ -62,7 +62,11 @@ where
             // for arrays of unit length we can ignore the sorted flag, as it is
             // not necessarily set.
             let ca_sorted_flag = ca.is_sorted_flag();
+            if ca_sorted_flag.not() {
+                return;
+            }
             let other_sorted_flag = other.is_sorted_flag();
+
             if !(ca_sorted_flag.any() || ca.len() == 1)
                 || !(other_sorted_flag.any() || other.len() == 1)
                 || !(
