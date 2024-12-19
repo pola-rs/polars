@@ -516,6 +516,13 @@ impl ProbeState {
     }
 }
 
+impl Drop for ProbeState {
+    fn drop(&mut self) {
+        // Parallel drop as the state might be quite big.
+        self.table_per_partition.par_drain(..).for_each(drop);
+    }
+}
+
 struct EmitUnmatchedState {
     partitions: Vec<ProbeTable>,
     active_partition_idx: usize,
