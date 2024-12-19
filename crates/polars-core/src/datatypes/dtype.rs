@@ -717,6 +717,8 @@ impl DataType {
             UInt64 => Scalar::from(u64::MAX),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
+            #[cfg(feature = "dtype-time")]
+            Time => Scalar::new(Time, AnyValue::Time(NS_IN_DAY - 1)),
             dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
         };
         Ok(v)
@@ -737,6 +739,8 @@ impl DataType {
             UInt64 => Scalar::from(u64::MIN),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
+            #[cfg(feature = "dtype-time")]
+            Time => Scalar::new(Time, AnyValue::Time(0)),
             dt => polars_bail!(ComputeError: "cannot determine lower bound for dtype `{}`", dt),
         };
         Ok(v)
