@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -131,7 +130,7 @@ class ExprCatNameSpace:
         """
         return wrap_expr(self._pyexpr.cat_len_chars())
 
-    def starts_with(self, prefix: str | Expr | None) -> Expr:
+    def starts_with(self, prefix: str) -> Expr:
         """
         Check if string representations of values start with a substring.
 
@@ -144,6 +143,11 @@ class ExprCatNameSpace:
         --------
         contains : Check if string repr contains a substring that matches a pattern.
         ends_with : Check if string repr end with a substring.
+
+        Notes
+        -----
+        Whereas `str.starts_with` allows expression inputs, `cat.starts_with` requires
+        a literal string value.
 
         Examples
         --------
@@ -199,10 +203,9 @@ class ExprCatNameSpace:
         │ apple  ┆ app    │
         └────────┴────────┘
         """
-        prefix = parse_into_expression(prefix, str_as_lit=True)
         return wrap_expr(self._pyexpr.cat_starts_with(prefix))
 
-    def ends_with(self, suffix: str | Expr | None) -> Expr:
+    def ends_with(self, suffix: str | None) -> Expr:
         """
         Check if string representations of values end with a substring.
 
@@ -215,6 +218,11 @@ class ExprCatNameSpace:
         --------
         contains : Check if string reprs contains a substring that matches a pattern.
         starts_with : Check if string reprs start with a substring.
+
+        Notes
+        -----
+        Whereas `str.ends_with` allows expression inputs, `cat.ends_with` requires a
+        literal string value.
 
         Examples
         --------
@@ -268,5 +276,4 @@ class ExprCatNameSpace:
         │ mango  ┆ go     │
         └────────┴────────┘
         """
-        suffix = parse_into_expression(suffix, str_as_lit=True)
         return wrap_expr(self._pyexpr.cat_ends_with(suffix))

@@ -16,11 +16,11 @@ impl PyExpr {
         self.inner.clone().cat().len_chars().into()
     }
 
-    fn cat_starts_with(&self, sub: Self) -> Self {
-        self.inner.clone().cat().starts_with(sub.inner).into()
+    fn cat_starts_with(&self, prefix: String) -> Self {
+        self.inner.clone().cat().starts_with(prefix).into()
     }
 
-    fn cat_ends_with(&self, sub: Self) -> Self {
-        self.inner.clone().cat().ends_with(sub.inner).into()
+    fn cat_ends_with(&self, suffix: String) -> Self {
+        self.inner.clone().cat().ends_with(suffix).into()
     }
 }

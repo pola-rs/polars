@@ -7,7 +7,7 @@ from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
-    from polars import Expr, Series
+    from polars import Series
     from polars.polars import PySeries
 
 
@@ -186,7 +186,7 @@ class CatNameSpace:
         ]
         """
 
-    def starts_with(self, prefix: str | Expr | None) -> Series:
+    def starts_with(self, prefix: str | None) -> Series:
         """
         Check if string representations of values start with a substring.
 
@@ -213,7 +213,7 @@ class CatNameSpace:
         ]
         """
 
-    def ends_with(self, suffix: str | Expr | None) -> Series:
+    def ends_with(self, suffix: str | None) -> Series:
         """
         Check if string representations of values end with a substring.
 

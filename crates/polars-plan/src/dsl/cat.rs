@@ -22,24 +22,18 @@ impl CategoricalNameSpace {
     }
 
     #[cfg(feature = "strings")]
-    /// Check if a string value starts with the `sub` string.
-    pub fn starts_with(self, sub: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::Categorical(CategoricalFunction::StartsWith),
-            &[sub],
-            false,
-            None,
-        )
+    pub fn starts_with(self, prefix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Categorical(CategoricalFunction::StartsWith(
+                prefix,
+            )))
     }
 
     #[cfg(feature = "strings")]
-    /// Check if a string value ends with the `sub` string.
-    pub fn ends_with(self, sub: Expr) -> Expr {
-        self.0.map_many_private(
-            FunctionExpr::Categorical(CategoricalFunction::EndsWith),
-            &[sub],
-            false,
-            None,
-        )
+    pub fn ends_with(self, suffix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Categorical(CategoricalFunction::EndsWith(
+                suffix,
+            )))
     }
 }
