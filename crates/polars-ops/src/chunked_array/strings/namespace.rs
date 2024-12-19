@@ -68,7 +68,7 @@ pub trait StringNameSpaceImpl: AsString {
         let ca = self.as_string();
         let f = |opt_s: Option<&str>, opt_base: Option<u32>| -> Option<i64> {
             match (opt_s, opt_base) {
-                (Some(s), Some(base)) => <i64 as Num>::from_str_radix(s, base).ok(),
+                (Some(s), Some(base)) => <i64 as Num>::from_str_radix(s.trim(), base).ok(),
                 _ => None,
             }
         };
