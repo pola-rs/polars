@@ -7,6 +7,7 @@ use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 use url::Url;
 
@@ -17,7 +18,7 @@ use crate::cloud::CloudConfig;
 /// get rate limited when querying the DNS (can take up to 5s).
 /// Other reasons are connection pools that must be shared between as much as possible.
 #[allow(clippy::type_complexity)]
-static OBJECT_STORE_CACHE: Lazy<RwLock<PlHashMap<String, PolarsObjectStore>>> =
+static OBJECT_STORE_CACHE: Lazy<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
     Lazy::new(Default::default);
 
 #[allow(dead_code)]
@@ -29,10 +30,10 @@ fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn Obje
 }
 
 /// Get the key of a url for object store registration.
-fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
+fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    struct S {
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct C {
         max_retries: usize,
         #[cfg(feature = "file_cache")]
         file_cache_ttl: u64,
@@ -41,8 +42,15 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
         credential_provider: usize,
     }
 
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct S {
+        url_base: PlSmallStr,
+        cloud_options: Option<C>,
+    }
+
     // We include credentials as they can expire, so users will send new credentials for the same url.
-    let creds = serde_json::to_string(&options.map(
+    let cloud_options = options.map(
         |CloudOptions {
              // Destructure to ensure this breaks if anything changes.
              max_retries,
@@ -52,7 +60,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
              #[cfg(feature = "cloud")]
              credential_provider,
          }| {
-            S {
+            C {
                 max_retries: *max_retries,
                 #[cfg(feature = "file_cache")]
                 file_cache_ttl: *file_cache_ttl,
@@ -61,15 +69,21 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> String {
                 credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
             }
         },
-    ))
-    .unwrap();
+    );
 
-    format!(
-        "{}://{}<\\creds\\>{}",
-        url.scheme(),
-        &url[url::Position::BeforeHost..url::Position::AfterPort],
-        creds
-    )
+    let cache_key = S {
+        url_base: format_pl_smallstr!(
+            "{}",
+            &url[url::Position::BeforeScheme..url::Position::AfterPort]
+        ),
+        cloud_options,
+    };
+
+    if config::verbose() {
+        eprintln!("object store cache key: {} {:?}", url, &cache_key);
+    }
+
+    pl_serialize::serialize_to_bytes(&cache_key).unwrap()
 }
 
 /// Construct an object_store `Path` from a string without any encoding/decoding.

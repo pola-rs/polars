@@ -1243,6 +1243,20 @@ def test_join_preserve_order_left() -> None:
         5,
     ]
 
+    right_left = left.join(right, on="a", how="right", maintain_order="left").collect()
+    assert right_left.get_column("a").cast(pl.UInt32).to_list() == [2, 1, 1, None, 6]
+
+    right_right = left.join(
+        right, on="a", how="right", maintain_order="right"
+    ).collect()
+    assert right_right.get_column("a").cast(pl.UInt32).to_list() == [
+        1,
+        1,
+        None,
+        2,
+        6,
+    ]
+
 
 def test_join_preserve_order_full() -> None:
     left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
