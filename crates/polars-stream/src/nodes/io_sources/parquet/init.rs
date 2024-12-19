@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::Arc;
 
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::PlIndexSet;
@@ -13,9 +12,8 @@ use polars_io::prelude::_internal::PrefilterMaskSetting;
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetSourceNode};
-use crate::async_executor;
-use crate::async_primitives::connector::connector;
-use crate::async_primitives::wait_group::IndexedWaitGroup;
+use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
+use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
@@ -72,9 +70,7 @@ impl ParquetSourceNode {
 
         let use_statistics = self.options.use_statistics;
 
-        let (mut raw_morsel_senders, raw_morsel_receivers): (Vec<_>, Vec<_>) =
-            (0..self.config.num_pipelines).map(|_| connector()).unzip();
-
+        let (mut raw_morsel_sender, raw_morsel_receivers) = distributor_channel(self.config.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
         if let Some((_, 0)) = self.file_options.slice {
             return (
                 raw_morsel_receivers,
@@ -136,12 +132,6 @@ impl ParquetSourceNode {
 
             row_group_data_fetcher.slice_range = slice_range;
 
-            // Ensure proper backpressure by only polling the buffered iterator when a wait group
-            // is free.
-            let mut wait_groups = (0..num_pipelines)
-                .map(|index| IndexedWaitGroup::new(index).wait())
-                .collect::<FuturesUnordered<_>>();
-
             let mut df_stream = row_group_data_fetcher
                 .into_stream()
                 .map(|x| async {
@@ -173,14 +163,10 @@ impl ParquetSourceNode {
             let morsel_seq_ref = &mut MorselSeq::default();
             let mut dfs = VecDeque::with_capacity(1);
 
-            'main: loop {
-                let Some(mut indexed_wait_group) = wait_groups.next().await else {
-                    break;
-                };
-
+            loop {
                 while dfs.is_empty() {
                     let Some(v) = df_stream.next().await else {
-                        break 'main;
+                        break;
                     };
 
                     let df = v?;
@@ -190,41 +176,15 @@ impl ParquetSourceNode {
                     }
 
                     let (iter, n) = split_to_morsels(&df, ideal_morsel_size);
-
                     dfs.reserve(n);
                     dfs.extend(iter);
                 }
 
-                let mut df = dfs.pop_front().unwrap();
+                let df = dfs.pop_front().unwrap();
                 let morsel_seq = *morsel_seq_ref;
                 *morsel_seq_ref = morsel_seq.successor();
-
-                loop {
-                    use crate::async_primitives::connector::SendError;
-
-                    let channel_index = indexed_wait_group.index();
-                    let wait_token = indexed_wait_group.token();
-
-                    match raw_morsel_senders[channel_index].try_send((df, morsel_seq, wait_token)) {
-                        Ok(_) => {
-                            wait_groups.push(indexed_wait_group.wait());
-                            break;
-                        },
-                        Err(SendError::Closed(v)) => {
-                            // The channel assigned to this wait group has been closed, so we will not
-                            // add it back to the list of wait groups, and we will try to send this
-                            // across another channel.
-                            df = v.0
-                        },
-                        Err(SendError::Full(_)) => unreachable!(),
-                    }
-
-                    let Some(v) = wait_groups.next().await else {
-                        // All channels have closed
-                        break 'main;
-                    };
-
-                    indexed_wait_group = v;
+                if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
+                    break;
                 }
             }
 
