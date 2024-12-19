@@ -153,23 +153,36 @@ impl Inner {
                 .open(data_file_path)
                 .map_err(PolarsError::from)?;
 
-            static PREALLOCATE: Lazy<bool> = Lazy::new(|| {
+            static IGNORE_ERR: Lazy<bool> = Lazy::new(|| {
                 let v =
-                    std::env::var("POLARS_DISABLE_FILE_CACHE_PREALLOCATE").as_deref() != Ok("1");
+                    std::env::var("POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR").as_deref() == Ok("1");
                 if config::verbose() {
-                    eprintln!("[file_cache]: preallocate: {}", v);
+                    eprintln!(
+                        "[file_cache]: POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR: {}",
+                        v
+                    );
                 }
                 v
             });
 
-            if *PREALLOCATE {
-                file.lock_exclusive().unwrap();
-                if file.allocate(remote_metadata.size).is_err() {
-                    polars_bail!(
-                        ComputeError: "failed to allocate {} bytes to download uri = {}",
-                        remote_metadata.size,
-                        self.uri.as_ref()
-                    );
+            // Initialize it to get the verbose print
+            let _ = *IGNORE_ERR;
+
+            file.lock_exclusive().unwrap();
+            if let Err(e) = file.allocate(remote_metadata.size) {
+                let msg = format!(
+                    "failed to allocate {} bytes to download uri = {}: {:?}",
+                    remote_metadata.size,
+                    self.uri.as_ref(),
+                    e
+                );
+
+                if *IGNORE_ERR {
+                    if config::verbose() {
+                        eprintln!("[file_cache]: warning: {}", msg)
+                    }
+                } else {
+                    polars_bail!(ComputeError: msg);
                 }
             }
         }
