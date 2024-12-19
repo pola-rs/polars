@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use fs4::fs_std::FileExt;
+use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
@@ -145,12 +146,32 @@ impl Inner {
         // This could be left from an aborted process.
         let _ = std::fs::remove_file(data_file_path);
         if !self.file_fetcher.fetches_as_symlink() {
-            std::fs::OpenOptions::new()
+            let file = std::fs::OpenOptions::new()
                 .write(true)
                 .create(true)
                 .truncate(true)
                 .open(data_file_path)
                 .map_err(PolarsError::from)?;
+
+            static PREALLOCATE: Lazy<bool> = Lazy::new(|| {
+                let v =
+                    std::env::var("POLARS_DISABLE_FILE_CACHE_PREALLOCATE").as_deref() != Ok("1");
+                if config::verbose() {
+                    eprintln!("[file_cache]: preallocate: {}", v);
+                }
+                v
+            });
+
+            if *PREALLOCATE {
+                file.lock_exclusive().unwrap();
+                if file.allocate(remote_metadata.size).is_err() {
+                    polars_bail!(
+                        ComputeError: "failed to allocate {} bytes to download uri = {}",
+                        remote_metadata.size,
+                        self.uri.as_ref()
+                    );
+                }
+            }
         }
         self.file_fetcher.fetch(data_file_path)?;
 
