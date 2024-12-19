@@ -163,10 +163,10 @@ impl ParquetSourceNode {
             let morsel_seq_ref = &mut MorselSeq::default();
             let mut dfs = VecDeque::with_capacity(1);
 
-            loop {
+            'main: loop {
                 while dfs.is_empty() {
                     let Some(v) = df_stream.next().await else {
-                        break;
+                        break 'main;
                     };
 
                     let df = v?;
