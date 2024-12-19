@@ -171,14 +171,14 @@ class ExprCatNameSpace:
         Using `starts_with` as a filter condition:
 
         >>> df.filter(pl.col("fruits").cat.starts_with("app"))
-        shape: (1, 2)
-        ┌────────┬────────┐
-        │ fruits ┆ prefix │
-        │ ---    ┆ ---    │
-        │ cat    ┆ str    │
-        ╞════════╪════════╡
-        │ apple  ┆ app    │
-        └────────┴────────┘
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ cat    │
+        ╞════════╡
+        │ apple  │
+        └────────┘
         """
         return wrap_expr(self._pyexpr.cat_starts_with(prefix))
 
@@ -221,13 +221,13 @@ class ExprCatNameSpace:
         Using `ends_with` as a filter condition:
 
         >>> df.filter(pl.col("fruits").cat.ends_with("go"))
-        shape: (1, 2)
-        ┌────────┬────────┐
-        │ fruits ┆ suffix │
-        │ ---    ┆ ---    │
-        │ cat    ┆ str    │
-        ╞════════╪════════╡
-        │ mango  ┆ go     │
-        └────────┴────────┘
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ cat    │
+        ╞════════╡
+        │ mango  │
+        └────────┘
         """
         return wrap_expr(self._pyexpr.cat_ends_with(suffix))
