@@ -34,7 +34,10 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
             pl.Object,  # Unsortable type
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
             pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
-        ]
+            pl.Categorical(
+                ordering="lexical"
+            ),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
+        ],
     )
 )
 def test_df_sort_idempotent(df: pl.DataFrame) -> None:
