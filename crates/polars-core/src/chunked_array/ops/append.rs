@@ -23,6 +23,7 @@ where
 {
     // Note: Do not call (first|last)_non_null on an array here before checking
     // it is sorted, otherwise it will lead to quadratic behavior.
+    // Warning! Always try to return early if you can. Mutating the metadata can be very expensive.
     let sorted_flag = match (
         ca.null_count() != ca.len(),
         other.null_count() != other.len(),
@@ -60,16 +61,22 @@ where
             // both arrays have non-null values.
             // for arrays of unit length we can ignore the sorted flag, as it is
             // not necessarily set.
-            if !(ca.is_sorted_any() || ca.len() == 1)
-                || !(other.is_sorted_any() || other.len() == 1)
+            let ca_sorted_flag = ca.is_sorted_flag();
+            let other_sorted_flag = other.is_sorted_flag();
+            if !(ca_sorted_flag.any() || ca.len() == 1)
+                || !(other_sorted_flag.any() || other.len() == 1)
                 || !(
                     // We will coerce for single values
                     ca.len() - ca.null_count() == 1
                         || other.len() - other.null_count() == 1
-                        || ca.is_sorted_flag() == other.is_sorted_flag()
+                        || ca_sorted_flag == other_sorted_flag
                 )
             {
-                IsSorted::Not
+                let out = IsSorted::Not;
+                if out == ca_sorted_flag {
+                    return;
+                }
+                out
             } else {
                 let l_idx = ca.last_non_null().unwrap();
                 let r_idx = other.first_non_null().unwrap();
@@ -84,7 +91,11 @@ where
                     && !(ca.first_non_null().unwrap() != 0 && 1 + other.last_non_null().unwrap() != other.len());
 
                 if !null_pos_check {
-                    IsSorted::Not
+                    let out = IsSorted::Not;
+                    if out == ca_sorted_flag {
+                        return;
+                    }
+                    out
                 } else {
                     #[allow(unused_assignments)]
                     let mut out = IsSorted::Not;
@@ -106,7 +117,11 @@ where
                             return;
                         },
                         (true, false) => out = other.is_sorted_flag(),
-                        _ => out = ca.is_sorted_flag(),
+                        // Keep is sorted_flag of ca.
+                        // Return early, so we don't mutate as that's expensive.
+                        _ => {
+                            return;
+                        },
                     }
 
                     debug_assert!(!matches!(out, IsSorted::Not));
@@ -121,6 +136,9 @@ where
                         out = IsSorted::Not
                     }
 
+                    if out == ca_sorted_flag {
+                        return;
+                    }
                     out
                 }
             }

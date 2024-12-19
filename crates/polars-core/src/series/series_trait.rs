@@ -29,6 +29,10 @@ impl IsSorted {
             Not => Not,
         }
     }
+
+    pub fn any(&self) -> bool {
+        matches!(self, Self::Ascending | Self::Descending)
+    }
 }
 
 pub enum BitRepr {
