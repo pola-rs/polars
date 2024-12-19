@@ -163,21 +163,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                 let sources = match &scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
-                        ref cloud_options, ..
-                    } => sources
+                    FileScan::Parquet { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
-                        ref cloud_options, ..
-                    } => sources
+                    FileScan::Ipc { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
                     #[cfg(feature = "csv")]
-                    FileScan::Csv {
-                        ref cloud_options, ..
-                    } => sources.expand_paths(&file_options, cloud_options.as_ref())?,
+                    FileScan::Csv { cloud_options, .. } => {
+                        sources.expand_paths(&file_options, cloud_options.as_ref())?
+                    },
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => sources.expand_paths(&file_options, None)?,
+                    FileScan::NDJson { cloud_options, .. } => {
+                        sources.expand_paths(&file_options, cloud_options.as_ref())?
+                    },
                     FileScan::Anonymous { .. } => sources,
                 };
 
