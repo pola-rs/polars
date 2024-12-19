@@ -34,10 +34,6 @@ impl FunctionRegistry for MyFunctionRegistry {
 fn test_udfs() -> PolarsResult<()> {
     let my_custom_sum = UserDefinedFunction::new(
         "my_custom_sum".into(),
-        vec![
-            Field::new("a".into(), DataType::Int32),
-            Field::new("b".into(), DataType::Int32),
-        ],
         GetOutput::same_type(),
         move |c: &mut [Column]| {
             let first = c[0].as_materialized_series().clone();
@@ -64,10 +60,6 @@ fn test_udfs() -> PolarsResult<()> {
     // create a new UDF to be registered on the context
     let my_custom_divide = UserDefinedFunction::new(
         "my_custom_divide".into(),
-        vec![
-            Field::new("a".into(), DataType::Int32),
-            Field::new("b".into(), DataType::Int32),
-        ],
         GetOutput::same_type(),
         move |c: &mut [Column]| {
             let first = c[0].as_materialized_series().clone();
