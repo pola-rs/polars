@@ -41,7 +41,11 @@ pub(super) fn to_physical(s: &Column) -> PolarsResult<Column> {
 
 pub(super) fn set_sorted_flag(s: &Column, sorted: IsSorted) -> PolarsResult<Column> {
     let mut s = s.clone();
+    dbg!(&sorted);
+    dbg!(&s.get_flags());
     s.set_sorted_flag(sorted);
+    dbg!(&s.get_flags());
+    dbg!(&sorted);
     Ok(s)
 }
 

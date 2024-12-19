@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use serde::ser::{Error, SerializeMap};
 use serde::{Serialize, Serializer};
 
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::implementations::null::NullChunked;
 
@@ -48,7 +48,7 @@ fn serialize_impl<T, S>(
     serializer: S,
     name: &PlSmallStr,
     dtype: &DataType,
-    bit_settings: MetadataFlags,
+    bit_settings: StatisticsFlags,
     ca: &ChunkedArray<T>,
 ) -> std::result::Result<<S as Serializer>::Ok, <S as Serializer>::Error>
 where

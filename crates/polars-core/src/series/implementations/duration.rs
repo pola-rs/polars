@@ -29,10 +29,10 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
         self.0.dtype()
     }
 
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.deref_mut().set_flags(flags)
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.deref().get_flags()
     }
 

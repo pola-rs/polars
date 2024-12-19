@@ -18,7 +18,6 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
-use crate::chunked_array::metadata::MetadataEnv;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -115,10 +114,6 @@ where
                 .reduce(MinMax::min_ignore_nan),
         };
 
-        if MetadataEnv::experimental_enabled() {
-            self.interior_mut_metadata().set_min_value(result);
-        }
-
         result
     }
 
@@ -152,10 +147,6 @@ where
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
         };
-
-        if MetadataEnv::experimental_enabled() {
-            self.interior_mut_metadata().set_max_value(result);
-        }
 
         result
     }
@@ -204,18 +195,6 @@ where
                     )
                 }),
         };
-
-        if MetadataEnv::experimental_enabled() {
-            let (min, max) = match result {
-                Some((min, max)) => (Some(min), Some(max)),
-                None => (None, None),
-            };
-
-            let mut md = self.interior_mut_metadata();
-
-            md.set_min_value(min);
-            md.set_max_value(max);
-        }
 
         result
     }

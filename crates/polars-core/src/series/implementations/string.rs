@@ -15,10 +15,10 @@ impl private::PrivateSeries for SeriesWrap<StringChunked> {
         self.0.ref_field().dtype()
     }
 
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
