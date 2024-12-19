@@ -1,0 +1,32 @@
+﻿polars.datatypes.String
+=======================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: String
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~String.__init__
+      ~String.base_type
+      ~String.is_
+      ~String.is_decimal
+      ~String.is_float
+      ~String.is_integer
+      ~String.is_nested
+      ~String.is_numeric
+      ~String.is_signed_integer
+      ~String.is_temporal
+      ~String.is_unsigned_integer
+   
+   
+
+   
+   
+   

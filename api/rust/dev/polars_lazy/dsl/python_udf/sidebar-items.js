@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PYTHON_SERDE_MAGIC_BYTE_MARK"],"static":["CALL_COLUMNS_UDF_PYTHON","CALL_DF_UDF_PYTHON","PYTHON3_VERSION"],"struct":["PythonFunction","PythonGetOutput","PythonUdfExpression"]};
