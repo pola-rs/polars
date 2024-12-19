@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
-use polars_core::frame::DataFrame;
 use polars_core::prelude::ArrowSchema;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{phys_expr_to_io_expr, PhysicalExpr};
@@ -17,10 +16,10 @@ use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::async_primitives::wait_group::WaitToken;
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::{MorselSeq, TaskPriority};
+use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
 mod init;
@@ -31,7 +30,7 @@ mod row_group_data_fetch;
 mod row_group_decode;
 
 type AsyncTaskData = (
-    Vec<crate::async_primitives::connector::Receiver<(DataFrame, MorselSeq, WaitToken)>>,
+    Vec<crate::async_primitives::distributor_channel::Receiver<(DataFrame, MorselSeq)>>,
     task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
 );
 
@@ -242,19 +241,20 @@ impl ComputeNode for ParquetSourceNode {
                 let is_finished = is_finished.clone();
                 let source_token = source_token.clone();
                 scope.spawn_task(TaskPriority::Low, async move {
+                    let wait_group = WaitGroup::default();
                     loop {
-                        let Ok((df, morsel_seq, wait_token)) = raw_morsel_rx.recv().await else {
+                        let Ok((df, seq)) = raw_morsel_rx.recv().await else {
                             is_finished.store(true, Ordering::Relaxed);
                             break;
                         };
 
-                        let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
-                        morsel.set_consume_token(wait_token);
-
+                        let mut morsel = Morsel::new(df, seq, source_token.clone());
+                        morsel.set_consume_token(wait_group.token());
                         if morsel_tx.send(morsel).await.is_err() {
                             break;
                         }
-
+                        
+                        wait_group.wait().await;
                         if source_token.stop_requested() {
                             break;
                         }
