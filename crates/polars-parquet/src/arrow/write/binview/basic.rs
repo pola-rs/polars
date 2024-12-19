@@ -16,24 +16,21 @@ pub(crate) fn encode_plain(
     buffer: &mut Vec<u8>,
 ) {
     if options.is_optional() && array.validity().is_some() {
+        // @NOTE: This capacity might overestimate the amount of bytes since the buffers might
+        // still contain data that is not referenced by any value.
         let capacity =
             array.total_bytes_len() + (array.len() - array.null_count()) * size_of::<u32>();
-
-        let len_before = buffer.len();
         buffer.reserve(capacity);
 
         encode_non_null_values(array.non_null_values_iter(), buffer);
         // Append the non-null values.
-        debug_assert_eq!(buffer.len() - len_before, capacity);
     } else {
+        // @NOTE: This capacity might overestimate the amount of bytes since the buffers might
+        // still contain data that is not referenced by any value.
         let capacity = array.total_bytes_len() + array.len() * size_of::<u32>();
-
-        let len_before = buffer.len();
         buffer.reserve(capacity);
 
         encode_non_null_values(array.values_iter(), buffer);
-        // Append the non-null values.
-        debug_assert_eq!(buffer.len() - len_before, capacity);
     }
 }
 
