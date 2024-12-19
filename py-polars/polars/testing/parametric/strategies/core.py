@@ -9,8 +9,9 @@ from hypothesis.errors import InvalidArgument
 
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
-from polars.datatypes import DataType, DataTypeClass, Null
+from polars.datatypes import DataType, DataTypeClass, Null, List, Array, Struct
 from polars.series import Series
+from polars import select, when
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
 from polars.testing.parametric.strategies.data import data
@@ -42,6 +43,7 @@ def series(
     strategy: SearchStrategy[Any] | None = None,
     allow_null: bool = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     unique: bool = False,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
@@ -74,6 +76,8 @@ def series(
         Allow nulls as possible values and allow the `Null` data type by default.
     allow_chunks : bool
         Allow the Series to contain multiple chunks.
+    allow_masked_out : bool
+        Allow the nulls to contain masked out elements.
     unique : bool, optional
         indicate whether Series values should all be distinct.
     allowed_dtypes : {list,set}, optional
@@ -221,6 +225,28 @@ def series(
         )
 
     s = Series(name=name, values=values, dtype=dtype)
+
+    # Apply masking out of values
+    can_mask = isinstance(dtype, List) or isinstance(dtype, Array) or isinstance(dtype, Struct)
+    if allow_masked_out and can_mask and s.has_nulls() and draw(st.booleans()):
+        masked_out_strategy = data(
+            dtype,  # type: ignore[arg-type]
+            allow_null=False,
+            **kwargs,
+        )
+        masked_out = draw(
+            st.lists(
+                masked_out_strategy,
+                min_size=size,
+                max_size=size,
+                unique_by=(flexhash if unique else None),
+            )
+        )
+        masked_out_s = Series(name=name, values=masked_out, dtype=dtype)
+
+        nulls_mask = s.is_null()
+        s = select(when(nulls_mask).then(masked_out_s).otherwise(s).alias(s.name)).to_series()
+        s = select(when(~nulls_mask).then(s)).to_series()
 
     # Apply chunking
     if allow_chunks and size > 1 and draw(st.booleans()):
