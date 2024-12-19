@@ -5,6 +5,7 @@ use std::sync::Arc;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::frame::DataFrame;
+use polars_core::prelude::PlIndexSet;
 use polars_error::PolarsResult;
 use polars_io::prelude::ParallelStrategy;
 use polars_io::prelude::_internal::PrefilterMaskSetting;
@@ -264,25 +265,26 @@ impl ParquetSourceNode {
             );
 
         let predicate_arrow_field_indices = if use_prefiltered {
-            let v = physical_predicate
+            let mut live_columns = PlIndexSet::default();
+            physical_predicate
                 .as_ref()
                 .unwrap()
-                .live_variables()
-                .and_then(|x| {
-                    let mut out = x
+                .collect_live_columns(&mut live_columns);
+            let v = (!live_columns.is_empty())
+                .then(|| {
+                    let out = live_columns
                         .iter()
                         // Can be `None` - if the column is e.g. a hive column, or the row index column.
                         .filter_map(|x| projected_arrow_schema.index_of(x))
                         .collect::<Vec<_>>();
 
-                    out.sort_unstable();
-                    out.dedup();
                     // There is at least one non-predicate column, or pre-filtering was
                     // explicitly requested (only useful for testing).
                     (out.len() < projected_arrow_schema.len()
                         || matches!(self.options.parallel, ParallelStrategy::Prefiltered))
                     .then_some(out)
-                });
+                })
+                .flatten();
 
             use_prefiltered &= v.is_some();
 

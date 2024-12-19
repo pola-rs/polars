@@ -201,6 +201,7 @@ impl PhysicalExpr for SortByExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
         if self.by.is_empty() {
@@ -372,6 +373,13 @@ impl PhysicalExpr for SortByExpr {
 
         ac_in.with_groups(groups);
         Ok(ac_in)
+    }
+
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        self.input.collect_live_columns(lv);
+        for i in &self.by {
+            i.collect_live_columns(lv);
+        }
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

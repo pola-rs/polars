@@ -233,7 +233,7 @@ impl LiteralValue {
         }
     }
 
-    pub(crate) fn new_idxsize(value: IdxSize) -> Self {
+    pub fn new_idxsize(value: IdxSize) -> Self {
         #[cfg(feature = "bigidx")]
         {
             LiteralValue::UInt64(value)

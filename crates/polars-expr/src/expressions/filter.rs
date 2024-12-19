@@ -24,6 +24,7 @@ impl PhysicalExpr for FilterExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
@@ -143,6 +144,11 @@ impl PhysicalExpr for FilterExpr {
             ac_s.with_groups(groups).set_original_len(false);
             Ok(ac_s)
         }
+    }
+
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        self.input.collect_live_columns(lv);
+        self.by.collect_live_columns(lv);
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

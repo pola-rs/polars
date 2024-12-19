@@ -137,8 +137,11 @@ where
                                     self.p.evaluate_io(df)
                                 }
 
-                                fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
-                                    None
+                                fn collect_live_columns(
+                                    &self,
+                                    live_columns: &mut PlIndexSet<PlSmallStr>,
+                                ) {
+                                    self.p.collect_live_columns(live_columns);
                                 }
 
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
