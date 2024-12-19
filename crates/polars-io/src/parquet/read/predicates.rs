@@ -25,12 +25,12 @@ pub(crate) fn collect_statistics(
     let stats = schema
         .iter_values()
         .map(|field| {
-            let iter = md.columns_under_root_iter(&field.name).unwrap();
-
-            Ok(if iter.len() == 0 {
-                ColumnStats::new(field.into(), None, None, None)
-            } else {
-                ColumnStats::from_arrow_stats(deserialize(field, iter)?, field)
+            let iter = md.columns_under_root_iter(&field.name);
+            Ok(match iter {
+                Some(x) if { x.len() > 0 } => {
+                    ColumnStats::from_arrow_stats(deserialize(field, x)?, field)
+                },
+                _ => ColumnStats::new(field.into(), None, None, None),
             })
         })
         .collect::<PolarsResult<Vec<_>>>()?;
