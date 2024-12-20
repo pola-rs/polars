@@ -298,48 +298,6 @@ impl MultiScanExec {
                 self.first_file_metadata.as_deref().filter(|_| i == 0),
             )?;
 
-            // Insert the hive partition values into the predicate. This allows the predicate
-            // to function even when there is a combination of hive and non-hive columns being
-            // used.
-            let mut file_predicate = predicate.clone();
-            if has_live_hive_columns {
-                let hive_part = hive_part.unwrap();
-                let predicate = predicate.as_ref().unwrap();
-                const_columns.clear();
-                for (idx, column) in hive_column_set.iter().enumerate() {
-                    let value = hive_part.get_statistics().column_stats()[idx]
-                        .to_min()
-                        .unwrap()
-                        .get(0)
-                        .unwrap()
-                        .into_static();
-                    const_columns.insert(column.clone(), value);
-                }
-                file_predicate = predicate.replace_elementwise_const_columns(&const_columns);
-
-                // @TODO: Set predicate to `None` if it's constant evaluated to true.
-
-                // At this point the file_predicate should not contain any references to the
-                // hive columns anymore.
-                //
-                // Note that, replace_elementwise_const_columns does not actually guarantee the
-                // replacement of all reference to the const columns. But any expression which
-                // does not guarantee this should not be pushed down as an IO predicate.
-                if cfg!(debug_assertions) {
-                    let mut live_columns = PlIndexSet::new();
-                    file_predicate
-                        .as_ref()
-                        .unwrap()
-                        .collect_live_columns(&mut live_columns);
-                    for hive_column in hive_part.get_statistics().column_stats() {
-                        assert!(
-                            !live_columns.contains(hive_column.field_name()),
-                            "Predicate still contains hive column"
-                        );
-                    }
-                }
-            }
-
             if verbose {
                 eprintln!(
                     "Multi-file / Hive read: currently reading '{}'",
@@ -376,6 +334,52 @@ impl MultiScanExec {
                 if !extra_columns.is_empty() {
                     // @TODO: Better error
                     polars_bail!(InvalidOperation: "More schema in file after first");
+                }
+            }
+
+            // Insert the hive partition values into the predicate. This allows the predicate
+            // to function even when there is a combination of hive and non-hive columns being
+            // used.
+            let mut file_predicate = predicate.clone();
+            if has_live_hive_columns {
+                let hive_part = hive_part.unwrap();
+                let predicate = predicate.as_ref().unwrap();
+                const_columns.clear();
+                for (idx, column) in hive_column_set.iter().enumerate() {
+                    let value = hive_part.get_statistics().column_stats()[idx]
+                        .to_min()
+                        .unwrap()
+                        .get(0)
+                        .unwrap()
+                        .into_static();
+                    const_columns.insert(column.clone(), value);
+                }
+                for (_, (missing_column, _)) in &missing_columns {
+                    const_columns.insert((*missing_column).clone(), AnyValue::Null);
+                }
+
+                file_predicate = predicate.replace_elementwise_const_columns(&const_columns);
+
+                // @TODO: Set predicate to `None` if it's constant evaluated to true.
+
+                // At this point the file_predicate should not contain any references to the
+                // hive columns anymore.
+                //
+                // Note that, replace_elementwise_const_columns does not actually guarantee the
+                // replacement of all reference to the const columns. But any expression which
+                // does not guarantee this should not be pushed down as an IO predicate.
+                if cfg!(debug_assertions) {
+                    let mut live_columns = PlIndexSet::new();
+                    file_predicate
+                        .as_ref()
+                        .unwrap()
+                        .collect_live_columns(&mut live_columns);
+                    for hive_column in hive_part.get_statistics().column_stats() {
+                        assert!(
+                            !live_columns.contains(hive_column.field_name()),
+                            "Predicate still contains hive column"
+                        );
+                    }
                 }
             }
 
