@@ -114,7 +114,7 @@ fn arr_no_validities_recursive(arr: &dyn Array) -> bool {
         && arr
             .as_any()
             .downcast_ref::<FixedSizeListArray>()
-            .map_or(true, |x| arr_no_validities_recursive(x.values().as_ref()))
+            .is_none_or(|x| arr_no_validities_recursive(x.values().as_ref()))
 }
 
 /// `take` implementation for FixedSizeListArrays

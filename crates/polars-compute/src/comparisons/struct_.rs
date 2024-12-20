@@ -27,7 +27,7 @@ impl TotalEqKernel for StructArray {
         for i in 0..lhs.len() {
             let mut is_equal = true;
 
-            if !ln.map_or(true, |v| v.get(i).unwrap()) || !rn.map_or(true, |v| v.get(i).unwrap()) {
+            if !ln.is_none_or(|v| v.get(i).unwrap()) || !rn.is_none_or(|v| v.get(i).unwrap()) {
                 bitmap.push(true);
                 continue;
             }
@@ -74,7 +74,7 @@ impl TotalEqKernel for StructArray {
         for i in 0..lhs.len() {
             let mut is_equal = true;
 
-            if !ln.map_or(true, |v| v.get(i).unwrap()) || !rn.map_or(true, |v| v.get(i).unwrap()) {
+            if !ln.is_none_or(|v| v.get(i).unwrap()) || !rn.is_none_or(|v| v.get(i).unwrap()) {
                 bitmap.push(false);
                 continue;
             }

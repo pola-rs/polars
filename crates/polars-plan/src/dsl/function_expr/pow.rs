@@ -72,10 +72,10 @@ where
             )));
         };
         let s = match exponent_value.to_f64().unwrap() {
-            a if a == 1.0 => base.clone().into_column(),
+            1.0 => base.clone().into_column(),
             // specialized sqrt will ensure (-inf)^0.5 = NaN
             // and will likely be faster as well.
-            a if a == 0.5 => base.apply_values(|v| v.sqrt()).into_column(),
+            0.5 => base.apply_values(|v| v.sqrt()).into_column(),
             a if a.fract() == 0.0 && a < 10.0 && a > 1.0 => {
                 let mut out = base.clone();
 

@@ -296,7 +296,7 @@ fn resolve_join_where(
             let mut iter =
                 expr_to_leaf_column_names_iter(left).chain(expr_to_leaf_column_names_iter(right));
             iter.all(|name| {
-                schema.contains(name.as_str()) && other.map_or(true, |s| !s.contains(name.as_str()))
+                schema.contains(name.as_str()) && other.is_none_or(|s| !s.contains(name.as_str()))
             })
         }
 

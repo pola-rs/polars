@@ -27,8 +27,8 @@ macro_rules! compare {
 
                 (0..$lhs.len())
                     .map(|i| {
-                        let lval = $lhs.validity().map_or(true, |v| v.get(i).unwrap());
-                        let rval = $rhs.validity().map_or(true, |v| v.get(i).unwrap());
+                        let lval = $lhs.validity().is_none_or(|v| v.get(i).unwrap());
+                        let rval = $rhs.validity().is_none_or(|v| v.get(i).unwrap());
 
                         if !lval || !rval {
                             return $invalid_rv;
@@ -126,7 +126,7 @@ macro_rules! compare_broadcast {
 
                 (0..length)
                     .map(move |i| {
-                        let v = $validity.map_or(true, |v| v.get(i).unwrap());
+                        let v = $validity.is_none_or(|v| v.get(i).unwrap());
 
                         if !v {
                             return $invalid_rv;
