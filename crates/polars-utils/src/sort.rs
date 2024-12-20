@@ -20,7 +20,7 @@ use crate::IdxSize;
 ///
 /// # Safety
 /// The caller must ensure that the right indexes for `&[(_, IdxSize)]` are integers ranging from `0..idx.len`
-#[cfg(not(target_family = "wasm"))]
+#[cfg(any(target_os = "emscripten", not(target_family = "wasm")))]
 pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &mut Vec<IdxSize>) {
     let chunk_size = std::cmp::max(
         idx.len() / pool.current_num_threads(),
@@ -47,7 +47,7 @@ pub unsafe fn perfect_sort(pool: &ThreadPool, idx: &[(IdxSize, IdxSize)], out: &
 }
 
 // wasm alternative with different signature
-#[cfg(target_family = "wasm")]
+#[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))]
 pub unsafe fn perfect_sort(
     pool: &crate::wasm::Pool,
     idx: &[(IdxSize, IdxSize)],

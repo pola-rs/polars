@@ -1117,7 +1117,7 @@ impl SQLContext {
         order_by: &Option<OrderBy>,
         selected: Option<&[Expr]>,
     ) -> PolarsResult<LazyFrame> {
-        if order_by.as_ref().map_or(true, |ob| ob.exprs.is_empty()) {
+        if order_by.as_ref().is_none_or(|ob| ob.exprs.is_empty()) {
             return Ok(lf);
         }
         let schema = self.get_frame_schema(&mut lf)?;

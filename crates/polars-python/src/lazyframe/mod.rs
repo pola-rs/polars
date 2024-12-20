@@ -6,6 +6,7 @@ mod serde;
 pub mod visit;
 pub mod visitor;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use exitable::PyInProcessQuery;
 use polars::prelude::LazyFrame;
 use pyo3::pyclass;

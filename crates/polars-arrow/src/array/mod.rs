@@ -735,7 +735,7 @@ pub type ArrayRef = Box<dyn Array>;
 impl Splitable for Option<Bitmap> {
     #[inline(always)]
     fn check_bound(&self, offset: usize) -> bool {
-        self.as_ref().map_or(true, |v| offset <= v.len())
+        self.as_ref().is_none_or(|v| offset <= v.len())
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {

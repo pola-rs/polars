@@ -660,7 +660,7 @@ where
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap();
 
-            if !right.validity().map_or(true, |v| v.get(0).unwrap()) {
+            if !right.validity().is_none_or(|v| v.get(0).unwrap()) {
                 if missing {
                     if is_ne {
                         return lhs.is_not_null();
@@ -692,7 +692,7 @@ where
                 .downcast_ref::<ListArray<i64>>()
                 .unwrap();
 
-            if !left.validity().map_or(true, |v| v.get(0).unwrap()) {
+            if !left.validity().is_none_or(|v| v.get(0).unwrap()) {
                 if missing {
                     if is_ne {
                         return rhs.is_not_null();
@@ -912,7 +912,7 @@ where
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap();
 
-            if !right.validity().map_or(true, |v| v.get(0).unwrap()) {
+            if !right.validity().is_none_or(|v| v.get(0).unwrap()) {
                 if missing {
                     if is_ne {
                         return lhs.is_not_null();
@@ -939,7 +939,7 @@ where
                 .downcast_ref::<FixedSizeListArray>()
                 .unwrap();
 
-            if !left.validity().map_or(true, |v| v.get(0).unwrap()) {
+            if !left.validity().is_none_or(|v| v.get(0).unwrap()) {
                 if missing {
                     if is_ne {
                         return rhs.is_not_null();

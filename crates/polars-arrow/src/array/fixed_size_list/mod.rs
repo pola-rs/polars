@@ -89,7 +89,7 @@ impl FixedSizeListArray {
         let has_valid_validity = self
             .validity
             .as_ref()
-            .map_or(true, |v| v.len() == self.length);
+            .is_none_or(|v| v.len() == self.length);
 
         has_valid_length && has_valid_validity
     }

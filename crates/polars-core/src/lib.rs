@@ -64,7 +64,16 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("could not spawn threads")
 });
 
-#[cfg(target_family = "wasm")] // instead use this on wasm targets
+#[cfg(all(target_os = "emscripten", target_family = "wasm"))] // Use 1 rayon thread on emscripten
+pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
+    ThreadPoolBuilder::new()
+        .num_threads(1)
+        .use_current_thread()
+        .build()
+        .expect("could not create pool")
+});
+
+#[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))] // use this on other wasm targets
 pub static POOL: Lazy<polars_utils::wasm::Pool> = Lazy::new(|| polars_utils::wasm::Pool);
 
 // utility for the tests to ensure a single thread can execute

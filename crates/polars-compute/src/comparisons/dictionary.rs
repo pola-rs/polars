@@ -13,8 +13,8 @@ impl<K: DictionaryKey> TotalEqKernel for DictionaryArray<K> {
         let mut bitmap = MutableBitmap::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let lval = self.validity().map_or(true, |v| v.get(i).unwrap());
-            let rval = other.validity().map_or(true, |v| v.get(i).unwrap());
+            let lval = self.validity().is_none_or(|v| v.get(i).unwrap());
+            let rval = other.validity().is_none_or(|v| v.get(i).unwrap());
 
             if !lval || !rval {
                 bitmap.push(true);
@@ -42,8 +42,8 @@ impl<K: DictionaryKey> TotalEqKernel for DictionaryArray<K> {
         let mut bitmap = MutableBitmap::with_capacity(self.len());
 
         for i in 0..self.len() {
-            let lval = self.validity().map_or(true, |v| v.get(i).unwrap());
-            let rval = other.validity().map_or(true, |v| v.get(i).unwrap());
+            let lval = self.validity().is_none_or(|v| v.get(i).unwrap());
+            let rval = other.validity().is_none_or(|v| v.get(i).unwrap());
 
             if !lval || !rval {
                 bitmap.push(false);

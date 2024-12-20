@@ -239,7 +239,7 @@ impl Series {
         match dimensions.len() {
             1 => {
                 polars_ensure!(
-                    dimensions[0].get().map_or(true, |dim| dim as usize == s_ref.len()),
+                    dimensions[0].get().is_none_or( |dim| dim as usize == s_ref.len()),
                     InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
                 Ok(s_ref.clone())
