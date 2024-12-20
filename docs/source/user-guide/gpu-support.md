@@ -25,7 +25,7 @@ pip install polars[gpu]
 
 !!! note Installation on a CUDA 11 system
 
-    If you have CUDA 11, the installation line is slightly more complicated: the relevant GPU package must be requested by hand using the NVIDIA package index.
+    If you have CUDA 11, the installation line also needs the NVIDIA package index to get the CUDA 11 package.
 
     === ":fontawesome-brands-python: Python"
     ```bash
