@@ -207,9 +207,7 @@ def series(
     do_mask_out = (
         allow_masked_out
         and allow_null
-        and (
-            isinstance(dtype, (List, Array, Struct))
-        )
+        and isinstance(dtype, (List, Array, Struct))
         and draw(st.booleans())
     )
 
