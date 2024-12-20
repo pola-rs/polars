@@ -179,12 +179,11 @@ class CredentialProviderAzure(CredentialProvider):
 
         self._check_module_availability()
 
-        from azure.identity import (
-            DefaultAzureCredential,  # type: ignore[import-not-found]
-        )
-
         self.account_name = storage_account
-        self.credential = DefaultAzureCredential()
+        # Done like this to bypass mypy, we don't have stubs for azure.identity
+        self.credential = importlib.import_module("azure.identity").__dict__[
+            "DefaultAzureCredential"
+        ]()
         self.scopes = scopes if scopes is not None else ["https://storage.azure.com/"]
         self._verbose = _verbose
 
