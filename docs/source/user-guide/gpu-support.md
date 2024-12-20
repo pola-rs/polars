@@ -20,12 +20,12 @@ You can install the GPU backend for Polars with a feature flag as part of a norm
 === ":fontawesome-brands-python: Python"
 
 ```bash
-pip install --extra-index-url=https://pypi.nvidia.com polars[gpu]
+pip install polars[gpu]
 ```
 
 !!! note Installation on a CUDA 11 system
 
-    If you have CUDA 11, the installation line is slightly more complicated: the relevant GPU package must be requested by hand.
+    If you have CUDA 11, the installation line is slightly more complicated: the relevant GPU package must be requested by hand using the NVIDIA PyPI index.
 
     === ":fontawesome-brands-python: Python"
     ```bash
