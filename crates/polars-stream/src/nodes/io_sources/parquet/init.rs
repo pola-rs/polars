@@ -2,7 +2,6 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::Arc;
 
-use futures::StreamExt;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::PlIndexSet;
 use polars_error::PolarsResult;
@@ -84,7 +83,6 @@ impl ParquetSourceNode {
         let (normalized_slice_oneshot_rx, metadata_rx, metadata_task_handle) =
             self.init_metadata_fetcher();
 
-        let num_pipelines = self.config.num_pipelines;
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
         let projection = self.file_options.with_columns.clone();
         assert_eq!(self.physical_predicate.is_some(), self.predicate.is_some());
@@ -133,55 +131,35 @@ impl ParquetSourceNode {
 
             row_group_data_fetcher.slice_range = slice_range;
 
-            let mut df_stream = row_group_data_fetcher
-                .into_stream()
-                .map(|x| async {
-                    match x {
-                        Ok(handle) => handle.await.unwrap(),
-                        Err(e) => Err(e),
-                    }
-                })
-                .buffered(row_group_prefetch_size)
-                .map(|x| async {
-                    let row_group_decoder = row_group_decoder.clone();
-
-                    match x {
-                        Ok(row_group_data) => {
-                            async_executor::spawn(TaskPriority::Low, async move {
-                                row_group_decoder.row_group_data_to_df(row_group_data).await
-                            })
-                            .await
-                        },
-                        Err(e) => Err(e),
-                    }
-                })
-                .buffered(
-                    // Because we are using an ordered buffer, we may suffer from head-of-line blocking,
-                    // so we add a small amount of buffer.
-                    num_pipelines + 4,
-                );
-
             let morsel_seq_ref = &mut MorselSeq::default();
-            let mut dfs = VecDeque::with_capacity(1);
+            let mut prefetches = VecDeque::with_capacity(row_group_prefetch_size);
+            let mut decoded_dfs = VecDeque::with_capacity(1);
 
-            'main: loop {
-                while dfs.is_empty() {
-                    let Some(v) = df_stream.next().await else {
-                        break 'main;
-                    };
-
-                    let df = v?;
-
+            loop {
+                while prefetches.len() < row_group_prefetch_size {
+                    let row_group_decoder = row_group_decoder.clone();
+                    let Some(prefetch) = row_group_data_fetcher.next().await else { break };
+                    prefetches.push_back(async move {
+                        let row_group_data = prefetch?.await.unwrap()?;
+                        async_executor::spawn(TaskPriority::High, async move {
+                            row_group_decoder.row_group_data_to_df(row_group_data).await
+                        }).await
+                    })
+                }
+                
+                if decoded_dfs.len() == 0 {
+                    let Some(prefetch) = prefetches.pop_front() else { break };
+                    let df = prefetch.await?;
                     if df.is_empty() {
                         continue;
                     }
 
                     let (iter, n) = split_to_morsels(&df, ideal_morsel_size);
-                    dfs.reserve(n);
-                    dfs.extend(iter);
+                    decoded_dfs.reserve(n);
+                    decoded_dfs.extend(iter);
                 }
 
-                let df = dfs.pop_front().unwrap();
+                let df = decoded_dfs.pop_front().unwrap();
                 let morsel_seq = *morsel_seq_ref;
                 *morsel_seq_ref = morsel_seq.successor();
                 if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
@@ -190,7 +168,6 @@ impl ParquetSourceNode {
             }
 
             // Join on the producer handle to catch errors/panics.
-            drop(df_stream);
             metadata_task_handle.await.unwrap()
         });
 
