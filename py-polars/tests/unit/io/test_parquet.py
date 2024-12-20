@@ -2710,3 +2710,24 @@ def test_boolean_slice_pushdown_20314() -> None:
 
     f.seek(0)
     assert pl.scan_parquet(f).slice(2, 1).collect().item()
+
+
+def test_allow_missing_columns_predicate_pushdown_20361() -> None:
+    f1 = io.BytesIO()
+    f2 = io.BytesIO()
+
+    pl.DataFrame({"a": [1, 2], "b": [1, 3], "c": [False, False]}).write_parquet(f1)
+    pl.DataFrame({"a": [4, 5], "c": [True, False]}).write_parquet(f2)
+
+    f1.seek(0)
+    f2.seek(0)
+
+    df = (
+        pl.scan_parquet([f1, f2], allow_missing_columns=True)  # type: ignore[arg-type]
+        .filter((pl.col.a == pl.col.b) | pl.col.c)
+        .collect()
+    )
+
+    assert_frame_equal(
+        df, pl.DataFrame({"a": [1, 4], "b": [1, None], "c": [False, True]})
+    )
