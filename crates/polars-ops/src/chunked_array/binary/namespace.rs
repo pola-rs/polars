@@ -3,8 +3,6 @@ use std::borrow::Cow;
 
 #[cfg(feature = "binary_encoding")]
 use arrow::array::Array;
-use arrow::array::ListArray;
-use arrow::offset::{Offsets, OffsetsBuffer};
 use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
 use arrow::datatypes::PhysicalType;
@@ -12,11 +10,10 @@ use arrow::datatypes::PhysicalType;
 use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
 use base64::Engine as _;
+use cast_binary_to_numerical::cast_binview_to_array_primitive_dyn;
 use memchr::memmem::find;
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
-
-use crate::prelude::AsList;
 
 use super::cast_binary_to_numerical::cast_binview_to_primitive_dyn;
 use super::*;
@@ -171,36 +168,66 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                 })
             },
             PhysicalType::FixedSizeList => {
-                // unwrap is safe since all lists have inner type
-                // let inner_dtype = dtype.inner_dtype().unwrap();
-
-                let (inner_dtype, offsets): (_, OffsetsBuffer<i64>) = if let DataType::Array(inner_dtype, size) = dtype {
-                    // TODO: Nicer way of doing this when I'm online
-                    let mut offsets = Vec::with_capacity(*size);
-                    let mut idx = 0;
-                    let type_size = inner_dtype.byte_size().unwrap();
-                    while idx < *size {
-                        offsets.push((idx * type_size) as i64);
-                        idx += 1
-                    }
-                    (
-                        inner_dtype,
-                        offsets.try_into().unwrap()
-                    )
+                let leaf_dtype = dtype.leaf_dtype();
+                let leaf_physical_type = leaf_dtype.to_arrow(CompatLevel::newest()).to_physical_type();
+                let primitive_type = if let PhysicalType::Primitive(x) = leaf_physical_type {
+                    x
                 } else {
-                    todo!("Some reasonable error here.")
+                    return Err(polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed in arrays."));
                 };
-                // ChunkedArray::as_list()
-                self._from_buffer_inner(inner_dtype, is_little_endian).map(|arr_vec| {
-                    arr_vec.into_iter().map(|arr| {
-                        LargeListArray::new(
-                            inner_dtype.to_arrow(CompatLevel::newest()),
-                            offsets.clone(),
-                            arr,
-                            None,
-                        ).boxed()
-                    }).collect()
+                // Since we know it's a physical size, we
+                let element_size = leaf_dtype.byte_size().unwrap();
+
+                with_match_primitive_type!(primitive_type, |$T| {
+                    unsafe {
+                        ca.chunks().iter().map(|chunk| {
+                            cast_binview_to_array_primitive_dyn::<$T>(
+                                &**chunk,
+                                &arrow_data_type,
+                                is_little_endian,
+                                element_size
+                            )
+                        }).collect()
+                    }
                 })
+
+                // // unwrap is safe since all lists have inner type
+                // // let inner_dtype = dtype.inner_dtype().unwrap();
+                // let size  = if let DataType::Array(inner_dtype, size) = dtype {
+                //     *size
+                // } else {
+                //     todo!("alfafldasd")
+                // };
+
+                // let (inner_dtype, offsets): (_, OffsetsBuffer<i64>) = if let DataType::Array(inner_dtype, size) = dtype {
+                //     // TODO: Nicer way of doing this when I'm online
+                //     let mut offsets = Vec::with_capacity(*size);
+                //     let mut idx = 0;
+                //     let type_size = inner_dtype.byte_size().unwrap();
+                //     while idx < *size {
+                //         offsets.push((idx * type_size) as i64);
+                //         idx += 1
+                //     }
+                //     (
+                //         inner_dtype,
+                //         offsets.try_into().unwrap()
+                //     )
+                // } else {
+                //     todo!("Some reasonable error here.")
+                // };
+                // // ChunkedArray::as_list()
+                // self._from_buffer_inner(inner_dtype, is_little_endian).map(|arr_vec| {
+                //     arr_vec.into_iter().map(|arr| {
+                //         println!("Array dtype: {:?}", arr.dtype());
+                //         println!("Values: {arr:?}");
+                //         FixedSizeListArray::new(
+                //             arrow_data_type.clone(),
+                //             size,
+                //             arr,
+                //             None,
+                //         ).boxed()
+                //     }).collect()
+                // })
             },
             _ => Err(
                 polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
