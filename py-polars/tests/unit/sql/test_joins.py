@@ -113,12 +113,15 @@ def test_join_cross_11927() -> None:
 def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     foods1 = pl.scan_ipc(foods_ipc_path)
     foods2 = foods1  # noqa: F841
+    schema = foods1.collect_schema()
 
+    sort_clause = ", ".join(f'{c} ASC, "{c}:foods2" DESC' for c in schema)
     out = pl.sql(
         f"""
         SELECT *
         FROM foods1
         INNER JOIN foods2 {join_clause}
+        ORDER BY {sort_clause}
         LIMIT 2
         """,
         eager=True,
@@ -128,18 +131,17 @@ def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
         out,
         pl.DataFrame(
             {
-                "category": ["vegetables", "vegetables"],
-                "calories": [45, 20],
-                "fats_g": [0.5, 0.0],
-                "sugars_g": [2, 2],
-                "category:foods2": ["vegetables", "vegetables"],
-                "calories:foods2": [45, 45],
-                "fats_g:foods2": [0.5, 0.5],
-                "sugars_g:foods2": [2, 2],
+                "category": ["fruit", "fruit"],
+                "calories": [30, 30],
+                "fats_g": [0.0, 0.0],
+                "sugars_g": [3, 5],
+                "category:foods2": ["fruit", "fruit"],
+                "calories:foods2": [130, 130],
+                "fats_g:foods2": [0.0, 0.0],
+                "sugars_g:foods2": [25, 25],
             }
         ),
         check_dtypes=False,
-        check_row_order=False,
     )
 
 
