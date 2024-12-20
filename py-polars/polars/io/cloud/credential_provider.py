@@ -179,7 +179,7 @@ class CredentialProviderAzure(CredentialProvider):
 
         self._check_module_availability()
 
-        from azure.identity import DefaultAzureCredential
+        from azure.identity import DefaultAzureCredential  # type: ignore[import-not-found]
 
         self.account_name = storage_account
         self.credential = DefaultAzureCredential()
