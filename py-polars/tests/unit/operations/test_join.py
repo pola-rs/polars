@@ -208,10 +208,14 @@ def test_join() -> None:
         }
     )
 
-    joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
+    joined = df_left.join(
+        df_right, left_on="a", right_on="a", maintain_order="left_right"
+    ).sort("a")
     assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2]))
 
-    joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
+    joined = df_left.join(
+        df_right, left_on="a", right_on="a", how="left", maintain_order="left_right"
+    ).sort("a")
     assert joined["c_right"].is_null().sum() == 1
     assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2, 4]))
 
