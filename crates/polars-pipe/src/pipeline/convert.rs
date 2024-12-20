@@ -333,13 +333,6 @@ where
             let slice = SliceSink::new(*offset as u64, *len as usize, input_schema.into_owned());
             Box::new(slice) as Box<dyn SinkTrait>
         },
-        Reduce {
-            input: _,
-            exprs: _,
-            schema: _,
-        } => {
-            todo!()
-        },
         Sort {
             input,
             by_column,

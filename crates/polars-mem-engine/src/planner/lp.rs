@@ -426,20 +426,6 @@ fn create_physical_plan_impl(
                 allow_vertical_parallelism,
             }))
         },
-        Reduce {
-            exprs,
-            input,
-            schema,
-        } => {
-            let select = Select {
-                input,
-                expr: exprs,
-                schema,
-                options: Default::default(),
-            };
-            let node = lp_arena.add(select);
-            create_physical_plan(node, lp_arena, expr_arena)
-        },
         DataFrameScan {
             df,
             filter: predicate,

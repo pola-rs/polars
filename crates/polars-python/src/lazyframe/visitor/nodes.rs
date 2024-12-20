@@ -504,15 +504,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             should_broadcast: options.should_broadcast,
         }
         .into_py_any(py),
-        IR::Reduce {
-            input,
-            exprs,
-            schema: _,
-        } => Reduce {
-            input: input.0,
-            exprs: exprs.iter().map(|e| e.into()).collect(),
-        }
-        .into_py_any(py),
         IR::Distinct { input, options } => Distinct {
             input: input.0,
             options: (

@@ -110,13 +110,6 @@ impl Hash for HashableEqLP<'_> {
                 hash_exprs(expr, self.expr_arena, state);
                 options.hash(state);
             },
-            IR::Reduce {
-                input: _,
-                exprs,
-                schema: _,
-            } => {
-                hash_exprs(exprs, self.expr_arena, state);
-            },
             IR::Sort {
                 input: _,
                 by_column,

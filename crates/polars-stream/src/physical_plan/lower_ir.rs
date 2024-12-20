@@ -431,7 +431,6 @@ pub fn lower_ir(
 
         #[cfg(feature = "python")]
         IR::PythonScan { .. } => todo!(),
-        IR::Reduce { .. } => todo!(),
         IR::Cache { .. } => todo!(),
         IR::GroupBy {
             input,
