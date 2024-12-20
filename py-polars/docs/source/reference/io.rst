@@ -127,4 +127,5 @@ Configuration for cloud credential provisioning.
 
    CredentialProvider
    CredentialProviderAWS
+   CredentialProviderAzure
    CredentialProviderGCP

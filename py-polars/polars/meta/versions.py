@@ -68,6 +68,7 @@ def _get_dependency_list() -> list[str]:
     return [
         "adbc_driver_manager",
         "altair",
+        "azure.identity",
         "boto3",
         "cloudpickle",
         "connectorx",
