@@ -37,5 +37,9 @@ def _is_aws_cloud(scheme: str) -> bool:
     return any(scheme == x for x in ["s3", "s3a"])
 
 
+def _is_azure_cloud(scheme: str) -> bool:
+    return any(scheme == x for x in ["az", "azure", "adl", "abfs", "abfss"])
+
+
 def _is_gcp_cloud(scheme: str) -> bool:
     return any(scheme == x for x in ["gs", "gcp", "gcs"])

@@ -547,6 +547,7 @@ mod python_impl {
 
         #[cfg(feature = "azure")]
         fn into_azure_provider(self) -> object_store::azure::AzureCredentialProvider {
+            use object_store::azure::AzureAccessKey;
             use polars_error::{to_compute_err, PolarsResult};
 
             use crate::cloud::credential_provider::{
@@ -556,8 +557,10 @@ mod python_impl {
             CredentialProviderFunction(Arc::new(move || {
                 let func = self.0.clone();
                 Box::pin(async move {
-                    let mut credentials =
-                        object_store::azure::AzureCredential::BearerToken(String::new());
+                    let mut credentials = None;
+
+                    static VALID_KEYS_MSG: &str =
+                        "valid configuration keys are: account_key, bearer_token";
 
                     let expiry = Python::with_gil(|py| {
                         let v = func.0.call0(py)?.into_bound(py);
@@ -568,17 +571,23 @@ mod python_impl {
                             let k = k.extract::<PyBackedStr>()?;
                             let v = v.extract::<String>()?;
 
-                            // We only support bearer for now
                             match k.as_ref() {
+                                "account_key" => {
+                                    credentials =
+                                        Some(object_store::azure::AzureCredential::AccessKey(
+                                            AzureAccessKey::try_new(v.as_str()).map_err(|e| {
+                                                PyValueError::new_err(e.to_string())
+                                            })?,
+                                        ))
+                                },
                                 "bearer_token" => {
                                     credentials =
-                                        object_store::azure::AzureCredential::BearerToken(v)
+                                        Some(object_store::azure::AzureCredential::BearerToken(v))
                                 },
                                 v => {
                                     return pyo3::PyResult::Err(PyValueError::new_err(format!(
-                                        "unknown configuration key for azure: {}, \
-                                    valid configuration keys are: {}",
-                                        v, "bearer_token",
+                                        "unknown configuration key for azure: {}, {}",
+                                        v, VALID_KEYS_MSG
                                     )))
                                 },
                             }
@@ -588,16 +597,15 @@ mod python_impl {
                     })
                     .map_err(to_compute_err)?;
 
-                    let object_store::azure::AzureCredential::BearerToken(bearer) = &credentials
-                    else {
-                        unreachable!()
-                    };
-
-                    if bearer.is_empty() {
+                    let Some(credentials) = credentials else {
                         return Err(PolarsError::ComputeError(
-                            "bearer was empty or not given".into(),
+                            format!(
+                                "did not find a valid configuration key for azure, {}",
+                                VALID_KEYS_MSG
+                            )
+                            .into(),
                         ));
-                    }
+                    };
 
                     PolarsResult::Ok((ObjectStoreCredential::Azure(Arc::new(credentials)), expiry))
                 })
