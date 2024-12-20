@@ -263,6 +263,8 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .iter_values()
             .take(self.num_keys)
             .map(get_row_encoding_dictionary)
+            // @TODO: get this unwrap out of here.
+            .map(|v| v.unwrap())
             .collect::<Vec<_>>();
         let fields = vec![Default::default(); self.num_keys];
         let key_columns =

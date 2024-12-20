@@ -5,6 +5,7 @@ use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use hashbrown::hash_table::Entry;
 use hashbrown::HashTable;
 use once_cell::sync::Lazy;
+use polars_error::{polars_ensure, PolarsResult};
 use polars_utils::aliases::PlRandomState;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -190,8 +191,9 @@ impl SCacheInner {
     }
 
     #[inline]
-    pub(crate) fn get_current_payloads(&self) -> &[PlSmallStr] {
-        &self.payloads
+    pub(crate) fn get_current_payloads(&self, uuid: u32) -> PolarsResult<&[PlSmallStr]> {
+        polars_ensure!(self.uuid == uuid, ComputeError: "trying to perform operations with  values from different global string cache version");
+        Ok(&self.payloads)
     }
 }
 

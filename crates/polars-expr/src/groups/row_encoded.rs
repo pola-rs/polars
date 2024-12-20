@@ -42,7 +42,8 @@ impl RowEncodedHashGrouper {
         let dicts = self
             .key_schema
             .iter()
-            .map(|(_, dt)| get_row_encoding_dictionary(dt))
+            // @TODO: Get this unwrap out of here. That is a bit difficult to do.
+            .map(|(_, dt)| get_row_encoding_dictionary(dt).unwrap())
             .collect::<Vec<_>>();
         let fields = vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()];
         let key_columns =

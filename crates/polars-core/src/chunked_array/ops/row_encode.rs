@@ -1,4 +1,5 @@
 use arrow::compute::utils::combine_validities_and_many;
+use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_row::{
     convert_columns, RowEncodingCategoricalContext, RowEncodingContext, RowEncodingOptions,
     RowsEncoded,
@@ -70,7 +71,7 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     ))
 }
 
-pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContext> {
+pub fn get_row_encoding_dictionary(dtype: &DataType) -> PolarsResult<Option<RowEncodingContext>> {
     match dtype {
         DataType::Boolean
         | DataType::UInt8
@@ -91,7 +92,7 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
         | DataType::Time
         | DataType::Date
         | DataType::Datetime(_, _)
-        | DataType::Duration(_) => None,
+        | DataType::Duration(_) => Ok(None),
 
         DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 
@@ -100,7 +101,7 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
 
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, _) => {
-            Some(RowEncodingContext::Decimal(precision.unwrap_or(38)))
+            Ok(Some(RowEncodingContext::Decimal(precision.unwrap_or(38))))
         },
 
         #[cfg(feature = "dtype-array")]
@@ -111,24 +112,25 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
             let revmap = revmap.as_ref().unwrap();
 
             let (num_known_categories, lexical_sort_idxs) = match revmap.as_ref() {
-                RevMapping::Global(map, _, _) => {
+                RevMapping::Global(map, _, uuid) => {
                     let num_known_categories = map.keys().max().copied().map_or(0, |m| m + 1);
 
                     // @TODO: This should probably be cached.
-                    let lexical_sort_idxs =
-                        matches!(ordering, CategoricalOrdering::Lexical).then(|| {
-                            let read_map = crate::STRING_CACHE.read_map();
-                            let payloads = read_map.get_current_payloads();
-                            assert!(payloads.len() >= num_known_categories as usize);
+                    let lexical_sort_idxs = if matches!(ordering, CategoricalOrdering::Lexical) {
+                        let read_map = crate::STRING_CACHE.read_map();
+                        let payloads = read_map.get_current_payloads(*uuid)?;
+                        assert!(payloads.len() >= num_known_categories as usize);
 
-                            let mut idxs = (0..num_known_categories).collect::<Vec<u32>>();
-                            idxs.sort_by_key(|&k| payloads[k as usize].as_str());
-                            let mut sort_idxs = vec![0; num_known_categories as usize];
-                            for (i, idx) in idxs.into_iter().enumerate_u32() {
-                                sort_idxs[idx as usize] = i;
-                            }
-                            sort_idxs
-                        });
+                        let mut idxs = (0..num_known_categories).collect::<Vec<u32>>();
+                        idxs.sort_by_key(|&k| payloads[k as usize].as_str());
+                        let mut sort_idxs = vec![0; num_known_categories as usize];
+                        for (i, idx) in idxs.into_iter().enumerate_u32() {
+                            sort_idxs[idx as usize] = i;
+                        }
+                        Some(sort_idxs)
+                    } else {
+                        None
+                    };
 
                     (num_known_categories, lexical_sort_idxs)
                 },
@@ -157,14 +159,14 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
                 is_enum: matches!(dtype, DataType::Enum(_, _)),
                 lexical_sort_idxs,
             };
-            Some(RowEncodingContext::Categorical(ctx))
+            Ok(Some(RowEncodingContext::Categorical(ctx)))
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fs) => {
             let mut out = Vec::new();
 
             for (i, f) in fs.iter().enumerate() {
-                if let Some(dict) = get_row_encoding_dictionary(f.dtype()) {
+                if let Some(dict) = get_row_encoding_dictionary(f.dtype())? {
                     out.reserve(fs.len());
                     out.extend(std::iter::repeat_n(None, i));
                     out.push(Some(dict));
@@ -173,16 +175,18 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
             }
 
             if out.is_empty() {
-                return None;
+                return Ok(None);
             }
 
-            out.extend(
-                fs[out.len()..]
-                    .iter()
-                    .map(|f| get_row_encoding_dictionary(f.dtype())),
-            );
+            unsafe {
+                out.try_extend_trusted_len_unchecked(
+                    fs[out.len()..]
+                        .iter()
+                        .map(|f| get_row_encoding_dictionary(f.dtype())),
+                )
+            }?;
 
-            Some(RowEncodingContext::Struct(out))
+            Ok(Some(RowEncodingContext::Struct(out)))
         },
     }
 }
@@ -210,7 +214,7 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_unsorted();
-        let dict = get_row_encoding_dictionary(by.dtype());
+        let dict = get_row_encoding_dictionary(by.dtype())?;
 
         cols.push(arr);
         opts.push(opt);
@@ -241,7 +245,7 @@ pub fn _get_rows_encoded(
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
-        let dict = get_row_encoding_dictionary(by.dtype());
+        let dict = get_row_encoding_dictionary(by.dtype())?;
 
         cols.push(arr);
         opts.push(opt);
