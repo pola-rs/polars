@@ -8,10 +8,12 @@ use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
 use polars_io::predicates::BatchStats;
-use polars_io::prelude::FileMetadata;
 use polars_io::RowIndex;
 
-use super::{CsvExec, Executor};
+use super::Executor;
+#[cfg(feature = "csv")]
+use crate::executors::CsvExec;
+#[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
 
@@ -69,6 +71,7 @@ fn source_to_scan_exec(
     };
 
     Ok(match scan_type {
+        #[cfg(feature = "parquet")]
         FileScan::Parquet {
             options,
             cloud_options,
@@ -83,11 +86,12 @@ fn source_to_scan_exec(
             file_options.clone(),
             metadata.map(|md| {
                 md.as_any()
-                    .downcast_ref::<Arc<FileMetadata>>()
+                    .downcast_ref::<Arc<polars_io::parquet::read::FileMetadata>>()
                     .unwrap()
                     .clone()
             }),
         )) as _,
+        #[cfg(feature = "csv")]
         FileScan::Csv { options, .. } => Box::new(CsvExec {
             sources: source,
             file_info: file_info.clone(),
@@ -160,6 +164,7 @@ impl MultiScanExec {
         mut scan_type: FileScan,
     ) -> Self {
         let first_file_metadata = match &mut scan_type {
+            #[cfg(feature = "parquet")]
             FileScan::Parquet { metadata, .. } => metadata.take().map(|md| Box::new(md) as _),
             _ => None,
         };
@@ -280,6 +285,7 @@ impl MultiScanExec {
 
         // @TODO: This should be moved outside of the FileScan::Parquet
         let use_statistics = match &self.scan_type {
+            #[cfg(feature = "parquet")]
             FileScan::Parquet { options, .. } => options.use_statistics,
             _ => true,
         };
