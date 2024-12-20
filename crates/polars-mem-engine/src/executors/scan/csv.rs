@@ -254,7 +254,7 @@ impl ScanExec for CsvExec {
             popt.separator,
             popt.quote_char,
             popt.comment_prefix.as_ref(),
-            popt.eol_char.clone(),
+            popt.eol_char,
             self.options.has_header,
         )? as IdxSize;
         let schema = infer_file_schema(

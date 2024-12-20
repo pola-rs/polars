@@ -528,6 +528,7 @@ impl ParquetExec {
         }) as _)
     }
 
+    #[cfg(feature = "cloud")]
     async fn metadata_async(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>> {
         let ScanSourceRef::Path(path) = self.sources.get(0).unwrap() else {
             unreachable!();
@@ -599,11 +600,12 @@ impl ScanExec for ParquetExec {
     }
 
     fn metadata(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>> {
+        #[cfg(feature = "cloud")]
         if self.sources.is_cloud_url() {
-            pl_async::get_runtime().block_on_potential_spawn(self.metadata_async())
-        } else {
-            self.metadata_sync()
+            return pl_async::get_runtime().block_on_potential_spawn(self.metadata_async());
         }
+
+        self.metadata_sync()
     }
 }
 

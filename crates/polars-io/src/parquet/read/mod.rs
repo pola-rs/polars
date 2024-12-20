@@ -31,10 +31,10 @@ consider compiling with polars-bigidx feature (polars-u64-idx package on python)
 or set 'streaming'",
 ));
 
-use arrow::datatypes::ArrowSchema;
 pub use options::{ParallelStrategy, ParquetOptions};
-use polars_error::{ErrString, PolarsError, PolarsResult};
-use polars_parquet::read::FileMetadata;
+use polars_error::{ErrString, PolarsError};
+pub use polars_parquet::arrow::read::infer_schema;
+pub use polars_parquet::read::FileMetadata;
 pub use read_impl::{create_sorting_map, try_set_sorted_flag};
 #[cfg(feature = "cloud")]
 pub use reader::ParquetAsyncReader;
@@ -46,8 +46,4 @@ pub mod _internal {
     pub use super::predicates::read_this_row_group;
     pub use super::read_impl::{calc_prefilter_cost, PrefilterMaskSetting};
     pub use super::utils::ensure_matching_dtypes_if_found;
-}
-
-pub fn infer_schema(metadata: &FileMetadata) -> PolarsResult<ArrowSchema> {
-    Ok(polars_parquet::arrow::read::infer_schema(metadata)?)
 }
