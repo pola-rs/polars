@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::series::IsSorted;
 
-/// An interior mutable version of [`ChunkedArrayFlags`]
+/// An interior mutable version of [`StatisticsFlags`]
 pub struct StatisticsFlagsIM {
     inner: AtomicU32,
 }

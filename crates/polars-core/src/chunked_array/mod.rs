@@ -493,9 +493,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Rename this [`ChunkedArray`].
     pub fn rename(&mut self, name: PlSmallStr) {
-        dbg!(self.get_flags());
         self.field = Arc::new(Field::new(name, self.field.dtype().clone()));
-        dbg!(self.get_flags());
     }
 
     /// Return this [`ChunkedArray`] with a new name.

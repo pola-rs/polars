@@ -172,9 +172,7 @@ impl Column {
 
     #[inline]
     pub fn with_name(mut self, name: PlSmallStr) -> Column {
-        dbg!(&self.get_flags());
         self.rename(name);
-        dbg!(&self.get_flags());
         self
     }
 
