@@ -7,7 +7,7 @@ use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::utils::slice::split_slice_at_file;
-use polars_io::{pl_async, RowIndex};
+use polars_io::RowIndex;
 
 use super::*;
 
@@ -602,7 +602,8 @@ impl ScanExec for ParquetExec {
     fn metadata(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>> {
         #[cfg(feature = "cloud")]
         if self.sources.is_cloud_url() {
-            return pl_async::get_runtime().block_on_potential_spawn(self.metadata_async());
+            return polars_io::pl_async::get_runtime()
+                .block_on_potential_spawn(self.metadata_async());
         }
 
         self.metadata_sync()
