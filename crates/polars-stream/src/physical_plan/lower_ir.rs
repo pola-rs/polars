@@ -46,7 +46,8 @@ fn build_filter_node(
     expr_cache: &mut ExprCache,
 ) -> PolarsResult<PhysNodeKey> {
     let predicate = predicate.clone();
-    let cols_and_predicate = phys_sm[input].output_schema
+    let cols_and_predicate = phys_sm[input]
+        .output_schema
         .iter_names()
         .cloned()
         .map(|name| {
@@ -57,13 +58,8 @@ fn build_filter_node(
         })
         .chain([predicate])
         .collect_vec();
-    let (trans_input, mut trans_cols_and_predicate) = lower_exprs(
-        input,
-        &cols_and_predicate,
-        expr_arena,
-        phys_sm,
-        expr_cache,
-    )?;
+    let (trans_input, mut trans_cols_and_predicate) =
+        lower_exprs(input, &cols_and_predicate, expr_arena, phys_sm, expr_cache)?;
 
     let filter_schema = phys_sm[trans_input].output_schema.clone();
     let filter = PhysNodeKind::Filter {
@@ -291,7 +287,7 @@ pub fn lower_ir(
         },
 
         IR::Union { inputs, options } => {
-            let options = options.clone();
+            let options = *options;
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
@@ -415,10 +411,10 @@ pub fn lower_ir(
                 } else {
                     node_kind
                 };
-                
+
                 let mut node = phys_sm.insert(PhysNode {
                     output_schema,
-                    kind: node_kind
+                    kind: node_kind,
                 });
 
                 if let Some((offset, length)) = slice {
