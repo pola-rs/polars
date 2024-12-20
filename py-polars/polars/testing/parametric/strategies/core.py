@@ -267,6 +267,7 @@ def dataframes(
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     allow_time_zones: bool = True,
@@ -286,6 +287,7 @@ def dataframes(
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     allow_time_zones: bool = True,
@@ -307,6 +309,7 @@ def dataframes(
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     allow_time_zones: bool = True,
@@ -346,6 +349,8 @@ def dataframes(
         Accepts either a boolean or a mapping of column names to booleans.
     allow_chunks : bool
         Allow the DataFrame to contain multiple chunks.
+    allow_masked_out : bool
+        Allow the nulls to contain masked out elements.
     allowed_dtypes : {list,set}, optional
         when automatically generating data, allow only these dtypes.
     excluded_dtypes : {list,set}, optional
@@ -500,6 +505,7 @@ def dataframes(
                     strategy=c.strategy,
                     allow_null=c.allow_null,  # type: ignore[arg-type]
                     allow_chunks=allow_series_chunks,
+                    allow_masked_out=allow_masked_out,
                     unique=c.unique,
                     allowed_dtypes=allowed_dtypes,
                     excluded_dtypes=excluded_dtypes,
