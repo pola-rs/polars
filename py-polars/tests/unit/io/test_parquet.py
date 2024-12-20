@@ -2710,3 +2710,17 @@ def test_boolean_slice_pushdown_20314() -> None:
 
     f.seek(0)
     assert pl.scan_parquet(f).slice(2, 1).collect().item()
+
+
+def test_load_pred_pushdown_fsl_19241() -> None:
+    f = io.BytesIO()
+
+    fsl = pl.Series("a", [[[1, 2]]], pl.Array(pl.Array(pl.Int8, 2), 1))
+    filt = pl.Series("f", [1])
+
+    pl.DataFrame([fsl, filt]).write_parquet(f)
+
+    f.seek(0)
+    q = pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f != 4)
+
+    assert_frame_equal(q.collect(), pl.DataFrame([fsl, filt]))
