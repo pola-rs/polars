@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Any, overload
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
 
+from polars import select, when
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
-from polars.datatypes import DataType, DataTypeClass, Null, List, Array, Struct, Boolean
+from polars.datatypes import Array, Boolean, DataType, DataTypeClass, List, Null, Struct
 from polars.series import Series
-from polars import select, when
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
 from polars.testing.parametric.strategies.data import data
@@ -208,9 +208,7 @@ def series(
         allow_masked_out
         and allow_null
         and (
-            isinstance(dtype, List)
-            or isinstance(dtype, Array)
-            or isinstance(dtype, Struct)
+            isinstance(dtype, (List, Array, Struct))
         )
         and draw(st.booleans())
     )
