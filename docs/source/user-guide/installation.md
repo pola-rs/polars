@@ -98,9 +98,7 @@ pip install 'polars[numpy,fsspec]'
 
 !!! note
 
-    To install the GPU engine, you need to pass
-    `--extra-index-url=https://pypi.nvidia.com` to `pip`. See [GPU
-    support](gpu-support.md) for more detailed instructions and
+    See [GPU support](gpu-support.md) for more detailed instructions and
     prerequisites.
 
 #### Interoperability
