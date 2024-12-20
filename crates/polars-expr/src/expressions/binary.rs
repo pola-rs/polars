@@ -8,6 +8,7 @@ use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
 
+#[derive(Clone)]
 pub struct BinaryExpr {
     left: Arc<dyn PhysicalExpr>,
     op: Operator,
@@ -263,6 +264,31 @@ impl PhysicalExpr for BinaryExpr {
             },
             _ => self.apply_group_aware(ac_l, ac_r),
         }
+    }
+
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        self.left.collect_live_columns(lv);
+        self.right.collect_live_columns(lv);
+    }
+    fn replace_elementwise_const_columns(
+        &self,
+        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
+    ) -> Option<Arc<dyn PhysicalExpr>> {
+        let rcc_left = self.left.replace_elementwise_const_columns(const_columns);
+        let rcc_right = self.right.replace_elementwise_const_columns(const_columns);
+
+        if rcc_left.is_some() || rcc_right.is_some() {
+            let mut slf = self.clone();
+            if let Some(left) = rcc_left {
+                slf.left = left;
+            }
+            if let Some(right) = rcc_right {
+                slf.right = right;
+            }
+            return Some(Arc::new(slf));
+        }
+
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

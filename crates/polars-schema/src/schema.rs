@@ -285,6 +285,26 @@ impl<D> Schema<D> {
 
         Ok(i)
     }
+
+    /// Compare the fields between two schema returning the additional columns that each schema has.
+    pub fn field_compare<'a, 'b>(
+        &'a self,
+        other: &'b Self,
+        self_extra: &mut Vec<(usize, (&'a PlSmallStr, &'a D))>,
+        other_extra: &mut Vec<(usize, (&'b PlSmallStr, &'b D))>,
+    ) {
+        self_extra.extend(
+            self.iter()
+                .enumerate()
+                .filter(|(_, (n, _))| !other.contains(n)),
+        );
+        other_extra.extend(
+            other
+                .iter()
+                .enumerate()
+                .filter(|(_, (n, _))| !self.contains(n)),
+        );
+    }
 }
 
 impl<D> Schema<D>

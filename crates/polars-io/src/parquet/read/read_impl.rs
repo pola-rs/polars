@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::ops::{Deref, Range};
+use std::ops::Range;
 
 use arrow::array::BooleanArray;
 use arrow::bitmap::MutableBitmap;
@@ -168,7 +168,9 @@ fn rg_to_dfs(
 
     if parallel == S::Prefiltered {
         if let Some(predicate) = predicate {
-            if let Some(live_variables) = predicate.live_variables() {
+            let mut live_columns = PlIndexSet::new();
+            predicate.collect_live_columns(&mut live_columns);
+            if !live_columns.is_empty() {
                 return rg_to_dfs_prefiltered(
                     store,
                     previous_row_count,
@@ -176,7 +178,7 @@ fn rg_to_dfs(
                     row_group_end,
                     file_metadata,
                     schema,
-                    live_variables,
+                    live_columns,
                     predicate,
                     row_index,
                     projection,
@@ -240,7 +242,7 @@ fn rg_to_dfs_prefiltered(
     row_group_end: usize,
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
-    live_variables: Vec<PlSmallStr>,
+    live_columns: PlIndexSet<PlSmallStr>,
     predicate: &dyn PhysicalIoExpr,
     row_index: Option<RowIndex>,
     projection: &[usize],
@@ -267,14 +269,8 @@ fn rg_to_dfs_prefiltered(
             .collect(),
     };
 
-    // Deduplicate the live variables
-    let live_variables = live_variables
-        .iter()
-        .map(Deref::deref)
-        .collect::<PlHashSet<_>>();
-
     // Get the number of live columns
-    let num_live_columns = live_variables.len();
+    let num_live_columns = live_columns.len();
     let num_dead_columns =
         projection.len() + hive_partition_columns.map_or(0, |x| x.len()) - num_live_columns;
 
@@ -290,7 +286,7 @@ fn rg_to_dfs_prefiltered(
     for &i in projection.iter() {
         let name = schema.get_at_index(i).unwrap().0.as_str();
 
-        if live_variables.contains(name) {
+        if live_columns.contains(name) {
             live_idx_to_col_idx.push(i);
         } else {
             dead_idx_to_col_idx.push(i);
@@ -831,7 +827,9 @@ pub fn read_parquet<R: MmapBytesReader>(
         let prefilter_env = std::env::var("POLARS_PARQUET_PREFILTER");
         let prefilter_env = prefilter_env.as_deref();
 
-        let num_live_variables = predicate.live_variables().map_or(0, |v| v.len());
+        let mut live_columns = PlIndexSet::new();
+        predicate.collect_live_columns(&mut live_columns);
+        let num_live_variables = live_columns.len();
         let mut do_prefilter = false;
 
         do_prefilter |= prefilter_env == Ok("1"); // Force enable
