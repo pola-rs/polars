@@ -18,16 +18,13 @@ use crate::read::ColumnChunkMetadata;
 mod binary;
 mod binview;
 mod boolean;
-mod dictionary;
 mod fixlen;
-mod list;
 mod map;
 mod null;
 mod primitive;
 mod struct_;
 mod utf8;
 
-use self::list::DynMutableListArray;
 use super::PrimitiveLogicalType;
 
 /// Arrow-deserialized parquet Statistics of a file
@@ -67,22 +64,6 @@ impl From<MutableStatistics> for Statistics {
                 .unwrap()
                 .clone()
                 .boxed(),
-            PhysicalType::List => s
-                .null_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<ListArray<i32>>()
-                .unwrap()
-                .clone()
-                .boxed(),
-            PhysicalType::LargeList => s
-                .null_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<ListArray<i64>>()
-                .unwrap()
-                .clone()
-                .boxed(),
             _ => s
                 .null_count
                 .as_box()
@@ -99,22 +80,6 @@ impl From<MutableStatistics> for Statistics {
                 .as_box()
                 .as_any()
                 .downcast_ref::<StructArray>()
-                .unwrap()
-                .clone()
-                .boxed(),
-            PhysicalType::List => s
-                .distinct_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<ListArray<i32>>()
-                .unwrap()
-                .clone()
-                .boxed(),
-            PhysicalType::LargeList => s
-                .distinct_count
-                .as_box()
-                .as_any()
-                .downcast_ref::<ListArray<i64>>()
                 .unwrap()
                 .clone()
                 .boxed(),
@@ -162,13 +127,16 @@ fn make_mutable(dtype: &ArrowDataType, capacity: usize) -> PolarsResult<Box<dyn 
             Box::new(MutableFixedSizeBinaryArray::try_new(dtype.clone(), vec![], None).unwrap())
                 as _
         },
-        PhysicalType::LargeList | PhysicalType::List | PhysicalType::FixedSizeList => Box::new(
-            DynMutableListArray::try_with_capacity(dtype.clone(), capacity)?,
-        )
-            as Box<dyn MutableArray>,
-        PhysicalType::Dictionary(_) => Box::new(
-            dictionary::DynMutableDictionary::try_with_capacity(dtype.clone(), capacity)?,
-        ),
+        PhysicalType::LargeList | PhysicalType::List | PhysicalType::FixedSizeList => {
+            make_mutable(dtype.inner_dtype().unwrap(), capacity)?
+        },
+        PhysicalType::Dictionary(_) => {
+            let ArrowDataType::Dictionary(_, dtype, _) = &dtype else {
+                unreachable!();
+            };
+
+            make_mutable(dtype, capacity)?
+        },
         PhysicalType::Struct => Box::new(struct_::DynMutableStructArray::try_with_capacity(
             dtype.clone(),
             capacity,
@@ -277,49 +245,21 @@ fn push(
     distinct_count: &mut dyn MutableArray,
     null_count: &mut dyn MutableArray,
 ) -> PolarsResult<()> {
-    match min.dtype().to_logical_type() {
-        List(_) | LargeList(_) | FixedSizeList(_, _) => {
-            let min = min
-                .as_mut_any()
-                .downcast_mut::<list::DynMutableListArray>()
-                .unwrap();
-            let max = max
-                .as_mut_any()
-                .downcast_mut::<list::DynMutableListArray>()
-                .unwrap();
-            let distinct_count = distinct_count
-                .as_mut_any()
-                .downcast_mut::<list::DynMutableListArray>()
-                .unwrap();
-            let null_count = null_count
-                .as_mut_any()
-                .downcast_mut::<list::DynMutableListArray>()
-                .unwrap();
-            return push(
-                stats,
-                min.inner.as_mut(),
-                max.inner.as_mut(),
-                distinct_count.inner.as_mut(),
-                null_count.inner.as_mut(),
-            );
-        },
-        Dictionary(_, _, _) => {
-            let min = min
-                .as_mut_any()
-                .downcast_mut::<dictionary::DynMutableDictionary>()
-                .unwrap();
-            let max = max
-                .as_mut_any()
-                .downcast_mut::<dictionary::DynMutableDictionary>()
-                .unwrap();
-            return push(
-                stats,
-                min.inner.as_mut(),
-                max.inner.as_mut(),
-                distinct_count,
-                null_count,
-            );
-        },
+    let mut logical_type = min.dtype().to_logical_type();
+
+    loop {
+        if let List(field) | LargeList(field) | FixedSizeList(field, _) = logical_type {
+            logical_type = field.dtype().to_logical_type();
+            continue;
+        }
+        if let Dictionary(_, dt, _) = logical_type {
+            logical_type = dt.to_logical_type();
+        }
+
+        break;
+    }
+
+    match logical_type {
         Struct(fields) => {
             if fields.is_empty() {
                 return Ok(());
