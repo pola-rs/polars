@@ -169,11 +169,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
-            HStack { input, exprs, .. }
-                if exprs
-                    .iter()
-                    .all(|e| is_elementwise_rec(expr_arena.get(e.node()), expr_arena)) =>
-            {
+            HStack { input, exprs, .. } if all_elementwise(exprs, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -198,11 +194,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
-            Select { input, expr, .. }
-                if expr
-                    .iter()
-                    .all(|e| is_elementwise_rec(expr_arena.get(e.node()), expr_arena)) =>
-            {
+            Select { input, expr, .. } if all_elementwise(expr, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
