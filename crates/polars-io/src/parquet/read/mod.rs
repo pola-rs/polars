@@ -21,7 +21,6 @@ mod options;
 mod predicates;
 mod read_impl;
 mod reader;
-mod to_metadata;
 mod utils;
 
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(

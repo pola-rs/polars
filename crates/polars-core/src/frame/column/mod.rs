@@ -13,7 +13,7 @@ use self::gather::check_bounds_ca;
 use self::partitioned::PartitionedColumn;
 use self::series::SeriesColumn;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::{MetadataFlags, MetadataTrait};
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::datatypes::ReshapeDimension;
 use crate::prelude::*;
 use crate::series::{BitRepr, IsSorted, SeriesPhysIter};
@@ -860,23 +860,14 @@ impl Column {
         }
     }
 
-    pub fn get_flags(&self) -> MetadataFlags {
+    pub fn get_flags(&self) -> StatisticsFlags {
         match self {
             Column::Series(s) => s.get_flags(),
             // @partition-opt
-            Column::Partitioned(_) => MetadataFlags::empty(),
-            // @scalar-opt
-            Column::Scalar(_) => MetadataFlags::empty(),
-        }
-    }
-
-    pub fn get_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
-        match self {
-            Column::Series(s) => s.boxed_metadata(),
-            // @partition-opt
-            Column::Partitioned(_) => None,
-            // @scalar-opt
-            Column::Scalar(_) => None,
+            Column::Partitioned(_) => StatisticsFlags::empty(),
+            Column::Scalar(_) => {
+                StatisticsFlags::IS_SORTED_ASC | StatisticsFlags::CAN_FAST_EXPLODE_LIST
+            },
         }
     }
 

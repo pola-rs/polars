@@ -1,13 +1,11 @@
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::RwLockReadGuard;
 
 use arrow::bitmap::{Bitmap, MutableBitmap};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataTrait;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -38,7 +36,7 @@ pub enum BitRepr {
 
 pub(crate) mod private {
     use super::*;
-    use crate::chunked_array::metadata::MetadataFlags;
+    use crate::chunked_array::flags::StatisticsFlags;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
 
     pub trait PrivateSeriesNumeric {
@@ -66,9 +64,9 @@ pub(crate) mod private {
 
         fn compute_len(&mut self);
 
-        fn _get_flags(&self) -> MetadataFlags;
+        fn _get_flags(&self) -> StatisticsFlags;
 
-        fn _set_flags(&mut self, flags: MetadataFlags);
+        fn _set_flags(&mut self, flags: StatisticsFlags);
 
         unsafe fn equal_element(
             &self,
@@ -204,14 +202,6 @@ pub trait SeriesTrait:
 {
     /// Rename the Series.
     fn rename(&mut self, name: PlSmallStr);
-
-    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
-        None
-    }
-
-    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
-        None
-    }
 
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkLenIter;

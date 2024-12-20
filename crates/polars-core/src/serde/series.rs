@@ -6,7 +6,7 @@ use arrow::io::ipc::write::WriteOptions;
 use serde::de::{Error as DeError, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::config;
 use crate::prelude::*;
 use crate::utils::accumulate_dataframes_vertical;
@@ -120,8 +120,8 @@ impl<'de> Deserialize<'de> for Series {
 
                 if let Some(custom_metadata) = custom_metadata {
                     if let Some(flags) = custom_metadata.get(&FLAGS_KEY) {
-                        if let Ok(v) = flags.parse::<u8>() {
-                            if let Some(flags) = MetadataFlags::from_bits(v) {
+                        if let Ok(v) = flags.parse::<u32>() {
+                            if let Some(flags) = StatisticsFlags::from_bits(v) {
                                 s.set_flags(flags);
                             }
                         } else if config::verbose() {
