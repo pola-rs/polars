@@ -15,3 +15,19 @@ fn test_initial_empty_sort() -> PolarsResult<()> {
     series.f64()?.sort(false);
     Ok(())
 }
+
+#[test]
+fn test_unique_non_existent_subset_column() {
+    let df = DataFrame::new(vec![
+        Column::new("ID".into(), vec![1, 2, 1, 2]),
+        Column::new("Name".into(), vec!["foo", "bar", "baz", "baa"]),
+    ])
+    .unwrap();
+
+    let result = df.unique(Some(&["id"]), None, None);
+    assert!(result.is_err());
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "polars.exceptions.ColumnNotFoundError: \"id\" not found"
+    );
+}

@@ -1,4 +1,3 @@
-//! DataFrame module.
 use std::sync::OnceLock;
 use std::{mem, ops};
 
@@ -760,7 +759,7 @@ impl DataFrame {
     /// # use polars_core::prelude::*;
     /// let s1 = Column::new("Name".into(), ["Pythagoras' theorem", "Shannon entropy"]);
     /// let s2 = Column::new("Formula".into(), ["a²+b²=c²", "H=-Σ[P(x)log|P(x)|]"]);
-    /// let df: DataFrame = DataFrame::new(vec![s1.clone(), s2.clone()])?;
+    /// let df: DataFrame = DataFrame::new(vec![s1.clone(), s2])?;
     ///
     /// let mut iterator = df.iter();
     ///
