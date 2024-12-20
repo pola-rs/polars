@@ -199,11 +199,6 @@ impl<'a> IRDotDisplay<'a> {
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
-            Reduce { input, exprs, .. } => {
-                let exprs = self.display_exprs(exprs);
-                self.with_root(*input)._format(f, Some(id), last)?;
-                write_label(f, id, |f| write!(f, "REDUCE {exprs}"))?;
-            },
             Slice { input, offset, len } => {
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;

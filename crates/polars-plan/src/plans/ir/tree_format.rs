@@ -312,14 +312,6 @@ impl<'a> TreeFmtNode<'a> {
                             .chain([self.lp_node(None, *input)])
                             .collect(),
                     ),
-                    Reduce { input, exprs, .. } => ND(
-                        wh(h, "REDUCE"),
-                        exprs
-                            .iter()
-                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
-                            .chain([self.lp_node(None, *input)])
-                            .collect(),
-                    ),
                     Distinct { input, options } => ND(
                         wh(
                             h,

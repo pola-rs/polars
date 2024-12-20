@@ -81,12 +81,6 @@ pub enum IR {
         input: Node,
         columns: SchemaRef,
     },
-    // Special case of `select` where all operations reduce to a single row.
-    Reduce {
-        input: Node,
-        exprs: Vec<ExprIR>,
-        schema: SchemaRef,
-    },
     // Polars' `select` operation. This may access full materialized data.
     Select {
         input: Node,

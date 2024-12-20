@@ -130,15 +130,6 @@ impl IR {
                     options,
                 }
             },
-            IR::Reduce { exprs, input, .. } => {
-                let i = convert_to_lp(input, lp_arena);
-                let expr = expr_irs_to_exprs(exprs, expr_arena);
-                DslPlan::Select {
-                    expr,
-                    input: Arc::new(i),
-                    options: Default::default(),
-                }
-            },
             IR::SimpleProjection { input, columns } => {
                 let input = convert_to_lp(input, lp_arena);
                 let expr = columns
