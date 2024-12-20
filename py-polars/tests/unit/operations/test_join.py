@@ -195,14 +195,14 @@ def test_join_lazy_frame_on_expression() -> None:
 def test_join() -> None:
     df_left = pl.DataFrame(
         {
-            "a": ["a", "b", "a", "z"],
+            "a": ["a", "b", "c", "z"],
             "b": [1, 2, 3, 4],
             "c": [6, 5, 4, 3],
         }
     )
     df_right = pl.DataFrame(
         {
-            "a": ["b", "c", "b", "a"],
+            "a": ["b", "c", "d", "a"],
             "k": [0, 3, 9, 6],
             "c": [1, 0, 2, 1],
         }

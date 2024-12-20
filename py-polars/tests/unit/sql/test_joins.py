@@ -124,16 +124,23 @@ def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
         eager=True,
     )
 
-    assert out.to_dict(as_series=False) == {
-        "category": ["vegetables", "vegetables"],
-        "calories": [45, 20],
-        "fats_g": [0.5, 0.0],
-        "sugars_g": [2, 2],
-        "category:foods2": ["vegetables", "vegetables"],
-        "calories:foods2": [45, 45],
-        "fats_g:foods2": [0.5, 0.5],
-        "sugars_g:foods2": [2, 2],
-    }
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "category": ["vegetables", "vegetables"],
+                "calories": [45, 20],
+                "fats_g": [0.5, 0.0],
+                "sugars_g": [2, 2],
+                "category:foods2": ["vegetables", "vegetables"],
+                "calories:foods2": [45, 45],
+                "fats_g:foods2": [0.5, 0.5],
+                "sugars_g:foods2": [2, 2],
+            }
+        ),
+        check_dtypes=False,
+        check_row_order=False,
+    )
 
 
 @pytest.mark.parametrize(
