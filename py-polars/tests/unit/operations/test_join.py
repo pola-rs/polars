@@ -195,23 +195,27 @@ def test_join_lazy_frame_on_expression() -> None:
 def test_join() -> None:
     df_left = pl.DataFrame(
         {
-            "a": ["a", "b", "c", "z"],
+            "a": ["a", "b", "a", "z"],
             "b": [1, 2, 3, 4],
             "c": [6, 5, 4, 3],
         }
     )
     df_right = pl.DataFrame(
         {
-            "a": ["b", "c", "d", "a"],
+            "a": ["b", "c", "b", "a"],
             "k": [0, 3, 9, 6],
             "c": [1, 0, 2, 1],
         }
     )
 
-    joined = df_left.join(df_right, left_on="a", right_on="a").sort("a")
+    joined = df_left.join(
+        df_right, left_on="a", right_on="a", maintain_order="left_right"
+    ).sort("a")
     assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2]))
 
-    joined = df_left.join(df_right, left_on="a", right_on="a", how="left").sort("a")
+    joined = df_left.join(
+        df_right, left_on="a", right_on="a", how="left", maintain_order="left_right"
+    ).sort("a")
     assert joined["c_right"].is_null().sum() == 1
     assert_series_equal(joined["b"], pl.Series("b", [1, 3, 2, 2, 4]))
 
