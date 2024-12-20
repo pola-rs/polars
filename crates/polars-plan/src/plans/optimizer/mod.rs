@@ -18,6 +18,7 @@ mod fused;
 mod join_utils;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
@@ -34,6 +35,7 @@ use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
+use self::set_order::set_order_flags;
 pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
@@ -206,6 +208,10 @@ pub fn optimize(
     if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
         // We only want to run this on cse inserted caches
         cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, expr_eval, verbose)?;
+    }
+
+    if members.has_group_by | members.has_sort | members.has_distinct {
+        set_order_flags(lp_top, lp_arena, expr_arena, scratch);
     }
 
     // This one should run (nearly) last as this modifies the projections

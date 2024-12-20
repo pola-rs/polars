@@ -27,6 +27,9 @@ pub(super) struct MemberCollector {
     pub(crate) has_cache: bool,
     pub(crate) has_ext_context: bool,
     pub(crate) has_filter_with_join_input: bool,
+    pub(crate) has_distinct: bool,
+    pub(crate) has_sort: bool,
+    pub(crate) has_group_by: bool,
     #[cfg(feature = "cse")]
     scans: UniqueScans,
 }
@@ -38,6 +41,9 @@ impl MemberCollector {
             has_cache: false,
             has_ext_context: false,
             has_filter_with_join_input: false,
+            has_distinct: false,
+            has_sort: false,
+            has_group_by: false,
             #[cfg(feature = "cse")]
             scans: UniqueScans::default(),
         }
@@ -49,6 +55,15 @@ impl MemberCollector {
                 Join { .. } | Union { .. } => self.has_joins_or_unions = true,
                 Filter { input, .. } => {
                     self.has_filter_with_join_input |= matches!(lp_arena.get(*input), Join { options, .. } if options.args.how.is_cross())
+                },
+                Distinct { .. } => {
+                    self.has_distinct = true;
+                },
+                GroupBy { .. } => {
+                    self.has_group_by = true;
+                },
+                Sort { .. } => {
+                    self.has_sort = true;
                 },
                 Cache { .. } => self.has_cache = true,
                 ExtContext { .. } => self.has_ext_context = true,
