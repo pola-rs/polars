@@ -355,7 +355,6 @@ jobs:
         with:
           command: build
           target: wasm32-unknown-emscripten
-          rust-toolchain: nightly-2024-12-19
           args: >
             --profile dist-release
             --manifest-path py-polars/Cargo.toml
