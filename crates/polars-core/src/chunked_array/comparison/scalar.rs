@@ -55,7 +55,8 @@ fn bitonic_mask<T: PolarsNumericType>(
             0
         };
         let true_range_end = if let Some(f_d) = f_d {
-            true_range_start + values[true_range_start..].partition_point(|x| apply::<T>(f_d, *x, rhs))
+            true_range_start
+                + values[true_range_start..].partition_point(|x| apply::<T>(f_d, *x, rhs))
         } else {
             values.len()
         };
