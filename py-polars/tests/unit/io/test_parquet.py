@@ -1374,10 +1374,13 @@ def test_struct_plain_encoded_statistics() -> None:
     test_scan_round_trip(df)
 
 
-@given(df=dataframes(
-    min_size=5, excluded_dtypes=[pl.Decimal, pl.Categorical],
-        allow_masked_out=False, # PyArrow does not support this
-    ))
+@given(
+    df=dataframes(
+        min_size=5,
+        excluded_dtypes=[pl.Decimal, pl.Categorical],
+        allow_masked_out=False,  # PyArrow does not support this
+    )
+)
 def test_scan_round_trip_parametric(df: pl.DataFrame) -> None:
     test_scan_round_trip(df)
 
@@ -1438,7 +1441,7 @@ def test_null_array_dict_pages_18085() -> None:
             pl.UInt32,
             pl.UInt64,
         ],
-        allow_masked_out=False, # PyArrow does not support this
+        allow_masked_out=False,  # PyArrow does not support this
     ),
     row_group_size=st.integers(min_value=10, max_value=1000),
 )
@@ -1574,7 +1577,7 @@ def test_predicate_filtering(
             pl.Enum,
             pl.Struct,  # See #19612.
         ],
-        allow_masked_out=False, # PyArrow does not support this
+        allow_masked_out=False,  # PyArrow does not support this
     ),
     offset=st.integers(0, 10),
     length=st.integers(0, 10),
