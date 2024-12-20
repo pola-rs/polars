@@ -8,7 +8,8 @@ pub struct StatisticsFlagsIM {
 }
 
 bitflags::bitflags! {
-    #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub struct StatisticsFlags: u32 {
         const IS_SORTED_ANY = 0x03;
 
