@@ -138,17 +138,22 @@ impl ParquetSourceNode {
             loop {
                 while prefetches.len() < row_group_prefetch_size {
                     let row_group_decoder = row_group_decoder.clone();
-                    let Some(prefetch) = row_group_data_fetcher.next().await else { break };
+                    let Some(prefetch) = row_group_data_fetcher.next().await else {
+                        break;
+                    };
                     prefetches.push_back(async move {
                         let row_group_data = prefetch?.await.unwrap()?;
                         async_executor::spawn(TaskPriority::High, async move {
                             row_group_decoder.row_group_data_to_df(row_group_data).await
-                        }).await
+                        })
+                        .await
                     })
                 }
-                
+
                 if decoded_dfs.len() == 0 {
-                    let Some(prefetch) = prefetches.pop_front() else { break };
+                    let Some(prefetch) = prefetches.pop_front() else {
+                        break;
+                    };
                     let df = prefetch.await?;
                     if df.is_empty() {
                         continue;
