@@ -100,7 +100,7 @@ impl StatisticsFlags {
     }
 
     pub fn is_sorted_any(&self) -> bool {
-        self.contains(Self::IS_SORTED_ASC | Self::IS_SORTED_DSC)
+        self.contains(Self::IS_SORTED_ASC) | self.contains(Self::IS_SORTED_DSC)
     }
     pub fn is_sorted_ascending(&self) -> bool {
         self.contains(Self::IS_SORTED_ASC)
