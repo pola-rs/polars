@@ -200,14 +200,11 @@ class CredentialProviderAzure(CredentialProvider):
         """Fetch the credentials."""
         if self.account_name is not None:
             try:
-                out = (
-                    {
-                        "account_key": self._get_azure_storage_account_key_az_cli(
-                            self.account_name
-                        )
-                    },
-                    None,
-                )
+                creds = {
+                    "account_key": self._get_azure_storage_account_key_az_cli(
+                        self.account_name
+                    )
+                }
 
                 if self._verbose:
                     print(
@@ -221,7 +218,7 @@ class CredentialProviderAzure(CredentialProvider):
                         file=sys.stderr,
                     )
             else:
-                return out  # type: ignore[return-value]
+                return creds, None  # type: ignore[return-value]
 
         token = self.credential.get_token(*self.scopes)
 
