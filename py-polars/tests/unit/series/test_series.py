@@ -1501,6 +1501,15 @@ def test_is_nan_is_not_nan(float_type: PolarsDataType) -> None:
     assert_series_equal(s.drop_nans(), pl.Series([1.0, None], dtype=float_type))
 
 
+def test_float_methods_on_ints() -> None:
+    # these float-specific methods work on non-float numeric types
+    s = pl.Series([1, None], dtype=pl.Int32)
+    assert_series_equal(s.is_finite(), pl.Series([True, None]))
+    assert_series_equal(s.is_infinite(), pl.Series([False, None]))
+    assert_series_equal(s.is_nan(), pl.Series([False, None]))
+    assert_series_equal(s.is_not_nan(), pl.Series([True, None]))
+
+
 def test_dot() -> None:
     s1 = pl.Series("a", [1, 2, 3])
     s2 = pl.Series("b", [4.0, 5.0, 6.0])
