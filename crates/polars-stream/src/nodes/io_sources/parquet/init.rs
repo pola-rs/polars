@@ -149,7 +149,7 @@ impl ParquetSourceNode {
                     })
                 }
 
-                if decoded_dfs.len() == 0 {
+                if decoded_dfs.is_empty() {
                     let Some(prefetch) = prefetches.pop_front() else {
                         break;
                     };
