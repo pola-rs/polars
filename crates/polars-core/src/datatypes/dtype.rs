@@ -921,7 +921,7 @@ impl DataType {
             DataType::String => None,
             DataType::Binary => None,
             DataType::BinaryOffset => None,
-            DataType::Date => todo!(),
+            DataType::Date => Some(4),
             DataType::Datetime(_, _) => Some(8),
             DataType::Duration(_) => Some(8),
             DataType::Time => Some(8),
@@ -929,10 +929,10 @@ impl DataType {
                 data_type.byte_size().map(|v| v * size)
             }
             DataType::List(_) => None,
-            DataType::Object(_, arc) => None,
+            DataType::Object(_, _) => None,
             DataType::Null => Some(0),
-            DataType::Categorical(arc, categorical_ordering) => None,
-            DataType::Enum(arc, categorical_ordering) => None,
+            DataType::Categorical(_, _) => None,
+            DataType::Enum(_, _) => None,
             DataType::Struct(vec) => {
                 let mut total_size = 0usize;
                 for field in vec.iter() {
@@ -944,7 +944,7 @@ impl DataType {
                 }
                 return Some(total_size)
             },
-            DataType::Unknown(unknown_kind) => None,
+            DataType::Unknown(_) => None,
         }
     }
 }
