@@ -590,25 +590,29 @@ impl Series {
         }
     }
 
-    /// Check if float value is NaN (note this is different than missing/ null)
+    /// Check if numeric value is NaN (note this is different than missing/ null)
     pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), false, self.len()))
+                let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_nan, self.dtype()),
         }
     }
 
-    /// Check if float value is NaN (note this is different than missing/null)
+    /// Check if numeric value is NaN (note this is different than missing/null)
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), true, self.len()))
+                let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_not_nan, self.dtype()),
         }
@@ -620,19 +624,23 @@ impl Series {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), true, self.len()))
+                let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_finite, self.dtype()),
         }
     }
 
-    /// Check if float value is infinite
+    /// Check if numeric value is infinite
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), false, self.len()))
+                let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_infinite, self.dtype()),
         }
