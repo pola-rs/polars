@@ -2,8 +2,6 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::Arc;
 
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::PlIndexSet;
 use polars_error::PolarsResult;
@@ -13,12 +11,11 @@ use polars_io::prelude::_internal::PrefilterMaskSetting;
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
 use super::{AsyncTaskData, ParquetSourceNode};
-use crate::async_executor;
-use crate::async_primitives::connector::connector;
-use crate::async_primitives::wait_group::IndexedWaitGroup;
+use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext;
+use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
 
 impl ParquetSourceNode {
     /// # Panics
@@ -72,9 +69,8 @@ impl ParquetSourceNode {
 
         let use_statistics = self.options.use_statistics;
 
-        let (mut raw_morsel_senders, raw_morsel_receivers): (Vec<_>, Vec<_>) =
-            (0..self.config.num_pipelines).map(|_| connector()).unzip();
-
+        let (mut raw_morsel_sender, raw_morsel_receivers) =
+            distributor_channel(self.config.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
         if let Some((_, 0)) = self.file_options.slice {
             return (
                 raw_morsel_receivers,
@@ -87,7 +83,6 @@ impl ParquetSourceNode {
         let (normalized_slice_oneshot_rx, metadata_rx, metadata_task_handle) =
             self.init_metadata_fetcher();
 
-        let num_pipelines = self.config.num_pipelines;
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
         let projection = self.file_options.with_columns.clone();
         assert_eq!(self.physical_predicate.is_some(), self.predicate.is_some());
@@ -136,100 +131,48 @@ impl ParquetSourceNode {
 
             row_group_data_fetcher.slice_range = slice_range;
 
-            // Ensure proper backpressure by only polling the buffered iterator when a wait group
-            // is free.
-            let mut wait_groups = (0..num_pipelines)
-                .map(|index| IndexedWaitGroup::new(index).wait())
-                .collect::<FuturesUnordered<_>>();
-
-            let mut df_stream = row_group_data_fetcher
-                .into_stream()
-                .map(|x| async {
-                    match x {
-                        Ok(handle) => handle.await.unwrap(),
-                        Err(e) => Err(e),
-                    }
-                })
-                .buffered(row_group_prefetch_size)
-                .map(|x| async {
-                    let row_group_decoder = row_group_decoder.clone();
-
-                    match x {
-                        Ok(row_group_data) => {
-                            async_executor::spawn(TaskPriority::Low, async move {
-                                row_group_decoder.row_group_data_to_df(row_group_data).await
-                            })
-                            .await
-                        },
-                        Err(e) => Err(e),
-                    }
-                })
-                .buffered(
-                    // Because we are using an ordered buffer, we may suffer from head-of-line blocking,
-                    // so we add a small amount of buffer.
-                    num_pipelines + 4,
-                );
-
             let morsel_seq_ref = &mut MorselSeq::default();
-            let mut dfs = VecDeque::with_capacity(1);
+            let mut prefetches = VecDeque::with_capacity(row_group_prefetch_size);
+            let mut decoded_dfs = VecDeque::with_capacity(1);
 
-            'main: loop {
-                let Some(mut indexed_wait_group) = wait_groups.next().await else {
-                    break;
-                };
-
-                while dfs.is_empty() {
-                    let Some(v) = df_stream.next().await else {
-                        break 'main;
+            loop {
+                while prefetches.len() < row_group_prefetch_size {
+                    let row_group_decoder = row_group_decoder.clone();
+                    let Some(prefetch) = row_group_data_fetcher.next().await else {
+                        break;
                     };
+                    prefetches.push_back(async move {
+                        let row_group_data = prefetch?.await.unwrap()?;
+                        async_executor::spawn(TaskPriority::High, async move {
+                            row_group_decoder.row_group_data_to_df(row_group_data).await
+                        })
+                        .await
+                    })
+                }
 
-                    let df = v?;
-
+                if decoded_dfs.is_empty() {
+                    let Some(prefetch) = prefetches.pop_front() else {
+                        break;
+                    };
+                    let df = prefetch.await?;
                     if df.is_empty() {
                         continue;
                     }
 
                     let (iter, n) = split_to_morsels(&df, ideal_morsel_size);
-
-                    dfs.reserve(n);
-                    dfs.extend(iter);
+                    decoded_dfs.reserve(n);
+                    decoded_dfs.extend(iter);
                 }
 
-                let mut df = dfs.pop_front().unwrap();
+                let df = decoded_dfs.pop_front().unwrap();
                 let morsel_seq = *morsel_seq_ref;
                 *morsel_seq_ref = morsel_seq.successor();
-
-                loop {
-                    use crate::async_primitives::connector::SendError;
-
-                    let channel_index = indexed_wait_group.index();
-                    let wait_token = indexed_wait_group.token();
-
-                    match raw_morsel_senders[channel_index].try_send((df, morsel_seq, wait_token)) {
-                        Ok(_) => {
-                            wait_groups.push(indexed_wait_group.wait());
-                            break;
-                        },
-                        Err(SendError::Closed(v)) => {
-                            // The channel assigned to this wait group has been closed, so we will not
-                            // add it back to the list of wait groups, and we will try to send this
-                            // across another channel.
-                            df = v.0
-                        },
-                        Err(SendError::Full(_)) => unreachable!(),
-                    }
-
-                    let Some(v) = wait_groups.next().await else {
-                        // All channels have closed
-                        break 'main;
-                    };
-
-                    indexed_wait_group = v;
+                if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
+                    break;
                 }
             }
 
             // Join on the producer handle to catch errors/panics.
-            drop(df_stream);
             metadata_task_handle.await.unwrap()
         });
 
