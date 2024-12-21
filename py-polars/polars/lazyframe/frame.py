@@ -1023,6 +1023,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         streaming: bool = False,
         tree_format: bool | None = None,
+        _check_order: bool = True,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -1137,6 +1138,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> str | None:
         """
         Show a plot of the query plan.
@@ -1202,6 +1204,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -1611,6 +1614,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
@@ -1706,6 +1710,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         df, timings = ldf.profile()
@@ -2087,6 +2092,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
         Collect DataFrame asynchronously in thread pool.
@@ -2208,6 +2214,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -2863,11 +2870,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        _check_order: bool = True,
     ) -> PyLazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
+            _check_order = False
 
         return self._ldf.optimization_toggle(
             type_coercion=type_coercion,
@@ -2881,6 +2890,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins=collapse_joins,
             streaming=True,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -2955,6 +2965,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -3055,6 +3066,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         return wrap_df(lf.fetch(n_rows))

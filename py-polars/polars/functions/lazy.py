@@ -1629,6 +1629,7 @@ def collect_all(
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
     streaming: bool = False,
+    _check_order: bool = True,
 ) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
@@ -1705,6 +1706,7 @@ def collect_all(
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         prepared.append(ldf)
@@ -1771,6 +1773,7 @@ def collect_all_async(
     cluster_with_columns: bool = True,
     collapse_joins: bool = True,
     streaming: bool = False,
+    _check_order: bool = True,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
@@ -1870,6 +1873,7 @@ def collect_all_async(
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         prepared.append(ldf)
