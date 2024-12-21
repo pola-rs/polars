@@ -373,3 +373,14 @@ def test_null(
         .to_series(),
         s,
     )
+
+
+def test_wrong_version_categorical_20364() -> None:
+    with pl.StringCache():
+        s = pl.Series("s", ["a"], pl.Categorical(ordering="lexical"))
+
+    with pytest.raises(
+        pl.exceptions.ComputeError,
+        match="trying to perform operations with values from different global string cache version",
+    ):
+        s.to_frame()._row_encode([(False, False, False)])

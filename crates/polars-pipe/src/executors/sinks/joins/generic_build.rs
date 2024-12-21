@@ -142,7 +142,7 @@ impl<K: ExtraPayload> GenericBuild<K> {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
-            dicts.push(get_row_encoding_dictionary(s.dtype()));
+            dicts.push(get_row_encoding_dictionary(s.dtype())?);
         }
         let rows_encoded = polars_row::convert_columns_no_order(
             self.join_columns[0].len(), // @NOTE: does not work for ZFS

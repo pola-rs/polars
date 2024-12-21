@@ -550,7 +550,8 @@ impl PySeries {
             let dicts = dtypes
                 .iter()
                 .map(|(_, dtype)| get_row_encoding_dictionary(&dtype.0))
-                .collect::<Vec<_>>();
+                .collect::<PolarsResult<Vec<_>>>()
+                .map_err(PyPolarsErr::from)?;
 
             // Get the BinaryOffset array.
             let arr = self.series.rechunk();

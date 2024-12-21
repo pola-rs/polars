@@ -143,7 +143,7 @@ impl SortSinkMultiple {
                 let (_, dtype) = schema.get_at_index(*i).unwrap();
                 get_row_encoding_dictionary(dtype)
             })
-            .collect::<Vec<_>>();
+            .collect::<PolarsResult<Vec<_>>>()?;
 
         polars_ensure!(sort_idx.iter().collect::<PlHashSet::<_>>().len() == sort_idx.len(), ComputeError: "only supports sorting by unique columns");
 
