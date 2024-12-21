@@ -1,0 +1,6 @@
+﻿polars.read\_clipboard
+======================
+
+.. currentmodule:: polars
+
+.. autofunction:: read_clipboard

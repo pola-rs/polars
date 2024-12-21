@@ -1,0 +1,6 @@
+﻿polars.Expr.dt.hours
+====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Expr.dt.hours
