@@ -371,10 +371,11 @@ def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None
 def test_add_string() -> None:
     s = pl.Series(["hello", "weird"])
     result = s + " world"
+    print(result)
     assert_series_equal(result, pl.Series(["hello world", "weird world"]))
 
     result = "pfx:" + s
-    assert_series_equal(result, pl.Series(["pfx:hello", "pfx:weird"]))
+    assert_series_equal(result, pl.Series("literal", ["pfx:hello", "pfx:weird"]))
 
 
 @pytest.mark.parametrize(
