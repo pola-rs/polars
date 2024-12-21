@@ -494,6 +494,7 @@ impl PyLazyFrame {
         collapse_joins: bool,
         streaming: bool,
         _eager: bool,
+        _check_order: bool,
         #[allow(unused_variables)] new_streaming: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
@@ -504,6 +505,7 @@ impl PyLazyFrame {
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
             .with_collapse_joins(collapse_joins)
+            .with_check_order(_check_order)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
 

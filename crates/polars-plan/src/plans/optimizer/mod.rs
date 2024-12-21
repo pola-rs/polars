@@ -18,6 +18,7 @@ mod fused;
 mod join_utils;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
@@ -34,6 +35,7 @@ use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
+use self::set_order::set_order_flags;
 pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
@@ -114,6 +116,13 @@ pub fn optimize(
     let mut members = MemberCollector::new();
     if !eager && (comm_subexpr_elim || projection_pushdown) {
         members.collect(lp_top, lp_arena, expr_arena)
+    }
+
+    // Run before slice pushdown
+    if opt_state.contains(OptFlags::CHECK_ORDER_OBSERVE)
+        && members.has_group_by | members.has_sort | members.has_distinct
+    {
+        set_order_flags(lp_top, lp_arena, expr_arena, scratch);
     }
 
     if simplify_expr {

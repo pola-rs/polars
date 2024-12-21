@@ -402,7 +402,7 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
         .sort("key")
         .group_by("key")
         .tail(1)
-        .collect()
+        .collect(_check_order=False)
     )
     assert df.rows() == []
     assert df.shape == (0, 2)

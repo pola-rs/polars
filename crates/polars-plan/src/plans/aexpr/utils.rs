@@ -39,6 +39,15 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
     true
 }
 
+pub fn all_elementwise<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
+where
+    Node: From<&'a N>,
+{
+    nodes
+        .iter()
+        .all(|n| is_elementwise_rec(expr_arena.get(n.into()), expr_arena))
+}
+
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
     let mut stack = unitvec![];

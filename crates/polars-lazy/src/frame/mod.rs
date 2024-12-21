@@ -153,6 +153,13 @@ impl LazyFrame {
         self
     }
 
+    /// Check if operations are order dependent and unset maintaining_order if
+    /// the order would not be observed.
+    pub fn with_check_order(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::CHECK_ORDER_OBSERVE, toggle);
+        self
+    }
+
     /// Toggle predicate pushdown optimization.
     pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::PREDICATE_PUSHDOWN, toggle);

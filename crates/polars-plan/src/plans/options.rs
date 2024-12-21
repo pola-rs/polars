@@ -46,12 +46,13 @@ pub struct FileScanOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
-    pub parallel: bool,
     // known row_output, estimated row output
     pub rows: (Option<usize>, usize),
+    pub parallel: bool,
     pub from_partitioned_ds: bool,
     pub flattened_by_opt: bool,
     pub rechunk: bool,
+    pub maintain_order: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
@@ -69,6 +70,30 @@ pub struct GroupbyOptions {
     pub rolling: Option<RollingGroupOptions>,
     /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
+}
+
+impl GroupbyOptions {
+    pub(crate) fn is_rolling(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.rolling.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+
+    pub(crate) fn is_dynamic(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.dynamic.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
@@ -387,6 +412,7 @@ pub struct UnionArgs {
     pub diagonal: bool,
     // If it is a union from a scan over multiple files.
     pub from_partitioned_ds: bool,
+    pub maintain_order: bool,
 }
 
 impl Default for UnionArgs {
@@ -397,6 +423,7 @@ impl Default for UnionArgs {
             to_supertypes: false,
             diagonal: false,
             from_partitioned_ds: false,
+            maintain_order: true,
         }
     }
 }
@@ -410,6 +437,7 @@ impl From<UnionArgs> for UnionOptions {
             from_partitioned_ds: args.from_partitioned_ds,
             flattened_by_opt: false,
             rechunk: args.rechunk,
+            maintain_order: args.maintain_order,
         }
     }
 }
