@@ -123,29 +123,6 @@ impl OptimizationRule for SimpleProjectionAndCollapse {
                     None
                 }
             },
-            // Remove double sorts
-            Sort {
-                input,
-                by_column,
-                slice,
-                sort_options:
-                    sort_options @ SortMultipleOptions {
-                        maintain_order: false, // `maintain_order=True` is influenced by result of earlier sorts
-                        ..
-                    },
-            } => match lp_arena.get(*input) {
-                Sort {
-                    input: inner,
-                    slice: None,
-                    ..
-                } => Some(Sort {
-                    input: *inner,
-                    by_column: by_column.clone(),
-                    slice: *slice,
-                    sort_options: sort_options.clone(),
-                }),
-                _ => None,
-            },
             _ => None,
         }
     }
