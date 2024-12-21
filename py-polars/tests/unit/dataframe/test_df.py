@@ -2038,6 +2038,7 @@ def test_add_string() -> None:
     expected = pl.DataFrame(
         {"a": ["hello hi", "hello there"], "b": ["hello hello", "hello world"]}
     )
+    print(expected)
     assert_frame_equal(("hello " + df), expected)
 
 

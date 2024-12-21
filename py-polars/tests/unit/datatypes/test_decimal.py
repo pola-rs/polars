@@ -553,3 +553,26 @@ def test_decimal_arithmetic_schema() -> None:
     assert q1.collect_schema() == q1.collect().schema
     q1 = q.select(pl.col.x + pl.col.x)
     assert q1.collect_schema() == q1.collect().schema
+
+
+def test_decimal_arithmetic_schema_float_20369() -> None:
+    s = pl.Series("x", [1.0], dtype=pl.Decimal(15, 2))
+    assert_series_equal((s - 1.0), pl.Series("x", [0.0], dtype=pl.Decimal(None, 2)))
+    assert_series_equal(
+        (3.0 - s), pl.Series("literal", [2.0], dtype=pl.Decimal(None, 2))
+    )
+    assert_series_equal(
+        (3.0 / s), pl.Series("literal", [3.0], dtype=pl.Decimal(None, 6))
+    )
+    assert_series_equal(
+        (s / 3.0), pl.Series("x", [0.333333], dtype=pl.Decimal(None, 6))
+    )
+
+    assert_series_equal((s + 1.0), pl.Series("x", [2.0], dtype=pl.Decimal(None, 2)))
+    assert_series_equal(
+        (1.0 + s), pl.Series("literal", [2.0], dtype=pl.Decimal(None, 2))
+    )
+    assert_series_equal((s * 1.0), pl.Series("x", [1.0], dtype=pl.Decimal(None, 4)))
+    assert_series_equal(
+        (1.0 * s), pl.Series("literal", [1.0], dtype=pl.Decimal(None, 4))
+    )
