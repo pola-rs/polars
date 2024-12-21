@@ -104,6 +104,7 @@ if TYPE_CHECKING:
         EngineType,
         ExplainFormat,
         FillNullStrategy,
+        FloatFmt,
         FrameInitTypes,
         IntoExpr,
         IntoExprColumn,
@@ -121,6 +122,7 @@ if TYPE_CHECKING:
         StartBy,
         UniqueKeepStrategy,
     )
+    from polars.config import TableFormatNames
     from polars.dependencies import numpy as np
     from polars.io.cloud import CredentialProviderFunction
 
@@ -7204,6 +7206,200 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             variable_name=variable_name,
             value_name=value_name,
             streamable=streamable,
+        )
+
+    def show(
+        self,
+        limit: int | None = 5,
+        *,
+        ascii_tables: bool | None = None,
+        decimal_separator: str | None = None,
+        thousands_separator: str | bool | None = None,
+        float_precision: int | None = None,
+        fmt_float: FloatFmt | None = None,
+        fmt_str_lengths: int | None = None,
+        fmt_table_cell_list_len: int | None = None,
+        tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
+        tbl_cols: int | None = None,
+        tbl_column_data_type_inline: bool | None = None,
+        tbl_dataframe_shape_below: bool | None = None,
+        tbl_formatting: TableFormatNames | None = None,
+        tbl_hide_column_data_types: bool | None = None,
+        tbl_hide_column_names: bool | None = None,
+        tbl_hide_dtype_separator: bool | None = None,
+        tbl_hide_dataframe_shape: bool | None = None,
+        tbl_width_chars: int | None = None,
+        trim_decimal_zeros: bool | None = True,
+    ) -> None:
+        """
+        Show the first `n` rows.
+
+        Parameters
+        ----------
+        limit : int
+            Number of rows to show. If None is passed, return all rows.
+        ascii_tables : bool
+            Use ASCII characters to display table outlines. Set False to revert to the
+            default UTF8_FULL_CONDENSED formatting style. See
+            :func:`Config.set_ascii_tables` for more information.
+        decimal_separator : str
+            Set the decimal separator character. See
+            :func:`Config.set_decimal_separator` for more information.
+        thousands_separator : str, bool
+            Set the thousands grouping separator character. See
+            :func:`Config.set_thousands_separator` for more information.
+        float_precision : int
+            Number of decimal places to display for floating point values. See
+            :func:`Config.set_float_precision` for more information.
+        fmt_float : {"mixed", "full"}
+            Control how floating point values are displayed. See
+            :func:`Config.set_fmt_float` for more information. Supported options are:
+
+            * "mixed": Limit the number of decimal places and use scientific notation
+              for large/small values.
+            * "full": Print the full precision of the floating point number.
+
+        fmt_str_lengths : int
+            Number of characters to display for string values. See
+            :func:`Config.set_fmt_str_lengths` for more information.
+        fmt_table_cell_list_len : int
+            Number of elements to display for List values. See
+            :func:`Config.set_fmt_table_cell_list_len` for more information.
+        tbl_cell_alignment : str
+            Set table cell alignment. See :func:`Config.set_tbl_cell_alignment` for more
+            information. Supported options are:
+
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        tbl_cell_numeric_alignment : str
+            Set table cell alignment for numeric columns. See
+            :func:`Config.set_tbl_cell_numeric_alignment` for more information.
+            Supported options are:
+
+            * "LEFT": left aligned
+            * "CENTER": center aligned
+            * "RIGHT": right aligned
+
+        tbl_cols : int
+            Number of columns to display. See :func:`Config.set_tbl_cols` for more
+            information.
+        tbl_column_data_type_inline : bool
+            Moves the data type inline with the column name (to the right, in
+            parentheses). See :func:`Config.set_tbl_column_data_type_inline` for more
+            information.
+        tbl_dataframe_shape_below : bool
+            Print the DataFrame shape information below the data when displaying tables.
+            See :func:`Config.set_tbl_dataframe_shape_below` for more information.
+        tbl_formatting : str
+            Set table formatting style. See :func:`Config.set_tbl_formatting` for more
+            information. Supported options are:
+
+            * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
+            * "ASCII_FULL_CONDENSED": Same as ASCII_FULL, but with dense row spacing.
+            * "ASCII_NO_BORDERS": ASCII, no borders.
+            * "ASCII_BORDERS_ONLY": ASCII, borders only.
+            * "ASCII_BORDERS_ONLY_CONDENSED": ASCII, borders only, dense row spacing.
+            * "ASCII_HORIZONTAL_ONLY": ASCII, horizontal lines only.
+            * "ASCII_MARKDOWN": Markdown format (ascii ellipses for truncated values).
+            * "MARKDOWN": Markdown format (utf8 ellipses for truncated values).
+            * "UTF8_FULL": UTF8, with all borders and lines, including row dividers.
+            * "UTF8_FULL_CONDENSED": Same as UTF8_FULL, but with dense row spacing.
+            * "UTF8_NO_BORDERS": UTF8, no borders.
+            * "UTF8_BORDERS_ONLY": UTF8, borders only.
+            * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
+            * "NOTHING": No borders or other lines.
+
+        tbl_hide_column_data_types : bool
+            Hide table column data types (i64, f64, str etc.). See
+            :func:`Config.set_tbl_hide_column_data_types` for more information.
+        tbl_hide_column_names : bool
+            Hide table column names. See :func:`Config.set_tbl_hide_column_names` for
+            more information.
+        tbl_hide_dtype_separator : bool
+            Hide the '---' separator between the column names and column types. See
+            :func:`Config.set_tbl_hide_dtype_separator` for more information.
+        tbl_hide_dataframe_shape : bool
+            Hide the DataFrame shape information when displaying tables. See
+            :func:`Config.set_tbl_hide_dataframe_shape` for more information.
+        tbl_width_chars : int
+            Set the maximum width of a table in characters. See
+            :func:`Config.set_tbl_width_chars` for more information.
+        trim_decimal_zeros : bool
+            Strip trailing zeros from Decimal data type values. See
+            :func:`Config.set_trim_decimal_zeros` for more information.
+
+        Warnings
+        --------
+        * This method does *not* maintain the laziness of the frame, and will `collect`
+          the final result. This could potentially be an expensive operation.
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1, 2, 3, 4, 5, 6],
+        ...         "b": [7, 8, 9, 10, 11, 12],
+        ...     }
+        ... )
+        >>> lf.show()
+        shape: (5, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 7   │
+        │ 2   ┆ 8   │
+        │ 3   ┆ 9   │
+        │ 4   ┆ 10  │
+        │ 5   ┆ 11  │
+        └─────┴─────┘
+        >>> lf.show(2)
+        shape: (2, 2)
+        ┌─────┬─────┐
+        │ a   ┆ b   │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 7   │
+        │ 2   ┆ 8   │
+        └─────┴─────┘
+        """
+        if limit is None:
+            lf = self
+            issue_warning(
+                "Showing a LazyFrame without a limit requires collecting the whole "
+                "LazyFrame, which could be an expensive operation. Set a limit to "
+                "show the LazyFrame without this warning.",
+                category=PerformanceWarning,
+            )
+        else:
+            lf = self.head(limit)
+
+        lf.collect().show(
+            limit,
+            ascii_tables=ascii_tables,
+            decimal_separator=decimal_separator,
+            thousands_separator=thousands_separator,
+            float_precision=float_precision,
+            fmt_float=fmt_float,
+            fmt_str_lengths=fmt_str_lengths,
+            fmt_table_cell_list_len=fmt_table_cell_list_len,
+            tbl_cell_alignment=tbl_cell_alignment,
+            tbl_cell_numeric_alignment=tbl_cell_numeric_alignment,
+            tbl_cols=tbl_cols,
+            tbl_column_data_type_inline=tbl_column_data_type_inline,
+            tbl_dataframe_shape_below=tbl_dataframe_shape_below,
+            tbl_formatting=tbl_formatting,
+            tbl_hide_column_data_types=tbl_hide_column_data_types,
+            tbl_hide_column_names=tbl_hide_column_names,
+            tbl_hide_dtype_separator=tbl_hide_dtype_separator,
+            tbl_hide_dataframe_shape=tbl_hide_dataframe_shape,
+            tbl_width_chars=tbl_width_chars,
+            trim_decimal_zeros=trim_decimal_zeros,
         )
 
     def _to_metadata(
