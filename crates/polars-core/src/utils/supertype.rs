@@ -12,6 +12,16 @@ pub fn try_get_supertype(l: &DataType, r: &DataType) -> PolarsResult<DataType> {
     )
 }
 
+pub fn try_get_supertype_with_options(
+    l: &DataType,
+    r: &DataType,
+    options: SuperTypeOptions,
+) -> PolarsResult<DataType> {
+    get_supertype_with_options(l, r, options).ok_or_else(
+        || polars_err!(SchemaMismatch: "failed to determine supertype of {} and {}", l, r),
+    )
+}
+
 /// Returns a numeric supertype that `l` and `r` can be safely upcasted to if it exists.
 pub fn get_numeric_upcast_supertype_lossless(l: &DataType, r: &DataType) -> Option<DataType> {
     use DataType::*;

@@ -179,30 +179,18 @@ impl Default for FunctionFlags {
     }
 }
 
-bitflags::bitflags! {
-    #[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
-    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-    pub struct FunctionCastFlags: u8 {}
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum CastingRules {
+    /// Whether information may be lost during cast. E.g. a float to int is considered lossy,
+    /// whereas int to int is considered lossless.
+    /// Overflowing is not considered in this flag, that's handled in `strict` casting
+    FirstArgLossless,
+    Supertype(SuperTypeOptions),
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct FunctionCastOptions {
-    pub flags: FunctionCastFlags,
-
-    // if the expression and its inputs should be cast to supertypes
-    // `None` -> Don't cast.
-    // `Some` -> cast with given options.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub supertype: Option<SuperTypeOptions>,
-}
-
-impl FunctionCastOptions {
-    pub fn cast_to_supertypes() -> FunctionCastOptions {
-        Self {
-            supertype: Some(Default::default()),
-            ..Default::default()
-        }
+impl CastingRules {
+    pub fn cast_to_supertypes() -> CastingRules {
+        Self::Supertype(Default::default())
     }
 }
 
@@ -213,9 +201,6 @@ pub struct FunctionOptions {
     /// This can be important in aggregation context.
     pub collect_groups: ApplyOptions,
 
-    /// Options used when deciding how to cast the arguments of the function.
-    pub cast_options: FunctionCastOptions,
-
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
@@ -224,6 +209,9 @@ pub struct FunctionOptions {
     // used for formatting, (only for anonymous functions)
     #[cfg_attr(feature = "serde", serde(skip))]
     pub fmt_str: &'static str,
+    /// Options used when deciding how to cast the arguments of the function.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub cast_options: Option<CastingRules>,
 }
 
 impl FunctionOptions {
