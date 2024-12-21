@@ -150,7 +150,7 @@ class SeriesPlot:
         Examples
         --------
         >>> s = pl.Series("price", [1, 3, 3, 3, 5, 2, 6, 5, 5, 5, 7])
-        >>> s.plot.kde()  # doctest: +SKIP
+        >>> s.plot.line()  # doctest: +SKIP
         """  # noqa: W505
         if self._series_name == "index":
             msg = "Cannot call `plot.line` when Series name is 'index'"
@@ -165,14 +165,14 @@ class SeriesPlot:
 
     def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
         if self._series_name == "index":
-            msg = "Cannot call `plot.{attr}` when Series name is 'index'"
+            msg = f"Cannot call `plot.{attr}` when Series name is 'index'"
             raise ValueError(msg)
         if attr == "scatter":
             # alias `scatter` to `point` because of how common it is
             attr = "point"
         method = getattr(alt.Chart(self._df.with_row_index()), f"mark_{attr}", None)
         if method is None:
-            msg = "Altair has no method 'mark_{attr}'"
+            msg = f"Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
         encodings: Encodings = {"x": "index", "y": self._series_name}
 
