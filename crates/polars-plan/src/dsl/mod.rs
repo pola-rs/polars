@@ -388,13 +388,9 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "search_sorted",
-                cast_options: FunctionCastOptions {
-                    supertype: Some(
-                        (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
-                            .into(),
-                    ),
-                    ..Default::default()
-                },
+                cast_options: Some(CastingRules::Supertype(
+                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
+                )),
                 ..Default::default()
             },
         }
@@ -714,7 +710,7 @@ impl Expr {
         input.extend_from_slice(arguments);
 
         let supertype = if cast_to_supertypes {
-            Some(Default::default())
+            Some(CastingRules::cast_to_supertypes())
         } else {
             None
         };
@@ -730,10 +726,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
                 flags,
-                cast_options: FunctionCastOptions {
-                    supertype,
-                    ..Default::default()
-                },
+                cast_options: supertype,
                 ..Default::default()
             },
         }
@@ -761,10 +754,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 flags,
-                cast_options: FunctionCastOptions {
-                    supertype: cast_to_supertypes,
-                    ..Default::default()
-                },
+                cast_options: cast_to_supertypes.map(CastingRules::Supertype),
                 ..Default::default()
             },
         }
@@ -1063,7 +1053,7 @@ impl Expr {
             function: FunctionExpr::FillNull,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_options: FunctionCastOptions::cast_to_supertypes(),
+                cast_options: Some(CastingRules::cast_to_supertypes()),
                 ..Default::default()
             },
         }
