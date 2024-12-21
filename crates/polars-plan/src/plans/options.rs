@@ -72,6 +72,30 @@ pub struct GroupbyOptions {
     pub slice: Option<(i64, usize)>,
 }
 
+impl GroupbyOptions {
+    pub(crate) fn is_rolling(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.rolling.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+
+    pub(crate) fn is_dynamic(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.dynamic.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DistinctOptionsDSL {

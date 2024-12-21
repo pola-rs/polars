@@ -210,7 +210,9 @@ pub fn optimize(
         cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, expr_eval, verbose)?;
     }
 
-    if members.has_group_by | members.has_sort | members.has_distinct {
+    if opt_state.contains(OptFlags::CHECK_ORDER_OBSERVE)
+        && members.has_group_by | members.has_sort | members.has_distinct
+    {
         set_order_flags(lp_top, lp_arena, expr_arena, scratch);
     }
 

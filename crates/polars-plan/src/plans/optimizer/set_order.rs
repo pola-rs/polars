@@ -105,8 +105,8 @@ pub(super) fn set_order_flags(
 
                 if apply.is_some()
                     || *maintain_order
-                    || options.rolling.is_some()
-                    || options.dynamic.is_some()
+                    || options.is_rolling()
+                    || options.is_dynamic()
                 {
                     maintain_order_above = true;
                     continue;

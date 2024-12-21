@@ -35,6 +35,9 @@ bitflags! {
         const FAST_PROJECTION = 1 << 14;
         /// Collapse slower joins with filters into faster joins.
         const COLLAPSE_JOINS = 1 << 15;
+        /// Check if operations are order dependent and unset maintaining_order if
+        /// the order would not be observed.
+        const CHECK_ORDER_OBSERVE = 1 << 16;
     }
 }
 

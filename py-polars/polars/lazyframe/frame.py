@@ -986,7 +986,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # reshape wide result
         n_metrics = len(metrics)
         column_metrics = [
-            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
+            df_metrics.row(0)[(n * n_metrics): (n + 1) * n_metrics]
             for n in range(schema.len())
         ]
         summary = dict(zip(schema, column_metrics))
@@ -1768,6 +1768,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "cpu",
         background: Literal[True],
         _eager: bool = False,
+        _check_order: bool = True,
     ) -> InProcessQuery: ...
 
     @overload
@@ -1787,6 +1788,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "cpu",
         background: Literal[False] = False,
+        _check_order: bool = True,
         _eager: bool = False,
     ) -> DataFrame: ...
 
@@ -1806,6 +1808,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "cpu",
         background: bool = False,
+        _check_order: bool = True,
         _eager: bool = False,
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
@@ -1974,6 +1977,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
             cluster_with_columns = False
             collapse_joins = False
+            _check_order = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -2005,6 +2009,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager,
+            _check_order,
             new_streaming,
         )
 
