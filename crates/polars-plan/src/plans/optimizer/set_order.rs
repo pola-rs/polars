@@ -81,8 +81,9 @@ pub(super) fn set_order_flags(
                 sort_options,
                 ..
             } => {
+                debug_assert!(sort_options.limit.is_none());
                 // This sort can be removed
-                if !maintain_order_above && sort_options.limit.is_none() {
+                if !maintain_order_above {
                     scratch.pop();
                     scratch.push(node);
                     let input = *input;
@@ -95,6 +96,7 @@ pub(super) fn set_order_flags(
                 }
             },
             IR::Distinct { options, .. } => {
+                debug_assert!(options.slice.is_none());
                 if !maintain_order_above {
                     options.maintain_order = false;
                     continue;
@@ -104,6 +106,7 @@ pub(super) fn set_order_flags(
                 }
             },
             IR::Union { options, .. } => {
+                debug_assert!(options.slice.is_none());
                 options.maintain_order = maintain_order_above;
             },
             IR::GroupBy {
@@ -114,6 +117,7 @@ pub(super) fn set_order_flags(
                 apply,
                 ..
             } => {
+                debug_assert!(options.slice.is_none());
                 if !maintain_order_above && *maintain_order {
                     *maintain_order = false;
                     continue;
