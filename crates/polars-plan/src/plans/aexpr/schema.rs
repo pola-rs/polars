@@ -1,3 +1,4 @@
+#[cfg(feature = "dtype-decimal")]
 use polars_core::chunked_array::arithmetic::{
     _get_decimal_scale_add_sub, _get_decimal_scale_div, _get_decimal_scale_mul,
 };
