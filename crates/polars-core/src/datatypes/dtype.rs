@@ -355,6 +355,10 @@ impl DataType {
             return Some(true);
         }
 
+        if self.is_null() {
+            return Some(true);
+        }
+
         use DataType as D;
         Some(match (self, to) {
             #[cfg(feature = "dtype-categorical")]
