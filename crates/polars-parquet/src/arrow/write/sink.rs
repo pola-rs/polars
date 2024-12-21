@@ -58,6 +58,7 @@ where
             parquet_schema.clone(),
             ParquetWriteOptions {
                 version: options.version,
+                write_indexes: false,
                 write_statistics: options.has_statistics(),
             },
             created_by,
