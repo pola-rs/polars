@@ -40,3 +40,13 @@ def test_fast_count_alias_18581() -> None:
     df = pl.scan_csv(f).select(pl.len().alias("weird_name")).collect()
 
     assert_frame_equal(pl.DataFrame({"weird_name": 2}), df)
+
+
+def test_order_observability() -> None:
+    q = pl.LazyFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).sort("a")
+
+    assert "SORT" not in q.group_by("a").sum().explain(_check_order=True)
+    assert "SORT" not in q.group_by("a").min().explain(_check_order=True)
+    assert "SORT" not in q.group_by("a").max().explain(_check_order=True)
+    assert "SORT" in q.group_by("a").last().explain(_check_order=True)
+    assert "SORT" in q.group_by("a").first().explain(_check_order=True)

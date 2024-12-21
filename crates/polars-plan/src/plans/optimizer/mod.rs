@@ -118,6 +118,13 @@ pub fn optimize(
         members.collect(lp_top, lp_arena, expr_arena)
     }
 
+    // Run before slice pushdown
+    if opt_state.contains(OptFlags::CHECK_ORDER_OBSERVE)
+        && members.has_group_by | members.has_sort | members.has_distinct
+    {
+        set_order_flags(lp_top, lp_arena, expr_arena, scratch);
+    }
+
     if simplify_expr {
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
@@ -208,12 +215,6 @@ pub fn optimize(
     if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
         // We only want to run this on cse inserted caches
         cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, expr_eval, verbose)?;
-    }
-
-    if opt_state.contains(OptFlags::CHECK_ORDER_OBSERVE)
-        && members.has_group_by | members.has_sort | members.has_distinct
-    {
-        set_order_flags(lp_top, lp_arena, expr_arena, scratch);
     }
 
     // This one should run (nearly) last as this modifies the projections

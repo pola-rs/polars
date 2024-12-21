@@ -13,7 +13,7 @@ fn is_order_dependent_top_level(ae: &AExpr, ctx: Context) -> bool {
             IRAggExpr::First(_) => true,
             IRAggExpr::Last(_) => true,
             IRAggExpr::Mean(_) => false,
-            IRAggExpr::Implode(_) => false,
+            IRAggExpr::Implode(_) => true,
             IRAggExpr::Quantile { .. } => false,
             IRAggExpr::Sum(_) => false,
             IRAggExpr::Count(_, _) => false,
@@ -31,8 +31,8 @@ fn is_order_dependent<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>, ctx: 
     let mut stack = unitvec![];
 
     loop {
-        if !is_order_dependent_top_level(ae, ctx) {
-            return false;
+        if is_order_dependent_top_level(ae, ctx) {
+            return true;
         }
 
         let Some(node) = stack.pop() else {
@@ -42,7 +42,7 @@ fn is_order_dependent<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>, ctx: 
         ae = expr_arena.get(node);
     }
 
-    true
+    false
 }
 
 // Can give false negatives.
@@ -54,11 +54,12 @@ pub(crate) fn all_order_independent<'a, N>(
 where
     Node: From<&'a N>,
 {
-    nodes
+    !nodes
         .iter()
-        .all(|n| !is_order_dependent(expr_arena.get(n.into()), expr_arena, ctx))
+        .any(|n| is_order_dependent(expr_arena.get(n.into()), expr_arena, ctx))
 }
 
+// Should run before slice pushdown.
 pub(super) fn set_order_flags(
     root: Node,
     ir_arena: &mut Arena<IR>,
@@ -75,8 +76,23 @@ pub(super) fn set_order_flags(
         ir.copy_inputs(scratch);
 
         match ir {
-            IR::Sort { .. } => {
-                maintain_order_above = false;
+            IR::Sort {
+                input,
+                sort_options,
+                ..
+            } => {
+                // This sort can be removed
+                if !maintain_order_above && sort_options.limit.is_none() {
+                    scratch.pop();
+                    scratch.push(node);
+                    let input = *input;
+                    ir_arena.swap(node, input);
+                    continue;
+                }
+
+                if !sort_options.maintain_order {
+                    maintain_order_above = false; // `maintain_order=True` is influenced by result of earlier sorts
+                }
             },
             IR::Distinct { options, .. } => {
                 if !maintain_order_above {
@@ -112,7 +128,7 @@ pub(super) fn set_order_flags(
                     continue;
                 }
                 if all_elementwise(keys, expr_arena)
-                    && !all_order_independent(aggs, expr_arena, Context::Aggregation)
+                    && all_order_independent(aggs, expr_arena, Context::Aggregation)
                 {
                     maintain_order_above = false;
                     continue;
@@ -127,6 +143,8 @@ pub(super) fn set_order_flags(
                 maintain_order_above = true;
             },
             _ => {
+                // If we don't know maintain order
+                // Known: slice
                 maintain_order_above = true;
             },
         }
