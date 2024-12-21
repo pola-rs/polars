@@ -1108,6 +1108,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 collapse_joins,
                 streaming,
                 _eager=False,
+                _check_order=_check_order,
                 new_streaming=False,
             )
             if format == "tree":
