@@ -1035,13 +1035,15 @@ class Series:
     @overload
     def __add__(self, other: Any) -> Self: ...
 
-    def __add__(self, other: Any) -> Self | DataFrame | Expr:
+    def __add__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, str):
             other = Series("", [other])
         elif isinstance(other, pl.DataFrame):
             return other + self
         elif isinstance(other, pl.Expr):
             return F.lit(self) + other
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) + other).to_series()
         return self._arithmetic(other, "add", "add_<>")
 
     @overload
@@ -1050,9 +1052,11 @@ class Series:
     @overload
     def __sub__(self, other: Any) -> Self: ...
 
-    def __sub__(self, other: Any) -> Self | Expr:
+    def __sub__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) - other
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) - other).to_series()
         return self._arithmetic(other, "sub", "sub_<>")
 
     def _recursive_cast_to_dtype(self, leaf_dtype: PolarsDataType) -> Series:
@@ -1083,6 +1087,8 @@ class Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) / other).to_series()
 
         self = (
             self
@@ -1111,6 +1117,8 @@ class Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) // other).to_series()
 
         if not isinstance(other, pl.Expr):
             other = F.lit(other)
@@ -1134,6 +1142,8 @@ class Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) * other).to_series()
         elif isinstance(other, pl.DataFrame):
             return other * self
         else:
@@ -1151,6 +1161,8 @@ class Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before applying modulo on datelike dtypes"
             raise TypeError(msg)
+        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+            return self.to_frame().select(F.col(self.name) % other).to_series()
         return self._arithmetic(other, "rem", "rem_<>")
 
     def __rmod__(self, other: Any) -> Series:
@@ -1160,11 +1172,15 @@ class Series:
         return self._arithmetic(other, "rem", "rem_<>_rhs")
 
     def __radd__(self, other: Any) -> Series:
-        if isinstance(other, str):
-            return (other + self.to_frame()).to_series()
+        if isinstance(other, str) or (
+            isinstance(other, (int, float)) and self.dtype.is_decimal()
+        ):
+            return self.to_frame().select(other + F.col(self.name)).to_series()
         return self._arithmetic(other, "add", "add_<>_rhs")
 
     def __rsub__(self, other: Any) -> Series:
+        if isinstance(other, (int, float)) and self.dtype.is_decimal():
+            return self.to_frame().select(other - F.col(self.name)).to_series()
         return self._arithmetic(other, "sub", "sub_<>_rhs")
 
     def __rtruediv__(self, other: Any) -> Series:
@@ -1173,6 +1189,8 @@ class Series:
             raise TypeError(msg)
         if self.dtype.is_float():
             self.__rfloordiv__(other)
+        if isinstance(other, (int, float)) and self.dtype.is_decimal():
+            return self.to_frame().select(other / F.col(self.name)).to_series()
 
         if isinstance(other, int):
             other = float(other)
@@ -1188,6 +1206,8 @@ class Series:
         if self.dtype.is_temporal():
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
+        if isinstance(other, (int, float)) and self.dtype.is_decimal():
+            return self.to_frame().select(other * F.col(self.name)).to_series()
         return self._arithmetic(other, "mul", "mul_<>")
 
     def __pow__(self, exponent: int | float | Series) -> Series:
