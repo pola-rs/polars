@@ -9,6 +9,11 @@ pub fn search_sorted(
     descending: bool,
 ) -> PolarsResult<IdxCa> {
     let original_dtype = s.dtype();
+
+    if s.dtype().is_categorical() {
+        polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
+    }
+
     let s = s.to_physical_repr();
     let phys_dtype = s.dtype();
 
