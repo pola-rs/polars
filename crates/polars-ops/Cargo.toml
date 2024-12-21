@@ -43,7 +43,9 @@ unicode-reverse = { workspace = true, optional = true }
 [dependencies.jsonpath_lib]
 package = "jsonpath_lib_polars_vendor"
 optional = true
-version = "0.0.1"
+git = "https://github.com/ritchie46/jsonpath.git"
+branch = "improve_compiled"
+#version = "0.0.1"
 
 [dev-dependencies]
 rand = { workspace = true, features = ["small_rng"] }
