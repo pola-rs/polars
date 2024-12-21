@@ -540,3 +540,16 @@ def test_decimal_round() -> None:
         expected_s = pl.Series("a", [round(v, decimals) for v in values], dtype)
 
         assert_series_equal(got_s, expected_s)
+
+
+def test_decimal_arithmetic_schema() -> None:
+    q = pl.LazyFrame({"x": [1.0]}, schema={"x": pl.Decimal(15, 2)})
+
+    q1 = q.select(pl.col.x * pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema
+    q1 = q.select(pl.col.x / pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema
+    q1 = q.select(pl.col.x - pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema
+    q1 = q.select(pl.col.x + pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema

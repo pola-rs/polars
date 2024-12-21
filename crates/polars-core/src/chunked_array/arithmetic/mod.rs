@@ -6,6 +6,7 @@ mod numeric;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::compute::utils::combine_validities_and;
+pub use decimal::{_get_decimal_scale_add_sub, _get_decimal_scale_div, _get_decimal_scale_mul};
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
 
