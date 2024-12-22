@@ -139,7 +139,7 @@ def test_read_spreadsheet(
         (pl.read_ods, "path_ods", {}),
     ],
 )
-def test_read_excel_multi_sheets(
+def test_read_excel_multiple_worksheets(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,
     params: dict[str, str],
@@ -166,6 +166,45 @@ def test_read_excel_multi_sheets(
 
         assert_frame_equal(frames["test1"], expected1)
         assert_frame_equal(frames["test2"], expected2)
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        # xls file
+        (pl.read_excel, "path_xls", {"engine": "calamine"}),
+        # xlsx file
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        # xlsb file (binary)
+        (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
+        # open document
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_read_excel_multiple_workbooks(
+    read_spreadsheet: Callable[..., pl.DataFrame],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+
+    df = read_spreadsheet(
+        [
+            spreadsheet_path,
+            spreadsheet_path,
+            spreadsheet_path,
+        ],
+        sheet_id=None,
+        sheet_name="test1",
+        **params,
+    )
+    expected = pl.DataFrame(
+        {"hello": ["Row 1", "Row 2", "Row 1", "Row 2", "Row 1", "Row 2"]}
+    )
+    assert_frame_equal(df, expected)
 
 
 @pytest.mark.parametrize(

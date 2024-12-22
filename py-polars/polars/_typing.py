@@ -299,7 +299,7 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
 
-ScanSource: TypeAlias = Union[
+FileSource: TypeAlias = Union[
     str,
     Path,
     IO[bytes],
