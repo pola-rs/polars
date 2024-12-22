@@ -4,7 +4,9 @@ import re
 import warnings
 from collections.abc import Sequence
 from datetime import time
+from glob import glob
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
+from os import PathLike
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
 
@@ -34,18 +36,38 @@ from polars.exceptions import (
     NoDataError,
     ParameterCollisionError,
 )
+from polars.functions import concat
 from polars.io._utils import looks_like_url, process_file_url
 from polars.io.csv.functions import read_csv
 
 if TYPE_CHECKING:
     from typing import Literal
 
-    from polars._typing import ExcelSpreadsheetEngine, SchemaDict
+    from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict
+
+
+def _sources(
+    source: FileSource,
+) -> tuple[Any, bool]:
+    read_multiple_workbooks = True
+    sources: list[Any] = []
+
+    if not isinstance(source, Sequence) or isinstance(source, str):
+        read_multiple_workbooks = False
+        source = [source]  # type: ignore[assignment]
+
+    for src in source:  # type: ignore[union-attr]
+        if isinstance(src, (str, PathLike)) and not Path(src).exists():
+            sources.extend(glob(str(src), recursive=True))  # noqa: PTH207
+        else:
+            sources.append(src)
+
+    return sources, read_multiple_workbooks
 
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -63,7 +85,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -81,7 +103,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -101,7 +123,7 @@ def read_excel(
 # Literal[0] overlaps with the return value for other integers
 @overload  # type: ignore[overload-overlap]
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -119,7 +141,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -137,7 +159,7 @@ def read_excel(
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -156,7 +178,7 @@ def read_excel(
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 @deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -173,6 +195,8 @@ def read_excel(
     """
     Read Excel spreadsheet data into a DataFrame.
 
+    .. versionadded:: 1.18
+        Support loading data from a list (or glob pattern) of multiple workbooks.
     .. versionchanged:: 1.0
         Default engine is now "calamine" (was "xlsx2csv").
     .. versionadded:: 0.20.6
@@ -183,18 +207,17 @@ def read_excel(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by "file-like object" we refer to objects
-        that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        Path(s) to a file or a file-like object (by "file-like object" we refer to
+        objects that have a `read()` method, such as a file handler like the builtin
+        `open` function, or a `BytesIO` instance). For file-like objects, the stream
+        position may not be updated after reading.
     sheet_id
         Sheet number(s) to convert (set `0` to load all sheets as DataFrames) and
         return a `{sheetname:frame,}` dict. (Defaults to `1` if neither this nor
         `sheet_name` are specified). Can also take a sequence of sheet numbers.
     sheet_name
-        Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
-        than one is given then a `{sheetname:frame,}` dict is returned.
+        Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If
+        more than one is given then a `{sheetname:frame,}` dict is returned.
     engine : {'calamine', 'xlsx2csv', 'openpyxl'}
         Library used to parse the spreadsheet file; defaults to "calamine".
 
@@ -297,25 +320,33 @@ def read_excel(
     ...     read_options={"has_header": False, "new_columns": ["a", "b", "c"]},
     ... )  # doctest: +SKIP
     """
-    return _read_spreadsheet(
-        sheet_id,
-        sheet_name,
-        source=source,
-        engine=engine,
-        engine_options=engine_options,
-        read_options=read_options,
-        schema_overrides=schema_overrides,
-        infer_schema_length=infer_schema_length,
-        raise_if_empty=raise_if_empty,
-        has_header=has_header,
-        columns=columns,
-        drop_empty_rows=drop_empty_rows,
-    )
+    sources, read_multiple_workbooks = _sources(source)
+    frames = [
+        _read_spreadsheet(
+            src,
+            sheet_id=sheet_id,
+            sheet_name=sheet_name,
+            engine=engine,
+            engine_options=engine_options,
+            read_options=read_options,
+            schema_overrides=schema_overrides,
+            infer_schema_length=infer_schema_length,
+            raise_if_empty=raise_if_empty,
+            has_header=has_header,
+            columns=columns,
+            drop_empty_rows=drop_empty_rows,
+            read_multiple_workbooks=read_multiple_workbooks,
+        )
+        for src in sources
+    ]
+    if read_multiple_workbooks:
+        return concat(frames, how="vertical_relaxed")  # type: ignore[type-var]
+    return frames[0]
 
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -330,7 +361,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -345,7 +376,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -360,7 +391,7 @@ def read_ods(
 
 @overload  # type: ignore[overload-overlap]
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -375,7 +406,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -390,7 +421,7 @@ def read_ods(
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -404,7 +435,7 @@ def read_ods(
 
 
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -423,9 +454,8 @@ def read_ods(
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        function, or a `BytesIO` instance). For file-like objects, the stream position
+        may not be updated accordingly after reading.
     sheet_id
         Sheet number(s) to convert, starting from 1 (set `0` to load *all* worksheets
         as DataFrames) and return a `{sheetname:frame,}` dict. (Defaults to `1` if
@@ -480,27 +510,35 @@ def read_ods(
     ...     raise_if_empty=False,
     ... )  # doctest: +SKIP
     """
-    return _read_spreadsheet(
-        sheet_id,
-        sheet_name,
-        source=source,
-        engine="calamine",
-        engine_options={},
-        read_options=None,
-        schema_overrides=schema_overrides,
-        infer_schema_length=infer_schema_length,
-        raise_if_empty=raise_if_empty,
-        drop_empty_rows=drop_empty_rows,
-        has_header=has_header,
-        columns=columns,
-    )
+    sources, read_multiple_workbooks = _sources(source)
+    frames = [
+        _read_spreadsheet(
+            src,
+            sheet_id=sheet_id,
+            sheet_name=sheet_name,
+            engine="calamine",
+            engine_options={},
+            read_options=None,
+            schema_overrides=schema_overrides,
+            infer_schema_length=infer_schema_length,
+            raise_if_empty=raise_if_empty,
+            drop_empty_rows=drop_empty_rows,
+            has_header=has_header,
+            columns=columns,
+            read_multiple_workbooks=read_multiple_workbooks,
+        )
+        for src in sources
+    ]
+    if read_multiple_workbooks:
+        return concat(frames, how="vertical_relaxed")  # type: ignore[type-var]
+    return frames[0]
 
 
 def _read_spreadsheet(
-    sheet_id: int | Sequence[int] | None,
-    sheet_name: str | list[str] | tuple[str] | None,
-    *,
     source: str | Path | IO[bytes] | bytes,
+    *,
+    sheet_id: int | Sequence[int] | None,
+    sheet_name: str | Sequence[str] | None,
     engine: ExcelSpreadsheetEngine,
     engine_options: dict[str, Any] | None = None,
     read_options: dict[str, Any] | None = None,
@@ -510,6 +548,7 @@ def _read_spreadsheet(
     has_header: bool = True,
     raise_if_empty: bool = True,
     drop_empty_rows: bool = True,
+    read_multiple_workbooks: bool = False,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     if isinstance(source, (str, Path)):
         source = normalize_filepath(source)
@@ -532,7 +571,13 @@ def _read_spreadsheet(
     )
     try:
         # parse data from the indicated sheet(s)
-        sheet_names, return_multi = _get_sheet_names(sheet_id, sheet_name, worksheets)
+        sheet_names, return_multiple_sheets = _get_sheet_names(
+            sheet_id, sheet_name, worksheets
+        )
+        if read_multiple_workbooks and return_multiple_sheets:
+            msg = "cannot return multiple sheets from multiple workbooks"
+            raise ValueError(msg)
+
         parsed_sheets = {
             name: reader_fn(
                 parser=parser,
@@ -554,7 +599,7 @@ def _read_spreadsheet(
         msg = f"no matching sheets found when `sheet_{param}` is {value!r}"
         raise ValueError(msg)
 
-    if return_multi:
+    if return_multiple_sheets:
         return parsed_sheets
     return next(iter(parsed_sheets.values()))
 
@@ -614,7 +659,7 @@ def _get_read_options(
 
 def _get_sheet_names(
     sheet_id: int | Sequence[int] | None,
-    sheet_name: str | list[str] | tuple[str] | None,
+    sheet_name: str | Sequence[str] | None,
     worksheets: list[dict[str, Any]],
 ) -> tuple[list[str], bool]:
     """Establish sheets to read; indicate if we are returning a dict frames."""
@@ -625,12 +670,12 @@ def _get_sheet_names(
     sheet_names = []
     if sheet_id is None and sheet_name is None:
         sheet_names.append(worksheets[0]["name"])
-        return_multi = False
+        return_multiple_sheets = False
     elif sheet_id == 0:
         sheet_names.extend(ws["name"] for ws in worksheets)
-        return_multi = True
+        return_multiple_sheets = True
     else:
-        return_multi = (
+        return_multiple_sheets = (
             (isinstance(sheet_name, Sequence) and not isinstance(sheet_name, str))
             or isinstance(sheet_id, Sequence)
             or sheet_id == 0
@@ -656,7 +701,7 @@ def _get_sheet_names(
                     msg = f"no matching sheet found when `sheet_id` is {idx}"
                     raise ValueError(msg)
                 sheet_names.append(name)
-    return sheet_names, return_multi
+    return sheet_names, return_multiple_sheets
 
 
 def _initialise_spreadsheet_parser(
