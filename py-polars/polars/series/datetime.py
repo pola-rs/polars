@@ -44,7 +44,7 @@ class DateTimeNameSpace:
         week_mask: Iterable[bool] = (True, True, True, True, True, False, False),
         holidays: Iterable[dt.date] = (),
         roll: Roll = "raise",
-    ) -> Expr:
+    ) -> Series:
         """
         Offset by `n` business days.
 
