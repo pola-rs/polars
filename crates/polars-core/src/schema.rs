@@ -20,8 +20,6 @@ pub trait SchemaExt {
     fn iter_fields(&self) -> impl ExactSizeIterator<Item = Field> + '_;
 
     fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool>;
-
-    fn materialize_unknown_dtypes(self) -> PolarsResult<Schema>;
 }
 
 impl SchemaExt for Schema {
@@ -89,15 +87,6 @@ impl SchemaExt for Schema {
             *dt = st
         }
         Ok(changed)
-    }
-
-    /// Materialize all unknown dtypes in this schema.
-    fn materialize_unknown_dtypes(mut self) -> PolarsResult<Schema> {
-        for (_, dtype) in self.iter_mut() {
-            let dt = std::mem::take(dtype);
-            *dtype = dt.materialize_unknown(true)?;
-        }
-        Ok(self)
     }
 }
 
