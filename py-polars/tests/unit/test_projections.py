@@ -227,7 +227,7 @@ def test_asof_join_projection_() -> None:
         "b",
         "c",
         "d",
-        pl.lit(0).alias("group"),
+        pl.lit(0, dtype=pl.Int64).alias("group"),
         pl.lit(0.1).alias("val"),
     ]
     dirty_lf1 = lf1.select(expressions)

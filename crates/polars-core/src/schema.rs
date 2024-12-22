@@ -21,7 +21,7 @@ pub trait SchemaExt {
 
     fn to_supertype(&mut self, other: &Schema) -> PolarsResult<bool>;
 
-    fn materialize_unknown_dtypes(&self) -> PolarsResult<Schema>;
+    fn materialize_unknown_dtypes(self) -> PolarsResult<Schema>;
 }
 
 impl SchemaExt for Schema {
@@ -92,10 +92,12 @@ impl SchemaExt for Schema {
     }
 
     /// Materialize all unknown dtypes in this schema.
-    fn materialize_unknown_dtypes(&self) -> PolarsResult<Schema> {
-        self.iter()
-            .map(|(name, dtype)| Ok((name.clone(), dtype.materialize_unknown()?)))
-            .collect()
+    fn materialize_unknown_dtypes(mut self) -> PolarsResult<Schema> {
+        for (_, dtype) in self.iter_mut() {
+            let dt = std::mem::take(dtype);
+            *dtype = dt.materialize_unknown(true)?;
+        }
+        Ok(self)
     }
 }
 
