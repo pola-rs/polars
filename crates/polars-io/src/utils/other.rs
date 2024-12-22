@@ -1,6 +1,8 @@
 #[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use std::borrow::Cow;
 use std::io::Read;
+#[cfg(target_os = "emscripten")]
+use std::io::{Seek, SeekFrom};
 
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
@@ -23,6 +25,15 @@ pub fn get_reader_bytes<R: Read + MmapBytesReader + ?Sized>(
     {
         let mut options = memmap::MmapOptions::new();
         options.offset(offset);
+
+        // Set mmap size based on seek to end when running under Emscripten
+        #[cfg(target_os = "emscripten")]
+        {
+            let mut file = file;
+            let size = file.seek(SeekFrom::End(0)).unwrap();
+            options.len((size - offset) as usize);
+        }
+
         let mmap = MMapSemaphore::new_from_file_with_options(file, options)?;
         Ok(ReaderBytes::Owned(MemSlice::from_mmap(Arc::new(mmap))))
     } else {
