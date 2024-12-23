@@ -526,13 +526,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -542,13 +542,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -845,13 +845,13 @@ where
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -861,13 +861,13 @@ where
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -1154,13 +1154,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1170,13 +1170,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -1610,13 +1610,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1636,13 +1636,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         })
                         .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -2054,13 +2054,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                     call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -2080,13 +2080,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         })
                         .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -2360,13 +2360,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -2376,13 +2376,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -2552,12 +2552,12 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             .skip(init_null_count + skip)
             .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
 
-        Ok(iterator_to_object(
+        iterator_to_object(
             it,
             init_null_count,
             first_value,
             self.name().clone(),
             self.len(),
-        ))
+        )
     }
 }

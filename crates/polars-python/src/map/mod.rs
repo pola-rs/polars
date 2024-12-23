@@ -214,7 +214,7 @@ fn iterator_to_object(
     first_value: Option<ObjectValue>,
     name: PlSmallStr,
     capacity: usize,
-) -> ObjectChunked<ObjectValue> {
+) -> PyResult<ObjectChunked<ObjectValue>> {
     let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: ObjectChunked<ObjectValue> = unsafe {
@@ -236,8 +236,11 @@ fn iterator_to_object(
             it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
+    if let Some(err) = error {
+        let _ = err?;
+    }
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+    Ok(ca.with_name(name))
 }
 
 fn catch_err<K>(error: &mut Option<PyResult<Option<K>>>, result: PyResult<Option<K>>) -> Option<K> {
