@@ -833,6 +833,15 @@ def test_cat_append_lexical_sorted_flag() -> None:
 
     assert not (df2["y"].is_sorted())
 
+    s = pl.Series("a", ["z", "k", "a"], pl.Categorical("lexical"))
+    s1 = s[[0]]
+    s2 = s[[1]]
+    s3 = s[[2]]
+    s1.append(s2)
+    s1.append(s3)
+
+    assert not (s1.is_sorted())
+
 
 def test_get_cat_categories_multiple_chunks() -> None:
     df = pl.DataFrame(
