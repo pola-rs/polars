@@ -71,7 +71,8 @@ We first create a PyArrow dataset and then create a `LazyFrame` from the dataset
 
 ## Writing to cloud storage
 
-We can write a `DataFrame` to cloud storage in Python using s3fs for S3, adlfs for Azure Blob
-Storage and gcsfs for Google Cloud Storage. In this example, we write a Parquet file to S3.
+`DataFrame`s can also be written to cloud storage by passing a cloud URL:
 
 {{code_block('user-guide/io/cloud-storage','write_parquet',['write_parquet'])}}
+
+Note that `DataFrame`s can also be written to any file-like Python object that supports writes.
