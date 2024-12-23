@@ -1,6 +1,7 @@
 use polars::prelude::*;
 use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
 use polars_core::series::SeriesIter;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
@@ -47,7 +48,7 @@ pub fn apply_lambda_unknown<'a>(
             let first_value = out.extract::<bool>().ok();
             return Ok((
                 PySeries::new(
-                    apply_lambda_with_bool_out_type(df, py, lambda, null_count, first_value)
+                    apply_lambda_with_bool_out_type(df, py, lambda, null_count, first_value)?
                         .into_series(),
                 )
                 .into_py_any(py)?,
@@ -64,7 +65,7 @@ pub fn apply_lambda_unknown<'a>(
                         lambda,
                         null_count,
                         first_value,
-                    )
+                    )?
                     .into_series(),
                 )
                 .into_py_any(py)?,
@@ -80,7 +81,7 @@ pub fn apply_lambda_unknown<'a>(
                         lambda,
                         null_count,
                         first_value,
-                    )
+                    )?
                     .into_series(),
                 )
                 .into_py_any(py)?,
@@ -90,7 +91,7 @@ pub fn apply_lambda_unknown<'a>(
             let first_value = out.extract::<PyBackedStr>().ok();
             return Ok((
                 PySeries::new(
-                    apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)
+                    apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)?
                         .into_series(),
                 )
                 .into_py_any(py)?,
@@ -145,7 +146,7 @@ fn apply_iter<'a, T>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     skip: usize,
-) -> impl Iterator<Item = Option<T>> + 'a
+) -> impl Iterator<Item = PyResult<Option<T>>> + 'a
 where
     T: FromPyObject<'a>,
 {
@@ -153,10 +154,7 @@ where
     ((init_null_count + skip)..df.height()).map(move |_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
         let tpl = (PyTuple::new(py, iter).unwrap(),);
-        match lambda.call1(tpl) {
-            Ok(val) => val.extract::<T>().ok(),
-            Err(e) => panic!("python function failed {e}"),
-        }
+        lambda.call1(tpl).map(|v| v.extract().ok())
     })
 }
 
@@ -167,14 +165,17 @@ pub fn apply_lambda_with_primitive_out_type<'a, D>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<D::Native>,
-) -> ChunkedArray<D>
+) -> PyResult<ChunkedArray<D>>
 where
     D: PyArrowPrimitiveType,
     D::Native: IntoPyObject<'a> + FromPyObject<'a>,
 {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
+        Ok(ChunkedArray::full_null(
+            PlSmallStr::from_static("map"),
+            df.height(),
+        ))
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
         iterator_to_primitive(
@@ -194,10 +195,13 @@ pub fn apply_lambda_with_bool_out_type<'a>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<bool>,
-) -> ChunkedArray<BooleanType> {
+) -> PyResult<ChunkedArray<BooleanType>> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
+        Ok(ChunkedArray::full_null(
+            PlSmallStr::from_static("map"),
+            df.height(),
+        ))
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
         iterator_to_bool(
@@ -217,10 +221,13 @@ pub fn apply_lambda_with_string_out_type<'a>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<PyBackedStr>,
-) -> StringChunked {
+) -> PyResult<StringChunked> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
+        Ok(ChunkedArray::full_null(
+            PlSmallStr::from_static("map"),
+            df.height(),
+        ))
     } else {
         let iter = apply_iter::<PyBackedStr>(df, py, lambda, init_null_count, skip);
         iterator_to_string(
@@ -253,18 +260,18 @@ pub fn apply_lambda_with_list_out_type<'a>(
         let iter = ((init_null_count + skip)..df.height()).map(|_| {
             let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
             let tpl = (PyTuple::new(py, iter).unwrap(),);
-            match lambda.call1(tpl) {
-                Ok(val) => match val.getattr("_s") {
-                    Ok(val) => val.extract::<PySeries>().ok().map(|ps| ps.series),
-                    Err(_) => {
-                        if val.is_none() {
-                            None
-                        } else {
-                            panic!("should return a Series, got a {val:?}")
-                        }
-                    },
+            let val = lambda.call1(tpl)?;
+            match val.getattr("_s") {
+                Ok(val) => val.extract::<PySeries>().map(|s| Some(s.series)),
+                Err(_) => {
+                    if val.is_none() {
+                        Ok(None)
+                    } else {
+                        Err(PyValueError::new_err(
+                            "should return a Series, got a {val:?}",
+                        ))
+                    }
                 },
-                Err(e) => panic!("python function failed {e}"),
             }
         });
         iterator_to_list(

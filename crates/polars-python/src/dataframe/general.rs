@@ -555,16 +555,16 @@ impl PyDataFrame {
             use apply_lambda_with_primitive_out_type as apply;
             #[rustfmt::skip]
             let out = match output_type.map(|dt| dt.0) {
-                Some(DataType::Int32) => apply::<Int32Type>(df, py, lambda, 0, None).into_series(),
-                Some(DataType::Int64) => apply::<Int64Type>(df, py, lambda, 0, None).into_series(),
-                Some(DataType::UInt32) => apply::<UInt32Type>(df, py, lambda, 0, None).into_series(),
-                Some(DataType::UInt64) => apply::<UInt64Type>(df, py, lambda, 0, None).into_series(),
-                Some(DataType::Float32) => apply::<Float32Type>(df, py, lambda, 0, None).into_series(),
-                Some(DataType::Float64) => apply::<Float64Type>(df, py, lambda, 0, None).into_series(),
-                Some(DataType::Date) => apply::<Int32Type>(df, py, lambda, 0, None).into_date().into_series(),
-                Some(DataType::Datetime(tu, tz)) => apply::<Int64Type>(df, py, lambda, 0, None).into_datetime(tu, tz).into_series(),
-                Some(DataType::Boolean) => apply_lambda_with_bool_out_type(df, py, lambda, 0, None).into_series(),
-                Some(DataType::String) => apply_lambda_with_string_out_type(df, py, lambda, 0, None).into_series(),
+                Some(DataType::Int32) => apply::<Int32Type>(df, py, lambda, 0, None)?.into_series(),
+                Some(DataType::Int64) => apply::<Int64Type>(df, py, lambda, 0, None)?.into_series(),
+                Some(DataType::UInt32) => apply::<UInt32Type>(df, py, lambda, 0, None)?.into_series(),
+                Some(DataType::UInt64) => apply::<UInt64Type>(df, py, lambda, 0, None)?.into_series(),
+                Some(DataType::Float32) => apply::<Float32Type>(df, py, lambda, 0, None)?.into_series(),
+                Some(DataType::Float64) => apply::<Float64Type>(df, py, lambda, 0, None)?.into_series(),
+                Some(DataType::Date) => apply::<Int32Type>(df, py, lambda, 0, None)?.into_date().into_series(),
+                Some(DataType::Datetime(tu, tz)) => apply::<Int64Type>(df, py, lambda, 0, None)?.into_datetime(tu, tz).into_series(),
+                Some(DataType::Boolean) => apply_lambda_with_bool_out_type(df, py, lambda, 0, None)?.into_series(),
+                Some(DataType::String) => apply_lambda_with_string_out_type(df, py, lambda, 0, None)?.into_series(),
                 _ => return apply_lambda_unknown(df, py, lambda, inference_size),
             };
 

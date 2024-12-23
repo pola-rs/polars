@@ -9,7 +9,7 @@ use crate::py_modules::{pl_series, polars};
 fn infer_and_finish<'a, A: ApplyLambda<'a>>(
     applyer: &'a A,
     py: Python<'a>,
-    lambda: &Bound<'a, PyAny>,
+    lambda: &'a Bound<'a, PyAny>,
     out: &Bound<'a, PyAny>,
     null_count: usize,
 ) -> PyResult<PySeries> {
@@ -131,7 +131,7 @@ pub trait ApplyLambda<'a> {
     fn apply_lambda_unknown(
         &'a self,
         _py: Python<'a>,
-        _lambda: &Bound<'a, PyAny>,
+        _lambda: &'a Bound<'a, PyAny>,
     ) -> PyResult<PySeries>;
 
     // Used to store a struct type
@@ -186,7 +186,7 @@ pub trait ApplyLambda<'a> {
     fn apply_extract_any_values(
         &'a self,
         py: Python<'a>,
-        lambda: &Bound<'a, PyAny>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series>;
@@ -214,16 +214,26 @@ where
     lambda.call1(arg)
 }
 
-pub(crate) fn call_lambda_and_extract<'a, 'py, T, S>(
+pub(crate) fn call_lambda_and_extract<'py, T, S>(
     py: Python<'py>,
-    lambda: &'a Bound<'py, PyAny>,
+    lambda: &Bound<'py, PyAny>,
     in_val: T,
-) -> PyResult<S>
+) -> PyResult<Option<S>>
 where
     T: IntoPyObject<'py>,
     S: FromPyObject<'py>,
 {
-    call_lambda(py, lambda, in_val).and_then(|out| out.extract::<S>())
+    let out = call_lambda(py, lambda, in_val)?;
+    match out.extract::<S>() {
+        Ok(s) => Ok(Some(s)),
+        Err(e) => {
+            if out.is_none() {
+                Ok(None)
+            } else {
+                Err(e)
+            }
+        },
+    }
 }
 
 fn call_lambda_series_out<'py, T>(
@@ -237,7 +247,39 @@ where
     let arg = PyTuple::new(py, [in_val])?;
     let out = lambda.call1(arg)?;
     let py_series = out.getattr("_s")?;
-    Ok(py_series.extract::<PySeries>().unwrap().series)
+    py_series.extract::<PySeries>().map(|s| s.series)
+}
+
+fn extract_anyvalues<'a, T, I>(
+    py: Python<'a>,
+    lambda: &'a Bound<PyAny>,
+    len: usize,
+    init_null_count: usize,
+    iter: I,
+    first_value: AnyValue<'a>,
+) -> PyResult<Vec<AnyValue<'a>>>
+where
+    T: IntoPyObject<'a>,
+    I: Iterator<Item = Option<T>> + 'a,
+{
+    let mut avs = Vec::with_capacity(len);
+    avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+    avs.push(first_value);
+
+    for opt_val in iter {
+        let av = match opt_val {
+            None => AnyValue::Null,
+            Some(val) => {
+                let val: Option<Wrap<AnyValue>> = call_lambda_and_extract(py, lambda, val)?;
+                match val {
+                    None => AnyValue::Null,
+                    Some(av) => av.0,
+                }
+            },
+        };
+        avs.push(av)
+    }
+    Ok(avs)
 }
 
 impl<'a> ApplyLambda<'a> for BooleanChunked {
@@ -273,7 +315,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda(py, lambda, val).ok());
+                .map(|val| call_lambda(py, lambda, val).map(Some));
             iterator_to_struct(
                 py,
                 it,
@@ -286,7 +328,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+                .map(|opt_val| opt_val.map(|val| call_lambda(py, lambda, val)).transpose());
             iterator_to_struct(
                 py,
                 it,
@@ -316,28 +358,30 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_primitive(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -355,28 +399,30 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_bool(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -395,30 +441,32 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| {
-                    call_lambda_and_extract::<_, pyo3::pybacked::PyBackedStr>(py, lambda, val).ok()
+                    call_lambda_and_extract::<_, pyo3::pybacked::PyBackedStr>(py, lambda, val)
                 });
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -438,7 +486,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -453,7 +501,9 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -469,34 +519,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
     fn apply_extract_any_values(
         &'a self,
         py: Python,
-        lambda: &Bound<'a, PyAny>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let mut avs = Vec::with_capacity(self.len());
-        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
-        avs.push(first_value);
+        let iter = self.into_iter().skip(init_null_count + 1);
+        let avs = extract_anyvalues(py, lambda, self.len(), init_null_count, iter, first_value)?;
 
-        if self.null_count() > 0 {
-            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
-                let out_wrapped = match opt_val {
-                    None => Wrap(AnyValue::Null),
-                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
-                };
-                out_wrapped.0
-            });
-            avs.extend(iter);
-        } else {
-            let iter = self
-                .into_no_null_iter()
-                .skip(init_null_count + 1)
-                .map(|val| {
-                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
-                        .unwrap()
-                        .0
-                });
-            avs.extend(iter);
-        }
         Ok(Series::new(self.name().clone(), &avs))
     }
 
@@ -515,29 +544,31 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
+                .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -551,7 +582,7 @@ where
     fn apply_lambda_unknown(
         &'a self,
         py: Python<'a>,
-        lambda: &Bound<'a, PyAny>,
+        lambda: &'a Bound<'a, PyAny>,
     ) -> PyResult<PySeries> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
@@ -584,7 +615,7 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda(py, lambda, val).ok());
+                .map(|val| call_lambda(py, lambda, val).map(Some));
             iterator_to_struct(
                 py,
                 it,
@@ -597,7 +628,7 @@ where
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+                .map(|opt_val| opt_val.map(|val| call_lambda(py, lambda, val)).transpose());
             iterator_to_struct(
                 py,
                 it,
@@ -627,28 +658,30 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_primitive(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -666,28 +699,30 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_bool(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -705,29 +740,31 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
+                .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -747,7 +784,7 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -762,7 +799,9 @@ where
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -778,34 +817,13 @@ where
     fn apply_extract_any_values(
         &'a self,
         py: Python<'a>,
-        lambda: &Bound<'a, PyAny>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let mut avs = Vec::with_capacity(self.len());
-        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
-        avs.push(first_value);
+        let iter = self.into_iter().skip(init_null_count + 1);
+        let avs = extract_anyvalues(py, lambda, self.len(), init_null_count, iter, first_value)?;
 
-        if self.null_count() > 0 {
-            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
-                let out_wrapped = match opt_val {
-                    None => Wrap(AnyValue::Null),
-                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
-                };
-                out_wrapped.0
-            });
-            avs.extend(iter);
-        } else {
-            let iter = self
-                .into_no_null_iter()
-                .skip(init_null_count + 1)
-                .map(|val| {
-                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
-                        .unwrap()
-                        .0
-                });
-            avs.extend(iter);
-        }
         Ok(Series::new(self.name().clone(), &avs))
     }
 
@@ -824,35 +842,41 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
+                .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
 
 impl<'a> ApplyLambda<'a> for StringChunked {
-    fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
+    fn apply_lambda_unknown(
+        &'a self,
+        py: Python,
+        lambda: &'a Bound<'a, PyAny>,
+    ) -> PyResult<PySeries> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
@@ -884,7 +908,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda(py, lambda, val).ok());
+                .map(|val| call_lambda(py, lambda, val).map(Some));
             iterator_to_struct(
                 py,
                 it,
@@ -897,7 +921,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+                .map(|opt_val| opt_val.map(|val| call_lambda(py, lambda, val)).transpose());
             iterator_to_struct(
                 py,
                 it,
@@ -927,28 +951,30 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_primitive(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -966,28 +992,30 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_bool(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1005,29 +1033,31 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
+                .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
     fn apply_lambda_with_list_out_type(
@@ -1046,7 +1076,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -1061,7 +1091,9 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -1076,35 +1108,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
-        lambda: &Bound<'a, PyAny>,
+        py: Python<'a>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let mut avs = Vec::with_capacity(self.len());
-        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
-        avs.push(first_value);
-
-        if self.null_count() > 0 {
-            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
-                let out_wrapped = match opt_val {
-                    None => Wrap(AnyValue::Null),
-                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
-                };
-                out_wrapped.0
-            });
-            avs.extend(iter);
-        } else {
-            let iter = self
-                .into_no_null_iter()
-                .skip(init_null_count + 1)
-                .map(|val| {
-                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
-                        .unwrap()
-                        .0
-                });
-            avs.extend(iter);
-        }
+        let iter = self.into_iter().skip(init_null_count + 1);
+        let avs = extract_anyvalues(py, lambda, self.len(), init_null_count, iter, first_value)?;
         Ok(Series::new(self.name().clone(), &avs))
     }
 
@@ -1123,29 +1133,31 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
+                .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -1154,7 +1166,7 @@ fn call_series_lambda(
     pypolars: &Bound<PyModule>,
     lambda: &Bound<PyAny>,
     series: Series,
-) -> Option<Series> {
+) -> PyResult<Option<Series>> {
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(series);
     // Wrap this PySeries object in the python side Series wrapper
@@ -1165,22 +1177,20 @@ fn call_series_lambda(
         .unwrap();
 
     // call the lambda en get a python side Series wrapper
-    let out = lambda.call1((python_series_wrapper,));
-    match out {
-        Ok(out) => {
-            // unpack the wrapper in a PySeries
-            let py_pyseries = out
-                .getattr("_s")
-                .expect("could not get Series attribute '_s'");
-            let pyseries = py_pyseries.extract::<PySeries>().unwrap();
-            Some(pyseries.series)
-        },
-        Err(_) => None,
-    }
+    let out = lambda.call1((python_series_wrapper,))?;
+    // unpack the wrapper in a PySeries
+    let py_pyseries = out
+        .getattr("_s")
+        .expect("could not get Series attribute '_s'");
+    Ok(py_pyseries.extract::<PySeries>().ok().map(|s| s.series))
 }
 
 impl<'a> ApplyLambda<'a> for ListChunked {
-    fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
+    fn apply_lambda_unknown(
+        &'a self,
+        py: Python,
+        lambda: &'a Bound<'a, PyAny>,
+    ) -> PyResult<PySeries> {
         let pypolars = polars(py).bind(py);
         let mut null_count = 0;
         for opt_v in self.into_iter() {
@@ -1232,7 +1242,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda(py, lambda, python_series_wrapper).ok()
+                    call_lambda(py, lambda, python_series_wrapper).map(Some)
                 });
             iterator_to_struct(
                 py,
@@ -1247,17 +1257,19 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .map(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda(py, lambda, python_series_wrapper)
+                        })
+                        .transpose()
                 });
             iterator_to_struct(
                 py,
@@ -1298,39 +1310,41 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1358,39 +1372,41 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1420,40 +1436,42 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
     fn apply_lambda_with_list_out_type(
@@ -1487,7 +1505,12 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
+                .map(|opt_val| {
+                    opt_val
+                        .map(|val| call_series_lambda(pypolars, lambda, val))
+                        .transpose()
+                        .map(|v| v.flatten())
+                });
             iterator_to_list(
                 dt,
                 it,
@@ -1501,8 +1524,8 @@ impl<'a> ApplyLambda<'a> for ListChunked {
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
-        lambda: &Bound<'a, PyAny>,
+        py: Python<'a>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
@@ -1520,26 +1543,21 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 .unwrap()
                 .call1((pyseries,))
                 .unwrap();
-            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, python_series_wrapper)
-                .unwrap()
-                .0
+            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, python_series_wrapper).map(
+                |opt_wrap| match opt_wrap {
+                    None => AnyValue::Null,
+                    Some(w) => w.0,
+                },
+            )
         };
 
-        if self.null_count() > 0 {
-            let iter = self
-                .into_iter()
-                .skip(init_null_count + 1)
-                .map(|opt_val| match opt_val {
-                    None => AnyValue::Null,
-                    Some(val) => call_with_value(val),
-                });
-            avs.extend(iter);
-        } else {
-            let iter = self
-                .into_no_null_iter()
-                .skip(init_null_count + 1)
-                .map(call_with_value);
-            avs.extend(iter);
+        for opt_val in self.into_iter().skip(init_null_count + 1) {
+            if let Some(s) = opt_val {
+                let av = call_with_value(s)?;
+                avs.push(av);
+            } else {
+                avs.push(AnyValue::Null);
+            }
         }
         Ok(Series::new(self.name().clone(), &avs))
     }
@@ -1569,47 +1587,53 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
 
 #[cfg(feature = "dtype-array")]
 impl<'a> ApplyLambda<'a> for ArrayChunked {
-    fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
+    fn apply_lambda_unknown(
+        &'a self,
+        py: Python,
+        lambda: &'a Bound<'a, PyAny>,
+    ) -> PyResult<PySeries> {
         let pypolars = polars(py).bind(py);
         let mut null_count = 0;
         for opt_v in self.into_iter() {
@@ -1661,7 +1685,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda(py, lambda, python_series_wrapper).ok()
+                    call_lambda(py, lambda, python_series_wrapper).map(Some)
                 });
             iterator_to_struct(
                 py,
@@ -1676,17 +1700,19 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .map(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda(py, lambda, python_series_wrapper)
+                        })
+                        .transpose()
                 });
             iterator_to_struct(
                 py,
@@ -1727,39 +1753,41 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1787,39 +1815,41 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1849,40 +1879,42 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
     fn apply_lambda_with_list_out_type(
@@ -1916,7 +1948,12 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
+                .map(|opt_val| {
+                    opt_val
+                        .map(|val| call_series_lambda(pypolars, lambda, val))
+                        .transpose()
+                        .map(|v| v.flatten())
+                });
             iterator_to_list(
                 dt,
                 it,
@@ -1930,8 +1967,8 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
-        lambda: &Bound<'a, PyAny>,
+        py: Python<'a>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
@@ -1949,27 +1986,23 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 .unwrap()
                 .call1((pyseries,))
                 .unwrap();
-            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, python_series_wrapper)
-                .unwrap()
-                .0
+            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, python_series_wrapper).map(
+                |opt_wrap| match opt_wrap {
+                    None => AnyValue::Null,
+                    Some(w) => w.0,
+                },
+            )
         };
 
-        if self.null_count() > 0 {
-            let iter = self
-                .into_iter()
-                .skip(init_null_count + 1)
-                .map(|opt_val| match opt_val {
-                    None => AnyValue::Null,
-                    Some(val) => call_with_value(val),
-                });
-            avs.extend(iter);
-        } else {
-            let iter = self
-                .into_no_null_iter()
-                .skip(init_null_count + 1)
-                .map(call_with_value);
-            avs.extend(iter);
+        for opt_val in self.into_iter().skip(init_null_count + 1) {
+            if let Some(s) = opt_val {
+                let av = call_with_value(s)?;
+                avs.push(av);
+            } else {
+                avs.push(AnyValue::Null);
+            }
         }
+
         Ok(Series::new(self.name().clone(), &avs))
     }
 
@@ -1998,47 +2031,53 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
+                    call_lambda_and_extract(py, lambda, python_series_wrapper)
                 });
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda_and_extract(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .and_then(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda_and_extract(py, lambda, python_series_wrapper).transpose()
+                        })
+                        .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
 
 #[cfg(feature = "object")]
 impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
-    fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
+    fn apply_lambda_unknown(
+        &'a self,
+        py: Python,
+        lambda: &'a Bound<'a, PyAny>,
+    ) -> PyResult<PySeries> {
         let mut null_count = 0;
         for opt_v in self.into_iter() {
             if let Some(v) = opt_v {
@@ -2069,10 +2108,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let it = self
             .into_iter()
             .skip(init_null_count + skip)
-            .map(|object_value| {
-                let out = lambda.call1((object_value.map(|v| &v.inner),)).unwrap();
-                Some(out)
-            });
+            .map(|object_value| lambda.call1((object_value.map(|v| &v.inner),)).map(Some));
         iterator_to_struct(
             py,
             it,
@@ -2101,28 +2137,30 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_primitive(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_primitive(
+            iterator_to_primitive(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -2140,28 +2178,30 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
-            Ok(iterator_to_bool(
+                .map(|val| call_lambda_and_extract(py, lambda, val));
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -2179,29 +2219,31 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
+                .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -2221,7 +2263,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -2236,7 +2278,9 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -2251,35 +2295,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
-        lambda: &Bound<'a, PyAny>,
+        py: Python<'a>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
-        let mut avs = Vec::with_capacity(self.len());
-        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
-        avs.push(first_value);
-
-        if self.null_count() > 0 {
-            let iter = self.into_iter().skip(init_null_count + 1).map(|opt_val| {
-                let out_wrapped = match opt_val {
-                    None => Wrap(AnyValue::Null),
-                    Some(val) => call_lambda_and_extract(py, lambda, val).unwrap(),
-                };
-                out_wrapped.0
-            });
-            avs.extend(iter);
-        } else {
-            let iter = self
-                .into_no_null_iter()
-                .skip(init_null_count + 1)
-                .map(|val| {
-                    call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, val)
-                        .unwrap()
-                        .0
-                });
-            avs.extend(iter);
-        }
+        let iter = self.into_iter().skip(init_null_count + 1);
+        let avs = extract_anyvalues(py, lambda, self.len(), init_null_count, iter, first_value)?;
         Ok(Series::new(self.name().clone(), &avs))
     }
 
@@ -2298,29 +2320,31 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_and_extract(py, lambda, val).ok());
+                .map(|val| call_lambda_and_extract(py, lambda, val));
 
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_and_extract(py, lambda, val).ok())
+                    opt_val
+                        .and_then(|val| call_lambda_and_extract(py, lambda, val).transpose())
+                        .transpose()
                 });
-            Ok(iterator_to_object(
+            iterator_to_object(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 }
@@ -2330,7 +2354,11 @@ fn iter_struct(ca: &StructChunked) -> impl Iterator<Item = AnyValue> {
 }
 
 impl<'a> ApplyLambda<'a> for StructChunked {
-    fn apply_lambda_unknown(&'a self, py: Python, lambda: &Bound<'a, PyAny>) -> PyResult<PySeries> {
+    fn apply_lambda_unknown(
+        &'a self,
+        py: Python,
+        lambda: &'a Bound<'a, PyAny>,
+    ) -> PyResult<PySeries> {
         let mut null_count = 0;
 
         for val in iter_struct(self) {
@@ -2356,7 +2384,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = 1;
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| lambda.call1((Wrap(val),)).ok());
+            .map(|val| lambda.call1((Wrap(val),)).map(Some));
         iterator_to_struct(
             py,
             it,
@@ -2381,15 +2409,15 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
 
-        Ok(iterator_to_primitive(
+        iterator_to_primitive(
             it,
             init_null_count,
             first_value,
             self.name().clone(),
             self.len(),
-        ))
+        )
     }
 
     fn apply_lambda_with_bool_out_type(
@@ -2402,15 +2430,15 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
 
-        Ok(iterator_to_bool(
+        iterator_to_bool(
             it,
             init_null_count,
             first_value,
             self.name().clone(),
             self.len(),
-        ))
+        )
     }
 
     fn apply_lambda_with_string_out_type(
@@ -2423,15 +2451,15 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
 
-        Ok(iterator_to_string(
+        iterator_to_string(
             it,
             init_null_count,
             first_value,
             self.name().clone(),
             self.len(),
-        ))
+        )
     }
     fn apply_lambda_with_list_out_type(
         &'a self,
@@ -2445,7 +2473,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let lambda = lambda.bind(py);
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_series_out(py, lambda, Wrap(val)).ok());
+            .map(|val| call_lambda_series_out(py, lambda, Wrap(val)).map(Some));
         iterator_to_list(
             dt,
             it,
@@ -2458,8 +2486,8 @@ impl<'a> ApplyLambda<'a> for StructChunked {
 
     fn apply_extract_any_values(
         &'a self,
-        py: Python,
-        lambda: &Bound<'a, PyAny>,
+        py: Python<'a>,
+        lambda: &'a Bound<'a, PyAny>,
         init_null_count: usize,
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
@@ -2467,12 +2495,14 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
         avs.push(first_value);
 
-        let iter = iter_struct(self).skip(init_null_count + 1).map(|val| {
-            call_lambda_and_extract::<_, Wrap<AnyValue>>(py, lambda, Wrap(val))
-                .unwrap()
-                .0
-        });
-        avs.extend(iter);
+        for val in iter_struct(self).skip(init_null_count + 1) {
+            let av: Option<Wrap<AnyValue>> = call_lambda_and_extract(py, lambda, Wrap(val))?;
+            let out = match av {
+                None => AnyValue::Null,
+                Some(av) => av.0,
+            };
+            avs.push(out)
+        }
 
         Ok(Series::new(self.name().clone(), &avs))
     }
@@ -2488,14 +2518,14 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).ok());
+            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
 
-        Ok(iterator_to_object(
+        iterator_to_object(
             it,
             init_null_count,
             first_value,
             self.name().clone(),
             self.len(),
-        ))
+        )
     }
 }

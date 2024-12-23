@@ -77,16 +77,22 @@ impl PySeries {
             {
                 let mut avs = Vec::with_capacity(self.series.len());
                 let s = self.series.rechunk();
-                let iter = s.iter().map(|av| match (skip_nulls, av) {
-                    (true, AnyValue::Null) => AnyValue::Null,
-                    (_, av) => {
-                        let input = Wrap(av);
-                        call_lambda_and_extract::<_, Wrap<AnyValue>>(py, function, input)
-                            .unwrap()
-                            .0
-                    },
-                });
-                avs.extend(iter);
+
+                for av in s.iter() {
+                    let out = match (skip_nulls, av) {
+                        (true, AnyValue::Null) => AnyValue::Null,
+                        (_, av) => {
+                            let av: Option<Wrap<AnyValue>> =
+                                call_lambda_and_extract(py, function, Wrap(av))?;
+                            match av {
+                                None => AnyValue::Null,
+                                Some(av) => av.0,
+                            }
+                        },
+                    };
+                    avs.push(out)
+                }
+
                 return Ok(Series::new(self.series.name().clone(), &avs).into());
             }
 
