@@ -1,3 +1,7 @@
+from typing import Any
+
+import pytest
+
 import polars as pl
 
 
@@ -14,3 +18,17 @@ def test_pass_name_alias_18914() -> None:
         )
         .over("id")
     ).to_dict(as_series=False) == {"id": [1], "value": [2]}
+
+
+@pytest.mark.parametrize("dtype", [pl.String, pl.Int64, pl.Boolean])
+def test_raises_udf(dtype: pl.DataType) -> None:
+    def raise_f(item: Any) -> None:
+        raise ValueError
+
+    with pytest.raises(pl.exceptions.ComputeError):
+        pl.select(
+            pl.lit(1).map_elements(
+                raise_f,
+                return_dtype=dtype,
+            )
+        )
