@@ -1,6 +1,6 @@
 use arrow::array::{BinaryArray, PrimitiveArray, UInt64Array};
-use arrow::compute::take::binary::take_unchecked;
 use arrow::compute::utils::combine_validities_and_many;
+use polars_compute::gather::binary::take_unchecked;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::PlRandomState;

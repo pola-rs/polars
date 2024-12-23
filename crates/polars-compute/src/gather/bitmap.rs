@@ -1,8 +1,8 @@
 use polars_utils::IdxSize;
 
-use crate::array::Array;
-use crate::bitmap::Bitmap;
-use crate::datatypes::IdxArr;
+use arrow::array::Array;
+use arrow::bitmap::Bitmap;
+use arrow::datatypes::IdxArr;
 
 /// # Safety
 /// Doesn't do any bound checks.

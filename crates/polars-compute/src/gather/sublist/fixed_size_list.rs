@@ -1,11 +1,11 @@
+use arrow::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
+use arrow::legacy::prelude::*;
+use arrow::legacy::utils::CustomIterTools;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::index::NullCount;
 use polars_utils::IdxSize;
 
-use crate::array::{ArrayRef, FixedSizeListArray, PrimitiveArray};
-use crate::compute::take::take_unchecked;
-use crate::legacy::prelude::*;
-use crate::legacy::utils::CustomIterTools;
+use crate::gather::take_unchecked;
 
 fn sub_fixed_size_list_get_indexes_literal(width: usize, len: usize, index: i64) -> IdxArr {
     (0..len)

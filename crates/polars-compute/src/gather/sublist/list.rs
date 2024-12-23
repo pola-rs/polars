@@ -1,11 +1,11 @@
+use arrow::array::{Array, ArrayRef, ListArray};
+use arrow::legacy::prelude::*;
+use arrow::legacy::trusted_len::TrustedLenPush;
+use arrow::legacy::utils::CustomIterTools;
+use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_utils::IdxSize;
 
-use crate::array::{Array, ArrayRef, ListArray};
-use crate::compute::take::take_unchecked;
-use crate::legacy::prelude::*;
-use crate::legacy::trusted_len::TrustedLenPush;
-use crate::legacy::utils::CustomIterTools;
-use crate::offset::{Offsets, OffsetsBuffer};
+use crate::gather::take_unchecked;
 
 /// Get the indices that would result in a get operation on the lists values.
 /// for example, consider this list:
@@ -146,9 +146,10 @@ pub fn array_to_unit_list(array: ArrayRef) -> ListArray<i64> {
 
 #[cfg(test)]
 mod test {
+    use arrow::array::{Int32Array, PrimitiveArray};
+    use arrow::datatypes::ArrowDataType;
+
     use super::*;
-    use crate::array::{Int32Array, PrimitiveArray};
-    use crate::datatypes::ArrowDataType;
 
     fn get_array() -> ListArray<i64> {
         let values = Int32Array::from_slice([1, 2, 3, 4, 5, 6]);

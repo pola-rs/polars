@@ -15,10 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use arrow::array::{Array, BinaryArray, PrimitiveArray};
+use arrow::offset::Offset;
+
 use super::generic_binary::*;
 use super::Index;
-use crate::array::{Array, BinaryArray, PrimitiveArray};
-use crate::offset::Offset;
 
 /// `take` implementation for utf8 arrays
 /// # Safety
