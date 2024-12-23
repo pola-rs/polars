@@ -25,6 +25,10 @@ impl Executor for UniqueExec {
         state.record(
             || {
                 if df.is_empty() {
+                    // Validating column names
+                    let names = subset.unwrap_or_else(|| df.get_column_names_owned());
+                    df.select_columns(names)?;
+
                     return Ok(df);
                 }
 
