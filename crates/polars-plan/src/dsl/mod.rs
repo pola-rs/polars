@@ -1801,7 +1801,7 @@ impl Expr {
     /// Returns whether all values in the column are `true`.
     ///
     /// If `ignore_nulls` is `False`, [Kleene logic] is used to deal with nulls:
-    /// if the column contains any null values and no `true` values, the output
+    /// if the column contains any null values and no `false` values, the output
     /// is null.
     ///
     /// [Kleene logic]: https://en.wikipedia.org/wiki/Three-valued_logic
