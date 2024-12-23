@@ -75,6 +75,8 @@ We first create a PyArrow dataset and then create a `LazyFrame` from the dataset
 
 {{code_block('user-guide/io/cloud-storage','write_parquet',['write_parquet'])}}
 
-Note that `DataFrame`s can also be written to any Python file object that supports writes:
+Note that `DataFrame`s can also be written to any Python file object that supports writes. This can
+be helpful for performing operations that are not yet natively supported, e.g. writing a compressed
+CSV directly to cloud:
 
-{{code_block('user-guide/io/cloud-storage','write_csv',['write_file_object'])}}
+{{code_block('user-guide/io/cloud-storage','write_file_object',['write_csv'])}}
