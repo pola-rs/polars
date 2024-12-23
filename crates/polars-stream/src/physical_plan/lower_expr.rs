@@ -651,7 +651,8 @@ pub fn compute_output_schema(
             let dtype = e
                 .dtype(input_schema, Context::Default, expr_arena)?
                 .clone()
-                .materialize_unknown(false)?;
+                .materialize_unknown(true)
+                .unwrap();
             PolarsResult::Ok(Field::new(name, dtype))
         })
         .try_collect()?;
