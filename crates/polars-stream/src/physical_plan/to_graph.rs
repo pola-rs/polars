@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::prelude::PlRandomState;
-use polars_core::schema::{Schema, SchemaExt};
+use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
@@ -416,9 +416,8 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(*input, ctx)?;
 
             let input_schema = &ctx.phys_sm[*input].output_schema;
-            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?
-                .materialize_unknown_dtypes()?;
-            let grouper = new_hash_grouper(Arc::new(key_schema));
+            let key_schema = compute_output_schema(input_schema, key, ctx.expr_arena)?;
+            let grouper = new_hash_grouper(key_schema);
 
             let key_selectors = key
                 .iter()
@@ -521,11 +520,9 @@ fn to_graph_rec<'a>(
             let right_input_schema = ctx.phys_sm[*input_right].output_schema.clone();
 
             let left_key_schema =
-                compute_output_schema(&left_input_schema, left_on, ctx.expr_arena)?
-                    .materialize_unknown_dtypes()?;
+                compute_output_schema(&left_input_schema, left_on, ctx.expr_arena)?;
             let right_key_schema =
-                compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?
-                    .materialize_unknown_dtypes()?;
+                compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
             let left_key_selectors = left_on
                 .iter()
@@ -540,8 +537,8 @@ fn to_graph_rec<'a>(
                 nodes::joins::equi_join::EquiJoinNode::new(
                     left_input_schema,
                     right_input_schema,
-                    Arc::new(left_key_schema),
-                    Arc::new(right_key_schema),
+                    left_key_schema,
+                    right_key_schema,
                     left_key_selectors,
                     right_key_selectors,
                     args,

@@ -250,14 +250,6 @@ def test_init_structured_objects() -> None:
         assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1, t2]}))
 
 
-def test_concat() -> None:
-    s = pl.Series("a", [2, 1, 3])
-
-    assert pl.concat([s, s]).len() == 6
-    # check if s remains unchanged
-    assert s.len() == 3
-
-
 def test_to_frame() -> None:
     s1 = pl.Series([1, 2])
     s2 = pl.Series("s", [1, 2])

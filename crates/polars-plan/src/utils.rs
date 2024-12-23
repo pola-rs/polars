@@ -262,7 +262,12 @@ pub fn expressions_to_schema(
 ) -> PolarsResult<Schema> {
     let mut expr_arena = Arena::with_capacity(4 * expr.len());
     expr.iter()
-        .map(|expr| expr.to_field_amortized(schema, ctxt, &mut expr_arena))
+        .map(|expr| {
+            let mut field = expr.to_field_amortized(schema, ctxt, &mut expr_arena)?;
+
+            field.dtype = field.dtype.materialize_unknown(true)?;
+            Ok(field)
+        })
         .collect()
 }
 
@@ -336,6 +341,7 @@ pub(crate) fn expr_irs_to_schema<I: IntoIterator<Item = K>, K: AsRef<ExprIR>>(
             if let Some(name) = e.get_alias() {
                 field.name = name.clone()
             }
+            field.dtype = field.dtype.materialize_unknown(true).unwrap();
             field
         })
         .collect()

@@ -378,6 +378,17 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 convert_utils::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
                     .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
+
+            let first = *inputs.first().ok_or_else(
+                || polars_err!(InvalidOperation: "expected at least one input in 'union'/'concat'"),
+            )?;
+            let schema = ctxt.lp_arena.get(first).schema(ctxt.lp_arena);
+            for n in &inputs[1..] {
+                let schema_i = ctxt.lp_arena.get(*n).schema(ctxt.lp_arena);
+                polars_ensure!(schema == schema_i, InvalidOperation: "'union'/'concat' inputs should all have the same schema,\
+                    got\n{:?} and \n{:?}", schema, schema_i)
+            }
+
             let options = args.into();
             IR::Union { inputs, options }
         },
@@ -976,7 +987,7 @@ fn resolve_with_columns(
             );
             polars_bail!(ComputeError: msg)
         }
-        new_schema.with_column(field.name().clone(), field.dtype().clone());
+        new_schema.with_column(field.name, field.dtype.materialize_unknown(true)?);
         arena.clear();
     }
 
