@@ -47,7 +47,7 @@ pub fn apply_lambda_unknown<'a>(
             let first_value = out.extract::<bool>().ok();
             return Ok((
                 PySeries::new(
-                    apply_lambda_with_bool_out_type(df, py, lambda, null_count, first_value)
+                    apply_lambda_with_bool_out_type(df, py, lambda, null_count, first_value)?
                         .into_series(),
                 )
                 .into_py_any(py)?,
@@ -90,7 +90,7 @@ pub fn apply_lambda_unknown<'a>(
             let first_value = out.extract::<PyBackedStr>().ok();
             return Ok((
                 PySeries::new(
-                    apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)
+                    apply_lambda_with_string_out_type(df, py, lambda, null_count, first_value)?
                         .into_series(),
                 )
                 .into_py_any(py)?,
@@ -194,10 +194,13 @@ pub fn apply_lambda_with_bool_out_type<'a>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<bool>,
-) -> ChunkedArray<BooleanType> {
+) -> PyResult<ChunkedArray<BooleanType>> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
+        Ok(ChunkedArray::full_null(
+            PlSmallStr::from_static("map"),
+            df.height(),
+        ))
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
         iterator_to_bool(
@@ -217,10 +220,13 @@ pub fn apply_lambda_with_string_out_type<'a>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<PyBackedStr>,
-) -> StringChunked {
+) -> PyResult<StringChunked> {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
+        Ok(ChunkedArray::full_null(
+            PlSmallStr::from_static("map"),
+            df.height(),
+        ))
     } else {
         let iter = apply_iter::<PyBackedStr>(df, py, lambda, init_null_count, skip);
         iterator_to_string(

@@ -178,7 +178,7 @@ fn iterator_to_bool(
     first_value: Option<bool>,
     name: PlSmallStr,
     capacity: usize,
-) -> ChunkedArray<BooleanType> {
+) -> PyResult<ChunkedArray<BooleanType>> {
     let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: BooleanChunked = unsafe {
@@ -200,8 +200,11 @@ fn iterator_to_bool(
             it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
+    if let Some(err) = error {
+        let _ = err?;
+    }
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+    Ok(ca.with_name(name))
 }
 
 #[cfg(feature = "object")]
@@ -252,7 +255,7 @@ fn iterator_to_string<S: AsRef<str>>(
     first_value: Option<S>,
     name: PlSmallStr,
     capacity: usize,
-) -> StringChunked {
+) -> PyResult<StringChunked> {
     let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: StringChunked = unsafe {
@@ -274,7 +277,10 @@ fn iterator_to_string<S: AsRef<str>>(
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+    if let Some(err) = error {
+        let _ = err?;
+    }
+    Ok(ca.with_name(name))
 }
 
 fn iterator_to_list(

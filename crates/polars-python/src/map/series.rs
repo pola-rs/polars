@@ -358,13 +358,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).map(Some));
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -374,13 +374,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -403,13 +403,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                         .map(Some)
                 });
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -419,13 +419,13 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -676,13 +676,13 @@ where
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).map(Some));
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -692,13 +692,13 @@ where
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -718,13 +718,13 @@ where
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).map(Some));
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -734,13 +734,13 @@ where
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -982,13 +982,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).map(Some));
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -998,13 +998,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1024,13 +1024,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).map(Some));
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1040,13 +1040,13 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
     fn apply_lambda_with_list_out_type(
@@ -1383,13 +1383,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap();
                     call_lambda_and_extract(py, lambda, python_series_wrapper).map(Some)
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1409,13 +1409,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         })
                         .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1448,13 +1448,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                     call_lambda_and_extract(py, lambda, python_series_wrapper).map(Some)
                 });
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1474,13 +1474,13 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         })
                         .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
     fn apply_lambda_with_list_out_type(
@@ -1820,13 +1820,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap();
                     call_lambda_and_extract(py, lambda, python_series_wrapper).map(Some)
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1846,13 +1846,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         })
                         .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -1885,13 +1885,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                     call_lambda_and_extract(py, lambda, python_series_wrapper).map(Some)
                 });
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -1911,13 +1911,13 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         })
                         .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
     fn apply_lambda_with_list_out_type(
@@ -2175,13 +2175,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).map(Some));
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -2191,13 +2191,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_bool(
+            iterator_to_bool(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -2217,13 +2217,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .skip(init_null_count + skip)
                 .map(|val| call_lambda_and_extract(py, lambda, val).map(Some));
 
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         } else {
             let it = self
                 .into_iter()
@@ -2233,13 +2233,13 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                         .map(|val| call_lambda_and_extract(py, lambda, val))
                         .transpose()
                 });
-            Ok(iterator_to_string(
+            iterator_to_string(
                 it,
                 init_null_count,
                 first_value,
                 self.name().clone(),
                 self.len(),
-            ))
+            )
         }
     }
 
@@ -2442,13 +2442,13 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             .skip(init_null_count + skip)
             .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).map(Some));
 
-        Ok(iterator_to_bool(
+        iterator_to_bool(
             it,
             init_null_count,
             first_value,
             self.name().clone(),
             self.len(),
-        ))
+        )
     }
 
     fn apply_lambda_with_string_out_type(
@@ -2463,13 +2463,13 @@ impl<'a> ApplyLambda<'a> for StructChunked {
             .skip(init_null_count + skip)
             .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)).map(Some));
 
-        Ok(iterator_to_string(
+        iterator_to_string(
             it,
             init_null_count,
             first_value,
             self.name().clone(),
             self.len(),
-        ))
+        )
     }
     fn apply_lambda_with_list_out_type(
         &'a self,
