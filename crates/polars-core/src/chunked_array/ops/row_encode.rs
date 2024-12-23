@@ -70,7 +70,11 @@ pub fn encode_rows_vertical_par_unordered_broadcast_nulls(
     ))
 }
 
-pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContext> {
+/// Get the [`RowEncodingContext`] for a certain [`DataType`].
+///
+/// This should be given the logical type in order to communicate Polars datatype information down
+/// into the row encoding / decoding.
+pub fn get_row_encoding_context(dtype: &DataType) -> Option<RowEncodingContext> {
     match dtype {
         DataType::Boolean
         | DataType::UInt8
@@ -104,8 +108,8 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
         },
 
         #[cfg(feature = "dtype-array")]
-        DataType::Array(dtype, _) => get_row_encoding_dictionary(dtype),
-        DataType::List(dtype) => get_row_encoding_dictionary(dtype),
+        DataType::Array(dtype, _) => get_row_encoding_context(dtype),
+        DataType::List(dtype) => get_row_encoding_context(dtype),
         #[cfg(feature = "dtype-categorical")]
         DataType::Categorical(revmap, ordering) | DataType::Enum(revmap, ordering) => {
             let revmap = revmap.as_ref().unwrap();
@@ -161,28 +165,28 @@ pub fn get_row_encoding_dictionary(dtype: &DataType) -> Option<RowEncodingContex
         },
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(fs) => {
-            let mut out = Vec::new();
+            let mut ctxts = Vec::new();
 
             for (i, f) in fs.iter().enumerate() {
-                if let Some(dict) = get_row_encoding_dictionary(f.dtype()) {
-                    out.reserve(fs.len());
-                    out.extend(std::iter::repeat_n(None, i));
-                    out.push(Some(dict));
+                if let Some(ctxt) = get_row_encoding_context(f.dtype()) {
+                    ctxts.reserve(fs.len());
+                    ctxts.extend(std::iter::repeat_n(None, i));
+                    ctxts.push(Some(ctxt));
                     break;
                 }
             }
 
-            if out.is_empty() {
+            if ctxts.is_empty() {
                 return None;
             }
 
-            out.extend(
-                fs[out.len()..]
+            ctxts.extend(
+                fs[ctxts.len()..]
                     .iter()
-                    .map(|f| get_row_encoding_dictionary(f.dtype())),
+                    .map(|f| get_row_encoding_context(f.dtype())),
             );
 
-            Some(RowEncodingContext::Struct(out))
+            Some(RowEncodingContext::Struct(ctxts))
         },
     }
 }
@@ -198,7 +202,7 @@ pub fn encode_rows_unordered(by: &[Column]) -> PolarsResult<BinaryOffsetChunked>
 pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
     let mut cols = Vec::with_capacity(by.len());
     let mut opts = Vec::with_capacity(by.len());
-    let mut dicts = Vec::with_capacity(by.len());
+    let mut ctxts = Vec::with_capacity(by.len());
 
     // Since ZFS exists, we might not actually have any arrays and need to get the length from the
     // columns.
@@ -210,13 +214,13 @@ pub fn _get_rows_encoded_unordered(by: &[Column]) -> PolarsResult<RowsEncoded> {
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_unsorted();
-        let dict = get_row_encoding_dictionary(by.dtype());
+        let ctxt = get_row_encoding_context(by.dtype());
 
         cols.push(arr);
         opts.push(opt);
-        dicts.push(dict);
+        ctxts.push(ctxt);
     }
-    Ok(convert_columns(num_rows, &cols, &opts, &dicts))
+    Ok(convert_columns(num_rows, &cols, &opts, &ctxts))
 }
 
 pub fn _get_rows_encoded(
@@ -229,7 +233,7 @@ pub fn _get_rows_encoded(
 
     let mut cols = Vec::with_capacity(by.len());
     let mut opts = Vec::with_capacity(by.len());
-    let mut dicts = Vec::with_capacity(by.len());
+    let mut ctxts = Vec::with_capacity(by.len());
 
     // Since ZFS exists, we might not actually have any arrays and need to get the length from the
     // columns.
@@ -241,13 +245,13 @@ pub fn _get_rows_encoded(
         let by = by.as_materialized_series();
         let arr = by.to_physical_repr().rechunk().chunks()[0].to_boxed();
         let opt = RowEncodingOptions::new_sorted(*desc, *null_last);
-        let dict = get_row_encoding_dictionary(by.dtype());
+        let ctxt = get_row_encoding_context(by.dtype());
 
         cols.push(arr);
         opts.push(opt);
-        dicts.push(dict);
+        ctxts.push(ctxt);
     }
-    Ok(convert_columns(num_rows, &cols, &opts, &dicts))
+    Ok(convert_columns(num_rows, &cols, &opts, &ctxts))
 }
 
 pub fn _get_rows_encoded_ca(

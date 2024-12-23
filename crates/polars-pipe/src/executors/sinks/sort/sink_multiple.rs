@@ -7,7 +7,7 @@ use polars_core::series::IsSorted;
 use polars_row::decode::decode_rows_from_binary;
 use polars_row::{RowEncodingContext, RowEncodingOptions};
 
-use self::row_encode::get_row_encoding_dictionary;
+use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::operators::{
     DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source, SourceResult,
@@ -137,11 +137,11 @@ impl SortSinkMultiple {
     ) -> PolarsResult<Self> {
         let mut schema = (*output_schema).clone();
 
-        let sort_dicts = sort_idx
+        let sort_ctxts = sort_idx
             .iter()
             .map(|i| {
                 let (_, dtype) = schema.get_at_index(*i).unwrap();
-                get_row_encoding_dictionary(dtype)
+                get_row_encoding_context(dtype)
             })
             .collect::<Vec<_>>();
 
@@ -182,7 +182,7 @@ impl SortSinkMultiple {
             sort_options,
             sort_idx: Arc::from(sort_idx),
             sort_opts: Arc::from(sort_fields),
-            sort_dicts: Arc::from(sort_dicts),
+            sort_dicts: Arc::from(sort_ctxts),
             sort_dtypes,
             sort_column: vec![],
             output_schema,

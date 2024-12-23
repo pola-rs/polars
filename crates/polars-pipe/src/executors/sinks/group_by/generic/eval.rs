@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 
 use polars_row::{RowEncodingOptions, RowsEncoded};
 
-use self::row_encode::get_row_encoding_dictionary;
+use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::executors::sinks::group_by::utils::prepare_key;
 use crate::executors::sinks::utils::hash_rows;
@@ -77,7 +77,7 @@ impl Eval {
         let mut dicts = Vec::with_capacity(self.key_columns_expr.len());
         for phys_e in self.key_columns_expr.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
-            dicts.push(get_row_encoding_dictionary(s.dtype()));
+            dicts.push(get_row_encoding_context(s.dtype()));
             let s = s.to_physical_repr().into_owned();
             let s = prepare_key(&s, chunk);
             keys_columns.push(s.to_arrow(0, CompatLevel::newest()));

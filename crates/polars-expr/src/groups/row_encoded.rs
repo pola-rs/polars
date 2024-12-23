@@ -4,7 +4,7 @@ use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::idx_map::bytes_idx_map::{BytesIndexMap, Entry};
 use polars_utils::vec::PushUnchecked;
 
-use self::row_encode::get_row_encoding_dictionary;
+use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::hash_keys::HashKeys;
 
@@ -39,14 +39,14 @@ impl RowEncodedHashGrouper {
             .iter()
             .map(|(_name, dt)| dt.to_physical().to_arrow(CompatLevel::newest()))
             .collect::<Vec<_>>();
-        let dicts = self
+        let ctxts = self
             .key_schema
             .iter()
-            .map(|(_, dt)| get_row_encoding_dictionary(dt))
+            .map(|(_, dt)| get_row_encoding_context(dt))
             .collect::<Vec<_>>();
         let fields = vec![RowEncodingOptions::new_unsorted(); key_dtypes.len()];
         let key_columns =
-            unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &dicts, &key_dtypes) };
+            unsafe { polars_row::decode::decode_rows(&mut key_rows, &fields, &ctxts, &key_dtypes) };
 
         let cols = self
             .key_schema

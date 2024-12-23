@@ -9,7 +9,7 @@ use polars_utils::arena::Node;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::unitvec;
 
-use self::row_encode::get_row_encoding_dictionary;
+use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::executors::operators::PlaceHolder;
 use crate::executors::sinks::joins::generic_probe_inner_left::GenericJoinProbe;
@@ -137,17 +137,17 @@ impl<K: ExtraPayload> GenericBuild<K> {
         chunk: &DataChunk,
     ) -> PolarsResult<&BinaryArray<i64>> {
         debug_assert!(self.join_columns.is_empty());
-        let mut dicts = Vec::with_capacity(self.join_columns_left.len());
+        let mut ctxts = Vec::with_capacity(self.join_columns_left.len());
         for phys_e in self.join_columns_left.iter() {
             let s = phys_e.evaluate(chunk, &context.execution_state)?;
             let arr = s.to_physical_repr().rechunk().array_ref(0).clone();
             self.join_columns.push(arr);
-            dicts.push(get_row_encoding_dictionary(s.dtype()));
+            ctxts.push(get_row_encoding_context(s.dtype()));
         }
         let rows_encoded = polars_row::convert_columns_no_order(
             self.join_columns[0].len(), // @NOTE: does not work for ZFS
             &self.join_columns,
-            &dicts,
+            &ctxts,
         )
         .into_array();
         self.materialized_join_cols.push(rows_encoded);

@@ -1,7 +1,7 @@
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_utils::hashing::hash_to_partition;
 
-use self::row_encode::get_row_encoding_dictionary;
+use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::pipeline::PARTITION_SIZE;
 
@@ -262,7 +262,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .output_schema
             .iter_values()
             .take(self.num_keys)
-            .map(get_row_encoding_dictionary)
+            .map(get_row_encoding_context)
             .collect::<Vec<_>>();
         let fields = vec![Default::default(); self.num_keys];
         let key_columns =
