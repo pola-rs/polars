@@ -287,6 +287,7 @@ impl MMapSemaphore {
         // Set mmap size based on seek to end when running under Emscripten
         #[cfg(target_os = "emscripten")]
         {
+            use std::io::{Seek, SeekFrom};
             let mut file = file;
             let size = file.seek(SeekFrom::End(0)).unwrap();
             options.len((size - offset) as usize);
