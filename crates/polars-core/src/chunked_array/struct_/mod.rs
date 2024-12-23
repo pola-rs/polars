@@ -161,7 +161,6 @@ impl StructChunked {
                 .map(|s| s.to_physical_repr().into_owned()),
         );
 
-
         let mut ca = constructor(self.name().clone(), self.length, physicals.iter());
         if self.null_count() > 0 {
             ca.zip_outer_validity(self);
