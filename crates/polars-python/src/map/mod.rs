@@ -209,28 +209,31 @@ fn iterator_to_bool(
 
 #[cfg(feature = "object")]
 fn iterator_to_object(
-    it: impl Iterator<Item = Option<ObjectValue>>,
+    it: impl Iterator<Item = PyResult<Option<ObjectValue>>>,
     init_null_count: usize,
     first_value: Option<ObjectValue>,
     name: PlSmallStr,
     capacity: usize,
 ) -> ObjectChunked<ObjectValue> {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: ObjectChunked<ObjectValue> = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .chain(it)
+                .map(|v| catch_err(&mut error, v))
                 .trust_my_length(capacity)
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
+                .map(|v| catch_err(&mut error, v))
                 .trust_my_length(capacity)
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
     debug_assert_eq!(ca.len(), capacity);
