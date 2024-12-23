@@ -384,6 +384,9 @@ jobs:
           path: dist
           merge-multiple: true
 
+      - name: Remove Emscripten wheel
+        run: rm -f dist/*emscripten-wasm32*.whl
+
       - name: Publish to PyPI
         if: inputs.dry-run == false
         uses: pypa/gh-action-pypi-publish@release/v1
