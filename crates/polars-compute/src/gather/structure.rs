@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::array::{Array, StructArray};
-use crate::compute::utils::combine_validities_and;
-use crate::datatypes::IdxArr;
+use arrow::array::{Array, StructArray};
+use arrow::compute::utils::combine_validities_and;
+use arrow::datatypes::IdxArr;
 
 pub(super) unsafe fn take_unchecked(array: &StructArray, indices: &IdxArr) -> StructArray {
     let values: Vec<Box<dyn Array>> = array

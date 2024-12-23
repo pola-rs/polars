@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::legacy::kernels::list::array_to_unit_list;
 use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_compute::gather::sublist::list::array_to_unit_list;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::format_tuple;
 

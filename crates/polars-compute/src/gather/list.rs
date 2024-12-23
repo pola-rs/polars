@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::array::{self, ArrayFromIterDtype, ListArray, StaticArray};
-use crate::datatypes::IdxArr;
-use crate::offset::Offset;
+use arrow::array::{self, ArrayFromIterDtype, ListArray, StaticArray};
+use arrow::datatypes::IdxArr;
+use arrow::offset::Offset;
 
 /// `take` implementation for ListArrays
 pub(super) unsafe fn take_unchecked<I: Offset>(

@@ -4,10 +4,6 @@ use crate::array::BooleanArray;
 use crate::bitmap::utils::BitChunks;
 pub mod concatenate;
 pub mod ewm;
-#[cfg(feature = "compute_take")]
-pub mod fixed_size_list;
-#[cfg(feature = "compute_take")]
-pub mod list;
 pub mod rolling;
 pub mod set;
 pub mod sort_partition;

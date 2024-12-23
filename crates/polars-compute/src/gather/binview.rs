@@ -1,6 +1,7 @@
+use arrow::array::BinaryViewArray;
+
 use self::primitive::take_values_and_validity_unchecked;
 use super::*;
-use crate::array::BinaryViewArray;
 
 /// # Safety
 /// No bound checks

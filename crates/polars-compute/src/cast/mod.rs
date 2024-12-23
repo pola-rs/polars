@@ -222,9 +222,8 @@ fn cast_list_to_fixed_size_list<O: Offset>(
                 }
             }
         }
-        let take_values = unsafe {
-            arrow::compute::take::take_unchecked(list.values().as_ref(), &indices.freeze())
-        };
+        let take_values =
+            unsafe { crate::gather::take_unchecked(list.values().as_ref(), &indices.freeze()) };
 
         cast(take_values.as_ref(), inner.dtype(), options)?
     };

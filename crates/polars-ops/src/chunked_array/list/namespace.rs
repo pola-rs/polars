@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
-use arrow::legacy::kernels::list::{index_is_oob, sublist_get};
+use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "list_gather")]
 use polars_core::export::num::ToPrimitive;
