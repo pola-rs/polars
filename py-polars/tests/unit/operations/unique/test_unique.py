@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -154,6 +155,32 @@ def test_unique_with_null() -> None:
         {"a": [1, 2, 3, 4], "b": ["a", "b", "c", "c"], "c": [None, None, None, None]}
     )
     assert_frame_equal(df.unique(maintain_order=True), expected_df)
+
+
+@pytest.mark.parametrize(
+    ("input_json_data", "input_schema", "subset"),
+    [
+        ({"ID": [], "Name": []}, {"ID": pl.Int64, "Name": pl.String}, "id"),
+        ({"ID": [], "Name": []}, {"ID": pl.Int64, "Name": pl.String}, ["age", "place"]),
+        (
+            {"ID": [1, 2, 1, 2], "Name": ["foo", "bar", "baz", "baa"]},
+            {"ID": pl.Int64, "Name": pl.String},
+            "id",
+        ),
+        (
+            {"ID": [1, 2, 1, 2], "Name": ["foo", "bar", "baz", "baa"]},
+            {"ID": pl.Int64, "Name": pl.String},
+            ["age", "place"],
+        ),
+    ],
+)
+def test_unique_with_bad_subset(
+    input_json_data: dict, input_schema: dict, subset: str | list[str]
+) -> None:
+    df = pl.DataFrame(input_json_data, schema=input_schema)
+
+    with pytest.raises(ColumnNotFoundError, match="not found"):
+        df.unique(subset=subset)
 
 
 def test_categorical_unique_19409() -> None:
