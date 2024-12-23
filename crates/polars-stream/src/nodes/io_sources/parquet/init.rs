@@ -1,4 +1,3 @@
-use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::Arc;
 
@@ -14,7 +13,7 @@ use super::{AsyncTaskData, ParquetSourceNode};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::utils::task_handles_ext;
+use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
 use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
 
 impl ParquetSourceNode {
@@ -80,7 +79,7 @@ impl ParquetSourceNode {
 
         let reader_schema = self.schema.clone().unwrap();
 
-        let (normalized_slice_oneshot_rx, metadata_rx, metadata_task_handle) =
+        let (normalized_slice_oneshot_rx, metadata_rx, metadata_task) =
             self.init_metadata_fetcher();
 
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
@@ -116,14 +115,15 @@ impl ParquetSourceNode {
             eprintln!("[ParquetSource]: ideal_morsel_size: {}", ideal_morsel_size);
         }
 
-        // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
-        // it is purely a dispatch loop.
-        let raw_morsel_distributor_task_handle = io_runtime.spawn(async move {
+        // Prefetch loop (spawns prefetches on the tokio scheduler).
+        let (prefetch_send, mut prefetch_recv) =
+            tokio::sync::mpsc::channel(row_group_prefetch_size);
+        let prefetch_task = io_runtime.spawn(async move {
             let slice_range = {
                 let Ok(slice) = normalized_slice_oneshot_rx.await else {
                     // If we are here then the producer probably errored.
                     drop(row_group_data_fetcher);
-                    return metadata_task_handle.await.unwrap();
+                    return PolarsResult::Ok(());
                 };
 
                 slice.map(|(offset, len)| offset..offset + len)
@@ -131,55 +131,62 @@ impl ParquetSourceNode {
 
             row_group_data_fetcher.slice_range = slice_range;
 
-            let morsel_seq_ref = &mut MorselSeq::default();
-            let mut prefetches = VecDeque::with_capacity(row_group_prefetch_size);
-            let mut decoded_dfs = VecDeque::with_capacity(1);
-
             loop {
-                while prefetches.len() < row_group_prefetch_size {
-                    let row_group_decoder = row_group_decoder.clone();
-                    let Some(prefetch) = row_group_data_fetcher.next().await else {
-                        break;
-                    };
-                    prefetches.push_back(async move {
-                        let row_group_data = prefetch?.await.unwrap()?;
-                        async_executor::spawn(TaskPriority::High, async move {
-                            row_group_decoder.row_group_data_to_df(row_group_data).await
-                        })
-                        .await
-                    })
-                }
-
-                if decoded_dfs.is_empty() {
-                    let Some(prefetch) = prefetches.pop_front() else {
-                        break;
-                    };
-                    let df = prefetch.await?;
-                    if df.is_empty() {
-                        continue;
-                    }
-
-                    let (iter, n) = split_to_morsels(&df, ideal_morsel_size);
-                    decoded_dfs.reserve(n);
-                    decoded_dfs.extend(iter);
-                }
-
-                let df = decoded_dfs.pop_front().unwrap();
-                let morsel_seq = *morsel_seq_ref;
-                *morsel_seq_ref = morsel_seq.successor();
-                if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
+                let Some(prefetch) = row_group_data_fetcher.next().await else {
+                    break;
+                };
+                if prefetch_send.send(prefetch?).await.is_err() {
                     break;
                 }
             }
-
-            // Join on the producer handle to catch errors/panics.
-            metadata_task_handle.await.unwrap()
+            PolarsResult::Ok(())
         });
 
-        let raw_morsel_distributor_task_handle =
-            task_handles_ext::AbortOnDropHandle(raw_morsel_distributor_task_handle);
+        // Decode loop (spawns decodes on the computational executor).
+        let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
+        let decode_task = io_runtime.spawn(async move {
+            while let Some(prefetch) = prefetch_recv.recv().await {
+                let row_group_data = prefetch.await.unwrap()?;
+                let row_group_decoder = row_group_decoder.clone();
+                let decode_fut = async_executor::spawn(TaskPriority::High, async move {
+                    row_group_decoder.row_group_data_to_df(row_group_data).await
+                });
+                if decode_send.send(decode_fut).await.is_err() {
+                    break;
+                }
+            }
+            PolarsResult::Ok(())
+        });
 
-        (raw_morsel_receivers, raw_morsel_distributor_task_handle)
+        // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
+        // it is purely a dispatch loop.
+        let distribute_task = io_runtime.spawn(async move {
+            let mut morsel_seq = MorselSeq::default();
+            while let Some(decode_fut) = decode_recv.recv().await {
+                let df = decode_fut.await?;
+                if df.is_empty() {
+                    continue;
+                }
+
+                for df in split_to_morsels(&df, ideal_morsel_size) {
+                    if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
+                        return Ok(());
+                    }
+                    morsel_seq = morsel_seq.successor();
+                }
+            }
+            PolarsResult::Ok(())
+        });
+
+        let join_task = io_runtime.spawn(async move {
+            metadata_task.await.unwrap()?;
+            prefetch_task.await.unwrap()?;
+            decode_task.await.unwrap()?;
+            distribute_task.await.unwrap()?;
+            Ok(())
+        });
+
+        (raw_morsel_receivers, AbortOnDropHandle(join_task))
     }
 
     /// Creates a `RowGroupDecoder` that turns `RowGroupData` into DataFrames.
@@ -330,7 +337,7 @@ fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
 fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
-) -> (impl Iterator<Item = DataFrame> + '_, usize) {
+) -> impl Iterator<Item = DataFrame> + '_ {
     let n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
         (df.height() / ideal_morsel_size).max(2)
@@ -340,12 +347,9 @@ fn split_to_morsels(
 
     let rows_per_morsel = 1 + df.height() / n_morsels;
 
-    (
-        (0..i64::try_from(df.height()).unwrap())
-            .step_by(rows_per_morsel)
-            .map(move |offset| df.slice(offset, rows_per_morsel)),
-        n_morsels,
-    )
+    (0..i64::try_from(df.height()).unwrap())
+        .step_by(rows_per_morsel)
+        .map(move |offset| df.slice(offset, rows_per_morsel))
 }
 
 mod tests {
