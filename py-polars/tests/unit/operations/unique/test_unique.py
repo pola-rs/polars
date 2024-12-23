@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_unique_predicate_pd() -> None:
@@ -175,7 +179,9 @@ def test_unique_with_null() -> None:
     ],
 )
 def test_unique_with_bad_subset(
-    input_json_data: dict, input_schema: dict, subset: str | list[str]
+    input_json_data: dict[str, list[Any]],
+    input_schema: dict[str, PolarsDataType],
+    subset: str | list[str],
 ) -> None:
     df = pl.DataFrame(input_json_data, schema=input_schema)
 
