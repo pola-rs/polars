@@ -64,7 +64,7 @@ pub fn apply_lambda_unknown<'a>(
                         lambda,
                         null_count,
                         first_value,
-                    )
+                    )?
                     .into_series(),
                 )
                 .into_py_any(py)?,
@@ -80,7 +80,7 @@ pub fn apply_lambda_unknown<'a>(
                         lambda,
                         null_count,
                         first_value,
-                    )
+                    )?
                     .into_series(),
                 )
                 .into_py_any(py)?,
@@ -164,14 +164,17 @@ pub fn apply_lambda_with_primitive_out_type<'a, D>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     first_value: Option<D::Native>,
-) -> ChunkedArray<D>
+) -> PyResult<ChunkedArray<D>>
 where
     D: PyArrowPrimitiveType,
     D::Native: IntoPyObject<'a> + FromPyObject<'a>,
 {
     let skip = usize::from(first_value.is_some());
     if init_null_count == df.height() {
-        ChunkedArray::full_null(PlSmallStr::from_static("map"), df.height())
+        Ok(ChunkedArray::full_null(
+            PlSmallStr::from_static("map"),
+            df.height(),
+        ))
     } else {
         let iter = apply_iter(df, py, lambda, init_null_count, skip);
         iterator_to_primitive(

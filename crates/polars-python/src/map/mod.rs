@@ -139,7 +139,7 @@ fn iterator_to_primitive<T>(
     first_value: Option<T::Native>,
     name: PlSmallStr,
     capacity: usize,
-) -> ChunkedArray<T>
+) -> PyResult<ChunkedArray<T>>
 where
     T: PyArrowPrimitiveType,
 {
@@ -165,7 +165,11 @@ where
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+
+    if let Some(err) = error {
+        let _ = err?;
+    }
+    Ok(ca.with_name(name))
 }
 
 fn iterator_to_bool(
