@@ -8,7 +8,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyBytes;
 use pyo3::{IntoPyObjectExt, Python};
 
-use self::row_encode::get_row_encoding_dictionary;
+use self::row_encode::get_row_encoding_context;
 use super::PySeries;
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -549,7 +549,7 @@ impl PySeries {
 
             let dicts = dtypes
                 .iter()
-                .map(|(_, dtype)| get_row_encoding_dictionary(&dtype.0))
+                .map(|(_, dtype)| get_row_encoding_context(&dtype.0))
                 .collect::<Vec<_>>();
 
             // Get the BinaryOffset array.

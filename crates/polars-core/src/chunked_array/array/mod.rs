@@ -2,6 +2,8 @@
 
 mod iterator;
 
+use std::borrow::Cow;
+
 use crate::prelude::*;
 
 impl ArrayChunked {
@@ -27,6 +29,41 @@ impl ArrayChunked {
         let width = self.width();
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::Array(Box::new(inner_dtype), width))
+    }
+
+    /// Convert the datatype of the array into the physical datatype.
+    pub fn to_physical_repr(&self) -> Cow<ArrayChunked> {
+        let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
+            return Cow::Borrowed(self);
+        };
+
+        assert_eq!(self.chunks().len(), physical_repr.chunks().len());
+
+        let width = self.width();
+        let chunks: Vec<_> = self
+            .downcast_iter()
+            .zip(physical_repr.into_chunks())
+            .map(|(chunk, values)| {
+                FixedSizeListArray::new(
+                    ArrowDataType::FixedSizeList(
+                        Box::new(ArrowField::new(
+                            PlSmallStr::from_static("item"),
+                            values.dtype().clone(),
+                            true,
+                        )),
+                        width,
+                    ),
+                    chunk.len(),
+                    values,
+                    chunk.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect();
+
+        let name = self.name().clone();
+        let dtype = DataType::Array(Box::new(self.inner_dtype().to_physical()), width);
+        Cow::Owned(unsafe { ArrayChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
     }
 
     /// Convert a non-logical [`ArrayChunked`] back into a logical [`ArrayChunked`] without casting.

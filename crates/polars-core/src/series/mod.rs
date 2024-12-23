@@ -35,7 +35,6 @@ pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
 use polars_error::feature_gated;
-use polars_utils::itertools::Itertools;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
@@ -687,105 +686,21 @@ impl Series {
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
-            List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
+            List(_) => match self.list().unwrap().to_physical_repr() {
+                Cow::Borrowed(_) => Cow::Borrowed(self),
+                Cow::Owned(ca) => Cow::Owned(ca.into_series()),
+            },
             #[cfg(feature = "dtype-array")]
-            Array(inner, size) => Cow::Owned(
-                self.cast(&Array(Box::new(inner.to_physical()), *size))
-                    .unwrap(),
-            ),
+            Array(_, _) => match self.array().unwrap().to_physical_repr() {
+                Cow::Borrowed(_) => Cow::Borrowed(self),
+                Cow::Owned(ca) => Cow::Owned(ca.into_series()),
+            },
             #[cfg(feature = "dtype-struct")]
-            Struct(_) => {
-                let arr = self.struct_().unwrap();
-                let fields: Vec<_> = arr
-                    .fields_as_series()
-                    .iter()
-                    .map(|s| s.to_physical_repr().into_owned())
-                    .collect();
-                let mut ca =
-                    StructChunked::from_series(self.name().clone(), arr.len(), fields.iter())
-                        .unwrap();
-
-                if arr.null_count() > 0 {
-                    ca.zip_outer_validity(arr);
-                }
-                Cow::Owned(ca.into_series())
+            Struct(_) => match self.struct_().unwrap().to_physical_repr() {
+                Cow::Borrowed(_) => Cow::Borrowed(self),
+                Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
             _ => Cow::Borrowed(self),
-        }
-    }
-
-    /// Attempts to convert a Series to dtype, only allowing conversions from
-    /// physical to logical dtypes--the inverse of to_physical_repr().
-    ///
-    /// # Safety
-    /// When converting from UInt32 to Categorical it is not checked that the
-    /// values are in-bound for the categorical mapping.
-    pub unsafe fn to_logical_repr_unchecked(&self, dtype: &DataType) -> PolarsResult<Series> {
-        use DataType::*;
-
-        let err = || {
-            Err(
-                polars_err!(ComputeError: "can't cast from {} to {} in to_logical_repr_unchecked", self.dtype(), dtype),
-            )
-        };
-
-        match dtype {
-            dt if self.dtype() == dt => Ok(self.clone()),
-            #[cfg(feature = "dtype-date")]
-            Date => Ok(self.i32()?.clone().into_date().into_series()),
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(u, z) => Ok(self
-                .i64()?
-                .clone()
-                .into_datetime(*u, z.clone())
-                .into_series()),
-            #[cfg(feature = "dtype-duration")]
-            Duration(u) => Ok(self.i64()?.clone().into_duration(*u).into_series()),
-            #[cfg(feature = "dtype-time")]
-            Time => Ok(self.i64()?.clone().into_time().into_series()),
-            #[cfg(feature = "dtype-decimal")]
-            Decimal(precision, scale) => Ok(self
-                .i128()?
-                .clone()
-                .into_decimal(*precision, scale.unwrap())?
-                .into_series()),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical { .. } | Enum { .. } => {
-                Ok(CategoricalChunked::from_cats_and_dtype_unchecked(
-                    self.u32()?.clone(),
-                    dtype.clone(),
-                )
-                .into_series())
-            },
-            List(inner) => {
-                if let List(self_inner) = self.dtype() {
-                    if inner.to_physical() == **self_inner {
-                        return self.cast(dtype);
-                    }
-                }
-                err()
-            },
-            #[cfg(feature = "dtype-struct")]
-            Struct(target_fields) => {
-                let ca = self.struct_().unwrap();
-                if ca.struct_fields().len() != target_fields.len() {
-                    return err();
-                }
-                let fields = ca
-                    .fields_as_series()
-                    .iter()
-                    .zip(target_fields)
-                    .map(|(s, tf)| s.to_logical_repr_unchecked(tf.dtype()))
-                    .try_collect_vec()?;
-                let mut result =
-                    StructChunked::from_series(self.name().clone(), ca.len(), fields.iter())?;
-                if ca.null_count() > 0 {
-                    result.zip_outer_validity(ca);
-                }
-                Ok(result.into_series())
-            },
-
-            _ => err(),
         }
     }
 
