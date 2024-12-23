@@ -49,22 +49,23 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
                 .clone()
                 .map(|field| field.chunks()[c_i].clone())
                 .collect::<Vec<_>>();
+            let chunk_length = fields[0].len();
 
-            if !fields.iter().all(|arr| length == arr.len()) {
-                return Err(());
+            if fields[1..].iter().any(|arr| chunk_length != arr.len()) {
+                return None;
             }
 
-            Ok(StructArray::new(arrow_dtype.clone(), length, fields, None).boxed())
+            Some(StructArray::new(arrow_dtype.clone(), chunk_length, fields, None).boxed())
         })
-        .collect::<Result<Vec<_>, ()>>();
+        .collect::<Option<Vec<_>>>();
 
     match chunks {
-        Ok(chunks) => {
+        Some(chunks) => {
             // SAFETY: invariants checked above.
             unsafe { StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) }
         },
-        // Different chunk lengths: rechunk and recurse.
-        Err(_) => {
+        // Different chunks: rechunk and recurse.
+        None => {
             let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
             constructor(name, length, fields.iter())
         },
@@ -160,7 +161,10 @@ impl StructChunked {
                 .map(|s| s.to_physical_repr().into_owned()),
         );
 
+        dbg!(self.chunk_lengths().collect::<Vec<_>>());
+
         let mut ca = constructor(self.name().clone(), self.length, physicals.iter());
+        dbg!(ca.chunk_lengths().collect::<Vec<_>>());
         if self.null_count() > 0 {
             ca.zip_outer_validity(self);
         }
@@ -399,28 +403,31 @@ impl StructChunked {
 
     /// Combine the validities of two structs.
     pub fn zip_outer_validity(&mut self, other: &StructChunked) {
+        if other.null_count() == 0 {
+            return;
+        }
+
         if self.chunks.len() != other.chunks.len()
-            || !self
+            || self
                 .chunks
                 .iter()
-                .zip(other.chunks.iter())
-                .map(|(a, b)| a.len() == b.len())
-                .all_equal()
+                .zip(other.chunks())
+                .any(|(a, b)| a.len() != b.len())
         {
             *self = self.rechunk();
             let other = other.rechunk();
             return self.zip_outer_validity(&other);
         }
-        if other.null_count > 0 {
-            // SAFETY:
-            // We keep length and dtypes the same.
-            unsafe {
-                for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
-                    let new = combine_validities_and(a.validity(), b.validity());
-                    a.set_validity(new)
-                }
+
+        // SAFETY:
+        // We keep length and dtypes the same.
+        unsafe {
+            for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
+                let new = combine_validities_and(a.validity(), b.validity());
+                a.set_validity(new)
             }
         }
+
         self.compute_len();
         self.propagate_nulls();
     }
@@ -457,31 +464,5 @@ impl StructChunked {
     pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_outer_validity(validity);
         self
-    }
-
-    pub fn with_outer_validity_chunked(mut self, validity: BooleanChunked) -> Self {
-        assert_eq!(self.len(), validity.len());
-        if !self
-            .chunks
-            .iter()
-            .zip(validity.chunks.iter())
-            .map(|(a, b)| a.len() == b.len())
-            .all_equal()
-            || self.chunks.len() != validity.chunks().len()
-        {
-            let ca = self.rechunk();
-            let validity = validity.rechunk();
-            ca.with_outer_validity_chunked(validity)
-        } else {
-            unsafe {
-                for (arr, valid) in self.chunks_mut().iter_mut().zip(validity.downcast_iter()) {
-                    assert!(valid.validity().is_none());
-                    *arr = arr.with_validity(Some(valid.values().clone()))
-                }
-            }
-            self.compute_len();
-            self.propagate_nulls();
-            self
-        }
     }
 }

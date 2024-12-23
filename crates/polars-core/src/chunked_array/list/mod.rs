@@ -44,6 +44,8 @@ impl ListChunked {
             return Cow::Borrowed(self);
         };
 
+        assert_eq!(self.chunks().len(), physical_repr.chunks().len());
+
         let chunks: Vec<_> = self
             .downcast_iter()
             .zip(physical_repr.into_chunks())
