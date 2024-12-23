@@ -286,7 +286,7 @@ impl LazyCsvReader {
                     polars_bail!(ComputeError: "no buffers specified for this reader");
                 };
 
-                infer_schema(MemSlice::from_file(&file)?)?
+                infer_schema(MemSlice::from_file(file)?)?
             },
             ScanSources::Buffers(buffers) => {
                 let Some(buffer) = buffers.first() else {
