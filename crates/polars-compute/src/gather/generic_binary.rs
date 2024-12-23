@@ -1,10 +1,10 @@
 use arrow::array::{GenericBinaryArray, PrimitiveArray};
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::buffer::Buffer;
 use arrow::offset::{Offset, Offsets, OffsetsBuffer};
 use polars_utils::vec::{CapacityByFactor, PushUnchecked};
 
 use super::Index;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
 
 fn create_offsets<I: Iterator<Item = usize>, O: Offset>(
     lengths: I,

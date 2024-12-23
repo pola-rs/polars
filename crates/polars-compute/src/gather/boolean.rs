@@ -1,8 +1,8 @@
+use arrow::array::{Array, BooleanArray, PrimitiveArray};
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_utils::IdxSize;
 
 use super::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
-use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
 
 // Take implementation when neither values nor indices contain nulls.
 unsafe fn take_no_validity(values: &Bitmap, indices: &[IdxSize]) -> (Bitmap, Option<Bitmap>) {

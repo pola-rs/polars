@@ -1,8 +1,7 @@
-use polars_utils::IdxSize;
-
 use arrow::array::Array;
 use arrow::bitmap::Bitmap;
 use arrow::datatypes::IdxArr;
+use polars_utils::IdxSize;
 
 /// # Safety
 /// Doesn't do any bound checks.
