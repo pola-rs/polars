@@ -273,7 +273,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda(py, lambda, val).ok());
+                .map(|val| call_lambda(py, lambda, val).map(Some));
             iterator_to_struct(
                 py,
                 it,
@@ -286,7 +286,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+                .map(|opt_val| opt_val.map(|val| call_lambda(py, lambda, val)).transpose());
             iterator_to_struct(
                 py,
                 it,
@@ -591,7 +591,7 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda(py, lambda, val).ok());
+                .map(|val| call_lambda(py, lambda, val).map(Some));
             iterator_to_struct(
                 py,
                 it,
@@ -604,7 +604,7 @@ where
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+                .map(|opt_val| opt_val.map(|val| call_lambda(py, lambda, val)).transpose());
             iterator_to_struct(
                 py,
                 it,
@@ -897,7 +897,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda(py, lambda, val).ok());
+                .map(|val| call_lambda(py, lambda, val).map(Some));
             iterator_to_struct(
                 py,
                 it,
@@ -910,7 +910,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_lambda(py, lambda, val).ok()));
+                .map(|opt_val| opt_val.map(|val| call_lambda(py, lambda, val)).transpose());
             iterator_to_struct(
                 py,
                 it,
@@ -1251,7 +1251,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda(py, lambda, python_series_wrapper).ok()
+                    call_lambda(py, lambda, python_series_wrapper).map(Some)
                 });
             iterator_to_struct(
                 py,
@@ -1266,17 +1266,19 @@ impl<'a> ApplyLambda<'a> for ListChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .map(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda(py, lambda, python_series_wrapper)
+                        })
+                        .transpose()
                 });
             iterator_to_struct(
                 py,
@@ -1686,7 +1688,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                         .unwrap()
                         .call1((pyseries,))
                         .unwrap();
-                    call_lambda(py, lambda, python_series_wrapper).ok()
+                    call_lambda(py, lambda, python_series_wrapper).map(Some)
                 });
             iterator_to_struct(
                 py,
@@ -1701,17 +1703,19 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| {
-                        // create a PySeries struct/object for Python
-                        let pyseries = PySeries::new(val);
-                        // Wrap this PySeries object in the python side Series wrapper
-                        let python_series_wrapper = pypolars
-                            .getattr("wrap_s")
-                            .unwrap()
-                            .call1((pyseries,))
-                            .unwrap();
-                        call_lambda(py, lambda, python_series_wrapper).ok()
-                    })
+                    opt_val
+                        .map(|val| {
+                            // create a PySeries struct/object for Python
+                            let pyseries = PySeries::new(val);
+                            // Wrap this PySeries object in the python side Series wrapper
+                            let python_series_wrapper = pypolars
+                                .getattr("wrap_s")
+                                .unwrap()
+                                .call1((pyseries,))
+                                .unwrap();
+                            call_lambda(py, lambda, python_series_wrapper)
+                        })
+                        .transpose()
                 });
             iterator_to_struct(
                 py,
@@ -2100,10 +2104,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         let it = self
             .into_iter()
             .skip(init_null_count + skip)
-            .map(|object_value| {
-                let out = lambda.call1((object_value.map(|v| &v.inner),)).unwrap();
-                Some(out)
-            });
+            .map(|object_value| lambda.call1((object_value.map(|v| &v.inner),)).map(Some));
         iterator_to_struct(
             py,
             it,
@@ -2393,7 +2394,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = 1;
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| lambda.call1((Wrap(val),)).ok());
+            .map(|val| lambda.call1((Wrap(val),)).map(Some));
         iterator_to_struct(
             py,
             it,

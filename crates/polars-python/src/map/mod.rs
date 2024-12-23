@@ -33,7 +33,7 @@ impl PyArrowPrimitiveType for Float64Type {}
 
 fn iterator_to_struct<'a>(
     py: Python,
-    it: impl Iterator<Item = Option<Bound<'a, PyAny>>>,
+    it: impl Iterator<Item = PyResult<Option<Bound<'a, PyAny>>>>,
     init_null_count: usize,
     first_value: AnyValue<'a>,
     name: PlSmallStr,
@@ -72,7 +72,7 @@ fn iterator_to_struct<'a>(
     }
 
     for dict in it {
-        match dict {
+        match dict? {
             None => {
                 for field_items in struct_fields.values_mut() {
                     field_items.push(AnyValue::Null);
