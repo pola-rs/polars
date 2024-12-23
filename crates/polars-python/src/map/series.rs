@@ -224,15 +224,10 @@ where
     S: FromPyObject<'py>,
 {
     let out = call_lambda(py, lambda, in_val)?;
-    match out.extract::<S>() {
-        Ok(s) => Ok(Some(s)),
-        Err(e) => {
-            if out.is_none() {
-                Ok(None)
-            } else {
-                Err(e)
-            }
-        },
+    if out.is_none() {
+        Ok(None)
+    } else {
+        out.extract::<S>().map(Some)
     }
 }
 
