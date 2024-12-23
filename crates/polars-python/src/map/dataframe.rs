@@ -145,7 +145,7 @@ fn apply_iter<'a, T>(
     lambda: Bound<'a, PyAny>,
     init_null_count: usize,
     skip: usize,
-) -> impl Iterator<Item = Option<T>> + 'a
+) -> impl Iterator<Item = PyResult<Option<T>>> + 'a
 where
     T: FromPyObject<'a>,
 {
@@ -153,10 +153,7 @@ where
     ((init_null_count + skip)..df.height()).map(move |_| {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
         let tpl = (PyTuple::new(py, iter).unwrap(),);
-        match lambda.call1(tpl) {
-            Ok(val) => val.extract::<T>().ok(),
-            Err(e) => panic!("python function failed {e}"),
-        }
+        lambda.call1(tpl).map(|v| v.extract().ok())
     })
 }
 

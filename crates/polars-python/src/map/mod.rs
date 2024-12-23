@@ -134,7 +134,7 @@ fn iterator_to_struct<'a>(
 }
 
 fn iterator_to_primitive<T>(
-    it: impl Iterator<Item = Option<T::Native>>,
+    it: impl Iterator<Item = PyResult<Option<T::Native>>>,
     init_null_count: usize,
     first_value: Option<T::Native>,
     name: PlSmallStr,
@@ -143,22 +143,25 @@ fn iterator_to_primitive<T>(
 where
     T: PyArrowPrimitiveType,
 {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: ChunkedArray<T> = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
     debug_assert_eq!(ca.len(), capacity);
@@ -166,28 +169,31 @@ where
 }
 
 fn iterator_to_bool(
-    it: impl Iterator<Item = Option<bool>>,
+    it: impl Iterator<Item = PyResult<Option<bool>>>,
     init_null_count: usize,
     first_value: Option<bool>,
     name: PlSmallStr,
     capacity: usize,
 ) -> ChunkedArray<BooleanType> {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: BooleanChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
     debug_assert_eq!(ca.len(), capacity);
@@ -224,28 +230,43 @@ fn iterator_to_object(
     ca.with_name(name)
 }
 
+fn catch_err<K>(error: &mut Option<PyResult<Option<K>>>, result: PyResult<Option<K>>) -> Option<K> {
+    match result {
+        Ok(item) => item,
+        err => {
+            if error.is_none() {
+                *error = Some(err);
+            }
+            None
+        },
+    }
+}
+
 fn iterator_to_string<S: AsRef<str>>(
-    it: impl Iterator<Item = Option<S>>,
+    it: impl Iterator<Item = PyResult<Option<S>>>,
     init_null_count: usize,
     first_value: Option<S>,
     name: PlSmallStr,
     capacity: usize,
 ) -> StringChunked {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: StringChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
     debug_assert_eq!(ca.len(), capacity);
