@@ -1,5 +1,6 @@
 mod frame;
 
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::StructArray;
@@ -22,14 +23,14 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
     name: PlSmallStr,
     length: usize,
     fields: I,
-) -> PolarsResult<StructChunked> {
+) -> StructChunked {
     if fields.len() == 0 {
         let dtype = DataType::Struct(Vec::new());
         let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
         let chunks = vec![StructArray::new(arrow_dtype, length, Vec::new(), None).boxed()];
 
         // SAFETY: We construct each chunk above to have the `Struct` data type.
-        return Ok(unsafe { StructChunked::from_chunks_and_dtype(name, chunks, dtype) });
+        return unsafe { StructChunked::from_chunks_and_dtype(name, chunks, dtype) };
     }
 
     // Different chunk lengths: rechunk and recurse.
@@ -60,11 +61,7 @@ fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
     match chunks {
         Ok(chunks) => {
             // SAFETY: invariants checked above.
-            unsafe {
-                Ok(StructChunked::from_chunks_and_dtype_unchecked(
-                    name, chunks, dtype,
-                ))
-            }
+            unsafe { StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) }
         },
         // Different chunk lengths: rechunk and recurse.
         Err(_) => {
@@ -117,14 +114,14 @@ impl StructChunked {
         }
 
         if !needs_to_broadcast {
-            return constructor(name, length, fields);
+            return Ok(constructor(name, length, fields));
         }
 
         if length == 0 {
             // @NOTE: There are columns that are being broadcasted so we need to clear those.
             let new_fields = fields.map(|s| s.clear()).collect::<Vec<_>>();
 
-            return constructor(name, length, new_fields.iter());
+            return Ok(constructor(name, length, new_fields.iter()));
         }
 
         let new_fields = fields
@@ -136,7 +133,39 @@ impl StructChunked {
                 }
             })
             .collect::<Vec<_>>();
-        constructor(name, length, new_fields.iter())
+        Ok(constructor(name, length, new_fields.iter()))
+    }
+
+    /// Convert a struct to the underlying physical datatype.
+    pub fn to_physical_repr(&self) -> Cow<StructChunked> {
+        let mut physicals = Vec::new();
+
+        let field_series = self.fields_as_series();
+        for (i, s) in field_series.iter().enumerate() {
+            if let Cow::Owned(physical) = s.to_physical_repr() {
+                physicals.reserve(field_series.len());
+                physicals.extend(field_series[..i].iter().cloned());
+                physicals.push(physical);
+                break;
+            }
+        }
+
+        if physicals.is_empty() {
+            return Cow::Borrowed(self);
+        }
+
+        physicals.extend(
+            field_series[physicals.len()..]
+                .iter()
+                .map(|s| s.to_physical_repr().into_owned()),
+        );
+
+        let mut ca = constructor(self.name().clone(), self.length, physicals.iter());
+        if self.null_count() > 0 {
+            ca.zip_outer_validity(self);
+        }
+
+        Cow::Owned(ca)
     }
 
     /// Convert a non-logical [`StructChunked`] back into a logical [`StructChunked`] without casting.

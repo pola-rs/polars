@@ -54,7 +54,7 @@ impl RowEncodedHashGrouper {
             .zip(key_columns)
             .map(|((name, dt), col)| {
                 let s = Series::try_from((name.clone(), col)).unwrap();
-                unsafe { s.to_logical_repr_unchecked(dt) }
+                unsafe { s.from_physical_unchecked(dt) }
                     .unwrap()
                     .into_column()
             })
