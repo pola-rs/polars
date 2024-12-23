@@ -484,6 +484,7 @@ impl PyLazyFrame {
     fn optimization_toggle(
         &self,
         type_coercion: bool,
+        type_check: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
         simplify_expression: bool,
@@ -500,6 +501,7 @@ impl PyLazyFrame {
         let ldf = self.ldf.clone();
         let mut ldf = ldf
             .with_type_coercion(type_coercion)
+            .with_type_check(type_check)
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)

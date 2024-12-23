@@ -120,6 +120,9 @@ pub fn resolve_join(
         .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_right)
         .map_err(|e| e.context("'join' failed".into()))?;
 
+    let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
+    let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
+
     // Not a closure to avoid borrow issues because we mutate expr_arena as well.
     macro_rules! get_dtype {
         ($expr:expr, $schema:expr) => {

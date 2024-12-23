@@ -1619,6 +1619,7 @@ def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
+    type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1642,6 +1643,8 @@ def collect_all(
         A list of LazyFrames to collect.
     type_coercion
         Do type coercion optimization.
+    type_check
+        Do type checking of the intermediate representation.
     predicate_pushdown
         Do predicate pushdown optimization.
     projection_pushdown
@@ -1696,6 +1699,7 @@ def collect_all(
     for lf in lazy_frames:
         ldf = lf._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1725,6 +1729,7 @@ def collect_all_async(
     *,
     gevent: Literal[True],
     type_coercion: bool = True,
+    type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1744,6 +1749,7 @@ def collect_all_async(
     *,
     gevent: Literal[False] = False,
     type_coercion: bool = True,
+    type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1763,6 +1769,7 @@ def collect_all_async(
     *,
     gevent: bool = False,
     type_coercion: bool = True,
+    type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1797,6 +1804,8 @@ def collect_all_async(
         Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
     type_coercion
         Do type coercion optimization.
+    type_check
+        Do type checking of the intermediate representation.
     predicate_pushdown
         Do predicate pushdown optimization.
     projection_pushdown
@@ -1863,6 +1872,7 @@ def collect_all_async(
     for lf in lazy_frames:
         ldf = lf._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
