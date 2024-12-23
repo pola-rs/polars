@@ -385,7 +385,7 @@ jobs:
           merge-multiple: true
 
       - name: Remove Emscripten wheel
-        run: rm -f dist/*emscripten*.whl
+        run: rm -f dist/*emscripten-wasm32*.whl
 
       - name: Publish to PyPI
         if: inputs.dry-run == false
