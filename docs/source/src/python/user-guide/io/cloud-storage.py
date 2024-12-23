@@ -91,4 +91,25 @@ destination = "s3://bucket/my_file.parquet"
 df.write_parquet(destination)
 
 # --8<-- [end:write_parquet]
+
+# --8<-- [start:write_file_object]
+import polars as pl
+import s3fs
+import gzip
+
+df = pl.DataFrame(
+    {
+        "foo": ["a", "b", "c", "d", "d"],
+        "bar": [1, 2, 3, 4, 5],
+    }
+)
+
+destination = "s3://bucket/my_file.csv.gz"
+
+fs = s3fs.S3FileSystem()
+
+with fs.open(destination, "wb") as cloud_f:
+    with gzip.open(cloud_f, "w") as f:
+        df.write_csv(f)
+# --8<-- [end:write_file_object]
 """
