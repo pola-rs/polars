@@ -282,8 +282,16 @@ pub struct MMapSemaphore {
 impl MMapSemaphore {
     pub fn new_from_file_with_options(
         file: &File,
-        options: MmapOptions,
+        #[allow(unused_mut)] mut options: MmapOptions,
     ) -> PolarsResult<MMapSemaphore> {
+        // Set mmap size based on seek to end when running under Emscripten
+        #[cfg(target_os = "emscripten")]
+        {
+            let mut file = file;
+            let size = file.seek(SeekFrom::End(0)).unwrap();
+            options.len((size - offset) as usize);
+        }
+
         let mmap = unsafe { options.map(file) }?;
 
         #[cfg(target_family = "unix")]
