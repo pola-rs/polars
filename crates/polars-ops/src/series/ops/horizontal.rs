@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
@@ -267,24 +268,67 @@ pub fn mean_horizontal(
 ) -> PolarsResult<Option<Column>> {
     validate_column_lengths(columns)?;
 
-    let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) = columns.iter().partition(|s| {
-        let dtype = s.dtype();
-        dtype.is_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
-    });
+    let first_dtype = columns[0].dtype();
+    let is_temporal = first_dtype.is_temporal();
+    let columns = if is_temporal {
+        // All remaining must be the same temporal dtype.
+        for col in &columns[1..] {
+            if col.dtype() != first_dtype {
+                polars_bail!(
+                    InvalidOperation: "'horizontal_mean' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
+                    columns[0].name(),
+                    first_dtype,
+                    col.name(),
+                    col.dtype(),
+                );
+            };
+        }
 
-    if !non_numeric_columns.is_empty() {
-        let col = non_numeric_columns.first().cloned();
+        // Convert to physical
+        columns
+            .into_iter()
+            .map(|c| c.cast(&DataType::Int64).unwrap())
+            .collect::<Vec<_>>()
+    } else if first_dtype.is_numeric()
+        || first_dtype.is_decimal()
+        || first_dtype.is_bool()
+        || first_dtype.is_null()
+        || first_dtype.is_temporal()
+    {
+        // All remaining must be numeric.
+        for col in &columns[1..] {
+            let dtype = col.dtype();
+            if !(dtype.is_numeric()
+                || dtype.is_decimal()
+                || dtype.is_bool()
+                || dtype.is_null()
+                || dtype.is_temporal())
+            {
+                polars_bail!(
+                    InvalidOperation: "'horizontal_mean' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
+                    columns[0].name(),
+                    first_dtype,
+                    col.name(),
+                    dtype,
+                );
+            }
+        }
+        columns
+            .into_iter()
+            .map(|s| s.cast(&DataType::Int64).unwrap().into_column())
+            .collect::<Vec<_>>()
+    } else {
         polars_bail!(
-            InvalidOperation: "'horizontal_mean' expects numeric expressions, found {:?} (dtype={})",
-            col.unwrap().name(),
-            col.unwrap().dtype(),
+            InvalidOperation: "'horizontal_mean' expects all numeric or all temporal expressions, found {:?} (dtype={})",
+            columns[0].name(),
+            first_dtype,
         );
-    }
-    let columns = numeric_columns.into_iter().cloned().collect::<Vec<_>>();
+    };
+
     match columns.len() {
         0 => Ok(None),
         1 => Ok(Some(match columns[0].dtype() {
-            dt if dt != &DataType::Float32 && !dt.is_decimal() => {
+            dt if dt != &DataType::Float32 && !dt.is_temporal() && !dt.is_decimal() => {
                 columns[0].cast(&DataType::Float64)?
             },
             _ => columns[0].clone(),
@@ -331,8 +375,26 @@ pub fn mean_horizontal(
                 .into_column()
                 .cast(&DataType::Float64)?;
 
-            sum.map(|sum| std::ops::Div::div(&sum, &value_length))
-                .transpose()
+            let out = sum.map(|sum| std::ops::Div::div(&sum, &value_length));
+
+            let x = out.map(|opt| {
+                opt.and_then(|value| {
+                    if is_temporal {
+                        if first_dtype == &DataType::Date {
+                            // Cast to DateTime(us)
+                            (value * MILLISECONDS_IN_DAY)
+                                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                        } else {
+                            // Cast to original
+                            value.cast(&first_dtype)
+                        }
+                    } else {
+                        Ok(value)
+                    }
+                })
+            });
+
+            x.transpose()
         },
     }
 }
