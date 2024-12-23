@@ -677,8 +677,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let subset = options
                 .subset
-                .map(|s| expand_selectors(s, input_schema.as_ref(), &[]))
+                .map(|s| {
+                    let cols = expand_selectors(s, input_schema.as_ref(), &[])?;
+
+                    // Checking if subset columns exist in the dataframe
+                    cols.iter()
+                        .try_for_each(|name| match input_schema.try_get_field(name) {
+                            Ok(_) => Ok(()),
+                            Err(_) => Err(polars_err!(col_not_found = name)),
+                        })?;
+
+                    Ok::<_, PolarsError>(cols)
+                })
                 .transpose()?;
+
             let options = DistinctOptionsIR {
                 subset,
                 maintain_order: options.maintain_order,
