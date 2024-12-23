@@ -272,11 +272,13 @@ impl ParquetSourceNode {
                 .collect_live_columns(&mut live_columns);
             let v = (!live_columns.is_empty())
                 .then(|| {
-                    let out = live_columns
+                    let mut out = live_columns
                         .iter()
                         // Can be `None` - if the column is e.g. a hive column, or the row index column.
                         .filter_map(|x| projected_arrow_schema.index_of(x))
                         .collect::<Vec<_>>();
+
+                    out.sort_unstable();
 
                     // There is at least one non-predicate column, or pre-filtering was
                     // explicitly requested (only useful for testing).
@@ -363,6 +365,10 @@ impl ParquetSourceNode {
 /// Returns 0..len in a Vec, excluding indices in `exclude`.
 /// `exclude` needs to be a sorted list of unique values.
 fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
+    if cfg!(debug_assertions) {
+        assert!(exclude.windows(2).all(|x| x[1] > x[0]));
+    }
+
     let mut j = 0;
 
     (0..len)
