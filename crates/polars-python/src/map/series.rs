@@ -445,7 +445,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -460,7 +460,9 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -760,7 +762,7 @@ where
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -775,7 +777,9 @@ where
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -1065,7 +1069,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -1080,7 +1084,9 @@ impl<'a> ApplyLambda<'a> for StringChunked {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -1173,7 +1179,7 @@ fn call_series_lambda(
     pypolars: &Bound<PyModule>,
     lambda: &Bound<PyAny>,
     series: Series,
-) -> Option<Series> {
+) -> PyResult<Option<Series>> {
     // create a PySeries struct/object for Python
     let pyseries = PySeries::new(series);
     // Wrap this PySeries object in the python side Series wrapper
@@ -1184,18 +1190,12 @@ fn call_series_lambda(
         .unwrap();
 
     // call the lambda en get a python side Series wrapper
-    let out = lambda.call1((python_series_wrapper,));
-    match out {
-        Ok(out) => {
-            // unpack the wrapper in a PySeries
-            let py_pyseries = out
-                .getattr("_s")
-                .expect("could not get Series attribute '_s'");
-            let pyseries = py_pyseries.extract::<PySeries>().unwrap();
-            Some(pyseries.series)
-        },
-        Err(_) => None,
-    }
+    let out = lambda.call1((python_series_wrapper,))?;
+    // unpack the wrapper in a PySeries
+    let py_pyseries = out
+        .getattr("_s")
+        .expect("could not get Series attribute '_s'");
+    Ok(py_pyseries.extract::<PySeries>().ok().map(|s| s.series))
 }
 
 impl<'a> ApplyLambda<'a> for ListChunked {
@@ -1514,7 +1514,12 @@ impl<'a> ApplyLambda<'a> for ListChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
+                .map(|opt_val| {
+                    opt_val
+                        .map(|val| call_series_lambda(pypolars, lambda, val))
+                        .transpose()
+                        .map(|v| v.flatten())
+                });
             iterator_to_list(
                 dt,
                 it,
@@ -1951,7 +1956,12 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
             let it = self
                 .into_iter()
                 .skip(init_null_count + skip)
-                .map(|opt_val| opt_val.and_then(|val| call_series_lambda(pypolars, lambda, val)));
+                .map(|opt_val| {
+                    opt_val
+                        .map(|val| call_series_lambda(pypolars, lambda, val))
+                        .transpose()
+                        .map(|v| v.flatten())
+                });
             iterator_to_list(
                 dt,
                 it,
@@ -2259,7 +2269,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
             let it = self
                 .into_no_null_iter()
                 .skip(init_null_count + skip)
-                .map(|val| call_lambda_series_out(py, lambda, val).ok());
+                .map(|val| call_lambda_series_out(py, lambda, val).map(Some));
 
             iterator_to_list(
                 dt,
@@ -2274,7 +2284,9 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
                 .into_iter()
                 .skip(init_null_count + skip)
                 .map(|opt_val| {
-                    opt_val.and_then(|val| call_lambda_series_out(py, lambda, val).ok())
+                    opt_val
+                        .map(|val| call_lambda_series_out(py, lambda, val))
+                        .transpose()
                 });
             iterator_to_list(
                 dt,
@@ -2483,7 +2495,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let lambda = lambda.bind(py);
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_series_out(py, lambda, Wrap(val)).ok());
+            .map(|val| call_lambda_series_out(py, lambda, Wrap(val)).map(Some));
         iterator_to_list(
             dt,
             it,

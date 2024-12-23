@@ -1,6 +1,7 @@
 use polars::prelude::*;
 use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
 use polars_core::series::SeriesIter;
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyBool, PyFloat, PyInt, PyList, PyString, PyTuple};
@@ -259,18 +260,18 @@ pub fn apply_lambda_with_list_out_type<'a>(
         let iter = ((init_null_count + skip)..df.height()).map(|_| {
             let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
             let tpl = (PyTuple::new(py, iter).unwrap(),);
-            match lambda.call1(tpl) {
-                Ok(val) => match val.getattr("_s") {
-                    Ok(val) => val.extract::<PySeries>().ok().map(|ps| ps.series),
-                    Err(_) => {
-                        if val.is_none() {
-                            None
-                        } else {
-                            panic!("should return a Series, got a {val:?}")
-                        }
-                    },
+            let val = lambda.call1(tpl)?;
+            match val.getattr("_s") {
+                Ok(val) => val.extract::<PySeries>().map(|s| Some(s.series)),
+                Err(_) => {
+                    if val.is_none() {
+                        Ok(None)
+                    } else {
+                        Err(PyValueError::new_err(
+                            "should return a Series, got a {val:?}",
+                        ))
+                    }
                 },
-                Err(e) => panic!("python function failed {e}"),
             }
         });
         iterator_to_list(

@@ -285,7 +285,7 @@ fn iterator_to_string<S: AsRef<str>>(
 
 fn iterator_to_list(
     dt: &DataType,
-    it: impl Iterator<Item = Option<Series>>,
+    it: impl Iterator<Item = PyResult<Option<Series>>>,
     init_null_count: usize,
     first_value: Option<&Series>,
     name: PlSmallStr,
@@ -301,7 +301,7 @@ fn iterator_to_list(
             .map_err(PyPolarsErr::from)?;
     }
     for opt_val in it {
-        match opt_val {
+        match opt_val? {
             None => builder.append_null(),
             Some(s) => {
                 if s.len() == 0 && s.dtype() != dt {
