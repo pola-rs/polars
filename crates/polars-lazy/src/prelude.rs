@@ -14,7 +14,7 @@ pub use polars_ops::prelude::{RankMethod, RankOptions};
 pub use polars_plan::client::prepare_cloud_plan;
 pub use polars_plan::plans::{
     AnonymousScan, AnonymousScanArgs, AnonymousScanOptions, DslPlan, Literal, LiteralValue, Null,
-    NULL,
+    ScanSources, NULL,
 };
 pub use polars_plan::prelude::UnionArgs;
 pub(crate) use polars_plan::prelude::*;
