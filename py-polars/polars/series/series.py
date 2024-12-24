@@ -45,6 +45,7 @@ from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     _is_generator,
+    is_bool_sequence,
     no_default,
     parse_version,
     scale_bytes,
@@ -3034,7 +3035,7 @@ class Series:
                 raise
         return self
 
-    def filter(self, predicate: Series | list[bool] | np.ndarray[Any, Any]) -> Self:
+    def filter(self, predicate: Series | Sequence[bool]) -> Self:
         """
         Filter elements by a boolean mask.
 
@@ -3060,7 +3061,9 @@ class Series:
                 3
         ]
         """
-        if isinstance(predicate, (list, np.ndarray)):
+        if is_bool_sequence(predicate, include_series=True):
+            predicate = Series("", predicate, dtype=Boolean)
+        elif isinstance(predicate, Sequence):
             predicate = Series("", predicate)
         return self._from_pyseries(self._s.filter(predicate._s))
 
