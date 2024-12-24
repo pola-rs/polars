@@ -143,7 +143,7 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
 ) -> PolarsResult<CategoricalChunked> {
     let rev_map_left = cat_left.get_rev_map();
     let rev_map_right = cat_right.get_rev_map();
-    let (new_physical, new_rev_map) = match (&**rev_map_left, &**rev_map_right) {
+    let (mut new_physical, new_rev_map) = match (&**rev_map_left, &**rev_map_right) {
         (RevMapping::Global(_, _, idl), RevMapping::Global(_, _, idr)) if idl == idr => {
             let mut rev_map_merger = GlobalRevMapMerger::new(rev_map_left.clone());
             rev_map_merger.merge_map(rev_map_right)?;
@@ -176,6 +176,12 @@ pub fn call_categorical_merge_operation<I: CategoricalMergeOperation>(
         },
         _ => polars_bail!(string_cache_mismatch),
     };
+    // During merge operation, the sorted flag might get set on the underlying physical.
+    // Ensure that the sorted flag is not set if we use lexical order
+    if cat_left.uses_lexical_ordering() {
+        new_physical.set_sorted_flag(IsSorted::Not)
+    }
+
     // SAFETY: physical and rev map are correctly constructed above
     unsafe {
         Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
