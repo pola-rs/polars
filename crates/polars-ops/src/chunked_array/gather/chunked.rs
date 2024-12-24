@@ -542,19 +542,24 @@ where
             for id in by.iter() {
                 let (chunk_idx, array_idx) = id.extract();
 
-                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
-                if id.is_null() || arr.is_null_unchecked(array_idx as usize) {
+                if id.is_null() {
                     views.push_unchecked(View::default());
                     validity.push_unchecked(false);
                 } else {
-                    let view = *arr.views().get_unchecked(array_idx as usize);
-                    views.push_unchecked(update_view(
-                        view,
-                        arr.data_buffers(),
-                        &mut buffer_idxs,
-                        &mut buffers,
-                    ));
-                    validity.push_unchecked(true);
+                    let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+                    if arr.is_null_unchecked(array_idx as usize) {
+                        views.push_unchecked(View::default());
+                        validity.push_unchecked(false);
+                    } else {
+                        let view = *arr.views().get_unchecked(array_idx as usize);
+                        views.push_unchecked(update_view(
+                            view,
+                            arr.data_buffers(),
+                            &mut buffer_idxs,
+                            &mut buffers,
+                        ));
+                        validity.push_unchecked(true);
+                    }
                 }
             }
         } else {
@@ -672,6 +677,7 @@ mod test {
             assert!(out.equals_missing(&expected));
 
             // ## Ids with nulls;
+            dbg!(s_1.str().unwrap().n_chunks());
             let by: [ChunkId<24>; 4] = [
                 ChunkId::null(),
                 ChunkId::store(0, 1),
