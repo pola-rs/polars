@@ -2143,7 +2143,6 @@ impl DataFrame {
                 } else {
                     let (first, other) = prepare_arg_sort(by_column, &mut sort_options)?;
                     first
-                        .as_materialized_series()
                         .arg_sort_multiple(&other, &sort_options)?
                 }
             },

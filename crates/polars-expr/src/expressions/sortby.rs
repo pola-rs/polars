@@ -163,10 +163,7 @@ fn sort_by_groups_multiple_by(
                 limit: None,
             };
 
-            let sorted_idx = groups[0]
-                .as_materialized_series()
-                .arg_sort_multiple(&groups[1..], &options)
-                .unwrap();
+            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
@@ -183,10 +180,7 @@ fn sort_by_groups_multiple_by(
                 maintain_order,
                 limit: None,
             };
-            let sorted_idx = groups[0]
-                .as_materialized_series()
-                .arg_sort_multiple(&groups[1..], &options)
-                .unwrap();
+            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -246,9 +240,7 @@ impl PhysicalExpr for SortByExpr {
                     );
                 }
 
-                s_sort_by[0]
-                    .as_materialized_series()
-                    .arg_sort_multiple(&s_sort_by[1..], &options)
+                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
