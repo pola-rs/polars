@@ -499,11 +499,10 @@ where
 {
     let mut views = Vec::with_capacity(by.len());
     let mut validity = BitmapBuilder::with_capacity(by.len());
-    let arc_data_buffers;
 
     // If we can cheaply clone the list of buffers from the ChunkedArray we will,
     // otherwise we will only clone those buffers we need.
-    if ca.n_chunks() == 1 {
+    let arc_data_buffers = if ca.n_chunks() == 1 {
         let arr = ca.downcast_iter().next().unwrap();
         let arr_views = arr.views();
 
@@ -533,7 +532,7 @@ where
             }
         }
 
-        arc_data_buffers = arr.data_buffers().clone();
+        arr.data_buffers().clone()
     } else {
         let mut buffer_idxs = PlHashMap::with_capacity(8);
         let mut buffers = Vec::with_capacity(8);
@@ -579,7 +578,7 @@ where
             }
         };
 
-        arc_data_buffers = buffers.into();
+        buffers.into()
     };
 
     let arr = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
