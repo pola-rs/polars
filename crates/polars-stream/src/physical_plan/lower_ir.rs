@@ -434,12 +434,16 @@ pub fn lower_ir(
         #[cfg(feature = "python")]
         IR::PythonScan { .. } => todo!(),
 
-        IR::Cache { input, id, cache_hits: _ } => {
+        IR::Cache {
+            input,
+            id,
+            cache_hits: _,
+        } => {
             let id = *id;
             if let Some(cached) = cache_nodes.get(&id) {
                 return Ok(*cached);
             }
-            
+
             let phys_input = lower_ir!(*input)?;
             cache_nodes.insert(id, phys_input);
             return Ok(phys_input);
