@@ -1124,6 +1124,7 @@ def test_lazy_cache_same_key() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 
