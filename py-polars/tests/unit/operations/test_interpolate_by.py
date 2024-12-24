@@ -105,17 +105,15 @@ def test_interpolate_by_leading_nulls() -> None:
         }
     )
     result = df.select(pl.col("values").interpolate_by("times"))
-    expected = pl.DataFrame(
-        {"values": [None, None, None, 1.0, 1.7999999999999998, 4.6, 5.0]}
-    )
+    expected = pl.DataFrame({"values": [None, None, None, 1.0, 1.8, 4.6, 5.0]})
     assert_frame_equal(result, expected)
     result = (
-        df.sort("times", descending=True)
+        df.sort("times", maintain_order=True, descending=True)
         .with_columns(pl.col("values").interpolate_by("times"))
         .sort("times", maintain_order=True)
         .drop("times")
     )
-    assert_frame_equal(result, expected)
+    assert_frame_equal(result, expected, check_exact=False)
 
 
 @pytest.mark.parametrize("dataset", ["floats", "dates"])

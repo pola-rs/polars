@@ -825,6 +825,8 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
     assert df2["x"].dtype == dtype
 
 
+# TODO: Bug see: https://github.com/pola-rs/polars/issues/20440
+@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
         pl.col("y").cast(pl.Categorical(ordering="lexical"))

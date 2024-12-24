@@ -1026,6 +1026,18 @@ impl Column {
             }
         }
 
+        // @NOTE: This can theoretically be pushed into the previous operation but it is really
+        // worth it... probably not...
+        if let Some((limit, limit_dsc)) = options.limit {
+            let limit = limit.min(length);
+
+            if limit_dsc {
+                values = values.drain((length - limit) as usize..).collect();
+            } else {
+                values.truncate(limit as usize);
+            }
+        }
+
         IdxCa::from_vec(self.name().clone(), values)
     }
 
