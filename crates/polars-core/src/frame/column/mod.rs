@@ -1046,8 +1046,104 @@ impl Column {
         by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
-        // @scalar-opt
-        self.as_materialized_series().arg_sort_multiple(by, options)
+        /// Determine whether we can skip a column in the sorting process.
+        fn is_column_skippable(
+            c: &Column,
+            descending: bool,
+            nulls_last: bool,
+            maintain_order: bool,
+        ) -> bool {
+            if c.as_scalar_column().is_some() {
+                return true;
+            }
+
+            if maintain_order {
+                return false;
+            }
+
+            let is_sorted = c.is_sorted_flag();
+            if matches!(is_sorted, IsSorted::Not) {
+                return false;
+            }
+
+            let is_sorted_dsc = matches!(is_sorted, IsSorted::Descending);
+            if descending != is_sorted_dsc {
+                // @TODO: This can probably be handled smarter by instead inserting a column with
+                // inverse indices.
+                return false;
+            }
+
+            if !c.has_nulls() {
+                return true;
+            }
+
+            let has_nulls_last = c.get(c.len() - 1).unwrap().is_null();
+            if nulls_last == has_nulls_last {
+                return true;
+            }
+
+            false
+        }
+
+        let mut descending = Vec::with_capacity(by.len() + 1);
+        let mut nulls_last = Vec::with_capacity(by.len() + 1);
+        let mut non_skippable_by = Vec::with_capacity(by.len() + 1);
+
+        for (i, c) in std::iter::once(self).chain(by.iter()).enumerate() {
+            let dsc = options
+                .descending
+                .get(i)
+                .cloned()
+                .unwrap_or(options.descending[0]);
+            let nl = options
+                .nulls_last
+                .get(i)
+                .cloned()
+                .unwrap_or(options.nulls_last[0]);
+
+            if is_column_skippable(c, dsc, nl, options.maintain_order) {
+                continue;
+            }
+
+            descending.push(dsc);
+            nulls_last.push(nl);
+            non_skippable_by.push(c.clone());
+        }
+
+        if non_skippable_by.is_empty() {
+            return Ok(IdxCa::new_vec(
+                self.name().clone(),
+                (0..self.len() as IdxSize).collect(),
+            ));
+        }
+
+        if non_skippable_by.len() == 1 {
+            return Ok(non_skippable_by[0]
+                .arg_sort(SortOptions {
+                    descending: descending[0],
+                    nulls_last: nulls_last[0],
+                    multithreaded: options.multithreaded,
+                    maintain_order: options.maintain_order,
+                    limit: options.limit,
+                })
+                .with_name(self.name().clone()));
+        }
+
+        let by = &non_skippable_by[1..];
+
+        Ok(non_skippable_by[0]
+            .as_materialized_series()
+            .arg_sort_multiple(
+                by,
+                &SortMultipleOptions {
+                    descending,
+                    nulls_last,
+                    multithreaded: options.multithreaded,
+                    maintain_order: options.maintain_order,
+                    limit: options.limit,
+                },
+            )?
+            .with_name(self.name().clone()))
     }
 
     pub fn arg_unique(&self) -> PolarsResult<IdxCa> {
