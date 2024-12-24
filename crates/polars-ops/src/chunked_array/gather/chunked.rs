@@ -677,7 +677,6 @@ mod test {
             assert!(out.equals_missing(&expected));
 
             // ## Ids with nulls;
-            dbg!(s_1.str().unwrap().n_chunks());
             let by: [ChunkId<24>; 4] = [
                 ChunkId::null(),
                 ChunkId::store(0, 1),
