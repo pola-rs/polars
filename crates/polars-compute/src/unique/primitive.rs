@@ -1,8 +1,9 @@
 use std::ops::{Add, RangeInclusive, Sub};
 
 use arrow::array::PrimitiveArray;
+use arrow::bitmap;
 use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use num_traits::{FromPrimitive, ToPrimitive};
@@ -14,12 +15,21 @@ use super::RangedUniqueKernel;
 /// range.
 pub struct PrimitiveRangedUniqueState<T: NativeType> {
     seen: Seen,
+    has_seen_null: bool,
     range: RangeInclusive<T>,
 }
 
 enum Seen {
     Small(u128),
     Large(MutableBitmap),
+}
+
+fn has_seen_up_to_u128(v: u128, size: usize) -> bool {
+    if size == 128 {
+        !v == 0
+    } else {
+        v == ((1 << size) - 1)
+    }
 }
 
 impl Seen {
@@ -38,10 +48,10 @@ impl Seen {
         }
     }
 
-    fn has_seen_null(&self, size: usize) -> bool {
-        match self {
-            Self::Small(v) => v >> (size - 1) != 0,
-            Self::Large(v) => v.get(size - 1),
+    fn has_seen_up_to(&self, size: usize) -> bool {
+        match &self {
+            Seen::Small(v) => has_seen_up_to_u128(*v, size),
+            Seen::Large(v) => BitMask::new(v.as_slice(), 0, size).unset_bits() == 0,
         }
     }
 }
@@ -54,11 +64,10 @@ where
         let size = (max_value - min_value).to_usize().unwrap();
         // Range is inclusive
         let size = size + 1;
-        // One value is left for null
-        let size = size + 1;
 
         Self {
             seen: Seen::from_size(size),
+            has_seen_null: false,
             range: min_value..=max_value,
         }
     }
@@ -69,6 +78,46 @@ where
             .unwrap()
             + 1
     }
+
+    pub fn to_bitmap(&self) -> Bitmap {
+        #[cfg(not(target_endian = "little"))]
+        compile_error!("This assumes little-endian");
+
+        match &self.seen {
+            Seen::Small(v) => {
+                Bitmap::from_u8_slice(bytemuck::must_cast_ref::<u128, [u8; 16]>(v), self.size())
+            },
+            Seen::Large(v) => v.clone().freeze(),
+        }
+    }
+
+    pub fn min_max(&self) -> Option<(T, T)> {
+        let size = self.size();
+
+        let (from_min, from_max) = match &self.seen {
+            Seen::Small(v) => (
+                v.trailing_zeros() as usize,
+                v.leading_zeros() as usize - (128 - size),
+            ),
+            Seen::Large(v) => {
+                let slice = v.as_slice();
+
+                (
+                    bitmap::utils::leading_zeros(slice, 0, size),
+                    bitmap::utils::trailing_zeros(slice, 0, size),
+                )
+            },
+        };
+
+        if from_min >= size {
+            return None;
+        }
+
+        let min = *self.range.start() + T::from_usize(from_min).unwrap();
+        let max = *self.range.end() - T::from_usize(from_max).unwrap();
+
+        Some((min, max))
+    }
 }
 
 impl<T: NativeType> RangedUniqueKernel for PrimitiveRangedUniqueState<T>
@@ -78,12 +127,15 @@ where
     type Array = PrimitiveArray<T>;
 
     fn has_seen_all(&self) -> bool {
-        let size = self.size();
-        match &self.seen {
-            Seen::Small(v) if size == 128 => !v == 0,
-            Seen::Small(v) => *v == ((1 << size) - 1),
-            Seen::Large(v) => BitMask::new(v.as_slice(), 0, size).unset_bits() == 0,
-        }
+        self.has_seen_null && self.has_seen_all_ignore_null()
+    }
+
+    fn has_seen_all_ignore_null(&self) -> bool {
+        self.seen.has_seen_up_to(self.size())
+    }
+
+    fn has_seen_null(&self) -> bool {
+        self.has_seen_null
     }
 
     fn append(&mut self, array: &Self::Array) {
@@ -98,7 +150,7 @@ where
                 match self.seen {
                     Seen::Small(ref mut seen) => {
                         // Check every so often whether we have already seen all the values.
-                        while *seen != ((1 << (size - 1)) - 1) && i < values.len() {
+                        while !has_seen_up_to_u128(*seen, size) && i < values.len() {
                             for v in values[i..].iter().take(STEP_SIZE) {
                                 if cfg!(debug_assertions) {
                                     assert!(TotalOrd::tot_ge(v, self.range.start()));
@@ -115,7 +167,7 @@ where
                     },
                     Seen::Large(ref mut seen) => {
                         // Check every so often whether we have already seen all the values.
-                        while BitMask::new(seen.as_slice(), 0, size - 1).unset_bits() > 0
+                        while BitMask::new(seen.as_slice(), 0, size).unset_bits() > 0
                             && i < values.len()
                         {
                             for v in values[i..].iter().take(STEP_SIZE) {
@@ -136,11 +188,10 @@ where
             },
             Some(_) => {
                 let iter = array.non_null_values_iter();
+                self.has_seen_null = true;
 
                 match self.seen {
                     Seen::Small(ref mut seen) => {
-                        *seen |= 1 << (size - 1);
-
                         for v in iter {
                             if cfg!(debug_assertions) {
                                 assert!(TotalOrd::tot_ge(&v, self.range.start()));
@@ -153,8 +204,6 @@ where
                         }
                     },
                     Seen::Large(ref mut seen) => {
-                        seen.set(size - 1, true);
-
                         for v in iter {
                             if cfg!(debug_assertions) {
                                 assert!(TotalOrd::tot_ge(&v, self.range.start()));
@@ -186,10 +235,8 @@ where
     }
 
     fn finalize_unique(self) -> Self::Array {
-        let size = self.size();
         let seen = self.seen;
 
-        let has_null = seen.has_seen_null(size);
         let num_values = seen.num_seen();
         let mut values = Vec::with_capacity(num_values);
 
@@ -212,12 +259,13 @@ where
             },
         }
 
-        let validity = if has_null {
+        let validity = if self.has_seen_null {
             let mut validity = MutableBitmap::new();
             validity.extend_constant(values.len() - 1, true);
+
+            // Push the null
             validity.push(false);
-            // The null has already been pushed.
-            *values.last_mut().unwrap() = T::zeroed();
+            values.push(T::zeroed());
             Some(validity.freeze())
         } else {
             None
@@ -227,10 +275,10 @@ where
     }
 
     fn finalize_n_unique(&self) -> usize {
-        self.seen.num_seen()
+        self.seen.num_seen() + usize::from(self.has_seen_null)
     }
 
     fn finalize_n_unique_non_null(&self) -> usize {
-        self.seen.num_seen() - usize::from(self.seen.has_seen_null(self.size()))
+        self.seen.num_seen()
     }
 }

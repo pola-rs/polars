@@ -232,7 +232,7 @@ impl Array for FixedSizeBinaryArray {
 
 impl Splitable for FixedSizeBinaryArray {
     fn check_bound(&self, offset: usize) -> bool {
-        offset < self.len()
+        offset <= self.len()
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {
