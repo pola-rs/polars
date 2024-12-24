@@ -528,7 +528,7 @@ class StringNameSpace:
         ]
         """
 
-    def ends_with(self, suffix: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr | None) -> Series:
         """
         Check if string values end with a substring.
 
