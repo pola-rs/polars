@@ -510,7 +510,7 @@ where
         if arr.has_nulls() {
             for id in by.iter() {
                 let (chunk_idx, array_idx) = id.extract();
-                debug_assert!(chunk_idx == 0);
+                debug_assert!(id.is_null() || chunk_idx == 0);
                 if id.is_null() || arr.is_null_unchecked(array_idx as usize) {
                     views.push_unchecked(View::default());
                     validity.push_unchecked(false);
@@ -522,7 +522,7 @@ where
         } else {
             for id in by.iter() {
                 let (chunk_idx, array_idx) = id.extract();
-                debug_assert!(chunk_idx == 0);
+                debug_assert!(id.is_null() || chunk_idx == 0);
                 if id.is_null() {
                     views.push_unchecked(View::default());
                     validity.push_unchecked(false);
