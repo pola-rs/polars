@@ -1695,9 +1695,10 @@ def collect_all(
     prepared = []
 
     for lf in lazy_frames:
+        type_check = _type_check
         ldf = lf._ldf.optimization_toggle(
             type_coercion,
-            _type_check,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1866,9 +1867,10 @@ def collect_all_async(
     prepared = []
 
     for lf in lazy_frames:
+        type_check = _type_check
         ldf = lf._ldf.optimization_toggle(
             type_coercion,
-            _type_check,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,

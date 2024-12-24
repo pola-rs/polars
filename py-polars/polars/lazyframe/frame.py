@@ -1097,9 +1097,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("Streaming mode is considered unstable.")
 
         if optimized:
+            type_check = _type_check
             ldf = self._ldf.optimization_toggle(
                 type_coercion,
-                _type_check,
+                type_check,
                 predicate_pushdown,
                 projection_pushdown,
                 simplify_expression,
@@ -1196,9 +1197,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
         """
+        type_check = _type_check
         _ldf = self._ldf.optimization_toggle(
             type_coercion,
-            _type_check,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1704,9 +1706,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns = False
             collapse_joins = False
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
             type_coercion,
-            _type_check,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -2012,9 +2015,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Don't run on GPU in _eager mode (but don't warn)
             is_gpu = False
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
             type_coercion,
-            _type_check,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -2216,9 +2220,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
             type_coercion,
-            _type_check,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -2904,7 +2909,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._ldf.optimization_toggle(
             type_coercion=type_coercion,
-            _type_check=_type_check,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -3082,9 +3087,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
+        type_check = _type_check
         lf = self._ldf.optimization_toggle(
             type_coercion,
-            _type_check,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
