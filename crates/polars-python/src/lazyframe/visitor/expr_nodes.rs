@@ -1099,6 +1099,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     ("hash", seed, seed_1, seed_2, seed_3).into_py_any(py)
                 },
                 FunctionExpr::ArgWhere => ("argwhere",).into_py_any(py),
+                #[cfg(feature = "index_of")]
+                FunctionExpr::IndexOf => ("index_of",).into_py_any(py),
                 #[cfg(feature = "search_sorted")]
                 FunctionExpr::SearchSorted(side) => (
                     "search_sorted",
