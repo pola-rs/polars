@@ -45,6 +45,7 @@ from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     _is_generator,
+    is_bool_sequence,
     no_default,
     parse_version,
     scale_bytes,
@@ -3060,8 +3061,8 @@ class Series:
                 3
         ]
         """
-        if isinstance(predicate, list):
-            predicate = Series("", predicate)
+        if is_bool_sequence(predicate, include_series=True):
+            predicate = pl.Series(predicate, dtype=Boolean)
         return self._from_pyseries(self._s.filter(predicate._s))
 
     def head(self, n: int = 10) -> Series:
