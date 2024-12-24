@@ -86,6 +86,7 @@ pub fn lower_ir(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
+    cache_nodes: &mut PlHashMap<usize, PhysNodeKey>,
 ) -> PolarsResult<PhysNodeKey> {
     // Helper macro to simplify recursive calls.
     macro_rules! lower_ir {
@@ -97,6 +98,7 @@ pub fn lower_ir(
                 phys_sm,
                 schema_cache,
                 expr_cache,
+                cache_nodes,
             )
         };
     }
@@ -431,7 +433,18 @@ pub fn lower_ir(
 
         #[cfg(feature = "python")]
         IR::PythonScan { .. } => todo!(),
-        IR::Cache { .. } => todo!(),
+
+        IR::Cache { input, id, cache_hits: _ } => {
+            let id = *id;
+            if let Some(cached) = cache_nodes.get(&id) {
+                return Ok(*cached);
+            }
+            
+            let phys_input = lower_ir!(*input)?;
+            cache_nodes.insert(id, phys_input);
+            return Ok(phys_input);
+        },
+
         IR::GroupBy {
             input,
             keys,
