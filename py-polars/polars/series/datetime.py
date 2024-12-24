@@ -79,7 +79,7 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
+        Series
             Data type is preserved.
 
         Examples
