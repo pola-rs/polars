@@ -2398,7 +2398,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=_type_check,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2539,7 +2539,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=_type_check,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2726,7 +2726,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=_type_check,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2854,7 +2854,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=_type_check,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2904,7 +2904,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._ldf.optimization_toggle(
             type_coercion=type_coercion,
-            type_check=_type_check,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2964,7 +2964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._fetch(
             n_rows=n_rows,
             type_coercion=type_coercion,
-            type_check=_type_check,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
