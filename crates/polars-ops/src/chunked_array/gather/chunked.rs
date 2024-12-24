@@ -321,31 +321,30 @@ where
     ) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
-        let mut out = if let Some(iter) = self.downcast_slices() {
-            let targets = iter.collect::<Vec<_>>();
+        let mut out = if !self.has_nulls() {
             let iter = by.iter().map(|chunk_id| {
                 debug_assert!(
                     !chunk_id.is_null(),
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked(chunk_idx as usize);
-                vals.get_unchecked(array_idx as usize).clone()
+                let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                arr.value_unchecked(array_idx as usize).clone()
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
             ChunkedArray::with_chunk(self.name().clone(), arr)
         } else {
-            let targets = self.downcast_iter().collect::<Vec<_>>();
             let iter = by.iter().map(|chunk_id| {
                 debug_assert!(
                     !chunk_id.is_null(),
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked(chunk_idx as usize);
-                vals.get_unchecked(array_idx as usize)
+                let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
             });
+
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
             ChunkedArray::with_chunk(self.name().clone(), arr)
         };
@@ -358,8 +357,7 @@ where
     unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
-        if let Some(iter) = self.downcast_slices() {
-            let targets = iter.collect::<Vec<_>>();
+        if !self.has_nulls() {
             let arr = by
                 .iter()
                 .map(|chunk_id| {
@@ -367,15 +365,14 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked(chunk_idx as usize);
-                        Some(vals.get_unchecked(array_idx as usize).clone())
+                        let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                        Some(arr.value_unchecked(array_idx as usize).clone())
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
             ChunkedArray::with_chunk(self.name().clone(), arr)
         } else {
-            let targets = self.downcast_iter().collect::<Vec<_>>();
             let arr = by
                 .iter()
                 .map(|chunk_id| {
@@ -383,8 +380,8 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked(chunk_idx as usize);
-                        vals.get_unchecked(array_idx as usize)
+                        let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                        arr.get_unchecked(array_idx as usize)
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
