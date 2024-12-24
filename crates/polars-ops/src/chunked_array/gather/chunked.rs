@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::Debug;
 
 use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
@@ -156,7 +155,7 @@ impl TakeChunked for Series {
                     .into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_unchecked_object(&self, by, sorted),
+            Object(_, _) => take_unchecked_object(self, by, sorted),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
@@ -167,22 +166,34 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-date")]
             Date => {
                 let ca = self.date().unwrap();
-                ca.physical().take_chunked_unchecked(by, sorted).into_date().into_series()
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_date()
+                    .into_series()
             },
             #[cfg(feature = "dtype-datetime")]
             Datetime(u, z) => {
                 let ca = self.datetime().unwrap();
-                ca.physical().take_chunked_unchecked(by, sorted).into_datetime(*u, z.clone()).into_series()
-            }
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_datetime(*u, z.clone())
+                    .into_series()
+            },
             #[cfg(feature = "dtype-duration")]
             Duration(u) => {
                 let ca = self.duration().unwrap();
-                ca.physical().take_chunked_unchecked(by, sorted).into_duration(*u).into_series()
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_duration(*u)
+                    .into_series()
             },
             #[cfg(feature = "dtype-time")]
             Time => {
                 let ca = self.time().unwrap();
-                ca.physical().take_chunked_unchecked(by, sorted).into_time().into_series()
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_time()
+                    .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(revmap, ord) | Enum(revmap, ord) => {
@@ -193,7 +204,8 @@ impl TakeChunked for Series {
                     revmap.as_ref().unwrap().clone(),
                     matches!(self.dtype(), Enum(..)),
                     *ord,
-                ).into_series()
+                )
+                .into_series()
             },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
@@ -239,7 +251,7 @@ impl TakeChunked for Series {
                     .into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_opt_unchecked_object(&self, by),
+            Object(_, _) => take_opt_unchecked_object(self, by),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
                 let ca = self.decimal().unwrap();
@@ -250,22 +262,34 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-date")]
             Date => {
                 let ca = self.date().unwrap();
-                ca.physical().take_opt_chunked_unchecked(by).into_date().into_series()
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_date()
+                    .into_series()
             },
             #[cfg(feature = "dtype-datetime")]
             Datetime(u, z) => {
                 let ca = self.datetime().unwrap();
-                ca.physical().take_opt_chunked_unchecked(by).into_datetime(*u, z.clone()).into_series()
-            }
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_datetime(*u, z.clone())
+                    .into_series()
+            },
             #[cfg(feature = "dtype-duration")]
             Duration(u) => {
                 let ca = self.duration().unwrap();
-                ca.physical().take_opt_chunked_unchecked(by).into_duration(*u).into_series()
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_duration(*u)
+                    .into_series()
             },
             #[cfg(feature = "dtype-time")]
             Time => {
                 let ca = self.time().unwrap();
-                ca.physical().take_opt_chunked_unchecked(by).into_time().into_series()
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_time()
+                    .into_series()
             },
             #[cfg(feature = "dtype-categorical")]
             Categorical(revmap, ord) | Enum(revmap, ord) => {
@@ -276,7 +300,8 @@ impl TakeChunked for Series {
                     revmap.as_ref().unwrap().clone(),
                     matches!(self.dtype(), Enum(..)),
                     *ord,
-                ).into_series()
+                )
+                .into_series()
             },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
