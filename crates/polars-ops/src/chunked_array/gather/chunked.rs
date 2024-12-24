@@ -93,21 +93,6 @@ pub trait TakeChunkedHorPar: IntoDf {
 
 impl TakeChunkedHorPar for DataFrame {}
 
-fn prepare_series(s: &Series) -> Cow<Series> {
-    let phys = if s.dtype().is_nested() {
-        Cow::Borrowed(s)
-    } else {
-        s.to_physical_repr()
-    };
-    // If this is hit the cast rechunked the data and the gather will OOB
-    assert_eq!(
-        phys.chunks().len(),
-        s.chunks().len(),
-        "implementation error"
-    );
-    phys
-}
-
 impl TakeChunked for Column {
     unsafe fn take_chunked_unchecked<const B: u64>(
         &self,
@@ -134,110 +119,168 @@ impl TakeChunked for Series {
         by: &[ChunkId<B>],
         sorted: IsSorted,
     ) -> Self {
-        let phys = prepare_series(self);
         use DataType::*;
-        let out = match phys.dtype() {
+        match self.dtype() {
             dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
-                 let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
-                 ca.take_chunked_unchecked(by, sorted).into_series()
+                with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                    ca.take_chunked_unchecked(by, sorted).into_series()
                 })
             },
             Boolean => {
-                let ca = phys.bool().unwrap();
+                let ca = self.bool().unwrap();
                 ca.take_chunked_unchecked(by, sorted).into_series()
             },
             Binary => {
-                let ca = phys.binary().unwrap();
+                let ca = self.binary().unwrap();
                 take_unchecked_binview(ca, by, sorted).into_series()
             },
             String => {
-                let ca = phys.str().unwrap();
+                let ca = self.str().unwrap();
                 take_unchecked_binview(ca, by, sorted).into_series()
             },
             List(_) => {
-                let ca = phys.list().unwrap();
+                let ca = self.list().unwrap();
                 ca.take_chunked_unchecked(by, sorted).into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
-                let ca = phys.array().unwrap();
+                let ca = self.array().unwrap();
                 ca.take_chunked_unchecked(by, sorted).into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                let ca = phys.struct_().unwrap();
+                let ca = self.struct_().unwrap();
                 ca._apply_fields(|s| s.take_chunked_unchecked(by, sorted))
                     .expect("infallible")
                     .into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_unchecked_object(&phys, by, sorted),
+            Object(_, _) => take_unchecked_object(&self, by, sorted),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
-                let ca = phys.decimal().unwrap();
+                let ca = self.decimal().unwrap();
                 let out = ca.0.take_chunked_unchecked(by, sorted);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
+            #[cfg(feature = "dtype-date")]
+            Date => {
+                let ca = self.date().unwrap();
+                ca.physical().take_chunked_unchecked(by, sorted).into_date().into_series()
+            },
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(u, z) => {
+                let ca = self.datetime().unwrap();
+                ca.physical().take_chunked_unchecked(by, sorted).into_datetime(*u, z.clone()).into_series()
+            }
+            #[cfg(feature = "dtype-duration")]
+            Duration(u) => {
+                let ca = self.duration().unwrap();
+                ca.physical().take_chunked_unchecked(by, sorted).into_duration(*u).into_series()
+            },
+            #[cfg(feature = "dtype-time")]
+            Time => {
+                let ca = self.time().unwrap();
+                ca.physical().take_chunked_unchecked(by, sorted).into_time().into_series()
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(revmap, ord) | Enum(revmap, ord) => {
+                let ca = self.categorical().unwrap();
+                let t = ca.physical().take_chunked_unchecked(by, sorted);
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    t,
+                    revmap.as_ref().unwrap().clone(),
+                    matches!(self.dtype(), Enum(..)),
+                    *ord,
+                ).into_series()
+            },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
-        };
-        unsafe { out.from_physical_unchecked(self.dtype()).unwrap() }
+        }
     }
 
     /// Take function that checks of null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
-        let phys = prepare_series(self);
         use DataType::*;
-        let out = match phys.dtype() {
+        match self.dtype() {
             dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
-                 let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
+                with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
+                 let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                  ca.take_opt_chunked_unchecked(by).into_series()
                 })
             },
             Boolean => {
-                let ca = phys.bool().unwrap();
+                let ca = self.bool().unwrap();
                 ca.take_opt_chunked_unchecked(by).into_series()
             },
             Binary => {
-                let ca = phys.binary().unwrap();
+                let ca = self.binary().unwrap();
                 take_unchecked_binview_opt(ca, by).into_series()
             },
             String => {
-                let ca = phys.str().unwrap();
+                let ca = self.str().unwrap();
                 take_unchecked_binview_opt(ca, by).into_series()
             },
             List(_) => {
-                let ca = phys.list().unwrap();
+                let ca = self.list().unwrap();
                 ca.take_opt_chunked_unchecked(by).into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
-                let ca = phys.array().unwrap();
+                let ca = self.array().unwrap();
                 ca.take_opt_chunked_unchecked(by).into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                let ca = phys.struct_().unwrap();
+                let ca = self.struct_().unwrap();
                 ca._apply_fields(|s| s.take_opt_chunked_unchecked(by))
                     .expect("infallible")
                     .into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_opt_unchecked_object(&phys, by),
+            Object(_, _) => take_opt_unchecked_object(&self, by),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
-                let ca = phys.decimal().unwrap();
+                let ca = self.decimal().unwrap();
                 let out = ca.0.take_opt_chunked_unchecked(by);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
+            #[cfg(feature = "dtype-date")]
+            Date => {
+                let ca = self.date().unwrap();
+                ca.physical().take_opt_chunked_unchecked(by).into_date().into_series()
+            },
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(u, z) => {
+                let ca = self.datetime().unwrap();
+                ca.physical().take_opt_chunked_unchecked(by).into_datetime(*u, z.clone()).into_series()
+            }
+            #[cfg(feature = "dtype-duration")]
+            Duration(u) => {
+                let ca = self.duration().unwrap();
+                ca.physical().take_opt_chunked_unchecked(by).into_duration(*u).into_series()
+            },
+            #[cfg(feature = "dtype-time")]
+            Time => {
+                let ca = self.time().unwrap();
+                ca.physical().take_opt_chunked_unchecked(by).into_time().into_series()
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(revmap, ord) | Enum(revmap, ord) => {
+                let ca = self.categorical().unwrap();
+                let ret = ca.physical().take_opt_chunked_unchecked(by);
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    ret,
+                    revmap.as_ref().unwrap().clone(),
+                    matches!(self.dtype(), Enum(..)),
+                    *ord,
+                ).into_series()
+            },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
-        };
-        unsafe { out.from_physical_unchecked(self.dtype()).unwrap() }
+        }
     }
 }
 
