@@ -373,7 +373,7 @@ class DateTimeNameSpace:
         """
         return self.to_string(format)
 
-    def millennium(self) -> Expr:
+    def millennium(self) -> Series:
         """
         Extract the millennium from underlying representation.
 
@@ -383,8 +383,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`Int32`.
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------
@@ -411,7 +411,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def century(self) -> Expr:
+    def century(self) -> Series:
         """
         Extract the century from underlying representation.
 
@@ -421,8 +421,8 @@ class DateTimeNameSpace:
 
         Returns
         -------
-        Expr
-            Expression of data type :class:`Int32`.
+        Series
+            Series of data type :class:`Int32`.
 
         Examples
         --------
@@ -1924,7 +1924,7 @@ class DateTimeNameSpace:
         ]
         """
 
-    def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Expr:
+    def combine(self, time: dt.time | Series, time_unit: TimeUnit = "us") -> Series:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
 
