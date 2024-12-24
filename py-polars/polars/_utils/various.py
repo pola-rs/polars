@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import warnings
+from collections import Counter
 from collections.abc import (
     Collection,
     Generator,
@@ -42,7 +43,7 @@ from polars.dependencies import _check_for_numpy, import_optional, subprocess
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Reversible
+    from collections.abc import Iterator, MutableMapping, Reversible
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -245,6 +246,16 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
     seen: set[Any] = set()
     add_ = seen.add
     return [v for v in values if not (v in seen or add_(v))]
+
+
+def deduplicate_names(names: Iterable[str]) -> list[str]:
+    """Ensure name uniqueness by appending a counter to subsequent duplicates."""
+    seen: MutableMapping[str, int] = Counter()
+    deduped = []
+    for nm in names:
+        deduped.append(f"{nm}{seen[nm] - 1}" if nm in seen else nm)
+        seen[nm] += 1
+    return deduped
 
 
 @overload

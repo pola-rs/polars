@@ -312,6 +312,49 @@ def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
 @pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
+        # TODO: uncomment once fastexcel offers a suitable param
+        # (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+    ],
+)
+def test_read_dropped_cols(
+    read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+
+    df1 = read_spreadsheet(
+        spreadsheet_path,
+        sheet_name="test4",
+        **params,
+    )
+    df2 = read_spreadsheet(
+        spreadsheet_path,
+        sheet_name="test4",
+        drop_empty_cols=False,
+        **params,
+    )
+    assert df1.to_dict(as_series=False) == {  # type: ignore[attr-defined]
+        "cardinality": [1, 3, 15, 30, 150, 300],
+        "rows_by_key": [0.05059, 0.04478, 0.04414, 0.05245, 0.05395, 0.05677],
+        "iter_groups": [0.04806, 0.04223, 0.04774, 0.04864, 0.0572, 0.06945],
+    }
+    assert df2.to_dict(as_series=False) == {  # type: ignore[attr-defined]
+        "": [None, None, None, None, None, None],
+        "cardinality": [1, 3, 15, 30, 150, 300],
+        "rows_by_key": [0.05059, 0.04478, 0.04414, 0.05245, 0.05395, 0.05677],
+        "iter_groups": [0.04806, 0.04223, 0.04774, 0.04864, 0.0572, 0.06945],
+        "0": [None, None, None, None, None, None],
+        "1": [None, None, None, None, None, None],
+    }
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
