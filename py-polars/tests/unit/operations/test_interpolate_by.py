@@ -112,7 +112,7 @@ def test_interpolate_by_leading_nulls() -> None:
     result = (
         df.sort("times", descending=True)
         .with_columns(pl.col("values").interpolate_by("times"))
-        .sort("times")
+        .sort("times", maintain_order=True)
         .drop("times")
     )
     assert_frame_equal(result, expected)
