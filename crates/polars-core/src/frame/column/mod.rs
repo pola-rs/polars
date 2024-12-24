@@ -894,8 +894,167 @@ impl Column {
     }
 
     pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        if self.is_empty() {
+            return IdxCa::from_vec(self.name().clone(), Vec::new());
+        }
+
+        if self.null_count() == self.len() {
+            // We might need to maintain order so just respect the descending parameter.
+            let values = if options.descending {
+                (0..self.len() as IdxSize).rev().collect()
+            } else {
+                (0..self.len() as IdxSize).collect()
+            };
+
+            return IdxCa::from_vec(self.name().clone(), values);
+        }
+
+        let is_sorted = Some(self.is_sorted_flag());
+        let Some(is_sorted) = is_sorted.filter(|v| !matches!(v, IsSorted::Not)) else {
+            return self.as_materialized_series().arg_sort(options);
+        };
+
+        // Fast path: the data is sorted.
+        let is_sorted_dsc = matches!(is_sorted, IsSorted::Descending);
+        let invert = options.descending != is_sorted_dsc;
+
+        let mut values = Vec::with_capacity(self.len());
+
+        #[inline(never)]
+        fn extend(
+            start: IdxSize,
+            end: IdxSize,
+            slf: &Column,
+            values: &mut Vec<IdxSize>,
+            is_only_nulls: bool,
+            invert: bool,
+            maintain_order: bool,
+        ) {
+            debug_assert!(start <= end);
+            debug_assert!(start as usize <= slf.len());
+            debug_assert!(end as usize <= slf.len());
+
+            if !invert || is_only_nulls {
+                values.extend(start..end);
+                return;
+            }
+
+            // If we don't have to maintain order but we have to invert. Just flip it around.
+            if !maintain_order {
+                values.extend((start..end).rev());
+                return;
+            }
+
+            // If we want to maintain order but we also needs to invert, we need to invert
+            // per group of items.
+            //
+            // @NOTE: Since the column is sorted, arg_unique can also take a fast path and
+            // just do a single traversal.
+            let arg_unique = slf
+                .slice(start as i64, (end - start) as usize)
+                .arg_unique()
+                .unwrap();
+
+            assert!(!arg_unique.has_nulls());
+
+            let num_unique = arg_unique.len();
+
+            // Fast path: all items are unique.
+            if num_unique == (end - start) as usize {
+                values.extend((start..end).rev());
+                return;
+            }
+
+            if num_unique == 1 {
+                values.extend(start..end);
+                return;
+            }
+
+            let mut prev_idx = end - start;
+            for chunk in arg_unique.downcast_iter() {
+                for &idx in chunk.values().as_slice().iter().rev() {
+                    values.extend(start + idx..start + prev_idx);
+                    prev_idx = idx;
+                }
+            }
+        }
+        macro_rules! extend {
+            ($start:expr, $end:expr) => {
+                extend!($start, $end, is_only_nulls = false);
+            };
+            ($start:expr, $end:expr, is_only_nulls = $is_only_nulls:expr) => {
+                extend(
+                    $start,
+                    $end,
+                    self,
+                    &mut values,
+                    $is_only_nulls,
+                    invert,
+                    options.maintain_order,
+                );
+            };
+        }
+
+        let length = self.len() as IdxSize;
+        let null_count = self.null_count() as IdxSize;
+
+        if null_count == 0 {
+            extend!(0, length);
+        } else {
+            let has_nulls_last = self.get(self.len() - 1).unwrap().is_null();
+            match (options.nulls_last, has_nulls_last) {
+                (true, true) => {
+                    // Current: Nulls last, Wanted: Nulls last
+                    extend!(0, length - null_count);
+                    extend!(length - null_count, length, is_only_nulls = true);
+                },
+                (true, false) => {
+                    // Current: Nulls first, Wanted: Nulls last
+                    extend!(null_count, length);
+                    extend!(0, null_count, is_only_nulls = true);
+                },
+                (false, true) => {
+                    // Current: Nulls last, Wanted: Nulls first
+                    extend!(length - null_count, length, is_only_nulls = true);
+                    extend!(0, length - null_count);
+                },
+                (false, false) => {
+                    // Current: Nulls first, Wanted: Nulls first
+                    extend!(0, null_count, is_only_nulls = true);
+                    extend!(null_count, length);
+                },
+            }
+        }
+
+        // @NOTE: This can theoretically be pushed into the previous operation but it is really
+        // worth it... probably not...
+        if let Some((limit, limit_dsc)) = options.limit {
+            let limit = limit.min(length);
+
+            if limit_dsc {
+                values = values.drain((length - limit) as usize..).collect();
+            } else {
+                values.truncate(limit as usize);
+            }
+        }
+
+        IdxCa::from_vec(self.name().clone(), values)
+    }
+
+    pub fn arg_sort_multiple(
+        &self,
+        by: &[Column],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
         // @scalar-opt
-        self.as_materialized_series().arg_sort(options)
+        self.as_materialized_series().arg_sort_multiple(by, options)
+    }
+
+    pub fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        match self {
+            Column::Scalar(s) => Ok(IdxCa::new_vec(s.name().clone(), vec![0])),
+            _ => self.as_materialized_series().arg_unique(),
+        }
     }
 
     pub fn bit_repr(&self) -> Option<BitRepr> {
@@ -986,8 +1145,11 @@ impl Column {
     }
 
     pub fn is_sorted_flag(&self) -> IsSorted {
-        // @scalar-opt
-        self.as_materialized_series().is_sorted_flag()
+        match self {
+            Column::Series(s) => s.is_sorted_flag(),
+            Column::Partitioned(s) => s.partitions().is_sorted_flag(),
+            Column::Scalar(_) => IsSorted::Ascending,
+        }
     }
 
     pub fn unique(&self) -> PolarsResult<Column> {
