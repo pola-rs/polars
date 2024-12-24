@@ -1013,7 +1013,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         format: ExplainFormat = "plain",
         optimized: bool = True,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1042,8 +1042,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             run.
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -1101,7 +1099,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if optimized:
             ldf = self._ldf.optimization_toggle(
                 type_coercion,
-                type_check,
+                _type_check,
                 predicate_pushdown,
                 projection_pushdown,
                 simplify_expression,
@@ -1134,7 +1132,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1166,8 +1164,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Passed to matplotlib if `show == True`.
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -1202,7 +1198,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         _ldf = self._ldf.optimization_toggle(
             type_coercion,
-            type_check,
+            _type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1610,7 +1606,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1639,8 +1635,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -1712,7 +1706,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
-            type_check,
+            _type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1773,7 +1767,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1795,7 +1789,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1816,7 +1810,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1843,8 +1837,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -2022,7 +2014,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
-            type_check,
+            _type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -2066,7 +2058,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: Literal[True],
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2085,7 +2077,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: Literal[False] = False,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2103,7 +2095,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: bool = False,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2136,8 +2128,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Return wrapper to `gevent.event.AsyncResult` instead of Awaitable
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -2228,7 +2218,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         ldf = self._ldf.optimization_toggle(
             type_coercion,
-            type_check,
+            _type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -2293,7 +2283,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2360,8 +2350,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -2410,7 +2398,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=type_check,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2469,7 +2457,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: str | None = "zstd",
         maintain_order: bool = True,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2503,8 +2491,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -2553,7 +2539,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=type_check,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2603,7 +2589,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2685,8 +2671,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -2742,7 +2726,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=type_check,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2791,7 +2775,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         maintain_order: bool = True,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2822,8 +2806,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Setting this to `False` will be slightly faster.
         type_coercion
             Do type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Do predicate pushdown optimization.
         projection_pushdown
@@ -2872,7 +2854,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
-            type_check=type_check,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2905,7 +2887,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2922,7 +2904,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self._ldf.optimization_toggle(
             type_coercion=type_coercion,
-            type_check=type_check,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2947,7 +2929,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n_rows: int = 500,
         *,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2982,7 +2964,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._fetch(
             n_rows=n_rows,
             type_coercion=type_coercion,
-            type_check=type_check,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -3000,7 +2982,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n_rows: int = 500,
         *,
         type_coercion: bool = True,
-        type_check: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -3025,8 +3007,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collect n_rows from the data sources.
         type_coercion
             Run type coercion optimization.
-        type_check
-            Do type checking of the intermediate representation.
         predicate_pushdown
             Run predicate pushdown optimization.
         projection_pushdown
@@ -3104,7 +3084,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         lf = self._ldf.optimization_toggle(
             type_coercion,
-            type_check,
+            _type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
