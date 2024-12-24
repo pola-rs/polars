@@ -538,7 +538,6 @@ where
         let mut buffers = Vec::with_capacity(8);
 
         if ca.has_nulls() {
-            let mut validity = BitmapBuilder::with_capacity(by.len());
             for id in by.iter() {
                 let (chunk_idx, array_idx) = id.extract();
 
@@ -585,7 +584,7 @@ where
 
         buffers.into()
     };
-
+    
     let arr = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
         V::DATA_TYPE,
         views.into(),
