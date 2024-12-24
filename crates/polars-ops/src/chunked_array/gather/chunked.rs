@@ -584,7 +584,7 @@ where
 
         buffers.into()
     };
-    
+
     let arr = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
         V::DATA_TYPE,
         views.into(),
