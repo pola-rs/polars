@@ -1373,12 +1373,10 @@ def test_filter() -> None:
 
     assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
     assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
-
-
-def test_filter_sequence() -> None:
-    s = pl.Series("a", [1, 2, 3])
-    assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
     assert_series_equal(s.filter(np.array([True, False, True])), pl.Series("a", [1, 3]))
+
+    with pytest.raises(RuntimeError, match="Expected a boolean mask"):
+        s.filter(np.array([1, 0, 1]))
 
 
 def test_gather_every() -> None:
