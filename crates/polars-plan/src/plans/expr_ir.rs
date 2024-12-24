@@ -106,6 +106,10 @@ impl ExprIR {
         self
     }
 
+    pub(crate) fn set_dtype(&mut self, dtype: DataType) {
+        self.output_dtype = OnceLock::from(dtype);
+    }
+
     pub fn from_node(node: Node, arena: &Arena<AExpr>) -> Self {
         let mut out = Self {
             node,

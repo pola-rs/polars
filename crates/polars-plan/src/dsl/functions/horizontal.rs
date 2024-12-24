@@ -25,15 +25,15 @@ where
     F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
-    let mut exprs = exprs.as_ref().to_vec();
-    exprs.push(acc);
+    let mut exprs_v = Vec::with_capacity(exprs.as_ref().len() + 1);
+    exprs_v.push(acc);
+    exprs_v.extend(exprs.as_ref().iter().cloned());
+    let exprs = exprs_v;
 
     let function = new_column_udf(move |columns: &mut [Column]| {
-        let mut columns = columns.to_vec();
-        let mut acc = columns.pop().unwrap();
-
-        for c in columns {
-            if let Some(a) = f(acc.clone(), c)? {
+        let mut acc = columns.first().unwrap().clone();
+        for c in &columns[1..] {
+            if let Some(a) = f(acc.clone(), c.clone())? {
                 acc = a
             }
         }
@@ -43,7 +43,8 @@ where
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: GetOutput::super_type(),
+        // Take the type of the accumulator.
+        output_type: GetOutput::first(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             flags: FunctionFlags::default()

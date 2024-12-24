@@ -161,7 +161,7 @@ pub fn optimize(
 
         if projection_pushdown_opt.is_count_star {
             let mut count_star_opt = CountStar::new();
-            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top);
+            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top)?;
         }
     }
 

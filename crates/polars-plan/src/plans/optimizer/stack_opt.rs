@@ -31,7 +31,7 @@ impl StackOptimizer {
                 // Apply rules
                 for rule in rules.iter_mut() {
                     // keep iterating over same rule
-                    while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node) {
+                    while let Some(x) = rule.optimize_plan(lp_arena, expr_arena, current_node)? {
                         lp_arena.replace(current_node, x);
                         changed = true;
                     }
@@ -93,8 +93,8 @@ pub trait OptimizationRule {
         _lp_arena: &mut Arena<IR>,
         _expr_arena: &mut Arena<AExpr>,
         _node: Node,
-    ) -> Option<IR> {
-        None
+    ) -> PolarsResult<Option<IR>> {
+        Ok(None)
     }
     fn optimize_expr(
         &mut self,

@@ -172,6 +172,12 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle type check optimization.
+    pub fn with_type_check(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::TYPE_CHECK, toggle);
+        self
+    }
+
     /// Toggle expression simplification optimization on or off.
     pub fn with_simplify_expr(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::SIMPLIFY_EXPR, toggle);
