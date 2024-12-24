@@ -286,7 +286,7 @@ pub fn mean_horizontal(
 
         // Convert to physical
         columns
-            .into_iter()
+            .iter()
             .map(|c| c.cast(&DataType::Int64).unwrap())
             .collect::<Vec<_>>()
     } else if first_dtype.is_numeric()
@@ -314,7 +314,7 @@ pub fn mean_horizontal(
             }
         }
         columns
-            .into_iter()
+            .iter()
             .map(|s| s.cast(&DataType::Int64).unwrap().into_column())
             .collect::<Vec<_>>()
     } else {
@@ -386,7 +386,7 @@ pub fn mean_horizontal(
                                 .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
                         } else {
                             // Cast to original
-                            value.cast(&first_dtype)
+                            value.cast(first_dtype)
                         }
                     } else {
                         Ok(value)
