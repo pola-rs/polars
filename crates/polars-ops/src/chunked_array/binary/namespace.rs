@@ -3,9 +3,9 @@ use std::borrow::Cow;
 
 #[cfg(feature = "binary_encoding")]
 use arrow::array::Array;
-use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
 use arrow::datatypes::PhysicalType;
+use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
@@ -139,17 +139,19 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     #[allow(clippy::wrong_self_convention)]
     fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
         unsafe {
-            Ok(
-                Series::from_chunks_and_dtype_unchecked(
-                    self.as_binary().name().clone(),
-                    self._from_buffer_inner(&dtype, is_little_endian)?,
-                    dtype
-                )
-            )
+            Ok(Series::from_chunks_and_dtype_unchecked(
+                self.as_binary().name().clone(),
+                self._from_buffer_inner(&dtype, is_little_endian)?,
+                dtype,
+            ))
         }
     }
 
-    fn _from_buffer_inner(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Vec<Box<dyn Array>>> {
+    fn _from_buffer_inner(
+        &self,
+        dtype: &DataType,
+        is_little_endian: bool,
+    ) -> PolarsResult<Vec<Box<dyn Array>>> {
         let arrow_data_type = dtype.to_arrow(CompatLevel::newest());
         let ca = self.as_binary();
 
@@ -169,11 +171,15 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             },
             PhysicalType::FixedSizeList => {
                 let leaf_dtype = dtype.leaf_dtype();
-                let leaf_physical_type = leaf_dtype.to_arrow(CompatLevel::newest()).to_physical_type();
+                let leaf_physical_type = leaf_dtype
+                    .to_arrow(CompatLevel::newest())
+                    .to_physical_type();
                 let primitive_type = if let PhysicalType::Primitive(x) = leaf_physical_type {
                     x
                 } else {
-                    return Err(polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed in arrays."));
+                    return Err(
+                        polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed in arrays."),
+                    );
                 };
                 // Since we know it's a physical size, we
                 let element_size = leaf_dtype.byte_size().unwrap();

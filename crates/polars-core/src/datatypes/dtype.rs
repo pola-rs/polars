@@ -925,9 +925,7 @@ impl DataType {
             DataType::Datetime(_, _) => Some(8),
             DataType::Duration(_) => Some(8),
             DataType::Time => Some(8),
-            DataType::Array(data_type, size) => {
-                data_type.byte_size().map(|v| v * size)
-            }
+            DataType::Array(data_type, size) => data_type.byte_size().map(|v| v * size),
             DataType::List(_) => None,
             DataType::Object(_, _) => None,
             DataType::Null => Some(0),

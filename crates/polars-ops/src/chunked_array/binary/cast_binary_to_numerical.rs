@@ -1,4 +1,7 @@
-use arrow::array::{Array, BinaryViewArray, FixedSizeListArray, MutableArray, MutableFixedSizeListArray, MutablePrimitiveArray, PrimitiveArray, TryPush};
+use arrow::array::{
+    Array, BinaryViewArray, FixedSizeListArray, MutableArray, MutableFixedSizeListArray,
+    MutablePrimitiveArray, PrimitiveArray, TryPush,
+};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 use polars_error::PolarsResult;
@@ -84,7 +87,7 @@ pub(super) fn try_cast_binview_to_array_primitive<T>(
     from: &BinaryViewArray,
     to: &ArrowDataType,
     is_little_endian: bool,
-    element_size: usize
+    element_size: usize,
 ) -> PolarsResult<FixedSizeListArray>
 where
     T: Cast + NativeType,
@@ -96,28 +99,28 @@ where
     };
     let mut result = MutableFixedSizeListArray::new(MutablePrimitiveArray::<T>::new(), size);
 
-    from.iter().try_for_each(
-        |x| {
-            if let Some(x) = x {
-                if x.len() % element_size != 0 {
-                    todo!("Return error here.")
-                }
+    from.iter().try_for_each(|x| {
+        if let Some(x) = x {
+            if x.len() % element_size != 0 {
+                todo!("Return error here.")
+            }
 
-                result.try_push(
-                    Some(x.chunks_exact(element_size).map(|val|
+            result.try_push(Some(
+                x.chunks_exact(element_size)
+                    .map(|val| {
                         if is_little_endian {
                             T::cast_le(val)
                         } else {
                             T::cast_be(val)
                         }
-                    ).collect::<Vec<_>>())
-                )
-            } else {
-                result.push_null();
-                Ok(())
-            }
+                    })
+                    .collect::<Vec<_>>(),
+            ))
+        } else {
+            result.push_null();
+            Ok(())
         }
-    )?;
+    })?;
 
     Ok(result.into())
 }
@@ -126,12 +129,17 @@ pub(super) fn cast_binview_to_array_primitive_dyn<T>(
     from: &dyn Array,
     to: &ArrowDataType,
     is_little_endian: bool,
-    element_size: usize
+    element_size: usize,
 ) -> PolarsResult<Box<dyn Array>>
 where
     T: Cast + NativeType,
 {
     let from = from.as_any().downcast_ref().unwrap();
 
-    Ok(Box::new(try_cast_binview_to_array_primitive::<T>(from, to, is_little_endian, element_size)?))
+    Ok(Box::new(try_cast_binview_to_array_primitive::<T>(
+        from,
+        to,
+        is_little_endian,
+        element_size,
+    )?))
 }

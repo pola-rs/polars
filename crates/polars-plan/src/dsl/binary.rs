@@ -71,12 +71,16 @@ impl BinaryNameSpace {
         let shape = to_type.get_shape();
 
         let call_to_type = if let Some(ref shape) = shape {
-            DataType::Array(Box::new(leaf_type.clone()), shape.iter().fold(1, |a, b| a * b))
+            DataType::Array(
+                Box::new(leaf_type.clone()),
+                shape.iter().fold(1, |a, b| a * b),
+            )
         } else {
             to_type
         };
 
-        let result = self.0
+        let result = self
+            .0
             .map_private(FunctionExpr::BinaryExpr(BinaryFunction::FromBuffer(
                 call_to_type,
                 is_little_endian,
@@ -89,9 +93,7 @@ impl BinaryNameSpace {
                 .collect();
             dimensions.insert(0, ReshapeDimension::Infer);
 
-
-            result
-                .apply_private(FunctionExpr::Reshape(dimensions))
+            result.apply_private(FunctionExpr::Reshape(dimensions))
         } else {
             result
         }
