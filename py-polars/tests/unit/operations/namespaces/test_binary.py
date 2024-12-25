@@ -210,6 +210,7 @@ def test_reinterpret(
 
         assert_frame_equal(result, expected_df)
 
+
 @pytest.mark.parametrize(
     ("dtype", "inner_type_size", "struct_type"),
     [
@@ -254,7 +255,9 @@ def test_reinterpret_list(
         expected = []
         for elem_bytes in byte_arr:
             vals = [
-                struct.unpack_from(f"{struct_endianness}{struct_type}", elem_bytes[idx:idx + inner_type_size])[0]
+                struct.unpack_from(
+                    f"{struct_endianness}{struct_type}", elem_bytes[idx:idx + inner_type_size]
+                )[0]
                 for idx in range(0, type_size, inner_type_size)
             ]
             if len(shape) > 1:
