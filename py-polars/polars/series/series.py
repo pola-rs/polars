@@ -45,7 +45,6 @@ from polars._utils.unstable import unstable
 from polars._utils.various import (
     BUILDING_SPHINX_DOCS,
     _is_generator,
-    is_bool_sequence,
     no_default,
     parse_version,
     scale_bytes,
@@ -3061,9 +3060,7 @@ class Series:
                 3
         ]
         """
-        if is_bool_sequence(predicate, include_series=True):
-            predicate = Series("", predicate, dtype=Boolean)
-        elif isinstance(predicate, Iterable):
+        if not isinstance(predicate, Series):
             predicate = Series("", predicate)
         return self._from_pyseries(self._s.filter(predicate._s))
 
