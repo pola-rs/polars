@@ -942,7 +942,7 @@ impl DataType {
                         return None;
                     }
                 }
-                return Some(total_size)
+                Some(total_size)
             },
             DataType::Unknown(_) => None,
         }
