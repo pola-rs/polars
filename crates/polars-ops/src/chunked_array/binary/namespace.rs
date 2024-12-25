@@ -190,44 +190,6 @@ pub trait BinaryNameSpaceImpl: AsBinary {
                         }).collect()
                     }
                 })
-
-                // // unwrap is safe since all lists have inner type
-                // // let inner_dtype = dtype.inner_dtype().unwrap();
-                // let size  = if let DataType::Array(inner_dtype, size) = dtype {
-                //     *size
-                // } else {
-                //     todo!("alfafldasd")
-                // };
-
-                // let (inner_dtype, offsets): (_, OffsetsBuffer<i64>) = if let DataType::Array(inner_dtype, size) = dtype {
-                //     // TODO: Nicer way of doing this when I'm online
-                //     let mut offsets = Vec::with_capacity(*size);
-                //     let mut idx = 0;
-                //     let type_size = inner_dtype.byte_size().unwrap();
-                //     while idx < *size {
-                //         offsets.push((idx * type_size) as i64);
-                //         idx += 1
-                //     }
-                //     (
-                //         inner_dtype,
-                //         offsets.try_into().unwrap()
-                //     )
-                // } else {
-                //     todo!("Some reasonable error here.")
-                // };
-                // // ChunkedArray::as_list()
-                // self._from_buffer_inner(inner_dtype, is_little_endian).map(|arr_vec| {
-                //     arr_vec.into_iter().map(|arr| {
-                //         println!("Array dtype: {:?}", arr.dtype());
-                //         println!("Values: {arr:?}");
-                //         FixedSizeListArray::new(
-                //             arrow_data_type.clone(),
-                //             size,
-                //             arr,
-                //             None,
-                //         ).boxed()
-                //     }).collect()
-                // })
             },
             _ => Err(
                 polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
