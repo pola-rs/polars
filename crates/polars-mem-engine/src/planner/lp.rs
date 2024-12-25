@@ -10,7 +10,7 @@ use crate::utils::*;
 fn partitionable_gb(
     keys: &[ExprIR],
     aggs: &[ExprIR],
-    _input_schema: &Schema,
+    input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
     apply: &Option<Arc<dyn DataFrameUdf>>,
 ) -> bool {
@@ -33,95 +33,7 @@ fn partitionable_gb(
             }
         }
 
-        if partitionable {
-            for agg in aggs {
-                let agg = agg.node();
-                let aexpr = expr_arena.get(agg);
-                let depth = (expr_arena).iter(agg).count();
-
-                // These single expressions are partitionable
-                if matches!(aexpr, AExpr::Len) {
-                    continue;
-                }
-                // col()
-                // lit() etc.
-                if depth == 1 {
-                    partitionable = false;
-                    break;
-                }
-
-                let has_aggregation =
-                    |node: Node| has_aexpr(node, expr_arena, |ae| matches!(ae, AExpr::Agg(_)));
-
-                // check if the aggregation type is partitionable
-                // only simple aggregation like col().sum
-                // that can be divided in to the aggregation of their partitions are allowed
-                if !((expr_arena).iter(agg).all(|(_, ae)| {
-                    use AExpr::*;
-                    match ae {
-                        // struct is needed to keep both states
-                        #[cfg(feature = "dtype-struct")]
-                        Agg(IRAggExpr::Mean(_)) => {
-                            // only numeric means for now.
-                            // logical types seem to break because of casts to float.
-                            matches!(expr_arena.get(agg).get_type(_input_schema, Context::Default, expr_arena).map(|dt| {
-                                        dt.is_numeric()}), Ok(true))
-                        },
-                        // only allowed expressions
-                        Agg(agg_e) => {
-                            matches!(
-                                            agg_e,
-                                            IRAggExpr::Min{..}
-                                                | IRAggExpr::Max{..}
-                                                | IRAggExpr::Sum(_)
-                                                | IRAggExpr::Last(_)
-                                                | IRAggExpr::First(_)
-                                                | IRAggExpr::Count(_, true)
-                                        )
-                        },
-                        Function {input, options, ..} => {
-                            matches!(options.collect_groups, ApplyOptions::ElementWise) && input.len() == 1 &&
-                                !has_aggregation(input[0].node())
-                        }
-                        BinaryExpr {left, right, ..} => {
-                            !has_aggregation(*left) && !has_aggregation(*right)
-                        }
-                        Ternary {truthy, falsy, predicate,..} => {
-                            !has_aggregation(*truthy) && !has_aggregation(*falsy) && !has_aggregation(*predicate)
-                        }
-                        Column(_) | Len | Literal(_) | Cast {..} => {
-                            true
-                        }
-                        _ => {
-                            false
-                        },
-                    }
-                }) &&
-                    // we only allow expressions that end with an aggregation
-                    matches!(aexpr, AExpr::Agg(_)))
-                {
-                    partitionable = false;
-                    break;
-                }
-
-                #[cfg(feature = "object")]
-                {
-                    for name in aexpr_to_leaf_names(agg, expr_arena) {
-                        let dtype = _input_schema.get(&name).unwrap();
-
-                        if let DataType::Object(_, _) = dtype {
-                            partitionable = false;
-                            break;
-                        }
-                    }
-                    if !partitionable {
-                        break;
-                    }
-                }
-            }
-        }
-    } else {
-        partitionable = false;
+        partitionable &= can_pre_agg_exprs(aggs, expr_arena, input_schema);
     }
     partitionable
 }
