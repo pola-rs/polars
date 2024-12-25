@@ -1,13 +1,13 @@
-use std::borrow::Cow;
 use std::fmt::Debug;
 
-use arrow::array::{Array, BinaryViewArray, View};
-use arrow::bitmap::MutableBitmap;
+use arrow::array::{Array, BinaryViewArrayGeneric, View, ViewType};
+use arrow::bitmap::BitmapBuilder;
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use polars_core::prelude::gather::_update_gather_sorted_flag;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
+use polars_core::utils::Container;
 use polars_core::with_match_physical_numeric_polars_type;
 
 use crate::frame::IntoDf;
@@ -91,21 +91,6 @@ pub trait TakeChunkedHorPar: IntoDf {
 
 impl TakeChunkedHorPar for DataFrame {}
 
-fn prepare_series(s: &Series) -> Cow<Series> {
-    let phys = if s.dtype().is_nested() {
-        Cow::Borrowed(s)
-    } else {
-        s.to_physical_repr()
-    };
-    // If this is hit the cast rechunked the data and the gather will OOB
-    assert_eq!(
-        phys.chunks().len(),
-        s.chunks().len(),
-        "implementation error"
-    );
-    phys
-}
-
 impl TakeChunked for Column {
     unsafe fn take_chunked_unchecked<const B: u64>(
         &self,
@@ -132,116 +117,194 @@ impl TakeChunked for Series {
         by: &[ChunkId<B>],
         sorted: IsSorted,
     ) -> Self {
-        let phys = prepare_series(self);
         use DataType::*;
-        let out = match phys.dtype() {
+        match self.dtype() {
             dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
-                 let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
-                 ca.take_chunked_unchecked(by, sorted).into_series()
+                with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
+                    let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                    ca.take_chunked_unchecked(by, sorted).into_series()
                 })
             },
             Boolean => {
-                let ca = phys.bool().unwrap();
+                let ca = self.bool().unwrap();
                 ca.take_chunked_unchecked(by, sorted).into_series()
             },
             Binary => {
-                let ca = phys.binary().unwrap();
-                let out = take_unchecked_binview(ca, by, sorted);
-                out.into_series()
+                let ca = self.binary().unwrap();
+                take_unchecked_binview(ca, by, sorted).into_series()
             },
             String => {
-                let ca = phys.str().unwrap();
-                let ca = ca.as_binary();
-                let out = take_unchecked_binview(&ca, by, sorted);
-                out.to_string_unchecked().into_series()
+                let ca = self.str().unwrap();
+                take_unchecked_binview(ca, by, sorted).into_series()
             },
             List(_) => {
-                let ca = phys.list().unwrap();
+                let ca = self.list().unwrap();
                 ca.take_chunked_unchecked(by, sorted).into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
-                let ca = phys.array().unwrap();
+                let ca = self.array().unwrap();
                 ca.take_chunked_unchecked(by, sorted).into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                let ca = phys.struct_().unwrap();
+                let ca = self.struct_().unwrap();
                 ca._apply_fields(|s| s.take_chunked_unchecked(by, sorted))
                     .expect("infallible")
                     .into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_unchecked_object(&phys, by, sorted),
+            Object(_, _) => take_unchecked_object(self, by, sorted),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
-                let ca = phys.decimal().unwrap();
+                let ca = self.decimal().unwrap();
                 let out = ca.0.take_chunked_unchecked(by, sorted);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
+            #[cfg(feature = "dtype-date")]
+            Date => {
+                let ca = self.date().unwrap();
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_date()
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(u, z) => {
+                let ca = self.datetime().unwrap();
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_datetime(*u, z.clone())
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-duration")]
+            Duration(u) => {
+                let ca = self.duration().unwrap();
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_duration(*u)
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-time")]
+            Time => {
+                let ca = self.time().unwrap();
+                ca.physical()
+                    .take_chunked_unchecked(by, sorted)
+                    .into_time()
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(revmap, ord) | Enum(revmap, ord) => {
+                let ca = self.categorical().unwrap();
+                let t = ca.physical().take_chunked_unchecked(by, sorted);
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    t,
+                    revmap.as_ref().unwrap().clone(),
+                    matches!(self.dtype(), Enum(..)),
+                    *ord,
+                )
+                .into_series()
+            },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
-        };
-        unsafe { out.from_physical_unchecked(self.dtype()).unwrap() }
+        }
     }
 
     /// Take function that checks of null state in `ChunkIdx`.
     unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
-        let phys = prepare_series(self);
         use DataType::*;
-        let out = match phys.dtype() {
+        match self.dtype() {
             dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(phys.dtype(), |$T| {
-                 let ca: &ChunkedArray<$T> = phys.as_ref().as_ref().as_ref();
+                with_match_physical_numeric_polars_type!(self.dtype(), |$T| {
+                 let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                  ca.take_opt_chunked_unchecked(by).into_series()
                 })
             },
             Boolean => {
-                let ca = phys.bool().unwrap();
+                let ca = self.bool().unwrap();
                 ca.take_opt_chunked_unchecked(by).into_series()
             },
             Binary => {
-                let ca = phys.binary().unwrap();
-                let out = take_unchecked_binview_opt(ca, by);
-                out.into_series()
+                let ca = self.binary().unwrap();
+                take_unchecked_binview_opt(ca, by).into_series()
             },
             String => {
-                let ca = phys.str().unwrap();
-                let ca = ca.as_binary();
-                let out = take_unchecked_binview_opt(&ca, by);
-                out.to_string_unchecked().into_series()
+                let ca = self.str().unwrap();
+                take_unchecked_binview_opt(ca, by).into_series()
             },
             List(_) => {
-                let ca = phys.list().unwrap();
+                let ca = self.list().unwrap();
                 ca.take_opt_chunked_unchecked(by).into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
-                let ca = phys.array().unwrap();
+                let ca = self.array().unwrap();
                 ca.take_opt_chunked_unchecked(by).into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
-                let ca = phys.struct_().unwrap();
+                let ca = self.struct_().unwrap();
                 ca._apply_fields(|s| s.take_opt_chunked_unchecked(by))
                     .expect("infallible")
                     .into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => take_opt_unchecked_object(&phys, by),
+            Object(_, _) => take_opt_unchecked_object(self, by),
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => {
-                let ca = phys.decimal().unwrap();
+                let ca = self.decimal().unwrap();
                 let out = ca.0.take_opt_chunked_unchecked(by);
                 out.into_decimal_unchecked(ca.precision(), ca.scale())
                     .into_series()
             },
+            #[cfg(feature = "dtype-date")]
+            Date => {
+                let ca = self.date().unwrap();
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_date()
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-datetime")]
+            Datetime(u, z) => {
+                let ca = self.datetime().unwrap();
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_datetime(*u, z.clone())
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-duration")]
+            Duration(u) => {
+                let ca = self.duration().unwrap();
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_duration(*u)
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-time")]
+            Time => {
+                let ca = self.time().unwrap();
+                ca.physical()
+                    .take_opt_chunked_unchecked(by)
+                    .into_time()
+                    .into_series()
+            },
+            #[cfg(feature = "dtype-categorical")]
+            Categorical(revmap, ord) | Enum(revmap, ord) => {
+                let ca = self.categorical().unwrap();
+                let ret = ca.physical().take_opt_chunked_unchecked(by);
+                CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    ret,
+                    revmap.as_ref().unwrap().clone(),
+                    matches!(self.dtype(), Enum(..)),
+                    *ord,
+                )
+                .into_series()
+            },
             Null => Series::new_null(self.name().clone(), by.len()),
             _ => unreachable!(),
-        };
-        unsafe { out.from_physical_unchecked(self.dtype()).unwrap() }
+        }
     }
 }
 
@@ -257,31 +320,30 @@ where
     ) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
-        let mut out = if let Some(iter) = self.downcast_slices() {
-            let targets = iter.collect::<Vec<_>>();
+        let mut out = if !self.has_nulls() {
             let iter = by.iter().map(|chunk_id| {
                 debug_assert!(
                     !chunk_id.is_null(),
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked(chunk_idx as usize);
-                vals.get_unchecked(array_idx as usize).clone()
+                let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                arr.value_unchecked(array_idx as usize).clone()
             });
 
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
             ChunkedArray::with_chunk(self.name().clone(), arr)
         } else {
-            let targets = self.downcast_iter().collect::<Vec<_>>();
             let iter = by.iter().map(|chunk_id| {
                 debug_assert!(
                     !chunk_id.is_null(),
                     "null chunks should not hit this branch"
                 );
                 let (chunk_idx, array_idx) = chunk_id.extract();
-                let vals = targets.get_unchecked(chunk_idx as usize);
-                vals.get_unchecked(array_idx as usize)
+                let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                arr.get_unchecked(array_idx as usize)
             });
+
             let arr = iter.collect_arr_trusted_with_dtype(arrow_dtype);
             ChunkedArray::with_chunk(self.name().clone(), arr)
         };
@@ -294,8 +356,7 @@ where
     unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>]) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
-        if let Some(iter) = self.downcast_slices() {
-            let targets = iter.collect::<Vec<_>>();
+        if !self.has_nulls() {
             let arr = by
                 .iter()
                 .map(|chunk_id| {
@@ -303,15 +364,14 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked(chunk_idx as usize);
-                        Some(vals.get_unchecked(array_idx as usize).clone())
+                        let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                        Some(arr.value_unchecked(array_idx as usize).clone())
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
 
             ChunkedArray::with_chunk(self.name().clone(), arr)
         } else {
-            let targets = self.downcast_iter().collect::<Vec<_>>();
             let arr = by
                 .iter()
                 .map(|chunk_id| {
@@ -319,8 +379,8 @@ where
                         None
                     } else {
                         let (chunk_idx, array_idx) = chunk_id.extract();
-                        let vals = *targets.get_unchecked(chunk_idx as usize);
-                        vals.get_unchecked(array_idx as usize)
+                        let arr = self.downcast_get_unchecked(chunk_idx as usize);
+                        arr.get_unchecked(array_idx as usize)
                     }
                 })
                 .collect_arr_trusted_with_dtype(arrow_dtype);
@@ -370,6 +430,97 @@ unsafe fn take_opt_unchecked_object<const B: u64>(s: &Series, by: &[ChunkId<B>])
     builder.to_series()
 }
 
+unsafe fn take_unchecked_binview<const B: u64, T, V>(
+    ca: &ChunkedArray<T>,
+    by: &[ChunkId<B>],
+    sorted: IsSorted,
+) -> ChunkedArray<T>
+where
+    T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
+    V: ViewType + ?Sized,
+{
+    let mut views = Vec::with_capacity(by.len());
+    let (validity, arc_data_buffers);
+
+    // If we can cheaply clone the list of buffers from the ChunkedArray we will,
+    // otherwise we will only clone those buffers we need.
+    if ca.n_chunks() == 1 {
+        let arr = ca.downcast_iter().next().unwrap();
+        let arr_views = arr.views();
+
+        validity = if arr.has_nulls() {
+            let mut validity = BitmapBuilder::with_capacity(by.len());
+            for id in by.iter() {
+                let (chunk_idx, array_idx) = id.extract();
+                debug_assert!(chunk_idx == 0);
+                if arr.is_null_unchecked(array_idx as usize) {
+                    views.push_unchecked(View::default());
+                    validity.push_unchecked(false);
+                } else {
+                    views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
+                    validity.push_unchecked(true);
+                }
+            }
+            Some(validity.freeze())
+        } else {
+            for id in by.iter() {
+                let (chunk_idx, array_idx) = id.extract();
+                debug_assert!(chunk_idx == 0);
+                views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
+            }
+            None
+        };
+
+        arc_data_buffers = arr.data_buffers().clone();
+    } else {
+        let (buffers, buffer_offsets) = dedup_buffers(ca);
+
+        validity = if ca.has_nulls() {
+            let mut validity = BitmapBuilder::with_capacity(by.len());
+            for id in by.iter() {
+                let (chunk_idx, array_idx) = id.extract();
+
+                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+                if arr.is_null_unchecked(array_idx as usize) {
+                    views.push_unchecked(View::default());
+                    validity.push_unchecked(false);
+                } else {
+                    let view = *arr.views().get_unchecked(array_idx as usize);
+                    let view = rewrite_view(view, chunk_idx, &buffer_offsets);
+                    views.push_unchecked(view);
+                    validity.push_unchecked(true);
+                }
+            }
+            Some(validity.freeze())
+        } else {
+            for id in by.iter() {
+                let (chunk_idx, array_idx) = id.extract();
+
+                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+                let view = *arr.views().get_unchecked(array_idx as usize);
+                let view = rewrite_view(view, chunk_idx, &buffer_offsets);
+                views.push_unchecked(view);
+            }
+            None
+        };
+
+        arc_data_buffers = buffers.into();
+    };
+
+    let arr = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
+        V::DATA_TYPE,
+        views.into(),
+        arc_data_buffers,
+        validity,
+        None,
+    );
+
+    let mut out = ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc());
+    let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), sorted);
+    out.set_sorted_flag(sorted_flag);
+    out
+}
+
 #[allow(clippy::unnecessary_cast)]
 #[inline(always)]
 unsafe fn rewrite_view(mut view: View, chunk_idx: IdxSize, buffer_offsets: &[u32]) -> View {
@@ -380,164 +531,125 @@ unsafe fn rewrite_view(mut view: View, chunk_idx: IdxSize, buffer_offsets: &[u32
     view
 }
 
-fn create_buffer_offsets(ca: &BinaryChunked) -> Vec<u32> {
+fn dedup_buffers<T, V>(ca: &ChunkedArray<T>) -> (Vec<Buffer<u8>>, Vec<u32>)
+where
+    T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
+    V: ViewType + ?Sized,
+{
+    // Dedup buffers up front. Note: don't do this during view update, as this is much more
+    // costly.
+    let mut buffers = Vec::with_capacity(ca.chunks().len());
+    // Dont need to include the length, as we look at the arc pointers, which are immutable.
+    let mut buffers_dedup = PlHashSet::with_capacity(ca.chunks().len());
     let mut buffer_offsets = Vec::with_capacity(ca.chunks().len() + 1);
-    let mut cumsum = 0u32;
-    buffer_offsets.push(cumsum);
-    buffer_offsets.extend(ca.downcast_iter().map(|arr| {
-        cumsum += arr.data_buffers().len() as u32;
-        cumsum
-    }));
-    buffer_offsets
+
+    for arr in ca.downcast_iter() {
+        let data_buffers = arr.data_buffers();
+        let arc_ptr = data_buffers.as_ptr();
+        buffer_offsets.push(buffers.len() as u32);
+        if buffers_dedup.insert(arc_ptr) {
+            buffers.extend(data_buffers.iter().cloned())
+        }
+    }
+    (buffers, buffer_offsets)
 }
 
-#[allow(clippy::unnecessary_cast)]
-unsafe fn take_unchecked_binview<const B: u64>(
-    ca: &BinaryChunked,
+unsafe fn take_unchecked_binview_opt<const B: u64, T, V>(
+    ca: &ChunkedArray<T>,
     by: &[ChunkId<B>],
-    sorted: IsSorted,
-) -> BinaryChunked {
-    let views = ca
-        .downcast_iter()
-        .map(|arr| arr.views().as_slice())
-        .collect::<Vec<_>>();
-    let buffer_offsets = create_buffer_offsets(ca);
+) -> ChunkedArray<T>
+where
+    T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
+    V: ViewType + ?Sized,
+{
+    let mut views = Vec::with_capacity(by.len());
+    let mut validity = BitmapBuilder::with_capacity(by.len());
 
-    let buffers: Arc<[Buffer<u8>]> = ca
-        .downcast_iter()
-        .flat_map(|arr| arr.data_buffers().as_ref())
-        .cloned()
-        .collect();
+    // If we can cheaply clone the list of buffers from the ChunkedArray we will,
+    // otherwise we will only clone those buffers we need.
+    let arc_data_buffers = if ca.n_chunks() == 1 {
+        let arr = ca.downcast_iter().next().unwrap();
+        let arr_views = arr.views();
 
-    let (views, validity) = if ca.null_count() == 0 {
-        let views = by
-            .iter()
-            .map(|chunk_id| {
-                let (chunk_idx, array_idx) = chunk_id.extract();
-                let array_idx = array_idx as usize;
-
-                let target = *views.get_unchecked(chunk_idx as usize);
-                let view = *target.get_unchecked(array_idx);
-                rewrite_view(view, chunk_idx, &buffer_offsets)
-            })
-            .collect::<Vec<_>>();
-
-        (views, None)
-    } else {
-        let targets = ca.downcast_iter().collect::<Vec<_>>();
-
-        let mut mut_views = Vec::with_capacity(by.len());
-        let mut validity = MutableBitmap::with_capacity(by.len());
-
-        for id in by.iter() {
-            let (chunk_idx, array_idx) = id.extract();
-            let array_idx = array_idx as usize;
-
-            let target = *targets.get_unchecked(chunk_idx as usize);
-            if target.is_null_unchecked(array_idx) {
-                mut_views.push_unchecked(View::default());
-                validity.push_unchecked(false)
-            } else {
-                let target = *views.get_unchecked(chunk_idx as usize);
-                let view = *target.get_unchecked(array_idx);
-                let view = rewrite_view(view, chunk_idx, &buffer_offsets);
-                mut_views.push_unchecked(view);
-                validity.push_unchecked(true)
-            }
-        }
-
-        (mut_views, Some(validity.freeze()))
-    };
-
-    let arr = BinaryViewArray::new_unchecked_unknown_md(
-        ArrowDataType::BinaryView,
-        views.into(),
-        buffers,
-        validity,
-        None,
-    )
-    .maybe_gc();
-
-    let mut out = BinaryChunked::with_chunk(ca.name().clone(), arr);
-    let sorted_flag = _update_gather_sorted_flag(ca.is_sorted_flag(), sorted);
-    out.set_sorted_flag(sorted_flag);
-    out
-}
-
-unsafe fn take_unchecked_binview_opt<const B: u64>(
-    ca: &BinaryChunked,
-    by: &[ChunkId<B>],
-) -> BinaryChunked {
-    let views = ca
-        .downcast_iter()
-        .map(|arr| arr.views().as_slice())
-        .collect::<Vec<_>>();
-    let buffers: Arc<[Buffer<u8>]> = ca
-        .downcast_iter()
-        .flat_map(|arr| arr.data_buffers().as_ref())
-        .cloned()
-        .collect();
-    let buffer_offsets = create_buffer_offsets(ca);
-
-    let targets = ca.downcast_iter().collect::<Vec<_>>();
-
-    let mut mut_views = Vec::with_capacity(by.len());
-    let mut validity = MutableBitmap::with_capacity(by.len());
-
-    let (views, validity) = if ca.null_count() == 0 {
-        for id in by.iter() {
-            if id.is_null() {
-                mut_views.push_unchecked(View::default());
-                validity.push_unchecked(false)
-            } else {
+        if arr.has_nulls() {
+            for id in by.iter() {
                 let (chunk_idx, array_idx) = id.extract();
-                let array_idx = array_idx as usize;
-
-                let target = *views.get_unchecked(chunk_idx as usize);
-                let view = *target.get_unchecked(array_idx);
-                let view = rewrite_view(view, chunk_idx, &buffer_offsets);
-
-                mut_views.push_unchecked(view);
-                validity.push_unchecked(true)
-            }
-        }
-        (mut_views, Some(validity.freeze()))
-    } else {
-        for id in by.iter() {
-            if id.is_null() {
-                mut_views.push_unchecked(View::default());
-                validity.push_unchecked(false)
-            } else {
-                let (chunk_idx, array_idx) = id.extract();
-                let array_idx = array_idx as usize;
-
-                let target = *targets.get_unchecked(chunk_idx as usize);
-                if target.is_null_unchecked(array_idx) {
-                    mut_views.push_unchecked(View::default());
-                    validity.push_unchecked(false)
+                debug_assert!(id.is_null() || chunk_idx == 0);
+                if id.is_null() || arr.is_null_unchecked(array_idx as usize) {
+                    views.push_unchecked(View::default());
+                    validity.push_unchecked(false);
                 } else {
-                    let target = *views.get_unchecked(chunk_idx as usize);
-                    let view = *target.get_unchecked(array_idx);
-                    let view = rewrite_view(view, chunk_idx, &buffer_offsets);
-                    mut_views.push_unchecked(view);
+                    views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
+                    validity.push_unchecked(true);
+                }
+            }
+        } else {
+            for id in by.iter() {
+                let (chunk_idx, array_idx) = id.extract();
+                debug_assert!(id.is_null() || chunk_idx == 0);
+                if id.is_null() {
+                    views.push_unchecked(View::default());
+                    validity.push_unchecked(false);
+                } else {
+                    views.push_unchecked(*arr_views.get_unchecked(array_idx as usize));
                     validity.push_unchecked(true);
                 }
             }
         }
 
-        (mut_views, Some(validity.freeze()))
+        arr.data_buffers().clone()
+    } else {
+        let (buffers, buffer_offsets) = dedup_buffers(ca);
+
+        if ca.has_nulls() {
+            for id in by.iter() {
+                let (chunk_idx, array_idx) = id.extract();
+
+                if id.is_null() {
+                    views.push_unchecked(View::default());
+                    validity.push_unchecked(false);
+                } else {
+                    let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+                    if arr.is_null_unchecked(array_idx as usize) {
+                        views.push_unchecked(View::default());
+                        validity.push_unchecked(false);
+                    } else {
+                        let view = *arr.views().get_unchecked(array_idx as usize);
+                        let view = rewrite_view(view, chunk_idx, &buffer_offsets);
+                        views.push_unchecked(view);
+                        validity.push_unchecked(true);
+                    }
+                }
+            }
+        } else {
+            for id in by.iter() {
+                let (chunk_idx, array_idx) = id.extract();
+
+                if id.is_null() {
+                    views.push_unchecked(View::default());
+                    validity.push_unchecked(false);
+                } else {
+                    let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+                    let view = *arr.views().get_unchecked(array_idx as usize);
+                    let view = rewrite_view(view, chunk_idx, &buffer_offsets);
+                    views.push_unchecked(view);
+                    validity.push_unchecked(true);
+                }
+            }
+        };
+
+        buffers.into()
     };
 
-    let arr = BinaryViewArray::new_unchecked_unknown_md(
-        ArrowDataType::BinaryView,
+    let arr = BinaryViewArrayGeneric::<V>::new_unchecked_unknown_md(
+        V::DATA_TYPE,
         views.into(),
-        buffers,
-        validity,
+        arc_data_buffers,
+        Some(validity.freeze()),
         None,
-    )
-    .maybe_gc();
+    );
 
-    BinaryChunked::with_chunk(ca.name().clone(), arr)
+    ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc())
 }
 
 #[cfg(test)]

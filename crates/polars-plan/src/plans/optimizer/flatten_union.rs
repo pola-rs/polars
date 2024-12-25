@@ -1,3 +1,4 @@
+use polars_core::error::PolarsResult;
 use polars_utils::arena::{Arena, Node};
 use IR::*;
 
@@ -19,7 +20,7 @@ impl OptimizationRule for FlattenUnionRule {
         lp_arena: &mut polars_utils::arena::Arena<IR>,
         _expr_arena: &mut polars_utils::arena::Arena<crate::prelude::AExpr>,
         node: polars_utils::arena::Node,
-    ) -> Option<IR> {
+    ) -> PolarsResult<Option<IR>> {
         let lp = lp_arena.get(node);
 
         match lp {
@@ -41,12 +42,12 @@ impl OptimizationRule for FlattenUnionRule {
                 }
                 options.flattened_by_opt = true;
 
-                Some(Union {
+                Ok(Some(Union {
                     inputs: new_inputs,
                     options,
-                })
+                }))
             },
-            _ => None,
+            _ => Ok(None),
         }
     }
 }

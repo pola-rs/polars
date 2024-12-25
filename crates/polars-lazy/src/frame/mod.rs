@@ -172,6 +172,12 @@ impl LazyFrame {
         self
     }
 
+    /// Toggle type check optimization.
+    pub fn with_type_check(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::TYPE_CHECK, toggle);
+        self
+    }
+
     /// Toggle expression simplification optimization on or off.
     pub fn with_simplify_expr(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::SIMPLIFY_EXPR, toggle);
@@ -613,10 +619,6 @@ impl LazyFrame {
             // The new streaming engine can't deal with the way the common
             // subexpression elimination adds length-incorrect with_columns.
             opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
-
-            // The new streaming engine can't yet deal with the cache nodes
-            // introduced by common subplan elimination.
-            opt_state &= !OptFlags::COMM_SUBPLAN_ELIM;
         }
 
         let lp_top = optimize(

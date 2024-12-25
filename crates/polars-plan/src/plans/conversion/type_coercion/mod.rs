@@ -3,16 +3,13 @@ mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
-use std::borrow::Cow;
-
 use binary::process_binary;
 use polars_compute::cast::temporal::{time_unit_multiple, SECONDS_IN_DAY};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
-use polars_utils::idx_vec::UnitVec;
+use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
-use polars_utils::{format_list, unitvec};
 
 use super::*;
 
@@ -67,30 +64,6 @@ fn modify_supertype(
         _ => {},
     }
     st
-}
-
-fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
-    let plan = lp_arena.get(lp_node);
-    let mut inputs: UnitVec<Node> = unitvec!();
-
-    // Used to get the schema of the input.
-    if is_scan(plan) {
-        inputs.push(lp_node);
-    } else {
-        plan.copy_inputs(&mut inputs);
-    };
-    inputs
-}
-
-fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    let inputs = get_input(lp_arena, lp_node);
-    if inputs.is_empty() {
-        // Files don't have an input, so we must take their schema.
-        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
-    } else {
-        let input = inputs[0];
-        lp_arena.get(input).schema(lp_arena)
-    }
 }
 
 fn get_aexpr_and_type<'a>(
@@ -515,6 +488,7 @@ fn cast_expr_ir(
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
         if let Some(literal) = try_inline_literal_cast(lv, to_dtype, strict)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
+            e.set_dtype(to_dtype.clone());
             return Ok(());
         }
     }
@@ -524,6 +498,8 @@ fn cast_expr_ir(
         dtype: to_dtype.clone(),
         options: CastOptions::Strict,
     }));
+    e.set_dtype(to_dtype.clone());
+
     Ok(())
 }
 
