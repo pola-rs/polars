@@ -536,7 +536,7 @@ where
     T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
     V: ViewType + ?Sized,
 {
-    // Dedup buffers up front. Note: don't do this during view update, as this is much mor
+    // Dedup buffers up front. Note: don't do this during view update, as this is much more
     // costly.
     let mut buffers = Vec::with_capacity(ca.chunks().len());
     // Dont need to include the length, as we look at the arc pointers, which are immutable.
