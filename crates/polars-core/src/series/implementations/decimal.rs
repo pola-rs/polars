@@ -179,6 +179,13 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
         self.0.group_tuples(multithreaded, sorted)
     }
+    fn arg_sort_multiple(
+        &self,
+        by: &[Column],
+        options: &SortMultipleOptions,
+    ) -> PolarsResult<IdxCa> {
+        self.0.arg_sort_multiple(by, options)
+    }
 }
 
 impl SeriesTrait for SeriesWrap<DecimalChunked> {
