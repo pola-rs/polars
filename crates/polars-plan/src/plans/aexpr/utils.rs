@@ -177,7 +177,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
         AExpr::Len => true,
         AExpr::Column(_) | AExpr::Literal(_) => false,
         AExpr::Cast { expr, .. } => can_pre_agg(*expr, expr_arena, _input_schema),
-        // We only allow expresions that end with an aggregation.
+        // We only allow expressions that end with an aggregation.
         AExpr::Agg(_) => {
             let has_aggregation =
                 |node: Node| has_aexpr(node, expr_arena, |ae| matches!(ae, AExpr::Agg(_)));
