@@ -599,8 +599,6 @@ where
 
         arr.data_buffers().clone()
     } else {
-        // Dedup buffers up front. Note: don't do this during view update, as this is much mor
-        // costly.
         let (buffers, buffer_offsets) = dedup_buffers(ca);
 
         if ca.has_nulls() {
