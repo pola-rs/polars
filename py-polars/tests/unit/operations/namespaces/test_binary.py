@@ -257,7 +257,7 @@ def test_reinterpret_list(
             vals = [
                 struct.unpack_from(
                     f"{struct_endianness}{struct_type}",
-                    elem_bytes[idx:idx + inner_type_size],
+                    elem_bytes[idx : idx + inner_type_size],
                 )[0]
                 for idx in range(0, type_size, inner_type_size)
             ]

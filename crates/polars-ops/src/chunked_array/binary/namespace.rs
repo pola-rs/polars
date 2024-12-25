@@ -141,7 +141,7 @@ pub trait BinaryNameSpaceImpl: AsBinary {
         unsafe {
             Ok(Series::from_chunks_and_dtype_unchecked(
                 self.as_binary().name().clone(),
-                self._from_buffer_inner(&dtype, is_little_endian)?,
+                self._from_buffer_inner(dtype, is_little_endian)?,
                 dtype,
             ))
         }

@@ -73,7 +73,7 @@ impl BinaryNameSpace {
         let call_to_type = if let Some(ref shape) = shape {
             DataType::Array(
                 Box::new(leaf_type.clone()),
-                shape.iter().fold(1, |a, b| a * b),
+                shape.iter().product(),
             )
         } else {
             to_type
