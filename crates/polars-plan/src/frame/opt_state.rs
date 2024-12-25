@@ -38,12 +38,14 @@ bitflags! {
         /// Check if operations are order dependent and unset maintaining_order if
         /// the order would not be observed.
         const CHECK_ORDER_OBSERVE = 1 << 16;
+        /// Do type checking of the IR.
+        const TYPE_CHECK = 1 << 17;
     }
 }
 
 impl OptFlags {
     pub fn schema_only() -> Self {
-        Self::TYPE_COERCION
+        Self::TYPE_COERCION | Self::TYPE_CHECK
     }
 }
 

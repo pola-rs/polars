@@ -233,7 +233,7 @@ def test_error_on_double_agg() -> None:
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
-        ComputeError, match="filter predicate must be of type `Boolean`, got"
+        InvalidOperationError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
 

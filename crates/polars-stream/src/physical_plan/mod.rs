@@ -253,6 +253,7 @@ pub fn build_physical_plan(
 ) -> PolarsResult<PhysNodeKey> {
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
+    let mut cache_nodes = PlHashMap::new();
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,
@@ -260,6 +261,7 @@ pub fn build_physical_plan(
         phys_sm,
         &mut schema_cache,
         &mut expr_cache,
+        &mut cache_nodes,
     )?;
     let mut referenced = SecondaryMap::with_capacity(phys_sm.capacity());
     insert_multiplexers(phys_root, phys_sm, &mut referenced);

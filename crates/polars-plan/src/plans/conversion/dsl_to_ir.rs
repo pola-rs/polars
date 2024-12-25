@@ -63,12 +63,13 @@ pub fn to_alp(
     lp: DslPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
-    // Only `SIMPLIFY_EXPR` and `TYPE_COERCION` are respected.
+    // Only `SIMPLIFY_EXPR`, `TYPE_COERCION`, `TYPE_CHECK` are respected.
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Node> {
     let conversion_optimizer = ConversionOptimizer::new(
         opt_flags.contains(OptFlags::SIMPLIFY_EXPR),
         opt_flags.contains(OptFlags::TYPE_COERCION),
+        opt_flags.contains(OptFlags::TYPE_CHECK),
     );
 
     let mut ctxt = DslConversionContext {

@@ -1619,6 +1619,7 @@ def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1694,8 +1695,10 @@ def collect_all(
     prepared = []
 
     for lf in lazy_frames:
+        type_check = _type_check
         ldf = lf._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1725,6 +1728,7 @@ def collect_all_async(
     *,
     gevent: Literal[True],
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1744,6 +1748,7 @@ def collect_all_async(
     *,
     gevent: Literal[False] = False,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1763,6 +1768,7 @@ def collect_all_async(
     *,
     gevent: bool = False,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1861,8 +1867,10 @@ def collect_all_async(
     prepared = []
 
     for lf in lazy_frames:
+        type_check = _type_check
         ldf = lf._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
