@@ -1014,7 +1014,7 @@ def test_multiple_column_sort() -> None:
         pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]}),
     )
     assert_frame_equal(
-        df.sort("b", descending=True),
+        df.sort("b", descending=True, maintain_order=True),
         pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]}),
     )
     assert_frame_equal(

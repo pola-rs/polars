@@ -29,6 +29,8 @@ def test_global_and_local(
         yield
 
 
+# @TODO: Bug, see https://github.com/pola-rs/polars/issues/20440
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_lexical_sort() -> None:
     df = pl.DataFrame(
         {"cats": ["z", "z", "k", "a", "b"], "vals": [3, 1, 2, 2, 3]}
