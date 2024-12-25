@@ -4,6 +4,7 @@ import random
 import struct
 from typing import TYPE_CHECKING
 
+import numpy as np
 import pytest
 
 import polars as pl
@@ -214,6 +215,7 @@ def test_reinterpret(
     [
         (pl.Array(pl.Int8, 3), 1, "b"),
         (pl.Array(pl.UInt8, 3), 1, "B"),
+        (pl.Array(pl.UInt8, (3, 4, 5)), 1, "B"),
         (pl.Array(pl.Int16, 3), 2, "h"),
         (pl.Array(pl.UInt16, 3), 2, "H"),
         (pl.Array(pl.Int32, 3), 4, "i"),
@@ -255,6 +257,8 @@ def test_reinterpret_list(
                 struct.unpack_from(f"{struct_endianness}{struct_type}", elem_bytes[idx:idx + inner_type_size])[0]
                 for idx in range(0, type_size, inner_type_size)
             ]
+            if len(shape) > 1:
+                vals = np.reshape(vals, shape).tolist()
             expected.append(vals)
         expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
 

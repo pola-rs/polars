@@ -67,10 +67,33 @@ impl BinaryNameSpace {
 
     #[cfg(feature = "binary_encoding")]
     pub fn from_buffer(self, to_type: DataType, is_little_endian: bool) -> Expr {
-        self.0
+        let leaf_type = to_type.leaf_dtype();
+        let shape = to_type.get_shape();
+
+        let call_to_type = if let Some(ref shape) = shape {
+            DataType::Array(Box::new(leaf_type.clone()), shape.iter().fold(1, |a, b| a * b))
+        } else {
+            to_type
+        };
+
+        let result = self.0
             .map_private(FunctionExpr::BinaryExpr(BinaryFunction::FromBuffer(
-                to_type,
+                call_to_type,
                 is_little_endian,
-            )))
+            )));
+
+        if let Some(shape) = shape {
+            let mut dimensions: Vec<ReshapeDimension> = shape
+                .iter()
+                .map(|&v| ReshapeDimension::new(v as i64))
+                .collect();
+            dimensions.insert(0, ReshapeDimension::Infer);
+
+
+            result
+                .apply_private(FunctionExpr::Reshape(dimensions))
+        } else {
+            result
+        }
     }
 }
