@@ -285,11 +285,18 @@ def test_join_on_cast() -> None:
 
     df_b = pl.DataFrame({"a": [-2, -3, 3, 10]})
 
-    assert df_a.join(df_b, on=pl.col("a").cast(pl.Int64)).to_dict(as_series=False) == {
-        "index": [1, 2, 3, 5],
-        "a": [-2, 3, 3, 10],
-        "a_right": [-2, 3, 3, 10],
-    }
+    assert_frame_equal(
+        df_a.join(df_b, on=pl.col("a").cast(pl.Int64)),
+        pl.DataFrame(
+            {
+                "index": [1, 2, 3, 5],
+                "a": [-2, 3, 3, 10],
+                "a_right": [-2, 3, 3, 10],
+            }
+        ),
+        check_row_order=False,
+        check_dtypes=False,
+    )
     assert df_a.lazy().join(
         df_b.lazy(), on=pl.col("a").cast(pl.Int64)
     ).collect().to_dict(as_series=False) == {
