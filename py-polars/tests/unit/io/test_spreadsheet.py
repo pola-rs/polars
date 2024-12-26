@@ -184,13 +184,14 @@ def test_read_excel_multiple_worksheets(
     ],
 )
 def test_read_excel_multiple_workbooks(
-    read_spreadsheet: Callable[..., pl.DataFrame],
+    read_spreadsheet: Callable[..., Any],
     source: str,
     params: dict[str, str],
     request: pytest.FixtureRequest,
 ) -> None:
     spreadsheet_path = request.getfixturevalue(source)
 
+    # multiple workbooks, single worksheet
     df = read_spreadsheet(
         [
             spreadsheet_path,
@@ -205,6 +206,29 @@ def test_read_excel_multiple_workbooks(
         {"hello": ["Row 1", "Row 2", "Row 1", "Row 2", "Row 1", "Row 2"]}
     )
     assert_frame_equal(df, expected)
+
+    # multiple workbooks, multiple worksheets
+    res = read_spreadsheet(
+        [
+            spreadsheet_path,
+            spreadsheet_path,
+            spreadsheet_path,
+        ],
+        sheet_id=None,
+        sheet_name=["test1", "test2"],
+        **params,
+    )
+    expected_frames = {
+        "test1": pl.DataFrame(
+            {"hello": ["Row 1", "Row 2", "Row 1", "Row 2", "Row 1", "Row 2"]}
+        ),
+        "test2": pl.DataFrame(
+            {"world": ["Row 3", "Row 4", "Row 3", "Row 4", "Row 3", "Row 4"]}
+        ),
+    }
+    assert sorted(res) == sorted(expected_frames)
+    assert_frame_equal(res["test1"], expected_frames["test1"])
+    assert_frame_equal(res["test2"], expected_frames["test2"])
 
 
 @pytest.mark.parametrize(
