@@ -994,6 +994,7 @@ def test_mode() -> None:
         == "bar"
     )
     assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().item() == 2.0
+    assert pl.Series(["a", "b", "c", "b"]).mode().item() == "b"
 
     # sorted data
     assert set(pl.int_range(0, 3, eager=True).mode().to_list()) == {0, 1, 2}
