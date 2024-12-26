@@ -338,7 +338,15 @@ impl FunctionExpr {
                     }
                 })
             },
-            MeanHorizontal { .. } => mapper.map_to_float_dtype(),
+            MeanHorizontal { .. } => {
+                mapper.map_to_supertype().map(|mut f| {
+                    match f.dtype {
+                        dt @ DataType::Float32 => { f.dtype = dt; },
+                        _ => { f.dtype = DataType::Float64; },
+                    };
+                    f
+                })
+            }
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma_by")]
