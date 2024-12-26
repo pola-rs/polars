@@ -524,3 +524,35 @@ def test_expected_horizontal_dtype_errors(horizontal_func: type[pl.Expr]) -> Non
                 pl.col("cole"),
             )
         )
+
+
+def test_horizontal_sum_boolean_with_null() -> None:
+    lf = pl.LazyFrame(
+        {
+            "null": [None, None],
+            "bool": [True, False],
+        }
+    )
+
+    out = lf.select(
+        pl.sum_horizontal("null", "bool").alias("null_first"),
+        pl.sum_horizontal("bool", "null").alias("bool_first"),
+    )
+
+    expected_schema = pl.Schema(
+        {
+            "null_first": pl.UInt32,
+            "bool_first": pl.UInt32,
+        }
+    )
+
+    assert out.collect_schema() == expected_schema
+
+    expected_df = pl.DataFrame(
+        {
+            "null_first": pl.Series([1, 0], dtype=pl.UInt32),
+            "bool_first": pl.Series([1, 0], dtype=pl.UInt32),
+        }
+    )
+
+    assert_frame_equal(out.collect(), expected_df)
