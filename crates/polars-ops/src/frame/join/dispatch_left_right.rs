@@ -170,8 +170,7 @@ fn maintain_order_idx(
     let join_tuples_left = df
         .column("a")
         .unwrap()
-        .as_series()
-        .unwrap()
+        .as_materialized_series()
         .idx()
         .unwrap()
         .cont_slice()
@@ -180,8 +179,7 @@ fn maintain_order_idx(
     let join_tuples_right = df
         .column("b")
         .unwrap()
-        .as_series()
-        .unwrap()
+        .as_materialized_series()
         .idx()
         .unwrap()
         .cont_slice()
