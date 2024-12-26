@@ -14,9 +14,6 @@ fn partitionable_gb(
     expr_arena: &Arena<AExpr>,
     apply: &Option<Arc<dyn DataFrameUdf>>,
 ) -> bool {
-    // We first check if we can partition the group_by on the latest moment.
-    let mut partitionable = true;
-
     // checks:
     //      1. complex expressions in the group_by itself are also not partitionable
     //          in this case anything more than col("foo")
@@ -28,14 +25,14 @@ fn partitionable_gb(
         // in this case anything more than col("foo")
         for key in keys {
             if (expr_arena).iter(key.node()).count() > 1 {
-                partitionable = false;
-                break;
+                return false;
             }
         }
 
-        partitionable &= can_pre_agg_exprs(aggs, expr_arena, input_schema);
+        can_pre_agg_exprs(aggs, expr_arena, input_schema)
+    } else {
+        false
     }
-    partitionable
 }
 
 struct ConversionState {
