@@ -193,7 +193,6 @@ impl ExprIR {
         self.output_dtype = OnceLock::new();
     }
 
-    #[cfg(feature = "cse")]
     pub(crate) fn set_alias(&mut self, name: PlSmallStr) {
         self.output_name = OutputName::Alias(name)
     }
