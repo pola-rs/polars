@@ -2259,4 +2259,4 @@ class StringNameSpace:
                 "012"
                 "KADOKAWA"
         ]
-        """ # noqa: RUF002
+        """  # noqa: RUF002

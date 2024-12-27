@@ -1848,22 +1848,22 @@ def test_escape_regex() -> None:
     assert_frame_equal(result_df, expected_df)
     assert_series_equal(result_df["escaped"], expected_df["escaped"])
 
+
 @pytest.mark.parametrize(
     ("form", "expected_data"),
     [
-        ("NFC", ["01²", "ＫＡＤＯＫＡＷＡ"]), # noqa: RUF001
-        ("NFD", ["01²", "ＫＡＤＯＫＡＷＡ"]), # noqa: RUF001
+        ("NFC", ["01²", "ＫＡＤＯＫＡＷＡ"]),  # noqa: RUF001
+        ("NFD", ["01²", "ＫＡＤＯＫＡＷＡ"]),  # noqa: RUF001
         ("NFKC", ["012", "KADOKAWA"]),
         ("NFKD", ["012", "KADOKAWA"]),
     ],
 )
-def test_string_normalize(
-    form: str, expected_data: list[str | None]
-) -> None:
-    s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"], dtype=pl.String) # noqa: RUF001
+def test_string_normalize(form: str, expected_data: list[str | None]) -> None:
+    s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"], dtype=pl.String)  # noqa: RUF001
     res = s.str.normalize(form)
     expected_s = pl.Series(expected_data, dtype=pl.String)
     assert_series_equal(res, expected_s)
+
 
 def test_string_normalize_wrong_input() -> None:
     with pytest.raises(ValueError, match="`form` must be one of"):
