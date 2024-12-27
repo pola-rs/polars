@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use polars_core::prelude::{ArrowSchema, PlHashMap};
@@ -55,10 +54,6 @@ pub(super) struct RowGroupDataFetcher {
 }
 
 impl RowGroupDataFetcher {
-    pub(super) fn into_stream(self) -> RowGroupDataStream {
-        RowGroupDataStream::new(self)
-    }
-
     pub(super) async fn init_next_file_state(&mut self) -> bool {
         let Ok((path_index, row_offset, byte_source, metadata)) = self.metadata_rx.recv().await
         else {
@@ -274,66 +269,6 @@ impl FetchedBytes {
                 debug_assert_eq!(v.len(), range.len());
                 v.clone()
             },
-        }
-    }
-}
-
-#[rustfmt::skip]
-type RowGroupDataStreamFut = std::pin::Pin<Box<
-    dyn Future<
-        Output =
-            (
-                Box<RowGroupDataFetcher>               ,
-                Option                                 <
-                PolarsResult                           <
-                task_handles_ext::AbortOnDropHandle    <
-                PolarsResult                           <
-                RowGroupData      >      >      >      >
-            )
-    > + Send
->>;
-
-pub(super) struct RowGroupDataStream {
-    current_future: RowGroupDataStreamFut,
-}
-
-impl RowGroupDataStream {
-    fn new(row_group_data_fetcher: RowGroupDataFetcher) -> Self {
-        // [`RowGroupDataFetcher`] is a big struct, so we Box it once here to avoid boxing it on
-        // every `next()` call.
-        let current_future = Self::call_next_owned(Box::new(row_group_data_fetcher));
-        Self { current_future }
-    }
-
-    fn call_next_owned(
-        mut row_group_data_fetcher: Box<RowGroupDataFetcher>,
-    ) -> RowGroupDataStreamFut {
-        Box::pin(async move {
-            let out = row_group_data_fetcher.next().await;
-            (row_group_data_fetcher, out)
-        })
-    }
-}
-
-impl futures::stream::Stream for RowGroupDataStream {
-    type Item = PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>;
-
-    fn poll_next(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Option<Self::Item>> {
-        use std::pin::Pin;
-        use std::task::Poll;
-
-        match Pin::new(&mut self.current_future.as_mut()).poll(cx) {
-            Poll::Ready((row_group_data_fetcher, out)) => {
-                if out.is_some() {
-                    self.current_future = Self::call_next_owned(row_group_data_fetcher);
-                }
-
-                Poll::Ready(out)
-            },
-            Poll::Pending => Poll::Pending,
         }
     }
 }
