@@ -118,7 +118,7 @@ impl ParquetSourceNode {
         // Prefetch loop (spawns prefetches on the tokio scheduler).
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(row_group_prefetch_size);
-        let prefetch_task = io_runtime.spawn(async move {
+        let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
             let slice_range = {
                 let Ok(slice) = normalized_slice_oneshot_rx.await else {
                     // If we are here then the producer probably errored.
@@ -140,11 +140,11 @@ impl ParquetSourceNode {
                 }
             }
             PolarsResult::Ok(())
-        });
+        }));
 
         // Decode loop (spawns decodes on the computational executor).
         let (decode_send, mut decode_recv) = tokio::sync::mpsc::channel(self.config.num_pipelines);
-        let decode_task = io_runtime.spawn(async move {
+        let decode_task = AbortOnDropHandle(io_runtime.spawn(async move {
             while let Some(prefetch) = prefetch_recv.recv().await {
                 let row_group_data = prefetch.await.unwrap()?;
                 let row_group_decoder = row_group_decoder.clone();
@@ -156,11 +156,11 @@ impl ParquetSourceNode {
                 }
             }
             PolarsResult::Ok(())
-        });
+        }));
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop.
-        let distribute_task = io_runtime.spawn(async move {
+        let distribute_task = AbortOnDropHandle(io_runtime.spawn(async move {
             let mut morsel_seq = MorselSeq::default();
             while let Some(decode_fut) = decode_recv.recv().await {
                 let df = decode_fut.await?;
@@ -176,7 +176,7 @@ impl ParquetSourceNode {
                 }
             }
             PolarsResult::Ok(())
-        });
+        }));
 
         let join_task = io_runtime.spawn(async move {
             metadata_task.await.unwrap()?;
