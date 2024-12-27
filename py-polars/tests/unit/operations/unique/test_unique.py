@@ -175,3 +175,28 @@ def test_categorical_updated_revmap_unique_20233() -> None:
         )
 
         assert_series_equal(s.unique(), pl.Series("a", ["D"], pl.Categorical))
+
+
+def test_unique_check_order_20480() -> None:
+    df = pl.DataFrame(
+        [
+            {
+                "key": "some_key",
+                "value": "second",
+                "number": 2,
+            },
+            {
+                "key": "some_key",
+                "value": "first",
+                "number": 1,
+            },
+        ]
+    )
+    assert (
+        df.lazy()
+        .sort("key", "number")
+        .unique(subset="key", keep="first")
+        .collect()["number"]
+        .item()
+        == 1
+    )

@@ -101,7 +101,12 @@ pub(super) fn set_order_flags(
                     options.maintain_order = false;
                     continue;
                 }
-                if !options.maintain_order {
+                if matches!(
+                    options.keep_strategy,
+                    UniqueKeepStrategy::First | UniqueKeepStrategy::Last
+                ) {
+                    maintain_order_above = true;
+                } else if !options.maintain_order {
                     maintain_order_above = false;
                 }
             },
