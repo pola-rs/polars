@@ -1867,4 +1867,4 @@ def test_string_normalize(form: str, expected_data: list[str | None]) -> None:
 
 def test_string_normalize_wrong_input() -> None:
     with pytest.raises(ValueError, match="`form` must be one of"):
-        pl.Series(["01²"], dtype=pl.String).str.normalize("foobar")
+        pl.Series(["01²"], dtype=pl.String).str.normalize("foobar")  # type: ignore[arg-type]
