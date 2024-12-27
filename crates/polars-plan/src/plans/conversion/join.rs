@@ -3,8 +3,11 @@ use either::Either;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::utils::get_numeric_upcast_supertype_lossless;
+use polars_utils::format_pl_smallstr;
+use polars_utils::itertools::Itertools;
 
 use super::*;
+use crate::constants::POLARS_TMP_PREFIX;
 use crate::dsl::Expr;
 #[cfg(feature = "iejoin")]
 use crate::plans::AExpr;
@@ -151,11 +154,92 @@ pub fn resolve_join(
     // If we do a full join and keys are coalesced, the casted keys must be added up front.
     let key_cols_coalesced =
         options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
-    let mut to_cast_left = vec![];
-    let mut to_cast_right = vec![];
-    let mut to_cast_indices = vec![];
 
-    for (i, (lnode, rnode)) in left_on.iter_mut().zip(right_on.iter_mut()).enumerate() {
+    let has_scalars = left_on
+        .iter()
+        .chain(right_on.iter())
+        .any(|e| e.is_scalar(&ctxt.expr_arena));
+
+    let (schema_left, schema_right) = if has_scalars {
+        let mut as_with_columns_l = vec![];
+        let mut as_with_columns_r = vec![];
+        for (i, e) in left_on.iter().enumerate() {
+            if e.is_scalar(ctxt.expr_arena) {
+                as_with_columns_l.push((i, e.clone()));
+            }
+        }
+        for (i, e) in right_on.iter().enumerate() {
+            if e.is_scalar(ctxt.expr_arena) {
+                as_with_columns_r.push((i, e.clone()));
+            }
+        }
+
+        let mut count = 0;
+        let get_tmp_name = |i| format_pl_smallstr!("{POLARS_TMP_PREFIX}{i}");
+
+        // Early clone because of bck.
+        let mut schema_right_new = if !as_with_columns_r.is_empty() {
+            (**schema_right).clone()
+        } else {
+            Default::default()
+        };
+        if !as_with_columns_l.is_empty() {
+            let mut schema_left_new = (**schema_left).clone();
+
+            let mut exprs = Vec::with_capacity(as_with_columns_l.len());
+            for (i, mut e) in as_with_columns_l {
+                let tmp_name = get_tmp_name(count);
+                count += 1;
+                e.set_alias(tmp_name.clone());
+                let dtype = e.dtype(&schema_left_new, Context::Default, &ctxt.expr_arena)?;
+                schema_left_new.with_column(tmp_name.clone(), dtype.clone());
+
+                let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
+                left_on[i] = ExprIR::from_node(col, &ctxt.expr_arena);
+                exprs.push(e);
+            }
+            input_left = ctxt.lp_arena.add(IR::HStack {
+                input: input_left,
+                exprs,
+                schema: Arc::new(schema_left_new),
+                options: ProjectionOptions::default(),
+            })
+        }
+        if !as_with_columns_r.is_empty() {
+            let mut exprs = Vec::with_capacity(as_with_columns_r.len());
+            for (i, mut e) in as_with_columns_r {
+                let tmp_name = get_tmp_name(count);
+                count += 1;
+                e.set_alias(tmp_name.clone());
+                let dtype = e.dtype(&schema_right_new, Context::Default, &ctxt.expr_arena)?;
+                schema_right_new.with_column(tmp_name.clone(), dtype.clone());
+
+                let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
+                right_on[i] = ExprIR::from_node(col, &ctxt.expr_arena);
+                exprs.push(e);
+            }
+            input_right = ctxt.lp_arena.add(IR::HStack {
+                input: input_right,
+                exprs,
+                schema: Arc::new(schema_right_new),
+                options: ProjectionOptions::default(),
+            })
+        }
+
+        (
+            ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena),
+            ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena),
+        )
+    } else {
+        (schema_left, schema_right)
+    };
+
+    let mut as_with_columns_l = vec![];
+    let mut as_with_columns_r = vec![];
+    for (lnode, rnode) in left_on.iter_mut().zip(right_on.iter_mut()) {
+        //polars_ensure!(!lnode.is_scalar(&ctxt.expr_arena), InvalidOperation: "joining on scalars is not allowed, consider using 'join_where'");
+        //polars_ensure!(!rnode.is_scalar(&ctxt.expr_arena), InvalidOperation: "joining on scalars is not allowed, consider using 'join_where'");
+
         let ltype = get_dtype!(lnode, &schema_left)?;
         let rtype = get_dtype!(rnode, &schema_right)?;
 
@@ -186,9 +270,8 @@ pub fn resolve_join(
                 lnode.set_node(casted_l);
                 rnode.set_node(casted_r);
 
-                to_cast_indices.push(i);
-                to_cast_right.push(rnode);
-                to_cast_left.push(lnode);
+                as_with_columns_r.push(rnode);
+                as_with_columns_l.push(lnode);
             } else {
                 lnode.set_node(casted_l);
                 rnode.set_node(casted_r);
@@ -218,38 +301,57 @@ pub fn resolve_join(
         options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
 
     if key_cols_coalesced {
-        input_left = if to_cast_left.is_empty() {
+        input_left = if as_with_columns_l.is_empty() {
             input_left
         } else {
             ctxt.lp_arena.add(IR::HStack {
                 input: input_left,
-                exprs: to_cast_left,
+                exprs: as_with_columns_l,
                 schema: schema_left,
                 options: ProjectionOptions::default(),
             })
         };
 
-        input_right = if to_cast_right.is_empty() {
+        input_right = if as_with_columns_r.is_empty() {
             input_right
         } else {
             ctxt.lp_arena.add(IR::HStack {
                 input: input_right,
-                exprs: to_cast_right,
+                exprs: as_with_columns_r,
                 schema: schema_right,
                 options: ProjectionOptions::default(),
             })
         };
     }
 
-    let lp = IR::Join {
+    let ir = IR::Join {
         input_left,
         input_right,
-        schema,
+        schema: schema.clone(),
         left_on,
         right_on,
         options,
     };
-    Ok(ctxt.lp_arena.add(lp))
+    let ir_node = ctxt.lp_arena.add(ir);
+
+    if has_scalars {
+        let names = schema
+            .iter_names()
+            .filter_map(|n| {
+                if n.starts_with(POLARS_TMP_PREFIX) {
+                    None
+                } else {
+                    Some(n.clone())
+                }
+            })
+            .collect_vec();
+
+        let builder = IRBuilder::new(ir_node, ctxt.expr_arena, ctxt.lp_arena);
+        let ir = builder.project_simple(names).map(|b| b.build())?;
+        Ok(ctxt.lp_arena.add(ir))
+    } else {
+        Ok(ir_node)
+    }
 }
 
 #[cfg(feature = "iejoin")]
