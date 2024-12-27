@@ -223,7 +223,7 @@ operations = [
   "peaks",
   "hist",
   "find_many",
-  "string_normalize"
+  "string_normalize",
 ]
 
 io = [
