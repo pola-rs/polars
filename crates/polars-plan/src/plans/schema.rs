@@ -169,7 +169,7 @@ pub fn set_estimated_row_counts(
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
                     },
-                    JoinType::Cross | JoinType::Full { .. } => {
+                    JoinType::Cross(_) | JoinType::Full { .. } => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {

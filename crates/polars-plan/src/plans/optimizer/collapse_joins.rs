@@ -408,7 +408,7 @@ pub fn insert_fitting_join(
         debug_assert_eq!(ie_left_on.len(), ie_right_on.len());
         debug_assert!(ie_op.len() <= 2);
     }
-    debug_assert_eq!(options.args.how, JoinType::Cross);
+    debug_assert!(matches!(options.args.how, JoinType::Cross(_)));
 
     let remaining_predicates = remaining_predicates
         .iter()
@@ -455,7 +455,7 @@ pub fn insert_fitting_join(
         },
         // If anything just fall back to a cross join.
         _ => {
-            options.args.how = JoinType::Cross;
+            options.args.how = JoinType::Cross(Default::default());
             // We need to make sure not to delete any columns
             options.args.coalesce = JoinCoalesce::KeepColumns;
 

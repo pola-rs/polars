@@ -689,7 +689,7 @@ fn resolve_join_where(
         // No predicates found that are supported in a fast algorithm.
         // Do a cross join and follow up with filters.
         let opts = Arc::make_mut(&mut options);
-        opts.args.how = JoinType::Cross;
+        opts.args.how = JoinType::Cross(Default::default());
 
         resolve_join(
             Either::Right(input_left),

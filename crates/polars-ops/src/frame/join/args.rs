@@ -62,7 +62,7 @@ impl JoinCoalesce {
             AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
             #[cfg(feature = "iejoin")]
             IEJoin(_) => false,
-            Cross => false,
+            Cross(_) => false,
             #[cfg(feature = "semi_anti_join")]
             Semi | Anti => false,
         }
@@ -136,6 +136,35 @@ impl JoinArgs {
     }
 }
 
+pub trait CrossJoinFilter: Send + Sync {
+    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame>;
+}
+
+#[derive(Clone, Default)]
+pub struct CrossJoinOptions {
+    predicate: Option<Arc<dyn CrossJoinFilter>>,
+}
+
+impl CrossJoinOptions {
+    fn as_ptr_ref(&self) -> Option<*const dyn CrossJoinFilter> {
+        self.predicate.as_ref().map(|arc| Arc::as_ptr(arc))
+    }
+}
+
+impl Eq for CrossJoinOptions {}
+
+impl PartialEq for CrossJoinOptions {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ptr_ref() == other.as_ptr_ref()
+    }
+}
+
+impl Hash for CrossJoinOptions {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_ptr_ref().hash(state);
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
@@ -146,13 +175,14 @@ pub enum JoinType {
     Full,
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
-    Cross,
     #[cfg(feature = "semi_anti_join")]
     Semi,
     #[cfg(feature = "semi_anti_join")]
     Anti,
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
+    #[cfg_attr(feature = "serde", serde(skip))]
+    Cross(CrossJoinOptions),
 }
 
 impl From<JoinType> for JoinArgs {
@@ -173,7 +203,7 @@ impl Display for JoinType {
             AsOf(_) => "ASOF",
             #[cfg(feature = "iejoin")]
             IEJoin(_) => "IEJOIN",
-            Cross => "CROSS",
+            Cross(_) => "CROSS",
             #[cfg(feature = "semi_anti_join")]
             Semi => "SEMI",
             #[cfg(feature = "semi_anti_join")]
@@ -209,7 +239,7 @@ impl JoinType {
     }
 
     pub fn is_cross(&self) -> bool {
-        matches!(self, JoinType::Cross)
+        matches!(self, JoinType::Cross(_))
     }
 
     pub fn is_ie(&self) -> bool {

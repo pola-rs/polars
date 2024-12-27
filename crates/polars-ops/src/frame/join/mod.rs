@@ -123,7 +123,7 @@ pub trait DataFrameJoinOps: IntoDf {
         let left_df = self.to_df();
 
         #[cfg(feature = "cross_join")]
-        if let JoinType::Cross = args.how {
+        if let JoinType::Cross(_) = args.how {
             return left_df.cross_join(other, args.suffix.clone(), args.slice);
         }
 
@@ -306,7 +306,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 JoinType::IEJoin(_) => {
                     unreachable!()
                 },
-                JoinType::Cross => {
+                JoinType::Cross(_) => {
                     unreachable!()
                 },
             };
@@ -334,7 +334,7 @@ pub trait DataFrameJoinOps: IntoDf {
             JoinType::IEJoin(_) => {
                 unreachable!()
             },
-            JoinType::Cross => {
+            JoinType::Cross(_) => {
                 unreachable!()
             },
             JoinType::Full => {
