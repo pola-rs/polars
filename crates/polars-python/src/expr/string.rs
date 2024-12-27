@@ -156,6 +156,10 @@ impl PyExpr {
             .into()
     }
 
+    fn str_normalize(&self, form: Wrap<UnicodeForm>) -> Self {
+        self.inner.clone().str().normalize(form.0).into()
+    }
+
     fn str_reverse(&self) -> Self {
         self.inner.clone().str().reverse().into()
     }

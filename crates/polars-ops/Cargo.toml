@@ -38,6 +38,7 @@ regex-syntax = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
+unicode-normalization = { workspace = true, optional = true }
 unicode-reverse = { workspace = true, optional = true }
 
 [dependencies.jsonpath_lib]
@@ -104,6 +105,7 @@ diff = []
 pct_change = ["diff"]
 strings = ["polars-core/strings"]
 string_pad = ["polars-core/strings"]
+string_normalize = ["polars-core/strings", "unicode-normalization"]
 string_reverse = ["polars-core/strings", "unicode-reverse"]
 string_to_integer = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
