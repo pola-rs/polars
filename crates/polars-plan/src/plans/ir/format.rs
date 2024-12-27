@@ -1,6 +1,5 @@
 use std::borrow::Cow;
-use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
@@ -299,13 +298,21 @@ impl<'a> IRDisplay<'a> {
                 self.with_root(*input)._format(f, sub_indent)
             },
             GroupBy {
-                input, keys, aggs, ..
+                input,
+                keys,
+                aggs,
+                apply,
+                ..
             } => {
-                let aggs = self.display_expr_slice(aggs);
                 let keys = self.display_expr_slice(keys);
 
                 write!(f, "{:indent$}AGGREGATE", "")?;
-                write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
+                if apply.is_some() {
+                    write!(f, "\n{:indent$}\tMAP_GROUPS BY {keys} FROM", "")?;
+                } else {
+                    let aggs = self.display_expr_slice(aggs);
+                    write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
+                }
                 self.with_root(*input)._format(f, sub_indent)
             },
             Join {

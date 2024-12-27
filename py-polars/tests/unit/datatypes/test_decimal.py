@@ -404,6 +404,11 @@ def test_decimal_sort() -> None:
         "bar": [D("2.1"), D("3.4"), D("4.5")],
         "baz": [1, 1, 2],
     }
+    assert df.sort(["bar", "foo"]).to_dict(as_series=False) == {
+        "foo": [2, 1, 3],
+        "bar": [D("2.1"), D("3.4"), D("4.5")],
+        "baz": [1, 1, 2],
+    }
     assert df.sort(["foo", "bar"]).to_dict(as_series=False) == {
         "foo": [1, 2, 3],
         "bar": [D("3.4"), D("2.1"), D("4.5")],

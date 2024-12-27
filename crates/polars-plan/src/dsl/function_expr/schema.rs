@@ -330,11 +330,13 @@ impl FunctionExpr {
             MaxHorizontal => mapper.map_to_supertype(),
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {
-                if mapper.fields[0].dtype() == &DataType::Boolean {
-                    mapper.with_dtype(DataType::UInt32)
-                } else {
-                    mapper.map_to_supertype()
-                }
+                mapper.map_to_supertype().map(|mut f| {
+                    match f.dtype {
+                        // Booleans sum to UInt32.
+                        DataType::Boolean => { f.dtype = DataType::UInt32; f},
+                        _ => f,
+                    }
+                })
             },
             MeanHorizontal { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma")]
