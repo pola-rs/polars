@@ -43,6 +43,16 @@ pub fn resolve_join(
     }
 
     let owned = Arc::unwrap_or_clone;
+    let mut input_left = input_left.map_right(Ok).right_or_else(|input| {
+        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join left)))
+    })?;
+    let mut input_right = input_right.map_right(Ok).right_or_else(|input| {
+        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join right)))
+    })?;
+
+    let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
+    let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
+
     if options.args.how.is_cross() {
         polars_ensure!(left_on.len() + right_on.len() == 0, InvalidOperation: "a 'cross' join doesn't expect any join keys");
     } else {
@@ -65,6 +75,21 @@ pub fn resolve_join(
 
         options.args.validation.is_valid_join(&options.args.how)?;
 
+        #[cfg(feature = "asof_join")]
+        if let JoinType::AsOf(opt) = &options.args.how {
+            match (&opt.left_by, &opt.right_by) {
+                (None, None) => {},
+                (Some(l), Some(r)) => {
+                    polars_ensure!(l.len() == r.len(), InvalidOperation: "expected equal number of columns in 'by_left' and 'by_right' in 'asof_join'");
+                    validate_columns_in_input(l, &schema_left, "asof_join")?;
+                    validate_columns_in_input(r, &schema_right, "asof_join")?;
+                },
+                _ => {
+                    polars_bail!(InvalidOperation: "expected both 'by_left' and 'by_right' to be set in 'asof_join'")
+                },
+            }
+        }
+
         polars_ensure!(
             left_on.len() == right_on.len(),
             InvalidOperation:
@@ -75,16 +100,6 @@ pub fn resolve_join(
                 )
         );
     }
-
-    let mut input_left = input_left.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join left)))
-    })?;
-    let mut input_right = input_right.map_right(Ok).right_or_else(|input| {
-        to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(join right)))
-    })?;
-
-    let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
-    let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
     let schema = det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
         .map_err(|e| e.context(failed_here!(join schema resolving)))?;
@@ -120,6 +135,7 @@ pub fn resolve_join(
         .coerce_types(ctxt.expr_arena, ctxt.lp_arena, input_right)
         .map_err(|e| e.context("'join' failed".into()))?;
 
+    // Re-evaluate because of mutable borrows earlier.
     let schema_left = ctxt.lp_arena.get(input_left).schema(ctxt.lp_arena);
     let schema_right = ctxt.lp_arena.get(input_right).schema(ctxt.lp_arena);
 
