@@ -23,6 +23,8 @@ fn check_join_keys(keys: &[Expr]) -> PolarsResult<()> {
     }
     Ok(())
 }
+
+/// Returns: left: join_node, right: last_node (often both the same)
 pub fn resolve_join(
     input_left: Either<Arc<DslPlan>, Node>,
     input_right: Either<Arc<DslPlan>, Node>,
@@ -31,7 +33,7 @@ pub fn resolve_join(
     predicates: Vec<Expr>,
     mut options: Arc<JoinOptions>,
     ctxt: &mut DslConversionContext,
-) -> PolarsResult<Node> {
+) -> PolarsResult<(Node, Node)> {
     if !predicates.is_empty() {
         feature_gated!("iejoin", {
             debug_assert!(left_on.is_empty() && right_on.is_empty());
@@ -150,15 +152,16 @@ pub fn resolve_join(
                 .get_type($schema, Context::Default, ctxt.expr_arena)
         };
     }
-
-    // If we do a full join and keys are coalesced, the casted keys must be added up front.
-    let key_cols_coalesced =
-        options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
+    // # Resolve scalars
+    //
+    // Scalars need to be expanded. We translate them to temporary columns added with
+    // `with_columns` and remove them later with `project`
+    // This way the backends don't have to expand the literals in the join implementation
 
     let has_scalars = left_on
         .iter()
         .chain(right_on.iter())
-        .any(|e| e.is_scalar(&ctxt.expr_arena));
+        .any(|e| e.is_scalar(ctxt.expr_arena));
 
     let (schema_left, schema_right) = if has_scalars {
         let mut as_with_columns_l = vec![];
@@ -191,11 +194,11 @@ pub fn resolve_join(
                 let tmp_name = get_tmp_name(count);
                 count += 1;
                 e.set_alias(tmp_name.clone());
-                let dtype = e.dtype(&schema_left_new, Context::Default, &ctxt.expr_arena)?;
+                let dtype = e.dtype(&schema_left_new, Context::Default, ctxt.expr_arena)?;
                 schema_left_new.with_column(tmp_name.clone(), dtype.clone());
 
                 let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
-                left_on[i] = ExprIR::from_node(col, &ctxt.expr_arena);
+                left_on[i] = ExprIR::from_node(col, ctxt.expr_arena);
                 exprs.push(e);
             }
             input_left = ctxt.lp_arena.add(IR::HStack {
@@ -211,11 +214,11 @@ pub fn resolve_join(
                 let tmp_name = get_tmp_name(count);
                 count += 1;
                 e.set_alias(tmp_name.clone());
-                let dtype = e.dtype(&schema_right_new, Context::Default, &ctxt.expr_arena)?;
+                let dtype = e.dtype(&schema_right_new, Context::Default, ctxt.expr_arena)?;
                 schema_right_new.with_column(tmp_name.clone(), dtype.clone());
 
                 let col = ctxt.expr_arena.add(AExpr::Column(tmp_name));
-                right_on[i] = ExprIR::from_node(col, &ctxt.expr_arena);
+                right_on[i] = ExprIR::from_node(col, ctxt.expr_arena);
                 exprs.push(e);
             }
             input_right = ctxt.lp_arena.add(IR::HStack {
@@ -234,6 +237,11 @@ pub fn resolve_join(
         (schema_left, schema_right)
     };
 
+    // # Cast lossless
+    //
+    // If we do a full join and keys are coalesced, the casted keys must be added up front.
+    let key_cols_coalesced =
+        options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
     let mut as_with_columns_l = vec![];
     let mut as_with_columns_r = vec![];
     for (lnode, rnode) in left_on.iter_mut().zip(right_on.iter_mut()) {
@@ -297,9 +305,6 @@ pub fn resolve_join(
     let schema_left = schema_left.into_owned();
     let schema_right = schema_right.into_owned();
 
-    let key_cols_coalesced =
-        options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
-
     if key_cols_coalesced {
         input_left = if as_with_columns_l.is_empty() {
             input_left
@@ -332,7 +337,7 @@ pub fn resolve_join(
         right_on,
         options,
     };
-    let ir_node = ctxt.lp_arena.add(ir);
+    let join_node = ctxt.lp_arena.add(ir);
 
     if has_scalars {
         let names = schema
@@ -346,11 +351,13 @@ pub fn resolve_join(
             })
             .collect_vec();
 
-        let builder = IRBuilder::new(ir_node, ctxt.expr_arena, ctxt.lp_arena);
+        let builder = IRBuilder::new(join_node, ctxt.expr_arena, ctxt.lp_arena);
         let ir = builder.project_simple(names).map(|b| b.build())?;
-        Ok(ctxt.lp_arena.add(ir))
+        let select_node = ctxt.lp_arena.add(ir);
+
+        Ok((select_node, join_node))
     } else {
-        Ok(ir_node)
+        Ok((join_node, join_node))
     }
 }
 
@@ -367,13 +374,14 @@ impl From<InequalityOperator> for Operator {
 }
 
 #[cfg(feature = "iejoin")]
+/// Returns: left: join_node, right: last_node (often both the same)
 fn resolve_join_where(
     input_left: Arc<DslPlan>,
     input_right: Arc<DslPlan>,
     predicates: Vec<Expr>,
     mut options: Arc<JoinOptions>,
     ctxt: &mut DslConversionContext,
-) -> PolarsResult<Node> {
+) -> PolarsResult<(Node, Node)> {
     check_join_keys(&predicates)?;
     let input_left = to_alp_impl(Arc::unwrap_or_clone(input_left), ctxt)
         .map_err(|e| e.context(failed_here!(join left)))?;
@@ -601,10 +609,10 @@ fn resolve_join_where(
         }
     }
 
-    let join_node = if !eq_left_on.is_empty() {
+    let (mut last_node, join_node) = if !eq_left_on.is_empty() {
         // We found one or more  equality predicates. Go into a default equi join
         // as those are cheapest on avg.
-        let join_node = resolve_join(
+        let (last_node, join_node) = resolve_join(
             Either::Right(input_left),
             Either::Right(input_right),
             eq_left_on,
@@ -622,7 +630,7 @@ fn resolve_join_where(
             &schema_right,
             &suffix,
         );
-        join_node
+        (last_node, join_node)
     } else if ie_right_on.len() >= 2 {
         // Do an IEjoin.
         let opts = Arc::make_mut(&mut options);
@@ -631,7 +639,7 @@ fn resolve_join_where(
             operator2: Some(ie_op[1]),
         });
 
-        let join_node = resolve_join(
+        let (last_node, join_node) = resolve_join(
             Either::Right(input_left),
             Either::Right(input_right),
             ie_left_on[..2].to_vec(),
@@ -652,7 +660,7 @@ fn resolve_join_where(
 
             remaining_preds.push(to_binary_post_join(l, op.into(), r, &schema_right, &suffix))
         }
-        join_node
+        (last_node, join_node)
     } else if ie_right_on.len() == 1 {
         // For a single inequality comparison, we use the piecewise merge join algorithm
         let opts = Arc::make_mut(&mut options);
@@ -707,8 +715,6 @@ fn resolve_join_where(
         .schema(ctxt.lp_arena)
         .into_owned();
 
-    let mut last_node = join_node;
-
     // Ensure that the predicates use the proper suffix
     for e in remaining_preds {
         let predicate = to_expr_ir_ignore_alias(e, ctxt.expr_arena)?;
@@ -739,5 +745,5 @@ fn resolve_join_where(
         };
         last_node = ctxt.lp_arena.add(ir);
     }
-    Ok(last_node)
+    Ok((last_node, join_node))
 }
