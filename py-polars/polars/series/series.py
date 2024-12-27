@@ -3034,7 +3034,7 @@ class Series:
                 raise
         return self
 
-    def filter(self, predicate: Series | list[bool]) -> Self:
+    def filter(self, predicate: Series | Iterable[bool]) -> Self:
         """
         Filter elements by a boolean mask.
 
@@ -3060,7 +3060,7 @@ class Series:
                 3
         ]
         """
-        if isinstance(predicate, list):
+        if not isinstance(predicate, Series):
             predicate = Series("", predicate)
         return self._from_pyseries(self._s.filter(predicate._s))
 
