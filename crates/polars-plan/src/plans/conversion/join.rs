@@ -106,9 +106,6 @@ pub fn resolve_join(
         );
     }
 
-    let schema = det_join_schema(&schema_left, &schema_right, &left_on, &right_on, &options)
-        .map_err(|e| e.context(failed_here!(join schema resolving)))?;
-
     let mut left_on = to_expr_irs_ignore_alias(left_on, ctxt.expr_arena)?;
     let mut right_on = to_expr_irs_ignore_alias(right_on, ctxt.expr_arena)?;
     let mut joined_on = PlHashSet::new();
@@ -305,6 +302,16 @@ pub fn resolve_join(
     let schema_left = schema_left.into_owned();
     let schema_right = schema_right.into_owned();
 
+    let join_schema = det_join_schema(
+        &schema_left,
+        &schema_right,
+        &left_on,
+        &right_on,
+        &options,
+        ctxt.expr_arena,
+    )
+    .map_err(|e| e.context(failed_here!(join schema resolving)))?;
+
     if key_cols_coalesced {
         input_left = if as_with_columns_l.is_empty() {
             input_left
@@ -332,7 +339,7 @@ pub fn resolve_join(
     let ir = IR::Join {
         input_left,
         input_right,
-        schema: schema.clone(),
+        schema: join_schema.clone(),
         left_on,
         right_on,
         options,
@@ -340,7 +347,7 @@ pub fn resolve_join(
     let join_node = ctxt.lp_arena.add(ir);
 
     if has_scalars {
-        let names = schema
+        let names = join_schema
             .iter_names()
             .filter_map(|n| {
                 if n.starts_with(POLARS_TMP_PREFIX) {
