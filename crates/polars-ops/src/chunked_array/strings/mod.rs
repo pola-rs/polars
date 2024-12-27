@@ -12,6 +12,8 @@ mod find_many;
 mod json_path;
 #[cfg(feature = "strings")]
 mod namespace;
+#[cfg(feature = "string_normalize")]
+mod normalize;
 #[cfg(feature = "string_pad")]
 mod pad;
 #[cfg(feature = "string_reverse")]
@@ -37,6 +39,8 @@ pub use find_many::*;
 pub use json_path::*;
 #[cfg(feature = "strings")]
 pub use namespace::*;
+#[cfg(feature = "string_normalize")]
+pub use normalize::*;
 use polars_core::prelude::*;
 #[cfg(feature = "strings")]
 pub use split::*;

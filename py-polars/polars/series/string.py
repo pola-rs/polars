@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
+        UnicodeForm,
     )
     from polars._utils.various import NoDefault
     from polars.polars import PySeries
@@ -2223,3 +2224,39 @@ class StringNameSpace:
             "abc\(\\w\+\)"
         ]
         """
+
+    def normalize(self, form: UnicodeForm = "NFC") -> Series:
+        """
+        Return the Unicode normal form for the strings in the Series/Index.
+
+        Examples
+        --------
+        >>> s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"])
+        >>> s.str.normalize("NFC")
+        shape: (2,)
+        Series: '' [str]
+        >>> s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"])
+        >>> s.str.normalize("NFC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "01²"
+                "ＫＡＤＯＫＡＷＡ"
+        ]
+        >>> s.str.normalize("NFKC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "012"
+                "KADOKAWA"
+                "01²"
+                "ＫＡＤＯＫＡＷＡ"
+        ]
+        >>> s.str.normalize("NFKC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "012"
+                "KADOKAWA"
+        ]
+        """ # noqa: RUF002
