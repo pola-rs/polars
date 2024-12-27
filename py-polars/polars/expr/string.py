@@ -2940,8 +2940,8 @@ class ExprStringNameSpace:
         --------
         >>> df = pl.DataFrame({"text": ["01²", "ＫＡＤＯＫＡＷＡ"]})
         >>> new = df.with_columns(
-        ...     nfc = pl.col("text").str.normalize("NFC"),
-        ...     nfkc = pl.col("text").str.normalize("NFKC")
+        ...     nfc=pl.col("text").str.normalize("NFC"),
+        ...     nfkc=pl.col("text").str.normalize("NFKC"),
         ... )
         >>> new
         shape: (2, 3)
@@ -2963,7 +2963,7 @@ class ExprStringNameSpace:
         │ 4    ┆ 4   ┆ 3    │
         │ 24   ┆ 24  ┆ 8    │
         └──────┴─────┴──────┘
-        """ # noqa: RUF002
+        """  # noqa: RUF002
         return wrap_expr(self._pyexpr.str_normalize(form))
 
 
