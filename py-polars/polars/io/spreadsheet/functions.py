@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import warnings
+from collections import defaultdict
 from collections.abc import Sequence
 from datetime import time
 from glob import glob
@@ -69,6 +70,31 @@ def _sources(
 def _standardize_duplicates(s: str) -> str:
     """Standardize columns with '_duplicated_n' names."""
     return re.sub(r"_duplicated_(\d+)", repl=r"\1", string=s)
+
+
+def _unpack_sheet_results(
+    frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]],
+    *,
+    read_multiple_workbooks: bool,
+) -> Any:
+    if not frames:
+        msg = "no data found in the given workbook(s) and sheet(s)"
+        raise NoDataError(msg)
+
+    if not read_multiple_workbooks:
+        # one sheet from one workbook
+        return frames[0]
+
+    if isinstance(frames[0], pl.DataFrame):
+        # one sheet from multiple workbooks
+        return concat(frames, how="vertical_relaxed")  # type: ignore[type-var]
+    else:
+        # multiple sheets from multiple workbooks
+        sheet_frames = defaultdict(list)
+        for res in frames:
+            for sheet, df in res.items():  # type: ignore[union-attr]
+                sheet_frames[sheet].append(df)
+        return {k: concat(v, how="vertical_relaxed") for k, v in sheet_frames.items()}
 
 
 @overload
@@ -338,7 +364,7 @@ def read_excel(
     ... )  # doctest: +SKIP
     """
     sources, read_multiple_workbooks = _sources(source)
-    frames = [
+    frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]] = [  # type: ignore[assignment]
         _read_spreadsheet(
             src,
             sheet_id=sheet_id,
@@ -357,9 +383,10 @@ def read_excel(
         )
         for src in sources
     ]
-    if read_multiple_workbooks:
-        return concat(frames, how="vertical_relaxed")  # type: ignore[type-var]
-    return frames[0]
+    return _unpack_sheet_results(
+        frames=frames,
+        read_multiple_workbooks=read_multiple_workbooks,
+    )
 
 
 @overload
@@ -540,7 +567,7 @@ def read_ods(
     ... )  # doctest: +SKIP
     """
     sources, read_multiple_workbooks = _sources(source)
-    frames = [
+    frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]] = [  # type: ignore[assignment]
         _read_spreadsheet(
             src,
             sheet_id=sheet_id,
@@ -559,9 +586,10 @@ def read_ods(
         )
         for src in sources
     ]
-    if read_multiple_workbooks:
-        return concat(frames, how="vertical_relaxed")  # type: ignore[type-var]
-    return frames[0]
+    return _unpack_sheet_results(
+        frames=frames,
+        read_multiple_workbooks=read_multiple_workbooks,
+    )
 
 
 def _read_spreadsheet(
@@ -605,10 +633,6 @@ def _read_spreadsheet(
         sheet_names, return_multiple_sheets = _get_sheet_names(
             sheet_id, sheet_name, worksheets
         )
-        if read_multiple_workbooks and return_multiple_sheets:
-            msg = "cannot return multiple sheets from multiple workbooks"
-            raise ValueError(msg)
-
         parsed_sheets = {
             name: reader_fn(
                 parser=parser,
