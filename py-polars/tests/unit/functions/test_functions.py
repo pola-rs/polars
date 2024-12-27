@@ -374,6 +374,14 @@ def test_align_frames_duplicate_key() -> None:
     ]
 
 
+def test_align_frames_single_row_20445() -> None:
+    left = pl.DataFrame({"a": [1], "b": [2]})
+    right = pl.DataFrame({"a": [1], "c": [3]})
+    result = pl.align_frames(left, right, how="left", on="a")
+    assert_frame_equal(result[0], left)
+    assert_frame_equal(result[1], right)
+
+
 def test_coalesce() -> None:
     df = pl.DataFrame(
         {
