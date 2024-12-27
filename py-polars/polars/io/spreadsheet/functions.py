@@ -47,9 +47,8 @@ if TYPE_CHECKING:
     from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict
 
 
-def _sources(
-    source: FileSource,
-) -> tuple[Any, bool]:
+def _sources(source: FileSource) -> tuple[Any, bool]:
+    """Unpack any glob patterns, standardise file paths."""
     read_multiple_workbooks = True
     sources: list[Any] = []
 
@@ -60,8 +59,11 @@ def _sources(
     for src in source:  # type: ignore[union-attr]
         if isinstance(src, (str, os.PathLike)) and not Path(src).exists():
             src = os.path.expanduser(str(src))  # noqa: PTH111
-            sources.extend(glob(src, recursive=True))  # noqa: PTH207
+            sources.extend(files := glob(src, recursive=True))  # noqa: PTH207
+            read_multiple_workbooks = bool(files)
         else:
+            if isinstance(src, os.PathLike):
+                src = str(src)
             sources.append(src)
 
     return sources, read_multiple_workbooks
@@ -110,6 +112,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -129,6 +132,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -148,6 +152,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -169,6 +174,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -188,6 +194,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -207,6 +214,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -227,6 +235,7 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    include_file_paths: str | None = None,
     drop_empty_rows: bool = True,
     drop_empty_cols: bool = True,
     raise_if_empty: bool = True,
@@ -299,6 +308,8 @@ def read_excel(
         entire dataset is scanned to determine the dtypes, which can slow parsing for
         large workbooks. Note that only the "calamine" and "xlsx2csv" engines support
         this parameter.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
     drop_empty_rows
         Indicate whether to omit empty rows when reading data into the DataFrame.
     drop_empty_cols
@@ -374,12 +385,12 @@ def read_excel(
             read_options=read_options,
             schema_overrides=schema_overrides,
             infer_schema_length=infer_schema_length,
+            include_file_paths=include_file_paths,
             raise_if_empty=raise_if_empty,
             has_header=has_header,
             columns=columns,
             drop_empty_rows=drop_empty_rows,
             drop_empty_cols=drop_empty_cols,
-            read_multiple_workbooks=read_multiple_workbooks,
         )
         for src in sources
     ]
@@ -399,6 +410,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -415,6 +427,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -431,6 +444,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -447,6 +461,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -463,6 +478,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -479,6 +495,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
     drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
@@ -494,6 +511,7 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    include_file_paths: str | None = None,
     drop_empty_rows: bool = True,
     drop_empty_cols: bool = True,
     raise_if_empty: bool = True,
@@ -529,6 +547,8 @@ def read_ods(
         The maximum number of rows to scan for schema inference. If set to `None`, the
         entire dataset is scanned to determine the dtypes, which can slow parsing for
         large workbooks.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
     drop_empty_rows
         Indicate whether to omit empty rows when reading data into the DataFrame.
     drop_empty_cols
@@ -577,12 +597,12 @@ def read_ods(
             read_options=None,
             schema_overrides=schema_overrides,
             infer_schema_length=infer_schema_length,
+            include_file_paths=include_file_paths,
             raise_if_empty=raise_if_empty,
             drop_empty_rows=drop_empty_rows,
             drop_empty_cols=drop_empty_cols,
             has_header=has_header,
             columns=columns,
-            read_multiple_workbooks=read_multiple_workbooks,
         )
         for src in sources
     ]
@@ -593,7 +613,7 @@ def read_ods(
 
 
 def _read_spreadsheet(
-    source: str | Path | IO[bytes] | bytes,
+    source: str | IO[bytes] | bytes,
     *,
     sheet_id: int | Sequence[int] | None,
     sheet_name: str | Sequence[str] | None,
@@ -602,14 +622,14 @@ def _read_spreadsheet(
     read_options: dict[str, Any] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    include_file_paths: str | None = None,
     columns: Sequence[int] | Sequence[str] | None = None,
     has_header: bool = True,
     raise_if_empty: bool = True,
     drop_empty_rows: bool = True,
     drop_empty_cols: bool = True,
-    read_multiple_workbooks: bool = False,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-    if isinstance(source, (str, Path)):
+    if isinstance(source, str):
         source = normalize_filepath(source)
         if looks_like_url(source):
             source = process_file_url(source)
@@ -655,6 +675,12 @@ def _read_spreadsheet(
         msg = f"no matching sheets found when `sheet_{param}` is {value!r}"
         raise ValueError(msg)
 
+    if include_file_paths:
+        workbook = source if isinstance(source, str) else "in-mem"
+        parsed_sheets = {
+            name: frame.with_columns(F.lit(workbook).alias(include_file_paths))
+            for name, frame in parsed_sheets.items()
+        }
     if return_multiple_sheets:
         return parsed_sheets
     return next(iter(parsed_sheets.values()))
@@ -762,11 +788,11 @@ def _get_sheet_names(
 
 def _initialise_spreadsheet_parser(
     engine: str | None,
-    source: str | Path | IO[bytes] | bytes,
+    source: str | IO[bytes] | bytes,
     engine_options: dict[str, Any],
 ) -> tuple[Callable[..., pl.DataFrame], Any, list[dict[str, Any]]]:
     """Instantiate the indicated spreadsheet parser and establish related properties."""
-    if isinstance(source, (str, Path)) and not Path(source).exists():
+    if isinstance(source, str) and not Path(source).exists():
         raise FileNotFoundError(source)
 
     if engine == "xlsx2csv":  # default
