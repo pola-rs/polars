@@ -200,10 +200,14 @@ def test_read_excel_multiple_workbooks(
         ],
         sheet_id=None,
         sheet_name="test1",
+        include_file_paths="path",
         **params,
     )
     expected = pl.DataFrame(
-        {"hello": ["Row 1", "Row 2", "Row 1", "Row 2", "Row 1", "Row 2"]}
+        {
+            "hello": ["Row 1", "Row 2", "Row 1", "Row 2", "Row 1", "Row 2"],
+            "path": [str(spreadsheet_path)] * 6,
+        },
     )
     assert_frame_equal(df, expected)
 
@@ -833,11 +837,16 @@ def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
     df.write_excel(xls, worksheet="data")
 
     # expect string conversion (only scalar values are supported)
-    xldf = pl.read_excel(xls, sheet_name="data", engine=engine)
+    xldf = pl.read_excel(
+        xls,
+        sheet_name="data",
+        engine=engine,
+        include_file_paths="wbook",
+    )
     assert xldf.rows() == [
-        ("[1, 2]", "{'y': 'a', 'z': 9}"),
-        ("[3, 4]", "{'y': 'b', 'z': 8}"),
-        ("[5, 6]", "{'y': 'c', 'z': 7}"),
+        ("[1, 2]", "{'y': 'a', 'z': 9}", "in-mem"),
+        ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
+        ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
     ]
 
 
