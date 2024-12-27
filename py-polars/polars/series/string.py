@@ -2235,20 +2235,7 @@ class StringNameSpace:
         >>> s.str.normalize("NFC")
         shape: (2,)
         Series: '' [str]
-        >>> s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"])
-        >>> s.str.normalize("NFC")
-        shape: (2,)
-        Series: '' [str]
         [
-                "01²"
-                "ＫＡＤＯＫＡＷＡ"
-        ]
-        >>> s.str.normalize("NFKC")
-        shape: (2,)
-        Series: '' [str]
-        [
-                "012"
-                "KADOKAWA"
                 "01²"
                 "ＫＡＤＯＫＡＷＡ"
         ]
