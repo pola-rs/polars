@@ -175,11 +175,11 @@ pub fn resolve_join(
                 let mut lnode = lnode.clone();
                 let mut rnode = rnode.clone();
 
-                let ael = ctxt.expr_arena.get(lnode.node());
-                let aer = ctxt.expr_arena.get(rnode.node());
+                let ae_l = ctxt.expr_arena.get(lnode.node());
+                let ae_r = ctxt.expr_arena.get(rnode.node());
 
                 polars_ensure!(
-                    ael.is_col() && aer.is_col(),
+                    ae_l.is_col() && ae_r.is_col(),
                     SchemaMismatch: "can only 'coalesce' full join if join keys are column expressions",
                 );
 
