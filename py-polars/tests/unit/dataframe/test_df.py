@@ -2790,10 +2790,24 @@ def test_deadlocks_3409() -> None:
     ) == {"col1": [0, 0, 0]}
 
 
+def test_ceil() -> None:
+    df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
+    result = df.select(pl.col("a").ceil())
+    assert_frame_equal(result, pl.DataFrame({"a": [2.0, 2.0, 3.0]}))
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    result = df.select(pl.col("a").ceil())
+    assert_frame_equal(df, result)
+
+
 def test_floor() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
-    col_a_floor = df.select(pl.col("a").floor())["a"]
-    assert_series_equal(col_a_floor, pl.Series("a", [1, 1, 3]).cast(pl.Float64))
+    result = df.select(pl.col("a").floor())
+    assert_frame_equal(result, pl.DataFrame({"a": [1.0, 1.0, 3.0]}))
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    result = df.select(pl.col("a").floor())
+    assert_frame_equal(df, result)
 
 
 def test_floor_divide() -> None:

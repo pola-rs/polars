@@ -504,9 +504,24 @@ def test_cum_agg() -> None:
     )
 
 
+def test_ceil() -> None:
+    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]})
+    result = ldf.select(pl.col("a").ceil()).collect()
+    assert_frame_equal(result, pl.DataFrame({"a": [2.0, 2.0, 3.0]}))
+
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    result = ldf.select(pl.col("a").ceil()).collect()
+    assert_frame_equal(ldf.collect(), result)
+
+
 def test_floor() -> None:
-    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]}).select(pl.col("a").floor())
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 1, 3]).cast(pl.Float64))
+    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]})
+    result = ldf.select(pl.col("a").floor()).collect()
+    assert_frame_equal(result, pl.DataFrame({"a": [1.0, 1.0, 3.0]}))
+
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    result = ldf.select(pl.col("a").floor()).collect()
+    assert_frame_equal(ldf.collect(), result)
 
 
 @pytest.mark.parametrize(
