@@ -647,6 +647,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt,
             )
             .map_err(|e| e.context(failed_here!(join)))
+            .map(|t| t.0)
         },
         DslPlan::HStack {
             input,

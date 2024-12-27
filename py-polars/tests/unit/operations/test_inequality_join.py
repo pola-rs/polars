@@ -655,3 +655,30 @@ def test_join_predicate_pushdown_19580() -> None:
     )
 
     assert_frame_equal(expect, q.collect(), check_row_order=False)
+
+
+def test_join_where_literal_20061() -> None:
+    df_left = pl.DataFrame(
+        {"id": [1, 2, 3], "value_left": [10, 20, 30], "flag": [1, 0, 1]}
+    )
+
+    df_right = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "value_right": [5, 5, 25],
+            "flag": [1, 0, 1],
+        }
+    )
+
+    assert df_left.join_where(
+        df_right,
+        pl.col("value_left") > pl.col("value_right"),
+        pl.col("flag_right").cast(pl.Int32) == 1,
+    ).sort("id").to_dict(as_series=False) == {
+        "id": [1, 2, 3, 3],
+        "value_left": [10, 20, 30, 30],
+        "flag": [1, 0, 1, 1],
+        "id_right": [1, 1, 1, 3],
+        "value_right": [5, 5, 5, 25],
+        "flag_right": [1, 1, 1, 1],
+    }

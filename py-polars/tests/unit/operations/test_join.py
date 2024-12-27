@@ -1014,9 +1014,10 @@ def test_join_lit_panic_11410() -> None:
     df = pl.LazyFrame({"date": [1, 2, 3], "symbol": [4, 5, 6]})
     dates = df.select("date").unique(maintain_order=True)
     symbols = df.select("symbol").unique(maintain_order=True)
+
     assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).collect().to_dict(
         as_series=False
-    ) == {"symbol": [4], "date": [1]}
+    ) == {"symbol": [4, 4, 4, 5, 5, 5, 6, 6, 6], "date": [1, 2, 3, 1, 2, 3, 1, 2, 3]}
 
 
 def test_join_empty_literal_17027() -> None:
@@ -1320,48 +1321,48 @@ def test_join_preserve_order_full() -> None:
 @pytest.mark.parametrize(
     "dtypes",
     [
-        ["Int128" , "Int128" , "Int64"  ],
-        ["Int128" , "Int128" , "Int32"  ],
-        ["Int128" , "Int128" , "Int16"  ],
-        ["Int128" , "Int128" , "Int8"   ],
-        ["Int128" , "UInt64" , "Int128" ],
-        ["Int128" , "UInt64" , "Int64"  ],
-        ["Int128" , "UInt64" , "Int32"  ],
-        ["Int128" , "UInt64" , "Int16"  ],
-        ["Int128" , "UInt64" , "Int8"   ],
-        ["Int128" , "UInt32" , "Int128" ],
-        ["Int128" , "UInt16" , "Int128" ],
-        ["Int128" , "UInt8"  , "Int128" ],
+        ["Int128", "Int128", "Int64"],
+        ["Int128", "Int128", "Int32"],
+        ["Int128", "Int128", "Int16"],
+        ["Int128", "Int128", "Int8"],
+        ["Int128", "UInt64", "Int128"],
+        ["Int128", "UInt64", "Int64"],
+        ["Int128", "UInt64", "Int32"],
+        ["Int128", "UInt64", "Int16"],
+        ["Int128", "UInt64", "Int8"],
+        ["Int128", "UInt32", "Int128"],
+        ["Int128", "UInt16", "Int128"],
+        ["Int128", "UInt8", "Int128"],
 
-        ["Int64"  , "Int64"  , "Int32"  ],
-        ["Int64"  , "Int64"  , "Int16"  ],
-        ["Int64"  , "Int64"  , "Int8"   ],
-        ["Int64"  , "UInt32" , "Int64"  ],
-        ["Int64"  , "UInt32" , "Int32"  ],
-        ["Int64"  , "UInt32" , "Int16"  ],
-        ["Int64"  , "UInt32" , "Int8"   ],
-        ["Int64"  , "UInt16" , "Int64"  ],
-        ["Int64"  , "UInt8"  , "Int64"  ],
+        ["Int64", "Int64", "Int32"],
+        ["Int64", "Int64", "Int16"],
+        ["Int64", "Int64", "Int8"],
+        ["Int64", "UInt32", "Int64"],
+        ["Int64", "UInt32", "Int32"],
+        ["Int64", "UInt32", "Int16"],
+        ["Int64", "UInt32", "Int8"],
+        ["Int64", "UInt16", "Int64"],
+        ["Int64", "UInt8", "Int64"],
 
-        ["Int32"  , "Int32"  , "Int16"  ],
-        ["Int32"  , "Int32"  , "Int8"   ],
-        ["Int32"  , "UInt16" , "Int32"  ],
-        ["Int32"  , "UInt16" , "Int16"  ],
-        ["Int32"  , "UInt16" , "Int8"   ],
-        ["Int32"  , "UInt8"  , "Int32"  ],
+        ["Int32", "Int32", "Int16"],
+        ["Int32", "Int32", "Int8"],
+        ["Int32", "UInt16", "Int32"],
+        ["Int32", "UInt16", "Int16"],
+        ["Int32", "UInt16", "Int8"],
+        ["Int32", "UInt8", "Int32"],
 
-        ["Int16"  , "Int16"  , "Int8"   ],
-        ["Int16"  , "UInt8"  , "Int16"  ],
-        ["Int16"  , "UInt8"  , "Int8"   ],
+        ["Int16", "Int16", "Int8"],
+        ["Int16", "UInt8", "Int16"],
+        ["Int16", "UInt8", "Int8"],
 
-        ["UInt64" , "UInt64" , "UInt32" ],
-        ["UInt64" , "UInt64" , "UInt16" ],
-        ["UInt64" , "UInt64" , "UInt8"  ],
+        ["UInt64", "UInt64", "UInt32"],
+        ["UInt64", "UInt64", "UInt16"],
+        ["UInt64", "UInt64", "UInt8"],
 
-        ["UInt32" , "UInt32" , "UInt16" ],
-        ["UInt32" , "UInt32" , "UInt8"  ],
+        ["UInt32", "UInt32", "UInt16"],
+        ["UInt32", "UInt32", "UInt8"],
 
-        ["UInt16" , "UInt16" , "UInt8"  ],
+        ["UInt16", "UInt16", "UInt8"],
 
         ["Float64", "Float64", "Float32"],
     ],

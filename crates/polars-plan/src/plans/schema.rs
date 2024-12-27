@@ -240,9 +240,10 @@ pub fn set_estimated_row_counts(
 pub(crate) fn det_join_schema(
     schema_left: &SchemaRef,
     schema_right: &SchemaRef,
-    left_on: &[Expr],
-    right_on: &[Expr],
+    left_on: &[ExprIR],
+    right_on: &[ExprIR],
     options: &JoinOptions,
+    expr_arena: &Arena<AExpr>,
 ) -> PolarsResult<SchemaRef> {
     match &options.args.how {
         // semi and anti joins are just filtering operations
@@ -251,16 +252,15 @@ pub(crate) fn det_join_schema(
         JoinType::Semi | JoinType::Anti => Ok(schema_left.clone()),
         JoinType::Right => {
             // Get join names.
-            let mut arena = Arena::with_capacity(8);
             let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
             for e in left_on {
-                let field = e.to_field_amortized(schema_left, Context::Default, &mut arena)?;
+                let field = e.field(schema_left, Context::Default, expr_arena)?;
                 join_on_left.insert(field.name);
             }
 
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                let field = e.field(schema_right, Context::Default, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 
@@ -303,8 +303,6 @@ pub(crate) fn det_join_schema(
             }
             let should_coalesce = options.args.should_coalesce();
 
-            let mut arena = Arena::with_capacity(8);
-
             // Handles coalescing of asof-joins.
             // Asof joins are not equi-joins
             // so the columns that are joined on, may have different
@@ -312,10 +310,9 @@ pub(crate) fn det_join_schema(
             #[cfg(feature = "asof_join")]
             if matches!(_how, JoinType::AsOf(_)) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
-                    let field_left =
-                        left_on.to_field_amortized(schema_left, Context::Default, &mut arena)?;
-                    let field_right =
-                        right_on.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                    let field_left = left_on.field(schema_left, Context::Default, expr_arena)?;
+                    let field_right = right_on.field(schema_right, Context::Default, expr_arena)?;
+
                     if should_coalesce && field_left.name != field_right.name {
                         if schema_left.contains(&field_right.name) {
                             new_schema.with_column(
@@ -330,7 +327,7 @@ pub(crate) fn det_join_schema(
             }
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
-                let field = e.to_field_amortized(schema_right, Context::Default, &mut arena)?;
+                let field = e.field(schema_right, Context::Default, expr_arena)?;
                 join_on_right.insert(field.name);
             }
 

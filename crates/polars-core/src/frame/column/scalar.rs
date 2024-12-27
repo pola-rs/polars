@@ -143,7 +143,11 @@ impl ScalarColumn {
     pub fn from_single_value_series(series: Series, length: usize) -> Self {
         debug_assert!(series.len() <= 1);
 
-        let value = series.get(0).map_or(AnyValue::Null, |av| av.into_static());
+        let value = if series.is_empty() {
+            AnyValue::Null
+        } else {
+            unsafe { series.get_unchecked(0) }.into_static()
+        };
         let value = Scalar::new(series.dtype().clone(), value);
         ScalarColumn::new(series.name().clone(), value, length)
     }
