@@ -4568,9 +4568,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if by is not None:
             by_left_ = [by] if isinstance(by, str) else by
             by_right_ = by_left_
-        elif (by_left is not None) and (by_right is not None):
-            by_left_ = [by_left] if isinstance(by_left, str) else by_left
-            by_right_ = [by_right] if isinstance(by_right, str) else by_right
+        elif (by_left is not None) or (by_right is not None):
+            by_left_ = [by_left] if isinstance(by_left, str) else by_left  # type: ignore[assignment]
+            by_right_ = [by_right] if isinstance(by_right, str) else by_right  # type: ignore[assignment]
+
         else:
             # no by
             by_left_ = None

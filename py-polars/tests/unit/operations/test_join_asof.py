@@ -1196,3 +1196,21 @@ def test_asof_join_by_schema() -> None:
     )
 
     assert q.collect_schema() == q.collect().schema
+
+
+def test_raise_invalid_by_arg_13020() -> None:
+    df1 = pl.DataFrame({"asOfDate": [date(2020, 1, 1)]})
+    df2 = pl.DataFrame(
+        {
+            "endityId": [date(2020, 1, 1)],
+            "eventDate": ["A"],
+        }
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="expected both"):
+        df1.sort("asOfDate").join_asof(
+            df2.sort("eventDate"),
+            left_on="asOfDate",
+            right_on="eventDate",
+            by_left=None,
+            by_right=["entityId"],
+        )
