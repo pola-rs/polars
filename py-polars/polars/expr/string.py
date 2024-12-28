@@ -2934,7 +2934,14 @@ class ExprStringNameSpace:
 
     def normalize(self, form: UnicodeForm = "NFC") -> Expr:
         """
-        Return the Unicode normal form for the strings in the Series/Index.
+        Returns the Unicode normal form of the string values.
+
+        This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        Parameters
+        ----------
+        form : {'NFC', 'NFKC', 'NFD', 'NFKD'}
+            Unicode form to use.
 
         Examples
         --------
