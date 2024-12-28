@@ -581,3 +581,28 @@ def test_decimal_arithmetic_schema_float_20369() -> None:
     assert_series_equal(
         (1.0 * s), pl.Series("literal", [1.0], dtype=pl.Decimal(None, 4))
     )
+
+
+def test_decimal_horizontal_20482() -> None:
+    b = pl.LazyFrame(
+        {
+            "a": [D("123.000000"), D("234.000000")],
+            "b": [D("123.000000"), D("234.000000")],
+        },
+        schema={
+            "a": pl.Decimal(18, 6),
+            "b": pl.Decimal(18, 6),
+        },
+    )
+
+    assert (
+        b.select(
+            min=pl.min_horizontal(pl.col("a"), pl.col("b")),
+            max=pl.max_horizontal(pl.col("a"), pl.col("b")),
+            sum=pl.sum_horizontal(pl.col("a"), pl.col("b")),
+        ).collect()
+    ).to_dict(as_series=False) == {
+        "min": [D("123.000000"), D("234.000000")],
+        "max": [D("123.000000"), D("234.000000")],
+        "sum": [D("246.000000"), D("468.000000")],
+    }

@@ -85,9 +85,11 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                     AnyValue::Null => None,
                     v => polars_bail!(ComputeError: "fill value '{}' is not supported", v),
                 };
-                ca.shift_and_fill(n, fill_value.as_ref())
-                    .into_column()
-                    .cast(logical)
+                unsafe {
+                    ca.shift_and_fill(n, fill_value.as_ref())
+                        .into_column()
+                        .from_physical_unchecked(logical)
+                }
             },
             #[cfg(feature = "object")]
             Object(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
@@ -102,7 +104,7 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                     }};
                 }
                 let out = downcast_as_macro_arg_physical!(physical, dispatch, n, fill_value);
-                out.cast(logical)
+                unsafe { out.from_physical_unchecked(logical) }
             },
             dt => polars_bail!(opq = shift_and_fill, dt),
         }
