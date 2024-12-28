@@ -21,6 +21,8 @@ from polars._utils.constants import (
     I32_MIN,
     I64_MAX,
     I64_MIN,
+    I128_MAX,
+    I128_MIN,
     U8_MAX,
     U16_MAX,
     U32_MAX,
@@ -43,6 +45,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Null,
     Object,
@@ -78,6 +81,7 @@ _INTEGER_STRATEGIES: dict[bool, dict[int, SearchStrategy[int]]] = {
         16: st.integers(I16_MIN, I16_MAX),
         32: st.integers(I32_MIN, I32_MAX),
         64: st.integers(I64_MIN, I64_MAX),
+        128: st.integers(I128_MIN, I128_MAX),
     },
     False: {
         8: st.integers(0, U8_MAX),
@@ -89,7 +93,7 @@ _INTEGER_STRATEGIES: dict[bool, dict[int, SearchStrategy[int]]] = {
 
 
 def integers(
-    bit_width: Literal[8, 16, 32, 64] = 64, *, signed: bool = True
+    bit_width: Literal[8, 16, 32, 64, 128] = 64, *, signed: bool = True
 ) -> SearchStrategy[int]:
     """Create a strategy for generating integers."""
     return _INTEGER_STRATEGIES[signed][bit_width]
@@ -356,6 +360,7 @@ _STATIC_STRATEGIES: dict[DataTypeClass, SearchStrategy[Any]] = {
     Int16: integers(16, signed=True),
     Int32: integers(32, signed=True),
     Int64: integers(64, signed=True),
+    Int128: integers(128, signed=True),
     UInt8: integers(8, signed=False),
     UInt16: integers(16, signed=False),
     UInt32: integers(32, signed=False),
