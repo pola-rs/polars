@@ -356,6 +356,7 @@ pub(crate) fn insert_streaming_nodes(
                         DataType::Unknown(_) => false,
                         #[cfg(feature = "dtype-decimal")]
                         DataType::Decimal(_, _) => false,
+                        DataType::Int128 => false,
                         _ => true,
                     }
                 }
