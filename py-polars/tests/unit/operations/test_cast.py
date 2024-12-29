@@ -11,6 +11,7 @@ from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType
@@ -560,21 +561,14 @@ def test_strict_cast_string(
 @pytest.mark.parametrize(
     "dtype_out",
     [
-        (pl.UInt8),
-        (pl.Int8),
-        (pl.UInt16),
-        (pl.Int16),
-        (pl.UInt32),
-        (pl.Int32),
-        (pl.UInt64),
-        (pl.Int64),
-        (pl.Date),
-        (pl.Datetime),
-        (pl.Time),
-        (pl.Duration),
-        (pl.String),
-        (pl.Categorical),
-        (pl.Enum(["1", "2"])),
+        *INTEGER_DTYPES,
+        pl.Date,
+        pl.Datetime,
+        pl.Time,
+        pl.Duration,
+        pl.String,
+        pl.Categorical,
+        pl.Enum(["1", "2"]),
     ],
 )
 def test_cast_categorical_name_retention(
@@ -669,10 +663,7 @@ def test_all_null_cast_5826() -> None:
     assert out.item() is None
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
-)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
     result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())

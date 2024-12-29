@@ -28,6 +28,7 @@ impl PyArrowPrimitiveType for Int8Type {}
 impl PyArrowPrimitiveType for Int16Type {}
 impl PyArrowPrimitiveType for Int32Type {}
 impl PyArrowPrimitiveType for Int64Type {}
+impl PyArrowPrimitiveType for Int128Type {}
 impl PyArrowPrimitiveType for Float32Type {}
 impl PyArrowPrimitiveType for Float64Type {}
 
