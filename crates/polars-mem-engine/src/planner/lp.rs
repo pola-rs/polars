@@ -336,25 +336,11 @@ fn create_physical_plan_impl(
             }))
         },
         DataFrameScan {
+            df, output_schema, ..
+        } => Ok(Box::new(executors::DataFrameExec {
             df,
-            filter: predicate,
-            schema,
-            output_schema,
-            ..
-        } => {
-            let mut state = ExpressionConversionState::new(true, state.expr_depth);
-            let selection = predicate
-                .map(|pred| {
-                    create_physical_expr(&pred, Context::Default, expr_arena, &schema, &mut state)
-                })
-                .transpose()?;
-            Ok(Box::new(executors::DataFrameExec {
-                df,
-                projection: output_schema.map(|s| s.iter_names_cloned().collect()),
-                filter: selection,
-                predicate_has_windows: state.has_windows,
-            }))
-        },
+            projection: output_schema.map(|s| s.iter_names_cloned().collect()),
+        })),
         Sort {
             input,
             by_column,

@@ -189,7 +189,6 @@ impl<'a> TreeFmtNode<'a> {
                     DataFrameScan {
                         schema,
                         output_schema,
-                        filter: selection,
                         ..
                     } => ND(
                         wh(
@@ -205,11 +204,7 @@ impl<'a> TreeFmtNode<'a> {
                                 schema.len()
                             ),
                         ),
-                        if let Some(expr) = selection {
-                            vec![self.expr_node(Some("SELECTION:".to_string()), expr)]
-                        } else {
-                            vec![]
-                        },
+                        vec![],
                     ),
                     Union { inputs, .. } => ND(
                         wh(

@@ -341,15 +341,20 @@ impl PredicatePushDown<'_> {
                 df,
                 schema,
                 output_schema,
-                filter: selection,
             } => {
-                let selection = predicate_at_scan(acc_predicates, selection, expr_arena);
-                let lp = DataFrameScan {
+                let selection = predicate_at_scan(acc_predicates, None, expr_arena);
+                let mut lp = DataFrameScan {
                     df,
                     schema,
                     output_schema,
-                    filter: selection,
                 };
+
+                if let Some(predicate) = selection {
+                    let input = lp_arena.add(lp);
+
+                    lp = IR::Filter { input, predicate }
+                }
+
                 Ok(lp)
             },
             Scan {
@@ -430,7 +435,6 @@ impl PredicatePushDown<'_> {
                                     df: Arc::new(df),
                                     schema: schema.clone(),
                                     output_schema: None,
-                                    filter: None,
                                 });
                             } else {
                                 sources = ScanSources::Paths(new_paths.into());

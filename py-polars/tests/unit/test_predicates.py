@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -201,7 +202,9 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
         .filter(pl.col("b") == 1)
         .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
     )
-    assert "SELECTION: None" in out.explain(predicate_pushdown=True)
+    assert (
+        re.search(r"FILTER.*FROM\n\s*DF", out.explain(predicate_pushdown=True)) is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -275,7 +278,7 @@ def test_literal_series_expr_predicate_pushdown() -> None:
         .filter(pl.col("x").is_in([0, 1]))
     )
 
-    assert "FILTER" not in lf.explain()
+    assert re.search(r"FILTER .* FROM\n\s*DF", lf.explain()) is not None
     assert lf.collect().to_series().to_list() == [1]
 
 
@@ -285,8 +288,9 @@ def test_multi_alias_pushdown() -> None:
     actual = lf.with_columns(m="a", n="b").filter((pl.col("m") + pl.col("n")) < 2)
     plan = actual.explain()
 
-    assert "FILTER" not in plan
-    assert r'SELECTION: [([(col("a")) + (col("b"))]) < (2)]' in plan
+    print(plan)
+    assert plan.count("FILTER") == 1
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
 
     with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
         # confirm we aren't using `eq_missing` in the query plan (denoted as " ==v ")
@@ -311,8 +315,12 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     ).filter(pl.col("key") == 5)
 
     plan = actual.explain()
-    assert "FILTER" not in plan
-    assert r'SELECTION: [(col("key")) == (5)]' in plan
+
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
+    assert plan.count("FILTER") == 1
 
     actual = (
         lf.with_columns(
@@ -324,13 +332,8 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
 
     plan = actual.explain()
-    assert "FILTER" not in plan
-    assert (
-        # hashbrown::HashMap is unordered.
-        r'SELECTION: [([(col("key")) == (5)]) & ([(col("key_2")) == (5)])]' in plan
-        or r'SELECTION: [([(col("key_2")) == (5)]) & ([(col("key")) == (5)])]' in plan
-    )
-
+    assert plan.count("FILTER") == 1
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
     actual = (
         lf.with_columns(
             (pl.col("value") * 2).over("key", "key_2").alias("value_2"),
@@ -341,8 +344,11 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
 
     plan = actual.explain()
-    assert "FILTER" in plan
-    assert r'SELECTION: [(col("key")) == (5)]' in plan
+    assert plan.count("FILTER") == 2
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
 
     actual = (
         lf.with_columns(
@@ -353,8 +359,11 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         .filter(pl.col("key_2") == 5)
     )
     plan = actual.explain()
-    assert "FILTER" in plan
-    assert r'SELECTION: [(col("key")) == (5)]' in plan
+    assert plan.count("FILTER") == 2
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
 
     # Should block when .over() contains groups-sensitive expr
     actual = (
@@ -367,9 +376,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
 
     plan = actual.explain()
+    assert plan.count("FILTER") == 1
     assert "FILTER" in plan
-    assert "SELECTION: None" in plan
-
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is None
     # Ensure the implementation doesn't accidentally push a window expression
     # that only refers to the common window keys.
     actual = lf.with_columns(
@@ -377,14 +386,24 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     ).filter(pl.len().over("key") == 1)
 
     plan = actual.explain()
-    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
-    assert "SELECTION: None" in plan
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is None
+    assert plan.count("FILTER") == 1
 
     # Test window in filter
     actual = lf.filter(pl.len().over("key") == 1).filter(pl.col("key") == 1)
     plan = actual.explain()
-    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
-    assert r'SELECTION: [(col("key")) == (1)]' in plan
+    assert plan.count("FILTER") == 2
+    assert (
+        re.search(
+            r'FILTER \[\(len\(\).over\(\[col\("key"\)\]\)\) == \(1\)\]\s*FROM\n\s*FILTER',
+            plan,
+        )
+        is not None
+    )
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(1\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
 
 
 def test_predicate_reduction() -> None:
@@ -513,11 +532,14 @@ def test_predicate_slice_pushdown_list_gather_17492() -> None:
     )
 
     # null_on_oob=True can pass
-    assert "FILTER" not in (
+
+    plan = (
         lf.filter(pl.col("len") == 2)
         .filter(pl.col("val").list.get(1, null_on_oob=True) == 1)
         .explain()
     )
+
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
 
     # Also check slice pushdown
     q = lf.with_columns(pl.col("val").list.get(1).alias("b")).slice(1, 1)
