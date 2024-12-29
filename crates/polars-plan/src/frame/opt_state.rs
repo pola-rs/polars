@@ -47,6 +47,41 @@ impl OptFlags {
     pub fn schema_only() -> Self {
         Self::TYPE_COERCION | Self::TYPE_CHECK
     }
+
+    pub fn eager(&self) -> bool {
+        self.contains(OptFlags::EAGER)
+    }
+
+    pub fn cluster_with_columns(&self) -> bool {
+        self.contains(OptFlags::CLUSTER_WITH_COLUMNS)
+    }
+
+    pub fn collapse_joins(&self) -> bool {
+        self.contains(OptFlags::COLLAPSE_JOINS)
+    }
+
+    pub fn predicate_pushdown(&self) -> bool {
+        self.contains(OptFlags::PREDICATE_PUSHDOWN)
+    }
+
+    pub fn projection_pushdown(&self) -> bool {
+        self.contains(OptFlags::PROJECTION_PUSHDOWN)
+    }
+    pub fn simplify_expr(&self) -> bool {
+        self.contains(OptFlags::SIMPLIFY_EXPR)
+    }
+    pub fn slice_pushdown(&self) -> bool {
+        self.contains(OptFlags::SLICE_PUSHDOWN)
+    }
+    pub fn streaming(&self) -> bool {
+        self.contains(OptFlags::STREAMING)
+    }
+    pub fn new_streaming(&self) -> bool {
+        self.contains(OptFlags::NEW_STREAMING)
+    }
+    pub fn fast_projection(&self) -> bool {
+        self.contains(OptFlags::FAST_PROJECTION)
+    }
 }
 
 impl Default for OptFlags {

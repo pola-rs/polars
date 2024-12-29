@@ -441,6 +441,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         predicates.push(n)
                     }
                 }
+                let multiple_filters = predicates.len() > 1;
 
                 for predicate in predicates {
                     let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
@@ -449,6 +450,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let lp = IR::Filter { input, predicate };
                     input = run_conversion(lp, ctxt, "filter")?;
                 }
+
+                // Ensure that predicate are combined by optimizer
+                if ctxt.opt_flags.eager() && multiple_filters {
+                    ctxt.opt_flags.insert(OptFlags::EAGER);
+                }
+
                 Ok(input)
             } else {
                 ctxt.conversion_optimizer
