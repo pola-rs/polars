@@ -169,7 +169,7 @@ pub fn set_estimated_row_counts(
                         let (known_size, estimated_size) = options.rows_left;
                         (known_size, estimated_size, filter_count_left)
                     },
-                    JoinType::Cross(_) | JoinType::Full { .. } => {
+                    JoinType::Cross | JoinType::Full { .. } => {
                         let (known_size_left, estimated_size_left) = options.rows_left;
                         let (known_size_right, estimated_size_right) = options.rows_right;
                         match (known_size_left, known_size_right) {
@@ -308,7 +308,7 @@ pub(crate) fn det_join_schema(
             // so the columns that are joined on, may have different
             // values so if the right has a different name, it is added to the schema
             #[cfg(feature = "asof_join")]
-            if matches!(_how, JoinType::AsOf(_)) {
+            if matches!(_how, JoinType::AsOf) {
                 for (left_on, right_on) in left_on.iter().zip(right_on) {
                     let field_left = left_on.field(schema_left, Context::Default, expr_arena)?;
                     let field_right = right_on.field(schema_right, Context::Default, expr_arena)?;
@@ -335,7 +335,7 @@ pub(crate) fn det_join_schema(
                 if !join_on_right.contains(name.as_str()) || (!should_coalesce) {
                     // Asof join by columns are coalesced
                     #[cfg(feature = "asof_join")]
-                    if let JoinType::AsOf(asof_options) = &options.args.how {
+                    if let Some(JoinTypeOptions::AsOf(asof_options)) = &options.options {
                         if let Some(right_by) = &asof_options.right_by {
                             {
                                 // Do not add suffix. The column of the left table will be used

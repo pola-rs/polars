@@ -63,7 +63,7 @@ pub trait DataFrameJoinOps: IntoDf {
     /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
     ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinTypeName::Inner))?;
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner))?;
     /// assert_eq!(df3.shape(), (3, 3));
     /// println!("{}", df3);
     /// # Ok::<(), PolarsError>(())
@@ -91,6 +91,7 @@ pub trait DataFrameJoinOps: IntoDf {
         left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         args: JoinArgs,
+        options: Option<JoinTypeOptions>,
     ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
         let selected_left = df_left.select_columns(left_on)?;
@@ -105,7 +106,15 @@ pub trait DataFrameJoinOps: IntoDf {
             .map(Column::take_materialized_series)
             .collect::<Vec<_>>();
 
-        self._join_impl(other, selected_left, selected_right, args, true, false)
+        self._join_impl(
+            other,
+            selected_left,
+            selected_right,
+            args,
+            options,
+            true,
+            false,
+        )
     }
 
     #[doc(hidden)]
@@ -117,13 +126,14 @@ pub trait DataFrameJoinOps: IntoDf {
         mut selected_left: Vec<Series>,
         mut selected_right: Vec<Series>,
         mut args: JoinArgs,
+        options: Option<JoinTypeOptions>,
         _check_rechunk: bool,
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
         let left_df = self.to_df();
 
         #[cfg(feature = "cross_join")]
-        if let JoinTypeName::Cross = args.how {
+        if let JoinType::Cross = args.how {
             return left_df.cross_join(other, args.suffix.clone(), args.slice);
         }
 
@@ -151,7 +161,7 @@ pub trait DataFrameJoinOps: IntoDf {
             // the others not yet.
             // TODO! change this to other join types once they support chunked-id joins
             if _check_rechunk
-                && !(matches!(args.how, JoinTypeName::Left)
+                && !(matches!(args.how, JoinType::Left)
                     || std::env::var("POLARS_NO_CHUNKED_JOIN").is_ok())
             {
                 let mut left = Cow::Borrowed(left_df);
@@ -178,6 +188,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     selected_left,
                     selected_right,
                     args,
+                    options,
                     false,
                     _verbose,
                 );
@@ -212,8 +223,8 @@ pub trait DataFrameJoinOps: IntoDf {
         }
 
         #[cfg(feature = "iejoin")]
-        if let JoinTypeName::IEJoin = args.how {
-            let Some(JoinTypeOptions::IEJoin(options)) = args.options else {
+        if let JoinType::IEJoin = args.how {
+            let Some(JoinTypeOptions::IEJoin(options)) = options else {
                 unreachable!()
             };
             let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty()
@@ -240,9 +251,9 @@ pub trait DataFrameJoinOps: IntoDf {
             let drop_names: Option<Vec<PlSmallStr>> =
                 if should_coalesce { None } else { Some(vec![]) };
             return match args.how {
-                JoinTypeName::Inner => left_df
+                JoinType::Inner => left_df
                     ._inner_join_from_series(other, s_left, s_right, args, _verbose, drop_names),
-                JoinTypeName::Left => dispatch_left_right::left_join_from_series(
+                JoinType::Left => dispatch_left_right::left_join_from_series(
                     self.to_df().clone(),
                     other,
                     s_left,
@@ -251,7 +262,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     _verbose,
                     drop_names,
                 ),
-                JoinTypeName::Right => dispatch_left_right::right_join_from_series(
+                JoinType::Right => dispatch_left_right::right_join_from_series(
                     self.to_df(),
                     other.clone(),
                     s_left,
@@ -260,9 +271,9 @@ pub trait DataFrameJoinOps: IntoDf {
                     _verbose,
                     drop_names,
                 ),
-                JoinTypeName::Full => left_df._full_join_from_series(other, s_left, s_right, args),
+                JoinType::Full => left_df._full_join_from_series(other, s_left, s_right, args),
                 #[cfg(feature = "semi_anti_join")]
-                JoinTypeName::Anti => left_df._semi_anti_join_from_series(
+                JoinType::Anti => left_df._semi_anti_join_from_series(
                     s_left,
                     s_right,
                     args.slice,
@@ -270,7 +281,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     args.join_nulls,
                 ),
                 #[cfg(feature = "semi_anti_join")]
-                JoinTypeName::Semi => left_df._semi_anti_join_from_series(
+                JoinType::Semi => left_df._semi_anti_join_from_series(
                     s_left,
                     s_right,
                     args.slice,
@@ -278,8 +289,8 @@ pub trait DataFrameJoinOps: IntoDf {
                     args.join_nulls,
                 ),
                 #[cfg(feature = "asof_join")]
-                JoinTypeName::AsOf => {
-                    let Some(JoinTypeOptions::AsOf(options)) = args.options else {
+                JoinType::AsOf => {
+                    let Some(JoinTypeOptions::AsOf(options)) = options else {
                         unreachable!()
                     };
                     match (options.left_by, options.right_by) {
@@ -311,10 +322,10 @@ pub trait DataFrameJoinOps: IntoDf {
                     }
                 },
                 #[cfg(feature = "iejoin")]
-                JoinTypeName::IEJoin => {
+                JoinType::IEJoin => {
                     unreachable!()
                 },
-                JoinTypeName::Cross => {
+                JoinType::Cross => {
                     unreachable!()
                 },
             };
@@ -335,17 +346,17 @@ pub trait DataFrameJoinOps: IntoDf {
         // Multiple keys.
         match args.how {
             #[cfg(feature = "asof_join")]
-            JoinTypeName::AsOf => polars_bail!(
+            JoinType::AsOf => polars_bail!(
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
             #[cfg(feature = "iejoin")]
-            JoinTypeName::IEJoin => {
+            JoinType::IEJoin => {
                 unreachable!()
             },
-            JoinTypeName::Cross => {
+            JoinType::Cross => {
                 unreachable!()
             },
-            JoinTypeName::Full => {
+            JoinType::Full => {
                 let names_left = selected_left
                     .iter()
                     .map(|s| s.name().clone())
@@ -366,7 +377,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     out
                 }
             },
-            JoinTypeName::Inner => left_df._inner_join_from_series(
+            JoinType::Inner => left_df._inner_join_from_series(
                 other,
                 &lhs_keys,
                 &rhs_keys,
@@ -374,7 +385,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 _verbose,
                 Some(drop_names),
             ),
-            JoinTypeName::Left => dispatch_left_right::left_join_from_series(
+            JoinType::Left => dispatch_left_right::left_join_from_series(
                 left_df.clone(),
                 other,
                 &lhs_keys,
@@ -383,7 +394,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 _verbose,
                 Some(drop_names),
             ),
-            JoinTypeName::Right => dispatch_left_right::right_join_from_series(
+            JoinType::Right => dispatch_left_right::right_join_from_series(
                 left_df,
                 other.clone(),
                 &lhs_keys,
@@ -393,11 +404,12 @@ pub trait DataFrameJoinOps: IntoDf {
                 Some(drop_names),
             ),
             #[cfg(feature = "semi_anti_join")]
-            JoinTypeName::Anti | JoinTypeName::Semi => self._join_impl(
+            JoinType::Anti | JoinType::Semi => self._join_impl(
                 other,
                 vec![lhs_keys],
                 vec![rhs_keys],
                 args,
+                options,
                 _check_rechunk,
                 _verbose,
             ),
@@ -425,7 +437,8 @@ pub trait DataFrameJoinOps: IntoDf {
             other,
             left_on,
             right_on,
-            JoinArgs::new(JoinTypeName::Inner, None),
+            JoinArgs::new(JoinType::Inner),
+            None,
         )
     }
 
@@ -474,7 +487,8 @@ pub trait DataFrameJoinOps: IntoDf {
             other,
             left_on,
             right_on,
-            JoinArgs::new(JoinTypeName::Left, None),
+            JoinArgs::new(JoinType::Left),
+            None,
         )
     }
 
@@ -498,7 +512,8 @@ pub trait DataFrameJoinOps: IntoDf {
             other,
             left_on,
             right_on,
-            JoinArgs::new(JoinTypeName::Full, None),
+            JoinArgs::new(JoinType::Full),
+            None,
         )
     }
 }

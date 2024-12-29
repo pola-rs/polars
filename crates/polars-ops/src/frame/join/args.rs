@@ -25,7 +25,7 @@ use strum_macros::IntoStaticStr;
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {
-    pub how: JoinTypeName,
+    pub how: JoinType,
     pub validation: JoinValidation,
     pub suffix: Option<PlSmallStr>,
     pub slice: Option<(i64, usize)>,
@@ -42,7 +42,7 @@ impl JoinArgs {
 
 #[derive(Clone, PartialEq, Eq, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum JoinTypeName {
+pub enum JoinType {
     #[default]
     Inner,
     Left,
@@ -69,9 +69,9 @@ pub enum JoinCoalesce {
 }
 
 impl JoinCoalesce {
-    pub fn coalesce(&self, join_type: &JoinTypeName) -> bool {
+    pub fn coalesce(&self, join_type: &JoinType) -> bool {
         use JoinCoalesce::*;
-        use JoinTypeName::*;
+        use JoinType::*;
         match join_type {
             Left | Inner | Right => {
                 matches!(self, JoinSpecific | CoalesceColumns)
@@ -129,7 +129,7 @@ impl Default for JoinArgs {
 }
 
 impl JoinArgs {
-    pub fn new(how: JoinTypeName) -> Self {
+    pub fn new(how: JoinType) -> Self {
         Self {
             how,
             validation: Default::default(),
@@ -206,11 +206,12 @@ pub enum JoinTypeOptions {
     IEJoin(IEJoinOptions),
     #[cfg_attr(feature = "serde", serde(skip))]
     Cross(CrossJoinOptions),
+    None,
 }
 
-impl Display for JoinTypeName {
+impl Display for JoinType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use JoinTypeName::*;
+        use JoinType::*;
         let val = match self {
             Left => "LEFT",
             Right => "RIGHT",
@@ -230,24 +231,24 @@ impl Display for JoinTypeName {
     }
 }
 
-impl Debug for JoinTypeName {
+impl Debug for JoinType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl JoinTypeName {
+impl JoinType {
     pub fn is_equi(&self) -> bool {
         matches!(
             self,
-            JoinTypeName::Inner | JoinTypeName::Left | JoinTypeName::Right | JoinTypeName::Full
+            JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
         )
     }
 
     pub fn is_asof(&self) -> bool {
         #[cfg(feature = "asof_join")]
         {
-            matches!(self, JoinTypeName::AsOf)
+            matches!(self, JoinType::AsOf)
         }
         #[cfg(not(feature = "asof_join"))]
         {
@@ -256,13 +257,13 @@ impl JoinTypeName {
     }
 
     pub fn is_cross(&self) -> bool {
-        matches!(self, JoinTypeName::Cross)
+        matches!(self, JoinType::Cross)
     }
 
     pub fn is_ie(&self) -> bool {
         #[cfg(feature = "iejoin")]
         {
-            matches!(self, JoinTypeName::IEJoin)
+            matches!(self, JoinType::IEJoin)
         }
         #[cfg(not(feature = "iejoin"))]
         {
@@ -304,11 +305,11 @@ impl JoinValidation {
         }
     }
 
-    pub fn is_valid_join(&self, join_type: &JoinTypeName) -> PolarsResult<()> {
+    pub fn is_valid_join(&self, join_type: &JoinType) -> PolarsResult<()> {
         if !self.needs_checks() {
             return Ok(());
         }
-        polars_ensure!(matches!(join_type, JoinTypeName::Inner | JoinTypeName::Full | JoinTypeName::Left),
+        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Full | JoinType::Left),
                       ComputeError: "{self} validation on a {join_type} join is not supported");
         Ok(())
     }

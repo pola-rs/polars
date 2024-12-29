@@ -8,7 +8,7 @@ use std::sync::Arc;
 use polars_core::schema::*;
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::{IEJoinOptions, InequalityOperator};
-use polars_ops::frame::{JoinCoalesce, JoinType};
+use polars_ops::frame::{JoinCoalesce, JoinType, JoinTypeOptions};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -408,7 +408,7 @@ pub fn insert_fitting_join(
         debug_assert_eq!(ie_left_on.len(), ie_right_on.len());
         debug_assert!(ie_op.len() <= 2);
     }
-    debug_assert!(matches!(options.args.how, JoinType::Cross(_)));
+    debug_assert!(matches!(options.args.how, JoinType::Cross));
 
     let remaining_predicates = remaining_predicates
         .iter()
@@ -444,10 +444,11 @@ pub fn insert_fitting_join(
             let operator2 = ie_op.get(1).copied();
 
             // Do an IEjoin.
-            options.args.how = JoinType::IEJoin(IEJoinOptions {
+            options.args.how = JoinType::IEJoin;
+            options.options = Some(JoinTypeOptions::IEJoin(IEJoinOptions {
                 operator1,
                 operator2,
-            });
+            }));
             // We need to make sure not to delete any columns
             options.args.coalesce = JoinCoalesce::KeepColumns;
 
@@ -455,7 +456,7 @@ pub fn insert_fitting_join(
         },
         // If anything just fall back to a cross join.
         _ => {
-            options.args.how = JoinType::Cross(Default::default());
+            options.args.how = JoinType::Cross;
             // We need to make sure not to delete any columns
             options.args.coalesce = JoinCoalesce::KeepColumns;
 

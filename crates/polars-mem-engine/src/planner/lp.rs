@@ -528,6 +528,7 @@ fn create_physical_plan_impl(
                 right_on,
                 parallel,
                 options.args,
+                options.options,
             )))
         },
         HStack {

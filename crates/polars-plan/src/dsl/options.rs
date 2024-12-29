@@ -1,3 +1,4 @@
+use polars_ops::frame::JoinTypeOptions;
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
@@ -48,6 +49,7 @@ pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
     pub args: JoinArgs,
+    pub options: Option<JoinTypeOptions>,
     /// Proxy of the number of rows in both sides of the joins
     /// Holds `(Option<known_size>, estimated_size)`
     pub rows_left: (Option<usize>, usize),
@@ -59,7 +61,9 @@ impl Default for JoinOptions {
         JoinOptions {
             allow_parallel: true,
             force_parallel: false,
+            // Todo!: make default
             args: JoinArgs::new(JoinType::Left),
+            options: Default::default(),
             rows_left: (None, usize::MAX),
             rows_right: (None, usize::MAX),
         }

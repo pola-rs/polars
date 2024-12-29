@@ -240,7 +240,7 @@ where
 
             match &options.args.how {
                 #[cfg(feature = "cross_join")]
-                JoinType::Cross(_) => Box::new(CrossJoin::new(
+                JoinType::Cross => Box::new(CrossJoin::new(
                     options.args.suffix().clone(),
                     swapped,
                     node,
