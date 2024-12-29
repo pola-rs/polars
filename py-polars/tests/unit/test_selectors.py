@@ -1,5 +1,6 @@
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal as PyDecimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -110,6 +111,58 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
             "qqR": pl.String(),
         }
     )
+    assert df.select(
+        cs.by_dtype(pl.Datetime("ns"), pl.Float32, pl.UInt32, pl.Date)
+    ).schema == pl.Schema(
+        {
+            "bbb": pl.UInt32,
+            "def": pl.Float32,
+            "JJK": pl.Date,
+        }
+    )
+
+    # select using python types
+    assert df.select(cs.by_dtype(int, float)).schema == pl.Schema(
+        {
+            "abc": pl.UInt16,
+            "bbb": pl.UInt32,
+            "cde": pl.Float64,
+            "def": pl.Float32,
+        }
+    )
+    assert df.select(cs.by_dtype(bool, datetime, timedelta)).schema == pl.Schema(
+        {
+            "eee": pl.Boolean(),
+            "fgg": pl.Boolean(),
+            "Lmn": pl.Duration("us"),
+            "opp": pl.Datetime("ms"),
+        }
+    )
+
+    # cover timezones and decimal
+    dfx = pl.DataFrame(
+        {"idx": [], "dt1": [], "dt2": []},
+        schema_overrides={
+            "idx": pl.Decimal(24),
+            "dt1": pl.Datetime("ms"),
+            "dt2": pl.Datetime(time_zone="Asia/Tokyo"),
+        },
+    )
+    assert dfx.select(cs.by_dtype(PyDecimal)).schema == pl.Schema(
+        {"idx": pl.Decimal(24)},
+    )
+    assert dfx.select(cs.by_dtype(pl.Datetime(time_zone="*"))).schema == pl.Schema(
+        {"dt2": pl.Datetime(time_zone="Asia/Tokyo")}
+    )
+    assert dfx.select(cs.by_dtype(pl.Datetime("ms", None))).schema == pl.Schema(
+        {"dt1": pl.Datetime("ms")},
+    )
+    for dt in (datetime, pl.Datetime):
+        assert dfx.select(cs.by_dtype(dt)).schema == pl.Schema(
+            {"dt1": pl.Datetime("ms"), "dt2": pl.Datetime(time_zone="Asia/Tokyo")},
+        )
+
+    # empty selection selects nothing
     assert df.select(cs.by_dtype()).schema == {}
     assert df.select(cs.by_dtype([])).schema == {}
 
