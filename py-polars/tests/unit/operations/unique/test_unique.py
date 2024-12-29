@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import TYPE_CHECKING, Any
 
@@ -49,7 +50,13 @@ def test_unique_predicate_pd() -> None:
             plan = q.explain()
             assert r'FILTER col("z")' in plan
             # We can push filters if they only depend on the subset columns of unique()
-            assert r'SELECTION: [(col("x")) == (String(abc))]' in plan
+            assert (
+                re.search(
+                    r"FILTER \[\(col\(\"x\"\)\) == \(String\(abc\)\)\] FROM\n\s*DF",
+                    plan,
+                )
+                is not None
+            )
             assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
 
 

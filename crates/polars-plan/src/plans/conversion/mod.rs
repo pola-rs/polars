@@ -118,7 +118,6 @@ impl IR {
                 df,
                 schema,
                 output_schema: _,
-                filter: _,
             } => DslPlan::DataFrameScan { df, schema },
             IR::Select {
                 expr,

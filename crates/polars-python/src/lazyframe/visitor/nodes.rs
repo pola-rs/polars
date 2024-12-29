@@ -373,7 +373,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             df,
             schema: _,
             output_schema,
-            filter: selection,
         } => DataFrameScan {
             df: PyDataFrame::new((**df).clone()),
             projection: output_schema.as_ref().map_or_else(
@@ -385,7 +384,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .into_py_any(py)
                 },
             )?,
-            selection: selection.as_ref().map(|e| e.into()),
+            selection: None,
         }
         .into_py_any(py),
         IR::SimpleProjection { input, columns: _ } => {

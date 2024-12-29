@@ -107,10 +107,12 @@ fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsRes
                     let a: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
                     let b: &ChunkedArray<$T> = rhs.as_ref().as_ref().as_ref();
 
-                    if min {
-                        min_binary(a, b).into_series().cast(logical)
-                    } else {
-                        max_binary(a, b).into_series().cast(logical)
+                    unsafe {
+                        if min {
+                            min_binary(a, b).into_series().from_physical_unchecked(logical)
+                        } else {
+                            max_binary(a, b).into_series().from_physical_unchecked(logical)
+                        }
                     }
                 })
                 .map(Column::from)

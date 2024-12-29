@@ -40,9 +40,10 @@ from polars.expr import Expr
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable
 
     from polars import DataFrame, LazyFrame
-    from polars._typing import PolarsDataType, SelectorType, TimeUnit
+    from polars._typing import PolarsDataType, PythonDataType, SelectorType, TimeUnit
 
     if sys.version_info >= (3, 11):
         from typing import Self
@@ -868,7 +869,12 @@ def boolean() -> SelectorType:
 
 
 def by_dtype(
-    *dtypes: PolarsDataType | Collection[PolarsDataType],
+    *dtypes: (
+        PolarsDataType
+        | PythonDataType
+        | Iterable[PolarsDataType]
+        | Iterable[PythonDataType]
+    ),
 ) -> SelectorType:
     """
     Select all columns matching the given dtypes.
@@ -931,13 +937,13 @@ def by_dtype(
     │ foo   ┆ -3265500 │
     └───────┴──────────┘
     """
-    all_dtypes: list[PolarsDataType] = []
+    all_dtypes: list[PolarsDataType | PythonDataType] = []
     for tp in dtypes:
-        if is_polars_dtype(tp):
+        if is_polars_dtype(tp) or isinstance(tp, type):
             all_dtypes.append(tp)
         elif isinstance(tp, Collection):
             for t in tp:
-                if not is_polars_dtype(t):
+                if not (is_polars_dtype(t) or isinstance(t, type)):
                     msg = f"invalid dtype: {t!r}"
                     raise TypeError(msg)
                 all_dtypes.append(t)

@@ -122,19 +122,10 @@ impl IR {
                 df,
                 schema,
                 output_schema,
-                filter: selection,
-            } => {
-                let mut new_selection = None;
-                if selection.is_some() {
-                    new_selection = exprs.pop()
-                }
-
-                DataFrameScan {
-                    df: df.clone(),
-                    schema: schema.clone(),
-                    output_schema: output_schema.clone(),
-                    filter: new_selection,
-                }
+            } => DataFrameScan {
+                df: df.clone(),
+                schema: schema.clone(),
+                output_schema: output_schema.clone(),
             },
             MapFunction { function, .. } => MapFunction {
                 input: inputs[0],
@@ -181,13 +172,7 @@ impl IR {
                     container.push(pred.clone())
                 }
             },
-            DataFrameScan {
-                filter: selection, ..
-            } => {
-                if let Some(expr) = selection {
-                    container.push(expr.clone())
-                }
-            },
+            DataFrameScan { .. } => {},
             #[cfg(feature = "python")]
             PythonScan { .. } => {},
             HConcat { .. } => {},

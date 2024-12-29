@@ -176,11 +176,10 @@ pub fn lower_ir(
         IR::DataFrameScan {
             df,
             output_schema: projection,
-            filter,
             schema,
             ..
         } => {
-            let mut schema = schema.clone(); // This is initially the schema of df, but can change with the projection.
+            let schema = schema.clone(); // This is initially the schema of df, but can change with the projection.
             let mut node_kind = PhysNodeKind::InMemorySource { df: df.clone() };
 
             // Do we need to apply a projection?
@@ -196,13 +195,7 @@ pub fn lower_ir(
                         input: phys_input,
                         columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
                     };
-                    schema = projection_schema.clone();
                 }
-            }
-
-            if let Some(predicate) = filter.clone() {
-                let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
-                return build_filter_node(phys_input, predicate, expr_arena, phys_sm, expr_cache);
             }
 
             node_kind
