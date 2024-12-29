@@ -19,7 +19,7 @@ from polars.exceptions import (
     PolarsInefficientMapWarning,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES
 
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
@@ -1334,7 +1334,21 @@ def test_compare_schema_between_lazy_and_eager_6904() -> None:
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.Float32,
+        pl.Float64,
+    ],
+)
 @pytest.mark.parametrize(
     "func",
     [
