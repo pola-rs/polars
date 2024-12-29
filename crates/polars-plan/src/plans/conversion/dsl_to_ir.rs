@@ -24,7 +24,6 @@ fn empty_df() -> IR {
         df: Arc::new(Default::default()),
         schema: Arc::new(Default::default()),
         output_schema: None,
-        filter: None,
     }
 }
 
@@ -342,7 +341,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,
                         output_schema: None,
-                        filter: None,
                     }
                 } else {
                     IR::Scan {
@@ -471,7 +469,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             df,
             schema,
             output_schema: None,
-            filter: None,
         },
         DslPlan::Select {
             expr,

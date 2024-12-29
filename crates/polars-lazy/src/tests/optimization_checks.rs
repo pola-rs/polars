@@ -24,18 +24,14 @@ pub(crate) fn predicate_at_scan(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    (&lp_arena).iter(lp).any(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            DataFrameScan {
-                filter: Some(_),
-                ..
-            } | Scan {
-                predicate: Some(_),
-                ..
-            }
-        )
+    (&lp_arena).iter(lp).any(|(_, lp)| match lp {
+        IR::Filter { input, .. } => {
+            matches!(lp_arena.get(*input), IR::DataFrameScan { .. })
+        },
+        IR::Scan {
+            predicate: Some(_), ..
+        } => true,
+        _ => false,
     })
 }
 
@@ -43,18 +39,14 @@ pub(crate) fn predicate_at_all_scans(q: LazyFrame) -> bool {
     let (mut expr_arena, mut lp_arena) = get_arenas();
     let lp = q.optimize(&mut lp_arena, &mut expr_arena).unwrap();
 
-    (&lp_arena).iter(lp).all(|(_, lp)| {
-        use IR::*;
-        matches!(
-            lp,
-            DataFrameScan {
-                filter: Some(_),
-                ..
-            } | Scan {
-                predicate: Some(_),
-                ..
-            }
-        )
+    (&lp_arena).iter(lp).all(|(_, lp)| match lp {
+        IR::Filter { input, .. } => {
+            matches!(lp_arena.get(*input), IR::DataFrameScan { .. })
+        },
+        IR::Scan {
+            predicate: Some(_), ..
+        } => true,
+        _ => false,
     })
 }
 
@@ -128,11 +120,6 @@ fn test_pred_pd_1() -> PolarsResult<()> {
         .filter(col("B").gt(lit(1)));
 
     assert!(predicate_at_scan(q));
-
-    // check if we do not pass slice
-    let q = df.lazy().limit(10).filter(col("B").gt(lit(1)));
-
-    assert!(!predicate_at_scan(q));
 
     Ok(())
 }

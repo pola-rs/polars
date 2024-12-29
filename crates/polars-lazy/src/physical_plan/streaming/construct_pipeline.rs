@@ -247,7 +247,6 @@ fn get_pipeline_node(
         df: Arc::new(DataFrame::empty()),
         schema: Arc::new(Schema::default()),
         output_schema: None,
-        filter: None,
     });
 
     IR::MapFunction {

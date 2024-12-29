@@ -52,22 +52,13 @@ where
     use IR::*;
     match source {
         DataFrameScan {
-            df,
-            filter: selection,
-            output_schema,
-            ..
+            df, output_schema, ..
         } => {
             let mut df = (*df).clone();
             let schema = output_schema
                 .clone()
                 .unwrap_or_else(|| Arc::new(df.schema()));
             if push_predicate {
-                if let Some(predicate) = selection {
-                    let predicate = to_physical(&predicate, expr_arena, &schema)?;
-                    let op = operators::FilterOperator { predicate };
-                    let op = Box::new(op) as Box<dyn Operator>;
-                    operator_objects.push(op)
-                }
                 // projection is free
                 if let Some(schema) = output_schema {
                     let columns = schema.iter_names_cloned().collect::<Vec<_>>();
