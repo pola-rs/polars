@@ -172,7 +172,7 @@ fn replace_by_multiple(
         [s.name().as_str()],
         ["__POLARS_REPLACE_OLD"],
         JoinArgs {
-            how: JoinType::Left,
+            how: JoinTypeName::Left,
             coalesce: JoinCoalesce::CoalesceColumns,
             join_nulls: true,
             ..Default::default()
@@ -213,7 +213,7 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
         [s.name().as_str()],
         ["__POLARS_REPLACE_OLD"],
         JoinArgs {
-            how: JoinType::Left,
+            how: JoinTypeName::Left,
             coalesce: JoinCoalesce::CoalesceColumns,
             join_nulls: true,
             ..Default::default()

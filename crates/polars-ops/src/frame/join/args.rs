@@ -1,3 +1,5 @@
+use std::default;
+
 use super::*;
 
 pub(super) type JoinIds = Vec<IdxSize>;
@@ -23,7 +25,7 @@ use strum_macros::IntoStaticStr;
 #[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {
-    pub how: JoinType,
+    pub how: JoinTypeName,
     pub validation: JoinValidation,
     pub suffix: Option<PlSmallStr>,
     pub slice: Option<(i64, usize)>,
@@ -38,6 +40,25 @@ impl JoinArgs {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, Hash, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum JoinTypeName {
+    #[default]
+    Inner,
+    Left,
+    Right,
+    Full,
+    #[cfg(feature = "asof_join")]
+    AsOf,
+    #[cfg(feature = "semi_anti_join")]
+    Semi,
+    #[cfg(feature = "semi_anti_join")]
+    Anti,
+    #[cfg(feature = "iejoin")]
+    IEJoin,
+    Cross,
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinCoalesce {
@@ -48,9 +69,9 @@ pub enum JoinCoalesce {
 }
 
 impl JoinCoalesce {
-    pub fn coalesce(&self, join_type: &JoinType) -> bool {
+    pub fn coalesce(&self, join_type: &JoinTypeName) -> bool {
         use JoinCoalesce::*;
-        use JoinType::*;
+        use JoinTypeName::*;
         match join_type {
             Left | Inner | Right => {
                 matches!(self, JoinSpecific | CoalesceColumns)
@@ -59,10 +80,10 @@ impl JoinCoalesce {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]
-            AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
+            AsOf => matches!(self, JoinSpecific | CoalesceColumns),
             #[cfg(feature = "iejoin")]
-            IEJoin(_) => false,
-            Cross(_) => false,
+            IEJoin => false,
+            Cross => false,
             #[cfg(feature = "semi_anti_join")]
             Semi | Anti => false,
         }
@@ -96,7 +117,7 @@ impl MaintainOrderJoin {
 impl Default for JoinArgs {
     fn default() -> Self {
         Self {
-            how: JoinType::Inner,
+            how: Default::default(),
             validation: Default::default(),
             suffix: None,
             slice: None,
@@ -108,7 +129,7 @@ impl Default for JoinArgs {
 }
 
 impl JoinArgs {
-    pub fn new(how: JoinType) -> Self {
+    pub fn new(how: JoinTypeName) -> Self {
         Self {
             how,
             validation: Default::default(),
@@ -165,45 +186,41 @@ impl Hash for CrossJoinOptions {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, IntoStaticStr)]
+impl Debug for CrossJoinOptions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "CrossJoinOptions: predicate: {}",
+            self.predicate.is_some()
+        )
+    }
+}
+
+#[derive(Clone, PartialEq, Eq, Hash, IntoStaticStr, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
-pub enum JoinType {
-    Inner,
-    Left,
-    Right,
-    Full,
+pub enum JoinTypeOptions {
     #[cfg(feature = "asof_join")]
     AsOf(AsOfOptions),
-    #[cfg(feature = "semi_anti_join")]
-    Semi,
-    #[cfg(feature = "semi_anti_join")]
-    Anti,
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
     #[cfg_attr(feature = "serde", serde(skip))]
     Cross(CrossJoinOptions),
 }
 
-impl From<JoinType> for JoinArgs {
-    fn from(value: JoinType) -> Self {
-        JoinArgs::new(value)
-    }
-}
-
-impl Display for JoinType {
+impl Display for JoinTypeName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        use JoinType::*;
+        use JoinTypeName::*;
         let val = match self {
             Left => "LEFT",
             Right => "RIGHT",
             Inner => "INNER",
-            Full { .. } => "FULL",
+            Full => "FULL",
             #[cfg(feature = "asof_join")]
-            AsOf(_) => "ASOF",
+            AsOf => "ASOF",
             #[cfg(feature = "iejoin")]
-            IEJoin(_) => "IEJOIN",
-            Cross(_) => "CROSS",
+            IEJoin => "IEJOIN",
+            Cross => "CROSS",
             #[cfg(feature = "semi_anti_join")]
             Semi => "SEMI",
             #[cfg(feature = "semi_anti_join")]
@@ -213,24 +230,24 @@ impl Display for JoinType {
     }
 }
 
-impl Debug for JoinType {
+impl Debug for JoinTypeName {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self}")
     }
 }
 
-impl JoinType {
+impl JoinTypeName {
     pub fn is_equi(&self) -> bool {
         matches!(
             self,
-            JoinType::Inner | JoinType::Left | JoinType::Right | JoinType::Full
+            JoinTypeName::Inner | JoinTypeName::Left | JoinTypeName::Right | JoinTypeName::Full
         )
     }
 
     pub fn is_asof(&self) -> bool {
         #[cfg(feature = "asof_join")]
         {
-            matches!(self, JoinType::AsOf(_))
+            matches!(self, JoinTypeName::AsOf)
         }
         #[cfg(not(feature = "asof_join"))]
         {
@@ -239,13 +256,13 @@ impl JoinType {
     }
 
     pub fn is_cross(&self) -> bool {
-        matches!(self, JoinType::Cross(_))
+        matches!(self, JoinTypeName::Cross)
     }
 
     pub fn is_ie(&self) -> bool {
         #[cfg(feature = "iejoin")]
         {
-            matches!(self, JoinType::IEJoin(_))
+            matches!(self, JoinTypeName::IEJoin)
         }
         #[cfg(not(feature = "iejoin"))]
         {
@@ -287,11 +304,11 @@ impl JoinValidation {
         }
     }
 
-    pub fn is_valid_join(&self, join_type: &JoinType) -> PolarsResult<()> {
+    pub fn is_valid_join(&self, join_type: &JoinTypeName) -> PolarsResult<()> {
         if !self.needs_checks() {
             return Ok(());
         }
-        polars_ensure!(matches!(join_type, JoinType::Inner | JoinType::Full{..} | JoinType::Left),
+        polars_ensure!(matches!(join_type, JoinTypeName::Inner | JoinTypeName::Full | JoinTypeName::Left),
                       ComputeError: "{self} validation on a {join_type} join is not supported");
         Ok(())
     }

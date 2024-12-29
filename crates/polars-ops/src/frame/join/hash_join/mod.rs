@@ -197,7 +197,7 @@ pub trait JoinDispatch: IntoDf {
             )
         };
 
-        let coalesce = args.coalesce.coalesce(&JoinType::Full);
+        let coalesce = args.coalesce.coalesce(&JoinTypeName::Full);
         let out = _finish_join(df_left, df_right, args.suffix.clone());
         if coalesce {
             Ok(_coalesce_full_join(
