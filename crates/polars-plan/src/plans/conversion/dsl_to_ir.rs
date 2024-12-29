@@ -681,11 +681,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let cols = expand_selectors(s, input_schema.as_ref(), &[])?;
 
                     // Checking if subset columns exist in the dataframe
-                    cols.iter()
-                        .try_for_each(|name| match input_schema.try_get_field(name) {
-                            Ok(_) => Ok(()),
-                            Err(_) => Err(polars_err!(col_not_found = name)),
-                        })?;
+                    for col in cols.iter() {
+                        let _ = input_schema
+                            .try_get(col)
+                            .map_err(|_| polars_err!(col_not_found = col))?;
+                    }
 
                     Ok::<_, PolarsError>(cols)
                 })
