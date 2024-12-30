@@ -689,8 +689,8 @@ fn rg_to_dfs_par_over_rg(
         .sum();
     let slice_end = slice.0 + slice.1;
 
-    // we need to distinguish between the number of rows scanned and the number of rows actually read
-    // these values can differ when the slice_pushdown optimization and/or the async Parquet reader are being used
+    // we distinguish between the number of rows scanned and the number of rows actually
+    // read as these values can differ when the slice pushdown optimization is used
     let mut rows_scanned: IdxSize = (0..row_group_start)
         .map(|i| file_metadata.row_groups[i].num_rows() as IdxSize)
         .sum();
