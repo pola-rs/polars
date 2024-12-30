@@ -97,6 +97,7 @@ pub(super) fn sum_with_nulls(ca: &ArrayChunked, inner_dtype: &DataType) -> Polar
                     .collect();
                 out.into_series()
             },
+            #[cfg(feature = "dtype-i128")]
             Int128 => {
                 let out: Int128Chunked = ca
                     .amortized_iter()
