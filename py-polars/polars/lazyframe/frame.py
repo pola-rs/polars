@@ -4274,8 +4274,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This is similar to a left-join except that we match on nearest key rather than
         equal keys.
 
-        Both DataFrames must be sorted by the `join_asof` key (within each `by` group,
-        if specified).
+        Both DataFrames must be sorted by the `on` key (within each `by` group, if
+        specified).
 
         For each row in the left DataFrame:
 
