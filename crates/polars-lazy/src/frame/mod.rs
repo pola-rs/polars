@@ -1203,7 +1203,7 @@ impl LazyFrame {
             other,
             vec![],
             vec![],
-            JoinArgs::new(JoinType::Cross(Default::default())).with_suffix(suffix),
+            JoinArgs::new(JoinType::Cross).with_suffix(suffix),
         )
     }
 

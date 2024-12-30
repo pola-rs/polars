@@ -145,7 +145,7 @@ impl Executor for JoinExec {
                 left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 self.args.clone(),
-                self.options.clone(),
+                self.options.clone,
                 true,
                 state.verbose(),
             );
