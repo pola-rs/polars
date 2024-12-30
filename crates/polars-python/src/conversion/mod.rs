@@ -878,7 +878,7 @@ impl<'py> FromPyObject<'py> for Wrap<JoinType> {
             "semi" => JoinType::Semi,
             "anti" => JoinType::Anti,
             #[cfg(feature = "cross_join")]
-            "cross" => JoinType::Cross(Default::default()),
+            "cross" => JoinType::Cross,
             v => {
                 return Err(PyValueError::new_err(format!(
                 "`how` must be one of {{'inner', 'left', 'full', 'semi', 'anti', 'cross'}}, got {v}",

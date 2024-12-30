@@ -81,7 +81,7 @@ pub fn resolve_join(
         options.args.validation.is_valid_join(&options.args.how)?;
 
         #[cfg(feature = "asof_join")]
-        if let Some(JoinTypeOptions::AsOf(opt)) = &options.options {
+        if let JoinType::AsOf(opt) = &options.args.how {
             match (&opt.left_by, &opt.right_by) {
                 (None, None) => {},
                 (Some(l), Some(r)) => {

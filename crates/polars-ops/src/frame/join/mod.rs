@@ -289,37 +289,32 @@ pub trait DataFrameJoinOps: IntoDf {
                     args.join_nulls,
                 ),
                 #[cfg(feature = "asof_join")]
-                JoinType::AsOf => {
-                    let Some(JoinTypeOptions::AsOf(options)) = options else {
-                        unreachable!()
-                    };
-                    match (options.left_by, options.right_by) {
-                        (Some(left_by), Some(right_by)) => left_df._join_asof_by(
-                            other,
-                            s_left,
-                            s_right,
-                            left_by,
-                            right_by,
-                            options.strategy,
-                            options.tolerance,
-                            args.suffix.clone(),
-                            args.slice,
-                            should_coalesce,
-                        ),
-                        (None, None) => left_df._join_asof(
-                            other,
-                            s_left,
-                            s_right,
-                            options.strategy,
-                            options.tolerance,
-                            args.suffix,
-                            args.slice,
-                            should_coalesce,
-                        ),
-                        _ => {
-                            panic!("expected by arguments on both sides")
-                        },
-                    }
+                JoinType::AsOf(options) => match (options.left_by, options.right_by) {
+                    (Some(left_by), Some(right_by)) => left_df._join_asof_by(
+                        other,
+                        s_left,
+                        s_right,
+                        left_by,
+                        right_by,
+                        options.strategy,
+                        options.tolerance,
+                        args.suffix.clone(),
+                        args.slice,
+                        should_coalesce,
+                    ),
+                    (None, None) => left_df._join_asof(
+                        other,
+                        s_left,
+                        s_right,
+                        options.strategy,
+                        options.tolerance,
+                        args.suffix,
+                        args.slice,
+                        should_coalesce,
+                    ),
+                    _ => {
+                        panic!("expected by arguments on both sides")
+                    },
                 },
                 #[cfg(feature = "iejoin")]
                 JoinType::IEJoin => {
@@ -346,7 +341,7 @@ pub trait DataFrameJoinOps: IntoDf {
         // Multiple keys.
         match args.how {
             #[cfg(feature = "asof_join")]
-            JoinType::AsOf => polars_bail!(
+            JoinType::AsOf(_) => polars_bail!(
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
             #[cfg(feature = "iejoin")]

@@ -104,7 +104,7 @@ impl Executor for JoinExec {
             // we must ensure that we use the right units
             #[cfg(feature = "asof_join")]
             {
-                if let Some(JoinTypeOptions::AsOf(options)) = &mut self.options {
+                if let JoinType::AsOf(options) = &mut self.args.how {
                     use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
                     if let Some(tol) = &options.tolerance_str {
                         let duration = polars_time::Duration::parse(tol);
@@ -145,7 +145,7 @@ impl Executor for JoinExec {
                 left_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 right_on_series.into_iter().map(|c| c.take_materialized_series()).collect(),
                 self.args.clone(),
-                self.options.clone,
+                self.options.clone(),
                 true,
                 state.verbose(),
             );

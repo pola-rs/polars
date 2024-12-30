@@ -78,7 +78,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
         JoinType::Full { .. } => LeftRight(true, true),
         JoinType::Cross => LeftRight(true, true),
         #[cfg(feature = "asof_join")]
-        JoinType::AsOf => LeftRight(true, true),
+        JoinType::AsOf(_) => LeftRight(true, true),
 
         JoinType::Inner => LeftRight(false, false),
         #[cfg(feature = "semi_anti_join")]

@@ -260,13 +260,25 @@ fn test_join_multiple_columns() {
 
     // now check the join with multiple columns
     let joined = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Left.into(),
+            None,
+        )
         .unwrap();
     let ca = joined.column("ham").unwrap().str().unwrap();
     assert_eq!(Vec::from(ca), correct_ham);
     let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_inner = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Inner.into(),
+            None,
+        )
         .unwrap();
 
     assert!(joined_inner_hack
@@ -281,6 +293,7 @@ fn test_join_multiple_columns() {
             ["a", "b"],
             ["foo", "bar"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
     assert!(joined_full_outer_hack

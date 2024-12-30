@@ -1,3 +1,4 @@
+use polars::prelude::JoinTypeOptions;
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
@@ -463,7 +464,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             right_on: right_on.iter().map(|e| e.into()).collect(),
             options: {
                 let how = &options.args.how;
-                let name = Into::<&str>::into(how).into_pyobject(py)?;
+                let name = format!("{}", how).into_pyobject(py)?;
                 (
                     match how {
                         #[cfg(feature = "asof_join")]
@@ -471,15 +472,20 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             return Err(PyNotImplementedError::new_err("asof join"))
                         },
                         #[cfg(feature = "iejoin")]
-                        JoinType::IEJoin(ie_options) => (
-                            name,
-                            crate::Wrap(ie_options.operator1).into_py_any(py)?,
-                            ie_options.operator2.as_ref().map_or_else(
-                                || Ok(py.None()),
-                                |op| crate::Wrap(*op).into_py_any(py),
-                            )?,
-                        )
-                            .into_py_any(py)?,
+                        JoinType::IEJoin => {
+                            let Some(JoinTypeOptions::IEJoin(ie_options)) = &options.options else {
+                                unreachable!()
+                            };
+                            (
+                                name,
+                                crate::Wrap(ie_options.operator1).into_py_any(py)?,
+                                ie_options.operator2.as_ref().map_or_else(
+                                    || Ok(py.None()),
+                                    |op| crate::Wrap(*op).into_py_any(py),
+                                )?,
+                            )
+                                .into_py_any(py)?
+                        },
                         _ => name.into_any().unbind(),
                     },
                     options.args.join_nulls,

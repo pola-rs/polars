@@ -40,7 +40,7 @@ impl JoinArgs {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Clone, PartialEq, Eq, Hash, Default, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum JoinType {
     #[default]
@@ -49,13 +49,15 @@ pub enum JoinType {
     Right,
     Full,
     #[cfg(feature = "asof_join")]
-    AsOf,
+    AsOf(AsOfOptions),
     #[cfg(feature = "semi_anti_join")]
     Semi,
     #[cfg(feature = "semi_anti_join")]
     Anti,
     #[cfg(feature = "iejoin")]
+    // Options are set by optimizer/planner in Options
     IEJoin,
+    // Options are set by optimizer/planner in Options
     Cross,
 }
 
@@ -80,7 +82,7 @@ impl JoinCoalesce {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]
-            AsOf => matches!(self, JoinSpecific | CoalesceColumns),
+            AsOf(_) => matches!(self, JoinSpecific | CoalesceColumns),
             #[cfg(feature = "iejoin")]
             IEJoin => false,
             Cross => false,
@@ -157,6 +159,12 @@ impl JoinArgs {
     }
 }
 
+impl From<JoinType> for JoinArgs {
+    fn from(value: JoinType) -> Self {
+        JoinArgs::new(value)
+    }
+}
+
 pub trait CrossJoinFilter: Send + Sync {
     fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame>;
 }
@@ -200,13 +208,10 @@ impl Debug for CrossJoinOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "snake_case")]
 pub enum JoinTypeOptions {
-    #[cfg(feature = "asof_join")]
-    AsOf(AsOfOptions),
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
     #[cfg_attr(feature = "serde", serde(skip))]
     Cross(CrossJoinOptions),
-    None,
 }
 
 impl Display for JoinType {
@@ -218,7 +223,7 @@ impl Display for JoinType {
             Inner => "INNER",
             Full => "FULL",
             #[cfg(feature = "asof_join")]
-            AsOf => "ASOF",
+            AsOf(_) => "ASOF",
             #[cfg(feature = "iejoin")]
             IEJoin => "IEJOIN",
             Cross => "CROSS",
@@ -248,7 +253,7 @@ impl JoinType {
     pub fn is_asof(&self) -> bool {
         #[cfg(feature = "asof_join")]
         {
-            matches!(self, JoinType::AsOf)
+            matches!(self, JoinType::AsOf(_))
         }
         #[cfg(not(feature = "asof_join"))]
         {

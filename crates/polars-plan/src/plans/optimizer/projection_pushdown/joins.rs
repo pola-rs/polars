@@ -55,7 +55,7 @@ pub(super) fn process_asof_join(
     let mut names_right = PlHashSet::with_capacity(n);
     let mut local_projection = Vec::with_capacity(n);
 
-    let Some(JoinTypeOptions::AsOf(asof_options)) = &options.options else {
+    let JoinType::AsOf(asof_options) = &options.args.how else {
         unreachable!()
     };
 
@@ -207,7 +207,7 @@ pub(super) fn process_join(
     join_schema: &Schema,
 ) -> PolarsResult<IR> {
     #[cfg(feature = "asof_join")]
-    if matches!(options.args.how, JoinType::AsOf) {
+    if matches!(options.args.how, JoinType::AsOf(_)) {
         return process_asof_join(
             proj_pd,
             input_left,
