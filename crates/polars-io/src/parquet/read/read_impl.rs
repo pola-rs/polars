@@ -692,10 +692,11 @@ fn rg_to_dfs_par_over_rg(
     for i in row_group_start..row_group_end {
         let row_count_start = *previous_row_count;
         let rg_md = &file_metadata.row_groups[i];
+        let n_rows_this_file = rg_md.num_rows();
         let rg_slice =
-            split_slice_at_file(&mut n_rows_processed, rg_md.num_rows(), slice.0, slice_end);
+            split_slice_at_file(&mut n_rows_processed, n_rows_this_file, slice.0, slice_end);
         *previous_row_count = previous_row_count
-            .checked_add(rg_slice.1 as IdxSize)
+            .checked_add(n_rows_this_file as IdxSize)
             .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
 
         if rg_slice.1 == 0 {

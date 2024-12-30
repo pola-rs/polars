@@ -565,6 +565,34 @@ def test_parquet_slice_pushdown_non_zero_offset(
 
 
 @pytest.mark.write_disk
+def test_predicate_slice_pushdown_row_index_20485(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    file_path = tmp_path / "slice_pushdown.parquet"
+    row_group_size = 100000
+    num_row_groups = 3
+
+    df = pl.select(ref=pl.int_range(num_row_groups * row_group_size))
+    df.write_parquet(file_path, row_group_size=row_group_size)
+
+    # Use a slice that starts near the end of one row group and extends into the next
+    # to test handling of slices that span multiple row groups.
+    slice_start = 199995
+    slice_len = 10
+    ldf = pl.scan_parquet(file_path)
+    sliced_df = ldf.with_row_index().slice(slice_start, slice_len).collect()
+    sliced_df_no_pushdown = (
+        ldf.with_row_index().slice(slice_start, slice_len).collect(slice_pushdown=False)
+    )
+
+    expected_index = list(range(slice_start, slice_start + slice_len))
+    actual_index = list(sliced_df["index"])
+    assert actual_index == expected_index
+
+    assert_frame_equal(sliced_df, sliced_df_no_pushdown)
+
+
+@pytest.mark.write_disk
 @pytest.mark.parametrize("streaming", [True, False])
 def test_parquet_row_groups_shift_bug_18739(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
