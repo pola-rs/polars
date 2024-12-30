@@ -671,7 +671,7 @@ fn rg_to_dfs_par_over_rg(
     store: &mmap::ColumnStore,
     row_group_start: usize,
     row_group_end: usize,
-    previous_row_count: &mut IdxSize,
+    rows_read: &mut IdxSize,
     slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
@@ -689,15 +689,23 @@ fn rg_to_dfs_par_over_rg(
         .sum();
     let slice_end = slice.0 + slice.1;
 
+    // we need to distinguish between the number of rows scanned and the number of rows actually read
+    // these values can differ when the slice_pushdown optimization and/or the async Parquet reader are being used
+    let mut rows_scanned: IdxSize = (0..row_group_start)
+        .map(|i| file_metadata.row_groups[i].num_rows() as IdxSize)
+        .sum();
+
     for i in row_group_start..row_group_end {
-        let row_count_start = *previous_row_count;
+        let row_count_start = rows_scanned;
         let rg_md = &file_metadata.row_groups[i];
         let n_rows_this_file = rg_md.num_rows();
         let rg_slice =
             split_slice_at_file(&mut n_rows_processed, n_rows_this_file, slice.0, slice_end);
-        *previous_row_count = previous_row_count
+        rows_scanned = rows_scanned
             .checked_add(n_rows_this_file as IdxSize)
             .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+
+        *rows_read += rg_slice.1 as IdxSize;
 
         if rg_slice.1 == 0 {
             continue;
