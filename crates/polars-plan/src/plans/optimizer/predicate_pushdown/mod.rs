@@ -32,15 +32,17 @@ mod inner {
         pub(super) expr_eval: ExprEval<'a>,
         pub(super) verbose: bool,
         pub(super) block_at_cache: bool,
+        pub(super) streaming: bool,
         nodes_scratch: UnitVec<Node>,
     }
 
     impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>) -> Self {
+        pub fn new(expr_eval: ExprEval<'a>, streaming: bool) -> Self {
             Self {
                 expr_eval,
                 verbose: verbose(),
                 block_at_cache: true,
+                streaming,
                 nodes_scratch: unitvec![],
             }
         }
