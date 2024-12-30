@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
 def test_sort_by_bools() -> None:
@@ -172,18 +173,7 @@ def test_group_by_agg_equals_zero_3535() -> None:
 
 
 def test_dtype_concat_3735() -> None:
-    for dt in [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Float32,
-        pl.Float64,
-    ]:
+    for dt in NUMERIC_DTYPES:
         d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])
 
     d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])

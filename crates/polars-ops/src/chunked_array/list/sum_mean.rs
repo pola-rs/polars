@@ -51,6 +51,7 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
                 Int16 => dispatch_sum::<i16, i64>(values, offsets, arr.validity()),
                 Int32 => dispatch_sum::<i32, i32>(values, offsets, arr.validity()),
                 Int64 => dispatch_sum::<i64, i64>(values, offsets, arr.validity()),
+                Int128 => dispatch_sum::<i128, i128>(values, offsets, arr.validity()),
                 UInt8 => dispatch_sum::<u8, i64>(values, offsets, arr.validity()),
                 UInt16 => dispatch_sum::<u16, i64>(values, offsets, arr.validity()),
                 UInt32 => dispatch_sum::<u32, u32>(values, offsets, arr.validity()),

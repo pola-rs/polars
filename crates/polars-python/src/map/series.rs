@@ -152,7 +152,7 @@ pub trait ApplyLambda<'a> {
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>;
 
     /// Apply a lambda with a boolean output type
@@ -343,7 +343,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
@@ -570,7 +570,7 @@ impl<'a> ApplyLambda<'a> for BooleanChunked {
 
 impl<'a, T> ApplyLambda<'a> for ChunkedArray<T>
 where
-    T: PyArrowPrimitiveType + PolarsNumericType,
+    T: PyPolarsNumericType,
     T::Native: IntoPyObject<'a> + FromPyObject<'a>,
     ChunkedArray<T>: IntoSeries,
 {
@@ -643,7 +643,7 @@ where
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
@@ -936,7 +936,7 @@ impl<'a> ApplyLambda<'a> for StringChunked {
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
@@ -1285,7 +1285,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
@@ -1728,7 +1728,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
@@ -2122,7 +2122,7 @@ impl<'a> ApplyLambda<'a> for ObjectChunked<ObjectValue> {
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());
@@ -2398,7 +2398,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         first_value: Option<D::Native>,
     ) -> PyResult<ChunkedArray<D>>
     where
-        D: PyArrowPrimitiveType,
+        D: PyPolarsNumericType,
         D::Native: IntoPyObject<'a> + FromPyObject<'a>,
     {
         let skip = usize::from(first_value.is_some());

@@ -167,7 +167,7 @@ pub fn apply_lambda_with_primitive_out_type<'a, D>(
     first_value: Option<D::Native>,
 ) -> PyResult<ChunkedArray<D>>
 where
-    D: PyArrowPrimitiveType,
+    D: PyPolarsNumericType,
     D::Native: IntoPyObject<'a> + FromPyObject<'a>,
 {
     let skip = usize::from(first_value.is_some());

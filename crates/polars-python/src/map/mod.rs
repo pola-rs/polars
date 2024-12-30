@@ -18,18 +18,19 @@ use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
 use crate::{PySeries, Wrap};
 
-pub trait PyArrowPrimitiveType: PolarsNumericType {}
+pub trait PyPolarsNumericType: PolarsNumericType {}
 
-impl PyArrowPrimitiveType for UInt8Type {}
-impl PyArrowPrimitiveType for UInt16Type {}
-impl PyArrowPrimitiveType for UInt32Type {}
-impl PyArrowPrimitiveType for UInt64Type {}
-impl PyArrowPrimitiveType for Int8Type {}
-impl PyArrowPrimitiveType for Int16Type {}
-impl PyArrowPrimitiveType for Int32Type {}
-impl PyArrowPrimitiveType for Int64Type {}
-impl PyArrowPrimitiveType for Float32Type {}
-impl PyArrowPrimitiveType for Float64Type {}
+impl PyPolarsNumericType for UInt8Type {}
+impl PyPolarsNumericType for UInt16Type {}
+impl PyPolarsNumericType for UInt32Type {}
+impl PyPolarsNumericType for UInt64Type {}
+impl PyPolarsNumericType for Int8Type {}
+impl PyPolarsNumericType for Int16Type {}
+impl PyPolarsNumericType for Int32Type {}
+impl PyPolarsNumericType for Int64Type {}
+impl PyPolarsNumericType for Int128Type {}
+impl PyPolarsNumericType for Float32Type {}
+impl PyPolarsNumericType for Float64Type {}
 
 fn iterator_to_struct<'a>(
     py: Python,
@@ -141,7 +142,7 @@ fn iterator_to_primitive<T>(
     capacity: usize,
 ) -> PyResult<ChunkedArray<T>>
 where
-    T: PyArrowPrimitiveType,
+    T: PyPolarsNumericType,
 {
     let mut error = None;
     // SAFETY: we know the iterators len.
