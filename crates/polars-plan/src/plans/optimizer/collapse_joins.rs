@@ -8,12 +8,12 @@ use std::sync::Arc;
 use polars_core::schema::*;
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::{IEJoinOptions, InequalityOperator};
-use polars_ops::frame::{JoinCoalesce, JoinType, JoinTypeOptions};
+use polars_ops::frame::{JoinCoalesce, JoinType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
-use crate::dsl::Operator;
+use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::{ExprIR, OutputName};
 
 /// Join origin of an expression
@@ -445,7 +445,7 @@ pub fn insert_fitting_join(
 
             // Do an IEjoin.
             options.args.how = JoinType::IEJoin;
-            options.options = Some(JoinTypeOptions::IEJoin(IEJoinOptions {
+            options.options = Some(JoinTypeOptionsIR::IEJoin(IEJoinOptions {
                 operator1,
                 operator2,
             }));

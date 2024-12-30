@@ -129,7 +129,7 @@ pub(super) fn process_join(
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     schema: SchemaRef,
-    options: Arc<JoinOptions>,
+    mut options: Arc<JoinOptions>,
     acc_predicates: PlHashMap<PlSmallStr, ExprIR>,
 ) -> PolarsResult<IR> {
     use IR::*;
@@ -244,6 +244,15 @@ pub(super) fn process_join(
     opt.pushdown_and_assign(input_left, pushdown_left, lp_arena, expr_arena)?;
     opt.pushdown_and_assign(input_right, pushdown_right, lp_arena, expr_arena)?;
 
+    if let JoinType::Cross = &options.args.how {
+        let predicate = combine_predicates(local_predicates.into_iter(), expr_arena);
+        let options = Arc::make_mut(&mut options);
+        options.options = Some(JoinTypeOptionsIR::Cross {
+            predicate: predicate,
+        });
+
+        local_predicates = vec![];
+    }
     let lp = Join {
         input_left,
         input_right,
@@ -252,5 +261,6 @@ pub(super) fn process_join(
         schema,
         options,
     };
+
     Ok(opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 }

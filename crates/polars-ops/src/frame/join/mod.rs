@@ -48,6 +48,7 @@ use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
+use self::cross_join::fused_cross_filter;
 use super::IntoDf;
 
 pub trait DataFrameJoinOps: IntoDf {
@@ -134,6 +135,10 @@ pub trait DataFrameJoinOps: IntoDf {
 
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
+            if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
+                assert!(args.slice.is_none());
+                return fused_cross_filter(left_df, other, args.suffix.clone());
+            }
             return left_df.cross_join(other, args.suffix.clone(), args.slice);
         }
 

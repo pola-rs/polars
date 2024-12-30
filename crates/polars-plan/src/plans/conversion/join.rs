@@ -643,7 +643,7 @@ fn resolve_join_where(
         let opts = Arc::make_mut(&mut options);
 
         opts.args.how = JoinType::IEJoin;
-        opts.options = Some(JoinTypeOptions::IEJoin(IEJoinOptions {
+        opts.options = Some(JoinTypeOptionsIR::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: Some(ie_op[1]),
         }));
@@ -674,7 +674,7 @@ fn resolve_join_where(
         // For a single inequality comparison, we use the piecewise merge join algorithm
         let opts = Arc::make_mut(&mut options);
         opts.args.how = JoinType::IEJoin;
-        opts.options = Some(JoinTypeOptions::IEJoin(IEJoinOptions {
+        opts.options = Some(JoinTypeOptionsIR::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: None,
         }));

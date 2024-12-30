@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 
@@ -484,6 +485,7 @@ fn create_physical_plan_impl(
             left_on,
             right_on,
             options,
+            schema,
             ..
         } => {
             let parallel = if options.force_parallel {
@@ -521,6 +523,33 @@ fn create_physical_plan_impl(
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
+
+            // Convert the join options, to the physical join options. This requires the physical
+            // planner, so we do this last minute.
+            let join_type_options = options
+                .options
+                .map(|o| {
+                    o.compile(|e| {
+                        let phys_expr = create_physical_expr(
+                            e,
+                            Context::Default,
+                            expr_arena,
+                            &schema,
+                            &mut ExpressionConversionState::new(false, state.expr_depth),
+                        )?;
+
+                        let execution_state = ExecutionState::default();
+
+                        Ok(Arc::new(move |df: DataFrame| {
+                            let mask = phys_expr.evaluate(&df, &execution_state)?;
+                            let mask = mask.as_materialized_series();
+                            let mask = mask.bool()?;
+                            df._filter_seq(mask)
+                        }))
+                    })
+                })
+                .transpose()?;
+
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
@@ -528,7 +557,7 @@ fn create_physical_plan_impl(
                 right_on,
                 parallel,
                 options.args,
-                options.options,
+                join_type_options,
             )))
         },
         HStack {

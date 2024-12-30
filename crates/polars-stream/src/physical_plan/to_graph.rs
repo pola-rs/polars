@@ -457,7 +457,6 @@ fn to_graph_rec<'a>(
             left_on,
             right_on,
             args,
-            options,
         } => {
             let left_input_key = to_graph_rec(*input_left, ctx)?;
             let right_input_key = to_graph_rec(*input_right, ctx)?;
@@ -481,7 +480,7 @@ fn to_graph_rec<'a>(
                     allow_parallel: true,
                     force_parallel: false,
                     args: args.clone(),
-                    options: options.clone(),
+                    options: None,
                     rows_left: (None, 0),
                     rows_right: (None, 0),
                 }),

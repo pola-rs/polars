@@ -1,4 +1,4 @@
-use polars::prelude::JoinTypeOptions;
+use polars::prelude::{JoinTypeOptions, JoinTypeOptionsIR};
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
@@ -464,7 +464,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             right_on: right_on.iter().map(|e| e.into()).collect(),
             options: {
                 let how = &options.args.how;
-                let name = format!("{}", how).into_pyobject(py)?;
+                let name = Into::<&str>::into(how).into_pyobject(py)?;
                 (
                     match how {
                         #[cfg(feature = "asof_join")]
@@ -473,7 +473,8 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         },
                         #[cfg(feature = "iejoin")]
                         JoinType::IEJoin => {
-                            let Some(JoinTypeOptions::IEJoin(ie_options)) = &options.options else {
+                            let Some(JoinTypeOptionsIR::IEJoin(ie_options)) = &options.options
+                            else {
                                 unreachable!()
                             };
                             (

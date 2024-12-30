@@ -171,7 +171,6 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
-        options: Option<JoinTypeOptions>,
     },
 }
 

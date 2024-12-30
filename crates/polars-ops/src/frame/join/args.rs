@@ -1,5 +1,3 @@
-use std::default;
-
 use super::*;
 
 pub(super) type JoinIds = Vec<IdxSize>;
@@ -169,14 +167,23 @@ pub trait CrossJoinFilter: Send + Sync {
     fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame>;
 }
 
-#[derive(Clone, Default)]
+impl<T> CrossJoinFilter for T
+where
+    T: Fn(DataFrame) -> PolarsResult<DataFrame> + Send + Sync,
+{
+    fn apply(&self, df: DataFrame) -> PolarsResult<DataFrame> {
+        self(df)
+    }
+}
+
+#[derive(Clone)]
 pub struct CrossJoinOptions {
-    predicate: Option<Arc<dyn CrossJoinFilter>>,
+    pub predicate: Arc<dyn CrossJoinFilter>,
 }
 
 impl CrossJoinOptions {
-    fn as_ptr_ref(&self) -> Option<*const dyn CrossJoinFilter> {
-        self.predicate.as_ref().map(|arc| Arc::as_ptr(arc))
+    fn as_ptr_ref(&self) -> *const dyn CrossJoinFilter {
+        Arc::as_ptr(&self.predicate)
     }
 }
 
@@ -184,7 +191,7 @@ impl Eq for CrossJoinOptions {}
 
 impl PartialEq for CrossJoinOptions {
     fn eq(&self, other: &Self) -> bool {
-        self.as_ptr_ref() == other.as_ptr_ref()
+        std::ptr::addr_eq(self.as_ptr_ref(), other.as_ptr_ref())
     }
 }
 
@@ -196,11 +203,7 @@ impl Hash for CrossJoinOptions {
 
 impl Debug for CrossJoinOptions {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "CrossJoinOptions: predicate: {}",
-            self.predicate.is_some()
-        )
+        write!(f, "CrossJoinOptions",)
     }
 }
 
