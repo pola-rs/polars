@@ -51,6 +51,7 @@ pub trait CrossJoin: IntoDf {
         names: &[PlSmallStr],
     ) -> PolarsResult<DataFrame> {
         let (mut l_df, r_df) = cross_join_dfs(self.to_df(), other, None, false)?;
+        l_df.clear_schema();
 
         unsafe {
             l_df.get_columns_mut().extend_from_slice(r_df.get_columns());
@@ -143,6 +144,7 @@ pub(super) fn fused_cross_filter(
     left: &DataFrame,
     right: &DataFrame,
     suffix: Option<PlSmallStr>,
+    cross_join_options: &CrossJoinOptions,
 ) -> PolarsResult<DataFrame> {
     // Because we do a cartesian product, the number of partitions is squared.
     // We take the sqrt, but we don't expect every partition to produce results and work can be
@@ -171,7 +173,8 @@ pub(super) fn fused_cross_filter(
                 }
 
                 unsafe { left.hstack_mut_unchecked(&right_columns) };
-                PolarsResult::Ok(left)
+
+                cross_join_options.predicate.apply(left)
             })
         })
         .collect::<PolarsResult<Vec<_>>>()?;

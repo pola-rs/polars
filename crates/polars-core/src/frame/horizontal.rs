@@ -41,6 +41,7 @@ impl DataFrame {
             }
         }
 
+        self.clear_schema();
         self.columns.extend_from_slice(columns);
         self
     }

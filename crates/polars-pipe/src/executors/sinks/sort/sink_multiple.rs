@@ -95,6 +95,7 @@ fn finalize_dataframe(
 
         // SAFETY: col has the same length as the df height because it was popped from df.
         unsafe { df.get_columns_mut() }.insert(sort_idx, col);
+        df.clear_schema();
     }
 
     // SAFETY: We just change the sorted flag.
@@ -217,6 +218,7 @@ impl SortSinkMultiple {
                 let _ = cols.remove(sort_idx - i);
             });
 
+        df.clear_schema();
         let name = PlSmallStr::from_static(POLARS_SORT_COLUMN);
         let column = if chunk.data.height() == 0 && chunk.data.width() > 0 {
             Column::new_empty(name, &DataType::BinaryOffset)

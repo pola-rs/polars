@@ -55,9 +55,7 @@ where
             df, output_schema, ..
         } => {
             let mut df = (*df).clone();
-            let schema = output_schema
-                .clone()
-                .unwrap_or_else(|| Arc::new(df.schema()));
+            let schema = output_schema.clone().unwrap_or_else(|| df.schema().clone());
             if push_predicate {
                 // projection is free
                 if let Some(schema) = output_schema {

@@ -137,7 +137,7 @@ pub trait DataFrameJoinOps: IntoDf {
         if let JoinType::Cross = args.how {
             if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
                 assert!(args.slice.is_none());
-                return fused_cross_filter(left_df, other, args.suffix.clone());
+                return fused_cross_filter(left_df, other, args.suffix.clone(), cross_options);
             }
             return left_df.cross_join(other, args.suffix.clone(), args.slice);
         }

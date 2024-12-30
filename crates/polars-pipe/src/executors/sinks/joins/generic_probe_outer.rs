@@ -130,6 +130,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
                         .for_each(|(s, name)| {
                             s.rename(name.clone());
                         });
+                    left_df.clear_schema();
                     left_df
                 },
             })

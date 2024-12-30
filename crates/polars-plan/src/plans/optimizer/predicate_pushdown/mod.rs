@@ -528,6 +528,7 @@ impl PredicatePushDown<'_> {
                 schema,
                 options,
                 acc_predicates,
+                self.streaming,
             ),
             MapFunction { ref function, .. } => {
                 if function.allow_predicate_pd() {

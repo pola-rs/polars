@@ -28,15 +28,15 @@ pub fn _finish_join(
     let mut rename_strs = Vec::with_capacity(df_right.width());
     let right_names = df_right.schema();
 
-    for (i, name) in right_names.iter_names().enumerate() {
+    for name in right_names.iter_names() {
         if left_names.contains(name) {
-            rename_strs.push((i, name.clone()))
+            rename_strs.push(name.clone())
         }
     }
 
     let suffix = get_suffix(suffix);
 
-    for (i, name) in rename_strs {
+    for name in rename_strs {
         let new_name = _join_suffix_name(name.as_str(), suffix.as_str());
 
         df_right.rename(&name, new_name.clone()).map_err(|_| {
@@ -95,6 +95,7 @@ pub fn _coalesce_full_join(
     for pos in to_remove {
         let _ = columns.remove(pos);
     }
+    df.clear_schema();
     df
 }
 

@@ -28,7 +28,7 @@ pub(crate) struct CsvSource {
     // state for multi-file reads
     current_path_idx: usize,
     n_rows_read: usize,
-    first_schema: Schema,
+    first_schema: SchemaRef,
     include_file_path: Option<StringChunked>,
 }
 
@@ -189,7 +189,7 @@ impl Source for CsvSource {
 
             if first_read_from_file {
                 if self.first_schema.is_empty() {
-                    self.first_schema = batches[0].schema();
+                    self.first_schema = batches[0].schema().clone();
                 }
                 ensure_matching_schema(&self.first_schema, &batches[0].schema())?;
             }

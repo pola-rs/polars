@@ -176,6 +176,10 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
+    pub fn clear_schema(&mut self) {
+        self.cached_schema = OnceLock::new();
+    }
+
     #[inline]
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns.iter().map(Column::as_materialized_series)
@@ -416,7 +420,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn pop(&mut self) -> Option<Column> {
-        self.cached_schema = OnceLock::new();
+        self.clear_schema();
 
         self.columns.pop()
     }
@@ -472,7 +476,6 @@ impl DataFrame {
 
     /// Add a row index column in place.
     pub fn with_row_index_mut(&mut self, name: PlSmallStr, offset: Option<IdxSize>) -> &mut Self {
-        self.cached_schema = OnceLock::new();
         let offset = offset.unwrap_or(0);
         let mut ca = IdxCa::from_vec(
             name,
@@ -480,6 +483,7 @@ impl DataFrame {
         );
         ca.set_sorted_flag(IsSorted::Ascending);
 
+        self.clear_schema();
         self.columns.insert(0, ca.into_series().into());
         self
     }
@@ -694,14 +698,18 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> &SchemaRef {
-        self.cached_schema.get_or_init(|| {
+        let out = self.cached_schema.get_or_init(|| {
             Arc::new(
                 self.columns
                     .iter()
                     .map(|x| (x.name().clone(), x.dtype().clone()))
                     .collect(),
             )
-        })
+        });
+
+        debug_assert_eq!(out.len(), self.width());
+
+        out
     }
 
     /// Get a reference to the [`DataFrame`] columns.
@@ -737,7 +745,7 @@ impl DataFrame {
     #[inline]
     /// Remove all the columns in the [`DataFrame`] but keep the `height`.
     pub fn clear_columns(&mut self) {
-        self.cached_schema = OnceLock::new();
+        self.clear_schema();
         unsafe { self.get_columns_mut() }.clear()
     }
 
@@ -752,7 +760,7 @@ impl DataFrame {
     ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
     ///   with [`DataFrame::set_height`].
     pub unsafe fn column_extend_unchecked(&mut self, iter: impl IntoIterator<Item = Column>) {
-        self.cached_schema = OnceLock::new();
+        self.clear_schema();
         unsafe { self.get_columns_mut() }.extend(iter)
     }
 
@@ -826,7 +834,6 @@ impl DataFrame {
     }
 
     fn _set_column_names_impl(&mut self, names: &[PlSmallStr]) -> PolarsResult<()> {
-        self.cached_schema = OnceLock::new();
         polars_ensure!(
             names.len() == self.width(),
             ShapeMismatch: "{} column names provided for a DataFrame of width {}",
@@ -844,6 +851,7 @@ impl DataFrame {
                 s
             })
             .collect();
+        self.clear_schema();
         Ok(())
     }
 
@@ -1186,7 +1194,6 @@ impl DataFrame {
     /// when you read in multiple files and when to store them in a single `DataFrame`. In the latter case, finish the sequence
     /// of `append` operations with a [`rechunk`](Self::align_chunks_par).
     pub fn extend(&mut self, other: &DataFrame) -> PolarsResult<()> {
-        self.cached_schema = OnceLock::new();
         polars_ensure!(
             self.width() == other.width(),
             ShapeMismatch:
@@ -1205,6 +1212,7 @@ impl DataFrame {
                 Ok(())
             })?;
         self.height += other.height;
+        self.clear_schema();
         Ok(())
     }
 
@@ -1225,8 +1233,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn drop_in_place(&mut self, name: &str) -> PolarsResult<Column> {
-        self.cached_schema = OnceLock::new();
         let idx = self.check_name_to_idx(name)?;
+        self.clear_schema();
         Ok(self.columns.remove(idx))
     }
 
@@ -1348,7 +1356,6 @@ impl DataFrame {
         index: usize,
         column: Column,
     ) -> PolarsResult<&mut Self> {
-        self.cached_schema = OnceLock::new();
         polars_ensure!(
             self.width() == 0 || column.len() == self.height(),
             ShapeMismatch: "unable to add a column of length {} to a DataFrame of height {}",
@@ -1360,6 +1367,7 @@ impl DataFrame {
         }
 
         self.columns.insert(index, column);
+        self.clear_schema();
         Ok(self)
     }
 
@@ -1383,6 +1391,7 @@ impl DataFrame {
             }
 
             self.columns.push(column);
+            self.clear_schema();
         }
         Ok(())
     }
@@ -1430,6 +1439,7 @@ impl DataFrame {
             unsafe { self.set_height(column.len()) };
         }
         unsafe { self.get_columns_mut() }.push(column);
+        self.clear_schema();
 
         self
     }
@@ -1446,6 +1456,7 @@ impl DataFrame {
                     }
 
                     self.columns.push(c);
+                    self.clear_schema();
                 }
                 // Schema is incorrect fallback to search
                 else {
@@ -1461,6 +1472,7 @@ impl DataFrame {
             }
 
             self.columns.push(c);
+            self.clear_schema();
         }
 
         Ok(())
@@ -2324,7 +2336,6 @@ impl DataFrame {
         index: usize,
         new_column: C,
     ) -> PolarsResult<&mut Self> {
-        self.cached_schema = OnceLock::new();
         polars_ensure!(
             index < self.width(),
             ShapeMismatch:
@@ -2340,6 +2351,7 @@ impl DataFrame {
         );
         let old_col = &mut self.columns[index];
         mem::swap(old_col, &mut new_column);
+        self.clear_schema();
         Ok(self)
     }
 
