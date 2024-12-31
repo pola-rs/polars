@@ -2456,18 +2456,18 @@ def test_categorical_sliced_20017() -> None:
         name="mask", dtype=pl.Boolean, min_size=7, max_size=7, allow_null=False
     ),
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_parametric_masked(s: pl.Series, mask: pl.Series) -> None:
     f = io.BytesIO()
 
-    df = pl.DataFrame([s, mask]).with_columns(pl.col.a.cast(pl.Categorical))
-    df.write_parquet(f)
+    with pl.StringCache():
+        df = pl.DataFrame([s, mask]).with_columns(pl.col.a.cast(pl.Categorical))
+        df.write_parquet(f)
 
-    f.seek(0)
-    assert_frame_equal(
-        pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.mask).collect(),
-        df.filter(pl.col.mask),
-    )
+        f.seek(0)
+        assert_frame_equal(
+            pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.mask).collect(),
+            df.filter(pl.col.mask),
+        )
 
 
 @given(
@@ -2475,20 +2475,20 @@ def test_categorical_parametric_masked(s: pl.Series, mask: pl.Series) -> None:
     start=st.integers(0, 6),
     length=st.integers(1, 7),
 )
-@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_parametric_sliced(s: pl.Series, start: int, length: int) -> None:
     length = min(7 - start, length)
 
     f = io.BytesIO()
 
-    df = s.to_frame().with_columns(pl.col.a.cast(pl.Categorical))
-    df.write_parquet(f)
+    with pl.StringCache():
+        df = s.to_frame().with_columns(pl.col.a.cast(pl.Categorical))
+        df.write_parquet(f)
 
-    f.seek(0)
-    assert_frame_equal(
-        pl.scan_parquet(f).slice(start, length).collect(),
-        df.slice(start, length),
-    )
+        f.seek(0)
+        assert_frame_equal(
+            pl.scan_parquet(f).slice(start, length).collect(),
+            df.slice(start, length),
+        )
 
 
 @pytest.mark.write_disk

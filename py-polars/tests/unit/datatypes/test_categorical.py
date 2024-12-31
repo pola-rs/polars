@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType
 
 
-@pytest.mark.usefixtures("test_global_and_local")
+@StringCache()
 def test_categorical_full_outer_join() -> None:
     df1 = pl.DataFrame(
         [
