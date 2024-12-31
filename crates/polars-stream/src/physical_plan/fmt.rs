@@ -216,6 +216,7 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            ..
         }
         | PhysNodeKind::EquiJoin {
             input_left,

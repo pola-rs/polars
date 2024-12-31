@@ -111,7 +111,7 @@ pub fn resolve_join(
     let mut joined_on = PlHashSet::new();
 
     #[cfg(feature = "iejoin")]
-    let check = !matches!(options.args.how, JoinType::IEJoin(_));
+    let check = !matches!(options.args.how, JoinType::IEJoin);
     #[cfg(not(feature = "iejoin"))]
     let check = true;
     if check {
@@ -641,10 +641,12 @@ fn resolve_join_where(
     } else if ie_right_on.len() >= 2 {
         // Do an IEjoin.
         let opts = Arc::make_mut(&mut options);
-        opts.args.how = JoinType::IEJoin(IEJoinOptions {
+
+        opts.args.how = JoinType::IEJoin;
+        opts.options = Some(JoinTypeOptionsIR::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: Some(ie_op[1]),
-        });
+        }));
 
         let (last_node, join_node) = resolve_join(
             Either::Right(input_left),
@@ -671,10 +673,11 @@ fn resolve_join_where(
     } else if ie_right_on.len() == 1 {
         // For a single inequality comparison, we use the piecewise merge join algorithm
         let opts = Arc::make_mut(&mut options);
-        opts.args.how = JoinType::IEJoin(IEJoinOptions {
+        opts.args.how = JoinType::IEJoin;
+        opts.options = Some(JoinTypeOptionsIR::IEJoin(IEJoinOptions {
             operator1: ie_op[0],
             operator2: None,
-        });
+        }));
 
         resolve_join(
             Either::Right(input_left),

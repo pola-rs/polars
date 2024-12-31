@@ -48,6 +48,7 @@ use polars_core::POOL;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
+use self::cross_join::fused_cross_filter;
 use super::IntoDf;
 
 pub trait DataFrameJoinOps: IntoDf {
@@ -63,7 +64,8 @@ pub trait DataFrameJoinOps: IntoDf {
     /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
     ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner))?;
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner),
+    /// None)?;
     /// assert_eq!(df3.shape(), (3, 3));
     /// println!("{}", df3);
     /// # Ok::<(), PolarsError>(())
@@ -91,6 +93,7 @@ pub trait DataFrameJoinOps: IntoDf {
         left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         args: JoinArgs,
+        options: Option<JoinTypeOptions>,
     ) -> PolarsResult<DataFrame> {
         let df_left = self.to_df();
         let selected_left = df_left.select_columns(left_on)?;
@@ -105,7 +108,15 @@ pub trait DataFrameJoinOps: IntoDf {
             .map(Column::take_materialized_series)
             .collect::<Vec<_>>();
 
-        self._join_impl(other, selected_left, selected_right, args, true, false)
+        self._join_impl(
+            other,
+            selected_left,
+            selected_right,
+            args,
+            options,
+            true,
+            false,
+        )
     }
 
     #[doc(hidden)]
@@ -117,6 +128,7 @@ pub trait DataFrameJoinOps: IntoDf {
         mut selected_left: Vec<Series>,
         mut selected_right: Vec<Series>,
         mut args: JoinArgs,
+        options: Option<JoinTypeOptions>,
         _check_rechunk: bool,
         _verbose: bool,
     ) -> PolarsResult<DataFrame> {
@@ -124,6 +136,10 @@ pub trait DataFrameJoinOps: IntoDf {
 
         #[cfg(feature = "cross_join")]
         if let JoinType::Cross = args.how {
+            if let Some(JoinTypeOptions::Cross(cross_options)) = &options {
+                assert!(args.slice.is_none());
+                return fused_cross_filter(left_df, other, args.suffix.clone(), cross_options);
+            }
             return left_df.cross_join(other, args.suffix.clone(), args.slice);
         }
 
@@ -178,6 +194,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     selected_left,
                     selected_right,
                     args,
+                    options,
                     false,
                     _verbose,
                 );
@@ -212,7 +229,10 @@ pub trait DataFrameJoinOps: IntoDf {
         }
 
         #[cfg(feature = "iejoin")]
-        if let JoinType::IEJoin(options) = args.how {
+        if let JoinType::IEJoin = args.how {
+            let Some(JoinTypeOptions::IEJoin(options)) = options else {
+                unreachable!()
+            };
             let func = if POOL.current_num_threads() > 1 && !left_df.is_empty() && !other.is_empty()
             {
                 iejoin::iejoin_par
@@ -303,7 +323,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     },
                 },
                 #[cfg(feature = "iejoin")]
-                JoinType::IEJoin(_) => {
+                JoinType::IEJoin => {
                     unreachable!()
                 },
                 JoinType::Cross => {
@@ -331,7 +351,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 ComputeError: "asof join not supported for join on multiple keys"
             ),
             #[cfg(feature = "iejoin")]
-            JoinType::IEJoin(_) => {
+            JoinType::IEJoin => {
                 unreachable!()
             },
             JoinType::Cross => {
@@ -390,6 +410,7 @@ pub trait DataFrameJoinOps: IntoDf {
                 vec![lhs_keys],
                 vec![rhs_keys],
                 args,
+                options,
                 _check_rechunk,
                 _verbose,
             ),
@@ -413,7 +434,13 @@ pub trait DataFrameJoinOps: IntoDf {
         left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
-        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Inner))
+        self.join(
+            other,
+            left_on,
+            right_on,
+            JoinArgs::new(JoinType::Inner),
+            None,
+        )
     }
 
     /// Perform a left outer join on two DataFrames
@@ -457,7 +484,13 @@ pub trait DataFrameJoinOps: IntoDf {
         left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
-        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Left))
+        self.join(
+            other,
+            left_on,
+            right_on,
+            JoinArgs::new(JoinType::Left),
+            None,
+        )
     }
 
     /// Perform a full outer join on two DataFrames
@@ -476,7 +509,13 @@ pub trait DataFrameJoinOps: IntoDf {
         left_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
         right_on: impl IntoIterator<Item = impl Into<PlSmallStr>>,
     ) -> PolarsResult<DataFrame> {
-        self.join(other, left_on, right_on, JoinArgs::new(JoinType::Full))
+        self.join(
+            other,
+            left_on,
+            right_on,
+            JoinArgs::new(JoinType::Full),
+            None,
+        )
     }
 }
 

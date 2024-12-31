@@ -25,7 +25,7 @@ pub(crate) fn prepare_expression_for_context(
     // type coercion and simplify expression optimizations run.
     let column = Series::full_null(name, 0, dtype);
     let df = column.into_frame();
-    let input_schema = Arc::new(df.schema());
+    let input_schema = df.schema().clone();
     let lf = df
         .lazy()
         .without_optimizations()

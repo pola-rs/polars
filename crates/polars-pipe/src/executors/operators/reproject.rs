@@ -16,7 +16,7 @@ pub(crate) fn reproject_chunk(
 
         let out = chunk
             .data
-            .select_with_schema_unchecked(schema.iter_names_cloned(), &chunk_schema)?;
+            .select_with_schema_unchecked(schema.iter_names_cloned(), chunk_schema)?;
 
         *positions = out
             .get_columns()

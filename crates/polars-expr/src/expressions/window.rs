@@ -399,7 +399,7 @@ impl PhysicalExpr for WindowExpr {
         // 4. select the final column and return
 
         if df.is_empty() {
-            let field = self.phys_function.to_field(&df.schema())?;
+            let field = self.phys_function.to_field(df.schema())?;
             return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
         }
 

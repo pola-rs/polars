@@ -216,6 +216,7 @@ fn upsample_single_impl(
                         [index_col_name.clone()],
                         [index_col_name.clone()],
                         JoinArgs::new(JoinType::Left),
+                        None,
                     )
                 },
                 _ => polars_bail!(

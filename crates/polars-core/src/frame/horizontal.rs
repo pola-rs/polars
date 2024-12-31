@@ -41,6 +41,7 @@ impl DataFrame {
             }
         }
 
+        self.clear_schema();
         self.columns.extend_from_slice(columns);
         self
     }
@@ -99,6 +100,7 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
                     unsafe { df.get_columns_mut() }.iter_mut().for_each(|c| {
                         *c = c.extend_constant(AnyValue::Null, diff).unwrap();
                     });
+                    df.clear_schema();
                     unsafe {
                         df.set_height(output_height);
                     }

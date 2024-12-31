@@ -335,7 +335,7 @@ impl DslBuilder {
     }
 
     pub fn from_existing_df(df: DataFrame) -> Self {
-        let schema = Arc::new(df.schema());
+        let schema = df.schema().clone();
         DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema,

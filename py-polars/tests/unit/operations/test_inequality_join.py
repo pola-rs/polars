@@ -297,8 +297,7 @@ def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     )
 
     explained = q.explain()
-    assert "CROSS" in explained
-    assert "FILTER" in explained
+    assert "NESTED LOOP" in explained
     actual = q.collect()
     assert actual.to_dict(as_series=False) == {
         "group": [0, 0, 0, 0, 0, 0, 1, 1, 1],
@@ -603,7 +602,7 @@ def test_join_on_strings() -> None:
 
     q = df.join_where(df, pl.col("a").ge(pl.col("a_right")))
 
-    assert "CROSS JOIN" in q.explain()
+    assert "NESTED LOOP JOIN" in q.explain()
     assert q.collect().to_dict(as_series=False) == {
         "a": ["a", "b", "b", "c", "c", "c"],
         "b": ["b", "b", "b", "b", "b", "b"],
