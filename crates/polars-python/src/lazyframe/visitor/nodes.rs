@@ -1,3 +1,5 @@
+#[cfg(feature = "iejoin")]
+use polars::prelude::JoinTypeOptionsIR;
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
