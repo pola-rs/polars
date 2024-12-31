@@ -6,6 +6,7 @@ use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_ops::frame::{JoinArgs, JoinTypeOptions};
+use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -171,6 +172,7 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+        options: Option<JoinTypeOptionsIR>,
     },
 }
 

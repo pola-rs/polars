@@ -353,6 +353,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         remove_suffix(&mut ie_right_on, expr_arena, right_schema, suffix.as_str());
                         can_simplify_join = true;
                     }
+                    can_simplify_join |= options.args.how.is_cross();
                 }
 
                 if can_simplify_join {
@@ -387,7 +388,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn insert_fitting_join(
+fn insert_fitting_join(
     eq_left_on: Vec<ExprIR>,
     eq_right_on: Vec<ExprIR>,
     #[cfg(feature = "iejoin")] ie_left_on: Vec<ExprIR>,
@@ -472,8 +473,13 @@ pub fn insert_fitting_join(
                     Some(acc.map_or(e, |acc| and_expr(acc, e, expr_arena)))
                 },
             );
+            if let Some(pred) = remaining_predicates {
+                options.options = Some(JoinTypeOptionsIR::Cross {
+                    predicate: ExprIR::from_node(pred, &expr_arena),
+                })
+            }
 
-            (Vec::new(), Vec::new(), remaining_predicates)
+            (Vec::new(), Vec::new(), None)
         },
     };
 

@@ -155,8 +155,7 @@ pub fn optimize(
     }
 
     if opt_state.predicate_pushdown() {
-        let mut predicate_pushdown_opt =
-            PredicatePushDown::new(expr_eval, opt_state.streaming() | opt_state.new_streaming());
+        let mut predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -207,15 +206,7 @@ pub fn optimize(
 
     if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
         // We only want to run this on cse inserted caches
-        cache_states::set_cache_states(
-            lp_top,
-            lp_arena,
-            expr_arena,
-            scratch,
-            expr_eval,
-            verbose,
-            opt_state.streaming(),
-        )?;
+        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, expr_eval, verbose)?;
     }
 
     // This one should run (nearly) last as this modifies the projections

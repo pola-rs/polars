@@ -319,13 +319,25 @@ impl<'a> IRDisplay<'a> {
                 let left_on = self.display_expr_slice(left_on);
                 let right_on = self.display_expr_slice(right_on);
 
-                let how = &options.args.how;
-                write!(f, "{:indent$}{how} JOIN:", "")?;
-                write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
-                self.with_root(*input_left)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                self.with_root(*input_right)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}END {how} JOIN", "")
+                // Fused cross + filter (show as nested loop join)
+                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                    let predicate = self.display_expr(predicate);
+                    let name = "NESTED LOOP";
+                    write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {name} JOIN", "")
+                } else {
+                    let how = &options.args.how;
+                    write!(f, "{:indent$}{how} JOIN:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {how} JOIN", "")
+                }
             },
             HStack { input, exprs, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?

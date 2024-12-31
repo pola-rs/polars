@@ -533,8 +533,7 @@ pub fn lower_ir(
             let left_on = left_on.clone();
             let right_on = right_on.clone();
             let args = options.args.clone();
-            // Should not be set for streaming engine.
-            debug_assert!(options.options.is_none());
+            let options = options.options.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
             if args.how.is_equi() && !args.validation.needs_checks() {
@@ -580,6 +579,7 @@ pub fn lower_ir(
                     left_on,
                     right_on,
                     args,
+                    options,
                 }
             }
         },
