@@ -747,6 +747,7 @@ impl Series {
                 },
                 Int64 => Ok(self.i64().unwrap().prod_reduce()),
                 UInt64 => Ok(self.u64().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-i128")]
                 Int128 => Ok(self.i128().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
