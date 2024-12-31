@@ -2,7 +2,9 @@ use std::hash::Hash;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
-use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, IEJoinOptions, JoinTypeOptions};
+#[cfg(feature = "iejoin")]
+use polars_ops::frame::IEJoinOptions;
+use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;

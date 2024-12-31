@@ -694,7 +694,7 @@ impl DataFrame {
     /// let f2: Field = Field::new("Diameter (m)".into(), DataType::Float64);
     /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
-    /// assert_eq!(df.schema(), sc);
+    /// assert_eq!(&**df.schema(), &sc);
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn schema(&self) -> &SchemaRef {
