@@ -265,6 +265,7 @@ dtype-full = [
   "dtype-array",
   "dtype-i8",
   "dtype-i16",
+  "dtype-i128",
   "dtype-decimal",
   "dtype-u8",
   "dtype-u16",
@@ -318,12 +319,20 @@ dtype-i8 = [
   "polars-io/dtype-i8",
   "polars-lazy?/dtype-i8",
   "polars-ops/dtype-i8",
+  "polars-time?/dtype-i8",
 ]
 dtype-i16 = [
   "polars-core/dtype-i16",
   "polars-io/dtype-i16",
   "polars-lazy?/dtype-i16",
   "polars-ops/dtype-i16",
+  "polars-time?/dtype-i16",
+]
+dtype-i128 = [
+  "polars-core/dtype-i128",
+  "polars-lazy?/dtype-i128",
+  "polars-ops/dtype-i128",
+  "polars-time?/dtype-i128",
 ]
 dtype-decimal = [
   "polars-core/dtype-decimal",
@@ -337,12 +346,14 @@ dtype-u8 = [
   "polars-io/dtype-u8",
   "polars-lazy?/dtype-u8",
   "polars-ops/dtype-u8",
+  "polars-time?/dtype-u8",
 ]
 dtype-u16 = [
   "polars-core/dtype-u16",
   "polars-io/dtype-u16",
   "polars-lazy?/dtype-u16",
   "polars-ops/dtype-u16",
+  "polars-time?/dtype-u16",
 ]
 dtype-categorical = [
   "polars-core/dtype-categorical",
