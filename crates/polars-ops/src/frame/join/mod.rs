@@ -64,7 +64,8 @@ pub trait DataFrameJoinOps: IntoDf {
     /// let df2: DataFrame = df!("Name" => &["Apple", "Banana", "Pear"],
     ///                          "Potassium (mg/100g)" => &[107, 358, 115])?;
     ///
-    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner))?;
+    /// let df3: DataFrame = df1.join(&df2, ["Fruit"], ["Name"], JoinArgs::new(JoinType::Inner),
+    /// None)?;
     /// assert_eq!(df3.shape(), (3, 3));
     /// println!("{}", df3);
     /// # Ok::<(), PolarsError>(())

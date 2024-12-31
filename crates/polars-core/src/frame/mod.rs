@@ -738,6 +738,8 @@ impl DataFrame {
     ///
     /// The caller must ensure the length of all [`Series`] remains equal to `height` or
     /// [`DataFrame::set_height`] is called afterwards with the appropriate `height`.
+    /// The caller must ensure that the cached schema is cleared if it modifies the schema by
+    /// calling [`DataFrame::clear_schema`].
     pub unsafe fn get_columns_mut(&mut self) -> &mut Vec<Column> {
         &mut self.columns
     }
@@ -745,8 +747,8 @@ impl DataFrame {
     #[inline]
     /// Remove all the columns in the [`DataFrame`] but keep the `height`.
     pub fn clear_columns(&mut self) {
+        unsafe { self.get_columns_mut() }.clear();
         self.clear_schema();
-        unsafe { self.get_columns_mut() }.clear()
     }
 
     #[inline]
@@ -760,8 +762,8 @@ impl DataFrame {
     ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
     ///   with [`DataFrame::set_height`].
     pub unsafe fn column_extend_unchecked(&mut self, iter: impl IntoIterator<Item = Column>) {
+        unsafe { self.get_columns_mut() }.extend(iter);
         self.clear_schema();
-        unsafe { self.get_columns_mut() }.extend(iter)
     }
 
     /// Take ownership of the underlying columns vec.

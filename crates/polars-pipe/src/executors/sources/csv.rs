@@ -220,7 +220,8 @@ impl Source for CsvSource {
                     // SAFETY: Columns are only replaced with columns
                     // 1. of the same name, and
                     // 2. of the same length.
-                    unsafe { data_chunk.data.get_columns_mut() }.push(ca.slice(0, n).into_column())
+                    unsafe { data_chunk.data.get_columns_mut() }.push(ca.slice(0, n).into_column());
+                    data_chunk.data.clear_schema();
                 }
             }
 
