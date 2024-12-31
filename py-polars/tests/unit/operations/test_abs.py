@@ -48,7 +48,7 @@ def test_builtin_abs() -> None:
     assert abs(s).to_list() == [1, 0, 1, None]
 
 
-@pytest.mark.parametrize("dtype", FLOAT_DTYPES + SIGNED_INTEGER_DTYPES)
+@pytest.mark.parametrize("dtype", [*FLOAT_DTYPES, *SIGNED_INTEGER_DTYPES])
 def test_abs_builtin(dtype: PolarsDataType) -> None:
     lf = pl.LazyFrame({"a": [-1, 0, 1, None]}, schema={"a": dtype})
     result = lf.select(abs(pl.col("a")))
