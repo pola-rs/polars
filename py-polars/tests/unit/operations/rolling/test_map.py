@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -82,12 +83,13 @@ def test_rolling_map_std_weights(dtype: PolarsDataType) -> None:
     assert_series_equal(result, expected)
 
 
-def test_rolling_map_sum_int() -> None:
-    s = pl.Series("A", [1, 2, 9, 2, 13], dtype=pl.Int32)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_rolling_map_sum_int(dtype: PolarsDataType) -> None:
+    s = pl.Series("A", [1, 2, 9, 2, 13], dtype=dtype)
 
     result = s.rolling_map(function=lambda s: s.sum(), window_size=3)
 
-    expected = pl.Series("A", [None, None, 12, 13, 24], dtype=pl.Int32)
+    expected = pl.Series("A", [None, None, 12, 13, 24], dtype=dtype)
     assert_series_equal(result, expected)
 
 
