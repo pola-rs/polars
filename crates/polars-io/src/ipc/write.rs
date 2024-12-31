@@ -116,7 +116,7 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        let schema = schema_to_arrow_checked(&df.schema(), self.compat_level, "ipc")?;
+        let schema = schema_to_arrow_checked(df.schema(), self.compat_level, "ipc")?;
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             Arc::new(schema),

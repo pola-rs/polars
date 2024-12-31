@@ -5,7 +5,7 @@ use polars_core::frame::DataFrame;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
-use polars_ops::frame::{JoinArgs, JoinTypeOptions};
+use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};

@@ -191,7 +191,7 @@ impl Source for CsvSource {
                 if self.first_schema.is_empty() {
                     self.first_schema = batches[0].schema().clone();
                 }
-                ensure_matching_schema(&self.first_schema, &batches[0].schema())?;
+                ensure_matching_schema(&self.first_schema, batches[0].schema())?;
             }
 
             let index = get_source_index(0);

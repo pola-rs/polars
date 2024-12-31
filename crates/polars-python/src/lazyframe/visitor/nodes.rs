@@ -1,4 +1,3 @@
-use polars::prelude::{JoinTypeOptions, JoinTypeOptionsIR};
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
@@ -486,6 +485,11 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                                 )?,
                             )
                                 .into_py_any(py)?
+                        },
+                        // This is a cross join fused with a predicate. Shown in the IR::explain as
+                        // NESTED LOOP JOIN
+                        JoinType::Cross if options.options.is_some() => {
+                            return Err(PyNotImplementedError::new_err("nested loop join"))
                         },
                         _ => name.into_any().unbind(),
                     },

@@ -475,7 +475,7 @@ fn insert_fitting_join(
             );
             if let Some(pred) = remaining_predicates {
                 options.options = Some(JoinTypeOptionsIR::Cross {
-                    predicate: ExprIR::from_node(pred, &expr_arena),
+                    predicate: ExprIR::from_node(pred, expr_arena),
                 })
             }
 

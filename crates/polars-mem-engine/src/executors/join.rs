@@ -78,7 +78,7 @@ impl Executor for JoinExec {
             let by = self
                 .left_on
                 .iter()
-                .map(|s| Ok(s.to_field(&df_left.schema())?.name))
+                .map(|s| Ok(s.to_field(df_left.schema())?.name))
                 .collect::<PolarsResult<Vec<_>>>()?;
             let name = comma_delimited("join".to_string(), &by);
             Cow::Owned(name)

@@ -20,7 +20,7 @@ use polars_core::export::once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinArgs {
     pub how: JoinType,
@@ -110,20 +110,6 @@ impl MaintainOrderJoin {
             MaintainOrderJoin::Right => MaintainOrderJoin::Left,
             MaintainOrderJoin::LeftRight => MaintainOrderJoin::RightLeft,
             MaintainOrderJoin::RightLeft => MaintainOrderJoin::LeftRight,
-        }
-    }
-}
-
-impl Default for JoinArgs {
-    fn default() -> Self {
-        Self {
-            how: Default::default(),
-            validation: Default::default(),
-            suffix: None,
-            slice: None,
-            join_nulls: false,
-            coalesce: Default::default(),
-            maintain_order: Default::default(),
         }
     }
 }

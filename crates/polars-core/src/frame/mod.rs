@@ -1800,7 +1800,7 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        debug_ensure_matching_schema_names(schema, &self.schema())?;
+        debug_ensure_matching_schema_names(schema, self.schema())?;
 
         cols.iter()
             .map(|name| {
