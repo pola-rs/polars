@@ -286,7 +286,7 @@ impl_take_extremum!(i8);
 impl_take_extremum!(i16);
 impl_take_extremum!(i32);
 impl_take_extremum!(i64);
-#[cfg(feature = "dtype-decimal")]
+#[cfg(any(feature = "dtype-decimal", feature = "dtype-i128"))]
 impl_take_extremum!(i128);
 impl_take_extremum!(float: f32);
 impl_take_extremum!(float: f64);
