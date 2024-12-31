@@ -65,6 +65,7 @@ impl Hash for JoinTypeOptionsIR {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         use JoinTypeOptionsIR::*;
         match self {
+            #[cfg(feature = "iejoin")]
             IEJoin(opt) => opt.hash(state),
             Cross { predicate } => predicate.node().hash(state),
         }
@@ -83,6 +84,7 @@ impl JoinTypeOptionsIR {
 
                 Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
             },
+            #[cfg(feature = "iejoin")]
             IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
         }
     }
