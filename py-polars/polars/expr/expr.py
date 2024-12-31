@@ -10561,15 +10561,15 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"grouper": ["a", "a", "a", "b", "b"], "n": [-1, 0, 1, -1, 1]}
         ... )
-        >>> df.group_by("grouper").agg(pl.col("n").bitwise_and())
+        >>> df.group_by("grouper", maintain_order=True).agg(pl.col("n").bitwise_and())
         shape: (2, 2)
         ┌─────────┬─────┐
         │ grouper ┆ n   │
         │ ---     ┆ --- │
         │ str     ┆ i64 │
         ╞═════════╪═════╡
-        │ b       ┆ 1   │
         │ a       ┆ 0   │
+        │ b       ┆ 1   │
         └─────────┴─────┘
         """
         return self._from_pyexpr(self._pyexpr.bitwise_and())
