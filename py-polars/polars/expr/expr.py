@@ -10592,7 +10592,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"grouper": ["a", "a", "a", "b", "b"], "n": [-1, 0, 1, -1, 1]}
         ... )
-        >>> df.group_by("grouper").agg(pl.col("n").bitwise_or())
+        >>> df.group_by("grouper", maintain_order=True).agg(pl.col("n").bitwise_or())
         shape: (2, 2)
         ┌─────────┬─────┐
         │ grouper ┆ n   │
@@ -10623,7 +10623,7 @@ class Expr:
         >>> df = pl.DataFrame(
         ...     {"grouper": ["a", "a", "a", "b", "b"], "n": [-1, 0, 1, -1, 1]}
         ... )
-        >>> df.group_by("grouper").agg(pl.col("n").bitwise_xor())
+        >>> df.group_by("grouper", maintain_order=True).agg(pl.col("n").bitwise_xor())
         shape: (2, 2)
         ┌─────────┬─────┐
         │ grouper ┆ n   │
