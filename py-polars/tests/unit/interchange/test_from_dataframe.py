@@ -334,6 +334,7 @@ def test_string_column_to_series_no_offsets() -> None:
         _string_column_to_series(col, allow_copy=True)
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_column_to_series_non_dictionary() -> None:
     s = pl.Series(["a", "b", None, "a"], dtype=pl.Categorical)
 

@@ -144,12 +144,18 @@ def test_unique_null() -> None:
     [
         ([], []),
         (["a", "b", "b", "c"], ["a", "b", "c"]),
-        (["a", "b", "b", None], ["a", "b", None]),
+        ([None, "a", "b", "b"], [None, "a", "b"]),
     ],
 )
+# TODO: fails with global string cache
+# @pytest.mark.usefixtures("test_global_and_local")
 def test_unique_categorical(input: list[str | None], output: list[str | None]) -> None:
     s = pl.Series(input, dtype=pl.Categorical)
     result = s.unique(maintain_order=True)
+    expected = pl.Series(output, dtype=pl.Categorical)
+    assert_series_equal(result, expected)
+
+    result = s.unique(maintain_order=False).sort()
     expected = pl.Series(output, dtype=pl.Categorical)
     assert_series_equal(result, expected)
 
@@ -206,6 +212,7 @@ def test_unique_with_bad_subset(
         df.unique(subset=subset)
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_19409() -> None:
     df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
     uniq = df.unique()
