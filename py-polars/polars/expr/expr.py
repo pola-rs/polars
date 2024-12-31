@@ -10544,15 +10544,96 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.bitwise_trailing_zeros())
 
     def bitwise_and(self) -> Expr:
-        """Perform an aggregation of bitwise ANDs."""
+        """Perform an aggregation of bitwise ANDs.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"n": [-1, 0, 1]})
+        >>> df.select(pl.col("n").bitwise_and())
+        shape: (1, 1)
+        ┌─────┐
+        │ n   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ 0   │
+        └─────┘
+        >>> df = pl.DataFrame(
+        ...     {"grouper": ["a", "a", "a", "b", "b"], "n": [-1, 0, 1, -1, 1]}
+        ... )
+        >>> df.group_by("grouper").agg(pl.col("n").bitwise_and())
+        shape: (2, 2)
+        ┌─────────┬─────┐
+        │ grouper ┆ n   │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ b       ┆ 1   │
+        │ a       ┆ 0   │
+        └─────────┴─────┘
+        """
         return self._from_pyexpr(self._pyexpr.bitwise_and())
 
     def bitwise_or(self) -> Expr:
-        """Perform an aggregation of bitwise ORs."""
+        """Perform an aggregation of bitwise ORs.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"n": [-1, 0, 1]})
+        >>> df.select(pl.col("n").bitwise_or())
+        shape: (1, 1)
+        ┌─────┐
+        │ n   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ -1  │
+        └─────┘
+        >>> df = pl.DataFrame(
+        ...     {"grouper": ["a", "a", "a", "b", "b"], "n": [-1, 0, 1, -1, 1]}
+        ... )
+        >>> df.group_by("grouper").agg(pl.col("n").bitwise_or())
+        shape: (2, 2)
+        ┌─────────┬─────┐
+        │ grouper ┆ n   │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ a       ┆ -1  │
+        │ b       ┆ -1  │
+        └─────────┴─────┘
+        """
         return self._from_pyexpr(self._pyexpr.bitwise_or())
 
     def bitwise_xor(self) -> Expr:
-        """Perform an aggregation of bitwise XORs."""
+        """Perform an aggregation of bitwise XORs.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"n": [-1, 0, 1]})
+        >>> df.select(pl.col("n").bitwise_xor())
+        shape: (1, 1)
+        ┌─────┐
+        │ n   │
+        │ --- │
+        │ i64 │
+        ╞═════╡
+        │ -2  │
+        └─────┘
+        >>> df = pl.DataFrame(
+        ...     {"grouper": ["a", "a", "a", "b", "b"], "n": [-1, 0, 1, -1, 1]}
+        ... )
+        >>> df.group_by("grouper").agg(pl.col("n").bitwise_xor())
+        shape: (2, 2)
+        ┌─────────┬─────┐
+        │ grouper ┆ n   │
+        │ ---     ┆ --- │
+        │ str     ┆ i64 │
+        ╞═════════╪═════╡
+        │ a       ┆ -2  │
+        │ b       ┆ -2  │
+        └─────────┴─────┘
+        """
         return self._from_pyexpr(self._pyexpr.bitwise_xor())
 
     @deprecate_function(
