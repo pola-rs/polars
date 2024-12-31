@@ -30,6 +30,7 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
@@ -1717,23 +1718,28 @@ def test_trigonometric_invalid_input() -> None:
         s.cosh()
 
 
-def test_product() -> None:
-    a = pl.Series("a", [1, 2, 3])
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_product_ints(dtype: PolarsDataType) -> None:
+    a = pl.Series("a", [1, 2, 3], dtype=dtype)
     out = a.product()
     assert out == 6
-    a = pl.Series("a", [1, 2, None])
+    a = pl.Series("a", [1, 2, None], dtype=dtype)
     out = a.product()
     assert out == 2
-    a = pl.Series("a", [None, 2, 3])
+    a = pl.Series("a", [None, 2, 3], dtype=dtype)
     out = a.product()
     assert out == 6
-    a = pl.Series("a", [], dtype=pl.Float32)
+
+
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_product_floats(dtype: PolarsDataType) -> None:
+    a = pl.Series("a", [], dtype=dtype)
     out = a.product()
     assert out == 1
-    a = pl.Series("a", [None, None], dtype=pl.Float32)
+    a = pl.Series("a", [None, None], dtype=dtype)
     out = a.product()
     assert out == 1
-    a = pl.Series("a", [3.0, None, float("nan")])
+    a = pl.Series("a", [3.0, None, float("nan")], dtype=dtype)
     out = a.product()
     assert math.isnan(out)
 
