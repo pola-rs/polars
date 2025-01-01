@@ -689,11 +689,21 @@ fn rg_to_dfs_par_over_rg(
         .sum();
     let slice_end = slice.0 + slice.1;
 
-    // we distinguish between the number of rows scanned and the number of rows actually
-    // read as these values can differ when the slice pushdown optimization is used
-    let mut rows_scanned: IdxSize = (0..row_group_start)
-        .map(|i| file_metadata.row_groups[i].num_rows() as IdxSize)
-        .sum();
+    // rows_scanned is the number of rows that have been scanned so far when checking for overlap with the slice.
+    // rows_read is the number of rows found to overlap with the slice, and thus the number of rows that will be
+    // read into a dataframe.
+    let mut rows_scanned: IdxSize;
+
+    if row_group_start > 0 {
+        // In the case of async reads, we need to account for the fact that row_group_start may be greater than
+        // zero due to earlier processing.
+        // For details, see: https://github.com/pola-rs/polars/pull/20508#discussion_r1900165649
+        rows_scanned = (0..row_group_start)
+            .map(|i| file_metadata.row_groups[i].num_rows() as IdxSize)
+            .sum();
+    } else {
+        rows_scanned = 0;
+    }
 
     for i in row_group_start..row_group_end {
         let row_count_start = rows_scanned;
