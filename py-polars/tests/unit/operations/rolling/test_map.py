@@ -93,8 +93,9 @@ def test_rolling_map_sum_int(dtype: PolarsDataType) -> None:
     assert_series_equal(result, expected)
 
 
-def test_rolling_map_sum_int_cast_to_float() -> None:
-    s = pl.Series("A", [1, 2, 9, None, 13], dtype=pl.Int32)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_rolling_map_sum_int_cast_to_float(dtype: PolarsDataType) -> None:
+    s = pl.Series("A", [1, 2, 9, None, 13], dtype=dtype)
 
     result = s.rolling_map(
         function=lambda s: s.sum(), window_size=3, weights=[1.0, 2.0, 3.0]
