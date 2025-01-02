@@ -146,6 +146,10 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
         DataType::Int64 => {
             par_sorted_merge_inner_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
         },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            par_sorted_merge_inner_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
+        },
         DataType::Float32 => {
             par_sorted_merge_inner_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
         },
