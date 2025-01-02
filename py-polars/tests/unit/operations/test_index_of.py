@@ -10,6 +10,7 @@ from hypothesis import example, given
 from hypothesis import strategies as st
 
 import polars as pl
+from polars.exceptions import InvalidOperationError
 
 if TYPE_CHECKING:
     from polars._typing import IntoExpr
@@ -78,7 +79,6 @@ def test_float(dtype: pl.DataType) -> None:
 def test_null() -> None:
     series = pl.Series([None, None], dtype=pl.Null)
     assert_index_of(series, None)
-    assert_index_of(series, 3)
 
 
 def test_empty() -> None:
@@ -104,19 +104,7 @@ def test_integer(dtype: pl.DataType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    extra_values = [
-        np.int8(3),
-        np.int64(2**42),
-        np.float64(3.0),
-        np.float32(3.0),
-        np.uint64(2**63),
-        np.int8(-7),
-        np.float32(1.5),
-        np.float64(1.5),
-        # This caught a bug where rounding was erroneously happening:
-        np.float32(3.1),
-        np.float64(3.1),
-    ]
+    extra_values = [pl.select(v).item() for v in [dtype.max(), dtype.min()]]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:
@@ -124,6 +112,11 @@ def test_integer(dtype: pl.DataType) -> None:
             assert_index_of(s, value, convert_to_literal=False)
         for value in extra_values:  # type: ignore[assignment]
             assert_index_of(s, value)
+
+        # Can't cast floats:
+        for f in [np.float32(3.1), np.float64(3.1), 50.9]:
+            with pytest.raises(InvalidOperationError, match="cannot cast lossless"):
+                s.index_of(f)
 
 
 def test_groupby() -> None:
@@ -169,8 +162,8 @@ def test_randomized(
     sorted_series = series.sort(descending=False)
     sorted_series2 = series.sort(descending=True)
 
-    # Values are between 10 and 50, plus add None and add out-of-range values:
-    for i in set(range(10, 51)) | {-2000, 255, 2000, None}:
+    # Values are between 10 and 50, plus add None and max/min range values:
+    for i in set(range(10, 51)) | {-128, 127, None}:
         assert_index_of(series, i)
         assert_index_of(sorted_series, i)
         assert_index_of(sorted_series2, i)
@@ -287,12 +280,7 @@ def test_error_on_multiple_values() -> None:
     "convert_to_literal",
     [
         True,
-        pytest.param(
-            False,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20171"
-            ),
-        ),
+        False,
     ],
 )
 def test_enum(convert_to_literal: bool) -> None:

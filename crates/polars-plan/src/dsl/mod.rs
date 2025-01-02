@@ -387,13 +387,7 @@ impl Expr {
             options: FunctionOptions {
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "index_of",
-                cast_options: FunctionCastOptions {
-                    supertype: Some(
-                        (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING)
-                            .into(),
-                    ),
-                    ..Default::default()
-                },
+                cast_options: Some(CastingRules::FirstArgLossless),
                 ..Default::default()
             },
         }
