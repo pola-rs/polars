@@ -12,6 +12,7 @@ pub trait SchemaExtPl {
 
 impl SchemaExtPl for Schema {
     fn matches_schema(&self, other: &Schema) -> PolarsResult<bool> {
+        polars_ensure!(self.len() == other.len(), SchemaMismatch: "found different number of fields in schema's\n\nLeft schema: {} fields, right schema: {} fields.", self.len(), other.len());
         let mut cast = false;
         for (a, b) in self.iter_values().zip(other.iter_values()) {
             cast |= a.matches_schema_type(b)?;
