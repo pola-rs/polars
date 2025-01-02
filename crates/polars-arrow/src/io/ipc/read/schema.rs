@@ -72,7 +72,8 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
         (32, false) => IntegerType::UInt32,
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
-        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32 or 64."),
+        (128, true) => IntegerType::Int128,
+        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32, 64 or 128."),
     })
 }
 

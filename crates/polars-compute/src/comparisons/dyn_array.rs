@@ -68,6 +68,7 @@ macro_rules! compare {
             PH::Dictionary(I::Int16) => call_binary!(DictionaryArray<i16>, lhs, rhs, $op),
             PH::Dictionary(I::Int32) => call_binary!(DictionaryArray<i32>, lhs, rhs, $op),
             PH::Dictionary(I::Int64) => call_binary!(DictionaryArray<i64>, lhs, rhs, $op),
+            PH::Dictionary(I::Int128) => call_binary!(DictionaryArray<i128>, lhs, rhs, $op),
             PH::Dictionary(I::UInt8) => call_binary!(DictionaryArray<u8>, lhs, rhs, $op),
             PH::Dictionary(I::UInt16) => call_binary!(DictionaryArray<u16>, lhs, rhs, $op),
             PH::Dictionary(I::UInt32) => call_binary!(DictionaryArray<u32>, lhs, rhs, $op),

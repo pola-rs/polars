@@ -327,7 +327,7 @@ pub(crate) fn serialize_dictionary(
 ) -> arrow_format::ipc::DictionaryEncoding {
     use IntegerType::*;
     let is_signed = match index_type {
-        Int8 | Int16 | Int32 | Int64 => true,
+        Int8 | Int16 | Int32 | Int64 | Int128 => true,
         UInt8 | UInt16 | UInt32 | UInt64 => false,
     };
 
@@ -336,6 +336,7 @@ pub(crate) fn serialize_dictionary(
         Int16 | UInt16 => 16,
         Int32 | UInt32 => 32,
         Int64 | UInt64 => 64,
+        Int128 => 128,
     };
 
     let index_type = arrow_format::ipc::Int {

@@ -455,6 +455,7 @@ impl From<IntegerType> for ArrowDataType {
             IntegerType::Int16 => ArrowDataType::Int16,
             IntegerType::Int32 => ArrowDataType::Int32,
             IntegerType::Int64 => ArrowDataType::Int64,
+            IntegerType::Int128 => ArrowDataType::Int128,
             IntegerType::UInt8 => ArrowDataType::UInt8,
             IntegerType::UInt16 => ArrowDataType::UInt16,
             IntegerType::UInt32 => ArrowDataType::UInt32,
