@@ -104,19 +104,20 @@ def test_integer(dtype: pl.DataType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    extra_values = [pl.select(v).item() for v in [dtype.max(), dtype.min()]]
+    extra_values = [pl.select(v).item() for v in [dtype.max(), dtype.min()]]  # type: ignore[attr-defined]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:
             assert_index_of(s, value, convert_to_literal=True)
             assert_index_of(s, value, convert_to_literal=False)
-        for value in extra_values:  # type: ignore[assignment]
-            assert_index_of(s, value)
+        for value in extra_values:
+            assert_index_of(s, value, convert_to_literal=True)
+            assert_index_of(s, value, convert_to_literal=False)
 
         # Can't cast floats:
         for f in [np.float32(3.1), np.float64(3.1), 50.9]:
             with pytest.raises(InvalidOperationError, match="cannot cast lossless"):
-                s.index_of(f)
+                s.index_of(f)  # type: ignore[arg-type]
 
 
 def test_groupby() -> None:
