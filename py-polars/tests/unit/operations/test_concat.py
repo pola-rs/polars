@@ -97,3 +97,13 @@ def test_concat_series() -> None:
     assert pl.concat([s, s]).len() == 6
     # check if s remains unchanged
     assert s.len() == 3
+
+
+def test_concat_null_20501() -> None:
+    a = pl.DataFrame({"id": [1], "value": ["foo"]})
+    b = pl.DataFrame({"id": [2], "value": [None]})
+
+    assert pl.concat([a.lazy(), b.lazy()]).collect().to_dict(as_series=False) == {
+        "id": [1, 2],
+        "value": ["foo", None],
+    }
