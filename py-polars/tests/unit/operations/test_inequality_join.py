@@ -461,17 +461,6 @@ def test_raise_on_ambiguous_name() -> None:
         df.join_where(df, pl.col("id") >= pl.col("id"))
 
 
-def test_raise_on_multiple_binary_comparisons() -> None:
-    df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="only one binary comparison allowed in each 'join_where' predicate; found ",
-    ):
-        df.join_where(
-            df, (pl.col("id") < pl.col("id")) ^ (pl.col("id") >= pl.col("id"))
-        )
-
-
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
     with pytest.raises(
@@ -681,3 +670,14 @@ def test_join_where_literal_20061() -> None:
         "value_right": [5, 5, 5, 25],
         "flag_right": [1, 1, 1, 1],
     }
+
+
+def test_boolean_predicate_join_where() -> None:
+    urls = pl.LazyFrame({"url": "abcd.com/page"})
+    categories = pl.LazyFrame({"base_url": "abcd.com", "category": "landing page"})
+    assert (
+        "NESTED LOOP JOIN"
+        in urls.join_where(
+            categories, pl.col("url").str.starts_with(pl.col("base_url"))
+        ).explain()
+    )
