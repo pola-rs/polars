@@ -541,8 +541,8 @@ def test_horizontal_sum_boolean_with_null() -> None:
 
     expected_schema = pl.Schema(
         {
-            "null_first": pl.UInt32,
-            "bool_first": pl.UInt32,
+            "null_first": pl.get_index_type(),
+            "bool_first": pl.get_index_type(),
         }
     )
 
@@ -550,8 +550,8 @@ def test_horizontal_sum_boolean_with_null() -> None:
 
     expected_df = pl.DataFrame(
         {
-            "null_first": pl.Series([1, 0], dtype=pl.UInt32),
-            "bool_first": pl.Series([1, 0], dtype=pl.UInt32),
+            "null_first": pl.Series([1, 0], dtype=pl.get_index_type()),
+            "bool_first": pl.Series([1, 0], dtype=pl.get_index_type()),
         }
     )
 
@@ -563,7 +563,7 @@ def test_horizontal_sum_boolean_with_null() -> None:
     ("dtype_in", "dtype_out"),
     [
         (pl.Null, pl.Null),
-        (pl.Boolean, pl.UInt32),
+        (pl.Boolean, pl.get_index_type()),
         (pl.UInt8, pl.UInt8),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
@@ -589,6 +589,7 @@ def test_horizontal_sum_with_null_col_ignore_strategy(
         values = [None, None, None]  # type: ignore[list-item]
     expected = pl.LazyFrame(pl.Series("null", values, dtype=dtype_out))
     assert_frame_equal(result, expected)
+    assert result.collect_schema() == expected.collect_schema()
 
 
 @pytest.mark.parametrize("ignore_nulls", [True, False])
