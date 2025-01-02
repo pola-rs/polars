@@ -331,17 +331,19 @@ impl FunctionExpr {
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {
                 mapper.map_to_supertype().map(|mut f| {
-                    match f.dtype {
-                        // Booleans sum to UInt32.
-                        DataType::Boolean => { f.dtype = DataType::UInt32; f},
-                        _ => f,
+                    if f.dtype == DataType::Boolean {
+                        f.dtype = IDX_DTYPE;
                     }
+                    f
                 })
             },
             MeanHorizontal { .. } => {
                 mapper.map_to_supertype().map(|mut f| {
                     match f.dtype {
-                        dt @ DataType::Float32 => { f.dtype = dt; },
+                        DataType::Boolean => { f.dtype = DataType::Float64; },
+                        DataType::Float32 => { f.dtype = DataType::Float32; },
+                        DataType::Date => { f.dtype = DataType::Datetime(TimeUnit::Milliseconds, None); }
+                        dt if dt.is_temporal() => { f.dtype = dt; }
                         _ => { f.dtype = DataType::Float64; },
                     };
                     f

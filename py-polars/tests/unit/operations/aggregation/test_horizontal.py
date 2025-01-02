@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import datetime
 from collections import OrderedDict
+from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -12,7 +12,7 @@ from polars.exceptions import ComputeError, PolarsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, TimeUnit
 
 
 def test_any_expr(fruits_cars: pl.DataFrame) -> None:
@@ -340,7 +340,7 @@ def test_sum_dtype_12028() -> None:
         [
             pl.Series(
                 "sum_duration",
-                [datetime.timedelta(seconds=10)],
+                [timedelta(seconds=10)],
                 dtype=pl.Duration(time_unit="us"),
             ),
         ]
@@ -431,6 +431,7 @@ def test_mean_horizontal_no_rows() -> None:
 
     expected = pl.LazyFrame({"a": []}, schema={"a": pl.Float64})
     assert_frame_equal(result, expected)
+    assert result.collect_schema() == expected.collect_schema()
 
 
 def test_mean_horizontal_all_null() -> None:
@@ -440,6 +441,85 @@ def test_mean_horizontal_all_null() -> None:
 
     expected = pl.LazyFrame({"a": [1.5, None]}, schema={"a": pl.Float64})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("tz", [None, "UTC", "Asia/Kathmandu"])
+@pytest.mark.parametrize("tu", ["ms", "us", "ns"])
+@pytest.mark.parametrize("ignore_nulls", [False, True])
+def test_mean_horizontal_temporal(tu: TimeUnit, tz: str, ignore_nulls: bool) -> None:
+    dt1 = [date(2024, 1, 1), date(2024, 1, 3)]
+    dt2 = [date(2024, 1, 2), date(2024, 1, 4)]
+    dur1 = [timedelta(hours=1), timedelta(hours=3)]
+    dur2 = [timedelta(hours=2), timedelta(hours=4)]
+    lf = pl.LazyFrame(
+        {
+            "date1": pl.Series(dt1, dtype=pl.Date),
+            "date2": pl.Series(dt2, dtype=pl.Date),
+            "datetime1": pl.Series(dt1, dtype=pl.Datetime(time_unit=tu, time_zone=tz)),
+            "datetime2": pl.Series(dt2, dtype=pl.Datetime(time_unit=tu, time_zone=tz)),
+            "time1": [time(1), time(3)],
+            "time2": [time(2), time(4)],
+            "duration1": pl.Series(dur1, dtype=pl.Duration(time_unit=tu)),
+            "duration2": pl.Series(dur2, dtype=pl.Duration(time_unit=tu)),
+            "null": pl.Series([None, None], dtype=pl.Null),
+        }
+    )
+    null_method = {"ignore_nulls": ignore_nulls}
+    out = lf.select(
+        pl.mean_horizontal("date1", "date2", **null_method).alias("date"),
+        pl.mean_horizontal("datetime1", "datetime2", **null_method).alias("datetime"),
+        pl.mean_horizontal("time1", "time2", **null_method).alias("time"),
+        pl.mean_horizontal("duration1", "duration2", **null_method).alias("duration"),
+        pl.mean_horizontal("date1", "null", **null_method).alias("null_date1"),
+        pl.mean_horizontal("null", "date2", **null_method).alias("null_date2"),
+        pl.mean_horizontal("datetime1", "null", **null_method).alias("null_datetime1"),
+        pl.mean_horizontal("null", "datetime2", **null_method).alias("null_datetime2"),
+    )
+
+    expected = pl.DataFrame(
+        {
+            "date": pl.Series(
+                [datetime(2024, 1, 1, 12), datetime(2024, 1, 3, 12)],
+                dtype=pl.Datetime("ms"),
+            ),
+            "datetime": pl.Series(
+                [datetime(2024, 1, 1, 12), datetime(2024, 1, 3, 12)],
+                dtype=pl.Datetime(tu, tz),
+            ),
+            "time": [time(hour=1, minute=30), time(hour=3, minute=30)],
+            "duration": pl.Series(
+                [timedelta(hours=1, minutes=30), timedelta(hours=3, minutes=30)],
+                dtype=pl.Duration(time_unit=tu),
+            ),
+            "null_date1": (
+                pl.Series(dt1, dtype=pl.Datetime(time_unit="ms"))
+                if ignore_nulls
+                else pl.Series([None, None], dtype=pl.Datetime(time_unit="ms"))
+            ),
+            "null_date2": (
+                pl.Series(dt2, dtype=pl.Datetime(time_unit="ms"))
+                if ignore_nulls
+                else pl.Series([None, None], dtype=pl.Datetime(time_unit="ms"))
+            ),
+            "null_datetime1": (
+                pl.Series(dt1, dtype=pl.Datetime(time_unit=tu, time_zone=tz))
+                if ignore_nulls
+                else pl.Series(
+                    [None, None], dtype=pl.Datetime(time_unit=tu, time_zone=tz)
+                )
+            ),
+            "null_datetime2": pl.Series(
+                pl.Series(dt2, dtype=pl.Datetime(time_unit=tu, time_zone=tz))
+                if ignore_nulls
+                else pl.Series(
+                    [None, None], dtype=pl.Datetime(time_unit=tu, time_zone=tz)
+                )
+            ),
+        }
+    )
+
+    assert_frame_equal(out.collect(), expected)
+    assert out.collect_schema() == expected.collect_schema()
 
 
 @pytest.mark.parametrize(
@@ -556,6 +636,7 @@ def test_horizontal_sum_boolean_with_null() -> None:
     )
 
     assert_frame_equal(out.collect(), expected_df)
+    assert out.collect_schema(), expected_df.collect_schema()
 
 
 @pytest.mark.parametrize("ignore_nulls", [True, False])
@@ -589,6 +670,7 @@ def test_horizontal_sum_with_null_col_ignore_strategy(
         values = [None, None, None]  # type: ignore[list-item]
     expected = pl.LazyFrame(pl.Series("null", values, dtype=dtype_out))
     assert_frame_equal(result, expected)
+    assert result.collect_schema() == result.collect_schema()
 
 
 @pytest.mark.parametrize("ignore_nulls", [True, False])
@@ -621,3 +703,4 @@ def test_horizontal_mean_with_null_col_ignore_strategy(
         values = [None, None, None]  # type: ignore[list-item]
     expected = pl.LazyFrame(pl.Series("null", values, dtype=dtype_out))
     assert_frame_equal(result, expected)
+    assert result.collect_schema() == expected.collect_schema()
