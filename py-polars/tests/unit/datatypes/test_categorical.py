@@ -898,3 +898,10 @@ def test_perfect_group_by_19950() -> None:
         "y": ["b"],
         "x": ["a"],
     }
+
+
+@StringCache()
+def test_categorical_unique() -> None:
+    s = pl.Series(["a", "b", None], dtype=pl.Categorical)
+    assert s.n_unique() == 3
+    assert s.unique().to_list() == ["a", "b", None]
