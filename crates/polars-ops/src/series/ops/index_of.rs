@@ -104,7 +104,8 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
     }
 
     if series.dtype().is_categorical() {
-        unimplemented!("Categorical index_of() can give incorrect result until https://github.com/pola-rs/polars/issues/20318 is fixed")
+        // See https://github.com/pola-rs/polars/issues/20318
+        polars_bail!(InvalidOperation: "index_of() on Categoricals is not supported");
     }
 
     // For non-numeric dtypes, we convert to row-encoding, which essentially has
