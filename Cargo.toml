@@ -28,7 +28,7 @@ avro-schema = { version = "0.3" }
 base64 = "0.22.0"
 bincode = "1.3.3"
 bitflags = "2"
-bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
+bytemuck = { version = "1.21", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.7" }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
