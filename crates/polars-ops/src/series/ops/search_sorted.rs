@@ -8,12 +8,10 @@ pub fn search_sorted(
     side: SearchSortedSide,
     descending: bool,
 ) -> PolarsResult<IdxCa> {
-    if s.dtype().is_categorical() {
-        unimplemented!("Categorical search_sorted() can give incorrect result until https://github.com/pola-rs/polars/issues/20318 is fixed");
-    }
     let original_dtype = s.dtype();
 
     if s.dtype().is_categorical() {
+        // See https://github.com/pola-rs/polars/issues/20171
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
 
