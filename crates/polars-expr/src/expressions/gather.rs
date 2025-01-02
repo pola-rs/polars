@@ -18,6 +18,7 @@ impl PhysicalExpr for GatherExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series = self.phys_expr.evaluate(df, state)?;
         self.finish(df, state, series)
@@ -86,6 +87,11 @@ impl PhysicalExpr for GatherExpr {
         ac.with_values(taken.into_column(), true, Some(&self.expr))?;
         ac.with_update_groups(UpdateGroups::WithSeriesLen);
         Ok(ac)
+    }
+
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        self.phys_expr.collect_live_columns(lv);
+        self.idx.collect_live_columns(lv);
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

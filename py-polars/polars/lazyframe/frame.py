@@ -1013,6 +1013,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         format: ExplainFormat = "plain",
         optimized: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1023,6 +1024,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         streaming: bool = False,
         tree_format: bool | None = None,
+        _check_order: bool = True,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -1095,8 +1097,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("Streaming mode is considered unstable.")
 
         if optimized:
+            type_check = _type_check
             ldf = self._ldf.optimization_toggle(
                 type_coercion,
+                type_check,
                 predicate_pushdown,
                 projection_pushdown,
                 simplify_expression,
@@ -1107,6 +1111,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 collapse_joins,
                 streaming,
                 _eager=False,
+                _check_order=_check_order,
                 new_streaming=False,
             )
             if format == "tree":
@@ -1128,6 +1133,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1137,6 +1143,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> str | None:
         """
         Show a plot of the query plan.
@@ -1190,8 +1197,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
         """
+        type_check = _type_check
         _ldf = self._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1202,6 +1211,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -1598,6 +1608,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1611,6 +1622,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
@@ -1694,8 +1706,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns = False
             collapse_joins = False
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -1706,6 +1720,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         df, timings = ldf.profile()
@@ -1755,6 +1770,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1768,6 +1784,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "cpu",
         background: Literal[True],
         _eager: bool = False,
+        _check_order: bool = True,
     ) -> InProcessQuery: ...
 
     @overload
@@ -1775,6 +1792,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1787,6 +1805,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "cpu",
         background: Literal[False] = False,
+        _check_order: bool = True,
         _eager: bool = False,
     ) -> DataFrame: ...
 
@@ -1794,6 +1813,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1806,6 +1826,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "cpu",
         background: bool = False,
+        _check_order: bool = True,
         _eager: bool = False,
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
@@ -1974,6 +1995,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
             cluster_with_columns = False
             collapse_joins = False
+            _check_order = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1993,8 +2015,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Don't run on GPU in _eager mode (but don't warn)
             is_gpu = False
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -2005,6 +2029,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager,
+            _check_order,
             new_streaming,
         )
 
@@ -2019,7 +2044,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 err_prefix="GPU engine requested, but required package",
                 install_message=(
                     "Please install using the command "
-                    "`pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu12` "
+                    "`pip install cudf-polars-cu12` "
                     "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
                     "if your system has a CUDA 11 driver)."
                 ),
@@ -2037,6 +2062,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: Literal[True],
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2055,6 +2081,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: Literal[False] = False,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2072,6 +2099,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: bool = False,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2082,6 +2110,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
         Collect DataFrame asynchronously in thread pool.
@@ -2191,8 +2220,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -2203,6 +2234,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -2256,6 +2288,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2370,6 +2403,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2428,6 +2462,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: str | None = "zstd",
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2509,6 +2544,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2558,6 +2594,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2694,6 +2731,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2742,6 +2780,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2820,6 +2859,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2852,20 +2892,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        _check_order: bool = True,
     ) -> PyLazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
+            _check_order = False
 
         return self._ldf.optimization_toggle(
             type_coercion=type_coercion,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2876,6 +2920,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins=collapse_joins,
             streaming=True,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -2889,6 +2934,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n_rows: int = 500,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2923,6 +2969,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._fetch(
             n_rows=n_rows,
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2940,6 +2987,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n_rows: int = 500,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2950,6 +2998,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -3038,8 +3087,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
+        type_check = _type_check
         lf = self._ldf.optimization_toggle(
             type_coercion,
+            type_check,
             predicate_pushdown,
             projection_pushdown,
             simplify_expression,
@@ -3050,6 +3101,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins,
             streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         return wrap_df(lf.fetch(n_rows))
@@ -4222,7 +4274,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This is similar to a left-join except that we match on nearest key rather than
         equal keys.
 
-        Both DataFrames must be sorted by the join_asof key.
+        Both DataFrames must be sorted by the `on` key (within each `by` group, if
+        specified).
 
         For each row in the left DataFrame:
 
@@ -4516,9 +4569,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if by is not None:
             by_left_ = [by] if isinstance(by, str) else by
             by_right_ = by_left_
-        elif (by_left is not None) and (by_right is not None):
-            by_left_ = [by_left] if isinstance(by_left, str) else by_left
-            by_right_ = [by_right] if isinstance(by_right, str) else by_right
+        elif (by_left is not None) or (by_right is not None):
+            by_left_ = [by_left] if isinstance(by_left, str) else by_left  # type: ignore[assignment]
+            by_right_ = [by_right] if isinstance(by_right, str) else by_right  # type: ignore[assignment]
+
         else:
             # no by
             by_left_ = None

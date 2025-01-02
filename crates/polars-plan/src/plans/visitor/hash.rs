@@ -92,11 +92,10 @@ impl Hash for HashableEqLP<'_> {
                 df,
                 schema: _,
                 output_schema,
-                filter: selection,
+                ..
             } => {
                 (Arc::as_ptr(df) as usize).hash(state);
                 output_schema.hash(state);
-                hash_option_expr(selection, self.expr_arena, state);
             },
             IR::SimpleProjection { columns, input: _ } => {
                 columns.hash(state);
@@ -109,13 +108,6 @@ impl Hash for HashableEqLP<'_> {
             } => {
                 hash_exprs(expr, self.expr_arena, state);
                 options.hash(state);
-            },
-            IR::Reduce {
-                input: _,
-                exprs,
-                schema: _,
-            } => {
-                hash_exprs(exprs, self.expr_arena, state);
             },
             IR::Sort {
                 input: _,
@@ -282,19 +274,13 @@ impl HashableEqLP<'_> {
                     df: dfl,
                     schema: _,
                     output_schema: s_l,
-                    filter: sl,
                 },
                 IR::DataFrameScan {
                     df: dfr,
                     schema: _,
                     output_schema: s_r,
-                    filter: sr,
                 },
-            ) => {
-                Arc::as_ptr(dfl) == Arc::as_ptr(dfr)
-                    && s_l == s_r
-                    && opt_expr_ir_eq(sl, sr, self.expr_arena)
-            },
+            ) => Arc::as_ptr(dfl) == Arc::as_ptr(dfr) && s_l == s_r,
             (
                 IR::SimpleProjection {
                     input: _,

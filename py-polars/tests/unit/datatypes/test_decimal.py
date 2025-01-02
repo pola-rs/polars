@@ -404,6 +404,11 @@ def test_decimal_sort() -> None:
         "bar": [D("2.1"), D("3.4"), D("4.5")],
         "baz": [1, 1, 2],
     }
+    assert df.sort(["bar", "foo"]).to_dict(as_series=False) == {
+        "foo": [2, 1, 3],
+        "bar": [D("2.1"), D("3.4"), D("4.5")],
+        "baz": [1, 1, 2],
+    }
     assert df.sort(["foo", "bar"]).to_dict(as_series=False) == {
         "foo": [1, 2, 3],
         "bar": [D("3.4"), D("2.1"), D("4.5")],
@@ -540,3 +545,64 @@ def test_decimal_round() -> None:
         expected_s = pl.Series("a", [round(v, decimals) for v in values], dtype)
 
         assert_series_equal(got_s, expected_s)
+
+
+def test_decimal_arithmetic_schema() -> None:
+    q = pl.LazyFrame({"x": [1.0]}, schema={"x": pl.Decimal(15, 2)})
+
+    q1 = q.select(pl.col.x * pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema
+    q1 = q.select(pl.col.x / pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema
+    q1 = q.select(pl.col.x - pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema
+    q1 = q.select(pl.col.x + pl.col.x)
+    assert q1.collect_schema() == q1.collect().schema
+
+
+def test_decimal_arithmetic_schema_float_20369() -> None:
+    s = pl.Series("x", [1.0], dtype=pl.Decimal(15, 2))
+    assert_series_equal((s - 1.0), pl.Series("x", [0.0], dtype=pl.Decimal(None, 2)))
+    assert_series_equal(
+        (3.0 - s), pl.Series("literal", [2.0], dtype=pl.Decimal(None, 2))
+    )
+    assert_series_equal(
+        (3.0 / s), pl.Series("literal", [3.0], dtype=pl.Decimal(None, 6))
+    )
+    assert_series_equal(
+        (s / 3.0), pl.Series("x", [0.333333], dtype=pl.Decimal(None, 6))
+    )
+
+    assert_series_equal((s + 1.0), pl.Series("x", [2.0], dtype=pl.Decimal(None, 2)))
+    assert_series_equal(
+        (1.0 + s), pl.Series("literal", [2.0], dtype=pl.Decimal(None, 2))
+    )
+    assert_series_equal((s * 1.0), pl.Series("x", [1.0], dtype=pl.Decimal(None, 4)))
+    assert_series_equal(
+        (1.0 * s), pl.Series("literal", [1.0], dtype=pl.Decimal(None, 4))
+    )
+
+
+def test_decimal_horizontal_20482() -> None:
+    b = pl.LazyFrame(
+        {
+            "a": [D("123.000000"), D("234.000000")],
+            "b": [D("123.000000"), D("234.000000")],
+        },
+        schema={
+            "a": pl.Decimal(18, 6),
+            "b": pl.Decimal(18, 6),
+        },
+    )
+
+    assert (
+        b.select(
+            min=pl.min_horizontal(pl.col("a"), pl.col("b")),
+            max=pl.max_horizontal(pl.col("a"), pl.col("b")),
+            sum=pl.sum_horizontal(pl.col("a"), pl.col("b")),
+        ).collect()
+    ).to_dict(as_series=False) == {
+        "min": [D("123.000000"), D("234.000000")],
+        "max": [D("123.000000"), D("234.000000")],
+        "sum": [D("246.000000"), D("468.000000")],
+    }

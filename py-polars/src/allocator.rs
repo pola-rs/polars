@@ -1,5 +1,6 @@
 #[cfg(all(
     target_family = "unix",
+    not(target_os = "emscripten"),
     not(allocator = "default"),
     not(allocator = "mimalloc"),
 ))]
@@ -7,13 +8,18 @@ use jemallocator::Jemalloc;
 #[cfg(all(
     not(debug_assertions),
     not(allocator = "default"),
-    any(not(target_family = "unix"), allocator = "mimalloc"),
+    any(
+        not(target_family = "unix"),
+        target_os = "emscripten",
+        allocator = "mimalloc"
+    ),
 ))]
 use mimalloc::MiMalloc;
 
 #[cfg(all(
     debug_assertions,
     target_family = "unix",
+    not(target_os = "emscripten"),
     not(allocator = "default"),
     not(allocator = "mimalloc"),
 ))]
@@ -25,6 +31,7 @@ use crate::memory::TracemallocAllocator;
     not(allocator = "mimalloc"),
     not(allocator = "default"),
     target_family = "unix",
+    not(target_os = "emscripten"),
 ))]
 static ALLOC: Jemalloc = Jemalloc;
 
@@ -32,7 +39,11 @@ static ALLOC: Jemalloc = Jemalloc;
 #[cfg(all(
     not(debug_assertions),
     not(allocator = "default"),
-    any(not(target_family = "unix"), allocator = "mimalloc"),
+    any(
+        not(target_family = "unix"),
+        target_os = "emscripten",
+        allocator = "mimalloc"
+    ),
 ))]
 static ALLOC: MiMalloc = MiMalloc;
 
@@ -44,6 +55,7 @@ static ALLOC: MiMalloc = MiMalloc;
 #[cfg(all(
     debug_assertions,
     target_family = "unix",
+    not(target_os = "emscripten"),
     not(allocator = "default"),
     not(allocator = "mimalloc"),
 ))]

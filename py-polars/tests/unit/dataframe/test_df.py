@@ -706,34 +706,6 @@ def test_multiple_columns_drop() -> None:
     assert out.columns == ["a"]
 
 
-def test_concat() -> None:
-    df1 = pl.DataFrame({"a": [2, 1, 3], "b": [1, 2, 3], "c": [1, 2, 3]})
-    df2 = pl.concat([df1, df1], rechunk=True)
-
-    assert df2.shape == (6, 3)
-    assert df2.n_chunks() == 1
-    assert df2.rows() == df1.rows() + df1.rows()
-    assert pl.concat([df1, df1], rechunk=False).n_chunks() == 2
-
-    # concat from generator of frames
-    df3 = pl.concat(items=(df1 for _ in range(2)))
-    assert_frame_equal(df2, df3)
-
-    # check that df4 is not modified following concat of itself
-    df4 = pl.from_records(((1, 2), (1, 2)))
-    _ = pl.concat([df4, df4, df4])
-
-    assert df4.shape == (2, 2)
-    assert df4.rows() == [(1, 1), (2, 2)]
-
-    # misc error conditions
-    with pytest.raises(ValueError):
-        _ = pl.concat([])
-
-    with pytest.raises(ValueError):
-        pl.concat([df1, df1], how="rubbish")  # type: ignore[arg-type]
-
-
 def test_arg_where() -> None:
     s = pl.Series([True, False, True, False])
     assert_series_equal(
@@ -1042,7 +1014,7 @@ def test_multiple_column_sort() -> None:
         pl.DataFrame({"a": [3, 2, 1], "b": ["b", "a", "a"]}),
     )
     assert_frame_equal(
-        df.sort("b", descending=True),
+        df.sort("b", descending=True, maintain_order=True),
         pl.DataFrame({"a": [3, 1, 2], "b": ["b", "a", "a"]}),
     )
     assert_frame_equal(
@@ -2262,12 +2234,6 @@ def test_list_of_list_of_struct() -> None:
     assert df.to_dicts() == []  # type: ignore[union-attr]
 
 
-def test_concat_to_empty() -> None:
-    assert pl.concat([pl.DataFrame([]), pl.DataFrame({"a": [1]})]).to_dict(
-        as_series=False
-    ) == {"a": [1]}
-
-
 def test_fill_null_limits() -> None:
     assert pl.DataFrame(
         {
@@ -2824,10 +2790,24 @@ def test_deadlocks_3409() -> None:
     ) == {"col1": [0, 0, 0]}
 
 
+def test_ceil() -> None:
+    df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
+    result = df.select(pl.col("a").ceil())
+    assert_frame_equal(result, pl.DataFrame({"a": [2.0, 2.0, 3.0]}))
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    result = df.select(pl.col("a").ceil())
+    assert_frame_equal(df, result)
+
+
 def test_floor() -> None:
     df = pl.DataFrame({"a": [1.8, 1.2, 3.0]})
-    col_a_floor = df.select(pl.col("a").floor())["a"]
-    assert_series_equal(col_a_floor, pl.Series("a", [1, 1, 3]).cast(pl.Float64))
+    result = df.select(pl.col("a").floor())
+    assert_frame_equal(result, pl.DataFrame({"a": [1.0, 1.0, 3.0]}))
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    result = df.select(pl.col("a").floor())
+    assert_frame_equal(df, result)
 
 
 def test_floor_divide() -> None:

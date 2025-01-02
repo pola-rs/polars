@@ -177,6 +177,7 @@ fn replace_by_multiple(
             join_nulls: true,
             ..Default::default()
         },
+        None,
     )?;
 
     let replaced = joined
@@ -218,6 +219,7 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
             join_nulls: true,
             ..Default::default()
         },
+        None,
     )?;
 
     let replaced = joined.column("__POLARS_REPLACE_NEW").unwrap();

@@ -15,7 +15,7 @@ pub trait Grouper: Any + Send + Sync {
     /// Creates a new empty Grouper similar to this one.
     fn new_empty(&self) -> Box<dyn Grouper>;
 
-    /// Reserves space for the given number additional of groups.
+    /// Reserves space for the given number additional groups.
     fn reserve(&mut self, additional: usize);
 
     /// Returns the number of groups in this Grouper.

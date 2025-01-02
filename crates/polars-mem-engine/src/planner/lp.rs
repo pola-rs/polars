@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 
@@ -10,13 +11,10 @@ use crate::utils::*;
 fn partitionable_gb(
     keys: &[ExprIR],
     aggs: &[ExprIR],
-    _input_schema: &Schema,
+    input_schema: &Schema,
     expr_arena: &Arena<AExpr>,
     apply: &Option<Arc<dyn DataFrameUdf>>,
 ) -> bool {
-    // We first check if we can partition the group_by on the latest moment.
-    let mut partitionable = true;
-
     // checks:
     //      1. complex expressions in the group_by itself are also not partitionable
     //          in this case anything more than col("foo")
@@ -28,102 +26,14 @@ fn partitionable_gb(
         // in this case anything more than col("foo")
         for key in keys {
             if (expr_arena).iter(key.node()).count() > 1 {
-                partitionable = false;
-                break;
+                return false;
             }
         }
 
-        if partitionable {
-            for agg in aggs {
-                let agg = agg.node();
-                let aexpr = expr_arena.get(agg);
-                let depth = (expr_arena).iter(agg).count();
-
-                // These single expressions are partitionable
-                if matches!(aexpr, AExpr::Len) {
-                    continue;
-                }
-                // col()
-                // lit() etc.
-                if depth == 1 {
-                    partitionable = false;
-                    break;
-                }
-
-                let has_aggregation =
-                    |node: Node| has_aexpr(node, expr_arena, |ae| matches!(ae, AExpr::Agg(_)));
-
-                // check if the aggregation type is partitionable
-                // only simple aggregation like col().sum
-                // that can be divided in to the aggregation of their partitions are allowed
-                if !((expr_arena).iter(agg).all(|(_, ae)| {
-                    use AExpr::*;
-                    match ae {
-                        // struct is needed to keep both states
-                        #[cfg(feature = "dtype-struct")]
-                        Agg(IRAggExpr::Mean(_)) => {
-                            // only numeric means for now.
-                            // logical types seem to break because of casts to float.
-                            matches!(expr_arena.get(agg).get_type(_input_schema, Context::Default, expr_arena).map(|dt| {
-                                        dt.is_numeric()}), Ok(true))
-                        },
-                        // only allowed expressions
-                        Agg(agg_e) => {
-                            matches!(
-                                            agg_e,
-                                            IRAggExpr::Min{..}
-                                                | IRAggExpr::Max{..}
-                                                | IRAggExpr::Sum(_)
-                                                | IRAggExpr::Last(_)
-                                                | IRAggExpr::First(_)
-                                                | IRAggExpr::Count(_, true)
-                                        )
-                        },
-                        Function {input, options, ..} => {
-                            matches!(options.collect_groups, ApplyOptions::ElementWise) && input.len() == 1 &&
-                                !has_aggregation(input[0].node())
-                        }
-                        BinaryExpr {left, right, ..} => {
-                            !has_aggregation(*left) && !has_aggregation(*right)
-                        }
-                        Ternary {truthy, falsy, predicate,..} => {
-                            !has_aggregation(*truthy) && !has_aggregation(*falsy) && !has_aggregation(*predicate)
-                        }
-                        Column(_) | Len | Literal(_) | Cast {..} => {
-                            true
-                        }
-                        _ => {
-                            false
-                        },
-                    }
-                }) &&
-                    // we only allow expressions that end with an aggregation
-                    matches!(aexpr, AExpr::Agg(_)))
-                {
-                    partitionable = false;
-                    break;
-                }
-
-                #[cfg(feature = "object")]
-                {
-                    for name in aexpr_to_leaf_names(agg, expr_arena) {
-                        let dtype = _input_schema.get(&name).unwrap();
-
-                        if let DataType::Object(_, _) = dtype {
-                            partitionable = false;
-                            break;
-                        }
-                    }
-                    if !partitionable {
-                        break;
-                    }
-                }
-            }
-        }
+        can_pre_agg_exprs(aggs, expr_arena, input_schema)
     } else {
-        partitionable = false;
+        false
     }
-    partitionable
 }
 
 struct ConversionState {
@@ -300,15 +210,30 @@ fn create_physical_plan_impl(
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
 
-            match scan_type {
+            match scan_type.clone() {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
-                    sources,
-                    file_info,
-                    options,
-                    predicate,
-                    file_options,
-                })),
+                FileScan::Csv { options, .. } => {
+                    if sources.len() > 1
+                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
+                    {
+                        Ok(Box::new(executors::MultiScanExec::new(
+                            sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            file_options,
+                            scan_type,
+                        )))
+                    } else {
+                        Ok(Box::new(executors::CsvExec {
+                            sources,
+                            file_info,
+                            options,
+                            predicate,
+                            file_options,
+                        }))
+                    }
+                },
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc {
                     options,
@@ -328,16 +253,31 @@ fn create_physical_plan_impl(
                     options,
                     cloud_options,
                     metadata,
-                } => Ok(Box::new(executors::ParquetExec::new(
-                    sources,
-                    file_info,
-                    hive_parts,
-                    predicate,
-                    options,
-                    cloud_options,
-                    file_options,
-                    metadata,
-                ))),
+                } => {
+                    if sources.len() > 1
+                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
+                    {
+                        Ok(Box::new(executors::MultiScanExec::new(
+                            sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            file_options,
+                            scan_type,
+                        )))
+                    } else {
+                        Ok(Box::new(executors::ParquetExec::new(
+                            sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            options,
+                            cloud_options,
+                            file_options,
+                            metadata,
+                        )))
+                    }
+                },
                 #[cfg(feature = "json")]
                 FileScan::NDJson { options, .. } => Ok(Box::new(executors::JsonExec::new(
                     sources,
@@ -396,40 +336,12 @@ fn create_physical_plan_impl(
                 allow_vertical_parallelism,
             }))
         },
-        Reduce {
-            exprs,
-            input,
-            schema,
-        } => {
-            let select = Select {
-                input,
-                expr: exprs,
-                schema,
-                options: Default::default(),
-            };
-            let node = lp_arena.add(select);
-            create_physical_plan(node, lp_arena, expr_arena)
-        },
         DataFrameScan {
+            df, output_schema, ..
+        } => Ok(Box::new(executors::DataFrameExec {
             df,
-            filter: predicate,
-            schema,
-            output_schema,
-            ..
-        } => {
-            let mut state = ExpressionConversionState::new(true, state.expr_depth);
-            let selection = predicate
-                .map(|pred| {
-                    create_physical_expr(&pred, Context::Default, expr_arena, &schema, &mut state)
-                })
-                .transpose()?;
-            Ok(Box::new(executors::DataFrameExec {
-                df,
-                projection: output_schema.map(|s| s.iter_names_cloned().collect()),
-                filter: selection,
-                predicate_has_windows: state.has_windows,
-            }))
-        },
+            projection: output_schema.map(|s| s.iter_names_cloned().collect()),
+        })),
         Sort {
             input,
             by_column,
@@ -573,6 +485,7 @@ fn create_physical_plan_impl(
             left_on,
             right_on,
             options,
+            schema,
             ..
         } => {
             let parallel = if options.force_parallel {
@@ -610,6 +523,33 @@ fn create_physical_plan_impl(
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
+
+            // Convert the join options, to the physical join options. This requires the physical
+            // planner, so we do this last minute.
+            let join_type_options = options
+                .options
+                .map(|o| {
+                    o.compile(|e| {
+                        let phys_expr = create_physical_expr(
+                            e,
+                            Context::Default,
+                            expr_arena,
+                            &schema,
+                            &mut ExpressionConversionState::new(false, state.expr_depth),
+                        )?;
+
+                        let execution_state = ExecutionState::default();
+
+                        Ok(Arc::new(move |df: DataFrame| {
+                            let mask = phys_expr.evaluate(&df, &execution_state)?;
+                            let mask = mask.as_materialized_series();
+                            let mask = mask.bool()?;
+                            df._filter_seq(mask)
+                        }))
+                    })
+                })
+                .transpose()?;
+
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
@@ -617,6 +557,7 @@ fn create_physical_plan_impl(
                 right_on,
                 parallel,
                 options.args,
+                join_type_options,
             )))
         },
         HStack {

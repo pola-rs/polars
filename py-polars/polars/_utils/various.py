@@ -5,6 +5,7 @@ import os
 import re
 import sys
 import warnings
+from collections import Counter
 from collections.abc import (
     Collection,
     Generator,
@@ -42,7 +43,7 @@ from polars.dependencies import _check_for_numpy, import_optional, subprocess
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Reversible
+    from collections.abc import Iterator, MutableMapping, Reversible
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -247,6 +248,16 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
     return [v for v in values if not (v in seen or add_(v))]
 
 
+def deduplicate_names(names: Iterable[str]) -> list[str]:
+    """Ensure name uniqueness by appending a counter to subsequent duplicates."""
+    seen: MutableMapping[str, int] = Counter()
+    deduped = []
+    for nm in names:
+        deduped.append(f"{nm}{seen[nm] - 1}" if nm in seen else nm)
+        seen[nm] += 1
+    return deduped
+
+
 @overload
 def scale_bytes(sz: int, unit: SizeUnit) -> int | float: ...
 
@@ -296,6 +307,8 @@ def _cast_repr_strings_with_schema(
             if tp != String:
                 msg = f"DataFrame should contain only String repr data; found {tp!r}"
                 raise TypeError(msg)
+
+    special_floats = {"-inf", "+inf", "inf", "nan"}
 
     # duration string scaling
     ns_sec = 1_000_000_000
@@ -366,8 +379,11 @@ def _cast_repr_strings_with_schema(
                 integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
                 fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
                 cast_cols[c] = (
-                    # check for empty string and/or integer format
-                    pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
+                    # check for empty string, special floats, or integer format
+                    pl.when(
+                        F.col(c).str.contains(r"^[+-]?\d*$")
+                        | F.col(c).str.to_lowercase().is_in(special_floats)
+                    )
                     .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
                     # check for scientific notation
                     .when(F.col(c).str.contains("[eE]"))

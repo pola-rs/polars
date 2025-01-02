@@ -139,7 +139,7 @@ def test_read_spreadsheet(
         (pl.read_ods, "path_ods", {}),
     ],
 )
-def test_read_excel_multi_sheets(
+def test_read_excel_multiple_worksheets(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,
     params: dict[str, str],
@@ -166,6 +166,73 @@ def test_read_excel_multi_sheets(
 
         assert_frame_equal(frames["test1"], expected1)
         assert_frame_equal(frames["test2"], expected2)
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        # xls file
+        (pl.read_excel, "path_xls", {"engine": "calamine"}),
+        # xlsx file
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        # xlsb file (binary)
+        (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
+        # open document
+        (pl.read_ods, "path_ods", {}),
+    ],
+)
+def test_read_excel_multiple_workbooks(
+    read_spreadsheet: Callable[..., Any],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+
+    # multiple workbooks, single worksheet
+    df = read_spreadsheet(
+        [
+            spreadsheet_path,
+            spreadsheet_path,
+            spreadsheet_path,
+        ],
+        sheet_id=None,
+        sheet_name="test1",
+        include_file_paths="path",
+        **params,
+    )
+    expected = pl.DataFrame(
+        {
+            "hello": ["Row 1", "Row 2", "Row 1", "Row 2", "Row 1", "Row 2"],
+            "path": [str(spreadsheet_path)] * 6,
+        },
+    )
+    assert_frame_equal(df, expected)
+
+    # multiple workbooks, multiple worksheets
+    res = read_spreadsheet(
+        [
+            spreadsheet_path,
+            spreadsheet_path,
+            spreadsheet_path,
+        ],
+        sheet_id=None,
+        sheet_name=["test1", "test2"],
+        **params,
+    )
+    expected_frames = {
+        "test1": pl.DataFrame(
+            {"hello": ["Row 1", "Row 2", "Row 1", "Row 2", "Row 1", "Row 2"]}
+        ),
+        "test2": pl.DataFrame(
+            {"world": ["Row 3", "Row 4", "Row 3", "Row 4", "Row 3", "Row 4"]}
+        ),
+    }
+    assert sorted(res) == sorted(expected_frames)
+    assert_frame_equal(res["test1"], expected_frames["test1"])
+    assert_frame_equal(res["test2"], expected_frames["test2"])
 
 
 @pytest.mark.parametrize(
@@ -268,6 +335,49 @@ def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
                 dtype=pl.Date,
             ),
         )
+
+
+@pytest.mark.parametrize(
+    ("read_spreadsheet", "source", "params"),
+    [
+        # TODO: uncomment once fastexcel offers a suitable param
+        # (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+    ],
+)
+def test_read_dropped_cols(
+    read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    spreadsheet_path = request.getfixturevalue(source)
+
+    df1 = read_spreadsheet(
+        spreadsheet_path,
+        sheet_name="test4",
+        **params,
+    )
+    df2 = read_spreadsheet(
+        spreadsheet_path,
+        sheet_name="test4",
+        drop_empty_cols=False,
+        **params,
+    )
+    assert df1.to_dict(as_series=False) == {  # type: ignore[attr-defined]
+        "cardinality": [1, 3, 15, 30, 150, 300],
+        "rows_by_key": [0.05059, 0.04478, 0.04414, 0.05245, 0.05395, 0.05677],
+        "iter_groups": [0.04806, 0.04223, 0.04774, 0.04864, 0.0572, 0.06945],
+    }
+    assert df2.to_dict(as_series=False) == {  # type: ignore[attr-defined]
+        "": [None, None, None, None, None, None],
+        "cardinality": [1, 3, 15, 30, 150, 300],
+        "rows_by_key": [0.05059, 0.04478, 0.04414, 0.05245, 0.05395, 0.05677],
+        "iter_groups": [0.04806, 0.04223, 0.04774, 0.04864, 0.0572, 0.06945],
+        "0": [None, None, None, None, None, None],
+        "1": [None, None, None, None, None, None],
+    }
 
 
 @pytest.mark.parametrize(
@@ -727,11 +837,16 @@ def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
     df.write_excel(xls, worksheet="data")
 
     # expect string conversion (only scalar values are supported)
-    xldf = pl.read_excel(xls, sheet_name="data", engine=engine)
+    xldf = pl.read_excel(
+        xls,
+        sheet_name="data",
+        engine=engine,
+        include_file_paths="wbook",
+    )
     assert xldf.rows() == [
-        ("[1, 2]", "{'y': 'a', 'z': 9}"),
-        ("[3, 4]", "{'y': 'b', 'z': 8}"),
-        ("[5, 6]", "{'y': 'c', 'z': 7}"),
+        ("[1, 2]", "{'y': 'a', 'z': 9}", "in-mem"),
+        ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
+        ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
     ]
 
 

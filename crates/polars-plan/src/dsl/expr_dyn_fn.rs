@@ -295,6 +295,12 @@ impl GetOutput {
         Default::default()
     }
 
+    pub fn first() -> Self {
+        SpecialEq::new(Arc::new(
+            |_input_schema: &Schema, _cntxt: Context, fields: &[Field]| Ok(fields[0].clone()),
+        ))
+    }
+
     pub fn from_type(dt: DataType) -> Self {
         SpecialEq::new(Arc::new(move |_: &Schema, _: Context, flds: &[Field]| {
             Ok(Field::new(flds[0].name().clone(), dt.clone()))

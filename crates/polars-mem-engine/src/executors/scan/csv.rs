@@ -17,7 +17,7 @@ pub struct CsvExec {
 }
 
 impl CsvExec {
-    fn read(&self) -> PolarsResult<DataFrame> {
+    fn read_impl(&self) -> PolarsResult<DataFrame> {
         let with_columns = self
             .file_options
             .with_columns
@@ -209,6 +209,72 @@ impl CsvExec {
     }
 }
 
+impl ScanExec for CsvExec {
+    fn read(
+        &mut self,
+        with_columns: Option<Arc<[PlSmallStr]>>,
+        slice: Option<(usize, usize)>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        row_index: Option<polars_io::RowIndex>,
+        metadata: Option<Box<dyn IOFileMetadata>>,
+        schema: Schema,
+    ) -> PolarsResult<DataFrame> {
+        self.file_options.with_columns = with_columns;
+        self.file_options.slice = slice.map(|(o, l)| (o as i64, l));
+        self.predicate = predicate;
+        self.file_options.row_index = row_index;
+
+        let schema = Arc::new(schema);
+        self.file_info.reader_schema = Some(arrow::Either::Right(schema.clone()));
+        self.file_info.schema = schema.clone();
+
+        self.options.schema.take();
+        // self.options.schema_overwrite.take();
+
+        // Use the metadata somehow
+        _ = metadata;
+
+        self.read_impl()
+    }
+
+    fn metadata(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>> {
+        let force_async = config::force_async();
+        let run_async = (self.sources.is_paths() && force_async) || self.sources.is_cloud_url();
+
+        let source = self.sources.at(0);
+        let owned = &mut vec![];
+
+        let memslice = source.to_memslice_async_assume_latest(run_async)?;
+
+        let popt = self.options.parse_options.as_ref();
+
+        let bytes = maybe_decompress_bytes(&memslice, owned)?;
+        let num_rows = count_rows_from_slice(
+            bytes,
+            popt.separator,
+            popt.quote_char,
+            popt.comment_prefix.as_ref(),
+            popt.eol_char,
+            self.options.has_header,
+        )? as IdxSize;
+        let schema = infer_file_schema(
+            &get_reader_bytes(&mut std::io::Cursor::new(bytes))?,
+            self.options.parse_options.as_ref(),
+            self.options.infer_schema_length,
+            self.options.has_header,
+            self.options.schema_overwrite.as_deref(),
+            self.options.skip_rows,
+            self.options.skip_lines,
+            self.options.skip_rows_after_header,
+            self.options.raise_if_empty,
+            &mut self.options.n_threads,
+        )?
+        .0;
+
+        Ok(Box::new(BasicFileMetadata { schema, num_rows }) as _)
+    }
+}
+
 impl Executor for CsvExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {
@@ -222,6 +288,6 @@ impl Executor for CsvExec {
             Cow::Borrowed("")
         };
 
-        state.record(|| self.read(), profile_name)
+        state.record(|| self.read_impl(), profile_name)
     }
 }

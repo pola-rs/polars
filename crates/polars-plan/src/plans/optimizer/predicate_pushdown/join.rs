@@ -84,7 +84,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => LeftRight(false, false),
         #[cfg(feature = "iejoin")]
-        JoinType::IEJoin(..) => LeftRight(false, false),
+        JoinType::IEJoin => LeftRight(false, false),
     }
 }
 
@@ -252,5 +252,6 @@ pub(super) fn process_join(
         schema,
         options,
     };
+
     Ok(opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 }

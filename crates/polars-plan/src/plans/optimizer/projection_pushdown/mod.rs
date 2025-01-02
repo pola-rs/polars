@@ -334,8 +334,6 @@ impl ProjectionPushDown {
         use IR::*;
 
         match logical_plan {
-            // Should not yet be here
-            Reduce { .. } => unreachable!(),
             Select { expr, input, .. } => process_projection(
                 self,
                 input,
@@ -365,7 +363,6 @@ impl ProjectionPushDown {
                 df,
                 schema,
                 mut output_schema,
-                filter: selection,
                 ..
             } => {
                 if !acc_projections.is_empty() {
@@ -380,7 +377,6 @@ impl ProjectionPushDown {
                     df,
                     schema,
                     output_schema,
-                    filter: selection,
                 };
                 Ok(lp)
             },

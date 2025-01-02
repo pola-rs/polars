@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 from pathlib import Path
 from uuid import uuid4
@@ -73,6 +75,26 @@ def test_nullable_object_13538() -> None:
         "is_null": [False, False, False, True],
         "is_not_null": [True, True, True, False],
     }
+
+
+def test_nullable_object_17936() -> None:
+    class Custom:
+        value: int
+
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    def mapper(value: int) -> Custom | None:
+        if value == 2:
+            return None
+        return Custom(value)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert df.select(
+        pl.col("a").map_elements(mapper, return_dtype=pl.Object).alias("with_dtype"),
+        pl.col("a").map_elements(mapper).alias("without_dtype"),
+    ).null_count().row(0) == (1, 1)
 
 
 def test_empty_sort() -> None:

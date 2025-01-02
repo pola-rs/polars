@@ -77,14 +77,14 @@ def test_streaming_joins() -> None:
         pl_result = (
             dfa_pl.lazy()
             .join(dfb_pl.lazy(), on="a", how=how)
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
             .collect(streaming=True)
         )
 
         a = (
             pl.from_pandas(pd_result)
             .with_columns(pl.all().cast(int))
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
         )
         assert_frame_equal(a, pl_result, check_dtypes=False)
 

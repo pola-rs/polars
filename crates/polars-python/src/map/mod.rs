@@ -18,22 +18,23 @@ use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
 use crate::{PySeries, Wrap};
 
-pub trait PyArrowPrimitiveType: PolarsNumericType {}
+pub trait PyPolarsNumericType: PolarsNumericType {}
 
-impl PyArrowPrimitiveType for UInt8Type {}
-impl PyArrowPrimitiveType for UInt16Type {}
-impl PyArrowPrimitiveType for UInt32Type {}
-impl PyArrowPrimitiveType for UInt64Type {}
-impl PyArrowPrimitiveType for Int8Type {}
-impl PyArrowPrimitiveType for Int16Type {}
-impl PyArrowPrimitiveType for Int32Type {}
-impl PyArrowPrimitiveType for Int64Type {}
-impl PyArrowPrimitiveType for Float32Type {}
-impl PyArrowPrimitiveType for Float64Type {}
+impl PyPolarsNumericType for UInt8Type {}
+impl PyPolarsNumericType for UInt16Type {}
+impl PyPolarsNumericType for UInt32Type {}
+impl PyPolarsNumericType for UInt64Type {}
+impl PyPolarsNumericType for Int8Type {}
+impl PyPolarsNumericType for Int16Type {}
+impl PyPolarsNumericType for Int32Type {}
+impl PyPolarsNumericType for Int64Type {}
+impl PyPolarsNumericType for Int128Type {}
+impl PyPolarsNumericType for Float32Type {}
+impl PyPolarsNumericType for Float64Type {}
 
 fn iterator_to_struct<'a>(
     py: Python,
-    it: impl Iterator<Item = Option<Bound<'a, PyAny>>>,
+    it: impl Iterator<Item = PyResult<Option<Bound<'a, PyAny>>>>,
     init_null_count: usize,
     first_value: AnyValue<'a>,
     name: PlSmallStr,
@@ -72,7 +73,7 @@ fn iterator_to_struct<'a>(
     }
 
     for dict in it {
-        match dict {
+        match dict? {
             None => {
                 for field_items in struct_fields.values_mut() {
                     field_items.push(AnyValue::Null);
@@ -134,127 +135,164 @@ fn iterator_to_struct<'a>(
 }
 
 fn iterator_to_primitive<T>(
-    it: impl Iterator<Item = Option<T::Native>>,
+    it: impl Iterator<Item = PyResult<Option<T::Native>>>,
     init_null_count: usize,
     first_value: Option<T::Native>,
     name: PlSmallStr,
     capacity: usize,
-) -> ChunkedArray<T>
+) -> PyResult<ChunkedArray<T>>
 where
-    T: PyArrowPrimitiveType,
+    T: PyPolarsNumericType,
 {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: ChunkedArray<T> = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+
+    if let Some(err) = error {
+        let _ = err?;
+    }
+    Ok(ca.with_name(name))
 }
 
 fn iterator_to_bool(
-    it: impl Iterator<Item = Option<bool>>,
+    it: impl Iterator<Item = PyResult<Option<bool>>>,
     init_null_count: usize,
     first_value: Option<bool>,
     name: PlSmallStr,
     capacity: usize,
-) -> ChunkedArray<BooleanType> {
+) -> PyResult<ChunkedArray<BooleanType>> {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: BooleanChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
+    if let Some(err) = error {
+        let _ = err?;
+    }
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+    Ok(ca.with_name(name))
 }
 
 #[cfg(feature = "object")]
 fn iterator_to_object(
-    it: impl Iterator<Item = Option<ObjectValue>>,
+    it: impl Iterator<Item = PyResult<Option<ObjectValue>>>,
     init_null_count: usize,
     first_value: Option<ObjectValue>,
     name: PlSmallStr,
     capacity: usize,
-) -> ObjectChunked<ObjectValue> {
+) -> PyResult<ObjectChunked<ObjectValue>> {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: ObjectChunked<ObjectValue> = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .chain(it)
+                .map(|v| catch_err(&mut error, v))
                 .trust_my_length(capacity)
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
+                .map(|v| catch_err(&mut error, v))
                 .trust_my_length(capacity)
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
+    if let Some(err) = error {
+        let _ = err?;
+    }
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+    Ok(ca.with_name(name))
+}
+
+fn catch_err<K>(error: &mut Option<PyResult<Option<K>>>, result: PyResult<Option<K>>) -> Option<K> {
+    match result {
+        Ok(item) => item,
+        err => {
+            if error.is_none() {
+                *error = Some(err);
+            }
+            None
+        },
+    }
 }
 
 fn iterator_to_string<S: AsRef<str>>(
-    it: impl Iterator<Item = Option<S>>,
+    it: impl Iterator<Item = PyResult<Option<S>>>,
     init_null_count: usize,
     first_value: Option<S>,
     name: PlSmallStr,
     capacity: usize,
-) -> StringChunked {
+) -> PyResult<StringChunked> {
+    let mut error = None;
     // SAFETY: we know the iterators len.
     let ca: StringChunked = unsafe {
         if init_null_count > 0 {
             (0..init_null_count)
-                .map(|_| None)
-                .chain(std::iter::once(first_value))
+                .map(|_| Ok(None))
+                .chain(std::iter::once(Ok(first_value)))
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else if first_value.is_some() {
-            std::iter::once(first_value)
+            std::iter::once(Ok(first_value))
                 .chain(it)
                 .trust_my_length(capacity)
+                .map(|v| catch_err(&mut error, v))
                 .collect_trusted()
         } else {
-            it.collect()
+            it.map(|v| catch_err(&mut error, v)).collect()
         }
     };
     debug_assert_eq!(ca.len(), capacity);
-    ca.with_name(name)
+    if let Some(err) = error {
+        let _ = err?;
+    }
+    Ok(ca.with_name(name))
 }
 
 fn iterator_to_list(
     dt: &DataType,
-    it: impl Iterator<Item = Option<Series>>,
+    it: impl Iterator<Item = PyResult<Option<Series>>>,
     init_null_count: usize,
     first_value: Option<&Series>,
     name: PlSmallStr,
@@ -270,7 +308,7 @@ fn iterator_to_list(
             .map_err(PyPolarsErr::from)?;
     }
     for opt_val in it {
-        match opt_val {
+        match opt_val? {
             None => builder.append_null(),
             Some(s) => {
                 if s.len() == 0 && s.dtype() != dt {

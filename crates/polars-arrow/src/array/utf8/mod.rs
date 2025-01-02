@@ -376,7 +376,7 @@ impl<O: Offset> Utf8Array<O> {
         debug_assert!(
             validity
                 .as_ref()
-                .map_or(true, |validity| validity.len() == offsets.len_proxy()),
+                .is_none_or(|validity| validity.len() == offsets.len_proxy()),
             "validity mask length must match the number of values"
         );
         debug_assert!(

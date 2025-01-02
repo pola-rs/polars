@@ -155,6 +155,7 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        #[cfg(feature = "cloud")]
         use cloud::credential_provider::PlCredentialProvider;
 
         let null_values = null_values.map(|w| w.0);
@@ -371,6 +372,7 @@ impl PyLazyFrame {
         file_cache_ttl: Option<u64>,
         include_file_paths: Option<String>,
     ) -> PyResult<Self> {
+        #[cfg(feature = "cloud")]
         use cloud::credential_provider::PlCredentialProvider;
         let row_index = row_index.map(|(name, offset)| RowIndex {
             name: name.into(),
@@ -389,7 +391,6 @@ impl PyLazyFrame {
             cache,
             rechunk,
             row_index,
-            #[cfg(feature = "cloud")]
             cloud_options: None,
             hive_options,
             include_file_paths: include_file_paths.map(|x| x.into()),
@@ -483,6 +484,7 @@ impl PyLazyFrame {
     fn optimization_toggle(
         &self,
         type_coercion: bool,
+        type_check: bool,
         predicate_pushdown: bool,
         projection_pushdown: bool,
         simplify_expression: bool,
@@ -493,16 +495,19 @@ impl PyLazyFrame {
         collapse_joins: bool,
         streaming: bool,
         _eager: bool,
+        _check_order: bool,
         #[allow(unused_variables)] new_streaming: bool,
     ) -> Self {
         let ldf = self.ldf.clone();
         let mut ldf = ldf
             .with_type_coercion(type_coercion)
+            .with_type_check(type_check)
             .with_predicate_pushdown(predicate_pushdown)
             .with_simplify_expr(simplify_expression)
             .with_slice_pushdown(slice_pushdown)
             .with_cluster_with_columns(cluster_with_columns)
             .with_collapse_joins(collapse_joins)
+            .with_check_order(_check_order)
             ._with_eager(_eager)
             .with_projection_pushdown(projection_pushdown);
 
@@ -740,6 +745,7 @@ impl PyLazyFrame {
             maintain_order,
         };
 
+        #[cfg(feature = "cloud")]
         let cloud_options = {
             let cloud_options =
                 parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
@@ -751,6 +757,9 @@ impl PyLazyFrame {
                     ),
             )
         };
+
+        #[cfg(not(feature = "cloud"))]
+        let cloud_options = None;
 
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
@@ -814,6 +823,7 @@ impl PyLazyFrame {
             serialize_options,
         };
 
+        #[cfg(feature = "cloud")]
         let cloud_options = {
             let cloud_options =
                 parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
@@ -825,6 +835,9 @@ impl PyLazyFrame {
                     ),
             )
         };
+
+        #[cfg(not(feature = "cloud"))]
+        let cloud_options = None;
 
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.

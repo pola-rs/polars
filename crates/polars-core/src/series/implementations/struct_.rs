@@ -26,11 +26,11 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.compute_len()
     }
 
-    fn _get_flags(&self) -> MetadataFlags {
-        MetadataFlags::empty()
+    fn _get_flags(&self) -> StatisticsFlags {
+        StatisticsFlags::empty()
     }
 
-    fn _set_flags(&mut self, _flags: MetadataFlags) {}
+    fn _set_flags(&mut self, _flags: StatisticsFlags) {}
 
     // TODO! remove this. Very slow. Asof join should use row-encoding.
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {

@@ -17,17 +17,17 @@
 
 use std::mem::ManuallyDrop;
 
+use arrow::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
+use arrow::bitmap::MutableBitmap;
+use arrow::compute::utils::combine_validities_and;
+use arrow::datatypes::reshape::{Dimension, ReshapeDimension};
+use arrow::datatypes::{ArrowDataType, IdxArr, PhysicalType};
+use arrow::legacy::prelude::FromData;
+use arrow::with_match_primitive_type;
 use polars_utils::itertools::Itertools;
 
 use super::Index;
-use crate::array::{Array, ArrayRef, FixedSizeListArray, PrimitiveArray, StaticArray};
-use crate::bitmap::MutableBitmap;
-use crate::compute::take::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
-use crate::compute::utils::combine_validities_and;
-use crate::datatypes::reshape::{Dimension, ReshapeDimension};
-use crate::datatypes::{ArrowDataType, IdxArr, PhysicalType};
-use crate::legacy::prelude::FromData;
-use crate::with_match_primitive_type;
+use crate::gather::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
 
 fn get_stride_and_leaf_type(dtype: &ArrowDataType, size: usize) -> (usize, &ArrowDataType) {
     if let ArrowDataType::FixedSizeList(inner, size_inner) = dtype {
@@ -114,7 +114,7 @@ fn arr_no_validities_recursive(arr: &dyn Array) -> bool {
         && arr
             .as_any()
             .downcast_ref::<FixedSizeListArray>()
-            .map_or(true, |x| arr_no_validities_recursive(x.values().as_ref()))
+            .is_none_or(|x| arr_no_validities_recursive(x.values().as_ref()))
 }
 
 /// `take` implementation for FixedSizeListArrays
@@ -207,18 +207,18 @@ pub(super) unsafe fn take_unchecked(values: &FixedSizeListArray, indices: &IdxAr
 
 #[cfg(test)]
 mod tests {
-    use crate::array::StaticArray;
-    use crate::datatypes::ArrowDataType;
+    use arrow::array::StaticArray;
+    use arrow::datatypes::ArrowDataType;
 
     /// Test gather for FixedSizeListArray with outer validity but no inner validities.
     #[test]
     fn test_arr_gather_nulls_outer_validity_19482() {
+        use arrow::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use arrow::bitmap::Bitmap;
+        use arrow::datatypes::reshape::{Dimension, ReshapeDimension};
         use polars_utils::IdxSize;
 
         use super::take_unchecked;
-        use crate::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
-        use crate::bitmap::Bitmap;
-        use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 
         unsafe {
             let dyn_arr = FixedSizeListArray::from_shape(
@@ -250,11 +250,11 @@ mod tests {
 
     #[test]
     fn test_arr_gather_nulls_inner_validity() {
+        use arrow::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
+        use arrow::datatypes::reshape::{Dimension, ReshapeDimension};
         use polars_utils::IdxSize;
 
         use super::take_unchecked;
-        use crate::array::{FixedSizeListArray, Int64Array, PrimitiveArray};
-        use crate::datatypes::reshape::{Dimension, ReshapeDimension};
 
         unsafe {
             let dyn_arr = FixedSizeListArray::from_shape(

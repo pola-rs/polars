@@ -21,6 +21,7 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 if sys.version_info >= (3, 11):
     from enum import StrEnum
@@ -498,10 +499,7 @@ def test_enum_categories_series_zero_copy() -> None:
     assert result_dtype == dtype
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
-)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_enum_cast_from_other_integer_dtype(dtype: pl.DataType) -> None:
     enum_dtype = pl.Enum(["a", "b", "c", "d"])
     series = pl.Series([1, 2, 3, 3, 2, 1], dtype=dtype)
@@ -585,19 +583,7 @@ def test_category_comparison_subset() -> None:
     assert out["dt1"].dtype != out["dt2"].dtype
 
 
-@pytest.mark.parametrize(
-    "dt",
-    [
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-    ],
-)
+@pytest.mark.parametrize("dt", INTEGER_DTYPES)
 def test_integer_cast_to_enum_15738(dt: pl.DataType) -> None:
     s = pl.Series([0, 1, 2], dtype=dt).cast(pl.Enum(["a", "b", "c"]))
     assert s.to_list() == ["a", "b", "c"]

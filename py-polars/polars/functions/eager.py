@@ -163,7 +163,13 @@ def concat(
         # (so we raise an error in case of column collision, like "horizontal")
         lf: LazyFrame = reduce(
             lambda x, y: (
-                x.join(y, how="full", on=common_cols, suffix="_PL_CONCAT_RIGHT")
+                x.join(
+                    y,
+                    how="full",
+                    on=common_cols,
+                    suffix="_PL_CONCAT_RIGHT",
+                    maintain_order="right_left",
+                )
                 # Coalesce full outer join columns
                 .with_columns(
                     F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
@@ -283,6 +289,7 @@ def _alignment_join(
             suffix=f":{y_idx}",
             join_nulls=True,
             coalesce=True,
+            maintain_order="right_left",
         )
 
     joined = reduce(join_func, idx_frames)[1].sort(by=align_on, descending=descending)

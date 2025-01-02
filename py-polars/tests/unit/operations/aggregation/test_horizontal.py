@@ -524,3 +524,100 @@ def test_expected_horizontal_dtype_errors(horizontal_func: type[pl.Expr]) -> Non
                 pl.col("cole"),
             )
         )
+
+
+def test_horizontal_sum_boolean_with_null() -> None:
+    lf = pl.LazyFrame(
+        {
+            "null": [None, None],
+            "bool": [True, False],
+        }
+    )
+
+    out = lf.select(
+        pl.sum_horizontal("null", "bool").alias("null_first"),
+        pl.sum_horizontal("bool", "null").alias("bool_first"),
+    )
+
+    expected_schema = pl.Schema(
+        {
+            "null_first": pl.UInt32,
+            "bool_first": pl.UInt32,
+        }
+    )
+
+    assert out.collect_schema() == expected_schema
+
+    expected_df = pl.DataFrame(
+        {
+            "null_first": pl.Series([1, 0], dtype=pl.UInt32),
+            "bool_first": pl.Series([1, 0], dtype=pl.UInt32),
+        }
+    )
+
+    assert_frame_equal(out.collect(), expected_df)
+
+
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize(
+    ("dtype_in", "dtype_out"),
+    [
+        (pl.Null, pl.Null),
+        (pl.Boolean, pl.UInt32),
+        (pl.UInt8, pl.UInt8),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+        (pl.Decimal(None, 5), pl.Decimal(None, 5)),
+    ],
+)
+def test_horizontal_sum_with_null_col_ignore_strategy(
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
+    ignore_nulls: bool,
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "null": [None, None, None],
+            "s": pl.Series([1, 0, 1], dtype=dtype_in, strict=False),
+            "s2": pl.Series([1, 0, None], dtype=dtype_in, strict=False),
+        }
+    )
+    result = lf.select(pl.sum_horizontal("null", "s", "s2", ignore_nulls=ignore_nulls))
+    if ignore_nulls and dtype_in != pl.Null:
+        values = [2, 0, 1]
+    else:
+        values = [None, None, None]  # type: ignore[list-item]
+    expected = pl.LazyFrame(pl.Series("null", values, dtype=dtype_out))
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("ignore_nulls", [True, False])
+@pytest.mark.parametrize(
+    ("dtype_in", "dtype_out"),
+    [
+        (pl.Null, pl.Float64),
+        (pl.Boolean, pl.Float64),
+        (pl.UInt8, pl.Float64),
+        (pl.Float32, pl.Float32),
+        (pl.Float64, pl.Float64),
+    ],
+)
+def test_horizontal_mean_with_null_col_ignore_strategy(
+    dtype_in: PolarsDataType,
+    dtype_out: PolarsDataType,
+    ignore_nulls: bool,
+) -> None:
+    lf = pl.LazyFrame(
+        {
+            "null": [None, None, None],
+            "s": pl.Series([1, 0, 1], dtype=dtype_in, strict=False),
+            "s2": pl.Series([1, 0, None], dtype=dtype_in, strict=False),
+        }
+    )
+    result = lf.select(pl.mean_horizontal("null", "s", "s2", ignore_nulls=ignore_nulls))
+    if ignore_nulls and dtype_in != pl.Null:
+        values = [1, 0, 1]
+    else:
+        values = [None, None, None]  # type: ignore[list-item]
+    expected = pl.LazyFrame(pl.Series("null", values, dtype=dtype_out))
+    assert_frame_equal(result, expected)

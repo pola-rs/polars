@@ -30,6 +30,7 @@ from polars.exceptions import (
     ShapeError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.utils.pycapsule_utils import PyCapsuleStreamHolder
 
 if TYPE_CHECKING:
@@ -250,14 +251,6 @@ def test_init_structured_objects() -> None:
         assert_frame_equal(s.to_frame(), pl.DataFrame({"t": [t0, t1, t2]}))
 
 
-def test_concat() -> None:
-    s = pl.Series("a", [2, 1, 3])
-
-    assert pl.concat([s, s]).len() == 6
-    # check if s remains unchanged
-    assert s.len() == 3
-
-
 def test_to_frame() -> None:
     s1 = pl.Series([1, 2])
     s2 = pl.Series("s", [1, 2])
@@ -371,10 +364,11 @@ def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None
 def test_add_string() -> None:
     s = pl.Series(["hello", "weird"])
     result = s + " world"
+    print(result)
     assert_series_equal(result, pl.Series(["hello world", "weird world"]))
 
     result = "pfx:" + s
-    assert_series_equal(result, pl.Series(["pfx:hello", "pfx:weird"]))
+    assert_series_equal(result, pl.Series("literal", ["pfx:hello", "pfx:weird"]))
 
 
 @pytest.mark.parametrize(
@@ -1001,6 +995,7 @@ def test_mode() -> None:
         == "bar"
     )
     assert pl.Series([1.0, 2.0, 3.0, 2.0]).mode().item() == 2.0
+    assert pl.Series(["a", "b", "c", "b"]).mode().item() == "b"
 
     # sorted data
     assert set(pl.int_range(0, 3, eager=True).mode().to_list()) == {0, 1, 2}
@@ -1380,6 +1375,10 @@ def test_filter() -> None:
 
     assert_series_equal(s.filter(mask), pl.Series("a", [1, 3]))
     assert_series_equal(s.filter([True, False, True]), pl.Series("a", [1, 3]))
+    assert_series_equal(s.filter(np.array([True, False, True])), pl.Series("a", [1, 3]))
+
+    with pytest.raises(RuntimeError, match="Expected a boolean mask"):
+        s.filter(np.array([1, 0, 1]))
 
 
 def test_gather_every() -> None:
@@ -1499,6 +1498,15 @@ def test_is_nan_is_not_nan(float_type: PolarsDataType) -> None:
     assert_series_equal(s.is_not_nan(), pl.Series([True, False, None]))
     assert_series_equal(s.fill_nan(2.0), pl.Series([1.0, 2.0, None], dtype=float_type))
     assert_series_equal(s.drop_nans(), pl.Series([1.0, None], dtype=float_type))
+
+
+def test_float_methods_on_ints() -> None:
+    # these float-specific methods work on non-float numeric types
+    s = pl.Series([1, None], dtype=pl.Int32)
+    assert_series_equal(s.is_finite(), pl.Series([True, None]))
+    assert_series_equal(s.is_infinite(), pl.Series([False, None]))
+    assert_series_equal(s.is_nan(), pl.Series([False, None]))
+    assert_series_equal(s.is_not_nan(), pl.Series([True, None]))
 
 
 def test_dot() -> None:
@@ -1710,23 +1718,28 @@ def test_trigonometric_invalid_input() -> None:
         s.cosh()
 
 
-def test_product() -> None:
-    a = pl.Series("a", [1, 2, 3])
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_product_ints(dtype: PolarsDataType) -> None:
+    a = pl.Series("a", [1, 2, 3], dtype=dtype)
     out = a.product()
     assert out == 6
-    a = pl.Series("a", [1, 2, None])
+    a = pl.Series("a", [1, 2, None], dtype=dtype)
     out = a.product()
     assert out == 2
-    a = pl.Series("a", [None, 2, 3])
+    a = pl.Series("a", [None, 2, 3], dtype=dtype)
     out = a.product()
     assert out == 6
-    a = pl.Series("a", [], dtype=pl.Float32)
+
+
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
+def test_product_floats(dtype: PolarsDataType) -> None:
+    a = pl.Series("a", [], dtype=dtype)
     out = a.product()
     assert out == 1
-    a = pl.Series("a", [None, None], dtype=pl.Float32)
+    a = pl.Series("a", [None, None], dtype=dtype)
     out = a.product()
     assert out == 1
-    a = pl.Series("a", [3.0, None, float("nan")])
+    a = pl.Series("a", [3.0, None, float("nan")], dtype=dtype)
     out = a.product()
     assert math.isnan(out)
 

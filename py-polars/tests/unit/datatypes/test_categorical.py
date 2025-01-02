@@ -825,6 +825,8 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
     assert df2["x"].dtype == dtype
 
 
+# TODO: Bug see: https://github.com/pola-rs/polars/issues/20440
+@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
         pl.col("y").cast(pl.Categorical(ordering="lexical"))
@@ -832,6 +834,15 @@ def test_cat_append_lexical_sorted_flag() -> None:
     df2 = pl.concat([part.sort("y") for part in df.partition_by("x")])
 
     assert not (df2["y"].is_sorted())
+
+    s = pl.Series("a", ["z", "k", "a"], pl.Categorical("lexical"))
+    s1 = s[[0]]
+    s2 = s[[1]]
+    s3 = s[[2]]
+    s1.append(s2)
+    s1.append(s3)
+
+    assert not (s1.is_sorted())
 
 
 def test_get_cat_categories_multiple_chunks() -> None:
@@ -887,3 +898,10 @@ def test_perfect_group_by_19950() -> None:
         "y": ["b"],
         "x": ["a"],
     }
+
+
+@StringCache()
+def test_categorical_unique() -> None:
+    s = pl.Series(["a", "b", None], dtype=pl.Categorical)
+    assert s.n_unique() == 3
+    assert s.unique().to_list() == ["a", "b", None]

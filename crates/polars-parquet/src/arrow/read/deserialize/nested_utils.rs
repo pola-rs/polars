@@ -94,7 +94,7 @@ impl Nested {
             debug_assert!(self
                 .validity
                 .as_ref()
-                .map_or(true, |v| v.len() == self.length));
+                .is_none_or(|v| v.len() == self.length));
         }
 
         self.num_valids = 0;
@@ -102,7 +102,7 @@ impl Nested {
 
         match self.content {
             NestedContent::Primitive => {
-                debug_assert!(self.validity.map_or(true, |validity| validity.is_empty()));
+                debug_assert!(self.validity.is_none_or(|validity| validity.is_empty()));
                 (self.length, Vec::new(), None)
             },
             NestedContent::List { offsets } => (self.length, offsets, self.validity),

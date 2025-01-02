@@ -39,6 +39,15 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
     true
 }
 
+pub fn all_elementwise<'a, N>(nodes: &'a [N], expr_arena: &Arena<AExpr>) -> bool
+where
+    Node: From<&'a N>,
+{
+    nodes
+        .iter()
+        .all(|n| is_elementwise_rec(expr_arena.get(n.into()), expr_arena))
+}
+
 /// Recursive variant of `is_elementwise`
 pub fn is_elementwise_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
     let mut stack = unitvec![];
@@ -147,4 +156,97 @@ pub fn permits_filter_pushdown_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<
     }
 
     true
+}
+
+pub fn can_pre_agg_exprs(
+    exprs: &[ExprIR],
+    expr_arena: &Arena<AExpr>,
+    _input_schema: &Schema,
+) -> bool {
+    exprs
+        .iter()
+        .all(|e| can_pre_agg(e.node(), expr_arena, _input_schema))
+}
+
+/// Checks whether an expression can be pre-aggregated in a group-by. Note that this also must be
+/// implemented physically, so this isn't a complete list.
+pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema) -> bool {
+    let aexpr = expr_arena.get(agg);
+
+    match aexpr {
+        AExpr::Len => true,
+        AExpr::Column(_) | AExpr::Literal(_) => false,
+        // We only allow expressions that end with an aggregation.
+        AExpr::Agg(_) => {
+            let has_aggregation =
+                |node: Node| has_aexpr(node, expr_arena, |ae| matches!(ae, AExpr::Agg(_)));
+
+            // check if the aggregation type is partitionable
+            // only simple aggregation like col().sum
+            // that can be divided in to the aggregation of their partitions are allowed
+            let can_partition = (expr_arena).iter(agg).all(|(_, ae)| {
+                use AExpr::*;
+                match ae {
+                    // struct is needed to keep both states
+                    #[cfg(feature = "dtype-struct")]
+                    Agg(IRAggExpr::Mean(_)) => {
+                        // only numeric means for now.
+                        // logical types seem to break because of casts to float.
+                        matches!(
+                            expr_arena
+                                .get(agg)
+                                .get_type(_input_schema, Context::Default, expr_arena)
+                                .map(|dt| { dt.is_numeric() }),
+                            Ok(true)
+                        )
+                    },
+                    // only allowed expressions
+                    Agg(agg_e) => {
+                        matches!(
+                            agg_e,
+                            IRAggExpr::Min { .. }
+                                | IRAggExpr::Max { .. }
+                                | IRAggExpr::Sum(_)
+                                | IRAggExpr::Last(_)
+                                | IRAggExpr::First(_)
+                                | IRAggExpr::Count(_, true)
+                        )
+                    },
+                    Function { input, options, .. } => {
+                        matches!(options.collect_groups, ApplyOptions::ElementWise)
+                            && input.len() == 1
+                            && !has_aggregation(input[0].node())
+                    },
+                    BinaryExpr { left, right, .. } => {
+                        !has_aggregation(*left) && !has_aggregation(*right)
+                    },
+                    Ternary {
+                        truthy,
+                        falsy,
+                        predicate,
+                        ..
+                    } => {
+                        !has_aggregation(*truthy)
+                            && !has_aggregation(*falsy)
+                            && !has_aggregation(*predicate)
+                    },
+                    Column(_) | Len | Literal(_) | Cast { .. } => true,
+                    _ => false,
+                }
+            });
+
+            #[cfg(feature = "object")]
+            {
+                for name in aexpr_to_leaf_names(agg, expr_arena) {
+                    let dtype = _input_schema.get(&name).unwrap();
+
+                    if let DataType::Object(_, _) = dtype {
+                        return false;
+                    }
+                }
+            }
+            can_partition
+        },
+        _ => false,
+    }
 }

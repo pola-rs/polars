@@ -97,6 +97,7 @@ dtype-full = [
   "dtype-decimal",
   "dtype-duration",
   "dtype-i16",
+  "dtype-i128",
   "dtype-i8",
   "dtype-struct",
   "dtype-time",
@@ -144,6 +145,7 @@ dtype-duration = [
   "polars-mem-engine/dtype-duration",
 ]
 dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16", "polars-expr/dtype-i16", "polars-mem-engine/dtype-i16"]
+dtype-i128 = ["polars-plan/dtype-i128", "polars-pipe?/dtype-i128", "polars-expr/dtype-i128"]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8"]
 dtype-struct = [
   "polars-plan/dtype-struct",
@@ -161,7 +163,7 @@ dtype-time = [
 dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16", "polars-mem-engine/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8"]
 
-object = ["polars-plan/object", "polars-mem-engine/object"]
+object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
 month_start = ["polars-plan/month_start"]
 month_end = ["polars-plan/month_end"]
 offset_by = ["polars-plan/offset_by"]

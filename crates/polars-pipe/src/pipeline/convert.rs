@@ -52,22 +52,11 @@ where
     use IR::*;
     match source {
         DataFrameScan {
-            df,
-            filter: selection,
-            output_schema,
-            ..
+            df, output_schema, ..
         } => {
             let mut df = (*df).clone();
-            let schema = output_schema
-                .clone()
-                .unwrap_or_else(|| Arc::new(df.schema()));
+            let schema = output_schema.clone().unwrap_or_else(|| df.schema().clone());
             if push_predicate {
-                if let Some(predicate) = selection {
-                    let predicate = to_physical(&predicate, expr_arena, &schema)?;
-                    let op = operators::FilterOperator { predicate };
-                    let op = Box::new(op) as Box<dyn Operator>;
-                    operator_objects.push(op)
-                }
                 // projection is free
                 if let Some(schema) = output_schema {
                     let columns = schema.iter_names_cloned().collect::<Vec<_>>();
@@ -137,8 +126,11 @@ where
                                     self.p.evaluate_io(df)
                                 }
 
-                                fn live_variables(&self) -> Option<Vec<PlSmallStr>> {
-                                    None
+                                fn collect_live_columns(
+                                    &self,
+                                    live_columns: &mut PlIndexSet<PlSmallStr>,
+                                ) {
+                                    self.p.collect_live_columns(live_columns);
                                 }
 
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
@@ -329,13 +321,6 @@ where
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             let slice = SliceSink::new(*offset as u64, *len as usize, input_schema.into_owned());
             Box::new(slice) as Box<dyn SinkTrait>
-        },
-        Reduce {
-            input: _,
-            exprs: _,
-            schema: _,
-        } => {
-            todo!()
         },
         Sort {
             input,

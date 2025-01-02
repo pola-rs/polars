@@ -1,11 +1,10 @@
+use arrow::array::PrimitiveArray;
+use arrow::bitmap::utils::set_bit_unchecked;
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::legacy::index::IdxArr;
+use arrow::legacy::utils::CustomIterTools;
+use arrow::types::NativeType;
 use polars_utils::index::NullCount;
-
-use crate::array::PrimitiveArray;
-use crate::bitmap::utils::set_bit_unchecked;
-use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::legacy::index::IdxArr;
-use crate::legacy::utils::CustomIterTools;
-use crate::types::NativeType;
 
 pub(super) unsafe fn take_values_and_validity_unchecked<T: NativeType>(
     values: &[T],

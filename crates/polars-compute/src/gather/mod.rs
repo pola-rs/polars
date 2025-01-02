@@ -17,13 +17,14 @@
 
 //! Defines take kernel for [`Array`]
 
-use crate::array::{
+use arrow::array::{
     self, new_empty_array, Array, ArrayCollectIterExt, ArrayFromIterDtype, NullArray, StaticArray,
     Utf8ViewArray,
 };
-use crate::compute::take::binview::take_binview_unchecked;
-use crate::datatypes::{ArrowDataType, IdxArr};
-use crate::types::Index;
+use arrow::datatypes::{ArrowDataType, IdxArr};
+use arrow::types::Index;
+
+use crate::gather::binview::take_binview_unchecked;
 
 pub mod binary;
 pub mod binview;
@@ -34,8 +35,9 @@ pub mod generic_binary;
 pub mod list;
 pub mod primitive;
 pub mod structure;
+pub mod sublist;
 
-use crate::with_match_primitive_type_full;
+use arrow::with_match_primitive_type_full;
 
 /// Returns a new [`Array`] with only indices at `indices`. Null indices are taken as nulls.
 /// The returned array has a length equal to `indices.len()`.
@@ -46,7 +48,7 @@ pub unsafe fn take_unchecked(values: &dyn Array, indices: &IdxArr) -> Box<dyn Ar
         return new_empty_array(values.dtype().clone());
     }
 
-    use crate::datatypes::PhysicalType::*;
+    use arrow::datatypes::PhysicalType::*;
     match values.dtype().to_physical_type() {
         Null => Box::new(NullArray::new(values.dtype().clone(), indices.len())),
         Boolean => {

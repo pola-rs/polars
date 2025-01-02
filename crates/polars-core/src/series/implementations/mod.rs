@@ -26,11 +26,9 @@ mod time;
 
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::RwLockReadGuard;
 
 use super::*;
 use crate::chunked_array::comparison::*;
-use crate::chunked_array::metadata::MetadataTrait;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
@@ -80,11 +78,11 @@ macro_rules! impl_dyn_series {
                 self.0.ref_field().dtype()
             }
 
-            fn _get_flags(&self) -> MetadataFlags {
+            fn _get_flags(&self) -> StatisticsFlags {
                 self.0.get_flags()
             }
 
-            fn _set_flags(&mut self, flags: MetadataFlags) {
+            fn _set_flags(&mut self, flags: StatisticsFlags) {
                 self.0.set_flags(flags)
             }
 
@@ -218,14 +216,6 @@ macro_rules! impl_dyn_series {
                 _options: RollingOptionsFixedWindow,
             ) -> PolarsResult<Series> {
                 ChunkRollApply::rolling_map(&self.0, _f, _options).map(|ca| ca.into_series())
-            }
-
-            fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
-                self.0.metadata_dyn()
-            }
-
-            fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
-                Some(self.0.boxed_metadata_dyn())
             }
 
             fn rename(&mut self, name: PlSmallStr) {

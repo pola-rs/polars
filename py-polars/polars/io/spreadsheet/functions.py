@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import os
 import re
 import warnings
+from collections import defaultdict
 from collections.abc import Sequence
 from datetime import time
+from glob import glob
 from io import BufferedReader, BytesIO, StringIO, TextIOWrapper
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any, Callable, NoReturn, overload
@@ -15,7 +18,7 @@ from polars._utils.deprecation import (
     deprecate_renamed_parameter,
     issue_deprecation_warning,
 )
-from polars._utils.various import normalize_filepath, parse_version
+from polars._utils.various import deduplicate_names, normalize_filepath, parse_version
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Boolean,
@@ -34,18 +37,71 @@ from polars.exceptions import (
     NoDataError,
     ParameterCollisionError,
 )
+from polars.functions import concat
 from polars.io._utils import looks_like_url, process_file_url
 from polars.io.csv.functions import read_csv
 
 if TYPE_CHECKING:
     from typing import Literal
 
-    from polars._typing import ExcelSpreadsheetEngine, SchemaDict
+    from polars._typing import ExcelSpreadsheetEngine, FileSource, SchemaDict
+
+
+def _sources(source: FileSource) -> tuple[Any, bool]:
+    """Unpack any glob patterns, standardise file paths."""
+    read_multiple_workbooks = True
+    sources: list[Any] = []
+
+    if not isinstance(source, Sequence) or isinstance(source, str):
+        read_multiple_workbooks = False
+        source = [source]  # type: ignore[assignment]
+
+    for src in source:  # type: ignore[union-attr]
+        if isinstance(src, (str, os.PathLike)) and not Path(src).exists():
+            src = os.path.expanduser(str(src))  # noqa: PTH111
+            sources.extend(files := glob(src, recursive=True))  # noqa: PTH207
+            read_multiple_workbooks = bool(files)
+        else:
+            if isinstance(src, os.PathLike):
+                src = str(src)
+            sources.append(src)
+
+    return sources, read_multiple_workbooks
+
+
+def _standardize_duplicates(s: str) -> str:
+    """Standardize columns with '_duplicated_n' names."""
+    return re.sub(r"_duplicated_(\d+)", repl=r"\1", string=s)
+
+
+def _unpack_sheet_results(
+    frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]],
+    *,
+    read_multiple_workbooks: bool,
+) -> Any:
+    if not frames:
+        msg = "no data found in the given workbook(s) and sheet(s)"
+        raise NoDataError(msg)
+
+    if not read_multiple_workbooks:
+        # one sheet from one workbook
+        return frames[0]
+
+    if isinstance(frames[0], pl.DataFrame):
+        # one sheet from multiple workbooks
+        return concat(frames, how="vertical_relaxed")  # type: ignore[type-var]
+    else:
+        # multiple sheets from multiple workbooks
+        sheet_frames = defaultdict(list)
+        for res in frames:
+            for sheet, df in res.items():  # type: ignore[union-attr]
+                sheet_frames[sheet].append(df)
+        return {k: concat(v, how="vertical_relaxed") for k, v in sheet_frames.items()}
 
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -56,14 +112,16 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -74,14 +132,16 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -92,7 +152,9 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> NoReturn: ...
 
@@ -101,7 +163,7 @@ def read_excel(
 # Literal[0] overlaps with the return value for other integers
 @overload  # type: ignore[overload-overlap]
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -112,14 +174,16 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -130,14 +194,16 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
 
 @overload
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -148,7 +214,9 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
@@ -156,7 +224,7 @@ def read_excel(
 @deprecate_renamed_parameter("xlsx2csv_options", "engine_options", version="0.20.6")
 @deprecate_renamed_parameter("read_csv_options", "read_options", version="0.20.7")
 def read_excel(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -167,12 +235,16 @@ def read_excel(
     columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    include_file_paths: str | None = None,
     drop_empty_rows: bool = True,
+    drop_empty_cols: bool = True,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
     Read Excel spreadsheet data into a DataFrame.
 
+    .. versionadded:: 1.18
+        Support loading data from a list (or glob pattern) of multiple workbooks.
     .. versionchanged:: 1.0
         Default engine is now "calamine" (was "xlsx2csv").
     .. versionadded:: 0.20.6
@@ -183,18 +255,17 @@ def read_excel(
     Parameters
     ----------
     source
-        Path to a file or a file-like object (by "file-like object" we refer to objects
-        that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        Path(s) to a file or a file-like object (by "file-like object" we refer to
+        objects that have a `read()` method, such as a file handler like the builtin
+        `open` function, or a `BytesIO` instance). For file-like objects, the stream
+        position may not be updated after reading.
     sheet_id
         Sheet number(s) to convert (set `0` to load all sheets as DataFrames) and
         return a `{sheetname:frame,}` dict. (Defaults to `1` if neither this nor
         `sheet_name` are specified). Can also take a sequence of sheet numbers.
     sheet_name
-        Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If more
-        than one is given then a `{sheetname:frame,}` dict is returned.
+        Sheet name(s) to convert; cannot be used in conjunction with `sheet_id`. If
+        more than one is given then a `{sheetname:frame,}` dict is returned.
     engine : {'calamine', 'xlsx2csv', 'openpyxl'}
         Library used to parse the spreadsheet file; defaults to "calamine".
 
@@ -237,8 +308,14 @@ def read_excel(
         entire dataset is scanned to determine the dtypes, which can slow parsing for
         large workbooks. Note that only the "calamine" and "xlsx2csv" engines support
         this parameter.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
     drop_empty_rows
         Indicate whether to omit empty rows when reading data into the DataFrame.
+    drop_empty_cols
+        Indicate whether to omit empty columns (with no headers) when reading data into
+        the DataFrame (note that empty column identification may vary depending on the
+        underlying engine being used).
     raise_if_empty
         When there is no data in the sheet,`NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -297,25 +374,35 @@ def read_excel(
     ...     read_options={"has_header": False, "new_columns": ["a", "b", "c"]},
     ... )  # doctest: +SKIP
     """
-    return _read_spreadsheet(
-        sheet_id,
-        sheet_name,
-        source=source,
-        engine=engine,
-        engine_options=engine_options,
-        read_options=read_options,
-        schema_overrides=schema_overrides,
-        infer_schema_length=infer_schema_length,
-        raise_if_empty=raise_if_empty,
-        has_header=has_header,
-        columns=columns,
-        drop_empty_rows=drop_empty_rows,
+    sources, read_multiple_workbooks = _sources(source)
+    frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]] = [  # type: ignore[assignment]
+        _read_spreadsheet(
+            src,
+            sheet_id=sheet_id,
+            sheet_name=sheet_name,
+            engine=engine,
+            engine_options=engine_options,
+            read_options=read_options,
+            schema_overrides=schema_overrides,
+            infer_schema_length=infer_schema_length,
+            include_file_paths=include_file_paths,
+            raise_if_empty=raise_if_empty,
+            has_header=has_header,
+            columns=columns,
+            drop_empty_rows=drop_empty_rows,
+            drop_empty_cols=drop_empty_cols,
+        )
+        for src in sources
+    ]
+    return _unpack_sheet_results(
+        frames=frames,
+        read_multiple_workbooks=read_multiple_workbooks,
     )
 
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: str,
@@ -323,14 +410,16 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None = ...,
     sheet_name: None = ...,
@@ -338,14 +427,16 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: str,
@@ -353,14 +444,16 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> NoReturn: ...
 
 
 @overload  # type: ignore[overload-overlap]
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: Literal[0] | Sequence[int],
     sheet_name: None = ...,
@@ -368,14 +461,16 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int,
     sheet_name: None = ...,
@@ -383,14 +478,16 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> pl.DataFrame: ...
 
 
 @overload
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: None,
     sheet_name: list[str] | tuple[str],
@@ -398,13 +495,15 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = ...,
     schema_overrides: SchemaDict | None = ...,
     infer_schema_length: int | None = ...,
+    include_file_paths: str | None = ...,
     drop_empty_rows: bool = ...,
+    drop_empty_cols: bool = ...,
     raise_if_empty: bool = ...,
 ) -> dict[str, pl.DataFrame]: ...
 
 
 def read_ods(
-    source: str | Path | IO[bytes] | bytes,
+    source: FileSource,
     *,
     sheet_id: int | Sequence[int] | None = None,
     sheet_name: str | list[str] | tuple[str] | None = None,
@@ -412,7 +511,9 @@ def read_ods(
     columns: Sequence[int] | Sequence[str] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    include_file_paths: str | None = None,
     drop_empty_rows: bool = True,
+    drop_empty_cols: bool = True,
     raise_if_empty: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
     """
@@ -423,9 +524,8 @@ def read_ods(
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        function, or a `BytesIO` instance). For file-like objects, the stream position
+        may not be updated accordingly after reading.
     sheet_id
         Sheet number(s) to convert, starting from 1 (set `0` to load *all* worksheets
         as DataFrames) and return a `{sheetname:frame,}` dict. (Defaults to `1` if
@@ -447,8 +547,14 @@ def read_ods(
         The maximum number of rows to scan for schema inference. If set to `None`, the
         entire dataset is scanned to determine the dtypes, which can slow parsing for
         large workbooks.
+    include_file_paths
+        Include the path of the source file(s) as a column with this name.
     drop_empty_rows
         Indicate whether to omit empty rows when reading data into the DataFrame.
+    drop_empty_cols
+        Indicate whether to omit empty columns (with no headers) when reading data into
+        the DataFrame (note that empty column identification may vary depending on the
+        underlying engine being used).
     raise_if_empty
         When there is no data in the sheet,`NoDataError` is raised. If this parameter
         is set to False, an empty DataFrame (with no columns) is returned instead.
@@ -480,38 +586,50 @@ def read_ods(
     ...     raise_if_empty=False,
     ... )  # doctest: +SKIP
     """
-    return _read_spreadsheet(
-        sheet_id,
-        sheet_name,
-        source=source,
-        engine="calamine",
-        engine_options={},
-        read_options=None,
-        schema_overrides=schema_overrides,
-        infer_schema_length=infer_schema_length,
-        raise_if_empty=raise_if_empty,
-        drop_empty_rows=drop_empty_rows,
-        has_header=has_header,
-        columns=columns,
+    sources, read_multiple_workbooks = _sources(source)
+    frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]] = [  # type: ignore[assignment]
+        _read_spreadsheet(
+            src,
+            sheet_id=sheet_id,
+            sheet_name=sheet_name,
+            engine="calamine",
+            engine_options={},
+            read_options=None,
+            schema_overrides=schema_overrides,
+            infer_schema_length=infer_schema_length,
+            include_file_paths=include_file_paths,
+            raise_if_empty=raise_if_empty,
+            drop_empty_rows=drop_empty_rows,
+            drop_empty_cols=drop_empty_cols,
+            has_header=has_header,
+            columns=columns,
+        )
+        for src in sources
+    ]
+    return _unpack_sheet_results(
+        frames=frames,
+        read_multiple_workbooks=read_multiple_workbooks,
     )
 
 
 def _read_spreadsheet(
-    sheet_id: int | Sequence[int] | None,
-    sheet_name: str | list[str] | tuple[str] | None,
+    source: str | IO[bytes] | bytes,
     *,
-    source: str | Path | IO[bytes] | bytes,
+    sheet_id: int | Sequence[int] | None,
+    sheet_name: str | Sequence[str] | None,
     engine: ExcelSpreadsheetEngine,
     engine_options: dict[str, Any] | None = None,
     read_options: dict[str, Any] | None = None,
     schema_overrides: SchemaDict | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    include_file_paths: str | None = None,
     columns: Sequence[int] | Sequence[str] | None = None,
     has_header: bool = True,
     raise_if_empty: bool = True,
     drop_empty_rows: bool = True,
+    drop_empty_cols: bool = True,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-    if isinstance(source, (str, Path)):
+    if isinstance(source, str):
         source = normalize_filepath(source)
         if looks_like_url(source):
             source = process_file_url(source)
@@ -532,7 +650,9 @@ def _read_spreadsheet(
     )
     try:
         # parse data from the indicated sheet(s)
-        sheet_names, return_multi = _get_sheet_names(sheet_id, sheet_name, worksheets)
+        sheet_names, return_multiple_sheets = _get_sheet_names(
+            sheet_id, sheet_name, worksheets
+        )
         parsed_sheets = {
             name: reader_fn(
                 parser=parser,
@@ -542,6 +662,7 @@ def _read_spreadsheet(
                 raise_if_empty=raise_if_empty,
                 columns=columns,
                 drop_empty_rows=drop_empty_rows,
+                drop_empty_cols=drop_empty_cols,
             )
             for name in sheet_names
         }
@@ -554,7 +675,13 @@ def _read_spreadsheet(
         msg = f"no matching sheets found when `sheet_{param}` is {value!r}"
         raise ValueError(msg)
 
-    if return_multi:
+    if include_file_paths:
+        workbook = source if isinstance(source, str) else "in-mem"
+        parsed_sheets = {
+            name: frame.with_columns(F.lit(workbook).alias(include_file_paths))
+            for name, frame in parsed_sheets.items()
+        }
+    if return_multiple_sheets:
         return parsed_sheets
     return next(iter(parsed_sheets.values()))
 
@@ -614,7 +741,7 @@ def _get_read_options(
 
 def _get_sheet_names(
     sheet_id: int | Sequence[int] | None,
-    sheet_name: str | list[str] | tuple[str] | None,
+    sheet_name: str | Sequence[str] | None,
     worksheets: list[dict[str, Any]],
 ) -> tuple[list[str], bool]:
     """Establish sheets to read; indicate if we are returning a dict frames."""
@@ -625,12 +752,12 @@ def _get_sheet_names(
     sheet_names = []
     if sheet_id is None and sheet_name is None:
         sheet_names.append(worksheets[0]["name"])
-        return_multi = False
+        return_multiple_sheets = False
     elif sheet_id == 0:
         sheet_names.extend(ws["name"] for ws in worksheets)
-        return_multi = True
+        return_multiple_sheets = True
     else:
-        return_multi = (
+        return_multiple_sheets = (
             (isinstance(sheet_name, Sequence) and not isinstance(sheet_name, str))
             or isinstance(sheet_id, Sequence)
             or sheet_id == 0
@@ -656,16 +783,16 @@ def _get_sheet_names(
                     msg = f"no matching sheet found when `sheet_id` is {idx}"
                     raise ValueError(msg)
                 sheet_names.append(name)
-    return sheet_names, return_multi
+    return sheet_names, return_multiple_sheets
 
 
 def _initialise_spreadsheet_parser(
     engine: str | None,
-    source: str | Path | IO[bytes] | bytes,
+    source: str | IO[bytes] | bytes,
     engine_options: dict[str, Any],
 ) -> tuple[Callable[..., pl.DataFrame], Any, list[dict[str, Any]]]:
     """Instantiate the indicated spreadsheet parser and establish related properties."""
-    if isinstance(source, (str, Path)) and not Path(source).exists():
+    if isinstance(source, str) and not Path(source).exists():
         raise FileNotFoundError(source)
 
     if engine == "xlsx2csv":  # default
@@ -729,8 +856,9 @@ def _csv_buffer_to_frame(
     separator: str,
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
-    raise_if_empty: bool,
     drop_empty_rows: bool,
+    drop_empty_cols: bool,
+    raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Translate StringIO buffer containing delimited data as a DataFrame."""
     # handle (completely) empty sheet data
@@ -765,35 +893,39 @@ def _csv_buffer_to_frame(
         **read_options,
     )
     return _drop_null_data(
-        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+        df,
+        raise_if_empty=raise_if_empty,
+        drop_empty_rows=drop_empty_rows,
+        drop_empty_cols=drop_empty_cols,
     )
 
 
 def _drop_null_data(
-    df: pl.DataFrame, *, raise_if_empty: bool, drop_empty_rows: bool = True
+    df: pl.DataFrame,
+    *,
+    raise_if_empty: bool,
+    drop_empty_rows: bool = True,
+    drop_empty_cols: bool = True,
 ) -> pl.DataFrame:
-    """
-    If DataFrame contains columns/rows that contain only nulls, drop them.
-
-    If `drop_empty_rows` is set to `False`, empty rows are not dropped.
-    """
+    """If DataFrame contains columns/rows that contain only nulls, drop them."""
     null_cols: list[str] = []
-    for col_name in df.columns:
-        # note that if multiple unnamed columns are found then all but the first one
-        # will be named as "_duplicated_{n}" (or "__UNNAMED__{n}" from calamine)
-        if col_name == "" or re.match(r"(_duplicated_|__UNNAMED__)\d+$", col_name):
-            col = df[col_name]
-            if (
-                col.dtype == Null
-                or col.null_count() == len(df)
-                or (
-                    col.dtype in NUMERIC_DTYPES
-                    and col.replace(0, None).null_count() == len(df)
-                )
-            ):
-                null_cols.append(col_name)
-    if null_cols:
-        df = df.drop(*null_cols)
+    if drop_empty_cols:
+        for col_name in df.columns:
+            # note that if multiple unnamed columns are found then all but the first one
+            # will be named as "_duplicated_{n}" (or "__UNNAMED__{n}" from calamine)
+            if col_name == "" or re.match(r"(_duplicated_|__UNNAMED__)\d+$", col_name):
+                col = df[col_name]
+                if (
+                    col.dtype == Null
+                    or col.null_count() == len(df)
+                    or (
+                        col.dtype in NUMERIC_DTYPES
+                        and col.replace(0, None).null_count() == len(df)
+                    )
+                ):
+                    null_cols.append(col_name)
+        if null_cols:
+            df = df.drop(*null_cols)
 
     if len(df) == 0 and len(df.columns) == 0:
         return _empty_frame(raise_if_empty)
@@ -830,8 +962,9 @@ def _read_spreadsheet_openpyxl(
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
     columns: Sequence[int] | Sequence[str] | None,
-    raise_if_empty: bool,
     drop_empty_rows: bool,
+    drop_empty_cols: bool,
+    raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'openpyxl' library to read data from the given worksheet."""
     infer_schema_length = read_options.pop("infer_schema_length", None)
@@ -871,9 +1004,9 @@ def _read_spreadsheet_openpyxl(
     dtype = String if no_inference else None
     series_data = []
     for name, column_data in zip(header, zip(*rows_iter)):
-        if name:
+        if name or not drop_empty_cols:
             values = [cell.value for cell in column_data]
-            if no_inference or (dtype := (schema_overrides or {}).get(name)) == String:  # type: ignore[assignment]
+            if no_inference or (dtype := (schema_overrides or {}).get(name)) == String:  # type: ignore[assignment,arg-type]
                 # note: if we initialise the series with mixed-type data (eg: str/int)
                 # then the non-strings will become null, so we handle the cast here
                 values = [str(v) if (v is not None) else v for v in values]
@@ -881,15 +1014,18 @@ def _read_spreadsheet_openpyxl(
             s = pl.Series(name, values, dtype=dtype, strict=False)
             series_data.append(s)
 
+    names = deduplicate_names(s.name for s in series_data)
     df = pl.DataFrame(
-        {s.name: s for s in series_data},
+        dict(zip(names, series_data)),
         schema_overrides=schema_overrides,
         infer_schema_length=infer_schema_length,
         strict=False,
     )
-
     df = _drop_null_data(
-        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+        df,
+        raise_if_empty=raise_if_empty,
+        drop_empty_rows=drop_empty_rows,
+        drop_empty_cols=drop_empty_cols,
     )
     df = _reorder_columns(df, columns)
     return df
@@ -902,8 +1038,9 @@ def _read_spreadsheet_calamine(
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
     columns: Sequence[int] | Sequence[str] | None,
-    raise_if_empty: bool,
     drop_empty_rows: bool,
+    drop_empty_cols: bool,
+    raise_if_empty: bool,
 ) -> pl.DataFrame:
     # if we have 'schema_overrides' and a more recent version of `fastexcel`
     # we can pass translated dtypes to the engine to refine the initial parse
@@ -957,7 +1094,10 @@ def _read_spreadsheet_calamine(
             df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
 
     df = _drop_null_data(
-        df, raise_if_empty=raise_if_empty, drop_empty_rows=drop_empty_rows
+        df,
+        raise_if_empty=raise_if_empty,
+        drop_empty_rows=drop_empty_rows,
+        drop_empty_cols=drop_empty_cols,
     )
 
     # note: even if we applied parser dtypes we still re-apply schema_overrides
@@ -1005,8 +1145,9 @@ def _read_spreadsheet_xlsx2csv(
     read_options: dict[str, Any],
     schema_overrides: SchemaDict | None,
     columns: Sequence[int] | Sequence[str] | None,
-    raise_if_empty: bool,
     drop_empty_rows: bool,
+    drop_empty_cols: bool,
+    raise_if_empty: bool,
 ) -> pl.DataFrame:
     """Use the 'xlsx2csv' library to read data from the given worksheet."""
     csv_buffer = StringIO()
@@ -1035,8 +1176,10 @@ def _read_spreadsheet_xlsx2csv(
         schema_overrides=schema_overrides,
         raise_if_empty=raise_if_empty,
         drop_empty_rows=drop_empty_rows,
+        drop_empty_cols=drop_empty_cols,
     )
     if cast_to_boolean:
         df = df.with_columns(*cast_to_boolean)
 
+    df = df.rename(_standardize_duplicates)
     return _reorder_columns(df, columns)

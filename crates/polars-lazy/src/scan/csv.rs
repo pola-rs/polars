@@ -5,10 +5,11 @@ use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
     infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
 };
-use polars_io::mmap::ReaderBytes;
 use polars_io::path_utils::expand_paths;
+use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::get_reader_bytes;
 use polars_io::RowIndex;
+use polars_utils::mmap::MemSlice;
 
 use crate::prelude::*;
 
@@ -242,14 +243,17 @@ impl LazyCsvReader {
     {
         let mut n_threads = self.read_options.n_threads;
 
-        let mut infer_schema = |reader_bytes: ReaderBytes| {
+        let mut infer_schema = |bytes: MemSlice| {
             let skip_rows = self.read_options.skip_rows;
             let skip_lines = self.read_options.skip_lines;
             let parse_options = self.read_options.get_parse_options();
 
+            let mut owned = vec![];
+            let bytes = maybe_decompress_bytes(bytes.as_ref(), &mut owned)?;
+
             PolarsResult::Ok(
                 infer_file_schema(
-                    &reader_bytes,
+                    &get_reader_bytes(&mut std::io::Cursor::new(bytes))?,
                     &parse_options,
                     self.read_options.infer_schema_length,
                     self.read_options.has_header,
@@ -275,28 +279,21 @@ impl LazyCsvReader {
                     polars_bail!(ComputeError: "no paths specified for this reader");
                 };
 
-                let mut file = polars_utils::open_file(path)?;
-                infer_schema(get_reader_bytes(&mut file).expect("could not mmap file"))?
+                infer_schema(MemSlice::from_file(&polars_utils::open_file(path)?)?)?
             },
             ScanSources::Files(files) => {
                 let Some(file) = files.first() else {
                     polars_bail!(ComputeError: "no buffers specified for this reader");
                 };
 
-                infer_schema(
-                    get_reader_bytes(&mut std::io::BufReader::new(file))
-                        .expect("could not mmap file"),
-                )?
+                infer_schema(MemSlice::from_file(file)?)?
             },
             ScanSources::Buffers(buffers) => {
                 let Some(buffer) = buffers.first() else {
                     polars_bail!(ComputeError: "no buffers specified for this reader");
                 };
 
-                infer_schema(
-                    get_reader_bytes(&mut std::io::Cursor::new(buffer))
-                        .expect("could not mmap file"),
-                )?
+                infer_schema(buffer.clone())?
             },
         };
 

@@ -253,30 +253,39 @@ impl DataType {
 
     /// Materialize this datatype if it is unknown. All other datatypes
     /// are left unchanged.
-    pub fn materialize_unknown(&self) -> PolarsResult<DataType> {
+    pub fn materialize_unknown(self, allow_unknown: bool) -> PolarsResult<DataType> {
         match self {
-            DataType::Unknown(u) => u
-                .materialize()
-                .ok_or_else(|| polars_err!(SchemaMismatch: "failed to materialize unknown type")),
-            DataType::List(inner) => Ok(DataType::List(Box::new(inner.materialize_unknown()?))),
+            DataType::Unknown(u) => match u.materialize() {
+                Some(known) => Ok(known),
+                None => {
+                    if allow_unknown {
+                        Ok(DataType::Unknown(u))
+                    } else {
+                        polars_bail!(SchemaMismatch: "failed to materialize unknown type")
+                    }
+                },
+            },
+            DataType::List(inner) => Ok(DataType::List(Box::new(
+                inner.materialize_unknown(allow_unknown)?,
+            ))),
             #[cfg(feature = "dtype-array")]
             DataType::Array(inner, size) => Ok(DataType::Array(
-                Box::new(inner.materialize_unknown()?),
-                *size,
+                Box::new(inner.materialize_unknown(allow_unknown)?),
+                size,
             )),
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(fields) => Ok(DataType::Struct(
                 fields
-                    .iter()
+                    .into_iter()
                     .map(|f| {
                         PolarsResult::Ok(Field::new(
-                            f.name().clone(),
-                            f.dtype().materialize_unknown()?,
+                            f.name,
+                            f.dtype.materialize_unknown(allow_unknown)?,
                         ))
                     })
                     .try_collect_vec()?,
             )),
-            _ => Ok(self.clone()),
+            _ => Ok(self),
         }
     }
 

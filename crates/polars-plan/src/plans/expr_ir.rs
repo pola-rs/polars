@@ -106,6 +106,10 @@ impl ExprIR {
         self
     }
 
+    pub(crate) fn set_dtype(&mut self, dtype: DataType) {
+        self.output_dtype = OnceLock::from(dtype);
+    }
+
     pub fn from_node(node: Node, arena: &Arena<AExpr>) -> Self {
         let mut out = Self {
             node,
@@ -189,7 +193,6 @@ impl ExprIR {
         self.output_dtype = OnceLock::new();
     }
 
-    #[cfg(feature = "cse")]
     pub(crate) fn set_alias(&mut self, name: PlSmallStr) {
         self.output_name = OutputName::Alias(name)
     }

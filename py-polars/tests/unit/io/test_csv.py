@@ -2428,3 +2428,23 @@ def test_csv_invalid_quoted_comment_line() -> None:
     assert pl.read_csv(
         b'#"Comment\nColA\tColB\n1\t2', separator="\t", comment_prefix="#"
     ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
+
+
+def test_csv_compressed_new_columns_19916() -> None:
+    n_rows = 100
+
+    df = pl.DataFrame(
+        {
+            "a": range(n_rows),
+            "b": range(n_rows),
+            "c": range(n_rows),
+            "d": range(n_rows),
+            "e": range(n_rows),
+            "f": range(n_rows),
+        }
+    )
+
+    b = zstandard.compress(df.write_csv(include_header=False).encode())
+
+    q = pl.scan_csv(b, has_header=False, new_columns=["a", "b", "c", "d", "e", "f"])
+    assert_frame_equal(q.collect(), df)

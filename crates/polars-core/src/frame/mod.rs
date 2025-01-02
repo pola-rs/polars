@@ -8,7 +8,7 @@ use polars_schema::schema::debug_ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::flags::StatisticsFlags;
 #[cfg(feature = "algorithm_group_by")]
 use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
@@ -176,6 +176,10 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
+    pub fn clear_schema(&mut self) {
+        self.cached_schema = OnceLock::new();
+    }
+
     #[inline]
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns.iter().map(Column::as_materialized_series)
@@ -390,6 +394,15 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(0, cols) }
     }
 
+    /// Create a new `DataFrame` with the given schema, only containing nulls.
+    pub fn full_null(schema: &Schema, height: usize) -> Self {
+        let columns = schema
+            .iter_fields()
+            .map(|f| Column::full_null(f.name.clone(), height, f.dtype()))
+            .collect();
+        unsafe { DataFrame::new_no_checks(height, columns) }
+    }
+
     /// Removes the last `Series` from the `DataFrame` and returns it, or [`None`] if it is empty.
     ///
     /// # Example
@@ -407,6 +420,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn pop(&mut self) -> Option<Column> {
+        self.clear_schema();
+
         self.columns.pop()
     }
 
@@ -468,6 +483,7 @@ impl DataFrame {
         );
         ca.set_sorted_flag(IsSorted::Ascending);
 
+        self.clear_schema();
         self.columns.insert(0, ca.into_series().into());
         self
     }
@@ -678,14 +694,22 @@ impl DataFrame {
     /// let f2: Field = Field::new("Diameter (m)".into(), DataType::Float64);
     /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
-    /// assert_eq!(df.schema(), sc);
+    /// assert_eq!(&**df.schema(), &sc);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn schema(&self) -> Schema {
-        self.columns
-            .iter()
-            .map(|x| (x.name().clone(), x.dtype().clone()))
-            .collect()
+    pub fn schema(&self) -> &SchemaRef {
+        let out = self.cached_schema.get_or_init(|| {
+            Arc::new(
+                self.columns
+                    .iter()
+                    .map(|x| (x.name().clone(), x.dtype().clone()))
+                    .collect(),
+            )
+        });
+
+        debug_assert_eq!(out.len(), self.width());
+
+        out
     }
 
     /// Get a reference to the [`DataFrame`] columns.
@@ -714,6 +738,8 @@ impl DataFrame {
     ///
     /// The caller must ensure the length of all [`Series`] remains equal to `height` or
     /// [`DataFrame::set_height`] is called afterwards with the appropriate `height`.
+    /// The caller must ensure that the cached schema is cleared if it modifies the schema by
+    /// calling [`DataFrame::clear_schema`].
     pub unsafe fn get_columns_mut(&mut self) -> &mut Vec<Column> {
         &mut self.columns
     }
@@ -721,7 +747,8 @@ impl DataFrame {
     #[inline]
     /// Remove all the columns in the [`DataFrame`] but keep the `height`.
     pub fn clear_columns(&mut self) {
-        unsafe { self.get_columns_mut() }.clear()
+        unsafe { self.get_columns_mut() }.clear();
+        self.clear_schema();
     }
 
     #[inline]
@@ -734,8 +761,9 @@ impl DataFrame {
     /// - The length of each appended column matches the height of the [`DataFrame`]. For
     ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
     ///   with [`DataFrame::set_height`].
-    pub unsafe fn column_extend_unchecked(&mut self, iter: impl Iterator<Item = Column>) {
-        unsafe { self.get_columns_mut() }.extend(iter)
+    pub unsafe fn column_extend_unchecked(&mut self, iter: impl IntoIterator<Item = Column>) {
+        unsafe { self.get_columns_mut() }.extend(iter);
+        self.clear_schema();
     }
 
     /// Take ownership of the underlying columns vec.
@@ -825,6 +853,7 @@ impl DataFrame {
                 s
             })
             .collect();
+        self.clear_schema();
         Ok(())
     }
 
@@ -1185,6 +1214,7 @@ impl DataFrame {
                 Ok(())
             })?;
         self.height += other.height;
+        self.clear_schema();
         Ok(())
     }
 
@@ -1206,6 +1236,7 @@ impl DataFrame {
     /// ```
     pub fn drop_in_place(&mut self, name: &str) -> PolarsResult<Column> {
         let idx = self.check_name_to_idx(name)?;
+        self.clear_schema();
         Ok(self.columns.remove(idx))
     }
 
@@ -1338,6 +1369,7 @@ impl DataFrame {
         }
 
         self.columns.insert(index, column);
+        self.clear_schema();
         Ok(self)
     }
 
@@ -1361,6 +1393,7 @@ impl DataFrame {
             }
 
             self.columns.push(column);
+            self.clear_schema();
         }
         Ok(())
     }
@@ -1408,6 +1441,7 @@ impl DataFrame {
             unsafe { self.set_height(column.len()) };
         }
         unsafe { self.get_columns_mut() }.push(column);
+        self.clear_schema();
 
         self
     }
@@ -1424,6 +1458,7 @@ impl DataFrame {
                     }
 
                     self.columns.push(c);
+                    self.clear_schema();
                 }
                 // Schema is incorrect fallback to search
                 else {
@@ -1439,6 +1474,7 @@ impl DataFrame {
             }
 
             self.columns.push(c);
+            self.clear_schema();
         }
 
         Ok(())
@@ -1628,7 +1664,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn get_column_index(&self, name: &str) -> Option<usize> {
-        let schema = self.cached_schema.get_or_init(|| Arc::new(self.schema()));
+        let schema = self.schema();
         if let Some(idx) = schema.index_of(name) {
             if self
                 .get_columns()
@@ -1766,7 +1802,7 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        debug_ensure_matching_schema_names(schema, &self.schema())?;
+        debug_ensure_matching_schema_names(schema, self.schema())?;
 
         cols.iter()
             .map(|name| {
@@ -1941,11 +1977,15 @@ impl DataFrame {
         unsafe { DataFrame::new_no_checks(idx.len(), cols) }
     }
 
-    pub(crate) unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn take_slice_unchecked(&self, idx: &[IdxSize]) -> Self {
         self.take_slice_unchecked_impl(idx, true)
     }
 
-    unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn take_slice_unchecked_impl(&self, idx: &[IdxSize], allow_threads: bool) -> Self {
         let cols = if allow_threads {
             POOL.install(|| self._apply_columns_par(&|s| s.take_slice_unchecked(idx)))
         } else {
@@ -1971,7 +2011,7 @@ impl DataFrame {
             return Ok(self);
         }
         polars_ensure!(
-            self.columns.iter().all(|c| c.name() != &name),
+            !self.schema().contains(&name),
             Duplicate: "column rename attempted with already existing name \"{name}\""
         );
 
@@ -2163,44 +2203,26 @@ impl DataFrame {
             BooleanChunkedBuilder::new(PlSmallStr::from_static("sorted_dsc"), num_columns);
         let mut fast_explode_list_ca =
             BooleanChunkedBuilder::new(PlSmallStr::from_static("fast_explode_list"), num_columns);
-        let mut min_value_ca =
-            StringChunkedBuilder::new(PlSmallStr::from_static("min_value"), num_columns);
-        let mut max_value_ca =
-            StringChunkedBuilder::new(PlSmallStr::from_static("max_value"), num_columns);
-        let mut distinct_count_ca: Vec<Option<IdxSize>> = Vec::with_capacity(num_columns);
         let mut materialized_at_ca =
             StringChunkedBuilder::new(PlSmallStr::from_static("materialized_at"), num_columns);
 
         for col in &self.columns {
-            let metadata = col.get_metadata();
-
-            let (flags, min_value, max_value, distinct_count) =
-                metadata.map_or((MetadataFlags::default(), None, None, None), |md| {
-                    (
-                        md.get_flags(),
-                        md.min_value(),
-                        md.max_value(),
-                        md.distinct_count(),
-                    )
-                });
+            let flags = col.get_flags();
 
             let (repr, materialized_at) = match col {
                 Column::Series(s) => ("series", s.materialized_at()),
                 Column::Partitioned(_) => ("partitioned", None),
                 Column::Scalar(_) => ("scalar", None),
             };
-            let sorted_asc = flags.contains(MetadataFlags::SORTED_ASC);
-            let sorted_dsc = flags.contains(MetadataFlags::SORTED_DSC);
-            let fast_explode_list = flags.contains(MetadataFlags::FAST_EXPLODE_LIST);
+            let sorted_asc = flags.contains(StatisticsFlags::IS_SORTED_ASC);
+            let sorted_dsc = flags.contains(StatisticsFlags::IS_SORTED_DSC);
+            let fast_explode_list = flags.contains(StatisticsFlags::CAN_FAST_EXPLODE_LIST);
 
             column_names.append_value(col.name().clone());
             repr_ca.append_value(repr);
             sorted_asc_ca.append_value(sorted_asc);
             sorted_dsc_ca.append_value(sorted_dsc);
             fast_explode_list_ca.append_value(fast_explode_list);
-            min_value_ca.append_option(min_value.map(|v| v.as_any_value().to_string()));
-            max_value_ca.append_option(max_value.map(|v| v.as_any_value().to_string()));
-            distinct_count_ca.push(distinct_count);
             materialized_at_ca.append_option(materialized_at.map(|v| format!("{v:#?}")));
         }
 
@@ -2213,13 +2235,6 @@ impl DataFrame {
                     sorted_asc_ca.finish().into_column(),
                     sorted_dsc_ca.finish().into_column(),
                     fast_explode_list_ca.finish().into_column(),
-                    min_value_ca.finish().into_column(),
-                    max_value_ca.finish().into_column(),
-                    IdxCa::from_slice_options(
-                        PlSmallStr::from_static("distinct_count"),
-                        &distinct_count_ca[..],
-                    )
-                    .into_column(),
                     materialized_at_ca.finish().into_column(),
                 ],
             )
@@ -2338,6 +2353,7 @@ impl DataFrame {
         );
         let old_col = &mut self.columns[index];
         mem::swap(old_col, &mut new_column);
+        self.clear_schema();
         Ok(self)
     }
 

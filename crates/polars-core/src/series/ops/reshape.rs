@@ -2,8 +2,8 @@ use std::borrow::Cow;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
-use arrow::legacy::kernels::list::array_to_unit_list;
 use arrow::offset::{Offsets, OffsetsBuffer};
+use polars_compute::gather::sublist::list::array_to_unit_list;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
 use polars_utils::format_tuple;
 
@@ -239,7 +239,7 @@ impl Series {
         match dimensions.len() {
             1 => {
                 polars_ensure!(
-                    dimensions[0].get().map_or(true, |dim| dim as usize == s_ref.len()),
+                    dimensions[0].get().is_none_or( |dim| dim as usize == s_ref.len()),
                     InvalidOperation: "cannot reshape len {} into shape {:?}", s_ref.len(), dimensions,
                 );
                 Ok(s_ref.clone())

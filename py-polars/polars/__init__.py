@@ -182,6 +182,7 @@ from polars.io import (
 from polars.io.cloud import (
     CredentialProvider,
     CredentialProviderAWS,
+    CredentialProviderAzure,
     CredentialProviderFunction,
     CredentialProviderFunctionReturn,
     CredentialProviderGCP,
@@ -280,6 +281,7 @@ __all__ = [
     # polars.io.cloud
     "CredentialProvider",
     "CredentialProviderAWS",
+    "CredentialProviderAzure",
     "CredentialProviderFunction",
     "CredentialProviderFunctionReturn",
     "CredentialProviderGCP",

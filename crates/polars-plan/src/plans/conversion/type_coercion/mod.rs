@@ -3,16 +3,13 @@ mod functions;
 #[cfg(feature = "is_in")]
 mod is_in;
 
-use std::borrow::Cow;
-
 use binary::process_binary;
 use polars_compute::cast::temporal::{time_unit_multiple, SECONDS_IN_DAY};
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_supertype, get_supertype_with_options, materialize_dyn_int};
-use polars_utils::idx_vec::UnitVec;
+use polars_utils::format_list;
 use polars_utils::itertools::Itertools;
-use polars_utils::{format_list, unitvec};
 
 use super::*;
 
@@ -67,30 +64,6 @@ fn modify_supertype(
         _ => {},
     }
     st
-}
-
-fn get_input(lp_arena: &Arena<IR>, lp_node: Node) -> UnitVec<Node> {
-    let plan = lp_arena.get(lp_node);
-    let mut inputs: UnitVec<Node> = unitvec!();
-
-    // Used to get the schema of the input.
-    if is_scan(plan) {
-        inputs.push(lp_node);
-    } else {
-        plan.copy_inputs(&mut inputs);
-    };
-    inputs
-}
-
-fn get_schema(lp_arena: &Arena<IR>, lp_node: Node) -> Cow<'_, SchemaRef> {
-    let inputs = get_input(lp_arena, lp_node);
-    if inputs.is_empty() {
-        // Files don't have an input, so we must take their schema.
-        Cow::Borrowed(lp_arena.get(lp_node).scan_schema())
-    } else {
-        let input = inputs[0];
-        lp_arena.get(input).schema(lp_arena)
-    }
 }
 
 fn get_aexpr_and_type<'a>(
@@ -271,7 +244,8 @@ impl OptimizationRule for TypeCoercionRule {
                 ref function,
                 ref input,
                 mut options,
-            } if options.cast_options.supertype.is_some() => {
+            } if options.cast_options.is_some() => {
+                let casting_rules = options.cast_options.unwrap();
                 let input_schema = get_schema(lp_arena, lp_node);
 
                 let function = function.clone();
@@ -280,33 +254,54 @@ impl OptimizationRule for TypeCoercionRule {
                 if let Some(dtypes) =
                     functions::get_function_dtypes(&input, expr_arena, &input_schema, &function)?
                 {
-                    // TODO! use args_to_supertype.
                     let self_e = input[0].clone();
                     let (self_ae, type_self) =
                         unpack!(get_aexpr_and_type(expr_arena, self_e.node(), &input_schema));
-
                     let mut super_type = type_self.clone();
-                    for other in &input[1..] {
-                        let (other, type_other) =
-                            unpack!(get_aexpr_and_type(expr_arena, other.node(), &input_schema));
+                    match casting_rules {
+                        CastingRules::Supertype(super_type_opts) => {
+                            for other in &input[1..] {
+                                let (other, type_other) = unpack!(get_aexpr_and_type(
+                                    expr_arena,
+                                    other.node(),
+                                    &input_schema
+                                ));
 
-                        let Some(new_st) = get_supertype_with_options(
-                            &super_type,
-                            &type_other,
-                            options.cast_options.supertype.unwrap(),
-                        ) else {
-                            raise_supertype(&function, &input, &input_schema, expr_arena)?;
-                            unreachable!()
-                        };
-                        if input.len() == 2 {
-                            // modify_supertype is a bit more conservative of casting columns
-                            // to literals
-                            super_type =
-                                modify_supertype(new_st, self_ae, other, &type_self, &type_other)
-                        } else {
-                            // when dealing with more than 1 argument, we simply find the supertypes
-                            super_type = new_st
-                        }
+                                let Some(new_st) = get_supertype_with_options(
+                                    &super_type,
+                                    &type_other,
+                                    super_type_opts,
+                                ) else {
+                                    raise_supertype(&function, &input, &input_schema, expr_arena)?;
+                                    unreachable!()
+                                };
+                                if input.len() == 2 {
+                                    // modify_supertype is a bit more conservative of casting columns
+                                    // to literals
+                                    super_type = modify_supertype(
+                                        new_st,
+                                        self_ae,
+                                        other,
+                                        &type_self,
+                                        &type_other,
+                                    )
+                                } else {
+                                    // when dealing with more than 1 argument, we simply find the supertypes
+                                    super_type = new_st
+                                }
+                            }
+                        },
+                        CastingRules::FirstArgLossless => {
+                            if super_type.is_integer() {
+                                for other in &input[1..] {
+                                    let other =
+                                        other.dtype(&input_schema, Context::Default, expr_arena)?;
+                                    if other.is_float() {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other)
+                                    }
+                                }
+                            }
+                        },
                     }
 
                     if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
@@ -334,7 +329,7 @@ impl OptimizationRule for TypeCoercionRule {
                 }
 
                 // Ensure we don't go through this on next iteration.
-                options.cast_options.supertype = None;
+                options.cast_options = None;
                 Some(AExpr::Function {
                     function,
                     input,
@@ -493,6 +488,7 @@ fn cast_expr_ir(
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
         if let Some(literal) = try_inline_literal_cast(lv, to_dtype, strict)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
+            e.set_dtype(to_dtype.clone());
             return Ok(());
         }
     }
@@ -502,6 +498,8 @@ fn cast_expr_ir(
         dtype: to_dtype.clone(),
         options: CastOptions::Strict,
     }));
+    e.set_dtype(to_dtype.clone());
+
     Ok(())
 }
 

@@ -46,12 +46,13 @@ pub struct FileScanOptions {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
     pub slice: Option<(i64, usize)>,
-    pub parallel: bool,
     // known row_output, estimated row output
     pub rows: (Option<usize>, usize),
+    pub parallel: bool,
     pub from_partitioned_ds: bool,
     pub flattened_by_opt: bool,
     pub rechunk: bool,
+    pub maintain_order: bool,
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
@@ -69,6 +70,30 @@ pub struct GroupbyOptions {
     pub rolling: Option<RollingGroupOptions>,
     /// Take only a slice of the result
     pub slice: Option<(i64, usize)>,
+}
+
+impl GroupbyOptions {
+    pub(crate) fn is_rolling(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.rolling.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
+
+    pub(crate) fn is_dynamic(&self) -> bool {
+        #[cfg(feature = "dynamic_group_by")]
+        {
+            self.dynamic.is_some()
+        }
+        #[cfg(not(feature = "dynamic_group_by"))]
+        {
+            false
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default, Hash)]
@@ -179,30 +204,18 @@ impl Default for FunctionFlags {
     }
 }
 
-bitflags::bitflags! {
-    #[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
-    #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-    pub struct FunctionCastFlags: u8 {}
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum CastingRules {
+    /// Whether information may be lost during cast. E.g. a float to int is considered lossy,
+    /// whereas int to int is considered lossless.
+    /// Overflowing is not considered in this flag, that's handled in `strict` casting
+    FirstArgLossless,
+    Supertype(SuperTypeOptions),
 }
 
-#[derive(Default, Clone, Copy, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct FunctionCastOptions {
-    pub flags: FunctionCastFlags,
-
-    // if the expression and its inputs should be cast to supertypes
-    // `None` -> Don't cast.
-    // `Some` -> cast with given options.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub supertype: Option<SuperTypeOptions>,
-}
-
-impl FunctionCastOptions {
-    pub fn cast_to_supertypes() -> FunctionCastOptions {
-        Self {
-            supertype: Some(Default::default()),
-            ..Default::default()
-        }
+impl CastingRules {
+    pub fn cast_to_supertypes() -> CastingRules {
+        Self::Supertype(Default::default())
     }
 }
 
@@ -213,9 +226,6 @@ pub struct FunctionOptions {
     /// This can be important in aggregation context.
     pub collect_groups: ApplyOptions,
 
-    /// Options used when deciding how to cast the arguments of the function.
-    pub cast_options: FunctionCastOptions,
-
     // Validate the output of a `map`.
     // this should always be true or we could OOB
     pub check_lengths: UnsafeBool,
@@ -224,6 +234,9 @@ pub struct FunctionOptions {
     // used for formatting, (only for anonymous functions)
     #[cfg_attr(feature = "serde", serde(skip))]
     pub fmt_str: &'static str,
+    /// Options used when deciding how to cast the arguments of the function.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub cast_options: Option<CastingRules>,
 }
 
 impl FunctionOptions {
@@ -399,6 +412,7 @@ pub struct UnionArgs {
     pub diagonal: bool,
     // If it is a union from a scan over multiple files.
     pub from_partitioned_ds: bool,
+    pub maintain_order: bool,
 }
 
 impl Default for UnionArgs {
@@ -409,6 +423,7 @@ impl Default for UnionArgs {
             to_supertypes: false,
             diagonal: false,
             from_partitioned_ds: false,
+            maintain_order: true,
         }
     }
 }
@@ -422,6 +437,7 @@ impl From<UnionArgs> for UnionOptions {
             from_partitioned_ds: args.from_partitioned_ds,
             flattened_by_opt: false,
             rechunk: args.rechunk,
+            maintain_order: args.maintain_order,
         }
     }
 }

@@ -10,7 +10,7 @@ fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AEx
         .collect();
     let mut options = FunctionOptions {
         collect_groups: ApplyOptions::ElementWise,
-        cast_options: FunctionCastOptions::cast_to_supertypes(),
+        cast_options: Some(CastingRules::cast_to_supertypes()),
         ..Default::default()
     };
     // order of operations change because of FMA

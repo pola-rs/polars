@@ -96,8 +96,7 @@ pub trait JoinDispatch: IntoDf {
         if left_join_no_duplicate_matches {
             df_self.clone()
         } else {
-            // left join tuples are always in ascending order
-            let sorted = if left_join || sorted_tuple_idx {
+            let sorted = if sorted_tuple_idx {
                 IsSorted::Ascending
             } else {
                 IsSorted::Not

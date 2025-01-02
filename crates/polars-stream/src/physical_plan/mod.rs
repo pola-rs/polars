@@ -6,6 +6,7 @@ use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_ops::frame::JoinArgs;
+use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -154,6 +155,14 @@ pub enum PhysNodeKind {
         aggs: Vec<ExprIR>,
     },
 
+    EquiJoin {
+        input_left: PhysNodeKey,
+        input_right: PhysNodeKey,
+        left_on: Vec<ExprIR>,
+        right_on: Vec<ExprIR>,
+        args: JoinArgs,
+    },
+
     /// Generic fallback for (as-of-yet) unsupported streaming joins.
     /// Fully sinks all data to in-memory data frames and uses the in-memory
     /// engine to perform the join.
@@ -163,6 +172,7 @@ pub enum PhysNodeKind {
         left_on: Vec<ExprIR>,
         right_on: Vec<ExprIR>,
         args: JoinArgs,
+        options: Option<JoinTypeOptionsIR>,
     },
 }
 
@@ -217,6 +227,11 @@ fn insert_multiplexers(
                 input_left,
                 input_right,
                 ..
+            }
+            | PhysNodeKind::EquiJoin {
+                input_left,
+                input_right,
+                ..
             } => {
                 let input_right = *input_right;
                 insert_multiplexers(*input_left, phys_sm, referenced);
@@ -240,6 +255,7 @@ pub fn build_physical_plan(
 ) -> PolarsResult<PhysNodeKey> {
     let mut schema_cache = PlHashMap::with_capacity(ir_arena.len());
     let mut expr_cache = ExprCache::with_capacity(expr_arena.len());
+    let mut cache_nodes = PlHashMap::new();
     let phys_root = lower_ir::lower_ir(
         root,
         ir_arena,
@@ -247,6 +263,7 @@ pub fn build_physical_plan(
         phys_sm,
         &mut schema_cache,
         &mut expr_cache,
+        &mut cache_nodes,
     )?;
     let mut referenced = SecondaryMap::with_capacity(phys_sm.capacity());
     insert_multiplexers(phys_root, phys_sm, &mut referenced);

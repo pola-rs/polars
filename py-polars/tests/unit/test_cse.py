@@ -647,6 +647,7 @@ def test_cse_and_schema_update_projection_pd() -> None:
 
 
 @pytest.mark.debug
+@pytest.mark.may_fail_auto_streaming
 def test_cse_predicate_self_join(capfd: Any, monkeypatch: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     y = pl.LazyFrame({"a": [1], "b": [2], "y": [3]})

@@ -21,7 +21,6 @@ mod options;
 mod predicates;
 mod read_impl;
 mod reader;
-mod to_metadata;
 mod utils;
 
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
@@ -33,6 +32,8 @@ or set 'streaming'",
 
 pub use options::{ParallelStrategy, ParquetOptions};
 use polars_error::{ErrString, PolarsError};
+pub use polars_parquet::arrow::read::infer_schema;
+pub use polars_parquet::read::FileMetadata;
 pub use read_impl::{create_sorting_map, try_set_sorted_flag};
 #[cfg(feature = "cloud")]
 pub use reader::ParquetAsyncReader;

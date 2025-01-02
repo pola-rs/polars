@@ -64,7 +64,7 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        let schema = schema_to_arrow_checked(&df.schema(), CompatLevel::oldest(), "avro")?;
+        let schema = schema_to_arrow_checked(df.schema(), CompatLevel::oldest(), "avro")?;
         let record = write::to_record(&schema, self.name.clone())?;
 
         let mut data = vec![];

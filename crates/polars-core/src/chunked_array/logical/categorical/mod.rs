@@ -14,7 +14,7 @@ pub use revmap::*;
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::using_string_cache;
@@ -174,15 +174,15 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn get_flags(&self) -> MetadataFlags {
+    pub(crate) fn get_flags(&self) -> StatisticsFlags {
         self.physical().get_flags()
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, mut flags: MetadataFlags) {
+    pub(crate) fn set_flags(&mut self, mut flags: StatisticsFlags) {
         // We should not set the sorted flag if we are sorting in lexical order
         if self.uses_lexical_ordering() {
-            flags.set_sorted_flag(IsSorted::Not)
+            flags.set_sorted(IsSorted::Not)
         }
         self.physical_mut().set_flags(flags)
     }

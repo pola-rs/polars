@@ -31,10 +31,11 @@ impl CategoricalChunked {
                 Ok(out)
             }
         } else {
+            let has_nulls = (self.null_count() > 0) as u32;
             let mut state = match cat_map.as_ref() {
                 RevMapping::Global(map, values, _) => {
                     if self.is_enum() {
-                        PrimitiveRangedUniqueState::new(0, values.len() as u32 + 1)
+                        PrimitiveRangedUniqueState::new(0, values.len() as u32 + has_nulls)
                     } else {
                         let mut min = u32::MAX;
                         let mut max = 0u32;
@@ -44,11 +45,11 @@ impl CategoricalChunked {
                             max = max.max(v);
                         }
 
-                        PrimitiveRangedUniqueState::new(min, max)
+                        PrimitiveRangedUniqueState::new(min, max + has_nulls)
                     }
                 },
                 RevMapping::Local(values, _) => {
-                    PrimitiveRangedUniqueState::new(0, values.len() as u32 + 1)
+                    PrimitiveRangedUniqueState::new(0, values.len() as u32 + has_nulls)
                 },
             };
 

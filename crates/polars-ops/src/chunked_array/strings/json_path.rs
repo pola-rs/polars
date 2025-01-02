@@ -141,6 +141,8 @@ impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
+
     use super::*;
 
     #[test]
@@ -215,7 +217,7 @@ mod tests {
             .iter(),
         )
         .unwrap()
-        .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))
+        .with_outer_validity(Some(Bitmap::from_iter([false, true, true, false])))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 

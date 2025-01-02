@@ -318,13 +318,12 @@ impl SlicePushDown {
 
                 Ok(lp)
             },
-            (DataFrameScan {df, schema, output_schema, filter, }, Some(state)) if filter.is_none() => {
+            (DataFrameScan {df, schema, output_schema, }, Some(state))  => {
                 let df = df.slice(state.offset, state.len as usize);
                 let lp = DataFrameScan {
                     df: Arc::new(df),
                     schema,
                     output_schema,
-                    filter
                 };
                 Ok(lp)
             }
@@ -355,7 +354,7 @@ impl SlicePushDown {
                 left_on,
                 right_on,
                 mut options
-            }, Some(state)) if !self.streaming => {
+            }, Some(state)) if !self.streaming && !matches!(options.options, Some(JoinTypeOptionsIR::Cross { .. })) => {
                 // first restart optimization in both inputs and get the updated LP
                 let lp_left = lp_arena.take(input_left);
                 let lp_left = self.pushdown(lp_left, None, lp_arena, expr_arena)?;

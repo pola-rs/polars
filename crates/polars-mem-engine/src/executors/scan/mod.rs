@@ -33,13 +33,11 @@ use crate::prelude::*;
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
     pub(crate) df: Arc<DataFrame>,
-    pub(crate) filter: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) projection: Option<Vec<PlSmallStr>>,
-    pub(crate) predicate_has_windows: bool,
 }
 
 impl Executor for DataFrameExec {
-    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+    fn execute(&mut self, _state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let df = mem::take(&mut self.df);
         let mut df = Arc::try_unwrap(df).unwrap_or_else(|df| (*df).clone());
 
@@ -47,20 +45,6 @@ impl Executor for DataFrameExec {
         // TODO: this is only the case if we don't create new columns
         if let Some(projection) = &self.projection {
             df = df.select(projection.iter().cloned())?;
-        }
-
-        if let Some(selection) = &self.filter {
-            if self.predicate_has_windows {
-                state.insert_has_window_function_flag()
-            }
-            let s = selection.evaluate(&df, state)?;
-            if self.predicate_has_windows {
-                state.clear_window_expr_cache()
-            }
-            let mask = s.bool().map_err(
-                |_| polars_err!(ComputeError: "filter predicate was not of type boolean"),
-            )?;
-            df = df.filter(mask)?;
         }
 
         Ok(match _set_n_rows_for_scan(None) {

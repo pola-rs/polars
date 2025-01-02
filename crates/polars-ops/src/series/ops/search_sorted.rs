@@ -12,6 +12,11 @@ pub fn search_sorted(
         unimplemented!("Categorical search_sorted() can give incorrect result until https://github.com/pola-rs/polars/issues/20318 is fixed");
     }
     let original_dtype = s.dtype();
+
+    if s.dtype().is_categorical() {
+        polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
+    }
+
     let s = s.to_physical_repr();
     let phys_dtype = s.dtype();
 

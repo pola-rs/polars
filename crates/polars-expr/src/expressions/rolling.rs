@@ -59,6 +59,10 @@ impl PhysicalExpr for RollingExpr {
         polars_bail!(InvalidOperation: "rolling expression not allowed in aggregation");
     }
 
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        self.phys_function.collect_live_columns(lv);
+    }
+
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.function.to_field(input_schema, Context::Default)
     }

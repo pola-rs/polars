@@ -1,10 +1,10 @@
+use arrow::array::{GenericBinaryArray, PrimitiveArray};
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::buffer::Buffer;
+use arrow::offset::{Offset, Offsets, OffsetsBuffer};
 use polars_utils::vec::{CapacityByFactor, PushUnchecked};
 
 use super::Index;
-use crate::array::{GenericBinaryArray, PrimitiveArray};
-use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::buffer::Buffer;
-use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
 fn create_offsets<I: Iterator<Item = usize>, O: Offset>(
     lengths: I,
@@ -73,7 +73,7 @@ pub(super) unsafe fn take_values_validity<O: Offset, I: Index, A: GenericBinaryA
         .map(|index| validity_values.get_bit_unchecked(index.to_usize()));
     let validity = Bitmap::from_trusted_len_iter(validity);
 
-    let mut length = O::default();
+    let mut total_length = O::default();
 
     let offsets = values.offsets();
     let values_values = values.values();
@@ -82,12 +82,13 @@ pub(super) unsafe fn take_values_validity<O: Offset, I: Index, A: GenericBinaryA
     let lengths = indices.iter().map(|index| {
         let index = index.to_usize();
         let start = *offsets.get_unchecked(index);
-        length += *offsets.get_unchecked(index + 1) - start;
+        let length = *offsets.get_unchecked(index + 1) - start;
+        total_length += length;
         starts.push_unchecked(start);
         length.to_usize()
     });
     let offsets = create_offsets(lengths, indices.len());
-    let buffer = take_values(length, starts.as_slice(), &offsets, values_values);
+    let buffer = take_values(total_length, starts.as_slice(), &offsets, values_values);
 
     (offsets, buffer, validity.into())
 }
@@ -98,26 +99,31 @@ pub(super) unsafe fn take_indices_validity<O: Offset, I: Index>(
     values: &[u8],
     indices: &PrimitiveArray<I>,
 ) -> (OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
-    let mut length = O::default();
+    let mut total_length = O::default();
 
     let offsets = offsets.buffer();
 
     let mut starts = Vec::<O>::with_capacity(indices.len());
     let lengths = indices.values().iter().map(|index| {
         let index = index.to_usize();
+        let length;
         match offsets.get(index + 1) {
             Some(&next) => {
                 let start = *offsets.get_unchecked(index);
-                length += next - start;
+                length = next - start;
+                total_length += length;
                 starts.push_unchecked(start);
             },
-            None => starts.push_unchecked(O::default()),
+            None => {
+                length = O::zero();
+                starts.push_unchecked(O::default());
+            },
         };
         length.to_usize()
     });
     let offsets = create_offsets(lengths, indices.len());
 
-    let buffer = take_values(length, &starts, &offsets, values);
+    let buffer = take_values(total_length, &starts, &offsets, values);
 
     (offsets, buffer, indices.validity().cloned())
 }
@@ -127,7 +133,7 @@ pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: Generi
     values: &A,
     indices: &PrimitiveArray<I>,
 ) -> (OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
-    let mut length = O::default();
+    let mut total_length = O::default();
     let mut validity = MutableBitmap::with_capacity(indices.len());
 
     let values_validity = values.validity().unwrap();
@@ -136,28 +142,32 @@ pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: Generi
 
     let mut starts = Vec::<O>::with_capacity(indices.len());
     let lengths = indices.iter().map(|index| {
+        let length;
         match index {
             Some(index) => {
                 let index = index.to_usize();
                 if values_validity.get_bit(index) {
                     validity.push(true);
-                    length += *offsets.get_unchecked(index + 1) - *offsets.get_unchecked(index);
+                    length = *offsets.get_unchecked(index + 1) - *offsets.get_unchecked(index);
                     starts.push_unchecked(*offsets.get_unchecked(index));
                 } else {
                     validity.push(false);
+                    length = O::zero();
                     starts.push_unchecked(O::default());
                 }
             },
             None => {
                 validity.push(false);
+                length = O::zero();
                 starts.push_unchecked(O::default());
             },
         };
+        total_length += length;
         length.to_usize()
     });
     let offsets = create_offsets(lengths, indices.len());
 
-    let buffer = take_values(length, &starts, &offsets, values_values);
+    let buffer = take_values(total_length, &starts, &offsets, values_values);
 
     (offsets, buffer, validity.into())
 }

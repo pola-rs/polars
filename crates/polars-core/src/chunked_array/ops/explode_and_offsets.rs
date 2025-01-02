@@ -1,5 +1,5 @@
-use arrow::compute::take::take_unchecked;
 use arrow::offset::OffsetsBuffer;
+use polars_compute::gather::take_unchecked;
 
 use super::*;
 

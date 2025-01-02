@@ -269,21 +269,13 @@ impl<'a> IRBuilder<'a> {
         let schema_left = self.schema();
         let schema_right = self.lp_arena.get(other).schema(self.lp_arena);
 
-        let left_on_exprs = left_on
-            .iter()
-            .map(|e| e.to_expr(self.expr_arena))
-            .collect::<Vec<_>>();
-        let right_on_exprs = right_on
-            .iter()
-            .map(|e| e.to_expr(self.expr_arena))
-            .collect::<Vec<_>>();
-
         let schema = det_join_schema(
             &schema_left,
             &schema_right,
-            &left_on_exprs,
-            &right_on_exprs,
+            &left_on,
+            &right_on,
             &options,
+            self.expr_arena,
         )
         .unwrap();
 

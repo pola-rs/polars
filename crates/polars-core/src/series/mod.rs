@@ -1,4 +1,5 @@
 //! Type agnostic columnar data structure.
+use crate::chunked_array::flags::StatisticsFlags;
 pub use crate::prelude::ChunkCompareEq;
 use crate::prelude::*;
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
@@ -34,11 +35,9 @@ pub use from::*;
 pub use iterator::{SeriesIter, SeriesPhysIter};
 use num_traits::NumCast;
 use polars_error::feature_gated;
-use polars_utils::itertools::Itertools;
 pub use series_trait::{IsSorted, *};
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::{IMMetadata, Metadata, MetadataFlags};
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::utils::{handle_casting_failures, materialize_dyn_int, Wrap};
@@ -215,21 +214,10 @@ impl Series {
     // TODO! this probably can now be removed, now we don't have special case for structs.
     pub fn select_chunk(&self, i: usize) -> Self {
         let mut new = self.clear();
-        let flags = self.get_flags();
+        let mut flags = self.get_flags();
 
-        let mut new_flags = MetadataFlags::empty();
-        new_flags.set(
-            MetadataFlags::SORTED_ASC,
-            flags.contains(MetadataFlags::SORTED_ASC),
-        );
-        new_flags.set(
-            MetadataFlags::SORTED_DSC,
-            flags.contains(MetadataFlags::SORTED_DSC),
-        );
-        new_flags.set(
-            MetadataFlags::FAST_EXPLODE_LIST,
-            flags.contains(MetadataFlags::FAST_EXPLODE_LIST),
-        );
+        use StatisticsFlags as F;
+        flags &= F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST;
 
         // Assign mut so we go through arc only once.
         let mut_new = new._get_inner_mut();
@@ -238,7 +226,7 @@ impl Series {
         chunks.clear();
         chunks.push(chunk);
         mut_new.compute_len();
-        mut_new._set_flags(new_flags);
+        mut_new._set_flags(flags);
         new
     }
 
@@ -246,31 +234,23 @@ impl Series {
         if self.len() <= 1 {
             return IsSorted::Ascending;
         }
-        let flags = self.get_flags();
-        if flags.contains(MetadataFlags::SORTED_DSC) {
-            IsSorted::Descending
-        } else if flags.contains(MetadataFlags::SORTED_ASC) {
-            IsSorted::Ascending
-        } else {
-            IsSorted::Not
-        }
+        self.get_flags().is_sorted()
     }
 
     pub fn set_sorted_flag(&mut self, sorted: IsSorted) {
         let mut flags = self.get_flags();
-        flags.set_sorted_flag(sorted);
+        flags.set_sorted(sorted);
         self.set_flags(flags);
     }
 
     pub(crate) fn clear_flags(&mut self) {
-        self.set_flags(MetadataFlags::empty());
+        self.set_flags(StatisticsFlags::empty());
     }
-    #[allow(dead_code)]
-    pub fn get_flags(&self) -> MetadataFlags {
+    pub fn get_flags(&self) -> StatisticsFlags {
         self.0._get_flags()
     }
 
-    pub(crate) fn set_flags(&mut self, flags: MetadataFlags) {
+    pub(crate) fn set_flags(&mut self, flags: StatisticsFlags) {
         self._get_inner_mut()._set_flags(flags)
     }
 
@@ -289,24 +269,6 @@ impl Series {
     pub fn with_name(mut self, name: PlSmallStr) -> Series {
         self.rename(name);
         self
-    }
-
-    ///  to set the [`Metadata`] for the underlying [`ChunkedArray`]
-    ///
-    /// This does not guarantee that the [`Metadata`] is always set. It returns whether it was
-    /// successful.
-    pub fn try_set_metadata<T: PolarsDataType + 'static>(&mut self, metadata: Metadata<T>) -> bool {
-        let inner = self._get_inner_mut();
-
-        // @NOTE: These types are not the same if they are logical for example. For now, we just
-        // say: do not set the metadata when you get into this situation. This can be a @TODO for
-        // later.
-        if &T::get_dtype() != inner.dtype() {
-            return false;
-        }
-
-        inner.as_mut().md = Arc::new(IMMetadata::new(metadata));
-        true
     }
 
     pub fn from_arrow_chunks(name: PlSmallStr, arrays: Vec<ArrayRef>) -> PolarsResult<Series> {
@@ -627,25 +589,29 @@ impl Series {
         }
     }
 
-    /// Check if float value is NaN (note this is different than missing/ null)
+    /// Check if numeric value is NaN (note this is different than missing/ null)
     pub fn is_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), false, self.len()))
+                let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_nan, self.dtype()),
         }
     }
 
-    /// Check if float value is NaN (note this is different than missing/null)
+    /// Check if numeric value is NaN (note this is different than missing/null)
     pub fn is_not_nan(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), true, self.len()))
+                let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_not_nan, self.dtype()),
         }
@@ -657,19 +623,23 @@ impl Series {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), true, self.len()))
+                let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_finite, self.dtype()),
         }
     }
 
-    /// Check if float value is infinite
+    /// Check if numeric value is infinite
     pub fn is_infinite(&self) -> PolarsResult<BooleanChunked> {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
             dt if dt.is_numeric() => {
-                Ok(BooleanChunked::full(self.name().clone(), false, self.len()))
+                let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
+                    .with_validity(self.rechunk_validity());
+                Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
             },
             _ => polars_bail!(opq = is_infinite, self.dtype()),
         }
@@ -716,105 +686,21 @@ impl Series {
             },
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, _) => Cow::Owned(self.decimal().unwrap().0.clone().into_series()),
-            List(inner) => Cow::Owned(self.cast(&List(Box::new(inner.to_physical()))).unwrap()),
+            List(_) => match self.list().unwrap().to_physical_repr() {
+                Cow::Borrowed(_) => Cow::Borrowed(self),
+                Cow::Owned(ca) => Cow::Owned(ca.into_series()),
+            },
             #[cfg(feature = "dtype-array")]
-            Array(inner, size) => Cow::Owned(
-                self.cast(&Array(Box::new(inner.to_physical()), *size))
-                    .unwrap(),
-            ),
+            Array(_, _) => match self.array().unwrap().to_physical_repr() {
+                Cow::Borrowed(_) => Cow::Borrowed(self),
+                Cow::Owned(ca) => Cow::Owned(ca.into_series()),
+            },
             #[cfg(feature = "dtype-struct")]
-            Struct(_) => {
-                let arr = self.struct_().unwrap();
-                let fields: Vec<_> = arr
-                    .fields_as_series()
-                    .iter()
-                    .map(|s| s.to_physical_repr().into_owned())
-                    .collect();
-                let mut ca =
-                    StructChunked::from_series(self.name().clone(), arr.len(), fields.iter())
-                        .unwrap();
-
-                if arr.null_count() > 0 {
-                    ca.zip_outer_validity(arr);
-                }
-                Cow::Owned(ca.into_series())
+            Struct(_) => match self.struct_().unwrap().to_physical_repr() {
+                Cow::Borrowed(_) => Cow::Borrowed(self),
+                Cow::Owned(ca) => Cow::Owned(ca.into_series()),
             },
             _ => Cow::Borrowed(self),
-        }
-    }
-
-    /// Attempts to convert a Series to dtype, only allowing conversions from
-    /// physical to logical dtypes--the inverse of to_physical_repr().
-    ///
-    /// # Safety
-    /// When converting from UInt32 to Categorical it is not checked that the
-    /// values are in-bound for the categorical mapping.
-    pub unsafe fn to_logical_repr_unchecked(&self, dtype: &DataType) -> PolarsResult<Series> {
-        use DataType::*;
-
-        let err = || {
-            Err(
-                polars_err!(ComputeError: "can't cast from {} to {} in to_logical_repr_unchecked", self.dtype(), dtype),
-            )
-        };
-
-        match dtype {
-            dt if self.dtype() == dt => Ok(self.clone()),
-            #[cfg(feature = "dtype-date")]
-            Date => Ok(self.i32()?.clone().into_date().into_series()),
-            #[cfg(feature = "dtype-datetime")]
-            Datetime(u, z) => Ok(self
-                .i64()?
-                .clone()
-                .into_datetime(*u, z.clone())
-                .into_series()),
-            #[cfg(feature = "dtype-duration")]
-            Duration(u) => Ok(self.i64()?.clone().into_duration(*u).into_series()),
-            #[cfg(feature = "dtype-time")]
-            Time => Ok(self.i64()?.clone().into_time().into_series()),
-            #[cfg(feature = "dtype-decimal")]
-            Decimal(precision, scale) => Ok(self
-                .i128()?
-                .clone()
-                .into_decimal(*precision, scale.unwrap())?
-                .into_series()),
-            #[cfg(feature = "dtype-categorical")]
-            Categorical { .. } | Enum { .. } => {
-                Ok(CategoricalChunked::from_cats_and_dtype_unchecked(
-                    self.u32()?.clone(),
-                    dtype.clone(),
-                )
-                .into_series())
-            },
-            List(inner) => {
-                if let List(self_inner) = self.dtype() {
-                    if inner.to_physical() == **self_inner {
-                        return self.cast(dtype);
-                    }
-                }
-                err()
-            },
-            #[cfg(feature = "dtype-struct")]
-            Struct(target_fields) => {
-                let ca = self.struct_().unwrap();
-                if ca.struct_fields().len() != target_fields.len() {
-                    return err();
-                }
-                let fields = ca
-                    .fields_as_series()
-                    .iter()
-                    .zip(target_fields)
-                    .map(|(s, tf)| s.to_logical_repr_unchecked(tf.dtype()))
-                    .try_collect_vec()?;
-                let mut result =
-                    StructChunked::from_series(self.name().clone(), ca.len(), fields.iter())?;
-                if ca.null_count() > 0 {
-                    result.zip_outer_validity(ca);
-                }
-                Ok(result.into_series())
-            },
-
-            _ => err(),
         }
     }
 
@@ -861,6 +747,8 @@ impl Series {
                 },
                 Int64 => Ok(self.i64().unwrap().prod_reduce()),
                 UInt64 => Ok(self.u64().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-i128")]
+                Int128 => Ok(self.i128().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {

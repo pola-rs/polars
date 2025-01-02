@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 
 @pytest.mark.parametrize("op", ["and_", "or_"])
@@ -80,20 +81,7 @@ def trailing_ones(v: int | None) -> int | None:
         None,
     ],
 )
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Boolean,
-    ],
-)
+@pytest.mark.parametrize("dtype", [*INTEGER_DTYPES, pl.Boolean])
 @pytest.mark.skipif(sys.version_info < (3, 10), reason="bit_count introduced in 3.10")
 @typing.no_type_check
 def test_bit_counts(value: int, dtype: pl.DataType) -> None:
@@ -106,6 +94,8 @@ def test_bit_counts(value: int, dtype: pl.DataType) -> None:
         bitsize = 32
     elif "64" in str(dtype):
         bitsize = 64
+    elif "128" in str(dtype):
+        bitsize = 128
 
     if bitsize == 1 and value is not None:
         value = value & 1 != 0
@@ -150,10 +140,7 @@ def test_bit_counts(value: int, dtype: pl.DataType) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
-)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bit_aggregations(dtype: pl.DataType) -> None:
     s = pl.Series("a", [0x74, 0x1C, 0x05], dtype)
 
@@ -175,10 +162,7 @@ def test_bit_aggregations(dtype: pl.DataType) -> None:
     )
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
-)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bit_group_by(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [

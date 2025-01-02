@@ -24,7 +24,6 @@ fn empty_df() -> IR {
         df: Arc::new(Default::default()),
         schema: Arc::new(Default::default()),
         output_schema: None,
-        filter: None,
     }
 }
 
@@ -63,12 +62,13 @@ pub fn to_alp(
     lp: DslPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
-    // Only `SIMPLIFY_EXPR` and `TYPE_COERCION` are respected.
+    // Only `SIMPLIFY_EXPR`, `TYPE_COERCION`, `TYPE_CHECK` are respected.
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Node> {
     let conversion_optimizer = ConversionOptimizer::new(
         opt_flags.contains(OptFlags::SIMPLIFY_EXPR),
         opt_flags.contains(OptFlags::TYPE_COERCION),
+        opt_flags.contains(OptFlags::TYPE_CHECK),
     );
 
     let mut ctxt = DslConversionContext {
@@ -163,21 +163,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                 let sources = match &scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
-                        ref cloud_options, ..
-                    } => sources
+                    FileScan::Parquet { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
-                        ref cloud_options, ..
-                    } => sources
+                    FileScan::Ipc { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
                     #[cfg(feature = "csv")]
-                    FileScan::Csv {
-                        ref cloud_options, ..
-                    } => sources.expand_paths(&file_options, cloud_options.as_ref())?,
+                    FileScan::Csv { cloud_options, .. } => {
+                        sources.expand_paths(&file_options, cloud_options.as_ref())?
+                    },
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => sources.expand_paths(&file_options, None)?,
+                    FileScan::NDJson { cloud_options, .. } => {
+                        sources.expand_paths(&file_options, cloud_options.as_ref())?
+                    },
                     FileScan::Anonymous { .. } => sources,
                 };
 
@@ -343,7 +341,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,
                         output_schema: None,
-                        filter: None,
                     }
                 } else {
                     IR::Scan {
@@ -380,6 +377,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 convert_utils::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
                     .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
+
+            let first = *inputs.first().ok_or_else(
+                || polars_err!(InvalidOperation: "expected at least one input in 'union'/'concat'"),
+            )?;
+            let schema = ctxt.lp_arena.get(first).schema(ctxt.lp_arena);
+            for n in &inputs[1..] {
+                let schema_i = ctxt.lp_arena.get(*n).schema(ctxt.lp_arena);
+                // The first argument
+                schema_i.matches_schema(schema.as_ref()).map_err(|_| polars_err!(InvalidOperation:  "'union'/'concat' inputs should all have the same schema,\
+                    got\n{:?} and \n{:?}", schema, schema_i)
+                )?;
+            }
+
             let options = args.into();
             IR::Union { inputs, options }
         },
@@ -433,6 +443,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         predicates.push(n)
                     }
                 }
+                let multiple_filters = predicates.len() > 1;
 
                 for predicate in predicates {
                     let predicate = ExprIR::from_node(predicate, ctxt.expr_arena);
@@ -441,6 +452,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let lp = IR::Filter { input, predicate };
                     input = run_conversion(lp, ctxt, "filter")?;
                 }
+
+                // Ensure that predicate are combined by optimizer
+                if ctxt.opt_flags.eager() && multiple_filters {
+                    ctxt.opt_flags.insert(OptFlags::EAGER);
+                }
+
                 Ok(input)
             } else {
                 ctxt.conversion_optimizer
@@ -461,7 +478,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             df,
             schema,
             output_schema: None,
-            filter: None,
         },
         DslPlan::Select {
             expr,
@@ -637,6 +653,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt,
             )
             .map_err(|e| e.context(failed_here!(join)))
+            .map(|t| t.0)
         },
         DslPlan::HStack {
             input,
@@ -666,8 +683,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let subset = options
                 .subset
-                .map(|s| expand_selectors(s, input_schema.as_ref(), &[]))
+                .map(|s| {
+                    let cols = expand_selectors(s, input_schema.as_ref(), &[])?;
+
+                    // Checking if subset columns exist in the dataframe
+                    for col in cols.iter() {
+                        let _ = input_schema
+                            .try_get(col)
+                            .map_err(|_| polars_err!(col_not_found = col))?;
+                    }
+
+                    Ok::<_, PolarsError>(cols)
+                })
                 .transpose()?;
+
             let options = DistinctOptionsIR {
                 subset,
                 maintain_order: options.maintain_order,
@@ -978,7 +1007,7 @@ fn resolve_with_columns(
             );
             polars_bail!(ComputeError: msg)
         }
-        new_schema.with_column(field.name().clone(), field.dtype().clone());
+        new_schema.with_column(field.name, field.dtype.materialize_unknown(true)?);
         arena.clear();
     }
 

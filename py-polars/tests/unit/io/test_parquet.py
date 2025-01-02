@@ -5,7 +5,7 @@ import io
 from datetime import datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
-from typing import IO, TYPE_CHECKING, Any, Callable, Literal, cast
+from typing import TYPE_CHECKING, Any, Callable, Literal, cast
 
 import fsspec
 import numpy as np
@@ -1374,7 +1374,13 @@ def test_struct_plain_encoded_statistics() -> None:
     test_scan_round_trip(df)
 
 
-@given(df=dataframes(min_size=5, excluded_dtypes=[pl.Decimal, pl.Categorical]))
+@given(
+    df=dataframes(
+        min_size=5,
+        excluded_dtypes=[pl.Decimal, pl.Categorical],
+        allow_masked_out=False,  # PyArrow does not support this
+    )
+)
 def test_scan_round_trip_parametric(df: pl.DataFrame) -> None:
     test_scan_round_trip(df)
 
@@ -1435,6 +1441,7 @@ def test_null_array_dict_pages_18085() -> None:
             pl.UInt32,
             pl.UInt64,
         ],
+        allow_masked_out=False,  # PyArrow does not support this
     ),
     row_group_size=st.integers(min_value=10, max_value=1000),
 )
@@ -1570,6 +1577,7 @@ def test_predicate_filtering(
             pl.Enum,
             pl.Struct,  # See #19612.
         ],
+        allow_masked_out=False,  # PyArrow does not support this
     ),
     offset=st.integers(0, 10),
     length=st.integers(0, 10),
@@ -1886,49 +1894,6 @@ def test_row_index_projection_pushdown_18463(
         df.select("index").slice(1, 1).collect(),
         df.collect().select("index").slice(1, 1),
     )
-
-
-def test_concat_multiple_inmem() -> None:
-    f = io.BytesIO()
-    g = io.BytesIO()
-
-    df1 = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": ["xyz", "abc", "wow"],
-        }
-    )
-    df2 = pl.DataFrame(
-        {
-            "a": [5, 6, 7],
-            "b": ["a", "few", "entries"],
-        }
-    )
-
-    dfs = pl.concat([df1, df2])
-
-    df1.write_parquet(f)
-    df2.write_parquet(g)
-
-    f.seek(0)
-    g.seek(0)
-
-    items: list[IO[bytes]] = [f, g]
-    assert_frame_equal(pl.read_parquet(items), dfs)
-
-    f.seek(0)
-    g.seek(0)
-
-    assert_frame_equal(pl.read_parquet(items, use_pyarrow=True), dfs)
-
-    f.seek(0)
-    g.seek(0)
-
-    fb = f.read()
-    gb = g.read()
-
-    assert_frame_equal(pl.read_parquet([fb, gb]), dfs)
-    assert_frame_equal(pl.read_parquet([fb, gb], use_pyarrow=True), dfs)
 
 
 @pytest.mark.write_disk
@@ -2710,3 +2675,17 @@ def test_boolean_slice_pushdown_20314() -> None:
 
     f.seek(0)
     assert pl.scan_parquet(f).slice(2, 1).collect().item()
+
+
+def test_load_pred_pushdown_fsl_19241() -> None:
+    f = io.BytesIO()
+
+    fsl = pl.Series("a", [[[1, 2]]], pl.Array(pl.Array(pl.Int8, 2), 1))
+    filt = pl.Series("f", [1])
+
+    pl.DataFrame([fsl, filt]).write_parquet(f)
+
+    f.seek(0)
+    q = pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f != 4)
+
+    assert_frame_equal(q.collect(), pl.DataFrame([fsl, filt]))

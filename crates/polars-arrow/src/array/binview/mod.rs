@@ -174,7 +174,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             // }
 
             for (i, view) in views.iter().enumerate() {
-                let is_valid = validity.as_ref().map_or(true, |v| v.get_bit(i));
+                let is_valid = validity.as_ref().is_none_or(|v| v.get_bit(i));
 
                 if !is_valid {
                     continue;
@@ -600,7 +600,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         debug_assert!(
-            validity.as_ref().map_or(true, |v| v.len() == self.len()),
+            validity.as_ref().is_none_or(|v| v.len() == self.len()),
             "{} != {}",
             validity.as_ref().unwrap().len(),
             self.len()

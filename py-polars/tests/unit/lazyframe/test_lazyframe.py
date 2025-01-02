@@ -19,7 +19,7 @@ from polars.exceptions import (
     PolarsInefficientMapWarning,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import FLOAT_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from _pytest.capture import CaptureFixture
@@ -488,25 +488,55 @@ def test_len() -> None:
     assert cast(int, ldf.select(pl.col("nrs").len()).collect().item()) == 3
 
 
-def test_cum_agg() -> None:
-    ldf = pl.LazyFrame({"a": [1, 2, 3, 2]})
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
+def test_cum_agg(dtype: PolarsDataType) -> None:
+    ldf = pl.LazyFrame({"a": [1, 2, 3, 2]}, schema={"a": dtype})
     assert_series_equal(
-        ldf.select(pl.col("a").cum_sum()).collect()["a"], pl.Series("a", [1, 3, 6, 8])
+        ldf.select(pl.col("a").cum_min()).collect()["a"],
+        pl.Series("a", [1, 1, 1, 1], dtype=dtype),
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cum_min()).collect()["a"], pl.Series("a", [1, 1, 1, 1])
+        ldf.select(pl.col("a").cum_max()).collect()["a"],
+        pl.Series("a", [1, 2, 3, 3], dtype=dtype),
+    )
+
+    expected_dtype = (
+        pl.Int64 if dtype in [pl.Int8, pl.Int16, pl.UInt8, pl.UInt16] else dtype
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cum_max()).collect()["a"], pl.Series("a", [1, 2, 3, 3])
+        ldf.select(pl.col("a").cum_sum()).collect()["a"],
+        pl.Series("a", [1, 3, 6, 8], dtype=expected_dtype),
+    )
+
+    expected_dtype = (
+        pl.Int64
+        if dtype in [pl.Int8, pl.Int16, pl.Int32, pl.UInt8, pl.UInt16, pl.UInt32]
+        else dtype
     )
     assert_series_equal(
-        ldf.select(pl.col("a").cum_prod()).collect()["a"], pl.Series("a", [1, 2, 6, 12])
+        ldf.select(pl.col("a").cum_prod()).collect()["a"],
+        pl.Series("a", [1, 2, 6, 12], dtype=expected_dtype),
     )
+
+
+def test_ceil() -> None:
+    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]})
+    result = ldf.select(pl.col("a").ceil()).collect()
+    assert_frame_equal(result, pl.DataFrame({"a": [2.0, 2.0, 3.0]}))
+
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    result = ldf.select(pl.col("a").ceil()).collect()
+    assert_frame_equal(ldf.collect(), result)
 
 
 def test_floor() -> None:
-    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]}).select(pl.col("a").floor())
-    assert_series_equal(ldf.collect()["a"], pl.Series("a", [1, 1, 3]).cast(pl.Float64))
+    ldf = pl.LazyFrame({"a": [1.8, 1.2, 3.0]})
+    result = ldf.select(pl.col("a").floor()).collect()
+    assert_frame_equal(result, pl.DataFrame({"a": [1.0, 1.0, 3.0]}))
+
+    ldf = pl.LazyFrame({"a": [1, 2, 3]})
+    result = ldf.select(pl.col("a").floor()).collect()
+    assert_frame_equal(ldf.collect(), result)
 
 
 @pytest.mark.parametrize(
@@ -1124,6 +1154,7 @@ def test_lazy_cache_same_key() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_lazy_cache_hit(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
 

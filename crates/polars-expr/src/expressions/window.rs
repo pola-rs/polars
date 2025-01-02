@@ -399,7 +399,7 @@ impl PhysicalExpr for WindowExpr {
         // 4. select the final column and return
 
         if df.is_empty() {
-            let field = self.phys_function.to_field(&df.schema())?;
+            let field = self.phys_function.to_field(df.schema())?;
             return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
         }
 
@@ -639,6 +639,16 @@ impl PhysicalExpr for WindowExpr {
 
     fn is_scalar(&self) -> bool {
         false
+    }
+
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        for i in &self.group_by {
+            i.collect_live_columns(lv);
+        }
+        if let Some((i, _)) = &self.order_by {
+            i.collect_live_columns(lv);
+        }
+        self.phys_function.collect_live_columns(lv);
     }
 
     #[allow(clippy::ptr_arg)]

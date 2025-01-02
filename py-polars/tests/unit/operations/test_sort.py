@@ -34,7 +34,10 @@ def test_series_sort_idempotent(s: pl.Series) -> None:
             pl.Object,  # Unsortable type
             pl.Null,  # Bug, see: https://github.com/pola-rs/polars/issues/17007
             pl.Decimal,  # Bug, see: https://github.com/pola-rs/polars/issues/17009
-        ]
+            pl.Categorical(
+                ordering="lexical"
+            ),  # Bug, see: https://github.com/pola-rs/polars/issues/20364
+        ],
     )
 )
 def test_df_sort_idempotent(df: pl.DataFrame) -> None:
@@ -120,7 +123,7 @@ def test_sort_by(
     assert out["a"].to_list() == expected[2]
 
     # by can also be a single column
-    out = df.select(pl.col("a").sort_by("b", descending=[False]))
+    out = df.select(pl.col("a").sort_by("b", descending=[False], maintain_order=True))
     assert out["a"].to_list() == expected[3]
 
 
@@ -140,17 +143,21 @@ def test_expr_sort_by_nulls_last(
     df = sort_function(df)
 
     # nulls last
-    expected = pl.DataFrame({"a": [1, 2, 5, None, None], "b": [None, 1, None, 1, 2]})
     out = df.select(pl.all().sort_by("a", nulls_last=True))
-    assert_frame_equal(out, expected)
+    assert out["a"].to_list() == [1, 2, 5, None, None]
+    # We don't maintain order so there are two possibilities
+    assert out["b"].to_list()[:3] == [None, 1, None]
+    assert out["b"].to_list()[3:] in [[1, 2], [2, 1]]
 
     # nulls first (default)
-    expected = pl.DataFrame({"a": [None, None, 1, 2, 5], "b": [1, 2, None, 1, None]})
     for out in (
         df.select(pl.all().sort_by("a", nulls_last=False)),
         df.select(pl.all().sort_by("a")),
     ):
-        assert_frame_equal(out, expected)
+        assert out["a"].to_list() == [None, None, 1, 2, 5]
+        # We don't maintain order so there are two possibilities
+        assert out["b"].to_list()[2:] == [None, 1, None]
+        assert out["b"].to_list()[:2] in [[1, 2], [2, 1]]
 
 
 def test_expr_sort_by_multi_nulls_last() -> None:
@@ -374,16 +381,30 @@ def test_sorted_join_and_dtypes(dtype: PolarsDataType) -> None:
     )
 
     result_inner = df_a.join(df_b, on="a", how="inner")
-    assert result_inner.to_dict(as_series=False) == {
-        "index": [1, 2, 3, 5],
-        "a": [-2, 3, 3, 10],
-    }
+    assert_frame_equal(
+        result_inner,
+        pl.DataFrame(
+            {
+                "index": [1, 2, 3, 5],
+                "a": [-2, 3, 3, 10],
+            },
+            schema={"index": pl.UInt32, "a": dtype},
+        ),
+        check_row_order=False,
+    )
 
     result_left = df_a.join(df_b, on="a", how="left")
-    assert result_left.to_dict(as_series=False) == {
-        "index": [0, 1, 2, 3, 4, 5],
-        "a": [-5, -2, 3, 3, 9, 10],
-    }
+    assert_frame_equal(
+        result_left,
+        pl.DataFrame(
+            {
+                "index": [0, 1, 2, 3, 4, 5],
+                "a": [-5, -2, 3, 3, 9, 10],
+            },
+            schema={"index": pl.UInt32, "a": dtype},
+        ),
+        check_row_order=False,
+    )
 
 
 def test_sorted_fast_paths() -> None:
@@ -406,21 +427,23 @@ def test_sorted_fast_paths() -> None:
         (
             pl.DataFrame({"Idx": [0, 1, 2, 3, 4, 5, 6], "Val": [0, 1, 2, 3, 4, 5, 6]}),
             (
-                [0, 1, 2, 3, 4, 5, 6],
-                [6, 5, 4, 3, 2, 1, 0],
-                [0, 1, 2, 3, 4, 5, 6],
-                [6, 5, 4, 3, 2, 1, 0],
+                [[0, 1, 2, 3, 4, 5, 6]],
+                [[6, 5, 4, 3, 2, 1, 0]],
+                [[0, 1, 2, 3, 4, 5, 6]],
+                [[6, 5, 4, 3, 2, 1, 0]],
             ),
         ),
         (
             pl.DataFrame(
                 {"Idx": [0, 1, 2, 3, 4, 5, 6], "Val": [0, 1, None, 3, None, 5, 6]}
             ),
+            # We don't use maintain order here, so it might as well do anything
+            # with the None elements.
             (
-                [0, 1, 3, 5, 6, 2, 4],
-                [6, 5, 3, 1, 0, 2, 4],
-                [2, 4, 0, 1, 3, 5, 6],
-                [2, 4, 6, 5, 3, 1, 0],
+                [[0, 1, 3, 5, 6, 2, 4], [0, 1, 3, 5, 6, 4, 2]],
+                [[6, 5, 3, 1, 0, 2, 4], [6, 5, 3, 1, 0, 4, 2]],
+                [[2, 4, 0, 1, 3, 5, 6], [4, 2, 0, 1, 3, 5, 6]],
+                [[2, 4, 6, 5, 3, 1, 0], [4, 2, 6, 5, 3, 1, 0]],
             ),
         ),
     ],
@@ -437,7 +460,7 @@ def test_sorted_fast_paths() -> None:
 def test_sorted_arg_sort_fast_paths(
     sort_function: Callable[[pl.DataFrame], pl.DataFrame],
     df: pl.DataFrame,
-    expected: tuple[list[int], list[int], list[int], list[int]],
+    expected: tuple[list[list[int]], list[list[int]], list[list[int]], list[list[int]]],
 ) -> None:
     # Test that an already sorted df is correctly sorted (by a single column)
     # In certain cases below we will not go through fast path; this test
@@ -450,34 +473,34 @@ def test_sorted_arg_sort_fast_paths(
     # Test dataframe.sort
     assert (
         df.sort("Val", descending=False, nulls_last=True)["Idx"].to_list()
-        == expected[0]
+        in expected[0]
     )
     assert (
-        df.sort("Val", descending=True, nulls_last=True)["Idx"].to_list() == expected[1]
+        df.sort("Val", descending=True, nulls_last=True)["Idx"].to_list() in expected[1]
     )
     assert (
         df.sort("Val", descending=False, nulls_last=False)["Idx"].to_list()
-        == expected[2]
+        in expected[2]
     )
     assert (
         df.sort("Val", descending=True, nulls_last=False)["Idx"].to_list()
-        == expected[3]
+        in expected[3]
     )
     # Test series.arg_sort
     assert (
         df["Idx"][s.arg_sort(descending=False, nulls_last=True)].to_list()
-        == expected[0]
+        in expected[0]
     )
     assert (
-        df["Idx"][s.arg_sort(descending=True, nulls_last=True)].to_list() == expected[1]
+        df["Idx"][s.arg_sort(descending=True, nulls_last=True)].to_list() in expected[1]
     )
     assert (
         df["Idx"][s.arg_sort(descending=False, nulls_last=False)].to_list()
-        == expected[2]
+        in expected[2]
     )
     assert (
         df["Idx"][s.arg_sort(descending=True, nulls_last=False)].to_list()
-        == expected[3]
+        in expected[3]
     )
 
 
@@ -578,7 +601,11 @@ def test_sorted_join_query_5406() -> None:
     out = df1.join(filter1, on="RowId", how="left").select(
         pl.exclude(["Datetime_right", "Group_right"])
     )
-    assert out["Value_right"].to_list() == [1, None, 2, 1, 2, None]
+    assert_series_equal(
+        out["Value_right"],
+        pl.Series("Value_right", [1, None, 2, 1, 2, None]),
+        check_order=False,
+    )
 
 
 def test_sort_by_in_over_5499() -> None:
@@ -875,30 +902,30 @@ def test_sort_with_null_12139(
         }
     )
     df = sort_function(df)
-    assert df.sort("bool", descending=False, nulls_last=False).to_dict(
-        as_series=False
-    ) == {
+    assert df.sort(
+        "bool", descending=False, nulls_last=False, maintain_order=True
+    ).to_dict(as_series=False) == {
         "bool": [None, False, False, True, True],
         "float": [3.0, 2.0, 5.0, 1.0, 4.0],
     }
 
-    assert df.sort("bool", descending=False, nulls_last=True).to_dict(
-        as_series=False
-    ) == {
+    assert df.sort(
+        "bool", descending=False, nulls_last=True, maintain_order=True
+    ).to_dict(as_series=False) == {
         "bool": [False, False, True, True, None],
         "float": [2.0, 5.0, 1.0, 4.0, 3.0],
     }
 
-    assert df.sort("bool", descending=True, nulls_last=True).to_dict(
-        as_series=False
-    ) == {
+    assert df.sort(
+        "bool", descending=True, nulls_last=True, maintain_order=True
+    ).to_dict(as_series=False) == {
         "bool": [True, True, False, False, None],
         "float": [1.0, 4.0, 2.0, 5.0, 3.0],
     }
 
-    assert df.sort("bool", descending=True, nulls_last=False).to_dict(
-        as_series=False
-    ) == {
+    assert df.sort(
+        "bool", descending=True, nulls_last=False, maintain_order=True
+    ).to_dict(as_series=False) == {
         "bool": [None, True, True, False, False],
         "float": [3.0, 1.0, 4.0, 2.0, 5.0],
     }

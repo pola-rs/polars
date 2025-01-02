@@ -38,6 +38,46 @@ fn build_slice_node(
     }
 }
 
+fn build_filter_node(
+    input: PhysNodeKey,
+    predicate: ExprIR,
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+) -> PolarsResult<PhysNodeKey> {
+    let predicate = predicate.clone();
+    let cols_and_predicate = phys_sm[input]
+        .output_schema
+        .iter_names()
+        .cloned()
+        .map(|name| {
+            ExprIR::new(
+                expr_arena.add(AExpr::Column(name.clone())),
+                OutputName::ColumnLhs(name),
+            )
+        })
+        .chain([predicate])
+        .collect_vec();
+    let (trans_input, mut trans_cols_and_predicate) =
+        lower_exprs(input, &cols_and_predicate, expr_arena, phys_sm, expr_cache)?;
+
+    let filter_schema = phys_sm[trans_input].output_schema.clone();
+    let filter = PhysNodeKind::Filter {
+        input: trans_input,
+        predicate: trans_cols_and_predicate.last().unwrap().clone(),
+    };
+
+    let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
+    trans_cols_and_predicate.pop(); // Remove predicate.
+    build_select_node(
+        post_filter,
+        &trans_cols_and_predicate,
+        expr_arena,
+        phys_sm,
+        expr_cache,
+    )
+}
+
 #[recursive::recursive]
 pub fn lower_ir(
     node: Node,
@@ -46,6 +86,7 @@ pub fn lower_ir(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     schema_cache: &mut PlHashMap<Node, Arc<Schema>>,
     expr_cache: &mut ExprCache,
+    cache_nodes: &mut PlHashMap<usize, PhysNodeKey>,
 ) -> PolarsResult<PhysNodeKey> {
     // Helper macro to simplify recursive calls.
     macro_rules! lower_ir {
@@ -57,6 +98,7 @@ pub fn lower_ir(
                 phys_sm,
                 schema_cache,
                 expr_cache,
+                cache_nodes,
             )
         };
     }
@@ -128,50 +170,16 @@ pub fn lower_ir(
         IR::Filter { input, predicate } => {
             let predicate = predicate.clone();
             let phys_input = lower_ir!(*input)?;
-            let cols_and_predicate = output_schema
-                .iter_names()
-                .cloned()
-                .map(|name| {
-                    ExprIR::new(
-                        expr_arena.add(AExpr::Column(name.clone())),
-                        OutputName::ColumnLhs(name),
-                    )
-                })
-                .chain([predicate])
-                .collect_vec();
-            let (trans_input, mut trans_cols_and_predicate) = lower_exprs(
-                phys_input,
-                &cols_and_predicate,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-            )?;
-
-            let filter_schema = phys_sm[trans_input].output_schema.clone();
-            let filter = PhysNodeKind::Filter {
-                input: trans_input,
-                predicate: trans_cols_and_predicate.last().unwrap().clone(),
-            };
-
-            let post_filter = phys_sm.insert(PhysNode::new(filter_schema, filter));
-            trans_cols_and_predicate.pop(); // Remove predicate.
-            return build_select_node(
-                post_filter,
-                &trans_cols_and_predicate,
-                expr_arena,
-                phys_sm,
-                expr_cache,
-            );
+            return build_filter_node(phys_input, predicate, expr_arena, phys_sm, expr_cache);
         },
 
         IR::DataFrameScan {
             df,
             output_schema: projection,
-            filter,
             schema,
             ..
         } => {
-            let mut schema = schema.clone(); // This is initially the schema of df, but can change with the projection.
+            let schema = schema.clone(); // This is initially the schema of df, but can change with the projection.
             let mut node_kind = PhysNodeKind::InMemorySource { df: df.clone() };
 
             // Do we need to apply a projection?
@@ -187,20 +195,7 @@ pub fn lower_ir(
                         input: phys_input,
                         columns: projection_schema.iter_names_cloned().collect::<Vec<_>>(),
                     };
-                    schema = projection_schema.clone();
                 }
-            }
-
-            if let Some(predicate) = filter.clone() {
-                if !is_elementwise_rec_cached(predicate.node(), expr_arena, expr_cache) {
-                    todo!()
-                }
-
-                let phys_input = phys_sm.insert(PhysNode::new(schema, node_kind));
-                node_kind = PhysNodeKind::Filter {
-                    input: phys_input,
-                    predicate,
-                };
             }
 
             node_kind
@@ -287,16 +282,21 @@ pub fn lower_ir(
         },
 
         IR::Union { inputs, options } => {
-            if options.slice.is_some() {
-                todo!()
-            }
-
+            let options = *options;
             let inputs = inputs
                 .clone() // Needed to borrow ir_arena mutably.
                 .into_iter()
                 .map(|input| lower_ir!(input))
                 .collect::<Result<_, _>>()?;
-            PhysNodeKind::OrderedUnion { inputs }
+
+            let mut node = phys_sm.insert(PhysNode {
+                output_schema,
+                kind: PhysNodeKind::OrderedUnion { inputs },
+            });
+            if let Some((offset, length)) = options.slice {
+                node = build_slice_node(node, offset, length, phys_sm);
+            }
+            return Ok(node);
         },
 
         IR::HConcat {
@@ -379,7 +379,7 @@ pub fn lower_ir(
                         _ => todo!(),
                     };
 
-                let phys_node = PhysNodeKind::FileScan {
+                let node_kind = PhysNodeKind::FileScan {
                     scan_sources,
                     file_info,
                     hive_parts,
@@ -391,12 +391,12 @@ pub fn lower_ir(
 
                 let (row_index, slice, predicate) = opt_rewrite_to_nodes;
 
-                let phys_node = if let Some(ri) = row_index {
+                let node_kind = if let Some(ri) = row_index {
                     let mut schema = Arc::unwrap_or_clone(output_schema.clone());
 
                     let v = schema.shift_remove_index(0).unwrap().0;
                     assert_eq!(v, ri.name);
-                    let input = phys_sm.insert(PhysNode::new(Arc::new(schema), phys_node));
+                    let input = phys_sm.insert(PhysNode::new(Arc::new(schema), node_kind));
 
                     PhysNodeKind::WithRowIndex {
                         input,
@@ -404,39 +404,44 @@ pub fn lower_ir(
                         offset: Some(ri.offset),
                     }
                 } else {
-                    phys_node
+                    node_kind
                 };
 
-                let phys_node = if let Some((offset, length)) = slice {
-                    let input = phys_sm.insert(PhysNode::new(output_schema.clone(), phys_node));
+                let mut node = phys_sm.insert(PhysNode {
+                    output_schema,
+                    kind: node_kind,
+                });
 
-                    if offset < 0 {
-                        todo!()
-                    }
-
-                    PhysNodeKind::StreamingSlice {
-                        input,
-                        offset: offset as usize,
-                        length,
-                    }
-                } else {
-                    phys_node
-                };
+                if let Some((offset, length)) = slice {
+                    node = build_slice_node(node, offset, length, phys_sm);
+                }
 
                 if let Some(predicate) = predicate {
-                    let input = phys_sm.insert(PhysNode::new(output_schema.clone(), phys_node));
-
-                    PhysNodeKind::Filter { input, predicate }
-                } else {
-                    phys_node
+                    node = build_filter_node(node, predicate, expr_arena, phys_sm, expr_cache)?;
                 }
+
+                return Ok(node);
             }
         },
 
         #[cfg(feature = "python")]
         IR::PythonScan { .. } => todo!(),
-        IR::Reduce { .. } => todo!(),
-        IR::Cache { .. } => todo!(),
+
+        IR::Cache {
+            input,
+            id,
+            cache_hits: _,
+        } => {
+            let id = *id;
+            if let Some(cached) = cache_nodes.get(&id) {
+                return Ok(*cached);
+            }
+
+            let phys_input = lower_ir!(*input)?;
+            cache_nodes.insert(id, phys_input);
+            return Ok(phys_input);
+        },
+
         IR::GroupBy {
             input,
             keys,
@@ -528,14 +533,54 @@ pub fn lower_ir(
             let left_on = left_on.clone();
             let right_on = right_on.clone();
             let args = options.args.clone();
+            let options = options.options.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
-            PhysNodeKind::InMemoryJoin {
-                input_left: phys_left,
-                input_right: phys_right,
-                left_on,
-                right_on,
-                args,
+            if args.how.is_equi() && !args.validation.needs_checks() {
+                // When lowering the expressions for the keys we need to ensure we keep around the
+                // payload columns, otherwise the input nodes can get replaced by input-independent
+                // nodes since the lowering code does not see we access any non-literal expressions.
+                // So we add dummy expressions before lowering and remove them afterwards.
+                let mut aug_left_on = left_on.clone();
+                for name in phys_sm[phys_left].output_schema.iter_names() {
+                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                    aug_left_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                }
+                let mut aug_right_on = right_on.clone();
+                for name in phys_sm[phys_right].output_schema.iter_names() {
+                    let col_expr = expr_arena.add(AExpr::Column(name.clone()));
+                    aug_right_on.push(ExprIR::new(col_expr, OutputName::ColumnLhs(name.clone())));
+                }
+                let (trans_input_left, mut trans_left_on) =
+                    lower_exprs(phys_left, &aug_left_on, expr_arena, phys_sm, expr_cache)?;
+                let (trans_input_right, mut trans_right_on) =
+                    lower_exprs(phys_right, &aug_right_on, expr_arena, phys_sm, expr_cache)?;
+                trans_left_on.drain(left_on.len()..);
+                trans_right_on.drain(right_on.len()..);
+
+                let mut node = phys_sm.insert(PhysNode::new(
+                    output_schema,
+                    PhysNodeKind::EquiJoin {
+                        input_left: trans_input_left,
+                        input_right: trans_input_right,
+                        left_on: trans_left_on,
+                        right_on: trans_right_on,
+                        args: args.clone(),
+                    },
+                ));
+                if let Some((offset, len)) = args.slice {
+                    node = build_slice_node(node, offset, len, phys_sm);
+                }
+                return Ok(node);
+            } else {
+                PhysNodeKind::InMemoryJoin {
+                    input_left: phys_left,
+                    input_right: phys_right,
+                    left_on,
+                    right_on,
+                    args,
+                    options,
+                }
             }
         },
         IR::Distinct { .. } => todo!(),
