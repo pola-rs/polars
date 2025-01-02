@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
         (pl.Int16, pl.Float64),
         (pl.Int32, pl.Float64),
         (pl.Int64, pl.Float64),
+        (pl.Int128, pl.Float64),
         (pl.UInt8, pl.Float64),
         (pl.UInt16, pl.Float64),
         (pl.UInt32, pl.Float64),
