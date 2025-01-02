@@ -384,8 +384,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let schema = ctxt.lp_arena.get(first).schema(ctxt.lp_arena);
             for n in &inputs[1..] {
                 let schema_i = ctxt.lp_arena.get(*n).schema(ctxt.lp_arena);
-                polars_ensure!(schema == schema_i, InvalidOperation: "'union'/'concat' inputs should all have the same schema,\
+                // The first argument
+                schema_i.matches_schema(schema.as_ref()).map_err(|_| polars_err!(InvalidOperation:  "'union'/'concat' inputs should all have the same schema,\
                     got\n{:?} and \n{:?}", schema, schema_i)
+                )?;
             }
 
             let options = args.into();
