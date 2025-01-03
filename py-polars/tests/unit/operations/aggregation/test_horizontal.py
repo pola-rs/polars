@@ -321,7 +321,7 @@ def test_sum_single_col() -> None:
 
 @pytest.mark.parametrize("ignore_nulls", [False, True])
 def test_sum_correct_supertype(ignore_nulls: bool) -> None:
-    values = [1, 2] if ignore_nulls else [None, None]
+    values = [1, 2] if ignore_nulls else [None, None]  # type: ignore[list-item]
     lf = pl.LazyFrame(
         {
             "null": [None, None],
@@ -343,7 +343,7 @@ def test_sum_correct_supertype(ignore_nulls: bool) -> None:
     assert out.collect_schema() == expected.collect_schema()
 
     # null + int32 + float32 should produce float64
-    values = [2, 4] if ignore_nulls else [None, None]
+    values = [2, 4] if ignore_nulls else [None, None]  # type: ignore[list-item]
     out = lf.select(
         pl.sum_horizontal("null", "int", "float", ignore_nulls=ignore_nulls)
     )
