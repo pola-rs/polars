@@ -233,7 +233,7 @@ def test_rolling_by_invalid() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3], "b": [4, 5, 6]}, schema_overrides={"a": pl.Int16}
     ).sort("a")
-    msg = "unsupported data type: i16 for `window_size`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time"
+    msg = "unsupported data type: i16 for temporal/index column, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time"
     with pytest.raises(InvalidOperationError, match=msg):
         df.select(pl.col("b").rolling_min_by("a", "2i"))
     df = pl.DataFrame({"a": [1, 2, 3], "b": [date(2020, 1, 1)] * 3}).sort("b")
