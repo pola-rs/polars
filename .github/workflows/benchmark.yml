@@ -73,6 +73,63 @@ jobs:
         working-directory: py-polars
         run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
+      - name: Set wheel size
+        run: |
+          WHEEL_SIZE=$(ls -l py-polars/polars/polars*.so | awk '{ print $5 }')
+          echo "WHEEL_SIZE=$WHEEL_SIZE" >> $GITHUB_ENV
+
+      - name: Upload wheel sizes artifact (main only)
+        if: github.ref_name == 'main'
+        uses: actions/upload-artifact@v3
+        with:
+          name: wheel-size
+          path: |
+            echo "$GITHUB_RUN_ID $WHEEL_SIZE" > wheel_sizes.txt
+            wheel_sizes.txt
+
+      - name: Download main wheel size
+        uses: actions/download-artifact@v3
+        with:
+          name: wheel-size
+        continue-on-error: true 
+
+      - name: Extract previous wheel size
+        id: load_previous_size
+        run: |
+          if [[ -f wheel_sizes.txt ]]; then
+            PREVIOUS_WHEEL_SIZE=$(tail -n 1 wheel_sizes.txt | awk '{ print $2 }')
+            echo "PREVIOUS_WHEEL_SIZE=$PREVIOUS_WHEEL_SIZE" >> $GITHUB_ENV
+          else
+            echo "PREVIOUS_WHEEL_SIZE=Unknown" >> $GITHUB_ENV
+          fi
+
+      - name: Comment wheel size
+        uses: actions/github-script@v7
+        with:
+          script: |
+              const previousSize = process.env.PREVIOUS_WHEEL_SIZE || 'Unknown';
+              const currentSize = process.env.WHEEL_SIZE || 'Unknown';
+
+              // Convert to MB
+              const previousSizeMB = previousSize !== 'Unknown' ? (previousSize / 1024 / 1024).toFixed(4) : 'Unknown';
+              const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
+
+              let commentBody = `The previous wheel size was **${previousSizeMB} MB**.\nThe current wheel size after this PR is **${currentSizeMB} MB**.`;
+
+              // Calculate percentage increase if both sizes are available
+              if (previousSize !== 'Unknown' && currentSize !== '') {
+                const increase = ((currentSize - previousSize) / previousSize) * 100;
+                commentBody += `\nThis represents a **${increase.toFixed(2)}% increase** in size.`;
+              }
+
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+
+
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v3
         with:
