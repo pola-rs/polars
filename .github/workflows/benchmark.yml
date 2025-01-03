@@ -93,6 +93,7 @@ jobs:
         continue-on-error: true 
 
       - name: Extract previous wheel size
+        if: github.ref_name != 'main'
         id: load_previous_size
         run: |
           if [[ -f wheel_sizes.txt ]]; then
@@ -105,6 +106,7 @@ jobs:
 
       - name: Comment wheel size
         uses: actions/github-script@v7
+        if: github.ref_name != 'main'
         with:
           script: |
               const previousSize = process.env.PREVIOUS_WHEEL_SIZE || 'Unknown';
