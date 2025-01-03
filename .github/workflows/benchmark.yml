@@ -77,6 +77,10 @@ jobs:
         run: |
           WHEEL_SIZE=$(ls -l py-polars/polars/polars*.so | awk '{ print $5 }')
           echo "WHEEL_SIZE=$WHEEL_SIZE" >> $GITHUB_ENV
+
+      - name: Wheel size txt
+        if: github.ref_name == 'main'
+        run: |
           echo "$GITHUB_RUN_ID $WHEEL_SIZE" > wheel_sizes.txt
 
       - name: Upload wheel sizes artifact (main only)
@@ -116,7 +120,7 @@ jobs:
               const previousSizeMB = previousSize !== 'Unknown' ? (previousSize / 1024 / 1024).toFixed(4) : 'Unknown';
               const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
 
-              let commentBody = `The uncompressed binary size was **${previousSizeMB} MB**.\nThe uncompressed binary size after this PR is **${currentSizeMB} MB**.`;
+              let commentBody = `The previous uncompressed lib size was **${previousSizeMB} MB**.\nThe current uncompressed lib size after this PR is **${currentSizeMB} MB**.`;
 
               // Calculate percentage increase if both sizes are available
               if (previousSize !== 'Unknown' && currentSize !== '') {
@@ -132,7 +136,7 @@ jobs:
 
               // Look for an existing comment
               const existingComment = comments.find(comment =>
-                comment.body.includes('### :gear: Wheel Size Comparison')
+                comment.body.includes('The previous uncompressed lib size was')
               );
 
               if (existingComment) {
