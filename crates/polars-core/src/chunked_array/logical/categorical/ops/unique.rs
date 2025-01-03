@@ -1,5 +1,3 @@
-use polars_compute::unique::{DictionaryRangedUniqueState, RangedUniqueKernel};
-
 use super::*;
 
 impl CategoricalChunked {
@@ -59,12 +57,7 @@ impl CategoricalChunked {
         if self._can_fast_unique() {
             Ok(self.get_rev_map().len())
         } else {
-            let cat_map = self.get_rev_map();
-            let mut state = DictionaryRangedUniqueState::new(cat_map.get_categories().to_boxed());
-            for chunk in self.physical().downcast_iter() {
-                state.key_state().append(chunk);
-            }
-            Ok(state.finalize_n_unique())
+            self.physical().n_unique()
         }
     }
 

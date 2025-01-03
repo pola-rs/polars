@@ -929,6 +929,7 @@ def test_categorical_unique_20539() -> None:
 
 @StringCache()
 def test_categorical_prefill() -> None:
+    # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
     # prefill cache
     pl.Series(["aaa", "bbb", "ccc"], dtype=pl.Categorical)  # pre-fill cache
 
@@ -938,3 +939,7 @@ def test_categorical_prefill() -> None:
     # test_unique_categorical
     a = pl.Series(["a"], dtype=pl.Categorical)
     assert a.unique().to_list() == ["a"]
+
+    s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
+    s = s.filter([True, False, True])
+    assert s.n_unique() == 2
