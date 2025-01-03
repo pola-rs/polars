@@ -78,22 +78,26 @@ jobs:
           WHEEL_SIZE=$(ls -l py-polars/polars/polars*.so | awk '{ print $5 }')
           echo "WHEEL_SIZE=$WHEEL_SIZE" >> $GITHUB_ENV
 
+      - name: Wheel size txt
+        if: github.ref_name == 'main'
+        run: |
+          echo "$GITHUB_RUN_ID $WHEEL_SIZE" > wheel_sizes.txt
+
       - name: Upload wheel sizes artifact (main only)
         if: github.ref_name == 'main'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheel-size
-          path: |
-            echo "$GITHUB_RUN_ID $WHEEL_SIZE" > wheel_sizes.txt
-            wheel_sizes.txt
+          path: wheel_sizes.txt
 
       - name: Download main wheel size
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: wheel-size
         continue-on-error: true 
 
       - name: Extract previous wheel size
+        if: github.ref_name != 'main'
         id: load_previous_size
         run: |
           if [[ -f wheel_sizes.txt ]]; then
@@ -102,9 +106,11 @@ jobs:
           else
             echo "PREVIOUS_WHEEL_SIZE=Unknown" >> $GITHUB_ENV
           fi
+        continue-on-error: true 
 
       - name: Comment wheel size
         uses: actions/github-script@v7
+        if: github.ref_name != 'main'
         with:
           script: |
               const previousSize = process.env.PREVIOUS_WHEEL_SIZE || 'Unknown';
@@ -114,7 +120,7 @@ jobs:
               const previousSizeMB = previousSize !== 'Unknown' ? (previousSize / 1024 / 1024).toFixed(4) : 'Unknown';
               const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
 
-              let commentBody = `The uncompressed binary size was **${previousSizeMB} MB**.\nThe uncompressed binary size after this PR is **${currentSizeMB} MB**.`;
+              let commentBody = `The previous uncompressed lib size was **${previousSizeMB} MB**.\nThe current uncompressed lib size after this PR is **${currentSizeMB} MB**.`;
 
               // Calculate percentage increase if both sizes are available
               if (previousSize !== 'Unknown' && currentSize !== '') {
@@ -122,13 +128,35 @@ jobs:
                 commentBody += `\nThis represents a **${increase.toFixed(2)}% increase** in size.`;
               }
 
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
+              const { data: comments } = await github.rest.issues.listComments({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: commentBody
+                issue_number: context.issue.number,
               });
 
+              // Look for an existing comment
+              const existingComment = comments.find(comment =>
+                comment.body.includes('The previous uncompressed lib size was')
+              );
+
+              if (existingComment) {
+                // Update the existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: commentBody,
+                });
+              } else {
+                // Create a new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody,
+                });
+              }
+        continue-on-error: true 
 
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v3
