@@ -928,6 +928,7 @@ def test_categorical_unique_20539() -> None:
 
 
 @StringCache()
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_prefill() -> None:
     # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
     # prefill cache
