@@ -124,12 +124,34 @@ jobs:
                 commentBody += `\nThis represents a **${increase.toFixed(2)}% increase** in size.`;
               }
 
-              github.rest.issues.createComment({
-                issue_number: context.issue.number,
+              const { data: comments } = await github.rest.issues.listComments({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                body: commentBody
+                issue_number: context.issue.number,
               });
+
+              // Look for an existing comment
+              const existingComment = comments.find(comment =>
+                comment.body.includes('### :gear: Wheel Size Comparison')
+              );
+
+              if (existingComment) {
+                // Update the existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: commentBody,
+                });
+              } else {
+                // Create a new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody,
+                });
+              }
         continue-on-error: true 
 
       - name: Run benchmark tests
