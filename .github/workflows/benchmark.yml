@@ -75,7 +75,7 @@ jobs:
 
       - name: Set wheel size
         run: |
-          WHEEL_SIZE=$(ls -l polars/polars*.so | awk '{ print $5 }')
+          WHEEL_SIZE=$(ls -l py-polars/polars/polars*.so | awk '{ print $5 }')
           echo "WHEEL_SIZE=$WHEEL_SIZE" >> $GITHUB_ENV
 
       - name: Upload wheel sizes artifact (main only)
