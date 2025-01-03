@@ -452,6 +452,17 @@ impl StringNameSpace {
         )
     }
 
+    #[cfg(feature = "string_normalize")]
+    /// Normalize each string
+    pub fn normalize(self, form: UnicodeForm) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Normalize { form }),
+            &[],
+            false,
+            None,
+        )
+    }
+
     #[cfg(feature = "string_reverse")]
     /// Reverse each string
     pub fn reverse(self) -> Expr {

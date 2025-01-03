@@ -14,6 +14,8 @@ use regex::escape;
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
+#[cfg(feature = "string_normalize")]
+use crate::prelude::strings::normalize::UnicodeForm;
 use crate::prelude::strings::starts_with::starts_with_str;
 
 // We need this to infer the right lifetimes for the match closure.
@@ -625,6 +627,14 @@ pub trait StringNameSpaceImpl: AsString {
     fn concat(&self, other: &StringChunked) -> StringChunked {
         let ca = self.as_string();
         ca + other
+    }
+
+    /// Normalizes the string values
+    #[must_use]
+    #[cfg(feature = "string_normalize")]
+    fn str_normalize(&self, form: UnicodeForm) -> StringChunked {
+        let ca = self.as_string();
+        normalize::normalize(ca, form)
     }
 
     /// Reverses the string values

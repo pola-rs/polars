@@ -150,6 +150,7 @@ StartBy: TypeAlias = Literal[
     "sunday",
 ]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
+UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 MapElementsStrategy: TypeAlias = Literal["thread_local", "threading"]

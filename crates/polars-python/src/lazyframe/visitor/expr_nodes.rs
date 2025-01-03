@@ -2,6 +2,8 @@
 use polars::prelude::InequalityOperator;
 use polars::series::ops::NullBehavior;
 use polars_core::series::IsSorted;
+#[cfg(feature = "string_normalize")]
+use polars_ops::chunked_array::UnicodeForm;
 use polars_ops::series::InterpolationMethod;
 #[cfg(feature = "search_sorted")]
 use polars_ops::series::SearchSortedSide;
@@ -171,6 +173,7 @@ pub enum PyStringFunction {
     ContainsMany,
     ReplaceMany,
     EscapeRegex,
+    Normalize,
 }
 
 #[pymethods]
@@ -865,6 +868,16 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Replace { n, literal } => {
                         (PyStringFunction::Replace, n, literal).into_py_any(py)
                     },
+                    StringFunction::Normalize { form } => (
+                        PyStringFunction::Normalize,
+                        match form {
+                            UnicodeForm::NFC => "nfc",
+                            UnicodeForm::NFKC => "nfkc",
+                            UnicodeForm::NFD => "nfd",
+                            UnicodeForm::NFKD => "nfkd",
+                        },
+                    )
+                        .into_py_any(py),
                     StringFunction::Reverse => (PyStringFunction::Reverse,).into_py_any(py),
                     StringFunction::PadStart { length, fill_char } => {
                         (PyStringFunction::PadStart, length, fill_char).into_py_any(py)

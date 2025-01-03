@@ -1328,3 +1328,21 @@ impl<'a> FromPyObject<'a> for PyCompatLevel {
         }))
     }
 }
+
+#[cfg(feature = "string_normalize")]
+impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "NFC" => UnicodeForm::NFC,
+            "NFKC" => UnicodeForm::NFKC,
+            "NFD" => UnicodeForm::NFD,
+            "NFKD" => UnicodeForm::NFKD,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`form` must be one of {{'NFC', 'NFKC', 'NFD', 'NFKD'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
