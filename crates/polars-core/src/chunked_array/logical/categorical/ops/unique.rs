@@ -1,6 +1,4 @@
-use polars_compute::unique::{
-    DictionaryRangedUniqueState, PrimitiveRangedUniqueState, RangedUniqueKernel,
-};
+use polars_compute::unique::{DictionaryRangedUniqueState, RangedUniqueKernel};
 
 use super::*;
 
@@ -43,32 +41,11 @@ impl CategoricalChunked {
                 Ok(out)
             }
         } else {
-            let has_nulls = (self.null_count() > 0) as u32;
-            let mut state = match cat_map.as_ref() {
-                RevMapping::Global(map, values, _) => {
-                    if self.is_enum() {
-                        PrimitiveRangedUniqueState::new(0, values.len() as u32 + has_nulls)
-                    } else {
-                        let mut min = u32::MAX;
-                        let mut max = 0u32;
-
-                        for &v in map.keys() {
-                            min = min.min(v);
-                            max = max.max(v);
-                        }
-
-                        PrimitiveRangedUniqueState::new(min, max + has_nulls)
-                    }
-                },
-                RevMapping::Local(values, _) => {
-                    PrimitiveRangedUniqueState::new(0, values.len() as u32 + has_nulls)
-                },
-            };
-
+            let mut state = DictionaryRangedUniqueState::new(cat_map.get_categories().to_boxed());
             for chunk in self.physical().downcast_iter() {
-                state.append(chunk);
+                state.key_state().append(chunk);
             }
-            let unique = state.finalize_unique();
+            let (_, unique, _) = state.finalize_unique().take();
             let ca = unsafe {
                 UInt32Chunked::from_chunks_and_dtype_unchecked(
                     self.physical().name().clone(),
