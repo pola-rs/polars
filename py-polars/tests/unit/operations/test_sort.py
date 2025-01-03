@@ -1072,11 +1072,12 @@ def test_sort_string_nulls() -> None:
     ]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_sort_by_unequal_lengths_7207() -> None:
-    df = pl.DataFrame({"a": [0, 1, 1, 0], "b": [3, 2, 3, 2]})
-    with pytest.raises(pl.exceptions.ShapeError):
-        df.select(pl.col.a.sort_by(["a", 1]))
+    df = pl.DataFrame({"a": [0, 1, 1, 0]})
+    result = df.select(pl.arg_sort_by(["a", 1]))
+
+    expected = pl.DataFrame({"a": [0, 3, 1, 2]})
+    assert_frame_equal(result, expected, check_dtypes=False)
 
 
 def test_sort_literals() -> None:
