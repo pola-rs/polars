@@ -407,7 +407,7 @@
 //! temp.full_join(&rain, ["days"], ["days"]);
 //!
 //! // join on multiple columns
-//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinArgs::new(JoinType::Left));
+//! temp.join(&rain, vec!["days", "other"], vec!["days", "other"], JoinArgs::new(JoinType::Left), None);
 //!
 //! # Ok(())
 //! # }

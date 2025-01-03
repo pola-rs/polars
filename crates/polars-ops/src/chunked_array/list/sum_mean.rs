@@ -161,6 +161,7 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
                 Int16 => dispatch_mean::<i16, f64>(values, offsets, arr.validity()),
                 Int32 => dispatch_mean::<i32, f64>(values, offsets, arr.validity()),
                 Int64 => dispatch_mean::<i64, f64>(values, offsets, arr.validity()),
+                Int128 => dispatch_mean::<i128, f64>(values, offsets, arr.validity()),
                 UInt8 => dispatch_mean::<u8, f64>(values, offsets, arr.validity()),
                 UInt16 => dispatch_mean::<u16, f64>(values, offsets, arr.validity()),
                 UInt32 => dispatch_mean::<u32, f64>(values, offsets, arr.validity()),

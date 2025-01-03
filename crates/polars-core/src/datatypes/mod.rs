@@ -22,6 +22,7 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::{Add, AddAssign, Div, Mul, Rem, Sub, SubAssign};
 
+mod schema;
 pub use aliases::*;
 pub use any_value::*;
 pub use arrow::array::{ArrayCollectIterExt, ArrayFromIter, ArrayFromIterDtype, StaticArray};
@@ -42,6 +43,7 @@ use polars_utils::abs_diff::AbsDiff;
 use polars_utils::float::IsFloat;
 use polars_utils::min_max::MinMax;
 use polars_utils::nulls::IsNull;
+pub use schema::SchemaExtPl;
 #[cfg(feature = "serde")]
 use serde::de::{EnumAccess, Error, Unexpected, VariantAccess, Visitor};
 #[cfg(any(feature = "serde", feature = "serde-lazy"))]

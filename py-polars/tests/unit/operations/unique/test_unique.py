@@ -43,7 +43,7 @@ def test_unique_predicate_pd() -> None:
     for maintain_order in (True, False):
         for keep in ("first", "last", "any", "none"):
             q = (
-                lf.unique("x", maintain_order=maintain_order, keep=keep)  # type: ignore[arg-type]
+                lf.unique("x", maintain_order=maintain_order, keep=keep)
                 .filter(pl.col("x") == "abc")
                 .filter(pl.col("z"))
             )
@@ -144,14 +144,29 @@ def test_unique_null() -> None:
     [
         ([], []),
         (["a", "b", "b", "c"], ["a", "b", "c"]),
-        (["a", "b", "b", None], ["a", "b", None]),
+        ([None, "a", "b", "b"], [None, "a", "b"]),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_unique_categorical(input: list[str | None], output: list[str | None]) -> None:
     s = pl.Series(input, dtype=pl.Categorical)
     result = s.unique(maintain_order=True)
     expected = pl.Series(output, dtype=pl.Categorical)
     assert_series_equal(result, expected)
+
+    result = s.unique(maintain_order=False).sort()
+    expected = pl.Series(output, dtype=pl.Categorical)
+    assert_series_equal(result, expected)
+
+
+def test_unique_categorical_global() -> None:
+    with pl.StringCache():
+        pl.Series(["aaaa", "bbbb", "cccc"])  # pre-fill global cache
+        s = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+        s_empty = s.slice(0, 0)
+
+        assert s_empty.unique().to_list() == []
+        assert_series_equal(s_empty.cat.get_categories(), pl.Series(["a", "b", "c"]))
 
 
 def test_unique_with_null() -> None:
@@ -196,6 +211,7 @@ def test_unique_with_bad_subset(
         df.unique(subset=subset)
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_19409() -> None:
     df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
     uniq = df.unique()

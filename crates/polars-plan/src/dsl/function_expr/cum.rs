@@ -38,6 +38,7 @@ pub(super) mod dtypes {
             match dt {
                 Boolean => UInt32,
                 Int32 => Int32,
+                Int128 => Int128,
                 UInt32 => UInt32,
                 UInt64 => UInt64,
                 Float32 => Float32,
@@ -56,6 +57,7 @@ pub(super) mod dtypes {
         match dt {
             Boolean => Int64,
             UInt64 => UInt64,
+            Int128 => Int128,
             Float32 => Float32,
             Float64 => Float64,
             _ => Int64,

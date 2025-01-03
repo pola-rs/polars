@@ -850,6 +850,8 @@ impl Expr {
                     T::Float32 => T::Float32,
                     T::Float64 => T::Float64,
                     T::UInt64 => T::UInt64,
+                    #[cfg(feature = "dtype-i128")]
+                    T::Int128 => T::Int128,
                     _ => T::Int64,
                 })
             }),

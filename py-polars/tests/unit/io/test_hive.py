@@ -200,7 +200,7 @@ def test_hive_partitioned_projection_pushdown(
         q = pl.scan_parquet(
             root / "**/*.parquet",
             hive_partitioning=True,
-            parallel=parallel,  # type: ignore[arg-type]
+            parallel=parallel,
         )
 
         expected = q.collect().select("category")

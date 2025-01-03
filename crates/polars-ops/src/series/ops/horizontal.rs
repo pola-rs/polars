@@ -254,13 +254,19 @@ pub fn sum_horizontal(
         .map(|c| c.as_materialized_series())
         .collect::<Vec<_>>();
 
+    let name = columns[0].name().clone();
     // If we have any null columns and null strategy is not `Ignore`, we can return immediately.
-    let num_cols = non_null_cols.len();
-    let name = columns[0].name();
-    if num_cols == 0 {
-        return Ok(Some(columns[0].clone().with_name(name.clone())));
-    } else if !ignore_nulls && non_null_cols.len() < columns.len() {
-        return null_with_supertype(non_null_cols, false);
+    if !ignore_nulls && non_null_cols.len() < columns.len() {
+        // We must determine the correct return dtype.
+        let return_dtype = match dtypes_to_supertype(non_null_cols.iter().map(|c| c.dtype()))? {
+            DataType::Boolean => IDX_DTYPE,
+            dt => dt,
+        };
+        return Ok(Some(Column::full_null(
+            name,
+            columns[0].len(),
+            &return_dtype,
+        )));
     }
 
     match non_null_cols.len() {
@@ -269,7 +275,7 @@ pub fn sum_horizontal(
                 Ok(None)
             } else {
                 // all columns are null dtype, so result is null dtype
-                Ok(Some(columns[0].clone().with_name(name.clone())))
+                Ok(Some(columns[0].clone().with_name(name)))
             }
         },
         1 => Ok(Some(
@@ -278,7 +284,7 @@ pub fn sum_horizontal(
             } else {
                 non_null_cols[0].clone()
             })?
-            .with_name(name.clone())
+            .with_name(name)
             .into(),
         )),
         2 => sum_fn(non_null_cols[0].clone(), non_null_cols[1].clone())

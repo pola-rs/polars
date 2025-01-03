@@ -31,6 +31,7 @@ mod tests;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub use datatypes::SchemaExtPl;
 pub use hashing::IdBuildHasher;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};

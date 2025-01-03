@@ -2433,6 +2433,7 @@ def test_dict_masked(
     )
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_sliced_20017() -> None:
     f = io.BytesIO()
     df = (

@@ -82,6 +82,13 @@ impl PrimitiveParser for Int64Type {
         atoi_simd::parse_skipped(bytes).ok()
     }
 }
+#[cfg(feature = "dtype-i128")]
+impl PrimitiveParser for Int128Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<i128> {
+        atoi_simd::parse_skipped(bytes).ok()
+    }
+}
 
 trait ParsedBuffer {
     fn parse_bytes(
@@ -522,6 +529,8 @@ pub fn init_buffers(
                 &DataType::Int16 => Buffer::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+                #[cfg(feature = "dtype-i128")]
+                &DataType::Int128 => Buffer::Int128(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u8")]
                 &DataType::UInt8 => Buffer::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u16")]
@@ -594,6 +603,8 @@ pub enum Buffer {
     Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
+    #[cfg(feature = "dtype-i128")]
+    Int128(PrimitiveChunkedBuilder<Int128Type>),
     #[cfg(feature = "dtype-u8")]
     UInt8(PrimitiveChunkedBuilder<UInt8Type>),
     #[cfg(feature = "dtype-u16")]
@@ -628,6 +639,8 @@ impl Buffer {
             Buffer::Int16(v) => v.finish().into_series(),
             Buffer::Int32(v) => v.finish().into_series(),
             Buffer::Int64(v) => v.finish().into_series(),
+            #[cfg(feature = "dtype-i128")]
+            Buffer::Int128(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u8")]
             Buffer::UInt8(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u16")]
@@ -701,6 +714,8 @@ impl Buffer {
             Buffer::Int16(v) => v.append_null(),
             Buffer::Int32(v) => v.append_null(),
             Buffer::Int64(v) => v.append_null(),
+            #[cfg(feature = "dtype-i128")]
+            Buffer::Int128(v) => v.append_null(),
             #[cfg(feature = "dtype-u8")]
             Buffer::UInt8(v) => v.append_null(),
             #[cfg(feature = "dtype-u16")]
@@ -745,6 +760,8 @@ impl Buffer {
             Buffer::Int16(_) => DataType::Int16,
             Buffer::Int32(_) => DataType::Int32,
             Buffer::Int64(_) => DataType::Int64,
+            #[cfg(feature = "dtype-i128")]
+            Buffer::Int128(_) => DataType::Int128,
             #[cfg(feature = "dtype-u8")]
             Buffer::UInt8(_) => DataType::UInt8,
             #[cfg(feature = "dtype-u16")]
@@ -817,6 +834,15 @@ impl Buffer {
                 None,
             ),
             Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
+            #[cfg(feature = "dtype-i128")]
+            Int128(buf) => <PrimitiveChunkedBuilder<Int128Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,

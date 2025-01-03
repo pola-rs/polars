@@ -16,6 +16,9 @@ from polars.testing.parametric import load_profile
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from typing import Any
+
+    FixtureRequest = Any
 
 load_profile(
     profile=os.environ.get("POLARS_HYPOTHESIS_PROFILE", "fast"),  # type: ignore[arg-type]
@@ -229,3 +232,22 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
         yield MemoryUsage()
     finally:
         tracemalloc.stop()
+
+
+@pytest.fixture(params=[True, False])
+def test_global_and_local(
+    request: FixtureRequest,
+) -> Generator[Any, Any, Any]:
+    """
+    Setup fixture which runs each test with and without global string cache.
+
+    Usage: @pytest.mark.usefixtures("test_global_and_local")
+    """
+    use_global = request.param
+    if use_global:
+        with pl.StringCache():
+            # Pre-fill some global items to ensure physical repr isn't 0..n.
+            pl.Series(["eapioejf", "2m4lmv", "3v3v9dlf"], dtype=pl.Categorical)
+            yield
+    else:
+        yield

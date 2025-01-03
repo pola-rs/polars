@@ -7937,7 +7937,7 @@ class DataFrame:
             Mapping of column names (or selector) to dtypes, or a single dtype
             to which all columns will be cast.
         strict
-            Raise if cast is invalid on rows after predicates are pusded down.
+            Raise if cast is invalid on rows after predicates are pushed down.
             If `False`, invalid casts will produce null values.
 
         Examples

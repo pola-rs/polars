@@ -535,6 +535,7 @@ pub(super) fn serializer_for<'a>(
         DataType::UInt32 => quote_if_always!(integer_serializer::<u32>),
         DataType::Int64 => quote_if_always!(integer_serializer::<i64>),
         DataType::UInt64 => quote_if_always!(integer_serializer::<u64>),
+        DataType::Int128 => quote_if_always!(integer_serializer::<i128>),
         DataType::Float32 => match options.float_precision {
             Some(precision) => match options.float_scientific {
                 Some(true) => {

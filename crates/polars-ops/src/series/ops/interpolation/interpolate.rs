@@ -164,6 +164,7 @@ fn interpolate_linear(s: &Series) -> Series {
                     | DataType::Int16
                     | DataType::Int32
                     | DataType::Int64
+                    | DataType::Int128
                     | DataType::UInt8
                     | DataType::UInt16
                     | DataType::UInt32
