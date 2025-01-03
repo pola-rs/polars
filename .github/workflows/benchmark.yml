@@ -108,7 +108,7 @@ jobs:
         with:
           script: |
               const previousSize = process.env.PREVIOUS_WHEEL_SIZE || 'Unknown';
-              const currentSize = process.env.CURRENT_WHEEL_SIZE || 'Unknown';
+              const currentSize = process.env.WHEEL_SIZE || 'Unknown';
               github.rest.issues.createComment({
                 issue_number: context.issue.number,
                 owner: context.repo.owner,
