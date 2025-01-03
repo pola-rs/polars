@@ -77,15 +77,14 @@ jobs:
         run: |
           WHEEL_SIZE=$(ls -l py-polars/polars/polars*.so | awk '{ print $5 }')
           echo "WHEEL_SIZE=$WHEEL_SIZE" >> $GITHUB_ENV
+          echo "$GITHUB_RUN_ID $WHEEL_SIZE" > wheel_sizes.txt
 
       - name: Upload wheel sizes artifact (main only)
         if: github.ref_name == 'main'
         uses: actions/upload-artifact@v4
         with:
           name: wheel-size
-          path: |
-            echo "$GITHUB_RUN_ID $WHEEL_SIZE" > wheel_sizes.txt
-            wheel_sizes.txt
+          path: wheel_sizes.txt
 
       - name: Download main wheel size
         uses: actions/download-artifact@v4
