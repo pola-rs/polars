@@ -103,6 +103,7 @@ jobs:
           else
             echo "PREVIOUS_WHEEL_SIZE=Unknown" >> $GITHUB_ENV
           fi
+        continue-on-error: true 
 
       - name: Comment wheel size
         uses: actions/github-script@v7
@@ -129,7 +130,7 @@ jobs:
                 repo: context.repo.repo,
                 body: commentBody
               });
-
+        continue-on-error: true 
 
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v3
