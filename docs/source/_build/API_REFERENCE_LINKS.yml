@@ -115,6 +115,7 @@ python:
   read_parquet: https://docs.pola.rs/api/python/stable/reference/api/polars.read_parquet.html
   round: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.round.html#polars.Expr.round
   sample: https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.sample.html
+  scan_bigquery: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_bigquery.html
   scan_csv: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_csv.html
   scan_ipc: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ipc.html
   scan_ndjson: https://docs.pola.rs/api/python/stable/reference/api/polars.scan_ndjson.html

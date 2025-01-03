@@ -39,3 +39,22 @@ with io.BytesIO() as stream:
 job.result()  # Waits for the job to complete
 # --8<-- [end:write]
 """
+
+
+"""
+# --8<-- [start:scan]
+import polars as pl
+
+df = pl.scan_bigquery(
+    'bigquery-public-data.usa_names.usa_1910_2013', 
+    billing_project_id="swast-scratch",
+)
+df.filter(
+    (pl.col("state") == "TX")
+    & (pl.col('year') == 2000)
+).select(
+    pl.col("name"),
+    pl.col("number"),
+).collect()
+# --8<-- [end:scan]
+"""

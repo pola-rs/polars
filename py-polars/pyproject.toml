@@ -62,6 +62,7 @@ sqlalchemy = ["sqlalchemy", "polars[pandas]"]
 database = ["polars[adbc,connectorx,sqlalchemy]"]
 
 # Cloud
+bigquery = ["google-cloud-bigquery", "google-cloud-bigquery-storage"]
 fsspec = ["fsspec"]
 
 # Other I/O
@@ -81,7 +82,7 @@ gpu = ["cudf-polars-cu12"]
 
 # All
 all = [
-  "polars[async,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
+  "polars[async,bigquery,cloudpickle,database,deltalake,excel,fsspec,graph,iceberg,numpy,pandas,plot,pyarrow,pydantic,style,timezone]",
 ]
 
 [tool.maturin]
