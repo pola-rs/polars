@@ -129,3 +129,111 @@ class ExprCatNameSpace:
         └──────┴─────────┴─────────┘
         """
         return wrap_expr(self._pyexpr.cat_len_chars())
+
+    def starts_with(self, prefix: str) -> Expr:
+        """
+        Check if string representations of values start with a substring.
+
+        Parameters
+        ----------
+        prefix
+            Prefix substring.
+
+        See Also
+        --------
+        contains : Check if string repr contains a substring that matches a pattern.
+        ends_with : Check if string repr end with a substring.
+
+        Notes
+        -----
+        Whereas `str.starts_with` allows expression inputs, `cat.starts_with` requires
+        a literal string value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"fruits": pl.Series(["apple", "mango", None], dtype=pl.Categorical)}
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("fruits").cat.starts_with("app").alias("has_prefix"),
+        ... )
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_prefix │
+        │ ---    ┆ ---        │
+        │ cat    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ true       │
+        │ mango  ┆ false      │
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using `starts_with` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").cat.starts_with("app"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ cat    │
+        ╞════════╡
+        │ apple  │
+        └────────┘
+        """
+        if not isinstance(prefix, str):
+            msg = f"'prefix' must be a string; found {type(prefix)!r}"
+            raise TypeError(msg)
+        return wrap_expr(self._pyexpr.cat_starts_with(prefix))
+
+    def ends_with(self, suffix: str) -> Expr:
+        """
+        Check if string representations of values end with a substring.
+
+        Parameters
+        ----------
+        suffix
+            Suffix substring.
+
+        See Also
+        --------
+        contains : Check if string reprs contains a substring that matches a pattern.
+        starts_with : Check if string reprs start with a substring.
+
+        Notes
+        -----
+        Whereas `str.ends_with` allows expression inputs, `cat.ends_with` requires a
+        literal string value.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"fruits": pl.Series(["apple", "mango", None], dtype=pl.Categorical)}
+        ... )
+        >>> df.with_columns(pl.col("fruits").cat.ends_with("go").alias("has_suffix"))
+        shape: (3, 2)
+        ┌────────┬────────────┐
+        │ fruits ┆ has_suffix │
+        │ ---    ┆ ---        │
+        │ cat    ┆ bool       │
+        ╞════════╪════════════╡
+        │ apple  ┆ false      │
+        │ mango  ┆ true       │
+        │ null   ┆ null       │
+        └────────┴────────────┘
+
+        Using `ends_with` as a filter condition:
+
+        >>> df.filter(pl.col("fruits").cat.ends_with("go"))
+        shape: (1, 1)
+        ┌────────┐
+        │ fruits │
+        │ ---    │
+        │ cat    │
+        ╞════════╡
+        │ mango  │
+        └────────┘
+        """
+        if not isinstance(suffix, str):
+            msg = f"'suffix' must be a string; found {type(suffix)!r}"
+            raise TypeError(msg)
+        return wrap_expr(self._pyexpr.cat_ends_with(suffix))
