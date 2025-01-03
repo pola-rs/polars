@@ -20,11 +20,11 @@ use crate::trusted_len::TrustedLen;
 const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
 const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
-// Invariants:
-//
-// - Each view must point to a valid slice of a buffer
-// - `total_buffer_len` must be equal to `completed_buffers.iter().map(Vec::len).sum()`
-// - `total_bytes_len` must be equal to `views.iter().map(View::len).sum()`
+/// # Safety invariants
+///
+/// - Each view must point to a valid slice of a buffer
+/// - `total_buffer_len` must be equal to `completed_buffers.iter().map(Vec::len).sum()`
+/// - `total_bytes_len` must be equal to `views.iter().map(View::len).sum()`
 pub struct MutableBinaryViewArray<T: ViewType + ?Sized> {
     pub(crate) views: Vec<View>,
     pub(crate) completed_buffers: Vec<Buffer<u8>>,
