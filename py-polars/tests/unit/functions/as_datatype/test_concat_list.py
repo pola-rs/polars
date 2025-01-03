@@ -91,6 +91,7 @@ def test_list_concat_supertype() -> None:
     ].to_list() == [[1, 10000], [2, 20000]]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_list_concat_4762() -> None:
     df = pl.DataFrame({"x": "a"})
     expected = {"x": [["a", "a"]]}

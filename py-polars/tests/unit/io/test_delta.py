@@ -474,6 +474,7 @@ def test_unsupported_dtypes(tmp_path: Path) -> None:
     reason="upstream bug in delta-rs causing categorical to be written as categorical in parquet"
 )
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_becomes_string(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": ["A", "B", "A"]}, schema={"a": pl.Categorical})
     df.write_delta(tmp_path)

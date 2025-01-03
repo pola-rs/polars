@@ -66,6 +66,7 @@ def test_row_index_len_16543(foods_parquet_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_parquet_statistics(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -281,6 +282,7 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
 
 
 @pytest.mark.write_disk
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
