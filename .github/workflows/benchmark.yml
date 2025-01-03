@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload wheel sizes artifact (main only)
         if: github.ref_name == 'main'
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: wheel-size
           path: |
@@ -88,7 +88,7 @@ jobs:
             wheel_sizes.txt
 
       - name: Download main wheel size
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: wheel-size
         continue-on-error: true 
@@ -96,6 +96,7 @@ jobs:
       - name: Extract previous wheel size
         id: load_previous_size
         run: |
+          ls -R 
           if [[ -f wheel_sizes.txt ]]; then
             PREVIOUS_WHEEL_SIZE=$(tail -n 1 wheel_sizes.txt | awk '{ print $2 }')
             echo "PREVIOUS_WHEEL_SIZE=$PREVIOUS_WHEEL_SIZE" >> $GITHUB_ENV
