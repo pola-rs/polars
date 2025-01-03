@@ -192,7 +192,7 @@ pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
 }
 
 // Return a full-null column with dtype determined by supertype of supplied columns.
-// Name of returned column is the left-month input column.
+// Name of returned column is the left-most input column.
 fn null_with_supertype(columns: &[Column], date_to_datetime: bool) -> PolarsResult<Option<Column>> {
     // We must first determine the correct return dtype.
     let mut return_dtype = dtypes_to_supertype(columns.iter().map(|c| c.dtype()))?;
@@ -350,7 +350,10 @@ pub fn mean_horizontal(
         // All remaining must be numeric (or null).
         for col in &columns[first_non_null_idx + 1..] {
             let dtype = col.dtype();
-            if !(dtype.is_numeric()
+            if !ignore_nulls && dtype == &DataType::Null {
+                // The presence of a single null column guarantees the output is all-null.
+                return null_with_supertype(columns, true);
+            } else if !(dtype.is_numeric()
                 || dtype.is_decimal()
                 || dtype.is_bool()
                 || dtype.is_temporal()
