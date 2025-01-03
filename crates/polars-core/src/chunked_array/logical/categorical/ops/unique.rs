@@ -1,5 +1,3 @@
-use polars_compute::unique::{DictionaryRangedUniqueState, RangedUniqueKernel};
-
 use super::*;
 
 impl CategoricalChunked {
@@ -41,18 +39,7 @@ impl CategoricalChunked {
                 Ok(out)
             }
         } else {
-            let mut state = DictionaryRangedUniqueState::new(cat_map.get_categories().to_boxed());
-            for chunk in self.physical().downcast_iter() {
-                state.key_state().append(chunk);
-            }
-            let (_, unique, _) = state.finalize_unique().take();
-            let ca = unsafe {
-                UInt32Chunked::from_chunks_and_dtype_unchecked(
-                    self.physical().name().clone(),
-                    vec![unique.to_boxed()],
-                    DataType::UInt32,
-                )
-            };
+            let ca = self.physical().unique()?;
             // SAFETY:
             // we only removed some indexes so we are still in bounds
             unsafe {
@@ -70,12 +57,7 @@ impl CategoricalChunked {
         if self._can_fast_unique() {
             Ok(self.get_rev_map().len())
         } else {
-            let cat_map = self.get_rev_map();
-            let mut state = DictionaryRangedUniqueState::new(cat_map.get_categories().to_boxed());
-            for chunk in self.physical().downcast_iter() {
-                state.key_state().append(chunk);
-            }
-            Ok(state.finalize_n_unique())
+            self.physical().n_unique()
         }
     }
 

@@ -114,7 +114,7 @@ jobs:
               const previousSizeMB = previousSize !== 'Unknown' ? (previousSize / 1024 / 1024).toFixed(4) : 'Unknown';
               const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
 
-              let commentBody = `The previous wheel size was **${previousSizeMB} MB**.\nThe current wheel size after this PR is **${currentSizeMB} MB**.`;
+              let commentBody = `The uncompressed binary size was **${previousSizeMB} MB**.\nThe uncompressed binary size after this PR is **${currentSizeMB} MB**.`;
 
               // Calculate percentage increase if both sizes are available
               if (previousSize !== 'Unknown' && currentSize !== '') {

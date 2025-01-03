@@ -904,7 +904,7 @@ def test_perfect_group_by_19950() -> None:
 def test_categorical_unique() -> None:
     s = pl.Series(["a", "b", None], dtype=pl.Categorical)
     assert s.n_unique() == 3
-    assert s.unique().to_list() == ["a", "b", None]
+    assert s.unique().sort().to_list() == [None, "a", "b"]
 
 
 @StringCache()
@@ -925,3 +925,22 @@ def test_categorical_unique_20539() -> None:
         "unique": [["a", "b"], ["b", "c"], ["c"]],
         "unique_with_order": [["a", "b"], ["b", "c"], ["c"]],
     }
+
+
+@StringCache()
+@pytest.mark.may_fail_auto_streaming
+def test_categorical_prefill() -> None:
+    # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
+    # prefill cache
+    pl.Series(["aaa", "bbb", "ccc"], dtype=pl.Categorical)  # pre-fill cache
+
+    # test_compare_categorical_single
+    assert (pl.Series(["a"], dtype=pl.Categorical) < "a").to_list() == [False]
+
+    # test_unique_categorical
+    a = pl.Series(["a"], dtype=pl.Categorical)
+    assert a.unique().to_list() == ["a"]
+
+    s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
+    s = s.filter([True, False, True])
+    assert s.n_unique() == 2
