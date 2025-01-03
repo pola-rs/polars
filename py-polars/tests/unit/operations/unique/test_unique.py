@@ -154,6 +154,16 @@ def test_unique_categorical(input: list[str | None], output: list[str | None]) -
     assert_series_equal(result, expected)
 
 
+def test_unique_categorical_global() -> None:
+    with pl.StringCache():
+        pl.Series(["aaaa", "bbbb", "cccc"])  # pre-fill global cache
+        s = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+        s_empty = s.slice(0, 0)
+
+        assert s_empty.unique().to_list() == []
+        assert_series_equal(s_empty.cat.get_categories(), pl.Series(["a", "b", "c"]))
+
+
 def test_unique_with_null() -> None:
     df = pl.DataFrame(
         {
