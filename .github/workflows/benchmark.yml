@@ -107,8 +107,8 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-              const previousSize = process.env.PREVIOUS_WHEEL_SIZE / 1024 / 1024).toFixed(4) || 'Unknown';
-              const currentSize = process.env.WHEEL_SIZE / 1024 / 1024).toFixed(4) || 'Unknown';
+              const previousSize = (process.env.PREVIOUS_WHEEL_SIZE / 1024 / 1024).toFixed(4) || 'Unknown';
+              const currentSize = (process.env.WHEEL_SIZE / 1024 / 1024).toFixed(4) || 'Unknown';
 
               let commentBody = `The previous wheel size was **${previousSizeMB} MB**.\nThe current wheel size after this PR is **${currentSizeMB} MB**.`;
 
