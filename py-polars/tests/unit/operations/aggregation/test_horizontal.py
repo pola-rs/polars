@@ -8,7 +8,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import ComputeError, PolarsError
+from polars.exceptions import ComputeError, InvalidOperationError, PolarsError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -556,6 +556,47 @@ def test_mean_horizontal_temporal(tu: TimeUnit, tz: str, ignore_nulls: bool) -> 
 
 
 @pytest.mark.parametrize(
+    ("dtype1", "dtype2"),
+    [
+        (pl.Date, pl.Datetime),
+        (pl.Date, pl.Time),
+        (pl.Date, pl.Duration),
+        (pl.Datetime, pl.Date),
+        (pl.Datetime, pl.Time),
+        (pl.Datetime, pl.Duration),
+        (pl.Time, pl.Date),
+        (pl.Time, pl.Datetime),
+        (pl.Time, pl.Duration),
+        (pl.Duration, pl.Date),
+        (pl.Duration, pl.Datetime),
+        (pl.Duration, pl.Time),
+    ],
+)
+@pytest.mark.parametrize("with_null", [False, True])
+def test_mean_horizontal_mismatched_types(
+    with_null: bool,
+    dtype1: PolarsDataType,
+    dtype2: PolarsDataType,
+) -> None:
+    df = pl.DataFrame(
+        {
+            "null": [None, None],
+            "a": pl.Series([1, 2]).cast(dtype1),
+            "b": pl.Series([1, 2]).cast(dtype2),
+        }
+    )
+    with pytest.raises(
+        InvalidOperationError,
+        match="'mean_horizontal' expects all numeric or all temporal expressions",
+    ):
+        df.select(
+            pl.mean_horizontal("null", "a", "b")
+            if with_null
+            else pl.mean_horizontal("a", "b")
+        )
+
+
+@pytest.mark.parametrize(
     ("in_dtype", "out_dtype"),
     [
         (pl.Boolean, pl.Float64),
@@ -569,6 +610,15 @@ def test_mean_horizontal_temporal(tu: TimeUnit, tz: str, ignore_nulls: bool) -> 
         (pl.Int64, pl.Float64),
         (pl.Float32, pl.Float32),
         (pl.Float64, pl.Float64),
+        (pl.Date, pl.Datetime("ms")),
+        (pl.Datetime("ms"), pl.Datetime("ms")),
+        (pl.Datetime("us"), pl.Datetime("us")),
+        (pl.Datetime("ns"), pl.Datetime("ns")),
+        (pl.Datetime("ns", "Asia/Kathmandu"), pl.Datetime("ns", "Asia/Kathmandu")),
+        (pl.Duration("ms"), pl.Duration("ms")),
+        (pl.Duration("us"), pl.Duration("us")),
+        (pl.Duration("ns"), pl.Duration("ns")),
+        (pl.Time, pl.Time),
     ],
 )
 def test_schema_mean_horizontal_single_column(

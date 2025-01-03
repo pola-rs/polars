@@ -191,10 +191,9 @@ pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
     }
 }
 
-fn null_with_supertype(
-    columns: Vec<&Series>,
-    date_to_datetime: bool,
-) -> PolarsResult<Option<Column>> {
+// Return a full-null column with dtype determined by supertype of supplied columns.
+// Name of returned column is the left-month input column.
+fn null_with_supertype(columns: &[Column], date_to_datetime: bool) -> PolarsResult<Option<Column>> {
     // We must first determine the correct return dtype.
     let mut return_dtype = dtypes_to_supertype(columns.iter().map(|c| c.dtype()))?;
     if return_dtype == DataType::Boolean {
@@ -207,19 +206,6 @@ fn null_with_supertype(
         columns[0].len(),
         &return_dtype,
     )))
-}
-
-fn null_with_supertype_from_series(
-    columns: &[Column],
-    date_to_datetime: bool,
-) -> PolarsResult<Option<Column>> {
-    null_with_supertype(
-        columns
-            .iter()
-            .map(|c| c.as_materialized_series())
-            .collect::<Vec<_>>(),
-        date_to_datetime,
-    )
 }
 
 pub fn sum_horizontal(
@@ -327,7 +313,8 @@ pub fn mean_horizontal(
     };
 
     if first_non_null_idx > 0 && !ignore_nulls {
-        return null_with_supertype_from_series(columns, true);
+        // We have null columns; return immediately
+        return null_with_supertype(columns, true);
     }
 
     // Ensure column dtypes are all valid
@@ -338,15 +325,15 @@ pub fn mean_horizontal(
         for col in &columns[first_non_null_idx + 1..] {
             let dtype = col.dtype();
             if !ignore_nulls && dtype == &DataType::Null {
-                // A null column guarantees null output.
-                return null_with_supertype_from_series(columns, true);
+                // The presence of a single null column guarantees the output is all-null.
+                return null_with_supertype(columns, true);
             } else if dtype != first_dtype && dtype != &DataType::Null {
                 polars_bail!(
-                    InvalidOperation: "'horizontal_mean' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
+                    InvalidOperation: "'mean_horizontal' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
                     columns[first_non_null_idx].name(),
                     first_dtype,
-                    dtype,
                     col.name(),
+                    dtype,
                 );
             };
         }
@@ -370,7 +357,7 @@ pub fn mean_horizontal(
                 || dtype.is_null())
             {
                 polars_bail!(
-                    InvalidOperation: "'horizontal_mean' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
+                    InvalidOperation: "'mean_horizontal' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
                     columns[first_non_null_idx].name(),
                     first_dtype,
                     col.name(),
@@ -381,7 +368,7 @@ pub fn mean_horizontal(
         columns[first_non_null_idx..].to_vec()
     } else {
         polars_bail!(
-            InvalidOperation: "'horizontal_mean' expects all numeric or all temporal expressions, found {:?} (dtype={})",
+            InvalidOperation: "'mean_horizontal' expects all numeric or all temporal expressions, found {:?} (dtype={})",
             columns[first_non_null_idx].name(),
             first_dtype,
         );
