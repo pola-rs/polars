@@ -53,7 +53,7 @@ itoap = { version = "1", features = ["simd"] }
 libc = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
-multiversion = "0.7"
+multiversion = "0.8"
 ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
 numpy = "0.23"
