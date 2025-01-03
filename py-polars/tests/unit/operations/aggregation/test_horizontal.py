@@ -319,6 +319,39 @@ def test_sum_single_col() -> None:
     )
 
 
+@pytest.mark.parametrize("ignore_nulls", [False, True])
+def test_sum_correct_supertype(ignore_nulls: bool) -> None:
+    values = [1, 2] if ignore_nulls else [None, None]
+    lf = pl.LazyFrame(
+        {
+            "null": [None, None],
+            "int": pl.Series(values, dtype=pl.Int32),
+            "float": pl.Series(values, dtype=pl.Float32),
+        }
+    )
+
+    # null + int32 should produce int32
+    out = lf.select(pl.sum_horizontal("null", "int", ignore_nulls=ignore_nulls))
+    expected = pl.LazyFrame({"null": pl.Series(values, dtype=pl.Int32)})
+    assert_frame_equal(out.collect(), expected.collect())
+    assert out.collect_schema() == expected.collect_schema()
+
+    # null + float32 should produce float32
+    out = lf.select(pl.sum_horizontal("null", "float", ignore_nulls=ignore_nulls))
+    expected = pl.LazyFrame({"null": pl.Series(values, dtype=pl.Float32)})
+    assert_frame_equal(out.collect(), expected.collect())
+    assert out.collect_schema() == expected.collect_schema()
+
+    # null + int32 + float32 should produce float64
+    values = [2, 4] if ignore_nulls else [None, None]
+    out = lf.select(
+        pl.sum_horizontal("null", "int", "float", ignore_nulls=ignore_nulls)
+    )
+    expected = pl.LazyFrame({"null": pl.Series(values, dtype=pl.Float64)})
+    assert_frame_equal(out.collect(), expected.collect())
+    assert out.collect_schema() == expected.collect_schema()
+
+
 def test_cum_sum_horizontal() -> None:
     df = pl.DataFrame(
         {

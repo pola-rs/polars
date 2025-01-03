@@ -190,40 +190,6 @@ pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
     }
 }
 
-// Given a Series sequence, determines the correct supertype and returns full-null Column.
-// The `date_to_datetime` flag indicates that Date supertypes should be converted to Datetime("ms").
-fn null_with_supertype(
-    columns: Vec<&Series>,
-    date_to_datetime: bool,
-) -> PolarsResult<Option<Column>> {
-    // We must first determine the correct return dtype.
-    let mut return_dtype = dtypes_to_supertype(columns.iter().map(|c| c.dtype()))?;
-    if return_dtype == DataType::Boolean {
-        return_dtype = IDX_DTYPE;
-    } else if date_to_datetime && return_dtype == DataType::Date {
-        return_dtype = DataType::Datetime(TimeUnit::Milliseconds, None);
-    }
-    Ok(Some(Column::full_null(
-        columns[0].name().clone(),
-        columns[0].len(),
-        &return_dtype,
-    )))
-}
-
-// Apply `null_with_supertype` to a sequence of Columns.
-fn null_with_supertype_from_columns(
-    columns: &[Column],
-    date_to_datetime: bool,
-) -> PolarsResult<Option<Column>> {
-    null_with_supertype(
-        columns
-            .iter()
-            .map(|c| c.as_materialized_series())
-            .collect::<Vec<_>>(),
-        date_to_datetime,
-    )
-}
-
 pub fn sum_horizontal(
     columns: &[Column],
     null_strategy: NullStrategy,
@@ -255,7 +221,16 @@ pub fn sum_horizontal(
 
     // If we have any null columns and null strategy is not `Ignore`, we can return immediately.
     if !ignore_nulls && non_null_cols.len() < columns.len() {
-        return null_with_supertype_from_columns(columns, false);
+        // We must determine the correct return dtype.
+        let return_dtype = match dtypes_to_supertype(non_null_cols.iter().map(|c| c.dtype()))? {
+            DataType::Boolean => IDX_DTYPE,
+            dt => dt,
+        };
+        return Ok(Some(Column::full_null(
+            columns[0].name().clone(),
+            columns[0].len(),
+            &return_dtype,
+        )));
     }
 
     match non_null_cols.len() {
