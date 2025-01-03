@@ -905,3 +905,23 @@ def test_categorical_unique() -> None:
     s = pl.Series(["a", "b", None], dtype=pl.Categorical)
     assert s.n_unique() == 3
     assert s.unique().to_list() == ["a", "b", None]
+
+
+@StringCache()
+def test_categorical_unique_20539() -> None:
+    df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})
+
+    result = (
+        df.cast({"letter": pl.Categorical})
+        .group_by("number")
+        .agg(
+            unique=pl.col("letter").unique(),
+            unique_with_order=pl.col("letter").unique(maintain_order=True),
+        )
+    )
+
+    assert result.sort("number").to_dict(as_series=False) == {
+        "number": [1, 2, 3],
+        "unique": [["a", "b"], ["b", "c"], ["c"]],
+        "unique_with_order": [["a", "b"], ["b", "c"], ["c"]],
+    }
