@@ -107,13 +107,17 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-              const previousSize = (process.env.PREVIOUS_WHEEL_SIZE / 1024 / 1024).toFixed(4) || 'Unknown';
-              const currentSize = (process.env.WHEEL_SIZE / 1024 / 1024).toFixed(4) || 'Unknown';
+              const previousSize = process.env.PREVIOUS_WHEEL_SIZE || 'Unknown';
+              const currentSize = process.env.WHEEL_SIZE || 'Unknown';
+
+              // Convert to MB
+              const previousSizeMB = previousSize !== 'Unknown' ? (previousSize / 1024 / 1024).toFixed(4) : 'Unknown';
+              const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
 
               let commentBody = `The previous wheel size was **${previousSizeMB} MB**.\nThe current wheel size after this PR is **${currentSizeMB} MB**.`;
 
               // Calculate percentage increase if both sizes are available
-              if (previousSize !== 'Unknown' && currentSize !== 'Unknown') {
+              if (previousSize !== 'Unknown' && currentSize !== '') {
                 const increase = ((currentSize - previousSize) / previousSize) * 100;
                 commentBody += `\nThis represents a **${increase.toFixed(2)}% increase** in size.`;
               }
