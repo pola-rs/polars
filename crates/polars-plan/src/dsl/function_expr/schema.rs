@@ -49,6 +49,8 @@ impl FunctionExpr {
             Hash(..) => mapper.with_dtype(DataType::UInt64),
             #[cfg(feature = "arg_where")]
             ArgWhere => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "index_of")]
+            IndexOf => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "range")]

@@ -247,6 +247,7 @@ string_pad = ["polars-plan/string_pad"]
 string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
+index_of = ["polars-plan/index_of"]
 search_sorted = ["polars-plan/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted"]
 meta = ["polars-plan/meta"]
@@ -314,6 +315,7 @@ test_all = [
   "row_hash",
   "string_pad",
   "string_to_integer",
+  "index_of",
   "search_sorted",
   "top_k",
   "pivot",
@@ -360,6 +362,7 @@ features = [
   "fused",
   "futures",
   "hist",
+  "index_of",
   "interpolate",
   "interpolate_by",
   "ipc",
