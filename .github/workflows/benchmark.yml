@@ -106,15 +106,15 @@ jobs:
       - name: Comment wheel size
         uses: actions/github-script@v7
         with:
-        script: |
-            const previousSize = process.env.PREVIOUS_WHEEL_SIZE || 'Unknown';
-            const currentSize = process.env.CURRENT_WHEEL_SIZE || 'Unknown';
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `The previous wheel size was **${previousSize} bytes**.\nThe current wheel size after this PR is **${currentSize} bytes**.`
-            })
+          script: |
+              const previousSize = process.env.PREVIOUS_WHEEL_SIZE || 'Unknown';
+              const currentSize = process.env.CURRENT_WHEEL_SIZE || 'Unknown';
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: `The previous wheel size was **${previousSize} bytes**.\nThe current wheel size after this PR is **${currentSize} bytes**.`
+              })
 
 
       - name: Run benchmark tests
