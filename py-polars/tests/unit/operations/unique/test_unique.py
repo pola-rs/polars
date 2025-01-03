@@ -147,8 +147,7 @@ def test_unique_null() -> None:
         ([None, "a", "b", "b"], [None, "a", "b"]),
     ],
 )
-# TODO: fails with global string cache
-# @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.usefixtures("test_global_and_local")
 def test_unique_categorical(input: list[str | None], output: list[str | None]) -> None:
     s = pl.Series(input, dtype=pl.Categorical)
     result = s.unique(maintain_order=True)

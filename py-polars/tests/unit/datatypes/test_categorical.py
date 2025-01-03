@@ -316,8 +316,7 @@ def test_compare_categorical(
         (pl.Series.ne_missing, pl.Series([True, True, False, True, False, True])),
     ],
 )
-# TODO: fails with global string cache
-# @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.usefixtures("test_global_and_local")
 def test_compare_categorical_single(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -637,8 +636,7 @@ def test_categorical_fill_null_stringcache() -> None:
     assert a.dtypes == [pl.Categorical]
 
 
-# TODO: fails with global string cache
-# @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.usefixtures("test_global_and_local")
 def test_fast_unique_flag_from_arrow() -> None:
     df = pl.DataFrame(
         {
@@ -929,14 +927,14 @@ def test_perfect_group_by_19950() -> None:
     }
 
 
-@StringCache()
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique() -> None:
     s = pl.Series(["a", "b", None], dtype=pl.Categorical)
     assert s.n_unique() == 3
     assert s.unique().sort().to_list() == [None, "a", "b"]
 
 
-@StringCache()
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_20539() -> None:
     df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})
 
@@ -956,13 +954,10 @@ def test_categorical_unique_20539() -> None:
     }
 
 
-@StringCache()
 @pytest.mark.may_fail_auto_streaming
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_prefill() -> None:
     # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
-    # prefill cache
-    pl.Series(["aaa", "bbb", "ccc"], dtype=pl.Categorical)  # pre-fill cache
-
     # test_compare_categorical_single
     assert (pl.Series(["a"], dtype=pl.Categorical) < "a").to_list() == [False]
 
