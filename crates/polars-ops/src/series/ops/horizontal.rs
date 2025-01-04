@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::series::arithmetic::coerce_lhs_rhs;
@@ -190,10 +191,30 @@ pub fn min_horizontal(columns: &[Column]) -> PolarsResult<Option<Column>> {
     }
 }
 
+// Return a full-null column with dtype determined by supertype of supplied columns.
+// Name of returned column is the left-most input column.
+fn null_with_supertype(columns: &[Column], date_to_datetime: bool) -> PolarsResult<Option<Column>> {
+    // We must first determine the correct return dtype.
+    let mut return_dtype = dtypes_to_supertype(columns.iter().map(|c| c.dtype()))?;
+    if return_dtype == DataType::Boolean {
+        return_dtype = IDX_DTYPE;
+    } else if date_to_datetime && return_dtype == DataType::Date {
+        return_dtype = DataType::Datetime(TimeUnit::Milliseconds, None);
+    }
+    Ok(Some(Column::full_null(
+        columns[0].name().clone(),
+        columns[0].len(),
+        &return_dtype,
+    )))
+}
+
 pub fn sum_horizontal(
     columns: &[Column],
     null_strategy: NullStrategy,
 ) -> PolarsResult<Option<Column>> {
+    if columns.is_empty() {
+        return Ok(None);
+    }
     validate_column_lengths(columns)?;
     let ignore_nulls = null_strategy == NullStrategy::Ignore;
 
@@ -219,6 +240,7 @@ pub fn sum_horizontal(
         .map(|c| c.as_materialized_series())
         .collect::<Vec<_>>();
 
+    let name = columns[0].name().clone();
     // If we have any null columns and null strategy is not `Ignore`, we can return immediately.
     if !ignore_nulls && non_null_cols.len() < columns.len() {
         // We must determine the correct return dtype.
@@ -227,7 +249,7 @@ pub fn sum_horizontal(
             dt => dt,
         };
         return Ok(Some(Column::full_null(
-            columns[0].name().clone(),
+            name,
             columns[0].len(),
             &return_dtype,
         )));
@@ -239,7 +261,7 @@ pub fn sum_horizontal(
                 Ok(None)
             } else {
                 // all columns are null dtype, so result is null dtype
-                Ok(Some(columns[0].clone()))
+                Ok(Some(columns[0].clone().with_name(name)))
             }
         },
         1 => Ok(Some(
@@ -248,6 +270,7 @@ pub fn sum_horizontal(
             } else {
                 non_null_cols[0].clone()
             })?
+            .with_name(name)
             .into(),
         )),
         2 => sum_fn(non_null_cols[0].clone(), non_null_cols[1].clone())
@@ -274,33 +297,102 @@ pub fn mean_horizontal(
     columns: &[Column],
     null_strategy: NullStrategy,
 ) -> PolarsResult<Option<Column>> {
-    validate_column_lengths(columns)?;
-
-    let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) = columns.iter().partition(|s| {
-        let dtype = s.dtype();
-        dtype.is_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
-    });
-
-    if !non_numeric_columns.is_empty() {
-        let col = non_numeric_columns.first().cloned();
-        polars_bail!(
-            InvalidOperation: "'horizontal_mean' expects numeric expressions, found {:?} (dtype={})",
-            col.unwrap().name(),
-            col.unwrap().dtype(),
-        );
+    if columns.is_empty() {
+        return Ok(None);
     }
-    let columns = numeric_columns.into_iter().cloned().collect::<Vec<_>>();
+    let ignore_nulls = null_strategy == NullStrategy::Ignore;
+
+    validate_column_lengths(columns)?;
+    let name = columns[0].name().clone();
+
+    let Some(first_non_null_idx) = columns.iter().position(|c| !c.dtype().is_null()) else {
+        // All columns are null; return f64 nulls.
+        return Ok(Some(
+            Float64Chunked::full_null(name, columns[0].len()).into_column(),
+        ));
+    };
+
+    if first_non_null_idx > 0 && !ignore_nulls {
+        // We have null columns; return immediately
+        return null_with_supertype(columns, true);
+    }
+
+    // Ensure column dtypes are all valid
+    let first_dtype = columns[first_non_null_idx].dtype();
+    let is_temporal = first_dtype.is_temporal();
+    let columns = if is_temporal {
+        // All remaining dtypes must be the same temporal dtype (or null).
+        for col in &columns[first_non_null_idx + 1..] {
+            let dtype = col.dtype();
+            if !ignore_nulls && dtype == &DataType::Null {
+                // The presence of a single null column guarantees the output is all-null.
+                return null_with_supertype(columns, true);
+            } else if dtype != first_dtype && dtype != &DataType::Null {
+                polars_bail!(
+                    InvalidOperation: "'mean_horizontal' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
+                    columns[first_non_null_idx].name(),
+                    first_dtype,
+                    col.name(),
+                    dtype,
+                );
+            };
+        }
+        columns[first_non_null_idx..]
+            .iter()
+            .map(|c| c.cast(&DataType::Int64).unwrap())
+            .collect::<Vec<_>>()
+    } else if first_dtype.is_numeric()
+        || first_dtype.is_decimal()
+        || first_dtype.is_bool()
+        || first_dtype.is_null()
+        || first_dtype.is_temporal()
+    {
+        // All remaining must be numeric (or null).
+        for col in &columns[first_non_null_idx + 1..] {
+            let dtype = col.dtype();
+            if !ignore_nulls && dtype == &DataType::Null {
+                // The presence of a single null column guarantees the output is all-null.
+                return null_with_supertype(columns, true);
+            } else if !(dtype.is_numeric()
+                || dtype.is_decimal()
+                || dtype.is_bool()
+                || dtype.is_temporal()
+                || dtype.is_null())
+            {
+                polars_bail!(
+                    InvalidOperation: "'mean_horizontal' expects all numeric or all temporal expressions, found {:?} (dtype={}) and {:?} (dtype={})",
+                    columns[first_non_null_idx].name(),
+                    first_dtype,
+                    col.name(),
+                    dtype,
+                );
+            }
+        }
+        columns[first_non_null_idx..].to_vec()
+    } else {
+        polars_bail!(
+            InvalidOperation: "'mean_horizontal' expects all numeric or all temporal expressions, found {:?} (dtype={})",
+            columns[first_non_null_idx].name(),
+            first_dtype,
+        );
+    };
+
     let num_rows = columns.len();
     match num_rows {
-        0 => Ok(None),
-        1 => Ok(Some(match columns[0].dtype() {
-            dt if dt != &DataType::Float32 && !dt.is_decimal() => {
-                columns[0].cast(&DataType::Float64)?
+        1 => Ok(Some(match first_dtype {
+            dt if dt != &DataType::Float32 && !is_temporal && !dt.is_decimal() => {
+                columns[0].cast(&DataType::Float64)?.with_name(name)
             },
-            _ => columns[0].clone(),
+            _ => match first_dtype {
+                DataType::Date => (&columns[0] * MILLISECONDS_IN_DAY)
+                    .with_name(name)
+                    .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
+                dt if is_temporal => columns[0].cast(dt)?.with_name(name),
+                _ => columns[0].clone().with_name(name),
+            },
         })),
         _ => {
-            let sum = || sum_horizontal(columns.as_slice(), null_strategy);
+            let sum = || sum_horizontal(&columns, null_strategy);
             let null_count = || {
                 columns
                     .par_iter()
@@ -321,7 +413,7 @@ pub fn mean_horizontal(
             };
 
             let (sum, null_count) = POOL.install(|| rayon::join(sum, null_count));
-            let sum = sum?;
+            let sum = sum?.map(|c| c.with_name(name));
             let null_count = null_count?;
 
             // value lengths: len - null_count
@@ -349,8 +441,26 @@ pub fn mean_horizontal(
                 .into_column()
                 .cast(dt)?;
 
-            sum.map(|sum| std::ops::Div::div(&sum, &value_length))
-                .transpose()
+            let out = sum.map(|sum| std::ops::Div::div(&sum, &value_length));
+
+            let x = out.map(|opt| {
+                opt.and_then(|value| {
+                    if is_temporal {
+                        if first_dtype == &DataType::Date {
+                            // Cast to DateTime(us)
+                            (value * MILLISECONDS_IN_DAY)
+                                .cast(&DataType::Datetime(TimeUnit::Milliseconds, None))
+                        } else {
+                            // Cast to original
+                            value.cast(first_dtype)
+                        }
+                    } else {
+                        Ok(value)
+                    }
+                })
+            });
+
+            x.transpose()
         },
     }
 }
