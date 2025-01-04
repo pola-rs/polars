@@ -5942,10 +5942,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         dtypes: Sequence[PolarsDataType] | None
 
         if value is not None:
-
-            def infer_dtype(value: Any) -> PolarsDataType:
-                return next(iter(self.select(value).collect_schema().values()))
-
             if isinstance(value, pl.Expr):
                 dtypes = None
             elif isinstance(value, bool):
