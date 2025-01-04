@@ -247,6 +247,18 @@ pub fn execute_graph(
     let num_pipelines = POOL.current_num_threads();
     async_executor::set_num_threads(num_pipelines);
 
+    // Ensure everything is properly connected.
+    for (node_key, node) in &graph.nodes {
+        for (i, input) in node.inputs.iter().enumerate() {
+            assert!(graph.pipes[*input].receiver == node_key);
+            assert!(graph.pipes[*input].recv_port == i);
+        }
+        for (i, output) in node.outputs.iter().enumerate() {
+            assert!(graph.pipes[*output].sender == node_key);
+            assert!(graph.pipes[*output].send_port == i);
+        }
+    }
+
     for node in graph.nodes.values_mut() {
         node.compute.initialize(num_pipelines);
     }

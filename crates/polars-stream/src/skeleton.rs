@@ -33,8 +33,10 @@ pub fn run_query(
     }
     let (mut graph, phys_to_graph) =
         crate::physical_plan::physical_plan_to_graph(root, &phys_sm, expr_arena)?;
+
     crate::async_executor::clear_task_wait_statistics();
     let mut results = crate::execute::execute_graph(&mut graph)?;
+
     if std::env::var("POLARS_TRACK_WAIT_STATS").as_deref() == Ok("1") {
         let mut stats = crate::async_executor::get_task_wait_statistics();
         stats.sort_by_key(|(_l, w)| Reverse(*w));

@@ -1,5 +1,5 @@
 use polars_error::PolarsResult;
-use slotmap::{SecondaryMap, SlotMap};
+use slotmap::{Key, SecondaryMap, SlotMap};
 
 use crate::nodes::ComputeNode;
 
@@ -32,7 +32,7 @@ impl Graph {
     pub fn add_node<N: ComputeNode + 'static>(
         &mut self,
         node: N,
-        inputs: impl IntoIterator<Item = GraphNodeKey>,
+        inputs: impl IntoIterator<Item = (GraphNodeKey, usize)>,
     ) -> GraphNodeKey {
         // Add the GraphNode.
         let node_key = self.nodes.insert(GraphNode {
@@ -42,8 +42,7 @@ impl Graph {
         });
 
         // Create and add pipes that connect input to output.
-        for (recv_port, sender) in inputs.into_iter().enumerate() {
-            let send_port = self.nodes[sender].outputs.len();
+        for (recv_port, (sender, send_port)) in inputs.into_iter().enumerate() {
             let pipe = LogicalPipe {
                 sender,
                 send_port,
@@ -58,7 +57,13 @@ impl Graph {
 
             // And connect input to output.
             self.nodes[node_key].inputs.push(pipe_key);
-            self.nodes[sender].outputs.push(pipe_key);
+            if self.nodes[sender].outputs.len() <= send_port {
+                self.nodes[sender]
+                    .outputs
+                    .resize(send_port + 1, LogicalPipeKey::null());
+            }
+            assert!(self.nodes[sender].outputs[send_port].is_null());
+            self.nodes[sender].outputs[send_port] = pipe_key;
         }
 
         node_key
@@ -142,14 +147,14 @@ pub struct LogicalPipe {
     pub sender: GraphNodeKey,
     // Output location:
     // graph[x].output[i].send_port == i
-    send_port: usize,
+    pub send_port: usize,
     pub send_state: PortState,
 
     // Node that we receive data from.
     pub receiver: GraphNodeKey,
     // Input location:
     // graph[x].inputs[i].recv_port == i
-    recv_port: usize,
+    pub recv_port: usize,
     pub recv_state: PortState,
 }
 
