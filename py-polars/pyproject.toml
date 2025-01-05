@@ -259,6 +259,8 @@ filterwarnings = [
   # Ignore invalid warnings when running earlier versions of SQLAlchemy (we
   # know they are invalid because our standard tests run the latest version)
   "ignore:Deprecated API features detected.*:DeprecationWarning",
+  # numpy import can generate this warning in Python 3.13 on certain runners
+  "ignore:.*numpy\\.longdouble.*:UserWarning",
 ]
 xfail_strict = true
 
