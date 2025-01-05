@@ -20,4 +20,20 @@ impl CategoricalNameSpace {
         self.0
             .map_private(FunctionExpr::Categorical(CategoricalFunction::LenChars))
     }
+
+    #[cfg(feature = "strings")]
+    pub fn starts_with(self, prefix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Categorical(CategoricalFunction::StartsWith(
+                prefix,
+            )))
+    }
+
+    #[cfg(feature = "strings")]
+    pub fn ends_with(self, suffix: String) -> Expr {
+        self.0
+            .map_private(FunctionExpr::Categorical(CategoricalFunction::EndsWith(
+                suffix,
+            )))
+    }
 }

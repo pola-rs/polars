@@ -229,3 +229,52 @@ def test_cat_len_chars() -> None:
         }
     )
     assert_frame_equal(result_df, expected_df)
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_starts_ends_with() -> None:
+    s = pl.Series(
+        "a",
+        ["hamburger_with_tomatoes", "nuts", "nuts", "lollypop", None],
+        dtype=pl.Categorical,
+    )
+    assert_series_equal(
+        s.cat.ends_with("pop"), pl.Series("a", [False, False, False, True, None])
+    )
+    assert_series_equal(
+        s.cat.starts_with("nu"), pl.Series("a", [False, True, True, False, None])
+    )
+
+    with pytest.raises(TypeError, match="'prefix' must be a string; found"):
+        s.cat.starts_with(None)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="'suffix' must be a string; found"):
+        s.cat.ends_with(None)  # type: ignore[arg-type]
+
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                ["hamburger_with_tomatoes", "nuts", "nuts", "lollypop", None],
+                dtype=pl.Categorical,
+            ),
+        }
+    )
+
+    expected = {
+        "ends_pop": [False, False, False, True, None],
+        "starts_ham": [True, False, False, False, None],
+    }
+
+    assert (
+        df.select(
+            pl.col("a").cat.ends_with("pop").alias("ends_pop"),
+            pl.col("a").cat.starts_with("ham").alias("starts_ham"),
+        ).to_dict(as_series=False)
+        == expected
+    )
+
+    with pytest.raises(TypeError, match="'prefix' must be a string; found"):
+        df.select(pl.col("a").cat.starts_with(None))  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError, match="'suffix' must be a string; found"):
+        df.select(pl.col("a").cat.ends_with(None))  # type: ignore[arg-type]
