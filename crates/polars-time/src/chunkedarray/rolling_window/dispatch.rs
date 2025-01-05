@@ -340,8 +340,8 @@ pub trait SeriesOpsTime: AsSeries {
                 rolling_agg_bool(
                     ca,
                     options,
-                    &rolling::no_nulls::rolling_min_bool,
-                    &rolling::nulls::rolling_min_bool,
+                    &rolling::no_nulls::rolling_find_and_set_bool::<false>,
+                    &rolling::nulls::rolling_find_and_set_bool::<false>,
                 )
             },
             dt if dt.is_numeric() => {
@@ -402,8 +402,8 @@ pub trait SeriesOpsTime: AsSeries {
                 rolling_agg_bool(
                     ca,
                     options,
-                    &rolling::no_nulls::rolling_max_bool,
-                    &rolling::nulls::rolling_max_bool,
+                    &rolling::no_nulls::rolling_find_and_set_bool::<true>,
+                    &rolling::nulls::rolling_find_and_set_bool::<true>,
                 )
             },
             dt if dt.is_numeric() => {

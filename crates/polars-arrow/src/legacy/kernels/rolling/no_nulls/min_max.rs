@@ -1,5 +1,4 @@
 use super::*;
-use crate::bitmap::utils::BitmapIter;
 
 #[inline]
 fn new_is_min<T: NativeType + IsFloat + PartialOrd>(old: &T, new: &T) -> bool {
@@ -287,111 +286,93 @@ macro_rules! rolling_minmax_func {
 rolling_minmax_func!(rolling_min, MinWindow, compute_min_weights);
 rolling_minmax_func!(rolling_max, MaxWindow, compute_max_weights);
 
-macro_rules! minmax_window_bool {
-    ($m_window_bool:tt, $count_until_next_value_fn:path, $count_consec_value_fn:path, $value:ident) => {
-        pub struct $m_window_bool {}
+pub struct AggWindowBool<const V: bool>;
 
-        impl<Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> RollingAggWindowBoolNoNulls<Fo>
-            for $m_window_bool
-        {
-            fn result_values(
-                bitmap: &Bitmap,
-                window_size: WindowSize,
-                det_effects_fn: Fo,
-            ) -> Bitmap {
-                let len = bitmap.len();
-                let mut out = MutableBitmap::with_capacity(len);
+impl<const V: bool, Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> RollingAggWindowBoolNoNulls<Fo>
+    for AggWindowBool<V>
+{
+    fn result_values(bitmap: &Bitmap, window_size: WindowSize, det_effects_fn: Fo) -> Bitmap {
+        let len = bitmap.len();
+        let mut out = MutableBitmap::with_capacity(len);
 
-                let iter = &mut bitmap.iter();
+        let iter = &mut bitmap.iter();
 
-                let mut last_end = 0;
-                let mut idx = 0;
+        let mut last_end = 0;
+        let mut idx = 0;
 
-                // Count until the first false
-                idx += $count_until_next_value_fn(iter);
+        // Count until the first value
+        idx += match V {
+            true => iter.take_leading_zeros(),
+            false => iter.take_leading_ones(),
+        };
 
-                while idx < len {
-                    // window that is affected by this false value at `idx`.
-                    let (start, end) = det_effects_fn(idx, window_size, len);
+        while idx < len {
+            // window that is affected by this false value at `idx`.
+            let (start, end) = det_effects_fn(idx, window_size, len);
 
-                    // extend window by the number of consecutive false.
-                    let num_of_consec_value = $count_consec_value_fn(iter);
-                    let end = std::cmp::min(len, end + (num_of_consec_value - 1));
+            // extend window by the number of consecutive false.
+            let num_of_consec_value = match V {
+                true => iter.take_leading_ones(),
+                false => iter.take_leading_zeros(),
+            };
 
-                    // previous false is not in current window
-                    if last_end <= start {
-                        // fill true from the last false to just before current window
-                        out.extend_constant(start - last_end, !($value));
-                        // fill window with false
-                        out.extend_constant(end - start, $value);
-                    }
-                    // previous false is in current window
-                    else {
-                        // fill window with false
-                        out.extend_constant(end - last_end, $value);
-                    }
-                    // last false idx
-                    last_end = end;
+            let end = std::cmp::min(len, end + (num_of_consec_value - 1));
 
-                    // count until the next false
-                    idx += num_of_consec_value + $count_until_next_value_fn(iter);
-                }
-
-                // fill the remaining with true
-                out.extend_constant(len - last_end, !($value));
-
-                assert!(out.len() == len);
-                out.freeze()
+            // previous false is not in current window
+            if last_end <= start {
+                // fill true from the last false to just before current window
+                out.extend_constant(start - last_end, !V);
+                // fill window with false
+                out.extend_constant(end - start, V);
             }
+            // previous false is in current window
+            else {
+                // fill window with false
+                out.extend_constant(end - last_end, V);
+            }
+            // last false idx
+            last_end = end;
+
+            // count until the next false
+            idx += num_of_consec_value
+                + match V {
+                    true => iter.take_leading_zeros(),
+                    false => iter.take_leading_ones(),
+                };
         }
-    };
+
+        // fill the remaining with true
+        out.extend_constant(len - last_end, !V);
+
+        out.freeze()
+    }
 }
 
-minmax_window_bool!(
-    MinWindowBool,
-    BitmapIter::take_leading_ones,
-    BitmapIter::take_leading_zeros,
-    false
-);
-minmax_window_bool!(
-    MaxWindowBool,
-    BitmapIter::take_leading_zeros,
-    BitmapIter::take_leading_ones,
-    true
-);
-
-macro_rules! rolling_minmax_bool_func {
-    ($rolling_m:ident, $window:tt) => {
-        pub fn $rolling_m(
-            bitmap: &Bitmap,
-            window_size: usize,
-            min_periods: usize,
-            center: bool,
-        ) -> ArrayRef {
-            let offset_fn = match center {
-                true => det_offsets_center,
-                false => det_offsets,
-            };
-
-            // window that should be unset if value is false at `i`
-            let effect_fn = match center {
-                true => det_effects_center,
-                false => det_effects,
-            };
-
-            rolling_apply_agg_window_bool::<$window, _>(
-                bitmap,
-                window_size,
-                min_periods,
-                offset_fn,
-                effect_fn,
-            )
-        }
+pub fn rolling_find_and_set_bool<const V: bool>(
+    bitmap: &Bitmap,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+) -> ArrayRef {
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
     };
-}
 
-rolling_minmax_bool_func!(rolling_min_bool, MinWindowBool);
-rolling_minmax_bool_func!(rolling_max_bool, MaxWindowBool);
+    // window that should be unset if value is false at `i`
+    let effect_fn = match center {
+        true => det_effects_center,
+        false => det_effects,
+    };
+
+    rolling_apply_agg_window_bool::<AggWindowBool<V>, _>(
+        bitmap,
+        window_size,
+        min_periods,
+        offset_fn,
+        effect_fn,
+    )
+}
 
 #[cfg(test)]
 mod test {
@@ -468,14 +449,14 @@ mod test {
         // test bool
         let values = Bitmap::from(&[true, true, false, false, true]);
 
-        let out = rolling_min_bool(&values, 2, 2, false);
+        let out = rolling_find_and_set_bool::<false>(&values, 2, 2, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
             out,
             &[None, Some(true), Some(false), Some(false), Some(false)]
         );
-        let out = rolling_max_bool(&values, 2, 2, false);
+        let out = rolling_find_and_set_bool::<true>(&values, 2, 2, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -483,7 +464,7 @@ mod test {
             &[None, Some(true), Some(true), Some(false), Some(true)]
         );
 
-        let out = rolling_min_bool(&values, 2, 1, false);
+        let out = rolling_find_and_set_bool::<false>(&values, 2, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -496,7 +477,7 @@ mod test {
                 Some(false)
             ]
         );
-        let out = rolling_max_bool(&values, 2, 1, false);
+        let out = rolling_find_and_set_bool::<true>(&values, 2, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -504,16 +485,16 @@ mod test {
             &[Some(true), Some(true), Some(true), Some(false), Some(true)]
         );
 
-        let out = rolling_min_bool(&values, 2, 3, false);
+        let out = rolling_find_and_set_bool::<false>(&values, 2, 3, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None, None]);
-        let out = rolling_max_bool(&values, 2, 3, false);
+        let out = rolling_find_and_set_bool::<true>(&values, 2, 3, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, None, None]);
 
-        let out = rolling_min_bool(&values, 3, 1, false);
+        let out = rolling_find_and_set_bool::<false>(&values, 3, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -526,7 +507,7 @@ mod test {
                 Some(false)
             ]
         );
-        let out = rolling_max_bool(&values, 3, 1, false);
+        let out = rolling_find_and_set_bool::<true>(&values, 3, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(

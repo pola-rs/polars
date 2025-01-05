@@ -407,70 +407,49 @@ where
     }
 }
 
-pub struct MinWindowBool {}
+pub struct AggWindowBool<const V: bool>;
 
-impl<Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> RollingAggWindowBoolNulls<Fo> for MinWindowBool {
+impl<const V: bool, Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> RollingAggWindowBoolNulls<Fo>
+    for AggWindowBool<V>
+{
     fn result_values(
         bitmap: &Bitmap,
         validity: &Bitmap,
         window_size: WindowSize,
         det_effects_fn: Fo,
     ) -> Bitmap {
-        // set None to true
-        let bitmap = bitmap | &(!validity);
+        let bitmap = match V {
+            true => bitmap & validity,
+            false => bitmap | &(!validity),
+        };
 
-        // finds false and update result
-        no_nulls::MinWindowBool::result_values(&bitmap, window_size, det_effects_fn)
+        no_nulls::AggWindowBool::<V>::result_values(&bitmap, window_size, det_effects_fn)
     }
 }
 
-pub struct MaxWindowBool {}
-
-impl<Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> RollingAggWindowBoolNulls<Fo> for MaxWindowBool {
-    fn result_values(
-        bitmap: &Bitmap,
-        validity: &Bitmap,
-        window_size: WindowSize,
-        det_effects_fn: Fo,
-    ) -> Bitmap {
-        // set None to false
-        let bitmap = bitmap & validity;
-
-        // finds true and update result
-        no_nulls::MaxWindowBool::result_values(&bitmap, window_size, det_effects_fn)
-    }
-}
-
-macro_rules! rolling_minmax_bool_func {
-    ($rolling_m:ident, $window:tt) => {
-        pub fn $rolling_m(
-            arr: &BooleanArray,
-            window_size: usize,
-            min_periods: usize,
-            center: bool,
-        ) -> ArrayRef {
-            let offset_fn = match center {
-                true => det_offsets_center,
-                false => det_offsets,
-            };
-
-            // window that should be unset if value is false at `i`
-            let effect_fn = match center {
-                true => det_effects_center,
-                false => det_effects,
-            };
-
-            rolling_apply_agg_window_bool::<$window, _>(
-                arr.values(),
-                arr.validity().unwrap(),
-                window_size,
-                min_periods,
-                offset_fn,
-                effect_fn,
-            )
-        }
+pub fn rolling_find_and_set_bool<const V: bool>(
+    arr: &BooleanArray,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+) -> ArrayRef {
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
     };
-}
 
-rolling_minmax_bool_func!(rolling_min_bool, MinWindowBool);
-rolling_minmax_bool_func!(rolling_max_bool, MaxWindowBool);
+    // window that should be unset if value is false at `i`
+    let effect_fn = match center {
+        true => det_effects_center,
+        false => det_effects,
+    };
+
+    rolling_apply_agg_window_bool::<AggWindowBool<V>, _>(
+        arr.values(),
+        arr.validity().unwrap(),
+        window_size,
+        min_periods,
+        offset_fn,
+        effect_fn,
+    )
+}

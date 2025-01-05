@@ -291,7 +291,7 @@ mod test {
             values,
             Some(Bitmap::from(&[true, true, true, true, true])),
         );
-        let out = rolling_max_bool(arr, 4, 1, false);
+        let out = rolling_find_and_set_bool::<true>(arr, 4, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -299,7 +299,7 @@ mod test {
             &[Some(false), Some(false), Some(true), Some(true), Some(true)]
         );
 
-        let out = rolling_max_bool(arr, 2, 2, false);
+        let out = rolling_find_and_set_bool::<true>(arr, 2, 2, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -307,7 +307,7 @@ mod test {
             &[None, Some(false), Some(true), Some(true), Some(true)]
         );
 
-        let out = rolling_max_bool(arr, 4, 4, false);
+        let out = rolling_find_and_set_bool::<true>(arr, 4, 4, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(out, &[None, None, None, Some(true), Some(true)]);
@@ -318,7 +318,7 @@ mod test {
             values,
             Some(Bitmap::from(&[true, true, true, true, true])),
         );
-        let out = rolling_max_bool(arr, 2, 1, false);
+        let out = rolling_find_and_set_bool::<true>(arr, 2, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
@@ -326,7 +326,7 @@ mod test {
             &[Some(true), Some(true), Some(true), Some(false), Some(true)]
         );
 
-        let out = super::no_nulls::rolling_max_bool(arr.values(), 2, 1, false);
+        let out = super::no_nulls::rolling_find_and_set_bool::<true>(arr.values(), 2, 1, false);
         let out = out.as_any().downcast_ref::<BooleanArray>().unwrap();
         let out = out.into_iter().collect::<Vec<_>>();
         assert_eq!(
