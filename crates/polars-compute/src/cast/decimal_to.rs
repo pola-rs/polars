@@ -29,7 +29,7 @@ fn decimal_to_decimal_impl<F: Fn(i128) -> Option<i128>>(
         .to(ArrowDataType::Decimal(to_precision, to_scale))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn decimal_to_decimal(
     from: &PrimitiveArray<i128>,
     to_precision: usize,
@@ -79,7 +79,7 @@ pub(super) fn decimal_to_decimal_dyn(
     Ok(Box::new(decimal_to_decimal(from, to_precision, to_scale)))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn decimal_to_float<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
 where
     T: NativeType + Float,
@@ -110,7 +110,7 @@ where
     Ok(Box::new(decimal_to_float::<T>(from)))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn decimal_to_integer<T>(from: &PrimitiveArray<i128>) -> PrimitiveArray<T>
 where
     T: NativeType + NumCast,

@@ -142,7 +142,7 @@ class DataType(metaclass=DataTypeClass):
         Parameters
         ----------
         other
-            the other polars dtype to compare with.
+            the other Polars dtype to compare with.
 
         Examples
         --------

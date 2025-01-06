@@ -682,7 +682,7 @@ class StringNameSpace:
         Extract the first match of json string with provided JSONPath expression.
 
         Throw errors if encounter invalid json strings.
-        All return value will be casted to String regardless of the original value.
+        All return value will be cast to String regardless of the original value.
 
         Documentation on JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.

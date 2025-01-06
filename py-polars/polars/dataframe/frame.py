@@ -10356,7 +10356,7 @@ class DataFrame:
         Apply a horizontal reduction on a DataFrame.
 
         This can be used to effectively determine aggregations on a row level, and can
-        be applied to any DataType that can be supercasted (casted to a similar parent
+        be applied to any DataType that can be supercast (cast to a similar parent
         type).
 
         An example of the supercast rules when applying an arithmetic operation on two

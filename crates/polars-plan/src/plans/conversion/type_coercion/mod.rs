@@ -409,7 +409,7 @@ fn try_inline_literal_cast(
                 Some(av) => av.into(),
             }
         },
-        // We generate casted literal datetimes, so ensure we cast upon conversion
+        // We generate cast literal datetimes, so ensure we cast upon conversion
         // to create simpler expr trees.
         #[cfg(feature = "dtype-datetime")]
         LiteralValue::DateTime(ts, tu, None) if dtype.is_date() => {

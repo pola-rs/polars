@@ -35,10 +35,10 @@ fn assert_dtypes(dtype: &ArrowDataType) {
     use ArrowDataType as D;
 
     match dtype {
-        // These should all be casted to the BinaryView / Utf8View variants
+        // These should all be cast to the BinaryView / Utf8View variants
         D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
 
-        // These should be casted to Float32
+        // These should be cast to Float32
         D::Float16 => unreachable!(),
 
         // This should have been converted to a LargeList

@@ -161,7 +161,7 @@ impl<T: PolarsNumericType> ChunkedArray<T> {
         S: PolarsNumericType,
     {
         // if we cast, we create a new arrow buffer
-        // then we clone the arrays and drop the casted arrays
+        // then we clone the arrays and drop the cast arrays
         // this will ensure we have a single ref count
         // and we can mutate in place
         let chunks = {
