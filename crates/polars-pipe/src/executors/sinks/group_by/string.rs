@@ -545,7 +545,7 @@ pub(super) fn apply_aggregate(
                 }};
             }
 
-    if has_physical_agg && aggregation_s.dtype().is_numeric() {
+    if has_physical_agg && aggregation_s.dtype().is_primitive_numeric() {
         macro_rules! dispatch {
             ($ca:expr, $name:ident) => {{
                 let arr = $ca.downcast_iter().next().unwrap();

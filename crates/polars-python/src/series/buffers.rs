@@ -75,7 +75,7 @@ impl PySeries {
                     length: len,
                 })
             },
-            dt if dt.is_numeric() => Ok(with_match_physical_numeric_polars_type!(dt, |$T| {
+            dt if dt.is_primitive_numeric() => Ok(with_match_physical_numeric_polars_type!(dt, |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
             })),
@@ -90,7 +90,7 @@ impl PySeries {
     fn _get_buffers(&self, py: Python) -> PyResult<(Self, Option<Self>, Option<Self>)> {
         let s = &self.series;
         py.allow_threads(|| match s.dtype().to_physical() {
-            dt if dt.is_numeric() => get_buffers_from_primitive(s),
+            dt if dt.is_primitive_numeric() => get_buffers_from_primitive(s),
             DataType::Boolean => get_buffers_from_primitive(s),
             DataType::String => get_buffers_from_string(s),
             dt => {
@@ -191,7 +191,7 @@ impl PySeries {
         let owner = owner.to_owned().unbind();
 
         let arr_boxed = match dtype {
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_type!(dt, |$T|  unsafe {
                     from_buffer_impl::<$T>(pointer, offset, length, owner)
                 })
@@ -294,7 +294,7 @@ impl PySeries {
         };
 
         let s = match dtype.to_physical() {
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 let values = data.into_iter().next().unwrap();
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let values_buffer = series_to_buffer::<$T>(values);

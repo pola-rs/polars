@@ -418,7 +418,7 @@ pub fn get_supertype_with_options(
                     // Keep unknown
                     dynam if dt.is_null() => Some(Unknown(*dynam)),
                     // Find integers sizes
-                    UnknownKind::Int(v) if dt.is_numeric() => {
+                    UnknownKind::Int(v) if dt.is_primitive_numeric() => {
                         // Both dyn int
                         if let Unknown(UnknownKind::Int(v_other)) = dt {
                             // Take the maximum value to ensure we bubble up the required minimal size.
@@ -451,7 +451,7 @@ pub fn get_supertype_with_options(
                 super_type_structs(fields_a, fields_b)
             }
             #[cfg(feature = "dtype-struct")]
-            (Struct(fields_a), rhs) if rhs.is_numeric() => {
+            (Struct(fields_a), rhs) if rhs.is_primitive_numeric() => {
                 let mut new_fields = Vec::with_capacity(fields_a.len());
                 for a in fields_a {
                     let st = get_supertype(&a.dtype, rhs)?;

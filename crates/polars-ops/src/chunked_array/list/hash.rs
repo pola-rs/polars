@@ -45,7 +45,7 @@ where
 }
 
 pub(crate) fn hash(ca: &mut ListChunked, build_hasher: PlRandomState) -> UInt64Chunked {
-    if !ca.inner_dtype().to_physical().is_numeric() {
+    if !ca.inner_dtype().to_physical().is_primitive_numeric() {
         panic!(
             "Hashing a list with a non-numeric inner type not supported. Got dtype: {:?}",
             ca.dtype()

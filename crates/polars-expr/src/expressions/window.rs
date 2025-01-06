@@ -697,7 +697,7 @@ fn set_by_groups(
     if update_groups {
         return None;
     }
-    if s.dtype().to_physical().is_numeric() {
+    if s.dtype().to_physical().is_primitive_numeric() {
         let dtype = s.dtype();
         let s = s.to_physical_repr();
 

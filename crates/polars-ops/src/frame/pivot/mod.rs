@@ -334,7 +334,7 @@ fn pivot_impl_single_column(
             debug_assert_eq!(row_locations.len(), col_locations.len());
             debug_assert_eq!(value_agg_phys.len(), row_locations.len());
 
-            let mut cols = if value_agg_phys.dtype().is_numeric() {
+            let mut cols = if value_agg_phys.dtype().is_primitive_numeric() {
                 macro_rules! dispatch {
                     ($ca:expr) => {{
                         positioning::position_aggregates_numeric(

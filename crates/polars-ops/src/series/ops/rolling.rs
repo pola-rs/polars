@@ -51,7 +51,7 @@ pub trait RollingSeries: SeriesSealed {
                 let ca = s.f32().unwrap();
                 rolling_skew(ca, window_size, bias).map(|ca| ca.into_series())
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 let s = s.cast(&DataType::Float64).unwrap();
                 s.rolling_skew(window_size, bias)
             },

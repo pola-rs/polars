@@ -36,7 +36,7 @@ pub fn floor_div_series(a: &Series, b: &Series) -> PolarsResult<Series> {
         _ => {},
     }
 
-    if !a.dtype().is_numeric() {
+    if !a.dtype().is_primitive_numeric() {
         polars_bail!(op = "floor_div", a.dtype());
     }
 

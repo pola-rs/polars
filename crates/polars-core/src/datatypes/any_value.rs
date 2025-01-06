@@ -364,7 +364,7 @@ impl AnyValue<'static> {
             DataType::Binary => AnyValue::BinaryOwned(Vec::new()),
             DataType::Boolean => (0 as IdxSize).into(),
             // SAFETY: numeric values are static, inform the compiler of this.
-            d if d.is_numeric() => unsafe {
+            d if d.is_primitive_numeric() => unsafe {
                 std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
                     AnyValue::UInt8(0).cast(dtype),
                 )

@@ -184,7 +184,7 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
 
     match (left, right) {
-        (String, dt) | (dt, String) if dt.is_numeric() => {
+        (String, dt) | (dt, String) if dt.is_primitive_numeric() => {
             polars_bail!(ComputeError: "cannot compare string with numeric type ({})", dt)
         },
         #[cfg(feature = "dtype-categorical")]
