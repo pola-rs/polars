@@ -644,7 +644,9 @@ impl<'a> AnyValue<'a> {
 
             // to date
             #[cfg(feature = "dtype-date")]
-            (av, DataType::Date) if av.is_primitive_numeric() => AnyValue::Date(av.extract::<i32>()?),
+            (av, DataType::Date) if av.is_primitive_numeric() => {
+                AnyValue::Date(av.extract::<i32>()?)
+            },
             #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Date) => {
                 AnyValue::Date(match tu {
@@ -656,7 +658,9 @@ impl<'a> AnyValue<'a> {
 
             // to time
             #[cfg(feature = "dtype-time")]
-            (av, DataType::Time) if av.is_primitive_numeric() => AnyValue::Time(av.extract::<i64>()?),
+            (av, DataType::Time) if av.is_primitive_numeric() => {
+                AnyValue::Time(av.extract::<i64>()?)
+            },
             #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Time) => {
                 AnyValue::Time(match tu {
