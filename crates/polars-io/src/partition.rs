@@ -39,9 +39,7 @@ fn write_partitioned_dataset_impl<W>(
 where
     W: WriteDataFrameToFile + Send + Sync,
 {
-    let partition_by = partition_by
-        .into_iter()
-        .collect::<Vec<PlSmallStr>>();
+    let partition_by = partition_by.into_iter().collect::<Vec<PlSmallStr>>();
     // Ensure we have a single chunk as the gather will otherwise rechunk per group.
     df.as_single_chunk_par();
 

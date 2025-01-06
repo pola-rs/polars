@@ -267,9 +267,9 @@ pub fn apply_lambda_with_list_out_type<'a>(
                     if val.is_none() {
                         Ok(None)
                     } else {
-                        Err(PyValueError::new_err(
-                            "should return a Series, got a {val:?}",
-                        ))
+                        Err(PyValueError::new_err(format!(
+                            "should return a Series, got a {val:?}"
+                        )))
                     }
                 },
             }

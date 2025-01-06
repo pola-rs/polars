@@ -329,10 +329,7 @@ impl PhysicalExpr for ApplyExpr {
                     .collect::<PolarsResult<Vec<_>>>()
             })
         } else {
-            self.inputs
-                .iter()
-                .map(f)
-                .collect::<PolarsResult<Vec<_>>>()
+            self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
         if self.allow_rename {

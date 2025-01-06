@@ -58,9 +58,7 @@ fn compute_keys(
     df: &DataFrame,
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
-    keys.iter()
-        .map(|s| s.evaluate(df, state))
-        .collect()
+    keys.iter().map(|s| s.evaluate(df, state)).collect()
 }
 
 fn run_partitions(
@@ -330,8 +328,7 @@ impl PartitionGroupByExec {
                 .zip(&df.get_columns()[self.phys_keys.len()..])
                 .map(|(expr, partitioned_s)| {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
-                    agg_expr
-                        .finalize(partitioned_s.clone(), groups, state)
+                    agg_expr.finalize(partitioned_s.clone(), groups, state)
                 })
                 .collect();
 
