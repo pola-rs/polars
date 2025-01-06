@@ -9,6 +9,7 @@ gives an overview of what they do and provides additional examples.
 - Essentials:
     - [Basic operations](basic-operations.md) – how to do basic operations on dataframe columns, like arithmetic calculations, comparisons, and other common, general-purpose operations
     - [Expression expansion](expression-expansion.md) – what is expression expansion and how to use it
+    - [Searching](searching.md) - how to search for values
     - [Casting](casting.md) – how to convert / cast values to different data types
 - How to work with specific types of data or data type namespaces:
     - [Strings](strings.md) – how to work with strings and the namespace `str`
