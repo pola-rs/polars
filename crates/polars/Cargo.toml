@@ -331,6 +331,7 @@ dtype-i16 = [
 ]
 dtype-i128 = [
   "polars-core/dtype-i128",
+  "polars-io/dtype-i128",
   "polars-lazy?/dtype-i128",
   "polars-ops/dtype-i128",
   "polars-time?/dtype-i128",

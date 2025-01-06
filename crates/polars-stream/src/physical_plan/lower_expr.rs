@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, Field, InitHashMaps, PlHashMap, PlHashSet};
+use polars_core::prelude::{Field, InitHashMaps, PlHashMap, PlHashSet};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::planner::get_expr_depth_limit;
@@ -17,7 +17,7 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, unitvec};
 use slotmap::SlotMap;
 
-use super::{PhysNode, PhysNodeKey, PhysNodeKind};
+use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 
 type IRNodeKey = Node;
 
@@ -228,42 +228,108 @@ fn build_input_independent_node_with_ctx(
     )))
 }
 
-fn simplify_input_nodes(
-    orig_input: PhysNodeKey,
-    mut input_nodes: PlHashSet<PhysNodeKey>,
+fn build_fallback_node_with_ctx(
+    input: PhysStream,
+    exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
-) -> PolarsResult<PlHashSet<PhysNodeKey>> {
+) -> PolarsResult<PhysNodeKey> {
+    // Pre-select only the columns that are needed for this fallback expression.
+    let input_schema = &ctx.phys_sm[input.node].output_schema;
+    let mut select_names: PlHashSet<_> = exprs
+        .iter()
+        .flat_map(|expr| polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena))
+        .collect();
+    // To keep the length correct we have to ensure we select at least one
+    // column.
+    if select_names.is_empty() {
+        if let Some(name) = input_schema.iter_names().next() {
+            select_names.insert(name.clone());
+        }
+    }
+    let input_stream = if input_schema
+        .iter_names()
+        .any(|name| !select_names.contains(name.as_str()))
+    {
+        let select_exprs = select_names
+            .into_iter()
+            .map(|name| {
+                ExprIR::new(
+                    ctx.expr_arena.add(AExpr::Column(name.clone())),
+                    OutputName::ColumnLhs(name),
+                )
+            })
+            .collect_vec();
+        build_select_stream_with_ctx(input, &select_exprs, ctx)?
+    } else {
+        input
+    };
+
+    let output_schema = schema_for_select(input_stream, exprs, ctx)?;
+    let expr_depth_limit = get_expr_depth_limit()?;
+    let mut conv_state = ExpressionConversionState::new(false, expr_depth_limit);
+    let phys_exprs = exprs
+        .iter()
+        .map(|expr| {
+            create_physical_expr(
+                expr,
+                Context::Default,
+                ctx.expr_arena,
+                &ctx.phys_sm[input_stream.node].output_schema,
+                &mut conv_state,
+            )
+        })
+        .try_collect_vec()?;
+    let map = move |df| {
+        let exec_state = ExecutionState::new();
+        let columns = phys_exprs
+            .iter()
+            .map(|phys_expr| phys_expr.evaluate(&df, &exec_state))
+            .try_collect()?;
+        DataFrame::new_with_broadcast(columns)
+    };
+    let kind = PhysNodeKind::InMemoryMap {
+        input: input_stream,
+        map: Arc::new(map),
+    };
+    Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)))
+}
+
+fn simplify_input_streams(
+    orig_input: PhysStream,
+    mut input_streams: PlHashSet<PhysStream>,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PlHashSet<PhysStream>> {
     // Flatten nested zips (ensures the original input columns only occur once).
-    if input_nodes.len() > 1 {
-        let mut flattened_input_nodes = PlHashSet::with_capacity(input_nodes.len());
-        for input_node in input_nodes {
+    if input_streams.len() > 1 {
+        let mut flattened_input_streams = PlHashSet::with_capacity(input_streams.len());
+        for input_stream in input_streams {
             if let PhysNodeKind::Zip {
                 inputs,
                 null_extend: false,
-            } = &ctx.phys_sm[input_node].kind
+            } = &ctx.phys_sm[input_stream.node].kind
             {
-                flattened_input_nodes.extend(inputs);
-                ctx.phys_sm.remove(input_node);
+                flattened_input_streams.extend(inputs);
+                ctx.phys_sm.remove(input_stream.node);
             } else {
-                flattened_input_nodes.insert(input_node);
+                flattened_input_streams.insert(input_stream);
             }
         }
-        input_nodes = flattened_input_nodes;
+        input_streams = flattened_input_streams;
     }
 
     // Merge reduce nodes that directly operate on the original input.
     let mut combined_exprs = vec![];
-    input_nodes = input_nodes
+    input_streams = input_streams
         .into_iter()
-        .filter(|input_node| {
+        .filter(|input_stream| {
             if let PhysNodeKind::Reduce {
                 input: inner,
                 exprs,
-            } = &ctx.phys_sm[*input_node].kind
+            } = &ctx.phys_sm[input_stream.node].kind
             {
                 if *inner == orig_input {
                     combined_exprs.extend(exprs.iter().cloned());
-                    ctx.phys_sm.remove(*input_node);
+                    ctx.phys_sm.remove(input_stream.node);
                     return false;
                 }
             }
@@ -277,86 +343,20 @@ fn simplify_input_nodes(
             exprs: combined_exprs,
         };
         let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-        input_nodes.insert(reduce_node_key);
+        input_streams.insert(PhysStream::first(reduce_node_key));
     }
 
-    Ok(input_nodes)
-}
-
-fn build_fallback_node_with_ctx(
-    input: PhysNodeKey,
-    exprs: &[ExprIR],
-    ctx: &mut LowerExprContext,
-) -> PolarsResult<PhysNodeKey> {
-    // Pre-select only the columns that are needed for this fallback expression.
-    let input_schema = &ctx.phys_sm[input].output_schema;
-    let mut select_names: PlHashSet<_> = exprs
-        .iter()
-        .flat_map(|expr| polars_plan::utils::aexpr_to_leaf_names_iter(expr.node(), ctx.expr_arena))
-        .collect();
-    // To keep the length correct we have to ensure we select at least one
-    // column.
-    if select_names.is_empty() {
-        if let Some(name) = input_schema.iter_names().next() {
-            select_names.insert(name.clone());
-        }
-    }
-    let input_node = if input_schema
-        .iter_names()
-        .any(|name| !select_names.contains(name.as_str()))
-    {
-        let select_exprs = select_names
-            .into_iter()
-            .map(|name| {
-                ExprIR::new(
-                    ctx.expr_arena.add(AExpr::Column(name.clone())),
-                    OutputName::ColumnLhs(name),
-                )
-            })
-            .collect_vec();
-        build_select_node_with_ctx(input, &select_exprs, ctx)?
-    } else {
-        input
-    };
-
-    let output_schema = schema_for_select(input_node, exprs, ctx)?;
-    let expr_depth_limit = get_expr_depth_limit()?;
-    let mut conv_state = ExpressionConversionState::new(false, expr_depth_limit);
-    let phys_exprs = exprs
-        .iter()
-        .map(|expr| {
-            create_physical_expr(
-                expr,
-                Context::Default,
-                ctx.expr_arena,
-                &ctx.phys_sm[input_node].output_schema,
-                &mut conv_state,
-            )
-        })
-        .try_collect_vec()?;
-    let map = move |df| {
-        let exec_state = ExecutionState::new();
-        let columns = phys_exprs
-            .iter()
-            .map(|phys_expr| phys_expr.evaluate(&df, &exec_state).map(Column::from))
-            .try_collect()?;
-        DataFrame::new_with_broadcast(columns)
-    };
-    let kind = PhysNodeKind::InMemoryMap {
-        input: input_node,
-        map: Arc::new(map),
-    };
-    Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, kind)))
+    Ok(input_streams)
 }
 
 // In the recursive lowering we don't bother with named expressions at all, so
 // we work directly with Nodes.
 #[recursive::recursive]
 fn lower_exprs_with_ctx(
-    input: PhysNodeKey,
+    input: PhysStream,
     exprs: &[Node],
     ctx: &mut LowerExprContext,
-) -> PolarsResult<(PhysNodeKey, Vec<Node>)> {
+) -> PolarsResult<(PhysStream, Vec<Node>)> {
     // We have to catch this case separately, in case all the input independent expressions are elementwise.
     // TODO: we shouldn't always do this when recursing, e.g. pl.col.a.sum() + 1 will still hit this in the recursion.
     if exprs.iter().all(|e| is_input_independent(*e, ctx)) {
@@ -369,14 +369,14 @@ fn lower_exprs_with_ctx(
             .iter()
             .map(|e| ctx.expr_arena.add(AExpr::Column(e.output_name().clone())))
             .collect();
-        return Ok((node, out_exprs));
+        return Ok((PhysStream::first(node), out_exprs));
     }
 
     // Fallback expressions that can directly be applied to the original input.
     let mut fallback_subset = Vec::new();
 
-    // Nodes containing the columns used for executing transformed expressions.
-    let mut input_nodes = PlHashSet::new();
+    // Streams containing the columns used for executing transformed expressions.
+    let mut input_streams = PlHashSet::new();
 
     // The final transformed expressions that will be selected from the zipped
     // together transformed nodes.
@@ -385,7 +385,7 @@ fn lower_exprs_with_ctx(
     for expr in exprs.iter().copied() {
         if is_elementwise_rec_cached(expr, ctx.expr_arena, ctx.cache) {
             if !is_input_independent(expr, ctx) {
-                input_nodes.insert(input);
+                input_streams.insert(input);
             }
             transformed_exprs.push(expr);
             continue;
@@ -407,7 +407,7 @@ fn lower_exprs_with_ctx(
                     extend_original: false,
                 };
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
-                input_nodes.insert(node_key);
+                input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(exploded_name)));
             },
             AExpr::Alias(_, _) => unreachable!("alias found in physical plan"),
@@ -415,7 +415,8 @@ fn lower_exprs_with_ctx(
             AExpr::Literal(_) => {
                 let out_name = unique_column_name();
                 let inner_expr = ExprIR::new(expr, OutputName::Alias(out_name.clone()));
-                input_nodes.insert(build_input_independent_node_with_ctx(&[inner_expr], ctx)?);
+                let node_key = build_input_independent_node_with_ctx(&[inner_expr], ctx)?;
+                input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
             AExpr::BinaryExpr { left, op, right } => {
@@ -425,7 +426,7 @@ fn lower_exprs_with_ctx(
                     op,
                     right: trans_exprs[1],
                 };
-                input_nodes.insert(trans_input);
+                input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(bin_expr));
             },
             AExpr::Ternary {
@@ -440,7 +441,7 @@ fn lower_exprs_with_ctx(
                     truthy: trans_exprs[1],
                     falsy: trans_exprs[2],
                 };
-                input_nodes.insert(trans_input);
+                input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(tern_expr));
             },
             AExpr::Cast {
@@ -449,7 +450,7 @@ fn lower_exprs_with_ctx(
                 options,
             } => {
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[inner], ctx)?;
-                input_nodes.insert(trans_input);
+                input_streams.insert(trans_input);
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Cast {
                     expr: trans_exprs[0],
                     dtype,
@@ -464,17 +465,18 @@ fn lower_exprs_with_ctx(
                 // expr is available as a column by selecting first.
                 let sorted_name = unique_column_name();
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(sorted_name.clone()));
-                let select_node = build_select_node_with_ctx(input, &[inner_expr_ir.clone()], ctx)?;
+                let select_stream =
+                    build_select_stream_with_ctx(input, &[inner_expr_ir.clone()], ctx)?;
                 let col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
                 let kind = PhysNodeKind::Sort {
-                    input: select_node,
+                    input: select_stream,
                     by_column: vec![ExprIR::new(col_expr, OutputName::Alias(sorted_name))],
                     slice: None,
                     sort_options: (&options).into(),
                 };
-                let output_schema = ctx.phys_sm[select_node].output_schema.clone();
+                let output_schema = ctx.phys_sm[select_stream.node].output_schema.clone();
                 let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_nodes.insert(node_key);
+                input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(col_expr);
             },
             AExpr::SortBy {
@@ -490,11 +492,11 @@ fn lower_exprs_with_ctx(
                     .chain(by_names.iter().zip(by.iter().copied()))
                     .map(|(name, inner)| ExprIR::new(inner, OutputName::Alias(name.clone())))
                     .collect_vec();
-                let select_node = build_select_node_with_ctx(input, &all_inner_expr_irs, ctx)?;
+                let select_stream = build_select_stream_with_ctx(input, &all_inner_expr_irs, ctx)?;
 
                 // Sort the inputs.
                 let kind = PhysNodeKind::Sort {
-                    input: select_node,
+                    input: select_stream,
                     by_column: by_names
                         .into_iter()
                         .map(|name| {
@@ -507,16 +509,17 @@ fn lower_exprs_with_ctx(
                     slice: None,
                     sort_options,
                 };
-                let output_schema = ctx.phys_sm[select_node].output_schema.clone();
+                let output_schema = ctx.phys_sm[select_stream.node].output_schema.clone();
                 let sort_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
+                let sort_stream = PhysStream::first(sort_node_key);
 
                 // Drop the by columns.
                 let sorted_col_expr = ctx.expr_arena.add(AExpr::Column(sorted_name.clone()));
                 let sorted_col_ir =
                     ExprIR::new(sorted_col_expr, OutputName::Alias(sorted_name.clone()));
-                let post_sort_select_node =
-                    build_select_node_with_ctx(sort_node_key, &[sorted_col_ir], ctx)?;
-                input_nodes.insert(post_sort_select_node);
+                let post_sort_select_stream =
+                    build_select_stream_with_ctx(sort_stream, &[sorted_col_ir], ctx)?;
+                input_streams.insert(post_sort_select_stream);
                 transformed_exprs.push(sorted_col_expr);
             },
             AExpr::Gather { .. } => todo!(),
@@ -526,8 +529,8 @@ fn lower_exprs_with_ctx(
                 let by_name = unique_column_name();
                 let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
                 let by_expr_ir = ExprIR::new(by, OutputName::Alias(by_name.clone()));
-                let select_node =
-                    build_select_node_with_ctx(input, &[inner_expr_ir, by_expr_ir], ctx)?;
+                let select_stream =
+                    build_select_stream_with_ctx(input, &[inner_expr_ir, by_expr_ir], ctx)?;
 
                 // Add a filter node.
                 let predicate = ExprIR::new(
@@ -535,12 +538,12 @@ fn lower_exprs_with_ctx(
                     OutputName::Alias(by_name),
                 );
                 let kind = PhysNodeKind::Filter {
-                    input: select_node,
+                    input: select_stream,
                     predicate,
                 };
-                let output_schema = ctx.phys_sm[select_node].output_schema.clone();
+                let output_schema = ctx.phys_sm[select_stream.node].output_schema.clone();
                 let filter_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_nodes.insert(filter_node_key);
+                input_streams.insert(PhysStream::first(filter_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
             AExpr::Agg(mut agg) => match agg {
@@ -569,7 +572,7 @@ fn lower_exprs_with_ctx(
                         exprs: vec![expr_ir],
                     };
                     let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                    input_nodes.insert(reduce_node_key);
+                    input_streams.insert(PhysStream::first(reduce_node_key));
                     transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
                 },
                 IRAggExpr::Median(_)
@@ -594,7 +597,7 @@ fn lower_exprs_with_ctx(
                     exprs: vec![expr_ir],
                 };
                 let reduce_node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, kind));
-                input_nodes.insert(reduce_node_key);
+                input_streams.insert(PhysStream::first(reduce_node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
             AExpr::AnonymousFunction { .. }
@@ -609,22 +612,23 @@ fn lower_exprs_with_ctx(
     }
 
     if !fallback_subset.is_empty() {
-        input_nodes.insert(build_fallback_node_with_ctx(input, &fallback_subset, ctx)?);
+        let fallback_node = build_fallback_node_with_ctx(input, &fallback_subset, ctx)?;
+        input_streams.insert(PhysStream::first(fallback_node));
     }
 
     // Simplify the input nodes (also ensures the original input only occurs
     // once in the zip).
-    input_nodes = simplify_input_nodes(input, input_nodes, ctx)?;
+    input_streams = simplify_input_streams(input, input_streams, ctx)?;
 
-    if input_nodes.len() == 1 {
+    if input_streams.len() == 1 {
         // No need for any multiplexing/zipping, can directly execute.
-        return Ok((input_nodes.into_iter().next().unwrap(), transformed_exprs));
+        return Ok((input_streams.into_iter().next().unwrap(), transformed_exprs));
     }
 
-    let zip_inputs = input_nodes.into_iter().collect_vec();
+    let zip_inputs = input_streams.into_iter().collect_vec();
     let output_schema = zip_inputs
         .iter()
-        .flat_map(|node| ctx.phys_sm[*node].output_schema.iter_fields())
+        .flat_map(|stream| ctx.phys_sm[stream.node].output_schema.iter_fields())
         .collect();
     let zip_kind = PhysNodeKind::Zip {
         inputs: zip_inputs,
@@ -634,7 +638,7 @@ fn lower_exprs_with_ctx(
         .phys_sm
         .insert(PhysNode::new(Arc::new(output_schema), zip_kind));
 
-    Ok((zip_node, transformed_exprs))
+    Ok((PhysStream::first(zip_node), transformed_exprs))
 }
 
 /// Computes the schema that selecting the given expressions on the input schema
@@ -662,21 +666,23 @@ pub fn compute_output_schema(
 /// Computes the schema that selecting the given expressions on the input node
 /// would result in.
 fn schema_for_select(
-    input: PhysNodeKey,
+    input: PhysStream,
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<Arc<Schema>> {
-    let input_schema = &ctx.phys_sm[input].output_schema;
+    let input_schema = &ctx.phys_sm[input.node].output_schema;
     compute_output_schema(input_schema, exprs, ctx.expr_arena)
 }
 
-fn build_select_node_with_ctx(
-    input: PhysNodeKey,
+fn build_select_stream_with_ctx(
+    input: PhysStream,
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
-) -> PolarsResult<PhysNodeKey> {
+) -> PolarsResult<PhysStream> {
     if exprs.iter().all(|e| is_input_independent(e.node(), ctx)) {
-        return build_input_independent_node_with_ctx(exprs, ctx);
+        return Ok(PhysStream::first(build_input_independent_node_with_ctx(
+            exprs, ctx,
+        )?));
     }
 
     // Are we only selecting simple columns, with the same name?
@@ -689,7 +695,7 @@ fn build_select_node_with_ctx(
         .collect();
 
     if let Some(columns) = all_simple_columns {
-        let input_schema = ctx.phys_sm[input].output_schema.clone();
+        let input_schema = ctx.phys_sm[input.node].output_schema.clone();
         if !cfg!(debug_assertions)
             && input_schema.len() == columns.len()
             && input_schema.iter_names().zip(&columns).all(|(l, r)| l == r)
@@ -700,7 +706,8 @@ fn build_select_node_with_ctx(
 
         let output_schema = Arc::new(input_schema.try_project(&columns)?);
         let node_kind = PhysNodeKind::SimpleProjection { input, columns };
-        return Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind)));
+        let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+        return Ok(PhysStream::first(node_key));
     }
 
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
@@ -716,7 +723,8 @@ fn build_select_node_with_ctx(
         selectors: trans_expr_irs,
         extend_original: false,
     };
-    Ok(ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind)))
+    let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+    Ok(PhysStream::first(node_key))
 }
 
 /// Lowers an input node plus a set of expressions on that input node to an
@@ -725,12 +733,12 @@ fn build_select_node_with_ctx(
 ///
 /// Ensures that if the input node is transformed it has unique column names.
 pub fn lower_exprs(
-    input: PhysNodeKey,
+    input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-) -> PolarsResult<(PhysNodeKey, Vec<ExprIR>)> {
+) -> PolarsResult<(PhysStream, Vec<ExprIR>)> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
@@ -747,18 +755,19 @@ pub fn lower_exprs(
     Ok((transformed_input, trans_expr_irs))
 }
 
-/// Builds a selection node given an input node and the expressions to select for.
-pub fn build_select_node(
-    input: PhysNodeKey,
+/// Builds a new selection node given an input stream and the expressions to
+/// select for, if needed.
+pub fn build_select_stream(
+    input: PhysStream,
     exprs: &[ExprIR],
     expr_arena: &mut Arena<AExpr>,
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
-) -> PolarsResult<PhysNodeKey> {
+) -> PolarsResult<PhysStream> {
     let mut ctx = LowerExprContext {
         expr_arena,
         phys_sm,
         cache: expr_cache,
     };
-    build_select_node_with_ctx(input, exprs, &mut ctx)
+    build_select_stream_with_ctx(input, exprs, &mut ctx)
 }

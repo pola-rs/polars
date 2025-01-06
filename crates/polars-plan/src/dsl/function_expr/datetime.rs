@@ -269,7 +269,6 @@ pub(super) fn time(s: &Column) -> PolarsResult<Column> {
         DataType::Time => Ok(s.clone()),
         dtype => polars_bail!(ComputeError: "expected Datetime or Time, got {}", dtype),
     }
-    .map(Column::from)
 }
 pub(super) fn date(s: &Column) -> PolarsResult<Column> {
     match s.dtype() {

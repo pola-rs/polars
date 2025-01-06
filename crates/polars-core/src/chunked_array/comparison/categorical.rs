@@ -374,13 +374,29 @@ where
         // Apply comparison on categories map and then do a lookup
         let bitmap = str_single_compare_function(lhs.get_rev_map().get_categories(), rhs);
 
-        Ok(
-            BooleanChunked::from_iter_trusted_length(lhs.physical().into_iter().map(|opt_idx| {
-                // SAFETY: indexing into bitmap with same length as original array
-                opt_idx.map(|idx| unsafe { bitmap.get_bit_unchecked(idx as usize) })
-            }))
-            .with_name(lhs.name().clone()),
-        )
+        let mask = match lhs.get_rev_map().as_ref() {
+            RevMapping::Local(_, _) => {
+                BooleanChunked::from_iter_trusted_length(lhs.physical().into_iter().map(
+                    |opt_idx| {
+                        // SAFETY: indexing into bitmap with same length as original array
+                        opt_idx.map(|idx| unsafe { bitmap.get_bit_unchecked(idx as usize) })
+                    },
+                ))
+            },
+            RevMapping::Global(idx_map, _, _) => {
+                BooleanChunked::from_iter_trusted_length(lhs.physical().into_iter().map(
+                    |opt_idx| {
+                        // SAFETY: indexing into bitmap with same length as original array
+                        opt_idx.map(|idx| unsafe {
+                            let idx = *idx_map.get(&idx).unwrap();
+                            bitmap.get_bit_unchecked(idx as usize)
+                        })
+                    },
+                ))
+            },
+        };
+
+        Ok(mask.with_name(lhs.name().clone()))
     }
 }
 

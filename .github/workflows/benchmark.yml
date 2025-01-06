@@ -73,6 +73,53 @@ jobs:
         working-directory: py-polars
         run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
+      - name: Set lib size
+        run: |
+          LIB_SIZE=$(ls -l py-polars/polars/polars*.so | awk '{ print $5 }')
+          echo "LIB_SIZE=$LIB_SIZE" >> $GITHUB_ENV
+
+      - name: Comment wheel size
+        uses: actions/github-script@v7
+        if: github.ref_name != 'main'
+        with:
+          script: |
+              const currentSize = process.env.LIB_SIZE || 'Unknown';
+
+              // Convert to MB
+              const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
+
+              let commentBody = `The uncompressed lib size after this PR is **${currentSizeMB} MB**.`;
+
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+
+              // Look for an existing comment
+              const existingComment = comments.find(comment =>
+                comment.body.includes('The previous uncompressed lib size was')
+              );
+
+              if (existingComment) {
+                // Update the existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: commentBody,
+                });
+              } else {
+                // Create a new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody,
+                });
+              }
+        continue-on-error: true 
+
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v3
         with:

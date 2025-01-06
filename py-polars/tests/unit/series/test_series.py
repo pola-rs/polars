@@ -356,6 +356,7 @@ def test_date_agg() -> None:
         (pl.Series(["c", "b", "a"], dtype=pl.Enum(["c", "b", "a", "d"])), "c", "a"),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_agg(s: pl.Series, min: str | None, max: str | None) -> None:
     assert s.min() == min
     assert s.max() == max

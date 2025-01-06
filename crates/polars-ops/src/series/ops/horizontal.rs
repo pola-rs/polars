@@ -221,9 +221,9 @@ pub fn sum_horizontal(
 
     // If we have any null columns and null strategy is not `Ignore`, we can return immediately.
     if !ignore_nulls && non_null_cols.len() < columns.len() {
-        // We must first determine the correct return dtype.
+        // We must determine the correct return dtype.
         let return_dtype = match dtypes_to_supertype(non_null_cols.iter().map(|c| c.dtype()))? {
-            DataType::Boolean => DataType::UInt32,
+            DataType::Boolean => IDX_DTYPE,
             dt => dt,
         };
         return Ok(Some(Column::full_null(
@@ -244,7 +244,7 @@ pub fn sum_horizontal(
         },
         1 => Ok(Some(
             apply_null_strategy(if non_null_cols[0].dtype() == &DataType::Boolean {
-                non_null_cols[0].cast(&DataType::UInt32)?
+                non_null_cols[0].cast(&IDX_DTYPE)?
             } else {
                 non_null_cols[0].clone()
             })?

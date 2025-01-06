@@ -72,7 +72,8 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
         (32, false) => IntegerType::UInt32,
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
-        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32 or 64."),
+        (128, true) => IntegerType::Int128,
+        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32, 64 or 128."),
     })
 }
 
@@ -362,7 +363,7 @@ pub fn deserialize_schema(
     message: &[u8],
 ) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
-        .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
+        .map_err(|err| polars_err!(oos = format!("Unable deserialize message: {err:?}")))?;
 
     let schema = match message
         .header()?
@@ -429,7 +430,7 @@ pub(super) fn fb_to_schema(
 
 pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
     let message = arrow_format::ipc::MessageRef::read_as_root(meta)
-        .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
+        .map_err(|err| polars_err!(oos = format!("Unable to get root as message: {err:?}")))?;
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message

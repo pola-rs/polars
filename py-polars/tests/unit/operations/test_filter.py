@@ -153,6 +153,7 @@ def test_binary_simplification_5971() -> None:
     ]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_string_comparison_6283() -> None:
     scores = pl.DataFrame(
         {

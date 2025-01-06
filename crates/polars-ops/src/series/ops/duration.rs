@@ -87,7 +87,5 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
         duration = (duration + weeks * multiplier * SECONDS_IN_DAY * 7)?;
     }
 
-    duration
-        .cast(&DataType::Duration(time_unit))
-        .map(Column::from)
+    duration.cast(&DataType::Duration(time_unit))
 }
