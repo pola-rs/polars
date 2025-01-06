@@ -68,8 +68,6 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.4
 
       - name: Install Polars release build
-        env:
-          RUSTFLAGS: -C embed-bitcode -D warnings
         working-directory: py-polars
         run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
