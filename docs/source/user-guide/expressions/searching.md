@@ -1,10 +1,12 @@
 # Searching
 
-Polars provides expression APIs for finding data in a `Series` or the result of previous expressions.
+Polars provides expression APIs for finding data in a `Series` or the result of
+previous expressions.
 
 ## Searching for a value's specific index with `index_of()`
 
-If you want to find the index of a particular value, you can use the `index_of()` API, which is similar to Python lists' `index()` method.
+If you want to find the index of a particular value, you can use the `index_of()`
+API, which is similar to Python lists' `index()` method.
 Given a dataframe:
 
 {{code_block('user-guide/expressions/casting', 'dfnum', [])}}
