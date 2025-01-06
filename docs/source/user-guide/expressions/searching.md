@@ -16,7 +16,7 @@ similar to Python lists' `index()` method. Given a dataframe:
 
 You can find the index of both values and nulls using `index_of()`:
 
-{{code_block('user-guide/expressions/searching','index_of',[])}}
+{{code_block('user-guide/expressions/searching','index_of',['index_of'])}}
 
 ```python exec="on" result="text" session="user-guide/searching"
 --8<-- "python/user-guide/expressions/searching.py:index_of"
@@ -24,7 +24,7 @@ You can find the index of both values and nulls using `index_of()`:
 
 Searching for a non-existent value will return `None`/`null`:
 
-{{code_block('user-guide/expressions/searching','index_of_not_found',[])}}
+{{code_block('user-guide/expressions/searching','index_of_not_found',['index_of'])}}
 
 ```python exec="on" result="text" session="user-guide/searching"
 --8<-- "python/user-guide/expressions/searching.py:index_of_not_found"
