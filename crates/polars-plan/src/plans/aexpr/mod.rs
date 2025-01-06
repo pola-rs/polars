@@ -3,7 +3,6 @@ mod hash;
 mod scalar;
 mod schema;
 mod traverse;
-mod utils;
 
 use std::hash::{Hash, Hasher};
 
@@ -18,8 +17,8 @@ pub use scalar::is_scalar_ae;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
-pub(crate) use utils::permits_filter_pushdown;
-pub use utils::*;
+mod properties;
+pub use properties::*;
 
 use crate::constants::LEN;
 use crate::plans::Context;
@@ -212,43 +211,6 @@ impl AExpr {
         AExpr::Column(name)
     }
 
-    /// Checks whether this expression is elementwise. This only checks the top level expression.
-    pub(crate) fn is_elementwise_top_level(&self) -> bool {
-        use AExpr::*;
-
-        match self {
-            AnonymousFunction { options, .. } => options.is_elementwise(),
-
-            // Non-strict strptime must be done in-memory to ensure the format
-            // is consistent across the entire dataframe.
-            #[cfg(all(feature = "strings", feature = "temporal"))]
-            Function {
-                options,
-                function: FunctionExpr::StringExpr(StringFunction::Strptime(_, opts)),
-                ..
-            } => {
-                assert!(options.is_elementwise());
-                opts.strict
-            },
-
-            Function { options, .. } => options.is_elementwise(),
-
-            Literal(v) => v.projects_as_scalar(),
-
-            Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
-
-            Agg { .. }
-            | Explode(_)
-            | Filter { .. }
-            | Gather { .. }
-            | Len
-            | Slice { .. }
-            | Sort { .. }
-            | SortBy { .. }
-            | Window { .. } => false,
-        }
-    }
-
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
     pub fn get_type(
         &self,
@@ -258,13 +220,5 @@ impl AExpr {
     ) -> PolarsResult<DataType> {
         self.to_field(schema, ctxt, arena)
             .map(|f| f.dtype().clone())
-    }
-
-    pub(crate) fn is_leaf(&self) -> bool {
-        matches!(self, AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len)
-    }
-
-    pub(crate) fn is_col(&self) -> bool {
-        matches!(self, AExpr::Column(_))
     }
 }
