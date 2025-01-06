@@ -1516,7 +1516,7 @@ impl Expr {
                         .map(|ca| ca.into_column()),
                 }?;
                 if let DataType::Float32 = c.dtype() {
-                    out.cast(&DataType::Float32).map(Column::from).map(Some)
+                    out.cast(&DataType::Float32).map(Some)
                 } else {
                     Ok(Some(out))
                 }

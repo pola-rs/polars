@@ -244,7 +244,7 @@ mod tests {
 
         encode::<bool, _, _>(&mut vec, iter, 1)?;
 
-        assert_eq!(vec, vec![(2 << 1 | 1), 0b10011101u8, 0b00011101]);
+        assert_eq!(vec, vec![((2 << 1) | 1), 0b10011101u8, 0b00011101]);
 
         Ok(())
     }
@@ -259,7 +259,7 @@ mod tests {
             1,
         )?;
 
-        assert_eq!(vec, vec![(1 << 1 | 1), 0b11111111]);
+        assert_eq!(vec, vec![((1 << 1) | 1), 0b11111111]);
         Ok(())
     }
 
@@ -272,7 +272,7 @@ mod tests {
         assert_eq!(
             vec,
             vec![
-                (2 << 1 | 1),
+                ((2 << 1) | 1),
                 0b01_10_01_00,
                 0b00_01_01_10,
                 0b_00_00_00_11,
@@ -294,7 +294,7 @@ mod tests {
         let expected = 0b11_10_01_00u8;
 
         let mut expected = vec![expected; length / 4];
-        expected.insert(0, ((length / 8) as u8) << 1 | 1);
+        expected.insert(0, (((length / 8) as u8) << 1) | 1);
 
         assert_eq!(vec, expected);
         Ok(())

@@ -218,7 +218,7 @@ impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     #[allow(clippy::unnecessary_cast)]
     pub fn store(chunk: IdxSize, row: IdxSize) -> Self {
         debug_assert!(chunk < !(u64::MAX << CHUNK_BITS) as IdxSize);
-        let swizzled = (row as u64) << CHUNK_BITS | chunk as u64;
+        let swizzled = ((row as u64) << CHUNK_BITS) | chunk as u64;
 
         Self { swizzled }
     }
