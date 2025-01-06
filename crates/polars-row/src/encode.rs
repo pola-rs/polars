@@ -626,7 +626,7 @@ unsafe fn encode_flat_array(
             encode_strs(buffer, array.iter(), opt, offsets);
         },
 
-        // Lexical ordered Categorical are casted to PrimitiveArray above.
+        // Lexical ordered Categorical are cast to PrimitiveArray above.
         D::Dictionary(_, _, _) => todo!(),
 
         D::FixedSizeBinary(_) => todo!(),

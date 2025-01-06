@@ -236,7 +236,7 @@ pub fn resolve_join(
 
     // # Cast lossless
     //
-    // If we do a full join and keys are coalesced, the casted keys must be added up front.
+    // If we do a full join and keys are coalesced, the cast keys must be added up front.
     let key_cols_coalesced =
         options.args.should_coalesce() && matches!(&options.args.how, JoinType::Full);
     let mut as_with_columns_l = vec![];
