@@ -8,7 +8,7 @@ expressions.
 If you want to find the index of a particular value, you can use the `index_of()` API, which is
 similar to Python lists' `index()` method. Given a dataframe:
 
-{{code_block('user-guide/expressions/casting', 'dfnum', [])}}
+{{code_block('user-guide/expressions/searching', 'dfnum', [])}}
 
 ```python exec="on" result="text" session="user-guide/searching"
 --8<-- "python/user-guide/expressions/searching.py:dfnum"
