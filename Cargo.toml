@@ -77,7 +77,7 @@ serde_json = "1"
 simd-json = { version = "0.14", features = ["known-key"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
-sqlparser = "0.52"
+sqlparser = "0.53"
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"

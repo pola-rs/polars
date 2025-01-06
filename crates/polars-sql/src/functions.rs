@@ -13,11 +13,13 @@ use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, cols, lit, StrptimeOptions};
 use polars_utils::pl_str::PlSmallStr;
+use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
     OrderByExpr, Value as SQLValue, WindowSpec, WindowType,
 };
+use sqlparser::tokenizer::Span;
 
 use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
 use crate::SQLContext;
@@ -1058,6 +1060,7 @@ impl SQLFunctionVisitor<'_> {
                             &DateTimeField::Custom(Ident {
                                 value: p.to_string(),
                                 quote_style: None,
+                                span: Span::empty(),
                             }),
                         )
                     },
@@ -1511,7 +1514,7 @@ impl SQLFunctionVisitor<'_> {
                 f(parse_sql_expr(sql_expr, self.ctx, self.active_schema)?)
             },
             [FunctionArgExpr::Wildcard] => f(parse_sql_expr(
-                &SQLExpr::Wildcard,
+                &SQLExpr::Wildcard(AttachedToken::empty()),
                 self.ctx,
                 self.active_schema,
             )?),
@@ -1813,6 +1816,7 @@ fn _extract_func_args(
                     .iter()
                     .map(|arg| match arg {
                         FunctionArg::Named { arg, .. } => arg,
+                        FunctionArg::ExprNamed { arg, .. } => arg,
                         FunctionArg::Unnamed(arg) => arg,
                     })
                     .collect();
