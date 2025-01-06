@@ -167,7 +167,7 @@ pub(super) fn process_binary(
     match (&type_left, &type_right, op) {
         #[cfg(not(feature = "dtype-categorical"))]
         (DataType::String, dt, op) | (dt, DataType::String, op)
-            if op.is_comparison() && dt.is_numeric() =>
+            if op.is_comparison() && dt.is_primitive_numeric() =>
         {
             return Ok(None)
         },
