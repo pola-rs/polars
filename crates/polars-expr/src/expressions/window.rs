@@ -406,7 +406,7 @@ impl PhysicalExpr for WindowExpr {
         let group_by_columns = self
             .group_by
             .iter()
-            .map(|e| e.evaluate(df, state).map(Column::from))
+            .map(|e| e.evaluate(df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
@@ -551,7 +551,6 @@ impl PhysicalExpr for WindowExpr {
                     state,
                     &cache_key,
                 )
-                .map(Column::from)
             },
             Join => {
                 let out_column = ac.aggregated();

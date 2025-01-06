@@ -68,7 +68,7 @@ impl RevMapping {
             val.hash(&mut hb);
         });
         let hash = hb.finish();
-        (hash as u128) << 64 | (categories.total_buffer_len() as u128)
+        ((hash as u128) << 64) | (categories.total_buffer_len() as u128)
     }
 
     pub fn build_local(categories: Utf8ViewArray) -> Self {

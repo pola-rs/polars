@@ -65,7 +65,7 @@ impl StackExec {
                 // new, unique column names. It is immediately
                 // followed by a projection which pulls out the
                 // possibly mismatching column lengths.
-                unsafe { df.column_extend_unchecked(res.into_iter().map(Column::from)) };
+                unsafe { df.column_extend_unchecked(res) };
             } else {
                 let (df_height, df_width) = df.shape();
 

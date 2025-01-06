@@ -220,7 +220,7 @@ pub(super) fn datetime_ranges(
     };
 
     let to_type = DataType::List(Box::new(dtype));
-    out.cast(&to_type).map(Column::from)
+    out.cast(&to_type)
 }
 
 impl FieldsMapper<'_> {

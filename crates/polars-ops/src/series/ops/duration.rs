@@ -89,5 +89,4 @@ pub fn impl_duration(s: &[Column], time_unit: TimeUnit) -> PolarsResult<Column> 
 
     duration
         .cast(&DataType::Duration(time_unit))
-        .map(Column::from)
 }

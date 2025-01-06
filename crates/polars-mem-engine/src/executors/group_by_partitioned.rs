@@ -59,7 +59,7 @@ fn compute_keys(
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
     keys.iter()
-        .map(|s| s.evaluate(df, state).map(Column::from))
+        .map(|s| s.evaluate(df, state))
         .collect()
 }
 
@@ -154,7 +154,6 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
         let keys = keys
             .iter()
             .map(|s| s.slice(offset, sample_size))
-            .map(Column::from)
             .collect::<Vec<_>>();
         let df = unsafe { DataFrame::new_no_checks_height_from_first(keys) };
         let names = df.get_column_names().into_iter().cloned();
@@ -333,7 +332,6 @@ impl PartitionGroupByExec {
                     let agg_expr = expr.as_partitioned_aggregator().unwrap();
                     agg_expr
                         .finalize(partitioned_s.clone(), groups, state)
-                        .map(Column::from)
                 })
                 .collect();
 

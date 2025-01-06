@@ -41,7 +41,6 @@ where
 {
     let partition_by = partition_by
         .into_iter()
-        .map(Into::into)
         .collect::<Vec<PlSmallStr>>();
     // Ensure we have a single chunk as the gather will otherwise rechunk per group.
     df.as_single_chunk_par();
