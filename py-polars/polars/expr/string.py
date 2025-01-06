@@ -8,6 +8,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     issue_deprecation_warning,
 )
 from polars._utils.parse import parse_into_expression
@@ -313,6 +314,7 @@ class ExprStringNameSpace:
             msg = "`dtype` must be of type {Date, Datetime, Time}"
             raise ValueError(msg)
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
