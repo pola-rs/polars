@@ -3,6 +3,53 @@ use polars_utils::unitvec;
 
 use super::*;
 
+impl AExpr {
+    pub(crate) fn is_leaf(&self) -> bool {
+        matches!(self, AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len)
+    }
+
+    pub(crate) fn is_col(&self) -> bool {
+        matches!(self, AExpr::Column(_))
+    }
+
+    /// Checks whether this expression is elementwise. This only checks the top level expression.
+    pub(crate) fn is_elementwise_top_level(&self) -> bool {
+        use AExpr::*;
+
+        match self {
+            AnonymousFunction { options, .. } => options.is_elementwise(),
+
+            // Non-strict strptime must be done in-memory to ensure the format
+            // is consistent across the entire dataframe.
+            #[cfg(all(feature = "strings", feature = "temporal"))]
+            Function {
+                options,
+                function: FunctionExpr::StringExpr(StringFunction::Strptime(_, opts)),
+                ..
+            } => {
+                assert!(options.is_elementwise());
+                opts.strict
+            },
+
+            Function { options, .. } => options.is_elementwise(),
+
+            Literal(v) => v.projects_as_scalar(),
+
+            Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
+
+            Agg { .. }
+            | Explode(_)
+            | Filter { .. }
+            | Gather { .. }
+            | Len
+            | Slice { .. }
+            | Sort { .. }
+            | SortBy { .. }
+            | Window { .. } => false,
+        }
+    }
+}
+
 /// Checks if the top-level expression node is elementwise. If this is the case, then `stack` will
 /// be extended further with any nested expression nodes.
 pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<AExpr>) -> bool {

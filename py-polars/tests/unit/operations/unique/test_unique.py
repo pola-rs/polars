@@ -47,16 +47,6 @@ def test_unique_predicate_pd() -> None:
                 .filter(pl.col("x") == "abc")
                 .filter(pl.col("z"))
             )
-            plan = q.explain()
-            assert r'FILTER col("z")' in plan
-            # We can push filters if they only depend on the subset columns of unique()
-            assert (
-                re.search(
-                    r"FILTER \[\(col\(\"x\"\)\) == \(String\(abc\)\)\] FROM\n\s*DF",
-                    plan,
-                )
-                is not None
-            )
             assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
 
 
@@ -256,3 +246,15 @@ def test_unique_check_order_20480() -> None:
         .item()
         == 1
     )
+
+
+def test_predicate_pushdown_unique() -> None:
+    q = (
+        pl.LazyFrame({"id": [1, 2, 3]})
+        .with_columns(pl.date(2024, 1, 1) + pl.duration(days=[1, 2, 3]))
+        .unique()
+    )
+
+    print(q.filter(pl.col("id").is_in([1, 2, 3])).explain())
+    assert not q.filter(pl.col("id").is_in([1, 2, 3])).explain().startswith("FILTER")
+    assert q.filter(pl.col("id").sum() == pl.col("id")).explain().startswith("FILTER")
