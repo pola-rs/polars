@@ -9,6 +9,8 @@ The following methods are available under the `Series.cat` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Series.cat.contains
+    Series.cat.contains_any
     Series.cat.ends_with
     Series.cat.get_categories
     Series.cat.is_local

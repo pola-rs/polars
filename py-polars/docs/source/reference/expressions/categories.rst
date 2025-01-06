@@ -9,6 +9,8 @@ The following methods are available under the `expr.cat` attribute.
    :toctree: api/
    :template: autosummary/accessor_method.rst
 
+    Expr.cat.contains
+    Expr.cat.contains_any
     Expr.cat.ends_with
     Expr.cat.get_categories
     Expr.cat.len_bytes

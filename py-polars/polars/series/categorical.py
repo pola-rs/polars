@@ -239,3 +239,116 @@ class CatNameSpace:
             null
         ]
         """
+
+    def contains(
+        self, pattern: str, *, literal: bool = False, strict: bool = True
+    ) -> Series:
+        """
+        Check if the string representation contains a substring that matches a pattern.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+        literal
+            Treat `pattern` as a literal string, not as a regular expression.
+        strict
+            Raise an error if the underlying pattern is not a valid regex,
+            otherwise mask out with a null value.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with
+        flags, use the inline `(?iLmsuxU)` syntax. For example:
+
+        Default (case-sensitive) match:
+
+        >>> s = pl.Series("s", ["AAA", "aAa", "aaa"], dtype=pl.Categorical)
+        >>> s.cat.contains("AA").to_list()
+        [True, False, False]
+
+        Case-insensitive match, using an inline flag:
+
+        >>> s = pl.Series("s", ["AAA", "aAa", "aaa"], dtype=pl.Categorical)
+        >>> s.cat.contains("(?i)AA").to_list()
+        [True, True, True]
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`Boolean`.
+
+        Examples
+        --------
+        >>> s = pl.Series(
+        ...     ["Crab", "cat and dog", "rab$bit", None],
+        ...     dtype=pl.Categorical,
+        ... )
+        >>> s.cat.contains("cat|bit")
+        shape: (4,)
+        Series: '' [bool]
+        [
+            false
+            true
+            true
+            null
+        ]
+        >>> s.cat.contains("rab$", literal=True)
+        shape: (4,)
+        Series: '' [bool]
+        [
+            false
+            false
+            true
+            null
+        ]
+        """
+
+    def contains_any(
+        self, patterns: Series | list[str], *, ascii_case_insensitive: bool = False
+    ) -> Series:
+        """
+        Use the Aho-Corasick algorithm to find matches.
+
+        Determines if any of the patterns are contained in the string representation.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case-insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> s = pl.Series(
+        ...     "lyrics",
+        ...     [
+        ...         "Everybody wants to rule the world",
+        ...         "Tell me what you want, what you really really want",
+        ...         "Can you feel the love tonight",
+        ...     ],
+        ...     dtype=pl.Categorical,
+        ... )
+        >>> s.cat.contains_any(["you", "me"])
+        shape: (3,)
+        Series: 'lyrics' [bool]
+        [
+            false
+            true
+            true
+        ]
+        """

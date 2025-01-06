@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -276,3 +277,119 @@ def test_starts_ends_with() -> None:
 
     with pytest.raises(TypeError, match="'suffix' must be a string; found"):
         df.select(pl.col("a").cat.ends_with(None))  # type: ignore[arg-type]
+
+
+def test_cat_contains() -> None:
+    s = pl.Series(["messi", "ronaldo", "ibrahimovic", "messi"], dtype=pl.Categorical)
+    expected = pl.Series([True, False, False, True])
+    assert_series_equal(s.cat.contains("mes"), expected)
+
+
+def test_contains() -> None:
+    s_txt = pl.Series(["123", "456", "789", "123"], dtype=pl.Categorical)
+    assert (
+        pl.Series([None, None, None, None]).cast(pl.Boolean).to_list()
+        == s_txt.cat.contains("(not_valid_regex", literal=False, strict=False).to_list()
+    )
+    with pytest.raises(ComputeError):
+        s_txt.cat.contains("(not_valid_regex", literal=False, strict=True)
+    assert (
+        pl.Series([True, False, False, True]).cast(pl.Boolean).to_list()
+        == s_txt.cat.contains("1", literal=False, strict=False).to_list()
+    )
+
+    df = pl.DataFrame(
+        data=[
+            (1, "some * * text"),
+            (2, "(with) special\n * chars"),
+            (3, "**etc...?$"),
+            (4, "some * * text"),
+        ],
+        schema={"idx": pl.get_index_type(), "text": pl.Categorical},
+        orient="row",
+    )
+    for pattern, as_literal, expected in (
+        (r"\* \*", False, [True, False, False, True]),
+        (r"* *", True, [True, False, False, True]),
+        (r"^\(", False, [False, True, False, False]),
+        (r"^\(", True, [False, False, False, False]),
+        (r"(", True, [False, True, False, False]),
+        (r"e", False, [True, True, True, True]),
+        (r"e", True, [True, True, True, True]),
+        (r"^\S+$", False, [False, False, True, False]),
+        (r"\?\$", False, [False, False, True, False]),
+        (r"?$", True, [False, False, True, False]),
+    ):
+        # series
+        assert (
+            expected == df["text"].cat.contains(pattern, literal=as_literal).to_list()
+        )
+        # frame select
+        assert (
+            expected
+            == df.select(pl.col("text").cat.contains(pattern, literal=as_literal))[
+                "text"
+            ].to_list()
+        )
+        # frame filter
+        assert sum(expected) == len(
+            df.filter(pl.col("text").cat.contains(pattern, literal=as_literal))
+        )
+
+
+@pytest.mark.parametrize(
+    ("pattern", "case_insensitive", "expected"),
+    [
+        (["me"], False, [True, False, False, True]),
+        (["Me"], False, [False, False, True, False]),
+        (["Me"], True, [True, False, True, True]),
+        (pl.Series(["me", "they"]), False, [True, False, True, True]),
+        (pl.Series(["Me", "they"]), False, [False, False, True, False]),
+        (pl.Series(["Me", "they"]), True, [True, False, True, True]),
+        (["me", "they"], False, [True, False, True, True]),
+        (["Me", "they"], False, [False, False, True, False]),
+        (["Me", "they"], True, [True, False, True, True]),
+    ],
+)
+def test_contains_any(
+    pattern: pl.Series | list[str],
+    case_insensitive: bool,
+    expected: list[bool],
+) -> None:
+    df = pl.DataFrame(
+        {
+            "text": pl.Series(
+                [
+                    "Tell me what you want",
+                    "Tell you what I want",
+                    "Tell Me what they want",
+                    "Tell me what you want",
+                ],
+                dtype=pl.Categorical,
+            )
+        }
+    )
+    # series
+    assert (
+        expected
+        == df["text"]
+        .cat.contains_any(pattern, ascii_case_insensitive=case_insensitive)
+        .to_list()
+    )
+    # expr
+    assert (
+        expected
+        == df.select(
+            pl.col("text").cat.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )["text"].to_list()
+    )
+    # frame filter
+    assert sum(expected) == len(
+        df.filter(
+            pl.col("text").cat.contains_any(
+                pattern, ascii_case_insensitive=case_insensitive
+            )
+        )
+    )

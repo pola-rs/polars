@@ -1,5 +1,7 @@
+use polars_ops::chunked_array::strings;
+
 use super::*;
-use crate::map;
+use crate::{map, map_as_slice};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]
@@ -13,6 +15,16 @@ pub enum CategoricalFunction {
     StartsWith(String),
     #[cfg(feature = "strings")]
     EndsWith(String),
+    #[cfg(all(feature = "strings", feature = "regex"))]
+    Contains {
+        pat: PlSmallStr,
+        literal: bool,
+        strict: bool,
+    },
+    #[cfg(all(feature = "strings", feature = "find_many"))]
+    ContainsMany {
+        ascii_case_insensitive: bool,
+    },
 }
 
 impl CategoricalFunction {
@@ -28,6 +40,10 @@ impl CategoricalFunction {
             StartsWith(_) => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "strings")]
             EndsWith(_) => mapper.with_dtype(DataType::Boolean),
+            #[cfg(all(feature = "strings", feature = "regex"))]
+            Contains { .. } => mapper.with_dtype(DataType::Boolean),
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 }
@@ -45,6 +61,10 @@ impl Display for CategoricalFunction {
             StartsWith(_) => "starts_with",
             #[cfg(feature = "strings")]
             EndsWith(_) => "ends_with",
+            #[cfg(all(feature = "strings", feature = "regex"))]
+            Contains { .. } => "contains",
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            ContainsMany { .. } => "contains_many",
         };
         write!(f, "cat.{s}")
     }
@@ -63,6 +83,18 @@ impl From<CategoricalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             StartsWith(prefix) => map!(starts_with, prefix.as_str()),
             #[cfg(feature = "strings")]
             EndsWith(suffix) => map!(ends_with, suffix.as_str()),
+            #[cfg(all(feature = "strings", feature = "regex"))]
+            Contains {
+                pat,
+                literal,
+                strict,
+            } => map!(contains, pat.as_str(), literal, strict),
+            #[cfg(all(feature = "strings", feature = "find_many"))]
+            ContainsMany {
+                ascii_case_insensitive,
+            } => {
+                map_as_slice!(contains_many, ascii_case_insensitive)
+            },
         }
     }
 }
@@ -114,6 +146,21 @@ where
     Ok(out.into_column())
 }
 
+/// Fast path: apply a fallible string function to the categories of a categorical column and
+/// broadcast the result back to the array.
+fn try_apply_to_cats<F, T>(ca: &CategoricalChunked, mut op: F) -> PolarsResult<Column>
+where
+    F: FnMut(&StringChunked) -> PolarsResult<ChunkedArray<T>>,
+    ChunkedArray<T>: IntoSeries,
+    T: PolarsDataType<HasViews = FalseT, IsStruct = FalseT, IsNested = FalseT>,
+{
+    let (categories, phys) = _get_cat_phys_map(ca);
+    let result = op(&categories)?;
+    // SAFETY: physical idx array is valid.
+    let out = unsafe { result.take_unchecked(phys.idx().unwrap()) };
+    Ok(out.into_column())
+}
+
 /// Fast path: apply a binary function to the categories of a categorical column and broadcast the
 /// result back to the array.
 fn apply_to_cats_binary<F, T>(ca: &CategoricalChunked, mut op: F) -> PolarsResult<Column>
@@ -151,4 +198,23 @@ fn starts_with(s: &Column, prefix: &str) -> PolarsResult<Column> {
 fn ends_with(s: &Column, suffix: &str) -> PolarsResult<Column> {
     let ca = s.categorical()?;
     apply_to_cats_binary(ca, |s| s.as_binary().ends_with(suffix.as_bytes()))
+}
+
+#[cfg(all(feature = "strings", feature = "regex"))]
+pub(super) fn contains(s: &Column, pat: &str, literal: bool, strict: bool) -> PolarsResult<Column> {
+    let ca = s.categorical()?;
+    if literal {
+        try_apply_to_cats(ca, |s| s.contains_literal(pat))
+    } else {
+        try_apply_to_cats(ca, |s| s.contains(pat, strict))
+    }
+}
+
+#[cfg(all(feature = "strings", feature = "find_many"))]
+fn contains_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
+    let ca = s[0].categorical()?;
+    let patterns = s[1].str()?;
+    try_apply_to_cats(ca, |s| {
+        strings::contains_any(s, patterns, ascii_case_insensitive)
+    })
 }
