@@ -814,7 +814,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                         StatsFunction::Mean => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
+                            |dt| {
+                                dt.is_primitive_numeric()
+                                    || dt.is_temporal()
+                                    || dt == &DataType::Boolean
+                            },
                             |name| col(name.clone()).mean(),
                             &input_schema,
                         ),
@@ -838,7 +842,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                         StatsFunction::Median => stats_helper(
-                            |dt| dt.is_primitive_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
+                            |dt| {
+                                dt.is_primitive_numeric()
+                                    || dt.is_temporal()
+                                    || dt == &DataType::Boolean
+                            },
                             |name| col(name.clone()).median(),
                             &input_schema,
                         ),

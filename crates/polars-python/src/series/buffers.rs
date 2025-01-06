@@ -75,10 +75,12 @@ impl PySeries {
                     length: len,
                 })
             },
-            dt if dt.is_primitive_numeric() => Ok(with_match_physical_numeric_polars_type!(dt, |$T| {
-                let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
-                BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
-            })),
+            dt if dt.is_primitive_numeric() => {
+                Ok(with_match_physical_numeric_polars_type!(dt, |$T| {
+                    let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
+                    BufferInfo { pointer: get_pointer(ca), offset: 0, length: ca.len() }
+                }))
+            },
             dt => {
                 let msg = format!("`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first");
                 Err(PyTypeError::new_err(msg))
