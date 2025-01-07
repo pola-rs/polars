@@ -425,6 +425,7 @@ def _maybe_init_credential_provider(
 
             if storage_options is not None:
                 for k, v in storage_options.items():
+                    # https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html
                     if k in {
                         "azure_storage_tenant_id",
                         "azure_storage_authority_id",
