@@ -47,7 +47,7 @@ impl PyFileLikeObject {
         Python::with_gil(|py| {
             let py_f = self.inner.bind(py);
             if let Ok(bytes) = read_if_bytesio(py_f.clone()).downcast::<PyBytes>() {
-                return MemSlice::from_arc(bytes.as_bytes(), Arc::new(py_f.clone().unbind()));
+                return MemSlice::from_arc(bytes.as_bytes(), Arc::new(bytes.clone().unbind().clone_ref(py)));
             }
 
             let bytes = self
