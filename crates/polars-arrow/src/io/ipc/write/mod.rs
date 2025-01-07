@@ -38,7 +38,8 @@ fn default_ipc_field(dtype: &ArrowDataType, current_id: &mut i64) -> IpcField {
         },
         // multiple children => recurse
         Union(u) => IpcField {
-            fields: u.fields
+            fields: u
+                .fields
                 .iter()
                 .map(|f| default_ipc_field(f.dtype(), current_id))
                 .collect(),

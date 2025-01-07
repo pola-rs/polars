@@ -41,7 +41,10 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
         },
         D::Extension(ext) => {
             let dtype = convert_dtype(ext.inner);
-            D::Extension(Box::new(ExtensionType { inner: dtype, ..*ext }))
+            D::Extension(Box::new(ExtensionType {
+                inner: dtype,
+                ..*ext
+            }))
         },
         dt => dt,
     }

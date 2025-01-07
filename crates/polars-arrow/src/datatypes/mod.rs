@@ -187,7 +187,7 @@ pub struct ExtensionType {
 pub struct UnionType {
     pub fields: Vec<Field>,
     pub ids: Option<Vec<i32>>,
-    pub mode: UnionMode
+    pub mode: UnionMode,
 }
 
 /// Mode of [`ArrowDataType::Union`]
@@ -451,12 +451,8 @@ impl ArrowDataType {
             | D::FixedSizeList(field, _)
             | D::Map(field, _)
             | D::LargeList(field) => field.dtype().contains_dictionary(),
-            D::Struct(fields) => {
-                fields.iter().any(|f| f.dtype().contains_dictionary())
-            },
-            D::Union(union) => {
-                union.fields.iter().any(|f| f.dtype().contains_dictionary())
-            },
+            D::Struct(fields) => fields.iter().any(|f| f.dtype().contains_dictionary()),
+            D::Union(union) => union.fields.iter().any(|f| f.dtype().contains_dictionary()),
             D::Dictionary(_, _, _) => true,
             D::Extension(ext) => ext.inner.contains_dictionary(),
         }

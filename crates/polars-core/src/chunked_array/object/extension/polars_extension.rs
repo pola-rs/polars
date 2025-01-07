@@ -41,9 +41,11 @@ impl PolarsExtension {
     /// Load the sentinel from the heap.
     /// be very careful, this dereferences a raw pointer on the heap,
     unsafe fn get_sentinel(&self) -> Box<ExtensionSentinel> {
-        if let ArrowDataType::Extension(ext) = self.array.as_ref().unwrap().dtype()
-        {
-            let metadata = ext.metadata.as_ref().expect("should have metadata in extension type");
+        if let ArrowDataType::Extension(ext) = self.array.as_ref().unwrap().dtype() {
+            let metadata = ext
+                .metadata
+                .as_ref()
+                .expect("should have metadata in extension type");
             let mut iter = metadata.split(';');
 
             let pid = iter.next().unwrap().parse::<u128>().unwrap();

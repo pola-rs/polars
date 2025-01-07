@@ -124,13 +124,11 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     let metadata = format_pl_smallstr!("{};{}", *PROCESS_ID, et_ptr as usize);
 
     let physical_type = ArrowDataType::FixedSizeBinary(t_size);
-    let extension_type = ArrowDataType::Extension(
-        Box::new(ExtensionType {
-            name: PlSmallStr::from_static(EXTENSION_NAME),
-            inner: physical_type.into(),
-            metadata: Some(metadata),
-        })
-    );
+    let extension_type = ArrowDataType::Extension(Box::new(ExtensionType {
+        name: PlSmallStr::from_static(EXTENSION_NAME),
+        inner: physical_type.into(),
+        metadata: Some(metadata),
+    }));
     // first freeze, otherwise we compute null
     let validity = if null_count > 0 {
         Some(validity.into())

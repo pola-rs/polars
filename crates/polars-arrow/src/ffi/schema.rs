@@ -7,7 +7,8 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::ArrowSchema;
 use crate::datatypes::{
-    ArrowDataType, Extension, ExtensionType, Field, IntegerType, IntervalUnit, Metadata, TimeUnit, UnionMode, UnionType
+    ArrowDataType, Extension, ExtensionType, Field, IntegerType, IntervalUnit, Metadata, TimeUnit,
+    UnionMode, UnionType,
 };
 
 #[allow(dead_code)]
@@ -54,7 +55,8 @@ fn schema_children(dtype: &ArrowDataType, flags: &mut i64) -> Box<[*mut ArrowSch
             .iter()
             .map(|field| Box::into_raw(Box::new(ArrowSchema::new(field))))
             .collect::<Box<[_]>>(),
-        ArrowDataType::Union(u) => u.fields
+        ArrowDataType::Union(u) => u
+            .fields
             .iter()
             .map(|field| Box::into_raw(Box::new(ArrowSchema::new(field))))
             .collect::<Box<[_]>>(),
@@ -90,8 +92,7 @@ impl ArrowSchema {
             .map(|inner| (**inner).clone())
             .unwrap_or_default();
 
-        let metadata = if let ArrowDataType::Extension(ext) = field.dtype()
-        {
+        let metadata = if let ArrowDataType::Extension(ext) = field.dtype() {
             // append extension information.
             let mut metadata = metadata.clone();
 
@@ -222,7 +223,11 @@ pub(crate) unsafe fn to_field(schema: &ArrowSchema) -> PolarsResult<Field> {
     let (metadata, extension) = unsafe { metadata_from_bytes(schema.metadata) };
 
     let dtype = if let Some((name, extension_metadata)) = extension {
-        ArrowDataType::Extension(Box::new(ExtensionType { name, inner: dtype, metadata: extension_metadata }))
+        ArrowDataType::Extension(Box::new(ExtensionType {
+            name,
+            inner: dtype,
+            metadata: extension_metadata,
+        }))
     } else {
         dtype
     };
@@ -408,7 +413,11 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
                     let fields = (0..schema.n_children as usize)
                         .map(|x| to_field(schema.child(x)))
                         .collect::<PolarsResult<Vec<_>>>()?;
-                    ArrowDataType::Union(Box::new(UnionType { fields, ids: Some(type_ids), mode }))
+                    ArrowDataType::Union(Box::new(UnionType {
+                        fields,
+                        ids: Some(type_ids),
+                        mode,
+                    }))
                 },
                 _ => {
                     polars_bail!(ComputeError:
@@ -646,10 +655,8 @@ mod tests {
                 )),
                 true,
             ),
-            ArrowDataType::Union(
-                Box::new(UnionType {
-                    fields:
-                vec![
+            ArrowDataType::Union(Box::new(UnionType {
+                fields: vec![
                     Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
                         PlSmallStr::from_static("b"),
@@ -663,10 +670,8 @@ mod tests {
                 ],
                 ids: Some(vec![1, 2]),
                 mode: UnionMode::Dense,
-                })
-            ),
-            ArrowDataType::Union(
-                Box::new(UnionType {
+            })),
+            ArrowDataType::Union(Box::new(UnionType {
                 fields: vec![
                     Field::new(PlSmallStr::from_static("a"), ArrowDataType::Int64, true),
                     Field::new(
@@ -681,8 +686,7 @@ mod tests {
                 ],
                 ids: Some(vec![0, 1]),
                 mode: UnionMode::Sparse,
-                })
-            ),
+            })),
         ];
         for time_unit in [
             TimeUnit::Second,

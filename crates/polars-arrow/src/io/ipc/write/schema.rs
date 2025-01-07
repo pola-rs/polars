@@ -313,7 +313,8 @@ fn serialize_children(
             .zip(ipc_field.fields.iter())
             .map(|(field, ipc)| serialize_field(field, ipc))
             .collect(),
-        Union(u) => u.fields
+        Union(u) => u
+            .fields
             .iter()
             .zip(ipc_field.fields.iter())
             .map(|(field, ipc)| serialize_field(field, ipc))
