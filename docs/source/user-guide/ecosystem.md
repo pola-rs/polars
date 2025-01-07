@@ -35,7 +35,7 @@ See the [dedicated visualization section](misc/visualization.md).
 The [Delta Lake](https://github.com/delta-io/delta-rs) project aims to unlock the power of the
 Deltalake for as many users and projects as possible by providing native low-level APIs aimed at
 developers and integrators, as well as a high-level operations API that lets you query, inspect, and
-operate your Delta Lake with ease.
+operate your Delta Lake with ease. Delta Lake builds on the native Polars Parquet reader allowing you to write standard Polars queries against a DeltaTable.
 
 Read how to use Delta Lake with Polars
 [at Delta Lake](https://delta-io.github.io/delta-rs/integrations/delta-lake-polars/#reading-a-delta-lake-table-with-polars).
@@ -47,6 +47,20 @@ Read how to use Delta Lake with Polars
 Since [Scikit Learn](https://scikit-learn.org/stable/) 1.4, all transformers support Polars output.
 See the change log for
 [more details](https://scikit-learn.org/dev/whats_new/v1.4.html#changes-impacting-all-modules).
+
+#### XGBoost & LightGBM
+
+XGBoost and LightGBM are gradient boosting libraries for doing regression or classification on tabular data. [XGBoost accepts Polars `DataFrame` and `LazyFrame` as input](https://xgboost.readthedocs.io/en/latest/python/python_intro.html) while LightGBM accepts Polars `DataFrame` as input.
+
+#### Time series forecasting
+The [Nixtla time series forecasting packages accept a Polars `DataFrame` as input](https://nixtlaverse.nixtla.io/statsforecast/docs/getting-started/getting_started_complete_polars.html).
+
+#### Huggingface
+Huggingface is a platform for working with machine learning datasets and models. [Polars can be used to work with datasets downloaded from Huggingface](https://pola.rs/posts/polars-hugging-face/).
+
+#### Deep learning frameworks
+We can transform a `DataFrame` [to a PyTorch format using `to_torch`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_torch.html) or [a JAX format using `to_jax`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_jax.html).
+
 
 ### Other
 
