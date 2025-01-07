@@ -202,7 +202,7 @@ where
                 };
                 let categories = rev_map.get_categories();
                 // Check if indices are in bounds
-                if let Some(m) = ca.max() {
+                if let Some(m) = ChunkAgg::max(&ca) {
                     if m >= categories.len() as u32 {
                         polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
                     }
