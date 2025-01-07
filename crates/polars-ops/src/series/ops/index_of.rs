@@ -95,7 +95,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
         return Ok(None);
     }
 
-    if series.dtype().is_numeric() {
+    if series.dtype().is_primitive_numeric() {
         return Ok(downcast_as_macro_arg_physical!(
             series,
             try_index_of_numeric_ca,
