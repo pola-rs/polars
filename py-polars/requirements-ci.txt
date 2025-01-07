@@ -3,6 +3,6 @@
 # (installable via `make requirements-all`)
 # -------------------------------------------------------
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch
+torch; python_version < '3.13' or platform_system != 'Windows'  # torch provides no wheel for Python 3.13 on Windows
 jax[cpu]
 pyiceberg>=0.5.0

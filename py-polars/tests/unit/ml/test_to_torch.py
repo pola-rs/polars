@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sys
 from typing import Any
 
 import pytest
@@ -12,7 +13,13 @@ from polars.dependencies import _lazy_import
 # ensures the tests aren't run locally; this avoids premature local import)
 torch, _ = _lazy_import("torch")
 
-pytestmark = pytest.mark.ci_only
+pytestmark = [
+    pytest.mark.ci_only,
+    pytest.mark.skipif(
+        sys.platform == "win32" and sys.version_info >= (3, 13),
+        reason="Torch does not ship wheels for Python 3.13 on Windows",
+    ),
+]
 
 
 @pytest.fixture
