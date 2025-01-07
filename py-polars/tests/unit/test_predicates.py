@@ -628,3 +628,13 @@ def test_predicate_pushdown_join_19772(
 
     assert_frame_equal(q.collect(no_optimization=True), expect)
     assert_frame_equal(q.collect(), expect)
+
+
+def test_predicate_pushdown_scalar_20489() -> None:
+    df = pl.DataFrame({"a": [1]})
+    mask = pl.Series([False])
+
+    assert_frame_equal(
+        df.lazy().with_columns(b=pl.Series([2])).filter(mask).collect(),
+        pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64}),
+    )

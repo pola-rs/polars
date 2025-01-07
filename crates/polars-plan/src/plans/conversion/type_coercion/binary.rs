@@ -167,21 +167,21 @@ pub(super) fn process_binary(
     match (&type_left, &type_right, op) {
         #[cfg(not(feature = "dtype-categorical"))]
         (DataType::String, dt, op) | (dt, DataType::String, op)
-            if op.is_comparison() && dt.is_numeric() =>
+            if op.is_comparison() && dt.is_primitive_numeric() =>
         {
             return Ok(None)
         },
         #[cfg(feature = "dtype-categorical")]
         (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
-            if op.is_comparison() && dt.is_numeric() =>
+            if op.is_comparison() && dt.is_primitive_numeric() =>
         {
             return Ok(None)
         },
         #[cfg(feature = "dtype-categorical")]
         (Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
-            if op.is_comparison() && dt.is_numeric() =>
+            if op.is_comparison() && dt.is_primitive_numeric() =>
         {
             return Ok(None)
         },
@@ -212,8 +212,8 @@ pub(super) fn process_binary(
     if op.is_arithmetic() {
         match (&type_left, &type_right) {
             (Duration(_), Duration(_)) => return Ok(None),
-            (Duration(_), r) if r.is_numeric() => return Ok(None),
-            (String, a) | (a, String) if a.is_numeric() => {
+            (Duration(_), r) if r.is_primitive_numeric() => return Ok(None),
+            (String, a) | (a, String) if a.is_primitive_numeric() => {
                 polars_bail!(InvalidOperation: "arithmetic on string and numeric not allowed, try an explicit cast first")
             },
             (Datetime(_, _), _)
@@ -229,7 +229,7 @@ pub(super) fn process_binary(
             #[cfg(feature = "dtype-array")]
             (Array(..), _) | (_, Array(..)) => return Ok(None),
             #[cfg(feature = "dtype-struct")]
-            (Struct(_), a) | (a, Struct(_)) if a.is_numeric() => {
+            (Struct(_), a) | (a, Struct(_)) if a.is_primitive_numeric() => {
                 return process_struct_numeric_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
                 )

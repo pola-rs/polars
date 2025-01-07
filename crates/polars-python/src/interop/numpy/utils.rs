@@ -47,7 +47,7 @@ where
 /// Returns whether the data type supports creating a NumPy view.
 pub(super) fn dtype_supports_view(dtype: &DataType) -> bool {
     match dtype {
-        dt if dt.is_numeric() => true,
+        dt if dt.is_primitive_numeric() => true,
         DataType::Datetime(_, _) | DataType::Duration(_) => true,
         DataType::Array(inner, _) => dtype_supports_view(inner.as_ref()),
         _ => false,

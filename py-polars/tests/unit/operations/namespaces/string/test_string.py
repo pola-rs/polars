@@ -688,8 +688,8 @@ def test_json_decode_primitive_to_list_11053() -> None:
     )
 
     output = df.select(
-        pl.col("json").str.json_decode(schema).alias("casted_json")
-    ).unnest("casted_json")
+        pl.col("json").str.json_decode(schema).alias("decoded_json")
+    ).unnest("decoded_json")
     expected = pl.DataFrame({"col1": [["123"], ["xyz"]], "col2": [["123"], None]})
     assert_frame_equal(output, expected)
 

@@ -65,7 +65,7 @@ pub fn search_sorted(
 
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             let search_values = search_values.to_physical_repr();
 
             let idx = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {

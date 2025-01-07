@@ -78,7 +78,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()));
                 Ok(out.into_series())
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
 
                     let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
@@ -106,7 +106,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => Ok(min_list_numerical(ca, dt)),
+        dt if dt.is_primitive_numeric() => Ok(min_list_numerical(ca, dt)),
         _ => inner(ca),
     }
 }
@@ -188,7 +188,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()));
                 Ok(out.into_series())
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
 
                     let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
@@ -217,7 +217,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => Ok(max_list_numerical(ca, dt)),
+        dt if dt.is_primitive_numeric() => Ok(max_list_numerical(ca, dt)),
         _ => inner(ca),
     }
 }

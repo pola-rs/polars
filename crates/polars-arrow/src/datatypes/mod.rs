@@ -160,10 +160,7 @@ pub enum ArrowDataType {
     /// Decimal backed by 256 bits
     Decimal256(usize, usize),
     /// Extension type.
-    /// - name
-    /// - physical type
-    /// - metadata
-    Extension(PlSmallStr, Box<ArrowDataType>, Option<PlSmallStr>),
+    Extension(Box<ExtensionType>),
     /// A binary type that inlines small values
     /// and can intern bytes.
     BinaryView,
@@ -175,7 +172,22 @@ pub enum ArrowDataType {
     /// A nested datatype that can represent slots of differing types.
     /// Third argument represents mode
     #[cfg_attr(feature = "serde", serde(skip))]
-    Union(Vec<Field>, Option<Vec<i32>>, UnionMode),
+    Union(Box<UnionType>),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ExtensionType {
+    pub name: PlSmallStr,
+    pub inner: ArrowDataType,
+    pub metadata: Option<PlSmallStr>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct UnionType {
+    pub fields: Vec<Field>,
+    pub ids: Option<Vec<i32>>,
+    pub mode: UnionMode,
 }
 
 /// Mode of [`ArrowDataType::Union`]
@@ -277,10 +289,10 @@ impl ArrowDataType {
             FixedSizeList(_, _) => PhysicalType::FixedSizeList,
             LargeList(_) => PhysicalType::LargeList,
             Struct(_) => PhysicalType::Struct,
-            Union(_, _, _) => PhysicalType::Union,
+            Union(_) => PhysicalType::Union,
             Map(_, _) => PhysicalType::Map,
             Dictionary(key, _, _) => PhysicalType::Dictionary(*key),
-            Extension(_, key, _) => key.to_physical_type(),
+            Extension(ext) => ext.inner.to_physical_type(),
             Unknown => unimplemented!(),
         }
     }
@@ -322,9 +334,9 @@ impl ArrowDataType {
                     .collect(),
             ),
             Dictionary(keys, _, _) => (*keys).into(),
-            Union(_, _, _) => unimplemented!(),
+            Union(_) => unimplemented!(),
             Map(_, _) => unimplemented!(),
-            Extension(_, inner, _) => inner.underlying_physical_type(),
+            Extension(ext) => ext.inner.underlying_physical_type(),
             _ => self.clone(),
         }
     }
@@ -335,7 +347,7 @@ impl ArrowDataType {
     pub fn to_logical_type(&self) -> &ArrowDataType {
         use ArrowDataType::*;
         match self {
-            Extension(_, key, _) => key.to_logical_type(),
+            Extension(ext) => ext.inner.to_logical_type(),
             _ => self,
         }
     }
@@ -358,10 +370,10 @@ impl ArrowDataType {
                 | D::LargeList(_)
                 | D::FixedSizeList(_, _)
                 | D::Struct(_)
-                | D::Union(_, _, _)
+                | D::Union(_)
                 | D::Map(_, _)
                 | D::Dictionary(_, _, _)
-                | D::Extension(_, _, _)
+                | D::Extension(_)
         )
     }
 
@@ -439,11 +451,10 @@ impl ArrowDataType {
             | D::FixedSizeList(field, _)
             | D::Map(field, _)
             | D::LargeList(field) => field.dtype().contains_dictionary(),
-            D::Struct(fields) | D::Union(fields, _, _) => {
-                fields.iter().any(|f| f.dtype().contains_dictionary())
-            },
+            D::Struct(fields) => fields.iter().any(|f| f.dtype().contains_dictionary()),
+            D::Union(union) => union.fields.iter().any(|f| f.dtype().contains_dictionary()),
             D::Dictionary(_, _, _) => true,
-            D::Extension(_, dtype, _) => dtype.contains_dictionary(),
+            D::Extension(ext) => ext.inner.contains_dictionary(),
         }
     }
 }

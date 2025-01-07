@@ -728,7 +728,7 @@ pub fn is_in(s: &Series, other: &Series) -> PolarsResult<BooleanChunked> {
 
             is_in_numeric(s.physical(), other.to_physical_repr().as_ref())
         },
-        dt if dt.to_physical().is_numeric() => {
+        dt if dt.to_physical().is_primitive_numeric() => {
             let s = s.to_physical_repr();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();

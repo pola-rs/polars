@@ -33,7 +33,7 @@ impl AExpr {
 
             Function { options, .. } => options.is_elementwise(),
 
-            Literal(v) => v.projects_as_scalar(),
+            Literal(v) => v.is_scalar(),
 
             Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
@@ -243,7 +243,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             expr_arena
                                 .get(agg)
                                 .get_type(_input_schema, Context::Default, expr_arena)
-                                .map(|dt| { dt.is_numeric() }),
+                                .map(|dt| { dt.is_primitive_numeric() }),
                             Ok(true)
                         )
                     },
