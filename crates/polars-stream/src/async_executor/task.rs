@@ -185,11 +185,8 @@ where
             },
         };
 
-        let join_waker = self.join_waker.take();
         drop(data);
-        if let Some(w) = join_waker {
-            w.wake();
-        }
+        self.join_waker.wake();
         true
     }
 
@@ -217,22 +214,9 @@ where
     }
 
     fn poll_join(&self, cx: &mut Context<'_>) -> Poll<F::Output> {
-        // Try to lock, if that fails register the waker and try to lock again.
-        // This ensures we can't miss finished tasks by it finishing right after
-        // we try to get the lock but before we could register the waker.
-        let mut data_lock = self.data.try_lock();
-        let mut registered = false;
-        if data_lock.is_none() {
-            self.join_waker.register(cx.waker());
-            registered = true;
-            data_lock = self.data.try_lock();
-        }
-
-        if let Some(mut data) = data_lock {
+        self.join_waker.register(cx.waker());
+        if let Some(mut data) = self.data.try_lock() {
             if matches!(*data, TaskData::Empty | TaskData::Polling(..)) {
-                if !registered {
-                    self.join_waker.register(cx.waker());
-                }
                 return Poll::Pending;
             }
 
