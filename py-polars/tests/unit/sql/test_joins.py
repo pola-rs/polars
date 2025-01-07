@@ -24,11 +24,19 @@ def foods_ipc_path() -> Path:
             pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
         ),
         (
+            "SELECT * FROM tbl_a SEMI JOIN tbl_b USING (a,c)",
+            pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
+        ),
+        (
             "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (a)",
             pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
         ),
         (
             "SELECT * FROM tbl_a LEFT ANTI JOIN tbl_b USING (a)",
+            pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.String}),
+        ),
+        (
+            "SELECT * FROM tbl_a ANTI JOIN tbl_b USING (a)",
             pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.String}),
         ),
         (
