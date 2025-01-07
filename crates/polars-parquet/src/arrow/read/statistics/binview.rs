@@ -19,11 +19,11 @@ pub(super) fn push<T: ViewType + ?Sized>(
 
     min.push(from.and_then(|s| {
         let opt_b = s.min_value.as_deref();
-        unsafe { opt_b.map(|b| T::from_bytes_unchecked(b)) }
+        opt_b.and_then(T::from_bytes)
     }));
     max.push(from.and_then(|s| {
         let opt_b = s.max_value.as_deref();
-        unsafe { opt_b.map(|b| T::from_bytes_unchecked(b)) }
+        opt_b.and_then(T::from_bytes)
     }));
 
     Ok(())
