@@ -126,7 +126,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     let physical_type = ArrowDataType::FixedSizeBinary(t_size);
     let extension_type = ArrowDataType::Extension(Box::new(ExtensionType {
         name: PlSmallStr::from_static(EXTENSION_NAME),
-        inner: physical_type.into(),
+        inner: physical_type,
         metadata: Some(metadata),
     }));
     // first freeze, otherwise we compute null
