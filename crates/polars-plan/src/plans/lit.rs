@@ -105,16 +105,6 @@ impl LiteralValue {
         !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 
-    /// Less-strict `is_scalar` check - generally used for internal functionality such as our
-    /// optimizers.
-    pub(crate) fn projects_as_scalar(&self) -> bool {
-        match self {
-            LiteralValue::Series(s) => s.len() == 1,
-            LiteralValue::Range { low, high, .. } => high.saturating_sub(*low) == 1,
-            _ => true,
-        }
-    }
-
     pub fn to_any_value(&self) -> Option<AnyValue> {
         use LiteralValue::*;
         let av = match self {

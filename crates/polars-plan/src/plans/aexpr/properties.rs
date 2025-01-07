@@ -33,7 +33,7 @@ impl AExpr {
 
             Function { options, .. } => options.is_elementwise(),
 
-            Literal(v) => v.projects_as_scalar(),
+            Literal(v) => v.is_scalar(),
 
             Alias(_, _) | BinaryExpr { .. } | Column(_) | Ternary { .. } | Cast { .. } => true,
 
