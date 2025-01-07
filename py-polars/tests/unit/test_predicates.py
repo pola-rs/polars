@@ -638,3 +638,14 @@ def test_predicate_pushdown_scalar_20489() -> None:
         df.lazy().with_columns(b=pl.Series([2])).filter(mask).collect(),
         pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64}),
     )
+
+
+def test_predicates_not_split_when_pushdown_disabled_20475() -> None:
+    # This is important for the eager `DataFrame.filter()`, as that runs without
+    # predicate pushdown enabled. Splitting the predicates in that case can
+    # severely degrade performance.
+    q = pl.LazyFrame({"a": 1, "b": 1, "c": 1}).filter(
+        pl.col("a") > 0, pl.col("b") > 0, pl.col("c") > 0
+    )
+
+    assert q.explain(predicate_pushdown=False).count("FILTER") == 1
