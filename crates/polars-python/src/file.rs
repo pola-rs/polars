@@ -45,6 +45,11 @@ impl PyFileLikeObject {
 
     pub fn to_memslice(&self) -> MemSlice {
         Python::with_gil(|py| {
+            let py_f = self.inner.bind(py);
+            if let Ok(bytes) = read_if_bytesio(py_f.clone()).downcast::<PyBytes>() {
+                return MemSlice::from_arc(bytes.as_bytes(), Arc::new(py_f.clone().unbind()));
+            }
+
             let bytes = self
                 .inner
                 .call_method(py, "read", (), None)
@@ -373,9 +378,11 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
     Ok(get_either_file(f, truncate)?.into_dyn())
 }
 
-/// If the give file-like is a BytesIO, read its contents.
+/// If the give file-like is a BytesIO, read its contents efficiently.
 fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     if py_f.getattr("read").is_ok() {
+        // Note that BytesIO has some memory optimizations so much of the time
+        // getvalue() doesn't need to copy of the underlying data:
         let Ok(bytes) = py_f.call_method0("getvalue") else {
             return py_f;
         };
