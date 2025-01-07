@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use arrow::array::FixedSizeBinaryArray;
 use arrow::bitmap::MutableBitmap;
 use arrow::buffer::Buffer;
+use arrow::datatypes::ExtensionType;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
 
@@ -124,9 +125,11 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
 
     let physical_type = ArrowDataType::FixedSizeBinary(t_size);
     let extension_type = ArrowDataType::Extension(
-        PlSmallStr::from_static(EXTENSION_NAME),
-        physical_type.into(),
-        Some(metadata),
+        Box::new(ExtensionType {
+            name: PlSmallStr::from_static(EXTENSION_NAME),
+            inner: physical_type.into(),
+            metadata: Some(metadata),
+        })
     );
     // first freeze, otherwise we compute null
     let validity = if null_count > 0 {

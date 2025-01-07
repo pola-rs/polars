@@ -136,10 +136,10 @@ fn dtype_and_data_to_encoded_item_len(
             item_len
         },
 
-        D::Union(_, _, _) => todo!(),
+        D::Union(_) => todo!(),
         D::Map(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
-        D::Extension(_, _, _) => todo!(),
+        D::Extension(_) => todo!(),
         D::Unknown => todo!(),
 
         _ => unreachable!(),

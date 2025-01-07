@@ -216,8 +216,16 @@ fn find_first_dict_field_d<'a>(
         List(field) | LargeList(field) | FixedSizeList(field, ..) | Map(field, ..) => {
             find_first_dict_field(id, field.as_ref(), &ipc_field.fields[0])
         },
-        Union(fields, ..) | Struct(fields) => {
+        Struct(fields) => {
             for (field, ipc_field) in fields.iter().zip(ipc_field.fields.iter()) {
+                if let Some(f) = find_first_dict_field(id, field, ipc_field) {
+                    return Some(f);
+                }
+            }
+            None
+        },
+        Union(u) => {
+            for (field, ipc_field) in u.fields.iter().zip(ipc_field.fields.iter()) {
                 if let Some(f) = find_first_dict_field(id, field, ipc_field) {
                     return Some(f);
                 }

@@ -208,7 +208,7 @@ impl DataType {
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
             }
-            ArrowDataType::Extension(name, _, _) if name.as_str() == EXTENSION_NAME => {
+            ArrowDataType::Extension(ext) if ext.name.as_str() == EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
                     DataType::Object("object", None)
