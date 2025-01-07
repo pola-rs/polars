@@ -679,10 +679,10 @@ class StringNameSpace:
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
-        Extract the first match of json string with provided JSONPath expression.
+        Extract the first match of JSON string with provided JSONPath expression.
 
-        Throw errors if encounter invalid json strings.
-        All return value will be casted to String regardless of the original value.
+        Throw errors if encounter invalid JSON strings.
+        All return values will be cast to String regardless of the original value.
 
         Documentation on JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.

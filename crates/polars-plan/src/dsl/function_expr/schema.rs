@@ -202,7 +202,7 @@ impl FunctionExpr {
                 // but we because only the numeric types deviate in
                 // bit size this will likely not lead to issues
                 mapper.map_dtype(|dt| {
-                    if dt.is_numeric() {
+                    if dt.is_primitive_numeric() {
                         if dt.is_float() {
                             DataType::Float32
                         } else if dt.is_unsigned_integer() {
@@ -438,7 +438,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map to a float supertype if numeric, else preserve
     pub fn map_numeric_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| {
-            if dtype.is_numeric() {
+            if dtype.is_primitive_numeric() {
                 match dtype {
                     DataType::Float32 => DataType::Float32,
                     _ => DataType::Float64,

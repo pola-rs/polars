@@ -172,7 +172,7 @@ where
     PrimitiveArray::<O>::from_trusted_len_iter(iter).to(to_type.clone())
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn integer_to_decimal<T: NativeType + AsPrimitive<i128>>(
     from: &PrimitiveArray<T>,
     to_precision: usize,
@@ -213,7 +213,7 @@ where
     Ok(Box::new(integer_to_decimal::<T>(from, precision, scale)))
 }
 
-/// Returns a [`PrimitiveArray<i128>`] with the casted values. Values are `None` on overflow
+/// Returns a [`PrimitiveArray<i128>`] with the cast values. Values are `None` on overflow
 pub fn float_to_decimal<T>(
     from: &PrimitiveArray<T>,
     to_precision: usize,

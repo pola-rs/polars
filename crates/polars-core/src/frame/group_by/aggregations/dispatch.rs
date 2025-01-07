@@ -141,7 +141,7 @@ impl Series {
             Boolean => s.cast(&Float64).unwrap().agg_mean(groups),
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_mean(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_mean(groups),
-            dt if dt.is_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
+            dt if dt.is_primitive_numeric() => apply_method_physical_integer!(s, agg_mean, groups),
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -193,7 +193,9 @@ impl Series {
             Boolean => s.cast(&Float64).unwrap().agg_median(groups),
             Float32 => SeriesWrap(s.f32().unwrap().clone()).agg_median(groups),
             Float64 => SeriesWrap(s.f64().unwrap().clone()).agg_median(groups),
-            dt if dt.is_numeric() => apply_method_physical_integer!(s, agg_median, groups),
+            dt if dt.is_primitive_numeric() => {
+                apply_method_physical_integer!(s, agg_median, groups)
+            },
             #[cfg(feature = "dtype-datetime")]
             dt @ Datetime(_, _) => self
                 .to_physical_repr()
@@ -249,7 +251,7 @@ impl Series {
         match s.dtype() {
             Float32 => s.f32().unwrap().agg_quantile(groups, quantile, method),
             Float64 => s.f64().unwrap().agg_quantile(groups, quantile, method),
-            dt if dt.is_numeric() || dt.is_temporal() => {
+            dt if dt.is_primitive_numeric() || dt.is_temporal() => {
                 let ca = s.to_physical_repr();
                 let physical_type = ca.dtype();
                 let s = apply_method_physical_integer!(ca, agg_quantile, groups, quantile, method);

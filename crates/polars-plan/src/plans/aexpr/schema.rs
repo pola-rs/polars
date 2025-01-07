@@ -12,7 +12,7 @@ fn float_type(field: &mut Field) {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(..) => true,
         DataType::Boolean => true,
-        dt => dt.is_numeric(),
+        dt => dt.is_primitive_numeric(),
     };
     if should_coerce {
         field.coerce(DataType::Float64);
@@ -586,7 +586,7 @@ fn get_arithmetic_field(
                     // True divide handled somewhere else
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
-                (l, Duration(_)) if l.is_numeric() => match op {
+                (l, Duration(_)) if l.is_primitive_numeric() => match op {
                     Operator::Multiply => {
                         left_field.coerce(right_type);
                         return Ok(left_field);
@@ -720,11 +720,11 @@ fn get_truediv_field(
             let scale = _get_decimal_scale_div(*scale_left);
             Decimal(None, Some(scale))
         },
-        (dt, _) if dt.is_numeric() => Float64,
+        (dt, _) if dt.is_primitive_numeric() => Float64,
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,
         #[cfg(feature = "dtype-duration")]
-        (Duration(_), dt) if dt.is_numeric() => return Ok(left_field),
+        (Duration(_), dt) if dt.is_primitive_numeric() => return Ok(left_field),
         #[cfg(feature = "dtype-duration")]
         (Duration(_), dt) => {
             polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_field.dtype(), dt)

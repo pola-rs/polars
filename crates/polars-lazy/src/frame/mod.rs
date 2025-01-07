@@ -822,7 +822,7 @@ impl LazyFrame {
         )
     }
 
-    /// Stream a query result into a json file. This is useful if the final result doesn't fit
+    /// Stream a query result into a JSON file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "json")]

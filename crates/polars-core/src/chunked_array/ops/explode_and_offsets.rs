@@ -110,7 +110,8 @@ impl ChunkExplode for ListChunked {
             let (indices, new_offsets) = if listarr.null_count() == 0 {
                 // SPECIALIZED path.
                 let inner_phys = self.inner_dtype().to_physical();
-                if inner_phys.is_numeric() || inner_phys.is_null() || inner_phys.is_bool() {
+                if inner_phys.is_primitive_numeric() || inner_phys.is_null() || inner_phys.is_bool()
+                {
                     return Ok(self.specialized(values, offsets, offsets_buf));
                 }
                 // Use gather

@@ -8,8 +8,7 @@ use super::super::deserialize::{read, skip};
 use super::super::read_basic::*;
 use super::super::{Compression, Dictionaries, IpcBuffer, Node, Version};
 use crate::array::UnionArray;
-use crate::datatypes::ArrowDataType;
-use crate::datatypes::UnionMode::Dense;
+use crate::datatypes::{ArrowDataType, UnionMode};
 use crate::io::ipc::read::array::{try_get_array_length, try_get_field_node};
 
 #[allow(clippy::too_many_arguments)]
@@ -48,8 +47,8 @@ pub fn read_union<R: Read + Seek>(
         scratch,
     )?;
 
-    let offsets = if let ArrowDataType::Union(_, _, mode) = dtype {
-        if !mode.is_sparse() {
+    let offsets = if let ArrowDataType::Union(u) = &dtype {
+        if !u.mode.is_sparse() {
             Some(read_buffer(
                 buffers,
                 length,
@@ -108,7 +107,8 @@ pub fn skip_union(
     let _ = buffers
         .pop_front()
         .ok_or_else(|| polars_err!(oos = "IPC: missing validity buffer."))?;
-    if let ArrowDataType::Union(_, _, Dense) = dtype {
+    if let ArrowDataType::Union(u) = dtype {
+        assert!(u.mode == UnionMode::Dense);
         let _ = buffers
             .pop_front()
             .ok_or_else(|| polars_err!(oos = "IPC: missing offsets buffer."))?;

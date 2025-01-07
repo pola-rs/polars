@@ -167,7 +167,7 @@ fn check_asof_columns(
     let dtype_b = b.dtype();
     if has_tolerance {
         polars_ensure!(
-            dtype_a.to_physical().is_numeric() && dtype_b.to_physical().is_numeric(),
+            dtype_a.to_physical().is_primitive_numeric() && dtype_b.to_physical().is_primitive_numeric(),
             InvalidOperation:
             "asof join with tolerance is only supported on numeric/temporal keys"
         );

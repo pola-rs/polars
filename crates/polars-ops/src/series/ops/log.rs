@@ -81,7 +81,7 @@ pub trait LogSeries: SeriesSealed {
     /// where `pk` are discrete probabilities.
     fn entropy(&self, base: f64, normalize: bool) -> PolarsResult<f64> {
         let s = self.as_series().to_physical_repr();
-        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "expected numerical input for 'entropy'");
+        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "expected numerical input for 'entropy'");
         // if there is only one value in the series, return 0.0 to prevent the
         // function from returning -0.0
         if s.len() == 1 {

@@ -368,10 +368,10 @@ impl PySeries {
         let lhs_dtype = self.series.dtype();
         let rhs_dtype = other.series.dtype();
 
-        if !lhs_dtype.is_numeric() {
+        if !lhs_dtype.is_primitive_numeric() {
             return Err(PyPolarsErr::from(polars_err!(opq = dot, lhs_dtype)).into());
         };
-        if !rhs_dtype.is_numeric() {
+        if !rhs_dtype.is_primitive_numeric() {
             return Err(PyPolarsErr::from(polars_err!(opq = dot, rhs_dtype)).into());
         }
 

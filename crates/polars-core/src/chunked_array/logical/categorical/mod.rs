@@ -418,7 +418,7 @@ impl LogicalType for CategoricalChunked {
                 // Otherwise we do nothing
                 Ok(self.clone().set_ordering(*ordering, true).into_series())
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 // Apply the cast to the categories and then index into the casted series.
                 // This has to be local for the gather.
                 let slf = self.to_local();

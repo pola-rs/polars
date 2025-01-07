@@ -61,7 +61,7 @@ pub(super) fn apply_trigonometric_function(
             let ca = s.f64().unwrap();
             apply_trigonometric_function_to_float(ca, trig_function)
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             let s = s.cast(&Float64)?;
             apply_trigonometric_function(&s, trig_function)
         },

@@ -511,7 +511,7 @@ pub(super) fn gather(args: &[Column], null_on_oob: bool) -> PolarsResult<Column>
     let idx = &args[1];
     let ca = ca.list()?;
 
-    if idx.len() == 1 && idx.dtype().is_numeric() && null_on_oob {
+    if idx.len() == 1 && idx.dtype().is_primitive_numeric() && null_on_oob {
         // fast path
         let idx = idx.get(0)?.try_extract::<i64>()?;
         let out = ca.lst_get(idx, null_on_oob).map(Column::from)?;

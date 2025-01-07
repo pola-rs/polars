@@ -134,7 +134,9 @@ def test_from_dataframe_pyarrow_boolean() -> None:
     result = pl.from_dataframe(df_pa)
     assert_frame_equal(result, df)
 
-    with pytest.raises(RuntimeError, match="Boolean column will be casted to uint8"):
+    # note: pyarrow uses the incorrect form "casted" instead of "cast" in this error.
+    # (in case they fix it in the future, the regex match handles both forms)
+    with pytest.raises(RuntimeError, match="Boolean column will be cast(ed)? to uint8"):
         pl.from_dataframe(df_pa, allow_copy=False)
 
 

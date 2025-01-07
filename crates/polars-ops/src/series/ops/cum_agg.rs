@@ -236,7 +236,7 @@ pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_min_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_min_numeric(ca, reverse).into_series();
@@ -257,7 +257,7 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_max_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_max_numeric(ca, reverse).into_series();

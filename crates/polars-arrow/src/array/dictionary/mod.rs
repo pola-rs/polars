@@ -40,7 +40,7 @@ pub unsafe trait DictionaryKey: NativeType + TryInto<usize> + TryFrom<usize> + H
     /// Represents this key as a `usize`.
     ///
     /// # Safety
-    /// The caller _must_ have checked that the value can be casted to `usize`.
+    /// The caller _must_ have checked that the value can be cast to `usize`.
     #[inline]
     unsafe fn as_usize(self) -> usize {
         match self.try_into() {

@@ -59,9 +59,12 @@ fn convert_dtype(mut dtype: ArrowDataType) -> ArrowDataType {
         Float16 => dtype = Float32,
         Binary | LargeBinary => dtype = BinaryView,
         Utf8 | LargeUtf8 => dtype = Utf8View,
-        Dictionary(_, ref mut dtype, _) | Extension(_, ref mut dtype, _) => {
+        Dictionary(_, ref mut dtype, _) => {
             let dtype = dtype.as_mut();
             *dtype = convert_dtype(std::mem::take(dtype));
+        },
+        Extension(ref mut ext) => {
+            ext.inner = convert_dtype(std::mem::take(&mut ext.inner));
         },
         Map(mut field, _ordered) => {
             // Polars doesn't support Map.

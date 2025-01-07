@@ -49,7 +49,7 @@ use polars_error::{polars_bail, PolarsResult};
 ///
 /// # Safety
 /// The following invariants hold:
-/// * Two consecutives `offsets` casted (`as`) to `usize` are valid slices of `values`.
+/// * Two consecutive `offsets` cast (`as`) to `usize` are valid slices of `values`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct BinaryArray<O: Offset> {

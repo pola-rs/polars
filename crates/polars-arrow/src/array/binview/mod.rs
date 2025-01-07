@@ -50,8 +50,9 @@ pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     type Owned: Debug + Clone + Sync + Send + AsRef<Self>;
 
     /// # Safety
-    /// The caller must ensure `index < self.len()`.
+    /// The caller must ensure that `slice` is a valid view.
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
+    fn from_bytes(slice: &[u8]) -> Option<&Self>;
 
     fn to_bytes(&self) -> &[u8];
 
@@ -69,6 +70,10 @@ impl ViewType for str {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         std::str::from_utf8_unchecked(slice)
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        std::str::from_utf8(slice).ok()
     }
 
     #[inline(always)]
@@ -92,6 +97,10 @@ impl ViewType for [u8] {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         slice
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        Some(slice)
     }
 
     #[inline(always)]

@@ -78,7 +78,7 @@ fn can_pushdown_slice_past_projections(
 
             match ae {
                 AExpr::Column(_) => has_column = true,
-                AExpr::Literal(v) => literals_all_scalar &= v.projects_as_scalar(),
+                AExpr::Literal(v) => literals_all_scalar &= v.is_scalar(),
                 _ => {},
             }
 

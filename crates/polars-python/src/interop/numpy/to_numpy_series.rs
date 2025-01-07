@@ -107,7 +107,7 @@ fn handle_chunks(py: Python, s: &Series, allow_rechunk: bool) -> Option<(Series,
 fn series_to_numpy_view_recursive(py: Python, s: Series, writable: bool) -> PyObject {
     debug_assert!(s.n_chunks() == 1);
     match s.dtype() {
-        dt if dt.is_numeric() => numeric_series_to_numpy_view(py, s, writable),
+        dt if dt.is_primitive_numeric() => numeric_series_to_numpy_view(py, s, writable),
         DataType::Datetime(_, _) | DataType::Duration(_) => {
             temporal_series_to_numpy_view(py, s, writable)
         },

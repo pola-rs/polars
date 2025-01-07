@@ -45,8 +45,8 @@ fn check_eligible(
     // Exclude literals for now as these will not benefit from fused operations downstream #9857
     // This optimization would also interfere with the `col -> lit` type-coercion rules
     // And it might also interfere with constant folding which is a more suitable optimizations here
-    if type_left.is_numeric()
-        && type_right.is_numeric()
+    if type_left.is_primitive_numeric()
+        && type_right.is_primitive_numeric()
         && !has_aexpr_literal(*left, expr_arena)
         && !has_aexpr_literal(*right, expr_arena)
     {
