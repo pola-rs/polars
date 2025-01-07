@@ -23,7 +23,6 @@ nav:
       - user-guide/expressions/index.md
       - user-guide/expressions/basic-operations.md
       - user-guide/expressions/expression-expansion.md
-      - user-guide/expressions/searching.md
       - user-guide/expressions/casting.md
       - user-guide/expressions/strings.md
       - user-guide/expressions/lists-and-arrays.md
