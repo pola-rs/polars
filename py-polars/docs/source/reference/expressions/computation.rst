@@ -42,6 +42,7 @@ Computation
     Expr.exp
     Expr.hash
     Expr.hist
+    Expr.index_of
     Expr.kurtosis
     Expr.log
     Expr.log10
