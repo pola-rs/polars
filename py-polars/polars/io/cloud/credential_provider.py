@@ -458,7 +458,7 @@ def _maybe_init_credential_provider(
             return None
         else:
             provider = (
-                CredentialProviderAWS()
+                CredentialProviderAWS()  # type: ignore[assignment]
                 if _is_aws_cloud(scheme)
                 else CredentialProviderGCP()
                 if _is_gcp_cloud(scheme)
