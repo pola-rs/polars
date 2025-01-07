@@ -942,7 +942,7 @@ def test_categorical_unique_20539() -> None:
         df.cast({"letter": pl.Categorical})
         .group_by("number")
         .agg(
-            unique=pl.col("letter").unique(),
+            unique=pl.col("letter").unique(maintain_order=True),
             unique_with_order=pl.col("letter").unique(maintain_order=True),
         )
     )
