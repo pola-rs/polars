@@ -20,7 +20,7 @@ where
         inner_type: DataType,
     ) -> Self {
         debug_assert!(
-            inner_type.to_physical().is_numeric(),
+            inner_type.to_physical().is_primitive_numeric(),
             "inner type must be primitive, got {}",
             inner_type
         );

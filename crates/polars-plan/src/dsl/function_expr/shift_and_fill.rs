@@ -97,7 +97,7 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
             Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
-            dt if dt.is_numeric() || dt.is_logical() => {
+            dt if dt.is_primitive_numeric() || dt.is_logical() => {
                 macro_rules! dispatch {
                     ($ca:expr, $n:expr, $fill_value:expr) => {{
                         shift_and_fill_numeric($ca, $n, $fill_value).into_column()

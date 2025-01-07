@@ -92,7 +92,7 @@ where
 }
 
 fn min_max_binary_columns(left: &Column, right: &Column, min: bool) -> PolarsResult<Column> {
-    if left.dtype().to_physical().is_numeric()
+    if left.dtype().to_physical().is_primitive_numeric()
         && left.null_count() == 0
         && right.null_count() == 0
         && left.len() == right.len()
@@ -278,7 +278,7 @@ pub fn mean_horizontal(
 
     let (numeric_columns, non_numeric_columns): (Vec<_>, Vec<_>) = columns.iter().partition(|s| {
         let dtype = s.dtype();
-        dtype.is_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
+        dtype.is_primitive_numeric() || dtype.is_decimal() || dtype.is_bool() || dtype.is_null()
     });
 
     if !non_numeric_columns.is_empty() {

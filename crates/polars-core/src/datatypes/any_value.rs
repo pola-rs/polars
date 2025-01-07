@@ -364,7 +364,7 @@ impl AnyValue<'static> {
             DataType::Binary => AnyValue::BinaryOwned(Vec::new()),
             DataType::Boolean => (0 as IdxSize).into(),
             // SAFETY: numeric values are static, inform the compiler of this.
-            d if d.is_numeric() => unsafe {
+            d if d.is_primitive_numeric() => unsafe {
                 std::mem::transmute::<AnyValue<'_>, AnyValue<'static>>(
                     AnyValue::UInt8(0).cast(dtype),
                 )
@@ -503,7 +503,7 @@ impl<'a> AnyValue<'a> {
         matches!(self, AnyValue::Boolean(_))
     }
 
-    pub fn is_numeric(&self) -> bool {
+    pub fn is_primitive_numeric(&self) -> bool {
         self.is_integer() || self.is_float()
     }
 
@@ -611,7 +611,7 @@ impl<'a> AnyValue<'a> {
 
             // to datetime
             #[cfg(feature = "dtype-datetime")]
-            (av, DataType::Datetime(tu, tz)) if av.is_numeric() => {
+            (av, DataType::Datetime(tu, tz)) if av.is_primitive_numeric() => {
                 AnyValue::Datetime(av.extract::<i64>()?, *tu, tz.as_ref())
             },
             #[cfg(all(feature = "dtype-datetime", feature = "dtype-date"))]
@@ -644,7 +644,9 @@ impl<'a> AnyValue<'a> {
 
             // to date
             #[cfg(feature = "dtype-date")]
-            (av, DataType::Date) if av.is_numeric() => AnyValue::Date(av.extract::<i32>()?),
+            (av, DataType::Date) if av.is_primitive_numeric() => {
+                AnyValue::Date(av.extract::<i32>()?)
+            },
             #[cfg(all(feature = "dtype-date", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Date) => {
                 AnyValue::Date(match tu {
@@ -656,7 +658,9 @@ impl<'a> AnyValue<'a> {
 
             // to time
             #[cfg(feature = "dtype-time")]
-            (av, DataType::Time) if av.is_numeric() => AnyValue::Time(av.extract::<i64>()?),
+            (av, DataType::Time) if av.is_primitive_numeric() => {
+                AnyValue::Time(av.extract::<i64>()?)
+            },
             #[cfg(all(feature = "dtype-time", feature = "dtype-datetime"))]
             (AnyValue::Datetime(v, tu, _) | AnyValue::DatetimeOwned(v, tu, _), DataType::Time) => {
                 AnyValue::Time(match tu {
@@ -668,7 +672,7 @@ impl<'a> AnyValue<'a> {
 
             // to duration
             #[cfg(feature = "dtype-duration")]
-            (av, DataType::Duration(tu)) if av.is_numeric() => {
+            (av, DataType::Duration(tu)) if av.is_primitive_numeric() => {
                 AnyValue::Duration(av.extract::<i64>()?, *tu)
             },
             #[cfg(all(feature = "dtype-duration", feature = "dtype-time"))]

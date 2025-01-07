@@ -139,12 +139,12 @@ fn pow_on_series(base: &Column, exponent: &Column) -> PolarsResult<Option<Column
 
     let base_dtype = base.dtype();
     polars_ensure!(
-        base_dtype.is_numeric(),
+        base_dtype.is_primitive_numeric(),
         InvalidOperation: "`pow` operation not supported for dtype `{}` as base", base_dtype
     );
     let exponent_dtype = exponent.dtype();
     polars_ensure!(
-        exponent_dtype.is_numeric(),
+        exponent_dtype.is_primitive_numeric(),
         InvalidOperation: "`pow` operation not supported for dtype `{}` as exponent", exponent_dtype
     );
 

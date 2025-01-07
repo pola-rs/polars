@@ -934,6 +934,7 @@ def test_categorical_unique() -> None:
     assert s.unique().sort().to_list() == [None, "a", "b"]
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_20539() -> None:
     df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})

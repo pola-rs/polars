@@ -35,7 +35,7 @@ pub(super) fn resolve_is_in(
         #[cfg(feature = "dtype-categorical")]
         (DataType::String, DataType::Categorical(_, _) | DataType::Enum(_, _)) => return Ok(None),
         #[cfg(feature = "dtype-decimal")]
-        (DataType::Decimal(_, _), dt) if dt.is_numeric() => AExpr::Cast {
+        (DataType::Decimal(_, _), dt) if dt.is_primitive_numeric() => AExpr::Cast {
             expr: other_e.node(),
             dtype: type_left,
             options: CastOptions::NonStrict,
@@ -64,7 +64,7 @@ pub(super) fn resolve_is_in(
             if other_inner.as_ref() == &type_left
                 || (type_left == DataType::Null)
                 || (other_inner.as_ref() == &DataType::Null)
-                || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
+                || (other_inner.as_ref().is_primitive_numeric() && type_left.is_primitive_numeric())
             {
                 return Ok(None);
             }
@@ -75,7 +75,7 @@ pub(super) fn resolve_is_in(
             if other_inner.as_ref() == &type_left
                 || (type_left == DataType::Null)
                 || (other_inner.as_ref() == &DataType::Null)
-                || (other_inner.as_ref().is_numeric() && type_left.is_numeric())
+                || (other_inner.as_ref().is_primitive_numeric() && type_left.is_primitive_numeric())
             {
                 return Ok(None);
             }
@@ -87,7 +87,7 @@ pub(super) fn resolve_is_in(
         // don't attempt to cast between obviously mismatched types, but
         // allow integer/float comparison (will use their supertypes).
         (a, b) => {
-            if (a.is_numeric() && b.is_numeric()) || (a == &DataType::Null) {
+            if (a.is_primitive_numeric() && b.is_primitive_numeric()) || (a == &DataType::Null) {
                 return Ok(None);
             }
             polars_bail!(InvalidOperation: "'is_in' cannot check for {:?} values in {:?} data", &type_other, &type_left)

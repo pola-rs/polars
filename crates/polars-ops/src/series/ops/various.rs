@@ -123,7 +123,7 @@ pub trait SeriesMethods: SeriesSealed {
             }
         }
 
-        if s.dtype().is_numeric() {
+        if s.dtype().is_primitive_numeric() {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 return Ok(is_sorted_ca_num::<$T>(ca, options))

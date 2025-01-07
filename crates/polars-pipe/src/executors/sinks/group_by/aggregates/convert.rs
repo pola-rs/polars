@@ -108,7 +108,7 @@ pub fn can_convert_to_hash_agg(
                             DataType::Date => {
                                 matches!(agg_fn, IRAggExpr::Mean(_) | IRAggExpr::Median(_))
                             },
-                            _ => field.dtype.to_physical().is_numeric(),
+                            _ => field.dtype.to_physical().is_primitive_numeric(),
                         }
                     } else {
                         false

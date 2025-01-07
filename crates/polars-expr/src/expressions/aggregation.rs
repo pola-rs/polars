@@ -483,7 +483,7 @@ impl PartitionedAggregation for AggregationExpr {
                     };
                     agg_s.rename(new_name.clone());
 
-                    if !agg_s.dtype().is_numeric() {
+                    if !agg_s.dtype().is_primitive_numeric() {
                         Ok(agg_s)
                     } else {
                         let agg_s = match agg_s.dtype() {
