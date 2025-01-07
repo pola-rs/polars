@@ -8,8 +8,8 @@ use polars_utils::pl_str::PlSmallStr;
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
 use crate::datatypes::{
-    get_extension, ArrowDataType, ArrowSchema, Extension, Field, IntegerType, IntervalUnit,
-    Metadata, TimeUnit, UnionMode,
+    get_extension, ArrowDataType, ArrowSchema, Extension, ExtensionType, Field, IntegerType,
+    IntervalUnit, Metadata, TimeUnit, UnionMode, UnionType,
 };
 
 fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
@@ -132,7 +132,10 @@ fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(ArrowDa
         fields: ipc_fields,
         dictionary_id: None,
     };
-    Ok((ArrowDataType::Union(fields, ids, mode), ipc_field))
+    Ok((
+        ArrowDataType::Union(Box::new(UnionType { fields, ids, mode })),
+        ipc_field,
+    ))
 }
 
 fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
@@ -258,7 +261,11 @@ fn get_dtype(
         let (name, metadata) = extension;
         let (dtype, fields) = get_dtype(field, None, false)?;
         return Ok((
-            ArrowDataType::Extension(name, Box::new(dtype), metadata),
+            ArrowDataType::Extension(Box::new(ExtensionType {
+                name,
+                inner: dtype,
+                metadata,
+            })),
             fields,
         ));
     }

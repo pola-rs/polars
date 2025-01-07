@@ -171,13 +171,14 @@ impl UnionArray {
 
     /// Creates a new null [`UnionArray`].
     pub fn new_null(dtype: ArrowDataType, length: usize) -> Self {
-        if let ArrowDataType::Union(f, _, mode) = &dtype {
-            let fields = f
+        if let ArrowDataType::Union(u) = &dtype {
+            let fields = u
+                .fields
                 .iter()
                 .map(|x| new_null_array(x.dtype().clone(), length))
                 .collect();
 
-            let offsets = if mode.is_sparse() {
+            let offsets = if u.mode.is_sparse() {
                 None
             } else {
                 Some((0..length as i32).collect::<Vec<_>>().into())
@@ -194,13 +195,14 @@ impl UnionArray {
 
     /// Creates a new empty [`UnionArray`].
     pub fn new_empty(dtype: ArrowDataType) -> Self {
-        if let ArrowDataType::Union(f, _, mode) = dtype.to_logical_type() {
-            let fields = f
+        if let ArrowDataType::Union(u) = dtype.to_logical_type() {
+            let fields = u
+                .fields
                 .iter()
                 .map(|x| new_empty_array(x.dtype().clone()))
                 .collect();
 
-            let offsets = if mode.is_sparse() {
+            let offsets = if u.mode.is_sparse() {
                 None
             } else {
                 Some(Buffer::default())
@@ -351,9 +353,7 @@ impl Array for UnionArray {
 impl UnionArray {
     fn try_get_all(dtype: &ArrowDataType) -> PolarsResult<UnionComponents> {
         match dtype.to_logical_type() {
-            ArrowDataType::Union(fields, ids, mode) => {
-                Ok((fields, ids.as_ref().map(|x| x.as_ref()), *mode))
-            },
+            ArrowDataType::Union(u) => Ok((&u.fields, u.ids.as_ref().map(|x| x.as_ref()), u.mode)),
             _ => polars_bail!(ComputeError:
                 "The UnionArray requires a logical type of DataType::Union",
             ),

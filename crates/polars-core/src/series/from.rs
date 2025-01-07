@@ -439,7 +439,9 @@ impl Series {
                 Ok(values)
             },
             #[cfg(feature = "object")]
-            ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
+            ArrowDataType::Extension(ext)
+                if ext.name == EXTENSION_NAME && ext.metadata.is_some() =>
+            {
                 assert_eq!(chunks.len(), 1);
                 let arr = chunks[0]
                     .as_any()
