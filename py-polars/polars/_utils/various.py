@@ -668,11 +668,13 @@ def dot_to_mermaid(dot: str) -> str:
         ]
     )
 
-    return (
-        mermaid_str
-        .replace(r"\n", "\n") # replace escaped newlines
-        .replace(r'\"', "#quot;") # replace escaped quotes
-    )
+    # replace escaped newlines
+    mermaid_str = mermaid_str.replace(r"\n", "\n")
+
+    # replace escaped quotes
+    mermaid_str = mermaid_str.replace(r"\"", "#quot;")
+
+    return mermaid_str
 
 
 # Don't rename or move. This is used by polars cloud
