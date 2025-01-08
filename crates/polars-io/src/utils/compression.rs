@@ -1,7 +1,7 @@
 use std::io::Read;
 
 use polars_core::prelude::*;
-use polars_error::to_compute_err;
+use polars_error::{feature_gated, to_compute_err};
 
 /// Represents the compression algorithms that we have decoders for
 pub enum SupportedCompression {
@@ -36,8 +36,7 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
     assert!(out.is_empty());
 
     if let Some(algo) = SupportedCompression::check(bytes) {
-        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
-        {
+        feature_gated!("decompress", {
             match algo {
                 SupportedCompression::GZIP => {
                     flate2::read::MultiGzDecoder::new(bytes)
@@ -50,16 +49,12 @@ pub fn maybe_decompress_bytes<'a>(bytes: &'a [u8], out: &'a mut Vec<u8>) -> Pola
                         .map_err(to_compute_err)?;
                 },
                 SupportedCompression::ZSTD => {
-                    zstd::Decoder::new(bytes)?.read_to_end(out)?;
+                    zstd::Decoder::with_buffer(bytes)?.read_to_end(out)?;
                 },
             }
 
             Ok(out)
-        }
-        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-        {
-            panic!("cannot decompress without 'decompress' or 'decompress-fast' feature")
-        }
+        })
     } else {
         Ok(bytes)
     }
