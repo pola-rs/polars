@@ -5,17 +5,6 @@ use polars_parquet::read::RowGroupMetadata;
 
 use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
 
-impl ColumnStats {
-    fn from_arrow_stats(stats: Statistics, field: &ArrowField) -> Self {
-        Self::new(
-            field.into(),
-            Some(Series::try_from((PlSmallStr::EMPTY, stats.null_count)).unwrap()),
-            Some(Series::try_from((PlSmallStr::EMPTY, stats.min_value)).unwrap()),
-            Some(Series::try_from((PlSmallStr::EMPTY, stats.max_value)).unwrap()),
-        )
-    }
-}
-
 /// Collect the statistics in a row-group
 pub(crate) fn collect_statistics(
     md: &RowGroupMetadata,
@@ -25,13 +14,35 @@ pub(crate) fn collect_statistics(
     let stats = schema
         .iter_values()
         .map(|field| {
-            let iter = md.columns_under_root_iter(&field.name).unwrap();
+            let mut iter = md.columns_under_root_iter(&field.name).unwrap();
 
-            Ok(if iter.len() == 0 {
-                ColumnStats::new(field.into(), None, None, None)
-            } else {
-                ColumnStats::from_arrow_stats(deserialize(field, iter)?, field)
-            })
+            let statistics = deserialize(field, &mut iter)?;
+            assert!(iter.next().is_none());
+
+            // We don't support reading nested statistics for now. It does not really make any
+            // sense at the moment with how we structure statistics.
+            let Some(Statistics::Column(stats)) = statistics else {
+                return Ok(ColumnStats::new(field.into(), None, None, None));
+            };
+
+            let stats = stats.into_arrow()?;
+
+            let null_count = stats
+                .null_count
+                .map(|x| Scalar::from(x).into_series(PlSmallStr::EMPTY));
+            let min_value = stats
+                .min_value
+                .map(|x| Series::try_from((PlSmallStr::EMPTY, x)).unwrap());
+            let max_value = stats
+                .max_value
+                .map(|x| Series::try_from((PlSmallStr::EMPTY, x)).unwrap());
+
+            Ok(ColumnStats::new(
+                field.into(),
+                null_count,
+                min_value,
+                max_value,
+            ))
         })
         .collect::<PolarsResult<Vec<_>>>()?;
 
