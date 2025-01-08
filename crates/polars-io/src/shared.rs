@@ -5,6 +5,7 @@ use arrow::array::new_empty_array;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 
+use crate::cloud::CloudOptions;
 use crate::options::RowIndex;
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 use crate::predicates::PhysicalIoExpr;
@@ -41,7 +42,12 @@ where
 }
 
 pub trait WriteDataFrameToFile {
-    fn write_df_to_file<W: std::io::Write>(&self, df: DataFrame, file: W) -> PolarsResult<()>;
+    fn write_df_to_file(
+        &self,
+        df: &mut DataFrame,
+        path: &str,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<()>;
 }
 
 pub trait ArrowReader {
