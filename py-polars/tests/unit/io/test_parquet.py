@@ -2705,7 +2705,7 @@ def test_struct_list_statistics_20510() -> None:
         data,
         schema=pl.Schema(
             {
-                "name": pl.String,
+                "name": pl.String(),
                 "data": pl.Struct(
                     {
                         "title": pl.String,
