@@ -69,7 +69,7 @@ def test_write_json_decimal() -> None:
 def test_json_infer_schema_length_11148() -> None:
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
     with pytest.raises(
-        pl.exceptions.ComputeError, match="extra key in struct data: col2"
+        pl.exceptions.ComputeError, match="extra field in struct data: col2"
     ):
         pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
 
@@ -471,7 +471,7 @@ def test_read_json_raise_on_data_type_mismatch() -> None:
 
 
 def test_read_json_struct_schema() -> None:
-    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+    with pytest.raises(ComputeError, match="extra field in struct data: b"):
         pl.read_json(
             b"""\
 [
