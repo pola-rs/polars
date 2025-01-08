@@ -234,13 +234,17 @@ impl PhysicalExpr for SortByExpr {
                         })?;
 
                         if column.len() == 1 && broadcast_length != 1 {
+                            polars_ensure!(
+                                e.is_scalar(),
+                                ShapeMismatch: "non-scalar expression produces broadcasting column",
+                            );
+
                             return Ok(column.new_from_index(0, broadcast_length));
                         }
 
                         if broadcast_length != column.len() {
                             polars_ensure!(
-                                broadcast_length == 1 && e.is_scalar(),
-                                expr = self.expr, ShapeMismatch:
+                                broadcast_length == 1, ShapeMismatch:
                                 "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
                                 broadcast_length, column.len()
                             );
