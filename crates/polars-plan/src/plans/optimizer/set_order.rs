@@ -123,11 +123,6 @@ pub(super) fn set_order_flags(
                 ..
             } => {
                 debug_assert!(options.slice.is_none());
-                if !maintain_order_above && *maintain_order {
-                    *maintain_order = false;
-                    continue;
-                }
-
                 if apply.is_some()
                     || *maintain_order
                     || options.is_rolling()
@@ -136,6 +131,11 @@ pub(super) fn set_order_flags(
                     maintain_order_above = true;
                     continue;
                 }
+                if !maintain_order_above && *maintain_order {
+                    *maintain_order = false;
+                    continue;
+                }
+
                 if all_elementwise(keys, expr_arena)
                     && all_order_independent(aggs, expr_arena, Context::Aggregation)
                 {
