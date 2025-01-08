@@ -281,8 +281,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 };
 
                 if let Some(ref hive_parts) = hive_parts {
-                    let hive_schema = hive_parts[0].schema();
-                    file_info.update_schema_with_hive_schema(hive_schema.clone());
+                    let hive_schema = hive_parts[0].schema.clone();
+                    file_info.update_schema_with_hive_schema(hive_schema);
                 } else if let Some(hive_schema) = file_options.hive_options.schema.clone() {
                     // We hit here if we are passed the `hive_schema` to `scan_parquet` but end up with an empty file
                     // list during path expansion. In this case we still want to return an empty DataFrame with this

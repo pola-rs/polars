@@ -166,11 +166,18 @@ fn rg_to_dfs(
 
     use ParallelStrategy as S;
 
+    let live_schema = predicate.map_or_else(Schema::default, |p| {
+        let mut live_columns = PlIndexSet::new();
+        p.collect_live_columns(&mut live_columns);
+        live_columns
+            .iter()
+            .map(|c| Field::from(schema.get(c).unwrap()))
+            .collect()
+    });
+
     if parallel == S::Prefiltered {
         if let Some(predicate) = predicate {
-            let mut live_columns = PlIndexSet::new();
-            predicate.collect_live_columns(&mut live_columns);
-            if !live_columns.is_empty() {
+            if !live_schema.is_empty() {
                 return rg_to_dfs_prefiltered(
                     store,
                     previous_row_count,
@@ -178,7 +185,7 @@ fn rg_to_dfs(
                     row_group_end,
                     file_metadata,
                     schema,
-                    live_columns,
+                    live_schema,
                     predicate,
                     row_index,
                     projection,
@@ -198,6 +205,7 @@ fn rg_to_dfs(
             slice,
             file_metadata,
             schema,
+            live_schema,
             predicate,
             row_index,
             parallel,
@@ -213,6 +221,7 @@ fn rg_to_dfs(
             slice,
             file_metadata,
             schema,
+            live_schema,
             predicate,
             row_index,
             projection,
@@ -242,7 +251,7 @@ fn rg_to_dfs_prefiltered(
     row_group_end: usize,
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
-    live_columns: PlIndexSet<PlSmallStr>,
+    live_schema: Schema,
     predicate: &dyn PhysicalIoExpr,
     row_index: Option<RowIndex>,
     projection: &[usize],
@@ -270,7 +279,7 @@ fn rg_to_dfs_prefiltered(
     };
 
     // Get the number of live columns
-    let num_live_columns = live_columns.len();
+    let num_live_columns = live_schema.len();
     let num_dead_columns =
         projection.len() + hive_partition_columns.map_or(0, |x| x.len()) - num_live_columns;
 
@@ -286,7 +295,7 @@ fn rg_to_dfs_prefiltered(
     for &i in projection.iter() {
         let name = schema.get_at_index(i).unwrap().0.as_str();
 
-        if live_columns.contains(name) {
+        if live_schema.contains(name) {
             live_idx_to_col_idx.push(i);
         } else {
             dead_idx_to_col_idx.push(i);
@@ -306,7 +315,7 @@ fn rg_to_dfs_prefiltered(
                 let md = &file_metadata.row_groups[rg_idx];
 
                 if use_statistics {
-                    match read_this_row_group(Some(predicate), md, schema) {
+                    match read_this_row_group(Some(predicate), md, schema, &live_schema) {
                         Ok(false) => return Ok(None),
                         Ok(true) => {},
                         Err(e) => return Err(e),
@@ -540,6 +549,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
+    live_schema: Schema,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
     parallel: ParallelStrategy,
@@ -562,7 +572,12 @@ fn rg_to_dfs_optionally_par_over_columns(
         let current_row_count = md.num_rows() as IdxSize;
 
         if use_statistics
-            && !read_this_row_group(predicate, &file_metadata.row_groups[rg_idx], schema)?
+            && !read_this_row_group(
+                predicate,
+                &file_metadata.row_groups[rg_idx],
+                schema,
+                &live_schema,
+            )?
         {
             *previous_row_count += rg_slice.1 as IdxSize;
             continue;
@@ -675,6 +690,7 @@ fn rg_to_dfs_par_over_rg(
     slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
+    live_schema: Schema,
     predicate: Option<&dyn PhysicalIoExpr>,
     row_index: Option<RowIndex>,
     projection: &[usize],
@@ -730,7 +746,9 @@ fn rg_to_dfs_par_over_rg(
         row_groups
             .into_par_iter()
             .map(|(md, slice, row_count_start)| {
-                if slice.1 == 0 || use_statistics && !read_this_row_group(predicate, md, schema)? {
+                if slice.1 == 0
+                    || use_statistics && !read_this_row_group(predicate, md, schema, &live_schema)?
+                {
                     return Ok(None);
                 }
                 // test we don't read the parquet file if this env var is set

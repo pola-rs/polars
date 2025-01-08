@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::prelude::{ArrowSchema, PlHashMap};
+use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
 use polars_core::utils::operation_exceeded_idxsize_msg;
 use polars_error::{polars_err, PolarsResult};
@@ -40,6 +41,7 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) use_statistics: bool,
     pub(super) verbose: bool,
     pub(super) reader_schema: Arc<ArrowSchema>,
+    pub(super) live_schema: Schema,
     pub(super) projection: Option<Arc<[PlSmallStr]>>,
     pub(super) predicate: Option<Arc<dyn PhysicalIoExpr>>,
     pub(super) slice_range: Option<std::ops::Range<usize>>,
@@ -92,6 +94,7 @@ impl RowGroupDataFetcher {
                         self.predicate.as_deref(),
                         &row_group_metadata,
                         self.reader_schema.as_ref(),
+                        &self.live_schema,
                     ) {
                         Ok(v) => v,
                         Err(e) => return Some(Err(e)),

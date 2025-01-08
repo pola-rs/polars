@@ -242,6 +242,15 @@ impl FetchRowGroupsFromObjectStore {
                 .collect()
         });
 
+        let live_schema = predicate.as_ref().map_or_else(Schema::default, |p| {
+            let mut live_columns = PlIndexSet::new();
+            p.collect_live_columns(&mut live_columns);
+            live_columns
+                .iter()
+                .map(|c| Field::from(schema.get(c).unwrap()))
+                .collect()
+        });
+
         let mut prefetched: PlHashMap<usize, DownloadedRowGroup> = PlHashMap::new();
 
         let mut row_groups = if let Some(pred) = predicate.as_deref() {
@@ -249,8 +258,10 @@ impl FetchRowGroupsFromObjectStore {
                 .filter_map(|i| {
                     let rg = &row_groups[i];
 
-                    let should_be_read =
-                        matches!(read_this_row_group(Some(pred), rg, &schema), Ok(true));
+                    let should_be_read = matches!(
+                        read_this_row_group(Some(pred), rg, &schema, &live_schema),
+                        Ok(true)
+                    );
 
                     // Already add the row groups that will be skipped to the prefetched data.
                     if !should_be_read {

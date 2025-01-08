@@ -410,7 +410,11 @@ impl MultiScanExec {
 
             if let Some(stats_evaluator) = stats_evaluator {
                 let allow_predicate_skip = !stats_evaluator
-                    .should_read(&BatchStats::default())
+                    .should_read(&BatchStats::new(
+                        &Schema::default(),
+                        Cow::Borrowed(&[]),
+                        None,
+                    ))
                     .unwrap_or(true);
                 if allow_predicate_skip && verbose {
                     eprintln!(

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -205,30 +207,18 @@ fn use_min_max(dtype: &DataType) -> bool {
 }
 
 /// A collection of column stats with a known schema.
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[derive(Debug, Clone)]
-pub struct BatchStats {
-    schema: SchemaRef,
-    stats: Vec<ColumnStats>,
+pub struct BatchStats<'a> {
+    schema: &'a Schema,
+    stats: Cow<'a, [ColumnStats]>,
     // This might not be available, as when pruning hive partitions.
     num_rows: Option<usize>,
 }
 
-impl Default for BatchStats {
-    fn default() -> Self {
-        Self {
-            schema: Arc::new(Schema::default()),
-            stats: Vec::new(),
-            num_rows: None,
-        }
-    }
-}
-
-impl BatchStats {
+impl<'a> BatchStats<'a> {
     /// Constructs a new [`BatchStats`].
     ///
     /// The `stats` should match the order of the `schema`.
-    pub fn new(schema: SchemaRef, stats: Vec<ColumnStats>, num_rows: Option<usize>) -> Self {
+    pub fn new(schema: &'a Schema, stats: Cow<'a, [ColumnStats]>, num_rows: Option<usize>) -> Self {
         Self {
             schema,
             stats,
@@ -237,8 +227,8 @@ impl BatchStats {
     }
 
     /// Returns the [`Schema`] of the batch.
-    pub fn schema(&self) -> &SchemaRef {
-        &self.schema
+    pub fn schema<'b: 'a>(&'b self) -> &'a Schema {
+        self.schema
     }
 
     /// Returns the [`ColumnStats`] of all columns in the batch, if known.
@@ -260,7 +250,7 @@ impl BatchStats {
         self.num_rows
     }
 
-    pub fn with_schema(&mut self, schema: SchemaRef) {
+    pub fn with_schema(&mut self, schema: &'a Schema) {
         self.schema = schema;
     }
 
