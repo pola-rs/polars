@@ -287,14 +287,7 @@ impl CloudOptions {
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = {
-            if self.credential_provider.is_none() {
-                AmazonS3Builder::from_env()
-            } else {
-                AmazonS3Builder::new()
-            }
-        }
-        .with_url(url);
+        let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = &self.config {
             let CloudConfig::Aws(options) = options else {
                 panic!("impl error: cloud type mismatch")
