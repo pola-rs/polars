@@ -118,6 +118,7 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
         SerializationFormat,
+        ShowGraphFormat,
         StartBy,
         UniqueKeepStrategy,
     )
@@ -1131,6 +1132,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         show: bool = True,
         output_path: str | Path | None = None,
         raw_output: bool = False,
+        raw_output_format: ShowGraphFormat = "dot",
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
         _type_check: bool = True,
@@ -1148,8 +1150,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Show a plot of the query plan.
 
-        Note that Graphviz must be installed to render the visualization (if not
-        already present, you can download it here: `<https://graphviz.org/download>`_).
+        Note that Graphviz must be installed to export the visualization
+        or show it outside of a notebook
+        (if not already present, you can download it here: `<https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -1161,6 +1164,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Write the figure to disk.
         raw_output
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
+        raw_output_format
+            The format of the raw output.
         figsize
             Passed to matplotlib if `show == True`.
         type_coercion
@@ -1221,6 +1226,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             show=show,
             output_path=output_path,
             raw_output=raw_output,
+            raw_output_format=raw_output_format,
             figsize=figsize,
         )
 

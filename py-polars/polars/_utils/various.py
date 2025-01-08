@@ -46,7 +46,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator, MutableMapping, Reversible
 
     from polars import DataFrame, Expr
-    from polars._typing import PolarsDataType, SizeUnit
+    from polars._typing import PolarsDataType, ShowGraphFormat, SizeUnit
 
     if sys.version_info >= (3, 13):
         from typing import TypeIs
@@ -652,6 +652,30 @@ def re_escape(s: str) -> str:
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
 
 
+def dot_to_mermaid(dot: str) -> str:
+    """Not comprehensive, only handles components of the dot language used by polars."""
+    edge_regex = r"(?P<node1>\w+) -- (?P<node2>\w+)"
+    node_regex = r"(?P<node>\w+)(\s+)?\[label=\"(?P<label>.*)\"]"
+
+    nodes = re.finditer(node_regex, dot)
+    edges = re.finditer(edge_regex, dot)
+
+    return "\n".join(
+        [
+            "graph TD",
+            *[
+                f'\t{n["node"]}["{
+                    n["label"]
+                    .replace(r"\n", "\n") # replace escaped newlines
+                    .replace(r'\"', "#quot;") # replace escaped quotes
+                }"]'
+                for n in nodes
+            ],
+            *[f'\t{e["node1"]} --- {e["node2"]}' for e in edges],
+        ]
+    )
+
+
 # Don't rename or move. This is used by polars cloud
 def display_dot_graph(
     *,
@@ -659,11 +683,18 @@ def display_dot_graph(
     show: bool = True,
     output_path: str | Path | None = None,
     raw_output: bool = False,
+    raw_output_format: ShowGraphFormat = "dot",
     figsize: tuple[float, float] = (16.0, 12.0),
 ) -> str | None:
     if raw_output:
         # we do not show a graph, nor save a graph to disk
-        return dot
+        if raw_output_format == "dot":
+            return dot
+        elif raw_output_format == "mermaid":
+            return dot_to_mermaid(dot)
+        else:
+            msg = f"invalid raw output format: {raw_output_format}"
+            raise ValueError(msg)
 
     output_type = "svg" if _in_notebook() else "png"
 
@@ -671,7 +702,20 @@ def display_dot_graph(
         graph = subprocess.check_output(
             ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
         )
+
+        graphviz_installed = True
     except (ImportError, FileNotFoundError):
+        graphviz_installed = False
+
+    # temp force graphviz to be uninstalled for testing purposes
+    graphviz_installed = False
+
+    exporting_file = output_path is not None
+    showing_outside_of_notebook = show and not _in_notebook()
+
+    if not graphviz_installed and (exporting_file or showing_outside_of_notebook):
+        # Graphviz must be installed to save graphs to disk or
+        # show them outside of a notebook
         msg = (
             "The graphviz `dot` binary should be on your PATH."
             "(If not installed you can download here: https://graphviz.org/download/)"
@@ -685,9 +729,14 @@ def display_dot_graph(
         return None
 
     if _in_notebook():
-        from IPython.display import SVG, display
+        from IPython.display import SVG, Markdown, display
 
-        return display(SVG(graph))
+        # if graphviz is installed, we can show the graph as an SVG
+        # otherwise we can show it as a mermaid diagram
+        if graphviz_installed:
+            return display(SVG(graph))
+        else:
+            return Markdown(f"```mermaid\n{dot_to_mermaid(dot)}\n```")
     else:
         import_optional(
             "matplotlib",
