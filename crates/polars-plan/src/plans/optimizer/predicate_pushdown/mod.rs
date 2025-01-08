@@ -278,6 +278,8 @@ impl PredicatePushDown<'_> {
 
         match lp {
             Filter {
+                // Note: We assume AND'ed predicates have already been split to separate IR filter
+                // nodes during DSL conversion so we don't do that here.
                 ref predicate,
                 input,
             } => {
