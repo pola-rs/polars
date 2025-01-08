@@ -660,19 +660,18 @@ def dot_to_mermaid(dot: str) -> str:
     nodes = re.finditer(node_regex, dot)
     edges = re.finditer(edge_regex, dot)
 
-    return "\n".join(
+    mermaid_str = "\n".join(
         [
             "graph TD",
-            *[
-                f'\t{n["node"]}["{
-                    n["label"]
-                    .replace(r"\n", "\n") # replace escaped newlines
-                    .replace(r'\"', "#quot;") # replace escaped quotes
-                }"]'
-                for n in nodes
-            ],
+            *[f'\t{n["node"]}["{n["label"]}"]' for n in nodes],
             *[f'\t{e["node1"]} --- {e["node2"]}' for e in edges],
         ]
+    )
+
+    return (
+        mermaid_str
+        .replace(r"\n", "\n") # replace escaped newlines
+        .replace(r'\"', "#quot;") # replace escaped quotes
     )
 
 
