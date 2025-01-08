@@ -46,7 +46,7 @@ Read how to use Delta Lake with Polars
 #### Scikit Learn
 
 The [Scikit Learn](https://scikit-learn.org/stable/) machine learning package accepts a Polars
-`DataFrame` as input/output to all transformers and as input to many models.
+`DataFrame` as input/output to all transformers and as input to models.
 
 #### XGBoost & LightGBM
 
@@ -61,10 +61,10 @@ The
 [Nixtla time series forecasting packages](https://nixtlaverse.nixtla.io/statsforecast/docs/getting-started/getting_started_complete_polars.html)
 accept a Polars `DataFrame` as input.
 
-#### Huggingface
+#### Hugging Face
 
-Huggingface is a platform for working with machine learning datasets and models.
-[Polars can be used to work with datasets downloaded from Huggingface](io/hugging-face/#scanning-datasets-from-hugging-face).
+Hugging Face is a platform for working with machine learning datasets and models.
+[Polars can be used to work with datasets downloaded from Hugging Face](io/hugging-face).
 
 #### Deep learning frameworks
 
