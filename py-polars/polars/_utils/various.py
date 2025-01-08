@@ -707,9 +707,6 @@ def display_dot_graph(
     except (ImportError, FileNotFoundError):
         graphviz_installed = False
 
-    # temp force graphviz to be uninstalled for testing purposes
-    graphviz_installed = False
-
     exporting_file = output_path is not None
     showing_outside_of_notebook = show and not _in_notebook()
 
