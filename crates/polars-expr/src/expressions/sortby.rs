@@ -239,7 +239,7 @@ impl PhysicalExpr for SortByExpr {
 
                         if broadcast_length != column.len() {
                             polars_ensure!(
-                                broadcast_length == 1,
+                                broadcast_length == 1 && e.is_scalar(),
                                 expr = self.expr, ShapeMismatch:
                                 "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
                                 broadcast_length, column.len()
