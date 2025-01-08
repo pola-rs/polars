@@ -2,7 +2,8 @@ use std::future::Future;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlIndexSet;
+use polars_core::prelude::{Field, InitHashMaps, PlIndexSet};
+use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_io::prelude::ParallelStrategy;
 use polars_io::prelude::_internal::PrefilterMaskSetting;
@@ -88,11 +89,21 @@ impl ParquetSourceNode {
         let predicate = self.physical_predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
+        let live_schema = predicate.as_ref().map_or_else(Schema::default, |p| {
+            let mut live_columns = PlIndexSet::new();
+            p.collect_live_columns(&mut live_columns);
+            live_columns
+                .into_iter()
+                .map(|c| Field::from(reader_schema.get(&c).unwrap()))
+                .collect()
+        });
+
         let mut row_group_data_fetcher = RowGroupDataFetcher {
             metadata_rx,
             use_statistics,
             verbose,
             reader_schema,
+            live_schema,
             projection,
             predicate,
             slice_range: None, // Initialized later

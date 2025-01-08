@@ -413,7 +413,7 @@ impl PredicatePushDown<'_> {
                                 let path = &paths[i];
                                 let hive_parts = &hive_parts[i];
 
-                                if stats_evaluator.should_read(hive_parts.get_statistics())? {
+                                if stats_evaluator.should_read(&hive_parts.get_statistics())? {
                                     new_paths.push(path.clone());
                                     new_hive_parts.push(hive_parts.clone());
                                 }

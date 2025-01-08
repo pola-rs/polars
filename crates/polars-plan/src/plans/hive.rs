@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
@@ -9,9 +10,8 @@ use serde::{Deserialize, Serialize};
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
 pub struct HivePartitions {
-    /// Single value Series that can be used to run the predicate against.
-    /// They are to be broadcasted if the predicates don't filter them out.
-    stats: BatchStats,
+    pub schema: SchemaRef,
+    pub stats: Vec<ColumnStats>,
 }
 
 impl HivePartitions {
@@ -19,10 +19,10 @@ impl HivePartitions {
         &self,
         names: &PlHashSet<PlSmallStr>,
     ) -> (SchemaRef, Vec<usize>) {
-        let mut out_schema = Schema::with_capacity(self.stats.schema().len());
-        let mut out_indices = Vec::with_capacity(self.stats.column_stats().len());
+        let mut out_schema = Schema::with_capacity(self.schema.len());
+        let mut out_indices = Vec::with_capacity(self.stats.len());
 
-        for (i, cs) in self.stats.column_stats().iter().enumerate() {
+        for (i, cs) in self.stats.iter().enumerate() {
             let name = cs.field_name();
             if names.contains(name.as_str()) {
                 out_indices.push(i);
@@ -36,16 +36,19 @@ impl HivePartitions {
     }
 
     pub fn apply_projection(&mut self, new_schema: SchemaRef, column_indices: &[usize]) {
-        self.stats.with_schema(new_schema);
-        self.stats.take_indices(column_indices);
+        self.schema = new_schema;
+        self.stats = column_indices
+            .iter()
+            .map(|&i| self.stats[i].clone())
+            .collect();
     }
 
-    pub fn get_statistics(&self) -> &BatchStats {
-        &self.stats
+    pub fn get_statistics(&self) -> BatchStats {
+        BatchStats::new(self.schema.as_ref(), Cow::Borrowed(&self.stats), None)
     }
 
-    pub(crate) fn schema(&self) -> &SchemaRef {
-        self.get_statistics().schema()
+    pub(crate) fn schema(&self) -> &Schema {
+        self.schema.as_ref()
     }
 
     pub fn materialize_partition_columns(&self) -> Vec<Series> {
@@ -224,8 +227,10 @@ pub fn hive_partitions_from_paths(
             )
         }
 
-        let stats = BatchStats::new(hive_schema.clone(), column_stats, None);
-        hive_partitions.push(HivePartitions { stats });
+        hive_partitions.push(HivePartitions {
+            schema: hive_schema.clone(),
+            stats: column_stats,
+        });
     }
 
     Ok(Some(Arc::from(hive_partitions)))

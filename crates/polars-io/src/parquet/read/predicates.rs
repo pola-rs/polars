@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use polars_core::config;
 use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
@@ -17,30 +19,35 @@ impl ColumnStats {
 }
 
 /// Collect the statistics in a row-group
-pub(crate) fn collect_statistics(
+pub(crate) fn collect_statistics<'a>(
     md: &RowGroupMetadata,
     schema: &ArrowSchema,
-) -> PolarsResult<Option<BatchStats>> {
+    live_schema: &'a Schema,
+) -> PolarsResult<Option<BatchStats<'a>>> {
     // TODO! fix this performance. This is a full sequential scan.
-    let stats = schema
-        .iter_values()
+    let stats = live_schema
+        .iter_fields()
         .map(|field| {
+            if field.dtype().is_nested() {
+                return Ok(ColumnStats::new(field.clone(), None, None, None));
+            }
+
+            let arrow_field = schema.get(&field.name).unwrap();
             let iter = md.columns_under_root_iter(&field.name).unwrap();
 
-            Ok(if iter.len() == 0 {
-                ColumnStats::new(field.into(), None, None, None)
-            } else {
-                ColumnStats::from_arrow_stats(deserialize(field, iter)?, field)
-            })
+            Ok(ColumnStats::from_arrow_stats(
+                deserialize(arrow_field, iter)?,
+                arrow_field,
+            ))
         })
-        .collect::<PolarsResult<Vec<_>>>()?;
+        .collect::<PolarsResult<Cow<_>>>()?;
 
     if stats.is_empty() {
         return Ok(None);
     }
 
     Ok(Some(BatchStats::new(
-        Arc::new(Schema::from_arrow_schema(schema)),
+        live_schema,
         stats,
         Some(md.num_rows()),
     )))
@@ -50,6 +57,7 @@ pub fn read_this_row_group(
     predicate: Option<&dyn PhysicalIoExpr>,
     md: &RowGroupMetadata,
     schema: &ArrowSchema,
+    live_schema: &Schema,
 ) -> PolarsResult<bool> {
     if std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
         return Ok(true);
@@ -59,7 +67,7 @@ pub fn read_this_row_group(
 
     if let Some(pred) = predicate {
         if let Some(pred) = pred.as_stats_evaluator() {
-            if let Some(stats) = collect_statistics(md, schema)? {
+            if let Some(stats) = collect_statistics(md, schema, live_schema)? {
                 let pred_result = pred.should_read(&stats);
 
                 // a parquet file may not have statistics of all columns
