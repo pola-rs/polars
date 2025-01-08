@@ -64,7 +64,7 @@ accept a Polars `DataFrame` as input.
 #### Huggingface
 
 Huggingface is a platform for working with machine learning datasets and models.
-[Polars can be used to work with datasets downloaded from Huggingface](https://pola.rs/posts/polars-hugging-face/).
+[Polars can be used to work with datasets downloaded from Huggingface](io/hugging-face/#scanning-datasets-from-hugging-face).
 
 #### Deep learning frameworks
 
