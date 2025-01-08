@@ -69,9 +69,9 @@ Hugging Face is a platform for working with machine learning datasets and models
 #### Deep learning frameworks
 
 A `DataFrame` can be transformed
-[to a PyTorch format using `to_torch`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_torch.html)
+[into a PyTorch format using `to_torch`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_torch.html)
 or
-[a JAX format using `to_jax`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_jax.html).
+[into a JAX format using `to_jax`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_jax.html).
 
 ### Other
 
