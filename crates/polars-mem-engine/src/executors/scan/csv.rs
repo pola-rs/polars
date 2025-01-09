@@ -239,7 +239,7 @@ impl ScanExec for CsvExec {
 
             let memslice = source.to_memslice_async_assume_latest(run_async)?;
 
-            // @TODO!: Cache the decompresssion
+            // @TODO!: Cache the decompression
             let bytes = maybe_decompress_bytes(&memslice, owned)?;
 
             schema = Some(arrow::Either::Right(Arc::new(
@@ -279,7 +279,7 @@ impl ScanExec for CsvExec {
         let source = self.sources.at(0);
         let owned = &mut vec![];
 
-        // @TODO!: Cache the decompresssion
+        // @TODO!: Cache the decompression
         let memslice = source.to_memslice_async_assume_latest(run_async)?;
 
         let popt = self.options.parse_options.as_ref();
