@@ -8,6 +8,8 @@ pub use serde_wrap::{
     SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
 };
 
+use crate::pl_serialize::deserialize_map_bytes;
+
 #[derive(Debug)]
 pub struct PythonFunction(pub PyObject);
 
@@ -60,10 +62,9 @@ impl<'a> serde::Deserialize<'a> for PythonFunction {
         D: serde::Deserializer<'a>,
     {
         use serde::de::Error;
-        let bytes = Vec::<u8>::deserialize(deserializer)?;
-        let v = Self::try_deserialize_bytes(bytes.as_slice())
-            .map_err(|e| D::Error::custom(e.to_string()));
-        v
+        deserialize_map_bytes(deserializer, &mut |bytes| {
+            Self::try_deserialize_bytes(&bytes).map_err(|e| D::Error::custom(e.to_string()))
+        })?
     }
 }
 
@@ -132,6 +133,8 @@ mod serde_wrap {
     use once_cell::sync::Lazy;
     use polars_error::PolarsResult;
 
+    use crate::pl_serialize::deserialize_map_bytes;
+
     pub const SERDE_MAGIC_BYTE_MARK: &[u8] = "PLPYFN".as_bytes();
     /// [minor, micro]
     pub static PYTHON3_VERSION: Lazy<[u8; 2]> = Lazy::new(super::get_python3_version);
@@ -170,44 +173,45 @@ mod serde_wrap {
             D: serde::Deserializer<'a>,
         {
             use serde::de::Error;
-            let bytes = Vec::<u8>::deserialize(deserializer)?;
 
-            let Some((magic, rem)) = bytes.split_at_checked(SERDE_MAGIC_BYTE_MARK.len()) else {
-                return Err(D::Error::custom(
-                    "unexpected EOF when reading serialized pyobject version",
-                ));
-            };
+            deserialize_map_bytes(deserializer, &mut |bytes| {
+                let Some((magic, rem)) = bytes.split_at_checked(SERDE_MAGIC_BYTE_MARK.len()) else {
+                    return Err(D::Error::custom(
+                        "unexpected EOF when reading serialized pyobject version",
+                    ));
+                };
 
-            if magic != SERDE_MAGIC_BYTE_MARK {
-                return Err(D::Error::custom(
-                    "serialized pyobject did not begin with magic byte mark",
-                ));
-            }
+                if magic != SERDE_MAGIC_BYTE_MARK {
+                    return Err(D::Error::custom(
+                        "serialized pyobject did not begin with magic byte mark",
+                    ));
+                }
 
-            let bytes = rem;
+                let bytes = rem;
 
-            let [a, b, rem @ ..] = bytes else {
-                return Err(D::Error::custom(
-                    "unexpected EOF when reading serialized pyobject metadata",
-                ));
-            };
+                let [a, b, rem @ ..] = bytes else {
+                    return Err(D::Error::custom(
+                        "unexpected EOF when reading serialized pyobject metadata",
+                    ));
+                };
 
-            let py3_version = [*a, *b];
+                let py3_version = [*a, *b];
 
-            if py3_version != *PYTHON3_VERSION {
-                return Err(D::Error::custom(format!(
-                    "python version that pyobject was serialized with {:?} \
-                    differs from system python version {:?}",
-                    (3, py3_version[0], py3_version[1]),
-                    (3, PYTHON3_VERSION[0], PYTHON3_VERSION[1]),
-                )));
-            }
+                if py3_version != *PYTHON3_VERSION {
+                    return Err(D::Error::custom(format!(
+                        "python version that pyobject was serialized with {:?} \
+                        differs from system python version {:?}",
+                        (3, py3_version[0], py3_version[1]),
+                        (3, PYTHON3_VERSION[0], PYTHON3_VERSION[1]),
+                    )));
+                }
 
-            let bytes = rem;
+                let bytes = rem;
 
-            T::try_deserialize_bytes(bytes)
-                .map(Self)
-                .map_err(|e| D::Error::custom(e.to_string()))
+                T::try_deserialize_bytes(bytes)
+                    .map(Self)
+                    .map_err(|e| D::Error::custom(e.to_string()))
+            })?
         }
     }
 }

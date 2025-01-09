@@ -3,6 +3,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 #[cfg(feature = "serde")]
+use polars_utils::pl_serialize::deserialize_map_bytes;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::*;
@@ -43,7 +45,7 @@ impl<T: Serialize + Clone> Serialize for LazySerde<T> {
     {
         match self {
             Self::Deserialized(t) => t.serialize(serializer),
-            Self::Bytes(b) => serializer.serialize_bytes(b),
+            Self::Bytes(b) => b.serialize(serializer),
         }
     }
 }
@@ -54,8 +56,8 @@ impl<'a, T: Deserialize<'a> + Clone> Deserialize<'a> for LazySerde<T> {
     where
         D: Deserializer<'a>,
     {
-        let buf = Vec::<u8>::deserialize(deserializer)?;
-        Ok(Self::Bytes(bytes::Bytes::from(buf)))
+        let buf = bytes::Bytes::deserialize(deserializer)?;
+        Ok(Self::Bytes(buf))
     }
 }
 
@@ -69,17 +71,17 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
         use serde::de::Error;
         #[cfg(feature = "python")]
         {
-            let buf = Vec::<u8>::deserialize(deserializer)?;
-
-            if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                let udf = python_udf::PythonUdfExpression::try_deserialize(&buf)
-                    .map_err(|e| D::Error::custom(format!("{e}")))?;
-                Ok(SpecialEq::new(udf))
-            } else {
-                Err(D::Error::custom(
-                    "deserialization not supported for this 'opaque' function",
-                ))
-            }
+            deserialize_map_bytes(deserializer, &mut |buf| {
+                if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
+                    let udf = python_udf::PythonUdfExpression::try_deserialize(&buf)
+                        .map_err(|e| D::Error::custom(format!("{e}")))?;
+                    Ok(SpecialEq::new(udf))
+                } else {
+                    Err(D::Error::custom(
+                        "deserialization not supported for this 'opaque' function",
+                    ))
+                }
+            })?
         }
         #[cfg(not(feature = "python"))]
         {
@@ -403,17 +405,17 @@ impl<'a> Deserialize<'a> for GetOutput {
         use serde::de::Error;
         #[cfg(feature = "python")]
         {
-            let buf = Vec::<u8>::deserialize(deserializer)?;
-
-            if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                let get_output = python_udf::PythonGetOutput::try_deserialize(&buf)
-                    .map_err(|e| D::Error::custom(format!("{e}")))?;
-                Ok(SpecialEq::new(get_output))
-            } else {
-                Err(D::Error::custom(
-                    "deserialization not supported for this output field",
-                ))
-            }
+            deserialize_map_bytes(deserializer, &mut |buf| {
+                if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
+                    let get_output = python_udf::PythonGetOutput::try_deserialize(&buf)
+                        .map_err(|e| D::Error::custom(format!("{e}")))?;
+                    Ok(SpecialEq::new(get_output))
+                } else {
+                    Err(D::Error::custom(
+                        "deserialization not supported for this output field",
+                    ))
+                }
+            })?
         }
         #[cfg(not(feature = "python"))]
         {

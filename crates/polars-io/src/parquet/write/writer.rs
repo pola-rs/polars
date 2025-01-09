@@ -2,6 +2,7 @@ use std::io::Write;
 use std::sync::Mutex;
 
 use arrow::datatypes::PhysicalType;
+use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
     to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, StatisticsOptions,
@@ -11,7 +12,6 @@ use polars_parquet::write::{
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
 use super::ParquetWriteOptions;
-use crate::prelude::chunk_df_for_writing;
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {

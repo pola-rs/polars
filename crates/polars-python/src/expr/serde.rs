@@ -1,4 +1,4 @@
-use std::io::{BufReader, BufWriter, Cursor};
+use std::io::{BufReader, BufWriter};
 
 use polars::lazy::prelude::Expr;
 use polars_utils::pl_serialize;
@@ -17,7 +17,6 @@ impl PyExpr {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
         pl_serialize::SerializeOptions::default()
-            .with_compression(true)
             .serialize_into_writer(&mut writer, &self.inner)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
@@ -26,12 +25,9 @@ impl PyExpr {
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
-
         let bytes = state.extract::<PyBackedBytes>()?;
-        let cursor = Cursor::new(&*bytes);
         self.inner = pl_serialize::SerializeOptions::default()
-            .with_compression(true)
-            .deserialize_from_reader(cursor)
+            .deserialize_from_reader(&*bytes)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
         Ok(())
     }
@@ -41,7 +37,6 @@ impl PyExpr {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
         pl_serialize::SerializeOptions::default()
-            .with_compression(true)
             .serialize_into_writer(writer, &self.inner)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
@@ -61,7 +56,6 @@ impl PyExpr {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let expr: Expr = pl_serialize::SerializeOptions::default()
-            .with_compression(true)
             .deserialize_from_reader(reader)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(expr.into())
