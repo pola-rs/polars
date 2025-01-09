@@ -252,9 +252,8 @@ impl FunctionOptions {
         matches!(
             self.collect_groups,
             ApplyOptions::ElementWise | ApplyOptions::ApplyList
-        ) && !self
-            .flags
-            .contains(FunctionFlags::CHANGES_LENGTH | FunctionFlags::RETURNS_SCALAR)
+        ) && !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
+            && !self.flags.contains(FunctionFlags::RETURNS_SCALAR)
     }
 }
 
