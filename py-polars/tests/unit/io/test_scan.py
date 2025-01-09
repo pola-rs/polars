@@ -925,9 +925,8 @@ def test_predicate_stats_eval_nested_binary() -> None:
             pl.scan_parquet(bufs)
             # The literal eval depth limit is 4 -
             # * crates/polars-expr/src/expressions/mod.rs::PhysicalExpr::evaluate_inline
-            .filter(
-                pl.col("x") == pl.lit("222").str.slice(0, 1).cast(pl.Int64)
-            ).collect()
+            .filter(pl.col("x") == pl.lit("222").str.slice(0, 1).cast(pl.Int64))
+            .collect()
         ),
         pl.DataFrame({"x": [2]}),
     )
