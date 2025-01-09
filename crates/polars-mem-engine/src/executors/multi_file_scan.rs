@@ -9,9 +9,13 @@ use polars_core::utils::{
 use polars_io::predicates::BatchStats;
 use polars_io::RowIndex;
 
-use super::{Executor, IpcExec, JsonExec};
+use super::Executor;
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
+#[cfg(feature = "ipc")]
+use crate::executors::IpcExec;
+#[cfg(feature = "json")]
+use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
@@ -46,6 +50,12 @@ fn source_to_exec(
 
     let is_first_file = file_index == 0;
 
+    let mut file_info = file_info.clone();
+
+    if allow_missing_columns && !is_first_file {
+        file_info.reader_schema.take();
+    }
+
     Ok(match scan_type {
         #[cfg(feature = "parquet")]
         FileScan::Parquet {
@@ -56,14 +66,12 @@ fn source_to_exec(
             let metadata = metadata.as_ref().take_if(|_| is_first_file);
 
             let mut options = options.clone();
-            let mut file_info = file_info.clone();
 
             if allow_missing_columns && !is_first_file {
                 options.schema.take();
-                file_info.reader_schema.take();
             }
 
-            let mut exec = ParquetExec::new(
+            Box::new(ParquetExec::new(
                 source,
                 file_info,
                 None,
@@ -72,40 +80,24 @@ fn source_to_exec(
                 cloud_options.clone(),
                 file_options.clone(),
                 metadata.cloned(),
-            );
-
-            if allow_missing_columns && !is_first_file {
-                // Fixes the file_info.schema
-                exec.schema()?;
-            }
-
-            Box::new(exec)
+            ))
         },
         #[cfg(feature = "csv")]
         FileScan::Csv { options, .. } => {
-            let mut file_info = file_info.clone();
             let mut options = options.clone();
             let file_options = file_options.clone();
 
             if allow_missing_columns && !is_first_file {
                 options.schema.take();
-                file_info.reader_schema.take();
             }
 
-            let mut exec = CsvExec {
+            Box::new(CsvExec {
                 sources: source,
                 file_info,
                 options,
                 file_options,
                 predicate: None,
-            };
-
-            if allow_missing_columns && !is_first_file {
-                // Fixes the file_info.schema
-                exec.schema()?;
-            }
-
-            Box::new(exec)
+            })
         },
         #[cfg(feature = "ipc")]
         FileScan::Ipc {
@@ -115,16 +107,11 @@ fn source_to_exec(
         } => {
             let metadata = metadata.as_ref().take_if(|_| is_first_file);
 
-            let mut file_info = file_info.clone();
             let options = options.clone();
             let file_options = file_options.clone();
             let cloud_options = cloud_options.clone();
 
-            if allow_missing_columns && !is_first_file {
-                file_info.reader_schema.take();
-            }
-
-            let mut exec = IpcExec {
+            Box::new(IpcExec {
                 sources: source,
                 file_info,
                 options,
@@ -133,14 +120,7 @@ fn source_to_exec(
                 hive_parts: None,
                 cloud_options,
                 metadata: metadata.cloned(),
-            };
-
-            if allow_missing_columns && !is_first_file {
-                // Fixes the file_info.schema
-                exec.schema()?;
-            }
-
-            Box::new(exec)
+            })
         },
         #[cfg(feature = "json")]
         FileScan::NDJson {
@@ -148,23 +128,17 @@ fn source_to_exec(
             cloud_options,
             ..
         } => {
-            let mut file_info = file_info.clone();
             let options = options.clone();
             let file_options = file_options.clone();
             _ = cloud_options; // @TODO: Use these?
 
-            if allow_missing_columns && !is_first_file {
-                file_info.reader_schema.take();
-            }
-
-            let mut exec = JsonExec::new(source, options, file_options, file_info, None);
-
-            if allow_missing_columns && !is_first_file {
-                // Fixes the file_info.schema
-                exec.schema()?;
-            }
-
-            Box::new(exec)
+            Box::new(JsonExec::new(
+                source,
+                options,
+                file_options,
+                file_info,
+                None,
+            ))
         },
         FileScan::Anonymous { .. } => unreachable!(),
     })

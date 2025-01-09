@@ -141,7 +141,9 @@ impl ScanExec for JsonExec {
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 
-        self.schema()?;
+        if self.file_info.reader_schema.is_none() {
+            self.schema()?;
+        }
         self.read_impl()
     }
 
@@ -158,8 +160,11 @@ impl ScanExec for JsonExec {
         let owned = &mut vec![];
         let bytes = maybe_decompress_bytes(&memslice[..], owned)?;
 
-        let schema = polars_io::ndjson::infer_schema(&mut std::io::Cursor::new(bytes), self.options.infer_schema_length)?;
-        
+        let schema = polars_io::ndjson::infer_schema(
+            &mut std::io::Cursor::new(bytes),
+            self.options.infer_schema_length,
+        )?;
+
         let schema = Arc::new(schema);
         self.file_info.schema = schema.clone();
         self.file_info.reader_schema = Some(arrow::Either::Right(schema.clone()));

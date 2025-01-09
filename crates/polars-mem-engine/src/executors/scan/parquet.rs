@@ -507,7 +507,7 @@ impl ParquetExec {
         let mut out = accumulate_dataframes_vertical(out)?;
 
         let num_unfiltered_rows = out.height();
-        self.file_info.row_estimation = (Some(num_unfiltered_rows), num_unfiltered_rows); 
+        self.file_info.row_estimation = (Some(num_unfiltered_rows), num_unfiltered_rows);
 
         polars_io::predicates::apply_predicate(&mut out, post_predicate.as_deref(), true)?;
 
@@ -568,6 +568,9 @@ impl ScanExec for ParquetExec {
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 
+        if self.file_info.reader_schema.is_none() {
+            self.schema()?;
+        }
         self.read_impl()
     }
 
@@ -606,9 +609,6 @@ impl Executor for ParquetExec {
             Cow::Borrowed("")
         };
 
-        state.record(
-            || self.read_impl(),
-            profile_name,
-        )
+        state.record(|| self.read_impl(), profile_name)
     }
 }

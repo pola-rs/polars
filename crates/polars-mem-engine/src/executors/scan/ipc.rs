@@ -206,6 +206,9 @@ impl ScanExec for IpcExec {
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 
+        if self.file_info.reader_schema.is_none() {
+            self.schema()?;
+        }
         self.read()
     }
 
