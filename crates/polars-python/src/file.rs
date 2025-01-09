@@ -45,6 +45,10 @@ impl PyFileLikeObject {
 
     pub fn to_memslice(&self) -> MemSlice {
         Python::with_gil(|py| {
+            // CPython has some internal tricks that means much of the time
+            // BytesIO.getvalue() involves no memory copying, unlike
+            // BytesIO.read(). So we want to handle BytesIO specially in order
+            // to save memory.
             let py_f = self.inner.bind(py);
             if let Ok(bytes) = read_if_bytesio(py_f.clone()).downcast::<PyBytes>() {
                 return MemSlice::from_arc(bytes.as_bytes(), Arc::new(bytes.clone().unbind().clone_ref(py)));
@@ -378,7 +382,8 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
     Ok(get_either_file(f, truncate)?.into_dyn())
 }
 
-/// If the give file-like is a BytesIO, read its contents efficiently.
+/// If the give file-like is a BytesIO, read its contents in a memory-efficient
+/// way.
 fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     if py_f.getattr("read").is_ok() {
         // Note that BytesIO has some memory optimizations so much of the time
