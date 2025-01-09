@@ -9,7 +9,7 @@ use polars_core::utils::{
 use polars_io::predicates::BatchStats;
 use polars_io::RowIndex;
 
-use super::{Executor, IpcExec};
+use super::{Executor, IpcExec, JsonExec};
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
 #[cfg(feature = "parquet")]
@@ -139,7 +139,27 @@ fn source_to_exec(
 
             Box::new(exec)
         },
-        _ => todo!(),
+        #[cfg(feature = "json")]
+        FileScan::NDJson { options, cloud_options, .. } => {
+            let mut file_info = file_info.clone();
+            let options = options.clone();
+            let file_options = file_options.clone();
+            _ = cloud_options; // @TODO: Use these?
+
+            if allow_missing_columns {
+                file_info.reader_schema.take();
+            }
+
+            let mut exec = JsonExec::new(source, options, file_options, file_info, None);
+
+            if allow_missing_columns {
+                // Fixes the file_info.schema
+                exec.schema()?;
+            }
+
+            Box::new(exec)
+        },
+        FileScan::Anonymous { .. } => unreachable!(),
     })
 }
 
