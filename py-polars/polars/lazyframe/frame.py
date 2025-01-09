@@ -328,11 +328,10 @@ class LazyFrame:
         return self
 
     def __getstate__(self) -> bytes:
-        return self._ldf.__getstate__()
+        return self.serialize()
 
     def __setstate__(self, state: bytes) -> None:
-        self._ldf = LazyFrame()._ldf  # Initialize with a dummy
-        self._ldf.__setstate__(state)
+        self._ldf = self.deserialize(BytesIO(state))._ldf
 
     @classmethod
     def _scan_python_function(
@@ -1099,17 +1098,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if optimized:
             type_check = _type_check
             ldf = self._ldf.optimization_toggle(
-                type_coercion,
-                type_check,
-                predicate_pushdown,
-                projection_pushdown,
-                simplify_expression,
-                slice_pushdown,
-                comm_subplan_elim,
-                comm_subexpr_elim,
-                cluster_with_columns,
-                collapse_joins,
-                streaming,
+                type_coercion=type_coercion,
+                type_check=type_check,
+                predicate_pushdown=predicate_pushdown,
+                projection_pushdown=projection_pushdown,
+                simplify_expression=simplify_expression,
+                slice_pushdown=slice_pushdown,
+                comm_subplan_elim=comm_subplan_elim,
+                comm_subexpr_elim=comm_subexpr_elim,
+                cluster_with_columns=cluster_with_columns,
+                collapse_joins=collapse_joins,
+                streaming=streaming,
                 _eager=False,
                 _check_order=_check_order,
                 new_streaming=False,
@@ -1199,17 +1198,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         type_check = _type_check
         _ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            type_check,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,
@@ -1708,17 +1707,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         type_check = _type_check
         ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            type_check,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,
@@ -2017,20 +2016,20 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         type_check = _type_check
         ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            type_check,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
-            _eager,
-            _check_order,
-            new_streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
+            _eager=_eager,
+            _check_order=_check_order,
+            new_streaming=new_streaming,
         )
 
         if background:
@@ -2222,17 +2221,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         type_check = _type_check
         ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            type_check,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,
@@ -3089,17 +3088,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         type_check = _type_check
         lf = self._ldf.optimization_toggle(
-            type_coercion,
-            type_check,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,

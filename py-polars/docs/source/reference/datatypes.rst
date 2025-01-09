@@ -48,6 +48,7 @@ Nested
 
     Array
     List
+    Field
     Struct
 
 String

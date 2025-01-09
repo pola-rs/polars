@@ -871,6 +871,19 @@ impl Column {
         }
     }
 
+    /// Returns whether the flags were set
+    pub fn set_flags(&mut self, flags: StatisticsFlags) -> bool {
+        match self {
+            Column::Series(s) => {
+                s.set_flags(flags);
+                true
+            },
+            // @partition-opt
+            Column::Partitioned(_) => false,
+            Column::Scalar(_) => false,
+        }
+    }
+
     pub fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         // @scalar-opt?
         self.as_materialized_series().vec_hash(build_hasher, buf)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections import Counter
 from collections.abc import Generator, Mapping, Sequence
 from datetime import date, datetime, time, timedelta
 from functools import singledispatch
@@ -52,7 +53,7 @@ from polars.dependencies import (
 from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
-from polars.exceptions import DataOrientationWarning, ShapeError
+from polars.exceptions import DataOrientationWarning, DuplicateError, ShapeError
 from polars.meta import thread_pool_size
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -209,7 +210,7 @@ def _unpack_schema(
 
     schema_overrides = _parse_schema_overrides(schema_overrides)
 
-    # Fast path for empty schema
+    # fast path for empty schema
     if not schema:
         columns = (
             [f"column_{i}" for i in range(n_expected)] if n_expected is not None else []
@@ -1163,7 +1164,6 @@ def arrow_to_pydf(
     column_names, schema_overrides = _unpack_schema(
         (schema or data.schema.names), schema_overrides=schema_overrides
     )
-
     try:
         if column_names != data.schema.names:
             data = data.rename_columns(column_names)
@@ -1179,6 +1179,12 @@ def arrow_to_pydf(
 
     # supply the arrow schema so the metadata is intact
     pydf = PyDataFrame.from_arrow_record_batches(batches, data.schema)
+
+    # arrow tables allow duplicate names; we don't
+    if len(data.columns) != pydf.width():
+        col_name, _ = Counter(column_names).most_common(1)[0]
+        msg = f"column {col_name!r} appears more than once; names must be unique"
+        raise DuplicateError(msg)
 
     if rechunk:
         pydf = pydf.rechunk()

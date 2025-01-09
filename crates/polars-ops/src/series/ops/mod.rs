@@ -21,6 +21,8 @@ mod floor_divide;
 mod fused;
 mod horizontal;
 mod index;
+#[cfg(feature = "index_of")]
+mod index_of;
 mod int_range;
 #[cfg(any(feature = "interpolate_by", feature = "interpolate"))]
 mod interpolation;
@@ -84,6 +86,8 @@ pub use floor_divide::*;
 pub use fused::*;
 pub use horizontal::*;
 pub use index::*;
+#[cfg(feature = "index_of")]
+pub use index_of::*;
 pub use int_range::*;
 #[cfg(feature = "interpolate")]
 pub use interpolation::interpolate::*;

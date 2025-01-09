@@ -357,7 +357,11 @@ impl SQLExprVisitor<'_> {
                 .replace('%', ".*")
                 .replace('_', ".");
 
-            rx = format!("^{}{}$", if case_insensitive { "(?i)" } else { "" }, rx);
+            rx = format!(
+                "^{}{}$",
+                if case_insensitive { "(?is)" } else { "(?s)" },
+                rx
+            );
 
             let expr = self.visit_expr(expr)?;
             let matches = expr.str().contains(lit(rx), true);

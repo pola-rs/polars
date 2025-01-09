@@ -52,7 +52,9 @@ def _sources(source: FileSource) -> tuple[Any, bool]:
     read_multiple_workbooks = True
     sources: list[Any] = []
 
-    if not isinstance(source, Sequence) or isinstance(source, str):
+    if isinstance(source, memoryview):
+        source = source.tobytes()
+    if not isinstance(source, Sequence) or isinstance(source, (bytes, str)):
         read_multiple_workbooks = False
         source = [source]  # type: ignore[assignment]
 
@@ -74,7 +76,7 @@ def _standardize_duplicates(s: str) -> str:
     return re.sub(r"_duplicated_(\d+)", repl=r"\1", string=s)
 
 
-def _unpack_sheet_results(
+def _unpack_read_results(
     frames: list[pl.DataFrame] | list[dict[str, pl.DataFrame]],
     *,
     read_multiple_workbooks: bool,
@@ -394,7 +396,7 @@ def read_excel(
         )
         for src in sources
     ]
-    return _unpack_sheet_results(
+    return _unpack_read_results(
         frames=frames,
         read_multiple_workbooks=read_multiple_workbooks,
     )
@@ -606,7 +608,7 @@ def read_ods(
         )
         for src in sources
     ]
-    return _unpack_sheet_results(
+    return _unpack_read_results(
         frames=frames,
         read_multiple_workbooks=read_multiple_workbooks,
     )
@@ -807,12 +809,18 @@ def _initialise_spreadsheet_parser(
         }.items():
             engine_options.setdefault(option, value)
 
+        if isinstance(source, bytes):
+            source = BytesIO(source)
+
         parser = xlsx2csv.Xlsx2csv(source, **engine_options)
         sheets = parser.workbook.sheets
         return _read_spreadsheet_xlsx2csv, parser, sheets
 
     elif engine == "openpyxl":
         openpyxl = import_optional("openpyxl")
+        if isinstance(source, bytes):
+            source = BytesIO(source)
+
         parser = openpyxl.load_workbook(source, data_only=True, **engine_options)
         sheets = [{"index": i + 1, "name": ws.title} for i, ws in enumerate(parser)]
         return _read_spreadsheet_openpyxl, parser, sheets
@@ -830,7 +838,7 @@ def _initialise_spreadsheet_parser(
             raise ModuleUpgradeRequiredError(msg)
 
         if reading_bytesio:
-            source = source.getbuffer().tobytes()  # type: ignore[union-attr]
+            source = source.getvalue()  # type: ignore[union-attr]
         elif isinstance(source, (BufferedReader, TextIOWrapper)):
             if "b" not in source.mode:
                 msg = f"file {source.name!r} must be opened in binary mode"

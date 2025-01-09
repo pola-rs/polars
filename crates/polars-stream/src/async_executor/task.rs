@@ -6,6 +6,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{Arc, Weak};
 use std::task::{Context, Poll, Wake, Waker};
 
+use atomic_waker::AtomicWaker;
 use parking_lot::Mutex;
 
 /// The state of the task. Can't be part of the TaskData enum as it needs to be
@@ -71,7 +72,8 @@ enum TaskData<F: Future> {
 
 struct Task<F: Future, S, M> {
     state: TaskState,
-    data: Mutex<(TaskData<F>, Option<Waker>)>,
+    data: Mutex<TaskData<F>>,
+    join_waker: AtomicWaker,
     schedule: S,
     metadata: M,
 }
@@ -89,13 +91,14 @@ where
     unsafe fn spawn(future: F, schedule: S, metadata: M) -> Arc<Self> {
         let task = Arc::new(Self {
             state: TaskState::default(),
-            data: Mutex::new((TaskData::Empty, None)),
+            data: Mutex::new(TaskData::Empty),
+            join_waker: AtomicWaker::new(),
             schedule,
             metadata,
         });
 
         let waker = unsafe { Waker::from_raw(std_shim::raw_waker(task.clone())) };
-        task.data.try_lock().unwrap().0 = TaskData::Polling(future, waker);
+        *task.data.try_lock().unwrap() = TaskData::Polling(future, waker);
         task
     }
 
@@ -157,7 +160,7 @@ where
     fn run(self: Arc<Self>) -> bool {
         let mut data = self.data.lock();
 
-        let poll_result = match &mut data.0 {
+        let poll_result = match &mut *data {
             TaskData::Polling(future, waker) => {
                 self.state.start_running();
                 // SAFETY: we always store a Task in an Arc and never move it.
@@ -169,7 +172,7 @@ where
             _ => unreachable!("invalid TaskData when polling"),
         };
 
-        data.0 = match poll_result {
+        *data = match poll_result {
             Err(error) => TaskData::Panic(error),
             Ok(Poll::Ready(output)) => TaskData::Ready(output),
             Ok(Poll::Pending) => {
@@ -182,11 +185,8 @@ where
             },
         };
 
-        let join_waker = data.1.take();
         drop(data);
-        if let Some(w) = join_waker {
-            w.wake();
-        }
+        self.join_waker.wake();
         true
     }
 
@@ -214,17 +214,20 @@ where
     }
 
     fn poll_join(&self, cx: &mut Context<'_>) -> Poll<F::Output> {
-        let mut data = self.data.lock();
-        if matches!(data.0, TaskData::Empty | TaskData::Polling(..)) {
-            data.1 = Some(cx.waker().clone());
-            return Poll::Pending;
-        }
+        self.join_waker.register(cx.waker());
+        if let Some(mut data) = self.data.try_lock() {
+            if matches!(*data, TaskData::Empty | TaskData::Polling(..)) {
+                return Poll::Pending;
+            }
 
-        match core::mem::replace(&mut data.0, TaskData::Joined) {
-            TaskData::Ready(output) => Poll::Ready(output),
-            TaskData::Panic(error) => resume_unwind(error),
-            TaskData::Cancelled => panic!("joined on cancelled task"),
-            _ => unreachable!("invalid TaskData when joining"),
+            match core::mem::replace(&mut *data, TaskData::Joined) {
+                TaskData::Ready(output) => Poll::Ready(output),
+                TaskData::Panic(error) => resume_unwind(error),
+                TaskData::Cancelled => panic!("joined on cancelled task"),
+                _ => unreachable!("invalid TaskData when joining"),
+            }
+        } else {
+            Poll::Pending
         }
     }
 }
@@ -242,14 +245,14 @@ where
 {
     fn cancel(&self) {
         let mut data = self.data.lock();
-        match data.0 {
+        match *data {
             // Already done.
             TaskData::Panic(_) | TaskData::Joined => {},
 
             // Still in-progress, cancel.
             _ => {
-                data.0 = TaskData::Cancelled;
-                if let Some(join_waker) = data.1.take() {
+                *data = TaskData::Cancelled;
+                if let Some(join_waker) = self.join_waker.take() {
                     join_waker.wake();
                 }
             },

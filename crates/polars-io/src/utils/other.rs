@@ -1,13 +1,9 @@
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
-use std::borrow::Cow;
 use std::io::Read;
 #[cfg(target_os = "emscripten")]
 use std::io::{Seek, SeekFrom};
 
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
-use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use polars_utils::mmap::{MMapSemaphore, MemSlice};
 use regex::{Regex, RegexBuilder};
 
@@ -204,75 +200,6 @@ pub fn materialize_projection(
             })
         },
     }
-}
-
-/// Split DataFrame into chunks in preparation for writing. The chunks have a
-/// maximum number of rows per chunk to ensure reasonable memory efficiency when
-/// reading the resulting file, and a minimum size per chunk to ensure
-/// reasonable performance when writing.
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
-pub(crate) fn chunk_df_for_writing(
-    df: &mut DataFrame,
-    row_group_size: usize,
-) -> PolarsResult<Cow<DataFrame>> {
-    // ensures all chunks are aligned.
-    df.align_chunks_par();
-
-    // Accumulate many small chunks to the row group size.
-    // See: #16403
-    if !df.get_columns().is_empty()
-        && df.get_columns()[0]
-            .as_materialized_series()
-            .chunk_lengths()
-            .take(5)
-            .all(|len| len < row_group_size)
-    {
-        fn finish(scratch: &mut Vec<DataFrame>, new_chunks: &mut Vec<DataFrame>) {
-            let mut new = accumulate_dataframes_vertical_unchecked(scratch.drain(..));
-            new.as_single_chunk_par();
-            new_chunks.push(new);
-        }
-
-        let mut new_chunks = Vec::with_capacity(df.first_col_n_chunks()); // upper limit;
-        let mut scratch = vec![];
-        let mut remaining = row_group_size;
-
-        for df in df.split_chunks() {
-            remaining = remaining.saturating_sub(df.height());
-            scratch.push(df);
-
-            if remaining == 0 {
-                remaining = row_group_size;
-                finish(&mut scratch, &mut new_chunks);
-            }
-        }
-        if !scratch.is_empty() {
-            finish(&mut scratch, &mut new_chunks);
-        }
-        return Ok(Cow::Owned(accumulate_dataframes_vertical_unchecked(
-            new_chunks,
-        )));
-    }
-
-    let n_splits = df.height() / row_group_size;
-    let result = if n_splits > 0 {
-        let mut splits = split_df_as_ref(df, n_splits, false);
-
-        for df in splits.iter_mut() {
-            // If the chunks are small enough, writing many small chunks
-            // leads to slow writing performance, so in that case we
-            // merge them.
-            let n_chunks = df.first_col_n_chunks();
-            if n_chunks > 1 && (df.estimated_size() / n_chunks < 128 * 1024) {
-                df.as_single_chunk_par();
-            }
-        }
-
-        Cow::Owned(accumulate_dataframes_vertical_unchecked(splits))
-    } else {
-        Cow::Borrowed(df)
-    };
-    Ok(result)
 }
 
 #[cfg(test)]

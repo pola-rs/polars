@@ -2690,3 +2690,62 @@ def test_load_pred_pushdown_fsl_19241() -> None:
     q = pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f != 4)
 
     assert_frame_equal(q.collect(), pl.DataFrame([fsl, filt]))
+
+
+def test_struct_list_statistics_20510() -> None:
+    # Test PyArrow - Utf8ViewArray
+    data = {
+        "name": ["a", "b"],
+        "data": [
+            {"title": "Title", "data": [0, 1, 3]},
+            {"title": "Title", "data": [0, 1, 3]},
+        ],
+    }
+    df = pl.DataFrame(
+        data,
+        schema=pl.Schema(
+            {
+                "name": pl.String(),
+                "data": pl.Struct(
+                    {
+                        "title": pl.String,
+                        "data": pl.List(pl.Int64),
+                    }
+                ),
+            }
+        ),
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+    f.seek(0)
+    result = pl.scan_parquet(f).filter(pl.col("name") == "b").collect()
+
+    assert_frame_equal(result, df.filter(pl.col("name") == "b"))
+
+    # Test PyArrow - Utf8Array
+    tb = pa.table(
+        data,
+        schema=pa.schema(
+            [
+                ("name", pa.string()),
+                (
+                    "data",
+                    pa.struct(
+                        [
+                            ("title", pa.string()),
+                            ("data", pa.list_(pa.int64())),
+                        ]
+                    ),
+                ),
+            ]
+        ),
+    )
+
+    f.seek(0)
+    pq.write_table(tb, f)
+    f.truncate()
+    f.seek(0)
+    result = pl.scan_parquet(f).filter(pl.col("name") == "b").collect()
+
+    assert_frame_equal(result, df.filter(pl.col("name") == "b"))

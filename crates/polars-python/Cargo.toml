@@ -134,8 +134,9 @@ repeat_by = ["polars/repeat_by"]
 
 streaming = ["polars/streaming"]
 meta = ["polars/meta"]
+index_of = ["polars/index_of"]
 search_sorted = ["polars/search_sorted"]
-decompress = ["polars/decompress-fast"]
+decompress = ["polars/decompress"]
 regex = ["polars/regex"]
 csv = ["polars/csv"]
 clipboard = ["arboard"]
@@ -211,6 +212,7 @@ operations = [
   "asof_join",
   "cross_join",
   "pct_change",
+  "index_of",
   "search_sorted",
   "merge_sorted",
   "top_k",
