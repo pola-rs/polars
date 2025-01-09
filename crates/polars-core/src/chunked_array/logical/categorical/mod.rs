@@ -389,18 +389,28 @@ impl LogicalType for CategoricalChunked {
                 Ok(ca.into_series())
             },
             #[cfg(feature = "dtype-categorical")]
-            DataType::Enum(Some(rev_map), ordering) => {
+            DataType::Enum(rev_map, ordering) => {
+                // note: Enum with no categories -> Enum created from sorted Categorical values
+                let (rev_map, ordering, given_enum_cats) = match rev_map {
+                    Some(rev_map) => (rev_map, *ordering, true),
+                    None => (self.get_rev_map(), self.get_ordering(), false),
+                };
                 let RevMapping::Local(categories, hash) = &**rev_map else {
-                    polars_bail!(ComputeError: "can not cast to enum with global mapping")
+                    polars_bail!(ComputeError: "cannot cast to enum with global mapping")
+                };
+                let (categories, hash) = if given_enum_cats {
+                    (categories.clone(), *hash)
+                } else {
+                    let mut values: Vec<&str> = categories.values_iter().collect();
+                    values.sort(); // ensure stable ordering when determining enum values
+                    let enum_cats = Utf8ViewArray::from_slice_values(&values);
+                    (enum_cats.clone(), RevMapping::build_hash(&enum_cats)) // sort can change the hash; rebuild it
                 };
                 Ok(self
-                    .to_enum(categories, *hash)
-                    .set_ordering(*ordering, true)
+                    .to_enum(&categories, hash)
+                    .set_ordering(ordering, true)
                     .into_series()
                     .with_name(self.name().clone()))
-            },
-            DataType::Enum(None, _) => {
-                polars_bail!(ComputeError: "can not cast to enum without categories present")
             },
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(rev_map, ordering) => {
@@ -419,7 +429,7 @@ impl LogicalType for CategoricalChunked {
                 Ok(self.clone().set_ordering(*ordering, true).into_series())
             },
             dt if dt.is_primitive_numeric() => {
-                // Apply the cast to the categories and then index into the casted series.
+                // Apply the cast to the categories and then index into the resulting series.
                 // This has to be local for the gather.
                 let slf = self.to_local();
                 let categories = StringChunked::with_chunk(

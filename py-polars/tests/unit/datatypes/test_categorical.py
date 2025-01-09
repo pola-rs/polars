@@ -832,6 +832,20 @@ def test_cast_from_cat_to_numeric() -> None:
     assert s.cast(pl.UInt8).sum() == 6
 
 
+def test_cast_from_cat_to_enum() -> None:
+    countries = ["Japan", "Australia", "Netherlands", "Wakanda"]
+    sorted_countries = sorted(countries)
+
+    cat_series = pl.Series("countries", countries).cast(pl.Categorical)
+
+    se1 = cat_series.cast(pl.Enum(sorted(cat_series.cat.get_categories())))
+    se2 = cat_series.cast(pl.Enum)  # more ergonomic version of the above
+
+    assert_series_equal(se1, se2)
+    for se in (se1, se2):
+        assert se.dtype == pl.Enum(sorted_countries)
+
+
 @pytest.mark.usefixtures("test_global_and_local")
 def test_cat_preserve_lexical_ordering_on_clear() -> None:
     s = pl.Series("a", ["a", "b"], dtype=pl.Categorical(ordering="lexical"))

@@ -61,7 +61,7 @@ impl RevMapping {
         }
     }
 
-    fn build_hash(categories: &Utf8ViewArray) -> u128 {
+    pub fn build_hash(categories: &Utf8ViewArray) -> u128 {
         // TODO! we must also validate the cases of duplicates!
         let mut hb = PlRandomState::with_seed(0).build_hasher();
         categories.values_iter().for_each(|val| {
