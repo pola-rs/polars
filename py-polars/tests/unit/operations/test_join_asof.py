@@ -269,7 +269,10 @@ def test_join_asof_tolerance() -> None:
     ]:
         with pytest.raises(pl.exceptions.PolarsError, match=match):
             df_trades.join_asof(
-                df_quotes, on="time", by="stock", tolerance=invalid_tolerance
+                df_quotes,
+                on="time",
+                by="stock",
+                tolerance=invalid_tolerance,  # type: ignore[arg-type]
             )
 
 
