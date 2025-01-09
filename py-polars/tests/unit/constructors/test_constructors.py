@@ -733,7 +733,7 @@ def test_init_arrow_dupes() -> None:
     )
     with pytest.raises(
         DuplicateError,
-        match="column 'col' appears 2 times; names must be unique",
+        match="column 'col' appears more than once; names must be unique",
     ):
         pl.DataFrame(tbl)
 

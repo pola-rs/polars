@@ -1171,12 +1171,6 @@ def arrow_to_pydf(
         msg = "dimensions of columns arg must match data dimensions"
         raise ValueError(msg) from e
 
-    # arrow tables allow duplicate names; we don't
-    if len(column_names) != len(set(column_names)):
-        col_name, col_count = Counter(column_names).most_common(1)[0]
-        msg = f"column {col_name!r} appears {col_count} times; names must be unique"
-        raise DuplicateError(msg)
-
     batches: list[pa.RecordBatch]
     if isinstance(data, pa.RecordBatch):
         batches = [data]
@@ -1185,6 +1179,12 @@ def arrow_to_pydf(
 
     # supply the arrow schema so the metadata is intact
     pydf = PyDataFrame.from_arrow_record_batches(batches, data.schema)
+
+    # arrow tables allow duplicate names; we don't
+    if len(data.columns) != pydf.width():
+        col_name, _ = Counter(column_names).most_common(1)[0]
+        msg = f"column {col_name!r} appears more than once; names must be unique"
+        raise DuplicateError(msg)
 
     if rechunk:
         pydf = pydf.rechunk()
