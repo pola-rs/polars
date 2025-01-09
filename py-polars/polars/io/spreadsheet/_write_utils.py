@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from io import BytesIO
+from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
 
@@ -594,13 +595,20 @@ def _xl_setup_workbook(
         if isinstance(workbook, BytesIO):
             wb, ws, can_close = Workbook(workbook, workbook_options), None, True
         else:
-            file = Path("dataframe.xlsx" if workbook is None else workbook)
-            wb = Workbook(
-                (file if file.suffix else file.with_suffix(".xlsx"))
-                .expanduser()
-                .resolve(strict=False),
-                workbook_options,
-            )
+            if workbook is None:
+                file = Path("dataframe.xlsx")
+            elif isinstance(workbook, str):
+                file = Path(workbook)
+            else:
+                file = workbook
+
+            if isinstance(file, PathLike):
+                file = (
+                    (file if file.suffix else file.with_suffix(".xlsx"))
+                    .expanduser()
+                    .resolve(strict=False)
+                )
+            wb = Workbook(file, workbook_options)
             ws, can_close = None, True
 
     if ws is None:
