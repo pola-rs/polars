@@ -4,7 +4,6 @@ use std::io::{Seek, SeekFrom};
 
 use once_cell::sync::Lazy;
 use polars_core::prelude::*;
-#[cfg(any(feature = "ipc_streaming", feature = "parquet"))]
 use polars_utils::mmap::{MMapSemaphore, MemSlice};
 use regex::{Regex, RegexBuilder};
 
