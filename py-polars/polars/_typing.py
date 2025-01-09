@@ -174,6 +174,10 @@ ConcatMethod = Literal[
     "diagonal_relaxed",
     "horizontal",
     "align",
+    "align_full",
+    "align_inner",
+    "align_left",
+    "align_right",
 ]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
