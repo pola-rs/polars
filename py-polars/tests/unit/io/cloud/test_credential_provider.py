@@ -71,14 +71,11 @@ def test_scan_credential_provider_serialization() -> None:
 
 
 def test_scan_credential_provider_serialization_pyversion() -> None:
-    import zlib
-
     lf = pl.scan_parquet(
         "s3://bucket/path", credential_provider=pl.CredentialProviderAWS()
     )
 
     serialized = lf.serialize()
-    serialized = zlib.decompress(serialized)
     serialized = bytearray(serialized)
 
     # We can't monkeypatch sys.python_version so we just mutate the output
@@ -92,8 +89,6 @@ def test_scan_credential_provider_serialization_pyversion() -> None:
     # Note: These are loaded as u8's
     serialized[i] = 255
     serialized[i + 1] = 254
-
-    serialized = zlib.compress(serialized)
 
     with pytest.raises(ComputeError, match=r"python version.*(3, 255, 254).*differs.*"):
         lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))
