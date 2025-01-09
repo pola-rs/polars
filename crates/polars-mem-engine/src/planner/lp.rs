@@ -246,6 +246,7 @@ fn create_physical_plan_impl(
                     file_options,
                     hive_parts,
                     cloud_options,
+                    metadata,
                 })),
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {

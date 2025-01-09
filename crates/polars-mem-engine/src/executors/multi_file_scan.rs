@@ -16,10 +16,6 @@ use crate::executors::CsvExec;
 use crate::executors::ParquetExec;
 use crate::prelude::*;
 
-pub trait IOFileMetadata: Send + Sync {
-    fn as_any(&self) -> &dyn std::any::Any;
-}
-
 pub trait ScanExec {
     fn read(
         &mut self,
@@ -39,7 +35,7 @@ fn source_to_exec(
     file_info: &FileInfo,
     file_options: &FileScanOptions,
     allow_missing_columns: bool,
-    metadata: Option<&dyn IOFileMetadata>,
+    file_index: usize,
 ) -> PolarsResult<Box<dyn ScanExec>> {
     let source = match source {
         ScanSourceRef::Path(path) => ScanSources::Paths([path.to_path_buf()].into()),
@@ -48,16 +44,21 @@ fn source_to_exec(
         },
     };
 
+    let is_first_file = file_index == 0;
+
     Ok(match scan_type {
         #[cfg(feature = "parquet")]
         FileScan::Parquet {
             options,
             cloud_options,
-            ..
+            metadata,
         } => {
+            let metadata = metadata.as_ref().take_if(|_| is_first_file);
+
             let mut options = options.clone();
             let mut file_info = file_info.clone();
-            if allow_missing_columns {
+
+            if allow_missing_columns && !is_first_file {
                 options.schema.take();
                 file_info.reader_schema.take();
             }
@@ -70,15 +71,10 @@ fn source_to_exec(
                 options,
                 cloud_options.clone(),
                 file_options.clone(),
-                metadata.map(|md| {
-                    md.as_any()
-                        .downcast_ref::<Arc<polars_io::parquet::read::FileMetadata>>()
-                        .unwrap()
-                        .clone()
-                }),
+                metadata.cloned(),
             );
 
-            if allow_missing_columns {
+            if allow_missing_columns && !is_first_file {
                 // Fixes the file_info.schema
                 exec.schema()?;
             }
@@ -91,7 +87,7 @@ fn source_to_exec(
             let mut options = options.clone();
             let file_options = file_options.clone();
 
-            if allow_missing_columns {
+            if allow_missing_columns && !is_first_file {
                 options.schema.take();
                 file_info.reader_schema.take();
             }
@@ -104,7 +100,7 @@ fn source_to_exec(
                 predicate: None,
             };
 
-            if allow_missing_columns {
+            if allow_missing_columns && !is_first_file {
                 // Fixes the file_info.schema
                 exec.schema()?;
             }
@@ -112,13 +108,19 @@ fn source_to_exec(
             Box::new(exec)
         },
         #[cfg(feature = "ipc")]
-        FileScan::Ipc { options, cloud_options, .. } => {
+        FileScan::Ipc {
+            options,
+            cloud_options,
+            metadata,
+        } => {
+            let metadata = metadata.as_ref().take_if(|_| is_first_file);
+
             let mut file_info = file_info.clone();
             let options = options.clone();
             let file_options = file_options.clone();
             let cloud_options = cloud_options.clone();
 
-            if allow_missing_columns {
+            if allow_missing_columns && !is_first_file {
                 file_info.reader_schema.take();
             }
 
@@ -130,9 +132,10 @@ fn source_to_exec(
                 predicate: None,
                 hive_parts: None,
                 cloud_options,
+                metadata: metadata.cloned(),
             };
 
-            if allow_missing_columns {
+            if allow_missing_columns && !is_first_file {
                 // Fixes the file_info.schema
                 exec.schema()?;
             }
@@ -140,19 +143,23 @@ fn source_to_exec(
             Box::new(exec)
         },
         #[cfg(feature = "json")]
-        FileScan::NDJson { options, cloud_options, .. } => {
+        FileScan::NDJson {
+            options,
+            cloud_options,
+            ..
+        } => {
             let mut file_info = file_info.clone();
             let options = options.clone();
             let file_options = file_options.clone();
             _ = cloud_options; // @TODO: Use these?
 
-            if allow_missing_columns {
+            if allow_missing_columns && !is_first_file {
                 file_info.reader_schema.take();
             }
 
             let mut exec = JsonExec::new(source, options, file_options, file_info, None);
 
-            if allow_missing_columns {
+            if allow_missing_columns && !is_first_file {
                 // Fixes the file_info.schema
                 exec.schema()?;
             }
@@ -171,8 +178,6 @@ pub struct MultiScanExec {
     predicate: Option<Arc<dyn PhysicalExpr>>,
     file_options: FileScanOptions,
     scan_type: FileScan,
-
-    first_file_metadata: Option<Box<dyn IOFileMetadata>>,
 }
 
 impl MultiScanExec {
@@ -182,14 +187,8 @@ impl MultiScanExec {
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         file_options: FileScanOptions,
-        mut scan_type: FileScan,
+        scan_type: FileScan,
     ) -> Self {
-        let first_file_metadata = match &mut scan_type {
-            #[cfg(feature = "parquet")]
-            FileScan::Parquet { metadata, .. } => metadata.take().map(|md| Box::new(md) as _),
-            _ => None,
-        };
-
         Self {
             sources,
             file_info,
@@ -197,7 +196,6 @@ impl MultiScanExec {
             predicate,
             file_options,
             scan_type,
-            first_file_metadata,
         }
     }
 
@@ -218,7 +216,7 @@ impl MultiScanExec {
                 &self.file_info,
                 &self.file_options,
                 self.file_options.allow_missing_columns,
-                self.first_file_metadata.as_deref().filter(|_| i == 0),
+                i,
             )?;
 
             let num_rows = exec_source.num_unfiltered_rows()? as usize;
@@ -328,7 +326,7 @@ impl MultiScanExec {
                 &self.file_info,
                 &self.file_options,
                 allow_missing_columns,
-                self.first_file_metadata.as_deref().filter(|_| i == 0),
+                i,
             )?;
 
             if verbose {

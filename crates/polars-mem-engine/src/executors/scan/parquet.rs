@@ -555,12 +555,6 @@ impl ParquetExec {
     }
 }
 
-impl IOFileMetadata for Arc<FileMetadata> {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
 impl ScanExec for ParquetExec {
     fn read(
         &mut self,

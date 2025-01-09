@@ -20,6 +20,7 @@ pub struct IpcExec {
     pub(crate) file_options: FileScanOptions,
     pub(crate) hive_parts: Option<Arc<Vec<HivePartitions>>>,
     pub(crate) cloud_options: Option<CloudOptions>,
+    pub(crate) metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
 }
 
 impl IpcExec {
@@ -213,13 +214,17 @@ impl ScanExec for IpcExec {
             return Ok(&self.file_info.schema);
         }
 
-        // @TODO!: Cache the memslice here.
-        // @TODO!: Use the existing IpcReader metadata to get the schema.
-        let memslice = self
-            .sources
-            .at(0)
-            .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
-        let arrow_schema = IpcReader::new(std::io::Cursor::new(memslice)).schema()?;
+        let arrow_schema = match &self.metadata {
+            None => {
+                // @TODO!: Cache the memslice here.
+                let memslice = self
+                    .sources
+                    .at(0)
+                    .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
+                IpcReader::new(std::io::Cursor::new(memslice)).schema()?
+            },
+            Some(md) => md.schema.clone(),
+        };
         self.file_info.schema =
             Arc::new(Schema::from_iter(arrow_schema.iter().map(
                 |(name, field)| (name.clone(), DataType::from_arrow_field(field)),
@@ -236,13 +241,16 @@ impl ScanExec for IpcExec {
         }
 
         // @TODO!: Cache the memslice here.
-        // @TODO!: Use the existing IpcReader metadata to get the row count from.
         let memslice = self
             .sources
             .at(0)
             .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
-        let row_count = arrow::io::ipc::read::get_row_count(&mut std::io::Cursor::new(memslice))?;
-        let num_unfiltered_rows = row_count as usize;
+        let mut reader = std::io::Cursor::new(memslice);
+
+        let num_unfiltered_rows = match &self.metadata {
+            None => arrow::io::ipc::read::get_row_count(&mut reader)?,
+            Some(md) => arrow::io::ipc::read::get_row_count_from_blocks(&mut reader, &md.blocks)?,
+        } as usize;
 
         self.file_info.row_estimation = (Some(num_unfiltered_rows), num_unfiltered_rows);
 

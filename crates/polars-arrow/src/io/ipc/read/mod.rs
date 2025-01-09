@@ -23,7 +23,7 @@ pub use common::{prepare_projection, ProjectionInfo};
 pub use error::OutOfSpecKind;
 pub use file::{
     deserialize_footer, get_row_count, read_batch, read_file_dictionaries, read_file_metadata,
-    FileMetadata,
+    FileMetadata, get_row_count_from_blocks,
 };
 use polars_utils::aliases::PlHashMap;
 pub use reader::FileReader;
