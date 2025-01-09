@@ -14,6 +14,7 @@ use polars_plan::prelude::expr_ir::ExprIR;
 mod fmt;
 mod lower_expr;
 mod lower_ir;
+mod lower_group_by;
 mod to_graph;
 
 pub use fmt::visualize_plan;

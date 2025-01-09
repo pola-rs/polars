@@ -21,7 +21,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 
 type IRNodeKey = Node;
 
-fn unique_column_name() -> PlSmallStr {
+pub fn unique_column_name() -> PlSmallStr {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let idx = COUNTER.fetch_add(1, Ordering::Relaxed);
     format_pl_smallstr!("__POLARS_STMP_{idx}")
@@ -696,8 +696,7 @@ fn build_select_stream_with_ctx(
 
     if let Some(columns) = all_simple_columns {
         let input_schema = ctx.phys_sm[input.node].output_schema.clone();
-        if !cfg!(debug_assertions)
-            && input_schema.len() == columns.len()
+        if input_schema.len() == columns.len()
             && input_schema.iter_names().zip(&columns).all(|(l, r)| l == r)
         {
             // Input node already has the correct schema, just pass through.
