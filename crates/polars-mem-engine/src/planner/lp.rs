@@ -239,15 +239,30 @@ fn create_physical_plan_impl(
                     options,
                     cloud_options,
                     metadata,
-                } => Ok(Box::new(executors::IpcExec {
-                    sources,
-                    file_info,
-                    predicate,
-                    options,
-                    file_options,
-                    hive_parts,
-                    cloud_options,
-                })),
+                } => {
+                    if sources.len() > 1
+                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
+                    {
+                        Ok(Box::new(executors::MultiScanExec::new(
+                            sources,
+                            file_info,
+                            hive_parts,
+                            predicate,
+                            file_options,
+                            scan_type,
+                        )))
+                    } else {
+                        Ok(Box::new(executors::IpcExec {
+                            sources,
+                            file_info,
+                            predicate,
+                            options,
+                            file_options,
+                            hive_parts,
+                            cloud_options,
+                        }))
+                    }
+                },
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options,

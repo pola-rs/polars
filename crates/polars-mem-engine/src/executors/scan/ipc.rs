@@ -192,6 +192,64 @@ impl IpcExec {
     }
 }
 
+impl ScanExec for IpcExec {
+    fn read(
+        &mut self,
+        with_columns: Option<Arc<[PlSmallStr]>>,
+        slice: Option<(usize, usize)>,
+        predicate: Option<Arc<dyn PhysicalExpr>>,
+        row_index: Option<polars_io::RowIndex>,
+    ) -> PolarsResult<DataFrame> {
+        self.file_options.with_columns = with_columns;
+        self.file_options.slice = slice.map(|(s, l)| (s as i64, l));
+        self.predicate = predicate;
+        self.file_options.row_index = row_index;
+
+        self.read()
+    }
+
+    fn schema(&mut self) -> PolarsResult<&SchemaRef> {
+        if self.file_info.reader_schema.is_some() {
+            return Ok(&self.file_info.schema);
+        }
+
+        // @TODO!: Cache the memslice here.
+        // @TODO!: Use the existing IpcReader metadata to get the schema.
+        let memslice = self
+            .sources
+            .at(0)
+            .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
+        let arrow_schema = IpcReader::new(std::io::Cursor::new(memslice)).schema()?;
+        self.file_info.schema =
+            Arc::new(Schema::from_iter(arrow_schema.iter().map(
+                |(name, field)| (name.clone(), DataType::from_arrow_field(field)),
+            )));
+        self.file_info.reader_schema = Some(arrow::Either::Left(arrow_schema));
+
+        Ok(&self.file_info.schema)
+    }
+
+    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
+        let (lb, ub) = self.file_info.row_estimation;
+        if lb.is_some_and(|lb| lb == ub) {
+            return Ok(ub as IdxSize);
+        }
+
+        // @TODO!: Cache the memslice here.
+        // @TODO!: Use the existing IpcReader metadata to get the row count from.
+        let memslice = self
+            .sources
+            .at(0)
+            .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
+        let row_count = arrow::io::ipc::read::get_row_count(&mut std::io::Cursor::new(memslice))?;
+        let num_unfiltered_rows = row_count as usize;
+
+        self.file_info.row_estimation = (Some(num_unfiltered_rows), num_unfiltered_rows);
+
+        Ok(num_unfiltered_rows as IdxSize)
+    }
+}
+
 impl Executor for IpcExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let profile_name = if state.has_node_timer() {

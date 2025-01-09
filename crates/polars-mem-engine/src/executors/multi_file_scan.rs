@@ -9,7 +9,7 @@ use polars_core::utils::{
 use polars_io::predicates::BatchStats;
 use polars_io::RowIndex;
 
-use super::Executor;
+use super::{Executor, IpcExec};
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
 #[cfg(feature = "parquet")]
@@ -102,6 +102,34 @@ fn source_to_exec(
                 options,
                 file_options,
                 predicate: None,
+            };
+
+            if allow_missing_columns {
+                // Fixes the file_info.schema
+                exec.schema()?;
+            }
+
+            Box::new(exec)
+        },
+        #[cfg(feature = "ipc")]
+        FileScan::Ipc { options, cloud_options, .. } => {
+            let mut file_info = file_info.clone();
+            let options = options.clone();
+            let file_options = file_options.clone();
+            let cloud_options = cloud_options.clone();
+
+            if allow_missing_columns {
+                file_info.reader_schema.take();
+            }
+
+            let mut exec = IpcExec {
+                sources: source,
+                file_info,
+                options,
+                file_options,
+                predicate: None,
+                hive_parts: None,
+                cloud_options,
             };
 
             if allow_missing_columns {
