@@ -953,7 +953,7 @@ def test_scan_csv_bytesio_memory_usage(
     assert (
         pl.scan_csv(f)
         .filter(pl.col("mydata") == 9_999_999)
-        .collect(new_streaming=streaming)
+        .collect(new_streaming=streaming)  # type: ignore[call-overload]
         .item()
         == 9_999_999
     )
