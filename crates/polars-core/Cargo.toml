@@ -13,7 +13,7 @@ polars-compute = { workspace = true, features = ["gather"] }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
 polars-schema = { workspace = true }
-polars-utils = { workspace = true }
+polars-utils = { workspace = true, features = ['mmap'] }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
