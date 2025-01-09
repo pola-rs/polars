@@ -823,6 +823,7 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         # note that the totals are written as formulae, so we
         # won't have the calculated values in the dataframe
         xldf = pl.read_excel(xls, sheet_name="misc", engine=engine)
+
         assert xldf.columns == ["id", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
@@ -836,18 +837,26 @@ def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
     xls = BytesIO()
     df.write_excel(xls, worksheet="data")
 
-    # expect string conversion (only scalar values are supported)
-    xldf = pl.read_excel(
+    # also test reading from the various flavours of supported binary data
+    # across all backend engines (check bytesio, bytes, and memoryview)
+    for binary_data in (
         xls,
-        sheet_name="data",
-        engine=engine,
-        include_file_paths="wbook",
-    )
-    assert xldf.rows() == [
-        ("[1, 2]", "{'y': 'a', 'z': 9}", "in-mem"),
-        ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
-        ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
-    ]
+        xls.getvalue(),
+        xls.getbuffer(),
+    ):
+        xldf = pl.read_excel(
+            binary_data,
+            sheet_name="data",
+            engine=engine,
+            include_file_paths="wbook",
+        )
+
+        # expect string conversion (only scalar values are supported)
+        assert xldf.rows() == [
+            ("[1, 2]", "{'y': 'a', 'z': 9}", "in-mem"),
+            ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
+            ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
+        ]
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
@@ -868,7 +877,7 @@ def test_excel_write_sparklines(engine: ExcelSpreadsheetEngine) -> None:
     from xlsxwriter import Workbook
 
     # note that we don't (quite) expect sparkline export to round-trip as we
-    # inject additional empty columns to hold them (which will read as nulls).
+    # inject additional empty columns to hold them (which will read as nulls)
     df = pl.DataFrame(
         {
             "id": ["aaa", "bbb", "ccc", "ddd", "eee"],
