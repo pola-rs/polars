@@ -234,14 +234,6 @@ impl MultiScanExec {
         let mut row_index = self.file_options.row_index.take();
         let slice = self.file_options.slice.take();
 
-        let file_output_schema = &self.file_info.schema;
-        let file_output_schema = if let Some(file_with_columns) = file_with_columns.as_ref() {
-            Arc::new(file_output_schema.try_project(file_with_columns.as_ref())?)
-        } else {
-            file_output_schema.clone()
-        };
-        let mut missing_columns = Vec::new();
-
         let mut first_slice_file = None;
         let mut slice = match slice {
             None => None,
@@ -255,6 +247,14 @@ impl MultiScanExec {
                 }
             }),
         };
+
+        let final_per_source_schema = &self.file_info.schema;
+        let file_output_schema = if let Some(file_with_columns) = file_with_columns.as_ref() {
+            Arc::new(final_per_source_schema.try_project(file_with_columns.as_ref())?)
+        } else {
+            final_per_source_schema.clone()
+        };
+        let mut missing_columns = Vec::new();
 
         let verbose = config::verbose();
         let mut dfs = Vec::with_capacity(self.sources.len());
@@ -353,7 +353,6 @@ impl MultiScanExec {
                 }
             }
 
-
             let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
             let stats_evaluator = stats_evaluator.filter(|_| use_statistics);
 
@@ -388,50 +387,57 @@ impl MultiScanExec {
             }
 
             // @TODO: There are cases where we can ignore reading. E.g. no row index + empty with columns + no predicate
-            let mut source_schema = exec_source.schema()?.clone();
-            let mut extra_columns = Vec::new();
+            let mut current_source_with_columns = Cow::Borrowed(&file_with_columns);
 
-            if let Some(file_with_columns) = &file_with_columns {
-                if allow_missing_columns {
-                    source_schema = Arc::new(
-                        source_schema.as_ref().try_project(
-                            file_with_columns
-                                .iter()
-                                .filter(|c| source_schema.contains(c.as_str())),
-                        )?,
-                    );
-                } else {
-                    source_schema = Arc::new(source_schema.try_project(file_with_columns.iter())?);
-                }
-            }
-
+            // If we allow missing columns, we need to determine the set of missing columns and
+            // possibly update the with_columns to reflect that.
             if allow_missing_columns {
-                missing_columns.clear();
-                extra_columns.clear();
+                let current_source_schema = exec_source.schema()?;
 
-                file_output_schema.as_ref().field_compare(
-                    &source_schema,
+                missing_columns.clear();
+
+                let mut extra_columns = Vec::new();
+                final_per_source_schema.as_ref().field_compare(
+                    current_source_schema.as_ref(),
                     &mut missing_columns,
                     &mut extra_columns,
                 );
 
                 if !extra_columns.is_empty() {
-                    // @TODO: Better error
-                    polars_bail!(InvalidOperation: "More schema in file after first");
+                    let source_name = match source {
+                        ScanSourceRef::Path(path) => path.to_string_lossy().into_owned(),
+                        ScanSourceRef::File(_) => format!("file descriptor #{}", i + 1),
+                        ScanSourceRef::Buffer(_) => format!("in-memory buffer #{}", i + 1),
+                    };
+                    let columns = extra_columns
+                        .iter()
+                        .map(|(_, (name, _))| format!("'{}'", name))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    polars_bail!(
+                        SchemaMismatch:
+                        "'{source_name}' contains column(s) {columns}, which are not present in the first scanned file"
+                    );
                 }
+
+                // Update `with_columns` to not include any columns not present in the file.
+                current_source_with_columns =
+                    Cow::Owned(current_source_with_columns.as_deref().map(|with_columns| {
+                        with_columns
+                            .iter()
+                            .filter(|c| current_source_schema.contains(c))
+                            .cloned()
+                            .collect()
+                    }));
             }
 
-            let with_columns = if allow_missing_columns {
-                file_with_columns
-                    .as_ref()
-                    .map(|_| source_schema.iter_names().cloned().collect())
-            } else {
-                file_with_columns.clone()
-            };
-
             // Read the DataFrame.
-            let mut df =
-                exec_source.read(with_columns, slice, file_predicate, row_index.clone())?;
+            let mut df = exec_source.read(
+                current_source_with_columns.into_owned(),
+                slice,
+                file_predicate,
+                row_index.clone(),
+            )?;
 
             // Update the row_index to the proper offset.
             if let Some(row_index) = row_index.as_mut() {
