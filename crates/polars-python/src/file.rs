@@ -386,8 +386,8 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
 /// way.
 fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
     if py_f.getattr("read").is_ok() {
-        // Note that BytesIO has some memory optimizations so much of the time
-        // getvalue() doesn't need to copy of the underlying data:
+        // Note that BytesIO has some memory optimizations ensuring that much of
+        // the time getvalue() doesn't need to copy the underlying data:
         let Ok(bytes) = py_f.call_method0("getvalue") else {
             return py_f;
         };
