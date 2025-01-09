@@ -236,10 +236,11 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     try:
         yield MemoryUsage()
     finally:
-        tracemalloc.stop()
+        # Workaround for https://github.com/python/cpython/issues/128679
+        time.sleep(1)
+        gc.collect()
 
-    # Workaround for https://github.com/python/cpython/issues/128679
-    time.sleep(1)
+        tracemalloc.stop()
 
 
 @pytest.fixture(params=[True, False])
