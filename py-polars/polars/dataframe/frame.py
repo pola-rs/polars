@@ -1154,11 +1154,11 @@ class DataFrame:
     def __le__(self, other: Any) -> DataFrame:
         return self._comp(other, "lt_eq")
 
-    def __getstate__(self) -> list[Series]:
-        return self.get_columns()
+    def __getstate__(self) -> bytes:
+        return self.serialize()
 
-    def __setstate__(self, state: list[Series]) -> None:
-        self._df = DataFrame(state)._df
+    def __setstate__(self, state: bytes) -> None:
+        self._df = self.deserialize(BytesIO(state))._df
 
     def __mul__(self, other: DataFrame | Series | int | float) -> DataFrame:
         if isinstance(other, DataFrame):

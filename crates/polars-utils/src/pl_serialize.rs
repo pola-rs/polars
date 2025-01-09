@@ -100,6 +100,61 @@ where
     Ok(v)
 }
 
+/// Potentially avoids copying memory compared to a naive `Vec::<u8>::deserialize`.
+///
+/// This is essentially boilerplate for visiting bytes without copying where possible.
+pub fn deserialize_map_bytes<'de, D, O>(
+    deserializer: D,
+    func: &mut (dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>) -> O),
+) -> Result<O, D::Error>
+where
+    D: serde::de::Deserializer<'de>,
+{
+    // Lets us avoid monomorphizing the visitor
+    let mut out: Option<O> = None;
+    struct V<'f>(&'f mut (dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>)));
+
+    deserializer.deserialize_bytes(V(&mut |v| drop(out.replace(func(v)))))?;
+
+    return Ok(out.unwrap());
+
+    impl<'de> serde::de::Visitor<'de> for V<'_> {
+        type Value = ();
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("deserialize_map_bytes")
+        }
+
+        fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            self.0(std::borrow::Cow::Borrowed(v));
+            Ok(())
+        }
+
+        fn visit_byte_buf<E>(self, v: Vec<u8>) -> Result<Self::Value, E>
+        where
+            E: serde::de::Error,
+        {
+            self.0(std::borrow::Cow::Owned(v));
+            Ok(())
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            // This is not ideal, but we hit here if the serialization format is JSON.
+            let bytes = std::iter::from_fn(|| seq.next_element::<u8>().transpose())
+                .collect::<Result<Vec<_>, A::Error>>()?;
+
+            self.0(std::borrow::Cow::Owned(bytes));
+            Ok(())
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

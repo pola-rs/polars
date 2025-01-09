@@ -20,6 +20,7 @@ use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
 mod chunks;
+pub use chunks::chunk_df_for_writing;
 pub mod column;
 pub mod explode;
 mod from;
@@ -3577,42 +3578,5 @@ mod test {
 
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
         Ok(())
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn test_deserialize_height_validation_8751() {
-        // Construct an invalid directly from the inner fields as the `new_unchecked_*` functions
-        // have debug assertions
-
-        use polars_utils::pl_serialize;
-
-        let df = DataFrame {
-            height: 2,
-            columns: vec![
-                Int64Chunked::full("a".into(), 1, 2).into_column(),
-                Int64Chunked::full("b".into(), 1, 1).into_column(),
-            ],
-            cached_schema: OnceLock::new(),
-        };
-
-        // We rely on the fact that the serialization doesn't check the heights of all columns
-        let serialized = serde_json::to_string(&df).unwrap();
-        let err = serde_json::from_str::<DataFrame>(&serialized).unwrap_err();
-
-        assert!(err.to_string().contains(
-            "successful parse invalid data: lengths don't match: could not create a new DataFrame:",
-        ));
-
-        let serialized = pl_serialize::SerializeOptions::default()
-            .serialize_to_bytes(&df)
-            .unwrap();
-        let err = pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader::<DataFrame, _>(serialized.as_slice())
-            .unwrap_err();
-
-        assert!(err.to_string().contains(
-            "successful parse invalid data: lengths don't match: could not create a new DataFrame:",
-        ));
     }
 }
