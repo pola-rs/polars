@@ -328,11 +328,10 @@ class LazyFrame:
         return self
 
     def __getstate__(self) -> bytes:
-        return self._ldf.__getstate__()
+        return self.serialize()
 
     def __setstate__(self, state: bytes) -> None:
-        self._ldf = LazyFrame()._ldf  # Initialize with a dummy
-        self._ldf.__setstate__(state)
+        self._ldf = self.deserialize(BytesIO(state))._ldf
 
     @classmethod
     def _scan_python_function(

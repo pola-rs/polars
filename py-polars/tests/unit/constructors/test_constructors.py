@@ -18,7 +18,7 @@ import polars as pl
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
-from polars.exceptions import ShapeError
+from polars.exceptions import DuplicateError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -721,6 +721,21 @@ def test_init_arrow() -> None:
     # Bad columns argument
     with pytest.raises(ValueError):
         pl.DataFrame(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}), schema=["c", "d", "e"])
+
+
+def test_init_arrow_dupes() -> None:
+    tbl = pa.Table.from_arrays(
+        arrays=[
+            pa.array([1, 2, 3], type=pa.int32()),
+            pa.array([4, 5, 6], type=pa.int32()),
+        ],
+        schema=pa.schema([("col", pa.int32()), ("col", pa.int32())]),
+    )
+    with pytest.raises(
+        DuplicateError,
+        match="column 'col' appears more than once; names must be unique",
+    ):
+        pl.DataFrame(tbl)
 
 
 def test_init_from_frame() -> None:

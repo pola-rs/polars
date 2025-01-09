@@ -3,10 +3,7 @@ use std::ops::Deref;
 
 use polars::prelude::*;
 use polars_io::mmap::ReaderBytes;
-use polars_utils::pl_serialize;
 use pyo3::prelude::*;
-use pyo3::pybacked::PyBackedBytes;
-use pyo3::types::PyBytes;
 
 use super::PyDataFrame;
 use crate::error::PyPolarsErr;
@@ -15,62 +12,40 @@ use crate::file::{get_file_like, get_mmap_bytes_reader};
 
 #[pymethods]
 impl PyDataFrame {
-    #[cfg(feature = "ipc_streaming")]
-    fn __getstate__<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {
-        // Used in pickle/pickling
-        PyBytes::new(
-            py,
-            &pl_serialize::SerializeOptions::default()
-                .with_compression(true)
-                .serialize_to_bytes(&self.df)
-                .unwrap(),
-        )
-    }
-
-    #[cfg(feature = "ipc_streaming")]
-    fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
-        // Used in pickle/pickling
-        match state.extract::<PyBackedBytes>() {
-            Ok(s) => pl_serialize::SerializeOptions::default()
-                .with_compression(true)
-                .deserialize_from_reader(&*s)
-                .map(|df| {
-                    self.df = df;
-                })
-                .map_err(|e| PyPolarsErr::from(e).into()),
-            Err(e) => Err(e),
-        }
-    }
-
     /// Serialize into binary data.
-    fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
+    fn serialize_binary(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
-        let writer = BufWriter::new(file);
-        pl_serialize::SerializeOptions::default()
-            .with_compression(true)
-            .serialize_into_writer(writer, &self.df)
-            .map_err(|err| ComputeError::new_err(err.to_string()))
-    }
+        let mut writer = BufWriter::new(file);
 
-    /// Serialize into a JSON string.
-    #[cfg(feature = "json")]
-    pub fn serialize_json(&mut self, py_f: PyObject) -> PyResult<()> {
-        let file = get_file_like(py_f, true)?;
-        let writer = BufWriter::new(file);
-        serde_json::to_writer(writer, &self.df)
-            .map_err(|err| ComputeError::new_err(err.to_string()))
+        py.allow_threads(|| {
+            self.df
+                .serialize_into_writer(&mut writer)
+                .map_err(|e| PyPolarsErr::from(e).into())
+        })
     }
 
     /// Deserialize a file-like object containing binary data into a DataFrame.
     #[staticmethod]
-    fn deserialize_binary(py_f: PyObject) -> PyResult<Self> {
+    fn deserialize_binary(py: Python, py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
-        let file = BufReader::new(file);
-        let df: DataFrame = pl_serialize::SerializeOptions::default()
-            .with_compression(true)
-            .deserialize_from_reader(file)
-            .map_err(|err| ComputeError::new_err(err.to_string()))?;
-        Ok(df.into())
+        let mut file = BufReader::new(file);
+
+        py.allow_threads(|| {
+            DataFrame::deserialize_from_reader(&mut file)
+                .map_err(|e| PyPolarsErr::from(e).into())
+                .map(|x| x.into())
+        })
+    }
+
+    /// Serialize into a JSON string.
+    #[cfg(feature = "json")]
+    pub fn serialize_json(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
+        let file = get_file_like(py_f, true)?;
+        let writer = BufWriter::new(file);
+        py.allow_threads(|| {
+            serde_json::to_writer(writer, &self.df)
+                .map_err(|err| ComputeError::new_err(err.to_string()))
+        })
     }
 
     /// Deserialize a file-like object containing JSON string data into a DataFrame.
