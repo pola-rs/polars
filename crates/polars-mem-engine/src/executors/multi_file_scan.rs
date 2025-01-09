@@ -20,7 +20,9 @@ use crate::executors::JsonExec;
 use crate::executors::ParquetExec;
 use crate::prelude::*;
 
+/// An [`Executor`] that scans over some IO.
 pub trait ScanExec {
+    /// Read the source.
     fn read(
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
@@ -29,7 +31,13 @@ pub trait ScanExec {
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame>;
 
+    /// Get the full schema for the source behind this [`Executor`].
+    ///
+    /// Note that this might be called several times so attempts should be made to cache the result.
     fn schema(&mut self) -> PolarsResult<&SchemaRef>;
+    /// Get the number of rows for the source behind this [`Executor`].
+    ///
+    /// Note that this might be called several times so attempts should be made to cache the result.
     fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize>;
 }
 
