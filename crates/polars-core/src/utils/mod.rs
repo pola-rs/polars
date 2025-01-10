@@ -21,7 +21,9 @@ pub use series::*;
 pub use supertype::*;
 pub use {arrow, rayon};
 
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
+use crate::series::IsSorted;
 use crate::POOL;
 
 #[repr(transparent)]
@@ -749,33 +751,315 @@ pub fn accumulate_dataframes_vertical_unchecked<I>(dfs: I) -> DataFrame
 where
     I: IntoIterator<Item = DataFrame>,
 {
+    unsafe { accumulate_dataframes_vertical_unchecked_impl(dfs, false, false, true) }.unwrap()
+}
+
+#[cold]
+#[inline(never)]
+fn name_mismatch(n1: &str, n2: &str) -> PolarsError {
+    polars_err!(
+        ShapeMismatch: "unable to vstack, column names don't match: {n1} and {n2}",
+    )
+}
+#[cold]
+#[inline(never)]
+fn dtype_mismatch(col: &str, dt1: &DataType, dt2: &DataType) -> PolarsError {
+    polars_err!(
+        SchemaMismatch:
+        "cannot append series '{col}', data types don't match ({dt1:?} != {dt2:?})",
+    )
+}
+#[cold]
+#[inline(never)]
+fn width_mismatch(df1: &DataFrame, df2: &DataFrame) -> PolarsError {
+    let mut df1_extra = Vec::new();
+    let mut df2_extra = Vec::new();
+
+    let s1 = df1.schema();
+    let s2 = df2.schema();
+
+    s1.field_compare(&s2, &mut df1_extra, &mut df2_extra);
+
+    let df1_extra = df1_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let df2_extra = df2_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    polars_err!(
+        SchemaMismatch: r#"unable to vstack, dataframes have different widths ({} != {}).
+
+One dataframe has additional columns: [{df1_extra}].
+Other dataframe has additional columns: [{df2_extra}]."#,
+        df1.width(),
+        df2.width(),
+    )
+}
+
+/// Accumulate several [`DataFrame`]s by vertically stacking them.
+///
+/// This will not rechunk and always check that the widths of the [`DataFrame`]s is the same.
+/// Checking of matches column names and datatypes can be enabled with the `check_names` and
+/// `check_dtype`s respectively.
+///
+/// Parallelism with [`rayon`] can be turned on with the `parallel` option.
+///
+/// # Safety
+///
+/// If `check_dtypes = False`, it needs to be ensured that all the datatypes between columns are
+/// the same.
+pub unsafe fn accumulate_dataframes_vertical_unchecked_impl(
+    dfs: impl IntoIterator<Item = DataFrame>,
+    check_names: bool,
+    check_dtypes: bool,
+    parallel: bool,
+) -> PolarsResult<DataFrame> {
     let mut iter = dfs.into_iter();
-    let additional = iter.size_hint().0;
-    let mut acc_df = iter.next().unwrap();
-    acc_df.reserve_chunks(additional);
+
+    // Find the first dataframe that actually has all columns.
+    let mut height = 0;
+    let Some(mut fst_full_schema_df) = iter.by_ref().find(|df| {
+        height += df.height();
+        df.width() != 0
+    }) else {
+        // SAFETY: No columns are given.
+        return Ok(unsafe { DataFrame::new_no_checks(height, Vec::new()) });
+    };
+
+    let width = fst_full_schema_df.width();
+
+    // Find the first non-empty dataframe.
+    while fst_full_schema_df.height() == 0 {
+        let Some(df) = iter.next() else {
+            return Ok(fst_full_schema_df);
+        };
+
+        if df.width() == 0 {
+            continue;
+        }
+
+        if df.width() != width {
+            return Err(width_mismatch(&df, &fst_full_schema_df));
+        }
+
+        if check_names || check_dtypes {
+            for (new_c, old_c) in df
+                .get_columns()
+                .iter()
+                .zip(fst_full_schema_df.get_columns())
+            {
+                if check_names && old_c.name() != new_c.name() {
+                    return Err(name_mismatch(old_c.name(), new_c.name()));
+                }
+                if check_dtypes && old_c.dtype() != new_c.dtype() {
+                    return Err(dtype_mismatch(old_c.name(), old_c.dtype(), new_c.dtype()));
+                }
+            }
+        }
+
+        fst_full_schema_df = df;
+    }
+
+    let mut chunk_amount_hints: Vec<usize> = fst_full_schema_df
+        .get_columns()
+        .iter()
+        .map(|c| c.n_chunks())
+        .collect();
+    let mut columns: Vec<_> = fst_full_schema_df
+        .take_columns()
+        .into_iter()
+        .map(|c| {
+            let mut cs = Vec::<Column>::with_capacity(iter.size_hint().0 + 1);
+            cs.push(c);
+            cs
+        })
+        .collect();
 
     for df in iter {
-        acc_df.vstack_mut_unchecked(&df);
+        if df.width() == 0 {
+            continue;
+        }
+
+        if df.width() != width {
+            // Cold path: just reconstruct the dataframe so you can give a nice error message.
+            let fst_full_schema_df =
+                DataFrame::new(columns.iter_mut().map(|c| c.pop().unwrap()).collect()).unwrap();
+            return Err(width_mismatch(&df, &fst_full_schema_df));
+        }
+
+        // Empty dataframes get skipped but we still want to check the names and datatypes if
+        // requested.
+        if df.height() == 0 {
+            if check_names || check_dtypes {
+                for (new_c, old_c) in df.get_columns().iter().zip(columns.iter().map(|cs| &cs[0])) {
+                    if check_names && old_c.name() != new_c.name() {
+                        return Err(name_mismatch(old_c.name(), new_c.name()));
+                    }
+                    if check_dtypes && old_c.dtype() != new_c.dtype() {
+                        return Err(dtype_mismatch(old_c.name(), old_c.dtype(), new_c.dtype()));
+                    }
+                }
+            }
+
+            continue;
+        }
+
+        chunk_amount_hints
+            .iter_mut()
+            .zip(df.get_columns())
+            .for_each(|(chunk_amount_hint, column)| {
+                *chunk_amount_hint += column
+                    .lazy_as_materialized_series()
+                    .map_or(1, |s| s.n_chunks())
+            });
+
+        columns
+            .iter_mut()
+            .zip(df.take_columns())
+            .for_each(|(into, from)| into.push(from));
     }
-    acc_df
+
+    let f = |(column, chunk_amount_hint): (Vec<Column>, usize)| {
+        let mut iter = column.into_iter();
+        let fst = iter.next().unwrap();
+
+        // @NOTE:
+        // Yeah... objects and categoricals are very annoying because they require merging of the
+        // datatypes. For now, just fallback to the dumb append loop.
+        if fst.dtype().contains_categoricals() || fst.dtype().contains_objects() {
+            let mut fst = fst;
+            for c in iter {
+                fst.append(&c)?;
+            }
+            return Ok(fst);
+        }
+
+        let mut chunks = Vec::with_capacity(chunk_amount_hint);
+
+        let name = fst.name().clone();
+        let dtype = fst.dtype().clone();
+        let mut flags = fst.get_flags();
+
+        let mut length = fst.len();
+        let mut null_count = fst.null_count();
+
+        let (has_nulls_at_start, mut lst_av) = if flags.is_sorted_any() {
+            (
+                fst.get(0).unwrap().is_null(),
+                fst.get(length - 1).unwrap().into_static(),
+            )
+        } else {
+            (false, AnyValue::Null)
+        };
+
+        chunks.extend(fst.take_materialized_series().into_chunks());
+
+        for c in iter {
+            if check_names && name != c.name() {
+                return Err(name_mismatch(name.as_str(), c.name()));
+            }
+            if check_dtypes && &dtype != c.dtype() {
+                return Err(dtype_mismatch(name.as_str(), &dtype, c.dtype()));
+            }
+
+            let c_len = c.len();
+            let c_null_count = c.null_count();
+            length += c_len;
+            null_count += c_null_count;
+
+            let c_flags = c.get_flags();
+
+            let c_can_fast_explode_list = c_flags & StatisticsFlags::CAN_FAST_EXPLODE_LIST;
+            flags &= !(c_can_fast_explode_list ^ StatisticsFlags::CAN_FAST_EXPLODE_LIST);
+
+            let is_sorted = flags.is_sorted();
+            let c_is_sorted = c_flags.is_sorted();
+
+            flags.set_sorted(IsSorted::Not);
+
+            // Preserve the sorted flag if possible.
+            use DataType as D;
+            if !matches!(is_sorted, IsSorted::Not)
+                && is_sorted == c_is_sorted
+                && !matches!(&dtype, D::Struct(_) | D::List(_) | D::Array(_, _))
+            {
+                let fst_av = c.get(0).unwrap();
+
+                let is_still_sorted = match (&lst_av, &fst_av) {
+                    (AnyValue::Null, AnyValue::Null) => {
+                        null_count == c_len || null_count - c_null_count == length - c_len
+                    },
+                    (AnyValue::Null, _) => null_count - c_null_count == 0,
+                    (_, AnyValue::Null) => null_count == c_null_count,
+                    (_, _) => {
+                        let mut res = true;
+
+                        if null_count > 0 {
+                            // SAFETY: We know that self has at least one element
+                            let are_nulls_first = has_nulls_at_start;
+                            let are_nulls_last = c.get(c_len - 1).unwrap().is_null();
+
+                            res &= are_nulls_first != are_nulls_last;
+                        }
+
+                        res & match is_sorted {
+                            IsSorted::Ascending => lst_av <= fst_av,
+                            IsSorted::Descending => lst_av >= fst_av,
+                            IsSorted::Not => unreachable!(),
+                        }
+                    },
+                };
+
+                if is_still_sorted {
+                    flags.set_sorted(is_sorted);
+                    lst_av = c.get(c.len() - 1).unwrap().into_static();
+                }
+            }
+
+            chunks.extend(c.take_materialized_series().into_chunks());
+        }
+
+        // @TODO: We know the length and null count. This will recalculate these. Maybe, we can
+        // pass these somehow.
+        // SAFETY: Either we checked that all Series have the same dtype or it is an invariant of
+        // this function.
+        let series = unsafe { Series::from_chunks_and_dtype_unchecked(name, chunks, &dtype) };
+        Ok(Column::from(series))
+    };
+
+    let columns = if parallel {
+        POOL.install(|| {
+            columns
+                .into_par_iter()
+                .zip(chunk_amount_hints)
+                .map(f)
+                .collect::<PolarsResult<Vec<_>>>()
+        })
+    } else {
+        columns
+            .into_iter()
+            .zip(chunk_amount_hints)
+            .map(f)
+            .collect::<PolarsResult<Vec<_>>>()
+    }?;
+
+    let height = columns[0].len();
+    // SAFETY: We only took whole columns from valid dataframes.
+    let df = unsafe { DataFrame::new_no_checks(height, columns) };
+    Ok(df)
 }
 
 /// This takes ownership of the DataFrame so that drop is called earlier.
-/// # Panics
-/// Panics if `dfs` is empty.
 pub fn accumulate_dataframes_vertical<I>(dfs: I) -> PolarsResult<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
 {
-    let mut iter = dfs.into_iter();
-    let additional = iter.size_hint().0;
-    let mut acc_df = iter.next().unwrap();
-    acc_df.reserve_chunks(additional);
-    for df in iter {
-        acc_df.vstack_mut(&df)?;
-    }
-
-    Ok(acc_df)
+    unsafe { accumulate_dataframes_vertical_unchecked_impl(dfs, true, true, true) }
 }
 
 /// Concat the DataFrames to a single DataFrame.

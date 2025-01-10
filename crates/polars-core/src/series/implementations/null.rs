@@ -306,6 +306,43 @@ impl SeriesTrait for NullChunked {
         self.clone().into_series()
     }
 
+    unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()> {
+        let estimated_num_chunks = self.n_chunks() * dfs.len();
+        self.chunks.reserve(estimated_num_chunks);
+
+        for df in dfs {
+            if df.width() == 0 {
+                continue;
+            }
+
+            let column = &df.get_columns()[i];
+
+            if check_names {
+                polars_ensure!(
+                    self.name() == column.name(),
+                    ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",
+                    self.name(), column.name(),
+                );
+            }
+
+            if check_dtypes {
+                polars_ensure!(column.dtype() == &DataType::Null, ComputeError: "expected null dtype");
+            }
+
+            // we don't create a new null array to keep probability of aligned chunks higher
+            self.chunks.extend(column.as_materialized_series().chunks().iter().cloned());
+            self.length += column.len() as IdxSize;
+        }
+
+        Ok(())
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
         // we don't create a new null array to keep probability of aligned chunks higher

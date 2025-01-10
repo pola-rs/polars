@@ -119,6 +119,17 @@ where
         (a.into_series(), b.into_series())
     }
 
+    unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()> {
+        self.0
+            .append_gather_unchecked(dfs, i, check_names, check_dtypes)
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         if self.dtype() != other.dtype() {
             polars_bail!(append);
@@ -177,7 +188,7 @@ where
     }
 
     fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        ObjectChunked::get_any_value(&self.0, index)
+        ObjectChunked::try_get_any_value(&self.0, index)
     }
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
         ObjectChunked::get_any_value_unchecked(&self.0, index)

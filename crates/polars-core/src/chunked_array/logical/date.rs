@@ -20,7 +20,7 @@ impl LogicalType for DateChunked {
     }
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        self.0.get_any_value(i).map(|av| av.as_date())
+        self.0.try_get_any_value(i).map(|av| av.as_date())
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {

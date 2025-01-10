@@ -40,6 +40,10 @@ impl CategoricalChunked {
         Field::new(name.clone(), self.dtype().clone())
     }
 
+    pub fn logical_mut(&mut self) -> &mut Logical<CategoricalType, UInt32Type> {
+        &mut self.physical
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
@@ -347,8 +351,8 @@ impl LogicalType for CategoricalChunked {
         match self.physical.0.get_unchecked(i) {
             Some(i) => match self.dtype() {
                 DataType::Enum(_, _) => AnyValue::Enum(i, self.get_rev_map(), SyncPtr::new_null()),
-                DataType::Categorical(_, _) => {
-                    AnyValue::Categorical(i, self.get_rev_map(), SyncPtr::new_null())
+                DataType::Categorical(_, ord) => {
+                    AnyValue::Categorical(i, self.get_rev_map(), SyncPtr::new_null(), *ord)
                 },
                 _ => unimplemented!(),
             },
@@ -553,7 +557,7 @@ mod test {
         );
         assert!(matches!(
             s.get(0)?,
-            AnyValue::Categorical(0, RevMapping::Local(_, _), _)
+            AnyValue::Categorical(0, RevMapping::Local(_, _), _, _)
         ));
 
         let groups = s.group_tuples(false, true);

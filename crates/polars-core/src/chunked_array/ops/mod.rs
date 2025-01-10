@@ -2,6 +2,7 @@
 use arrow::offset::OffsetsBuffer;
 
 use crate::prelude::*;
+use crate::series::implementations::null::NullChunked;
 
 pub(crate) mod aggregate;
 pub(crate) mod any_value;
@@ -67,7 +68,25 @@ pub(crate) trait ToBitRepr {
     fn to_bit_repr(&self) -> BitRepr;
 }
 
-pub trait ChunkAnyValue {
+#[allow(private_bounds)]
+trait HasLength {
+    fn _has_length_get_len(&self) -> usize;
+}
+
+impl<T: PolarsDataType> HasLength for ChunkedArray<T> {
+    fn _has_length_get_len(&self) -> usize {
+        ChunkedArray::len(self)
+    }
+}
+
+impl HasLength for NullChunked {
+    fn _has_length_get_len(&self) -> usize {
+        NullChunked::len(self)
+    }
+}
+
+#[allow(private_bounds)]
+pub trait ChunkAnyValue: HasLength {
     /// Get a single value. Beware this is slow.
     /// If you need to use this slightly performant, cast Categorical to UInt32
     ///
@@ -75,8 +94,43 @@ pub trait ChunkAnyValue {
     /// Does not do any bounds checking.
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue;
 
+    /// Get a single value as as static. Beware this is slow.
+    ///
+    /// # Safety
+    /// Does not do any bounds checking.
+    unsafe fn get_any_value_static_unchecked(&self, index: usize) -> AnyValue<'static> {
+        unsafe { self.get_any_value_unchecked(index) }.into_static()
+    }
+
     /// Get a single value. Beware this is slow.
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue>;
+    #[inline(always)]
+    fn try_get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
+        self.get_any_value(index)
+            .ok_or_else(|| polars_err!(oob = index, self._has_length_get_len()))
+    }
+
+    /// Get a single value. Beware this is slow.
+    #[inline(always)]
+    fn try_get_any_value_static(&self, index: usize) -> PolarsResult<AnyValue<'static>> {
+        self.get_any_value_static(index)
+            .ok_or_else(|| polars_err!(oob = index, self._has_length_get_len()))
+    }
+
+    /// Get a single value. Beware this is slow.
+    fn get_any_value(&self, index: usize) -> Option<AnyValue> {
+        if index >= self._has_length_get_len() {
+            return None;
+        }
+
+        // SAFETY: We just did the bounds check
+        Some(unsafe { self.get_any_value_unchecked(index) })
+    }
+
+    /// Get a single value. Beware this is slow.
+    #[inline(always)]
+    fn get_any_value_static(&self, index: usize) -> Option<AnyValue<'static>> {
+        self.get_any_value(index).map(AnyValue::into_static)
+    }
 }
 
 /// Explode/flatten a List or String Series

@@ -160,6 +160,18 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         (a, b)
     }
 
+    unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()> {
+        unsafe { self.0
+            .logical_mut()
+            .append_gather_unchecked(dfs, i, check_names, check_dtypes) }
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.categorical().unwrap())

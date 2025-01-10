@@ -74,6 +74,8 @@ impl Column {
         Self::Scalar(ScalarColumn::new(name, scalar, length))
     }
 
+
+
     // # Materialize
     /// Get a reference to a [`Series`] for this [`Column`]
     ///
@@ -128,6 +130,12 @@ impl Column {
             Column::Series(s) => s.take(),
             Column::Partitioned(s) => s.take_materialized_series(),
             Column::Scalar(s) => s.take_materialized_series(),
+        }
+    }
+    pub fn lazy_as_materialized_series(&self) -> Option<&Series> {
+        match self {
+            Column::Series(s) => Some(s),
+            Column::Partitioned(_) | Column::Scalar(_) => None,
         }
     }
 
@@ -897,6 +905,18 @@ impl Column {
         // @scalar-opt?
         self.as_materialized_series()
             .vec_hash_combine(build_hasher, hashes)
+    }
+
+    pub unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()> {
+        // @scalar-opt
+        let slf = self.into_materialized_series()._get_inner_mut();
+        unsafe { slf.append_gather_unchecked(dfs, i, check_names, check_dtypes) }
     }
 
     pub fn append(&mut self, other: &Column) -> PolarsResult<&mut Self> {

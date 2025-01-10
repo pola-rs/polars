@@ -91,6 +91,16 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         (a.into_series(), b.into_series())
     }
 
+    unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()> {
+        self.0.append_gather_unchecked(dfs, i, check_names, check_dtypes)
+    }
+
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         // todo! add object

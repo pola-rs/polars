@@ -18,7 +18,7 @@ impl LogicalType for DatetimeChunked {
 
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
         self.0
-            .get_any_value(i)
+            .try_get_any_value(i)
             .map(|av| av.as_datetime(self.time_unit(), self.time_zone().as_ref()))
     }
 

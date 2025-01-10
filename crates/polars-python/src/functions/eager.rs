@@ -1,5 +1,5 @@
 use polars::functions;
-use polars_core::prelude::*;
+use polars_core::utils::accumulate_dataframes_vertical;
 use pyo3::prelude::*;
 
 use crate::conversion::{get_df, get_series};
@@ -7,44 +7,20 @@ use crate::error::PyPolarsErr;
 use crate::{PyDataFrame, PySeries};
 
 #[pyfunction]
-pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
-    use polars_core::error::PolarsResult;
-    use polars_core::utils::rayon::prelude::*;
-
+pub fn concat_df(dfs: &Bound<'_, PyAny>, _py: Python) -> PyResult<PyDataFrame> {
     let mut iter = dfs.try_iter()?;
     let first = iter.next().unwrap()?;
 
     let first_rdf = get_df(&first)?;
-    let identity_df = first_rdf.clear();
 
-    let mut rdfs: Vec<PolarsResult<DataFrame>> = vec![Ok(first_rdf)];
-
+    let mut rdfs = vec![first_rdf];
     for item in iter {
-        let rdf = get_df(&item?)?;
-        rdfs.push(Ok(rdf));
+        rdfs.push(get_df(&item?)?);
     }
-
-    let identity = || Ok(identity_df.clone());
-
-    let df = py
-        .allow_threads(|| {
-            polars_core::POOL.install(|| {
-                rdfs.into_par_iter()
-                    .fold(identity, |acc: PolarsResult<DataFrame>, df| {
-                        let mut acc = acc?;
-                        acc.vstack_mut(&df?)?;
-                        Ok(acc)
-                    })
-                    .reduce(identity, |acc, df| {
-                        let mut acc = acc?;
-                        acc.vstack_mut(&df?)?;
-                        Ok(acc)
-                    })
-            })
-        })
-        .map_err(PyPolarsErr::from)?;
-
-    Ok(df.into())
+    accumulate_dataframes_vertical(rdfs)
+        .map(Into::into)
+        .map_err(PyPolarsErr::from)
+        .map_err(PyErr::from)
 }
 
 #[pyfunction]

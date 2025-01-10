@@ -59,7 +59,7 @@ impl LogicalType for TimeChunked {
 
     #[cfg(feature = "dtype-time")]
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        self.0.get_any_value(i).map(|av| av.as_time())
+        self.0.try_get_any_value(i).map(|av| av.as_time())
     }
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         self.0.get_any_value_unchecked(i).as_time()

@@ -317,7 +317,7 @@ impl From<AnyValue<'_>> for LiteralValue {
             AnyValue::List(l) => Self::Series(SpecialEq::new(l)),
             AnyValue::StringOwned(o) => Self::String(o),
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
+            AnyValue::Categorical(c, rev_mapping, arr, _) | AnyValue::Enum(c, rev_mapping, arr) => {
                 if arr.is_null() {
                     Self::String(PlSmallStr::from_str(rev_mapping.get(c)))
                 } else {

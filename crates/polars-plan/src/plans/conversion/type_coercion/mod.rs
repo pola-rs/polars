@@ -449,7 +449,7 @@ fn try_inline_literal_cast(
                 #[cfg(feature = "dtype-duration")]
                 (AnyValue::Duration(_, _), _) => return Ok(None),
                 #[cfg(feature = "dtype-categorical")]
-                (AnyValue::Categorical(_, _, _), _) | (_, DataType::Categorical(_, _)) => {
+                (AnyValue::Categorical(_, _, _, _), _) | (_, DataType::Categorical(_, _)) => {
                     return Ok(None)
                 },
                 #[cfg(feature = "dtype-categorical")]

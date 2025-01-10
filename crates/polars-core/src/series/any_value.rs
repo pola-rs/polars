@@ -442,8 +442,8 @@ fn any_values_to_categorical(
             AnyValue::Enum(s, rev, _) => builder.append_value(rev.get(*s)),
             AnyValue::EnumOwned(s, rev, _) => builder.append_value(rev.get(*s)),
 
-            AnyValue::Categorical(s, rev, _) => builder.append_value(rev.get(*s)),
-            AnyValue::CategoricalOwned(s, rev, _) => builder.append_value(rev.get(*s)),
+            AnyValue::Categorical(s, rev, _, _) => builder.append_value(rev.get(*s)),
+            AnyValue::CategoricalOwned(s, rev, _, _) => builder.append_value(rev.get(*s)),
 
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
             AnyValue::Null => builder.append_null(),
@@ -490,8 +490,8 @@ fn any_values_to_enum(values: &[AnyValue], dtype: &DataType, strict: bool) -> Po
             AnyValue::Enum(s, rev, _) => builder.append_enum(*s, rev)?,
             AnyValue::EnumOwned(s, rev, _) => builder.append_enum(*s, rev)?,
 
-            AnyValue::Categorical(s, rev, _) => builder.append_str(rev.get(*s))?,
-            AnyValue::CategoricalOwned(s, rev, _) => builder.append_str(rev.get(*s))?,
+            AnyValue::Categorical(s, rev, _, _) => builder.append_str(rev.get(*s))?,
+            AnyValue::CategoricalOwned(s, rev, _, _) => builder.append_str(rev.get(*s))?,
 
             AnyValue::Binary(_) | AnyValue::BinaryOwned(_) if !strict => builder.append_null(),
             AnyValue::Null => builder.append_null(),

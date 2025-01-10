@@ -505,6 +505,120 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
 impl<T> ChunkedArray<T>
 where
+    T: PolarsDataType<IsLogical = FalseT>,
+    Self: ChunkAnyValue,
+{
+    pub unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()> {
+        let estimated_num_chunks = self.chunks.len().max(1) * dfs.len();
+        self.chunks.reserve(estimated_num_chunks);
+
+        let mut flags = self.flags.get_mut();
+
+        for other_df in dfs {
+            if other_df.width() == 0 {
+                continue;
+            }
+
+            let ca: &Self = other_df.get_columns()[i]
+                .as_materialized_series()
+                .as_ref()
+                .as_ref();
+
+            if check_names {
+                polars_ensure!(
+                    self.name() == ca.name(),
+                    ShapeMismatch: "unable to vstack, column names don't match: {:?} and {:?}",
+                    self.name(), ca.name(),
+                );
+            }
+
+            if check_dtypes {
+                polars_ensure!(self.dtype() == ca.dtype(), append);
+            }
+
+            if ca.is_empty() {
+                continue;
+            }
+
+            let boundary_idx = self.length;
+            self.length += ca.len();
+            self.null_count += ca.null_count();
+            self.chunks.extend(ca.chunks.iter().cloned());
+
+            if self.len() == ca.len() {
+                flags = ca.get_flags()
+                    & (StatisticsFlags::CAN_FAST_EXPLODE_LIST | StatisticsFlags::IS_SORTED_ANY);
+            } else if flags.is_sorted_any() || flags.can_fast_explode_list() {
+                let ca_flags = ca.get_flags();
+
+                let ca_can_fast_explode_list = ca_flags & StatisticsFlags::CAN_FAST_EXPLODE_LIST;
+                flags &= !(ca_can_fast_explode_list ^ StatisticsFlags::CAN_FAST_EXPLODE_LIST);
+
+                let is_sorted = flags.is_sorted();
+                let ca_is_sorted = ca_flags.is_sorted();
+
+                flags.set_sorted(IsSorted::Not);
+
+                // Preserve the sorted flag if possible.
+                if !matches!(is_sorted, IsSorted::Not) && is_sorted == ca_is_sorted {
+                    let lst = self.get_any_value_static_unchecked(boundary_idx - 1);
+                    let fst = self.get_any_value_static_unchecked(boundary_idx);
+
+                    let is_still_sorted = match (&lst, &fst) {
+                        (AnyValue::Null, AnyValue::Null) => {
+                            ca.null_count() == ca.len()
+                                || self.null_count() - ca.null_count() == self.len() - ca.len()
+                        },
+                        (AnyValue::Null, _) => self.null_count() - ca.null_count() == 0,
+                        (_, AnyValue::Null) => self.null_count() == ca.null_count(),
+                        (_, _) => {
+                            let mut res = true;
+
+                            if self.null_count() > 0 {
+                                // SAFETY: We know that self has at least one element
+                                let are_nulls_first =
+                                    unsafe { self.get_any_value_unchecked(0) }.is_null();
+                                let are_nulls_last =
+                                    unsafe { self.get_any_value_unchecked(self.len() - 1) }
+                                        .is_null();
+
+                                res &= are_nulls_first != are_nulls_last;
+                            }
+
+                            // @NOTE: This only works when the logical type and the physical type
+                            // have the same ordering. This is not the case for
+                            // Categorical(ordering = 'lexical') so that needs a special case.
+                            res &= match is_sorted {
+                                IsSorted::Ascending => lst <= fst,
+                                IsSorted::Descending => lst >= fst,
+                                IsSorted::Not => unreachable!(),
+                            };
+
+                            res
+                        },
+                    };
+
+                    if is_still_sorted {
+                        flags.set_sorted(is_sorted);
+                    }
+                }
+            }
+        }
+
+        self.flags = StatisticsFlagsIM::new(flags);
+
+        Ok(())
+    }
+}
+
+impl<T> ChunkedArray<T>
+where
     T: PolarsDataType,
 {
     /// Get a single value from this [`ChunkedArray`]. If the return values is `None` this

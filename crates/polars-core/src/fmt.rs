@@ -1179,8 +1179,8 @@ impl Display for AnyValue<'_> {
                 write!(f, "{nt}")
             },
             #[cfg(feature = "dtype-categorical")]
-            AnyValue::Categorical(_, _, _)
-            | AnyValue::CategoricalOwned(_, _, _)
+            AnyValue::Categorical(_, _, _, _)
+            | AnyValue::CategoricalOwned(_, _, _, _)
             | AnyValue::Enum(_, _, _)
             | AnyValue::EnumOwned(_, _, _) => {
                 let s = self.get_str().unwrap();

@@ -81,10 +81,10 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
             }
         },
         #[cfg(feature = "dtype-categorical")]
-        DataType::Categorical(rev_map, _) => {
+        DataType::Categorical(rev_map, ord) => {
             let arr = &*(arr as *const dyn Array as *const UInt32Array);
             let v = arr.value_unchecked(idx);
-            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null())
+            AnyValue::Categorical(v, rev_map.as_ref().unwrap().as_ref(), SyncPtr::new_null(), *ord)
         },
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(rev_map, _) => {
@@ -163,11 +163,12 @@ impl<'a> AnyValue<'a> {
                                 if arr.is_valid_unchecked(idx) {
                                     let v = arr.value_unchecked(idx);
                                     match fld.dtype() {
-                                        DataType::Categorical(Some(rev_map), _) => {
+                                        DataType::Categorical(Some(rev_map), ord) => {
                                             AnyValue::Categorical(
                                                 v,
                                                 rev_map,
                                                 SyncPtr::from_const(values),
+                                                *ord,
                                             )
                                         },
                                         DataType::Enum(Some(rev_map), _) => {
@@ -210,17 +211,6 @@ macro_rules! get_any_value_unchecked {
     }};
 }
 
-macro_rules! get_any_value {
-    ($self:ident, $index:expr) => {{
-        if $index >= $self.len() {
-            polars_bail!(oob = $index, $self.len());
-        }
-        // SAFETY:
-        // bounds are checked
-        Ok(unsafe { $self.get_any_value_unchecked($index) })
-    }};
-}
-
 impl<T> ChunkAnyValue for ChunkedArray<T>
 where
     T: PolarsNumericType,
@@ -229,20 +219,12 @@ where
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)
     }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
-    }
 }
 
 impl ChunkAnyValue for BooleanChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)
-    }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
     }
 }
 
@@ -251,20 +233,12 @@ impl ChunkAnyValue for StringChunked {
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)
     }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
-    }
 }
 
 impl ChunkAnyValue for BinaryChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)
-    }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
     }
 }
 
@@ -273,20 +247,12 @@ impl ChunkAnyValue for BinaryOffsetChunked {
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)
     }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
-    }
 }
 
 impl ChunkAnyValue for ListChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)
-    }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
     }
 }
 
@@ -295,10 +261,6 @@ impl ChunkAnyValue for ArrayChunked {
     #[inline]
     unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
         get_any_value_unchecked!(self, index)
-    }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
     }
 }
 
@@ -311,31 +273,18 @@ impl<T: PolarsObject> ChunkAnyValue for ObjectChunked<T> {
             Some(v) => AnyValue::Object(v),
         }
     }
-
-    fn get_any_value(&self, index: usize) -> PolarsResult<AnyValue> {
-        get_any_value!(self, index)
-    }
 }
 
 impl ChunkAnyValue for NullChunked {
     #[inline]
-    unsafe fn get_any_value_unchecked(&self, _index: usize) -> AnyValue {
+    unsafe fn get_any_value_unchecked(&self, index: usize) -> AnyValue {
+        debug_assert!(index < NullChunked::len(self));
         AnyValue::Null
-    }
-
-    fn get_any_value(&self, _index: usize) -> PolarsResult<AnyValue> {
-        Ok(AnyValue::Null)
     }
 }
 
 #[cfg(feature = "dtype-struct")]
 impl ChunkAnyValue for StructChunked {
-    /// Gets AnyValue from LogicalType
-    fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
-        polars_ensure!(i < self.len(), oob = i, self.len());
-        unsafe { Ok(self.get_any_value_unchecked(i)) }
-    }
-
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         let (chunk_idx, idx) = index_to_chunked_index(self.chunks.iter().map(|c| c.len()), i);
         if let DataType::Struct(flds) = self.dtype() {

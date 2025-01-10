@@ -97,8 +97,36 @@ where
     pub fn physical(&self) -> &ChunkedArray<T> {
         &self.0
     }
+
     pub fn field(&self) -> Field {
         let name = self.0.ref_field().name();
         Field::new(name.clone(), LogicalType::dtype(self).clone())
+    }
+}
+
+impl<K: PolarsDataType, T: PolarsDataType<IsLogical = FalseT>> Logical<K, T>
+where
+    Self: LogicalType,
+    ChunkedArray<T>: ChunkAnyValue,
+{
+    pub unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()> {
+        if check_dtypes {
+            for df in dfs.iter() {
+                if df.width() == 0 {
+                    continue;
+                }
+
+                let column = &df.get_columns()[i];
+                polars_ensure!(self.dtype() == column.dtype(), append);
+            }
+        }
+
+        unsafe { self.0.append_gather_unchecked(dfs, i, check_names, false) }
     }
 }

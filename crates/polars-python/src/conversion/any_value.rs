@@ -75,7 +75,7 @@ pub(crate) fn any_value_into_py_object<'py>(
         AnyValue::Boolean(v) => v.into_bound_py_any(py),
         AnyValue::String(v) => v.into_bound_py_any(py),
         AnyValue::StringOwned(v) => v.into_bound_py_any(py),
-        AnyValue::Categorical(idx, rev, arr) | AnyValue::Enum(idx, rev, arr) => {
+        AnyValue::Categorical(idx, rev, arr, _) | AnyValue::Enum(idx, rev, arr) => {
             let s = if arr.is_null() {
                 rev.get(idx)
             } else {
@@ -83,7 +83,7 @@ pub(crate) fn any_value_into_py_object<'py>(
             };
             s.into_bound_py_any(py)
         },
-        AnyValue::CategoricalOwned(idx, rev, arr) | AnyValue::EnumOwned(idx, rev, arr) => {
+        AnyValue::CategoricalOwned(idx, rev, arr, _) | AnyValue::EnumOwned(idx, rev, arr) => {
             let s = if arr.is_null() {
                 rev.get(idx)
             } else {

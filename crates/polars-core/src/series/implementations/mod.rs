@@ -51,6 +51,18 @@ impl<T: PolarsDataType> Deref for SeriesWrap<ChunkedArray<T>> {
     }
 }
 
+impl<T: PolarsDataType> AsRef<ChunkedArray<T>> for SeriesWrap<ChunkedArray<T>> {
+    fn as_ref(&self) -> &ChunkedArray<T> {
+        &self.0
+    }
+}
+
+impl<K: PolarsDataType, T: PolarsDataType> AsRef<ChunkedArray<T>> for SeriesWrap<Logical<K, T>> {
+    fn as_ref(&self) -> &ChunkedArray<T> {
+        &self.0 .0
+    }
+}
+
 unsafe impl<T: PolarsDataType + 'static> IntoSeries for ChunkedArray<T>
 where
     SeriesWrap<ChunkedArray<T>>: SeriesTrait,
@@ -246,6 +258,19 @@ macro_rules! impl_dyn_series {
             fn split_at(&self, offset: i64) -> (Series, Series) {
                 let (a, b) = self.0.split_at(offset);
                 (a.into_series(), b.into_series())
+            }
+
+            unsafe fn append_gather_unchecked(
+                &mut self,
+                dfs: &[DataFrame],
+                i: usize,
+                check_names: bool,
+                check_dtypes: bool,
+            ) -> PolarsResult<()> {
+                unsafe {
+                    self.0
+                        .append_gather_unchecked(dfs, i, check_names, check_dtypes)
+                }
             }
 
             fn append(&mut self, other: &Series) -> PolarsResult<()> {

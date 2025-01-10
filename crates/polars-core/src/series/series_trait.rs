@@ -255,6 +255,14 @@ pub trait SeriesTrait:
     /// end of the array
     fn split_at(&self, _offset: i64) -> (Series, Series);
 
+    unsafe fn append_gather_unchecked(
+        &mut self,
+        dfs: &[DataFrame],
+        i: usize,
+        check_names: bool,
+        check_dtypes: bool,
+    ) -> PolarsResult<()>;
+
     #[doc(hidden)]
     fn append(&mut self, _other: &Series) -> PolarsResult<()>;
 
