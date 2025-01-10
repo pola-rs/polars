@@ -4,6 +4,7 @@ import warnings
 from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
@@ -16,7 +17,6 @@ from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
 
@@ -857,6 +857,37 @@ def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
             ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
             ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
         ]
+
+
+@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+def test_excel_write_to_file_object(
+    engine: ExcelSpreadsheetEngine, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": ["aaa", "bbb", "ccc"], "y": [123, 456, 789]})
+
+    # write to bytesio
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data")
+    assert_frame_equal(df, pl.read_excel(xls, engine=engine))
+
+    # write to file path
+    path = Path(tmp_path).joinpath("test_write_path.xlsx")
+    df.write_excel(path, worksheet="data")
+    assert_frame_equal(df, pl.read_excel(xls, engine=engine))
+
+    # write to file path (as string)
+    path = Path(tmp_path).joinpath("test_write_path_str.xlsx")
+    df.write_excel(str(path), worksheet="data")
+    assert_frame_equal(df, pl.read_excel(xls, engine=engine))
+
+    # write to file object
+    path = Path(tmp_path).joinpath("test_write_file_object.xlsx")
+    with path.open("wb") as tgt:
+        df.write_excel(tgt, worksheet="data")
+    with path.open("rb") as src:
+        assert_frame_equal(df, pl.read_excel(src, engine=engine))
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
