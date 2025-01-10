@@ -88,6 +88,9 @@ impl DataFrame {
             })
             .collect::<PolarsResult<Vec<DataFrame>>>()?;
 
+        if dfs.is_empty() {
+            return Ok(DataFrame::empty());
+        }
         let mut df = accumulate_dataframes_vertical_unchecked(dfs);
 
         // Set custom metadata (fallible)
