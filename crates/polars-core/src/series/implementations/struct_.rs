@@ -257,6 +257,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         &self.0
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         Ok(self.0.sort_with(options).into_series())
     }
