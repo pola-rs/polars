@@ -1090,7 +1090,12 @@ impl Column {
     pub fn rechunk(&self) -> Column {
         match self {
             Column::Series(s) => s.rechunk().into(),
-            Column::Partitioned(_) => self.clone(),
+            Column::Partitioned(s) => {
+                if let Some(s) = s.lazy_as_materialized_series() {
+                    debug_assert_eq!(s.n_chunks(), 1)
+                }
+                self.clone()
+            },
             Column::Scalar(s) => {
                 if s.lazy_as_materialized_series()
                     .filter(|x| x.n_chunks() > 1)
@@ -1714,7 +1719,12 @@ impl Column {
         match self {
             Column::Series(s) => s.n_chunks(),
             Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
-            Column::Partitioned(_) => 1,
+            Column::Partitioned(s) => {
+                if let Some(s) = s.lazy_as_materialized_series() {
+                    debug_assert_eq!(s.n_chunks(), 1)
+                }
+                1
+            },
         }
     }
 
