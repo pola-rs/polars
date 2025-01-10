@@ -563,12 +563,11 @@ pub trait SeriesTrait:
         invalid_operation_panic!(get_object_chunked_unchecked, self)
     }
 
-    /// Get a hold of the [`ChunkedArray`], [`Logical`] or
-    /// [`NullChunked`][super::implementations::null::NullChunked] as an `Any` trait reference.
+    /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait
+    /// reference.
     fn as_any(&self) -> &dyn Any;
 
-    /// Get a hold of the [`ChunkedArray`], [`Logical`] or
-    /// [`NullChunked`][super::implementations::null::NullChunked] as an `Any` trait mutable
+    /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait mutable
     /// reference.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 
