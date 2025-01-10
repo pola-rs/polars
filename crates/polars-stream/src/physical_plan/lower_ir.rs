@@ -16,7 +16,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
     build_select_stream, is_elementwise_rec_cached, lower_exprs, ExprCache,
 };
-use crate::physical_plan::lower_group_by::{build_group_by_stream};
+use crate::physical_plan::lower_group_by::build_group_by_stream;
 
 /// Creates a new PhysStream which outputs a slice of the input stream.
 fn build_slice_stream(

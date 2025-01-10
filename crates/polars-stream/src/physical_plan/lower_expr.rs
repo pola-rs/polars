@@ -207,12 +207,12 @@ pub fn is_input_independent_rec(
     ret
 }
 
-pub fn is_input_independent(expr_key: ExprNodeKey, expr_arena: &Arena<AExpr>, cache: &mut ExprCache) -> bool {
-    is_input_independent_rec(
-        expr_key,
-        expr_arena,
-        &mut cache.is_input_independent,
-    )
+pub fn is_input_independent(
+    expr_key: ExprNodeKey,
+    expr_arena: &Arena<AExpr>,
+    cache: &mut ExprCache,
+) -> bool {
+    is_input_independent_rec(expr_key, expr_arena, &mut cache.is_input_independent)
 }
 
 fn is_input_independent_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
@@ -687,7 +687,10 @@ fn build_select_stream_with_ctx(
     exprs: &[ExprIR],
     ctx: &mut LowerExprContext,
 ) -> PolarsResult<PhysStream> {
-    if exprs.iter().all(|e| is_input_independent_ctx(e.node(), ctx)) {
+    if exprs
+        .iter()
+        .all(|e| is_input_independent_ctx(e.node(), ctx))
+    {
         return Ok(PhysStream::first(build_input_independent_node_with_ctx(
             exprs, ctx,
         )?));
