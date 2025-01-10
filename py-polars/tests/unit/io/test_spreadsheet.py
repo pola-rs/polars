@@ -1030,11 +1030,17 @@ def test_excel_write_multiple_tables() -> None:
 
     # test loading one of the written tables by name
     for engine in ("calamine", "openpyxl"):
-        params = {"table_name": "Frame2", "engine": engine}
-
-        df1 = pl.read_excel(xls, sheet_name="sheet2", **params)
-        df2 = pl.read_excel(xls, **params)
-
+        df1 = pl.read_excel(
+            xls,
+            sheet_name="sheet2",
+            table_name="Frame2",
+            engine=engine,
+        )
+        df2 = pl.read_excel(
+            xls,
+            table_name="Frame2",
+            engine=engine,
+        )
         assert df1.columns == ["colx2", "coly2", "colz2"]
         assert_frame_equal(df1, df2)
 
