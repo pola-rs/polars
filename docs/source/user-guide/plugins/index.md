@@ -284,7 +284,7 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
 
 ### Geo
 
-- [polars-dt](https://github.com/Oreilles/polars-st) Polars ST provides spatial operations on Polars
+- [polars-st](https://github.com/Oreilles/polars-st) Polars ST provides spatial operations on Polars
   DataFrames, Series and Expressions. Just like Shapely and Geopandas.
 - [polars-reverse-geocode](https://github.com/MarcoGorelli/polars-reverse-geocode) Offline reverse
   geocoder for finding the closest city to a given (latitude, longitude) pair.
