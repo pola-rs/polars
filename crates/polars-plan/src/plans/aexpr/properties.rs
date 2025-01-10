@@ -78,9 +78,9 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
                 }
             };
 
-            ae.nodes(stack);
+            ae.inputs_rev(stack);
         })(),
-        _ => ae.nodes(stack),
+        _ => ae.inputs_rev(stack),
     }
 
     true
