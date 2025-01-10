@@ -96,7 +96,6 @@ fn try_lower_elementwise_scalar_agg_expr(
         AExpr::Alias(..) => unreachable!("alias found in physical plan"),
 
         AExpr::Column(c) => {
-            dbg!((c, inside_agg));
             if inside_agg {
                 Some(trans_input_cols[c])
             } else {
@@ -191,9 +190,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                     if inside_agg {
                         return None;
                     }
-                    dbg!(input);
                     // Lower and replace input.
-                    let trans_input = dbg!(lower_rec!(*input, true))?;
+                    let trans_input = lower_rec!(*input, true)?;
                     let mut trans_agg = orig_agg;
                     trans_agg.set_input(trans_input);
                     let trans_agg_node = expr_arena.add(AExpr::Agg(trans_agg));
@@ -243,12 +241,6 @@ fn try_build_streaming_group_by(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
 ) -> Option<PolarsResult<PhysStream>> {
-    for expr in keys {
-        dbg!(format!("orig key expr: {:?}", expr.display(expr_arena)));
-    }
-    for expr in aggs {
-        dbg!(format!("orig agg expr: {:?}", expr.display(expr_arena)));
-    }
     if apply.is_some() || maintain_order {
         return None; // TODO
     }
@@ -321,10 +313,6 @@ fn try_build_streaming_group_by(
     }
     
     let input_schema = &phys_sm[trans_input.node].output_schema;
-    dbg!(&input_schema);
-    for expr in &[trans_keys.clone(), trans_agg_exprs.clone()].concat() {
-        dbg!(format!("intermediate expr: {:?}", expr.display(expr_arena)));
-    }
     let group_by_output_schema = compute_output_schema(input_schema, &[trans_keys.clone(), trans_agg_exprs.clone()].concat(), expr_arena).unwrap();
     let agg_node = phys_sm.insert(PhysNode::new(
         group_by_output_schema,
@@ -335,9 +323,6 @@ fn try_build_streaming_group_by(
         },
     ));
 
-    for expr in &trans_output_exprs {
-        dbg!(format!("expr: {:?}", expr.display(expr_arena)));
-    }
     let post_select = build_select_stream(
         PhysStream::first(agg_node),
         &trans_output_exprs,
