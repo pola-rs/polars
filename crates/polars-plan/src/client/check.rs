@@ -12,6 +12,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
         match plan_node {
             #[cfg(feature = "python")]
             DslPlan::PythonScan { .. } => return ineligible_error("contains Python scan"),
+            DslPlan::GroupBy { apply, .. } => return ineligible_error("contains map groups"),
             DslPlan::Scan {
                 sources, scan_type, ..
             } => {
