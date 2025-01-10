@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
-use polars_error::{polars_ensure, polars_err, PolarsResult};
+use polars_error::{polars_err, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
@@ -14,14 +14,14 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use slotmap::SlotMap;
 
-use super::lower_expr::{is_elementwise_rec_cached, lower_exprs};
+use super::lower_expr::lower_exprs;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_input_independent, is_input_independent_rec,
-    unique_column_name,
+    build_select_stream, compute_output_schema, is_input_independent, unique_column_name,
 };
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
+#[allow(clippy::too_many_arguments)]
 fn build_group_by_fallback(
     input: PhysStream,
     keys: &[ExprIR],
@@ -76,7 +76,6 @@ fn try_lower_elementwise_scalar_agg_expr(
     inside_agg: bool,
     outer_name: Option<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
-    expr_cache: &mut ExprCache,
     agg_exprs: &mut Vec<ExprIR>,
     trans_input_cols: &PlHashMap<PlSmallStr, Node>,
 ) -> Option<Node> {
@@ -88,7 +87,6 @@ fn try_lower_elementwise_scalar_agg_expr(
                 $inside_agg,
                 None,
                 expr_arena,
-                expr_cache,
                 agg_exprs,
                 trans_input_cols,
             )
@@ -232,6 +230,7 @@ fn try_lower_elementwise_scalar_agg_expr(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_build_streaming_group_by(
     input: PhysStream,
     keys: &[ExprIR],
@@ -252,7 +251,7 @@ fn try_build_streaming_group_by(
         return None; // TODO
     }
 
-    if keys.len() == 0 {
+    if keys.is_empty() {
         return Some(Err(
             polars_err!(ComputeError: "at least one key is required in a group_by operation"),
         ));
@@ -270,11 +269,8 @@ fn try_build_streaming_group_by(
     let mut input_columns = PlIndexMap::new();
     for agg in aggs {
         for (node, expr) in (&*expr_arena).iter(agg.node()) {
-            match expr {
-                AExpr::Column(c) => {
-                    input_columns.insert(c.clone(), node);
-                },
-                _ => {},
+            if let AExpr::Column(c) = expr {
+                input_columns.insert(c.clone(), node);
             }
         }
     }
@@ -312,7 +308,6 @@ fn try_build_streaming_group_by(
             false,
             Some(agg.output_name().clone()),
             expr_arena,
-            expr_cache,
             &mut trans_agg_exprs,
             &trans_input_cols,
         )?;
@@ -345,6 +340,7 @@ fn try_build_streaming_group_by(
     Some(post_select)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn build_group_by_stream(
     input: PhysStream,
     keys: &[ExprIR],
