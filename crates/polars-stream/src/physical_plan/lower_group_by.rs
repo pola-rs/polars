@@ -16,7 +16,7 @@ use slotmap::SlotMap;
 
 use super::lower_expr::{is_elementwise_rec_cached, lower_exprs};
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
-use crate::physical_plan::lower_expr::{build_select_stream, compute_output_schema, unique_column_name};
+use crate::physical_plan::lower_expr::{build_select_stream, compute_output_schema, is_input_independent, is_input_independent_rec, unique_column_name};
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 fn build_group_by_fallback(
@@ -70,7 +70,8 @@ fn build_group_by_fallback(
 /// aggregations of elementwise combinations of the input columns / scalar literals.
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
-    is_outer: bool,
+    inside_agg: bool,
+    outer_name: Option<PlSmallStr>,
     expr_arena: &mut Arena<AExpr>,
     expr_cache: &mut ExprCache,
     agg_exprs: &mut Vec<ExprIR>,
@@ -78,10 +79,11 @@ fn try_lower_elementwise_scalar_agg_expr(
 ) -> Option<Node> {
     // Helper macro to simplify recursive calls.
     macro_rules! lower_rec {
-        ($input:expr) => {
+        ($input:expr, $inside_agg:expr) => {
             try_lower_elementwise_scalar_agg_expr(
                 $input,
-                false,
+                $inside_agg,
+                None,
                 expr_arena,
                 expr_cache,
                 agg_exprs,
@@ -89,16 +91,20 @@ fn try_lower_elementwise_scalar_agg_expr(
             )
         };
     }
-    
-    if is_outer && is_elementwise_rec_cached(expr, expr_arena, expr_cache) {
-        // Implicit implode not yet supported.
-        return None;
-    }
 
     match expr_arena.get(expr) {
         AExpr::Alias(..) => unreachable!("alias found in physical plan"),
 
-        AExpr::Column(c) => Some(trans_input_cols[c]),
+        AExpr::Column(c) => {
+            dbg!((c, inside_agg));
+            if inside_agg {
+                Some(trans_input_cols[c])
+            } else {
+                // Implicit implode not yet supported.
+                None
+            }
+        },
+
         AExpr::Literal(lit) => {
             if lit.is_scalar() {
                 Some(expr)
@@ -116,15 +122,15 @@ fn try_lower_elementwise_scalar_agg_expr(
 
         AExpr::Filter { input, by } => {
             let (input, by) = (*input, *by);
-            let input = lower_rec!(input)?;
-            let by = lower_rec!(by)?;
+            let input = lower_rec!(input, inside_agg)?;
+            let by = lower_rec!(by, inside_agg)?;
             Some(expr_arena.add(AExpr::Filter { input, by }))
         },
 
         AExpr::BinaryExpr { left, op, right } => {
             let (left, op, right) = (*left, *op, *right);
-            let left = lower_rec!(left)?;
-            let right = lower_rec!(right)?;
+            let left = lower_rec!(left, inside_agg)?;
+            let right = lower_rec!(right, inside_agg)?;
             Some(expr_arena.add(AExpr::BinaryExpr { left, op, right }))
         },
 
@@ -134,9 +140,9 @@ fn try_lower_elementwise_scalar_agg_expr(
             falsy,
         } => {
             let (predicate, truthy, falsy) = (*predicate, *truthy, *falsy);
-            let predicate = lower_rec!(predicate)?;
-            let truthy = lower_rec!(truthy)?;
-            let falsy = lower_rec!(falsy)?;
+            let predicate = lower_rec!(predicate, inside_agg)?;
+            let truthy = lower_rec!(truthy, inside_agg)?;
+            let falsy = lower_rec!(falsy, inside_agg)?;
             Some(expr_arena.add(AExpr::Ternary {
                 predicate,
                 truthy,
@@ -148,14 +154,11 @@ fn try_lower_elementwise_scalar_agg_expr(
         | node @ AExpr::AnonymousFunction { input, options, .. }
             if options.is_elementwise() =>
         {
-            dbg!("here");
-            dbg!(&options.is_elementwise());
-            dbg!(&node);
             let node = node.clone();
             let input = input.clone();
             let new_inputs = input
                 .into_iter()
-                .map(|i| lower_rec!(i.node()))
+                .map(|i| lower_rec!(i.node(), inside_agg))
                 .collect::<Option<Vec<_>>>()?;
             Some(expr_arena.add(node.replace_inputs(&new_inputs)))
         },
@@ -168,7 +171,7 @@ fn try_lower_elementwise_scalar_agg_expr(
             options,
         } => {
             let (expr, dtype, options) = (*expr, dtype.clone(), *options);
-            let expr = lower_rec!(expr)?;
+            let expr = lower_rec!(expr, inside_agg)?;
             Some(expr_arena.add(AExpr::Cast {
                 expr,
                 dtype,
@@ -185,19 +188,21 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
                 | IRAggExpr::Std(input, ..) => {
-                    if !is_elementwise_rec_cached(*input, expr_arena, expr_cache) {
+                    // Nested aggregates not supported.
+                    if inside_agg {
                         return None;
                     }
-
+                    dbg!(input);
                     // Lower and replace input.
-                    let trans_input = lower_rec!(*input)?;
+                    let trans_input = dbg!(lower_rec!(*input, true))?;
                     let mut trans_agg = orig_agg;
                     trans_agg.set_input(trans_input);
                     let trans_agg_node = expr_arena.add(AExpr::Agg(trans_agg));
 
                     // Add to aggregation expressions and replace with a reference to its output.
-                    let agg_expr = if is_outer {
-                        ExprIR::from_node(trans_agg_node, expr_arena)
+                    
+                    let agg_expr = if let Some(name) = outer_name {
+                        ExprIR::new(trans_agg_node, OutputName::Alias(name))
                     } else {
                         ExprIR::new(trans_agg_node, OutputName::Alias(unique_column_name()))
                     };
@@ -216,8 +221,8 @@ fn try_lower_elementwise_scalar_agg_expr(
             }
         },
         AExpr::Len => {
-            let agg_expr = if is_outer {
-                ExprIR::from_node(expr, expr_arena)
+            let agg_expr = if let Some(name) = outer_name {
+                ExprIR::new(expr, OutputName::Alias(name))
             } else {
                 ExprIR::new(expr, OutputName::Alias(unique_column_name()))
             };
@@ -240,6 +245,12 @@ fn try_build_streaming_group_by(
     phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
     expr_cache: &mut ExprCache,
 ) -> Option<PolarsResult<PhysStream>> {
+    for expr in keys {
+        dbg!(format!("orig key expr: {:?}", expr.display(expr_arena)));
+    }
+    for expr in aggs {
+        dbg!(format!("orig agg expr: {:?}", expr.display(expr_arena)));
+    }
     if apply.is_some() || maintain_order {
         return None; // TODO
     }
@@ -247,6 +258,13 @@ fn try_build_streaming_group_by(
     #[cfg(feature = "dynamic_group_by")]
     if options.dynamic.is_some() || options.rolling.is_some() {
         return None; // TODO
+    }
+    
+    let all_independent = keys.iter().chain(aggs.iter()).all(|expr| 
+        is_input_independent(expr.node(), expr_arena, expr_cache)
+    );
+    if all_independent {
+        return None;
     }
 
     // We must lower the keys together with the input to the aggregations.
@@ -289,7 +307,8 @@ fn try_build_streaming_group_by(
     for agg in aggs {
         let trans_node = try_lower_elementwise_scalar_agg_expr(
             agg.node(),
-            true,
+            false,
+            Some(agg.output_name().clone()),
             expr_arena,
             expr_cache,
             &mut trans_agg_exprs,
@@ -299,6 +318,10 @@ fn try_build_streaming_group_by(
     }
     
     let input_schema = &phys_sm[input.node].output_schema;
+    dbg!(&input_schema);
+    for expr in &[trans_keys.clone(), trans_agg_exprs.clone()].concat() {
+        dbg!(format!("intermediate expr: {:?}", expr.display(expr_arena)));
+    }
     let group_by_output_schema = compute_output_schema(input_schema, &[trans_keys.clone(), trans_agg_exprs.clone()].concat(), expr_arena).unwrap();
     let agg_node = phys_sm.insert(PhysNode::new(
         group_by_output_schema,
