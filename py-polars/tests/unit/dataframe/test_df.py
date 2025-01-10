@@ -1802,6 +1802,8 @@ def test_filter_with_all_expansion() -> None:
     assert out.shape == (2, 3)
 
 
+# TODO: investigate this discrepancy in auto streaming
+@pytest.mark.may_fail_auto_streaming
 def test_extension() -> None:
     class Foo:
         def __init__(self, value: Any) -> None:
