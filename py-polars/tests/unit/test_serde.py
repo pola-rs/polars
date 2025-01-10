@@ -217,3 +217,11 @@ def test_serde_udf() -> None:
     result = pl.LazyFrame.deserialize(io.BytesIO(lf.serialize()))
 
     assert_frame_equal(lf, result)
+
+
+def test_serde_empty_df_lazy_frame() -> None:
+    lf = pl.LazyFrame()
+    f = io.BytesIO()
+    f.write(lf.serialize())
+    f.seek(0)
+    assert pl.LazyFrame.deserialize(f).collect().shape == (0, 0)
