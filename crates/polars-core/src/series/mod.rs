@@ -1030,7 +1030,7 @@ where
     T: 'static + PolarsDataType<IsLogical = FalseT>,
 {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
-        if !self.as_any_mut().is::<T>() {
+        if !self.as_any_mut().is::<ChunkedArray<T>>() {
             panic!(
                 "implementation error, cannot get ref {:?} from {:?}",
                 T::get_dtype(),
