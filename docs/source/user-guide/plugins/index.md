@@ -284,11 +284,13 @@ Here is a curated (non-exhaustive) list of community-implemented plugins.
 
 ### Geo
 
+- [polars-dt](https://github.com/Oreilles/polars-st) Polars ST provides spatial operations on Polars
+  DataFrames, Series and Expressions. Just like Shapely and Geopandas.
 - [polars-reverse-geocode](https://github.com/MarcoGorelli/polars-reverse-geocode) Offline reverse
-  geocoder for finding the closest city to a given (latitude, longitude) pair
+  geocoder for finding the closest city to a given (latitude, longitude) pair.
 - [polars-h3](https://github.com/Filimoa/polars-h3) This is a Polars extension that adds support for
   the H3 discrete global grid system, so you can index points and geometries to hexagons directly in
-  Polars
+  Polars.
 
 ## Other material
 
