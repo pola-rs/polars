@@ -67,13 +67,16 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.4
 
-      - name: Install Polars release build
+      - name: Build Polars release build
         working-directory: py-polars
-        run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+        run: maturin build --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
-      - name: Set lib size
+      - name: Install Polars release build
+        run: pip install target/wheels/polars*.whl
+
+      - name: Set wheel size
         run: |
-          LIB_SIZE=$(ls -l py-polars/polars/polars*.so | awk '{ print $5 }')
+          LIB_SIZE=$(ls -l target/wheels/polars*.whl | awk '{ print $5 }')
           echo "LIB_SIZE=$LIB_SIZE" >> $GITHUB_ENV
 
       - name: Comment wheel size
