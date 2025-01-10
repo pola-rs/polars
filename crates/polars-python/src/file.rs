@@ -45,18 +45,6 @@ impl PyFileLikeObject {
 
     pub fn to_memslice(&self) -> MemSlice {
         Python::with_gil(|py| {
-            // CPython has some internal tricks that means much of the time
-            // BytesIO.getvalue() involves no memory copying, unlike
-            // BytesIO.read(). So we want to handle BytesIO specially in order
-            // to save memory.
-            let py_f = self.inner.bind(py);
-            if let Ok(bytes) = read_if_bytesio(py_f.clone()).downcast::<PyBytes>() {
-                return MemSlice::from_arc(
-                    bytes.as_bytes(),
-                    Arc::new(bytes.clone().unbind().clone_ref(py)),
-                );
-            }
-
             let bytes = self
                 .inner
                 .call_method(py, "read", (), None)
@@ -334,14 +322,20 @@ pub fn get_python_scan_source_input(
     write: bool,
 ) -> PyResult<PythonScanSourceInput> {
     Python::with_gil(|py| {
-        let py_f_0 = py_f;
-        let py_f = py_f_0.clone_ref(py).into_bound(py);
+        let py_f = py_f.into_bound(py);
+
+        // CPython has some internal tricks that means much of the time
+        // BytesIO.getvalue() involves no memory copying, unlike
+        // BytesIO.read(). So we want to handle BytesIO specially in order
+        // to save memory.
+        let py_f = read_if_bytesio(py_f);
 
         // If the pyobject is a `bytes` class
         if let Ok(b) = py_f.downcast::<PyBytes>() {
             return Ok(PythonScanSourceInput::Buffer(MemSlice::from_arc(
                 b.as_bytes(),
-                Arc::new(py_f_0),
+                // We want to specifically keep alive the PyBytes object.
+                Arc::new(b.clone().unbind()),
             )));
         }
 
