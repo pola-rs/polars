@@ -69,7 +69,7 @@ jobs:
 
       - name: Build Polars release build
         working-directory: py-polars
-        run: maturin build --profile nodedebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+        run: maturin build --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Install Polars release build
         run: pip install target/wheels/polars*.whl
