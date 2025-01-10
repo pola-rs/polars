@@ -210,30 +210,29 @@ fn create_physical_plan_impl(
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
 
+            if sources.len() > 1
+                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
+                && !matches!(scan_type, FileScan::Anonymous { .. })
+            {
+                return Ok(Box::new(executors::MultiScanExec::new(
+                    sources,
+                    file_info,
+                    hive_parts,
+                    predicate,
+                    file_options,
+                    scan_type,
+                )));
+            }
+
             match scan_type.clone() {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options, .. } => {
-                    if sources.len() > 1
-                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
-                    {
-                        Ok(Box::new(executors::MultiScanExec::new(
-                            sources,
-                            file_info,
-                            hive_parts,
-                            predicate,
-                            file_options,
-                            scan_type,
-                        )))
-                    } else {
-                        Ok(Box::new(executors::CsvExec {
-                            sources,
-                            file_info,
-                            options,
-                            predicate,
-                            file_options,
-                        }))
-                    }
-                },
+                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
+                    sources,
+                    file_info,
+                    options,
+                    predicate,
+                    file_options,
+                })),
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc {
                     options,
@@ -247,37 +246,23 @@ fn create_physical_plan_impl(
                     file_options,
                     hive_parts,
                     cloud_options,
+                    metadata,
                 })),
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options,
                     cloud_options,
                     metadata,
-                } => {
-                    if sources.len() > 1
-                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
-                    {
-                        Ok(Box::new(executors::MultiScanExec::new(
-                            sources,
-                            file_info,
-                            hive_parts,
-                            predicate,
-                            file_options,
-                            scan_type,
-                        )))
-                    } else {
-                        Ok(Box::new(executors::ParquetExec::new(
-                            sources,
-                            file_info,
-                            hive_parts,
-                            predicate,
-                            options,
-                            cloud_options,
-                            file_options,
-                            metadata,
-                        )))
-                    }
-                },
+                } => Ok(Box::new(executors::ParquetExec::new(
+                    sources,
+                    file_info,
+                    hive_parts,
+                    predicate,
+                    options,
+                    cloud_options,
+                    file_options,
+                    metadata,
+                ))),
                 #[cfg(feature = "json")]
                 FileScan::NDJson { options, .. } => Ok(Box::new(executors::JsonExec::new(
                     sources,
