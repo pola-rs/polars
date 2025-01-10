@@ -188,7 +188,9 @@ class CredentialProviderAzure(CredentialProvider):
         self.credential = importlib.import_module("azure.identity").__dict__[
             "DefaultAzureCredential"
         ]()
-        self.scopes = scopes if scopes is not None else ["https://storage.azure.com/"]
+        self.scopes = (
+            scopes if scopes is not None else ["https://storage.azure.com/.default"]
+        )
         self._verbose = _verbose
 
         if self._verbose:
