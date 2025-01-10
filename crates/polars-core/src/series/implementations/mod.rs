@@ -439,6 +439,10 @@ macro_rules! impl_dyn_series {
             fn as_any(&self) -> &dyn Any {
                 &self.0
             }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                &mut self.0
+            }
         }
     };
 }

@@ -362,8 +362,13 @@ macro_rules! impl_dyn_series {
             fn checked_div(&self, rhs: &Series) -> PolarsResult<Series> {
                 self.0.checked_div(rhs)
             }
+
             fn as_any(&self) -> &dyn Any {
                 &self.0
+            }
+
+            fn as_any_mut(&mut self) -> &mut dyn Any {
+                &mut self.0
             }
         }
     };

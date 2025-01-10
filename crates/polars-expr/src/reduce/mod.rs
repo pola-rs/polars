@@ -94,7 +94,7 @@ pub trait GroupedReduction: Any + Send + Sync {
 // Helper traits used in the VecGroupedReduction and VecMaskGroupedReduction to
 // reduce code duplication.
 pub trait Reducer: Send + Sync + Clone + 'static {
-    type Dtype: PolarsDataType;
+    type Dtype: PolarsDataType<IsLogical = FalseT>;
     type Value: Clone + Send + Sync + 'static;
     fn init(&self) -> Self::Value;
     #[inline(always)]
