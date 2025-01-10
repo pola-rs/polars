@@ -3,7 +3,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{polars_ensure, polars_err, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
@@ -113,19 +113,18 @@ fn try_lower_elementwise_scalar_agg_expr(
             }
         },
 
-        AExpr::Explode(_)
-        | AExpr::Slice { .. }
+        AExpr::Slice { .. }
         | AExpr::Window { .. }
         | AExpr::Sort { .. }
         | AExpr::SortBy { .. }
         | AExpr::Gather { .. } => None,
-
-        AExpr::Filter { input, by } => {
-            let (input, by) = (*input, *by);
-            let input = lower_rec!(input, inside_agg)?;
-            let by = lower_rec!(by, inside_agg)?;
-            Some(expr_arena.add(AExpr::Filter { input, by }))
-        },
+        
+        // Explode and filter are row-separable and should thus in theory work
+        // in a streaming fashion but they change the length of the input which
+        // means the same filter/explode should also be applied to the key
+        // column, which is not (yet) supported.
+        AExpr::Explode(_)
+        | AExpr::Filter { .. } => None,
 
         AExpr::BinaryExpr { left, op, right } => {
             let (left, op, right) = (*left, *op, *right);
@@ -237,7 +236,6 @@ fn try_build_streaming_group_by(
     input: PhysStream,
     keys: &[ExprIR],
     aggs: &[ExprIR],
-    output_schema: Arc<Schema>,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
     apply: Option<Arc<dyn DataFrameUdf>>,
@@ -259,6 +257,11 @@ fn try_build_streaming_group_by(
     if options.dynamic.is_some() || options.rolling.is_some() {
         return None; // TODO
     }
+
+    if keys.len() == 0 {
+        return Some(Err(polars_err!(ComputeError: "at least one key is required in a group_by operation")));
+    }
+
     
     let all_independent = keys.iter().chain(aggs.iter()).all(|expr| 
         is_input_independent(expr.node(), expr_arena, expr_cache)
@@ -317,7 +320,7 @@ fn try_build_streaming_group_by(
         trans_output_exprs.push(ExprIR::new(trans_node, agg.output_name_inner().clone()));
     }
     
-    let input_schema = &phys_sm[input.node].output_schema;
+    let input_schema = &phys_sm[trans_input.node].output_schema;
     dbg!(&input_schema);
     for expr in &[trans_keys.clone(), trans_agg_exprs.clone()].concat() {
         dbg!(format!("intermediate expr: {:?}", expr.display(expr_arena)));
@@ -361,7 +364,6 @@ pub fn build_group_by_stream(
         input,
         keys,
         aggs,
-        output_schema.clone(),
         maintain_order,
         options.clone(),
         apply.clone(),
