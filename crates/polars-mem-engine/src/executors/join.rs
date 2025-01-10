@@ -107,7 +107,7 @@ impl Executor for JoinExec {
                 if let JoinType::AsOf(options) = &mut self.args.how {
                     use polars_core::utils::arrow::temporal_conversions::MILLISECONDS_IN_DAY;
                     if let Some(tol) = &options.tolerance_str {
-                        let duration = polars_time::Duration::parse(tol);
+                        let duration = polars_time::Duration::try_parse(tol)?;
                         polars_ensure!(
                             duration.months() == 0,
                             ComputeError: "cannot use month offset in timedelta of an asof join; \
