@@ -1092,6 +1092,7 @@ impl Column {
             Column::Series(s) => s.rechunk().into(),
             Column::Partitioned(s) => {
                 if let Some(s) = s.lazy_as_materialized_series() {
+                    // This should always hold for partitioned.
                     debug_assert_eq!(s.n_chunks(), 1)
                 }
                 self.clone()
