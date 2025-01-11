@@ -49,20 +49,28 @@ def test_map_elements_arithmetic_consistency() -> None:
 
 def test_map_elements_struct() -> None:
     df = pl.DataFrame(
-        {"A": ["a", "a"], "B": [2, 3], "C": [True, False], "D": [12.0, None]}
+        {
+            "A": ["a", "a", None],
+            "B": [2, 3, None],
+            "C": [True, False, None],
+            "D": [12.0, None, None],
+            "E": [None, [1], [2, 3]],
+        }
     )
     out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         pl.col("struct").map_elements(lambda x: x["A"]).alias("A_field"),
         pl.col("struct").map_elements(lambda x: x["B"]).alias("B_field"),
         pl.col("struct").map_elements(lambda x: x["C"]).alias("C_field"),
         pl.col("struct").map_elements(lambda x: x["D"]).alias("D_field"),
+        pl.col("struct").map_elements(lambda x: x["E"]).alias("E_field"),
     )
     expected = pl.DataFrame(
         {
-            "A_field": ["a", "a"],
-            "B_field": [2, 3],
-            "C_field": [True, False],
-            "D_field": [12.0, None],
+            "A_field": ["a", "a", None],
+            "B_field": [2, 3, None],
+            "C_field": [True, False, None],
+            "D_field": [12.0, None, None],
+            "E_field": [None, [1], [2, 3]],
         }
     )
 
