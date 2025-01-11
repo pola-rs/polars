@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import pytest
 
 import polars as pl
@@ -1858,7 +1860,7 @@ def test_escape_regex() -> None:
         ("NFKD", ["012", "KADOKAWA"]),
     ],
 )
-def test_string_normalize(form: str, expected_data: list[str | None]) -> None:
+def test_string_normalize(form: Any, expected_data: list[str | None]) -> None:
     s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"], dtype=pl.String)  # noqa: RUF001
     res = s.str.normalize(form)
     expected_s = pl.Series(expected_data, dtype=pl.String)
