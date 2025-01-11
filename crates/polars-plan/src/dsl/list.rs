@@ -366,4 +366,15 @@ impl ListNameSpace {
         let other = other.into();
         self.set_operation(other, SetOperation::SymmetricDifference)
     }
+
+    /// Add elements in each sub-list until it matches the length of the longest
+    /// sub-list.
+    pub fn pad_start(self) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::PadStart),
+            &[],
+            false,
+            None,
+        )
+    }
 }

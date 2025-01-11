@@ -276,4 +276,8 @@ impl PyExpr {
         }
         .into()
     }
+
+    fn list_pad_start(&self) -> Self {
+        self.inner.clone().list().pad_start().into()
+    }
 }

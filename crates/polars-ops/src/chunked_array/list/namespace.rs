@@ -513,6 +513,37 @@ pub trait ListNameSpaceImpl: AsList {
         list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
     }
 
+    fn lst_pad_start(&self) -> PolarsResult<ListChunked> {
+        let list_ca = self.as_list();
+
+        let max_len = list_ca
+            .iter()
+            .map(|opt_v| match opt_v {
+                Some(v) => v.len(),
+                None => 0,
+            })
+            .collect::<Vec<usize>>()
+            .into_iter()
+            .max()
+            .unwrap_or(0);
+
+        let out: ListChunked = list_ca.apply_amortized(|s| {
+            let s: &Series = s.as_ref();
+            let ca: &Int64Chunked = s.i64().unwrap();
+            if ca.len() == max_len {
+                return *s;
+            }
+            let mut fill_values = Int64Chunked::new_vec(
+                PlSmallStr::EMPTY,
+                vec![fill_value; (max_len - ca.len()).try_into().unwrap()],
+            );
+            let _ = fill_values.append(ca);
+            fill_values.into()
+        });
+
+        Ok(out)
+    }
+
     #[cfg(feature = "list_sample")]
     fn lst_sample_n(
         &self,

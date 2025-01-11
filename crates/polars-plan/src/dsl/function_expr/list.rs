@@ -58,6 +58,7 @@ pub enum ListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    PadStart,
 }
 
 impl ListFunction {
@@ -107,6 +108,7 @@ impl ListFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
+            PadStart => mapper.with_same_dtype(),
         }
     }
 }
@@ -180,6 +182,7 @@ impl Display for ListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            PadStart => "pad_start",
         };
         write!(f, "list.{name}")
     }
@@ -243,6 +246,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
+            PadStart => map!(pad_start),
         }
     }
 }
@@ -665,4 +669,8 @@ pub(super) fn to_struct(s: &Column, args: &ListToStructArgs) -> PolarsResult<Col
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+pub(super) fn pad_start(s: &Column) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_pad_start()?.into_column())
 }
