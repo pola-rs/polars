@@ -925,6 +925,7 @@ def test_group_by_multiple_null_cols_15623() -> None:
 
 
 @pytest.mark.release
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))

@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) fn shrink(c: Column) -> PolarsResult<Column> {
-    if !c.dtype().is_numeric() {
+    if !c.dtype().is_primitive_numeric() {
         return Ok(c);
     }
 

@@ -2,6 +2,7 @@ use std::io::Write;
 use std::sync::Mutex;
 
 use arrow::datatypes::PhysicalType;
+use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 use polars_parquet::write::{
     to_parquet_schema, transverse, CompressionOptions, Encoding, FileWriter, StatisticsOptions,
@@ -11,7 +12,6 @@ use polars_parquet::write::{
 use super::batched_writer::BatchedWriter;
 use super::options::ParquetCompression;
 use super::ParquetWriteOptions;
-use crate::prelude::chunk_df_for_writing;
 use crate::shared::schema_to_arrow_checked;
 
 impl ParquetWriteOptions {
@@ -124,7 +124,7 @@ where
     /// Write the given DataFrame in the writer `W`. Returns the total size of the file.
     pub fn finish(self, df: &mut DataFrame) -> PolarsResult<u64> {
         let chunked_df = chunk_df_for_writing(df, self.row_group_size.unwrap_or(512 * 512))?;
-        let mut batched = self.batched(&chunked_df.schema())?;
+        let mut batched = self.batched(chunked_df.schema())?;
         batched.write_batch(&chunked_df)?;
         batched.finish()
     }

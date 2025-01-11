@@ -377,6 +377,22 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "index_of")]
+    /// Find the index of a value.
+    pub fn index_of<E: Into<Expr>>(self, element: E) -> Expr {
+        let element = element.into();
+        Expr::Function {
+            input: vec![self, element],
+            function: FunctionExpr::IndexOf,
+            options: FunctionOptions {
+                flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
+                fmt_str: "index_of",
+                cast_options: Some(CastingRules::FirstArgLossless),
+                ..Default::default()
+            },
+        }
+    }
+
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
     pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
@@ -850,6 +866,8 @@ impl Expr {
                     T::Float32 => T::Float32,
                     T::Float64 => T::Float64,
                     T::UInt64 => T::UInt64,
+                    #[cfg(feature = "dtype-i128")]
+                    T::Int128 => T::Int128,
                     _ => T::Int64,
                 })
             }),
@@ -1514,7 +1532,7 @@ impl Expr {
                         .map(|ca| ca.into_column()),
                 }?;
                 if let DataType::Float32 = c.dtype() {
-                    out.cast(&DataType::Float32).map(Column::from).map(Some)
+                    out.cast(&DataType::Float32).map(Some)
                 } else {
                     Ok(Some(out))
                 }

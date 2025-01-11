@@ -24,7 +24,6 @@ fn empty_df() -> IR {
         df: Arc::new(Default::default()),
         schema: Arc::new(Default::default()),
         output_schema: None,
-        filter: None,
     }
 }
 
@@ -218,7 +217,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         let (file_info, md) =
                             scans::ipc_file_info(&sources, &file_options, cloud_options.as_ref())
                                 .map_err(|e| e.context(failed_here!(ipc scan)))?;
-                        *metadata = Some(md);
+                        *metadata = Some(Arc::new(md));
                         file_info
                     },
                     #[cfg(feature = "csv")]
@@ -342,7 +341,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,
                         output_schema: None,
-                        filter: None,
                     }
                 } else {
                     IR::Scan {
@@ -386,8 +384,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let schema = ctxt.lp_arena.get(first).schema(ctxt.lp_arena);
             for n in &inputs[1..] {
                 let schema_i = ctxt.lp_arena.get(*n).schema(ctxt.lp_arena);
-                polars_ensure!(schema == schema_i, InvalidOperation: "'union'/'concat' inputs should all have the same schema,\
+                // The first argument
+                schema_i.matches_schema(schema.as_ref()).map_err(|_| polars_err!(InvalidOperation:  "'union'/'concat' inputs should all have the same schema,\
                     got\n{:?} and \n{:?}", schema, schema_i)
+                )?;
             }
 
             let options = args.into();
@@ -417,10 +417,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
 
             // TODO: We could do better here by using `pushdown_eligibility()`
-            return if permits_filter_pushdown_rec(
-                ctxt.expr_arena.get(predicate_ae.node()),
-                ctxt.expr_arena,
-            ) {
+            return if ctxt.opt_flags.predicate_pushdown()
+                && permits_filter_pushdown_rec(
+                    ctxt.expr_arena.get(predicate_ae.node()),
+                    ctxt.expr_arena,
+                ) {
                 // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
                 // push them down independently. Especially if they refer columns from different tables
                 // this will be more performant.
@@ -429,6 +430,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 // filter [foo == bar]
                 // filter [ham == spam]
                 let mut predicates = vec![];
+
                 let mut stack = vec![predicate_ae.node()];
                 while let Some(n) = stack.pop() {
                     if let AExpr::BinaryExpr {
@@ -451,6 +453,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let lp = IR::Filter { input, predicate };
                     input = run_conversion(lp, ctxt, "filter")?;
                 }
+
                 Ok(input)
             } else {
                 ctxt.conversion_optimizer
@@ -471,7 +474,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             df,
             schema,
             output_schema: None,
-            filter: None,
         },
         DslPlan::Select {
             expr,
@@ -677,8 +679,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let subset = options
                 .subset
-                .map(|s| expand_selectors(s, input_schema.as_ref(), &[]))
+                .map(|s| {
+                    let cols = expand_selectors(s, input_schema.as_ref(), &[])?;
+
+                    // Checking if subset columns exist in the dataframe
+                    for col in cols.iter() {
+                        let _ = input_schema
+                            .try_get(col)
+                            .map_err(|_| polars_err!(col_not_found = col))?;
+                    }
+
+                    Ok::<_, PolarsError>(cols)
+                })
                 .transpose()?;
+
             let options = DistinctOptionsIR {
                 subset,
                 maintain_order: options.maintain_order,
@@ -781,28 +795,32 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
                             |name| col(name.clone()).var(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Std { ddof } => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
                             |name| col(name.clone()).std(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, method } => stats_helper(
-                            |dt| dt.is_numeric(),
+                            |dt| dt.is_primitive_numeric(),
                             |name| col(name.clone()).quantile(quantile.clone(), method),
                             &input_schema,
                         ),
                         StatsFunction::Mean => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
+                            |dt| {
+                                dt.is_primitive_numeric()
+                                    || dt.is_temporal()
+                                    || dt == &DataType::Boolean
+                            },
                             |name| col(name.clone()).mean(),
                             &input_schema,
                         ),
                         StatsFunction::Sum => stats_helper(
                             |dt| {
-                                dt.is_numeric()
+                                dt.is_primitive_numeric()
                                     || dt.is_decimal()
                                     || matches!(dt, DataType::Boolean | DataType::Duration(_))
                             },
@@ -820,7 +838,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                         StatsFunction::Median => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
+                            |dt| {
+                                dt.is_primitive_numeric()
+                                    || dt.is_temporal()
+                                    || dt == &DataType::Boolean
+                            },
                             |name| col(name.clone()).median(),
                             &input_schema,
                         ),

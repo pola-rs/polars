@@ -301,7 +301,7 @@ class ExprBinaryNameSpace:
         self, *, dtype: PolarsDataType, endianness: Endianness = "little"
     ) -> Expr:
         r"""
-        Interpret a buffer as a numerical polars type.
+        Interpret a buffer as a numerical Polars type.
 
         Parameters
         ----------
@@ -321,19 +321,19 @@ class ExprBinaryNameSpace:
         --------
         >>> df = pl.DataFrame({"data": [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"]})
         >>> df.with_columns(  # doctest: +IGNORE_RESULT
-        ...     casted=pl.col("data").bin.reinterpret(
+        ...     bin2int=pl.col("data").bin.reinterpret(
         ...         dtype=pl.Int32, endianness="little"
         ...     ),
         ... )
-        shape: (2, 3)
-        ┌─────────────────────┬────────┐
-        │ data                ┆ caster │
-        │ ---                 ┆ ---    │
-        │ binary              ┆ i32    │
-        ╞═════════════════════╪════════╡
-        │ b"\x05\x00\x00\x00" ┆ 5      │
-        │ b"\x10\x00\x01\x00" ┆ 65552  │
-        └─────────────────────┴────────┘
+        shape: (2, 2)
+        ┌─────────────────────┬─────────┐
+        │ data                ┆ bin2int │
+        │ ---                 ┆ ---     │
+        │ binary              ┆ i32     │
+        ╞═════════════════════╪═════════╡
+        │ b"\x05\x00\x00\x00" ┆ 5       │
+        │ b"\x10\x00\x01\x00" ┆ 65552   │
+        └─────────────────────┴─────────┘
         """
         dtype = parse_into_dtype(dtype)
 

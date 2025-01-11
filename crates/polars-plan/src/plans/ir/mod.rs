@@ -71,9 +71,6 @@ pub enum IR {
         // Schema of the projected file
         // If `None`, no projection is applied
         output_schema: Option<SchemaRef>,
-        // Predicate to apply on the DataFrame
-        // All the columns required for the predicate are projected.
-        filter: Option<ExprIR>,
     },
     // Only selects columns (semantically only has row access).
     // This is a more restricted operation than `Select`.

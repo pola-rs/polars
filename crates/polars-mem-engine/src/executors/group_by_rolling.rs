@@ -48,7 +48,7 @@ impl GroupByRollingExec {
         let keys = self
             .keys
             .iter()
-            .map(|e| e.evaluate(&df, state).map(Column::from))
+            .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let (mut time_key, mut keys, groups) = df.rolling(keys, &self.options)?;
@@ -85,7 +85,7 @@ impl GroupByRollingExec {
         let mut columns = Vec::with_capacity(agg_columns.len() + 1 + keys.len());
         columns.extend_from_slice(&keys);
         columns.push(time_key);
-        columns.extend(agg_columns.into_iter().map(Column::from));
+        columns.extend(agg_columns);
 
         DataFrame::new(columns)
     }

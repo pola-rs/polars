@@ -5,44 +5,52 @@ use std::path::Path;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::POOL;
-use polars_utils::create_file;
 use rayon::prelude::*;
 
+use crate::cloud::CloudOptions;
 use crate::parquet::write::ParquetWriteOptions;
 #[cfg(feature = "ipc")]
 use crate::prelude::IpcWriterOptions;
 use crate::prelude::URL_ENCODE_CHAR_SET;
-use crate::{SerWriter, WriteDataFrameToFile};
+use crate::utils::file::try_get_writeable;
+use crate::{is_cloud_url, SerWriter, WriteDataFrameToFile};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
-    fn write_df_to_file<W: std::io::Write>(&self, mut df: DataFrame, file: W) -> PolarsResult<()> {
-        self.to_writer(file).finish(&mut df)?;
+    fn write_df_to_file(
+        &self,
+        df: &mut DataFrame,
+        path: &str,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<()> {
+        let f = try_get_writeable(path, cloud_options)?;
+        self.to_writer(f).finish(df)?;
         Ok(())
     }
 }
 
 #[cfg(feature = "ipc")]
 impl WriteDataFrameToFile for IpcWriterOptions {
-    fn write_df_to_file<W: std::io::Write>(&self, mut df: DataFrame, file: W) -> PolarsResult<()> {
-        self.to_writer(file).finish(&mut df)?;
+    fn write_df_to_file(
+        &self,
+        df: &mut DataFrame,
+        path: &str,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<()> {
+        let f = try_get_writeable(path, cloud_options)?;
+        self.to_writer(f).finish(df)?;
         Ok(())
     }
 }
 
-fn write_partitioned_dataset_impl<W>(
+/// Write a partitioned parquet dataset. This functionality is unstable.
+pub fn write_partitioned_dataset(
     df: &mut DataFrame,
     path: &Path,
     partition_by: Vec<PlSmallStr>,
-    file_write_options: &W,
+    file_write_options: &(dyn WriteDataFrameToFile + Send + Sync),
+    cloud_options: Option<&CloudOptions>,
     chunk_size: usize,
-) -> PolarsResult<()>
-where
-    W: WriteDataFrameToFile + Send + Sync,
-{
-    let partition_by = partition_by
-        .into_iter()
-        .map(Into::into)
-        .collect::<Vec<PlSmallStr>>();
+) -> PolarsResult<()> {
     // Ensure we have a single chunk as the gather will otherwise rechunk per group.
     df.as_single_chunk_par();
 
@@ -89,12 +97,16 @@ where
     };
 
     let base_path = path;
+    let is_cloud = is_cloud_url(base_path);
     let groups = df.group_by(partition_by)?.take_groups();
 
     let init_part_base_dir = |part_df: &DataFrame| {
         let path_part = get_hive_path_part(part_df);
         let dir = base_path.join(path_part);
-        std::fs::create_dir_all(&dir)?;
+
+        if !is_cloud {
+            std::fs::create_dir_all(&dir)?;
+        }
 
         PolarsResult::Ok(dir)
     };
@@ -110,9 +122,8 @@ where
         (n_files, rows_per_file)
     };
 
-    let write_part = |df: DataFrame, path: &Path| {
-        let f = create_file(path)?;
-        file_write_options.write_df_to_file(df, f)?;
+    let write_part = |mut df: DataFrame, path: &Path| {
+        file_write_options.write_df_to_file(&mut df, path.to_str().unwrap(), cloud_options)?;
         PolarsResult::Ok(())
     };
 
@@ -186,24 +197,4 @@ where
     })?;
 
     Ok(())
-}
-
-/// Write a partitioned parquet dataset. This functionality is unstable.
-pub fn write_partitioned_dataset<I, S, W>(
-    df: &mut DataFrame,
-    path: &Path,
-    partition_by: I,
-    file_write_options: &W,
-    chunk_size: usize,
-) -> PolarsResult<()>
-where
-    I: IntoIterator<Item = S>,
-    S: Into<PlSmallStr>,
-    W: WriteDataFrameToFile + Send + Sync,
-{
-    let partition_by = partition_by
-        .into_iter()
-        .map(Into::into)
-        .collect::<Vec<PlSmallStr>>();
-    write_partitioned_dataset_impl(df, path, partition_by, file_write_options, chunk_size)
 }

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
+from polars.exceptions import ColumnNotFoundError
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_unique_predicate_pd() -> None:
@@ -37,14 +42,10 @@ def test_unique_predicate_pd() -> None:
     for maintain_order in (True, False):
         for keep in ("first", "last", "any", "none"):
             q = (
-                lf.unique("x", maintain_order=maintain_order, keep=keep)  # type: ignore[arg-type]
+                lf.unique("x", maintain_order=maintain_order, keep=keep)
                 .filter(pl.col("x") == "abc")
                 .filter(pl.col("z"))
             )
-            plan = q.explain()
-            assert r'FILTER col("z")' in plan
-            # We can push filters if they only depend on the subset columns of unique()
-            assert r'SELECTION: [(col("x")) == (String(abc))]' in plan
             assert_frame_equal(q.collect(predicate_pushdown=False), q.collect())
 
 
@@ -132,14 +133,29 @@ def test_unique_null() -> None:
     [
         ([], []),
         (["a", "b", "b", "c"], ["a", "b", "c"]),
-        (["a", "b", "b", None], ["a", "b", None]),
+        ([None, "a", "b", "b"], [None, "a", "b"]),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_unique_categorical(input: list[str | None], output: list[str | None]) -> None:
     s = pl.Series(input, dtype=pl.Categorical)
     result = s.unique(maintain_order=True)
     expected = pl.Series(output, dtype=pl.Categorical)
     assert_series_equal(result, expected)
+
+    result = s.unique(maintain_order=False).sort()
+    expected = pl.Series(output, dtype=pl.Categorical)
+    assert_series_equal(result, expected)
+
+
+def test_unique_categorical_global() -> None:
+    with pl.StringCache():
+        pl.Series(["aaaa", "bbbb", "cccc"])  # pre-fill global cache
+        s = pl.Series(["a", "b", "c"], dtype=pl.Categorical)
+        s_empty = s.slice(0, 0)
+
+        assert s_empty.unique().to_list() == []
+        assert_series_equal(s_empty.cat.get_categories(), pl.Series(["a", "b", "c"]))
 
 
 def test_unique_with_null() -> None:
@@ -156,6 +172,35 @@ def test_unique_with_null() -> None:
     assert_frame_equal(df.unique(maintain_order=True), expected_df)
 
 
+@pytest.mark.parametrize(
+    ("input_json_data", "input_schema", "subset"),
+    [
+        ({"ID": [], "Name": []}, {"ID": pl.Int64, "Name": pl.String}, "id"),
+        ({"ID": [], "Name": []}, {"ID": pl.Int64, "Name": pl.String}, ["age", "place"]),
+        (
+            {"ID": [1, 2, 1, 2], "Name": ["foo", "bar", "baz", "baa"]},
+            {"ID": pl.Int64, "Name": pl.String},
+            "id",
+        ),
+        (
+            {"ID": [1, 2, 1, 2], "Name": ["foo", "bar", "baz", "baa"]},
+            {"ID": pl.Int64, "Name": pl.String},
+            ["age", "place"],
+        ),
+    ],
+)
+def test_unique_with_bad_subset(
+    input_json_data: dict[str, list[Any]],
+    input_schema: dict[str, PolarsDataType],
+    subset: str | list[str],
+) -> None:
+    df = pl.DataFrame(input_json_data, schema=input_schema)
+
+    with pytest.raises(ColumnNotFoundError, match="not found"):
+        df.unique(subset=subset)
+
+
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_19409() -> None:
     df = pl.DataFrame({"x": [str(n % 50) for n in range(127)]}).cast(pl.Categorical)
     uniq = df.unique()
@@ -200,3 +245,15 @@ def test_unique_check_order_20480() -> None:
         .item()
         == 1
     )
+
+
+def test_predicate_pushdown_unique() -> None:
+    q = (
+        pl.LazyFrame({"id": [1, 2, 3]})
+        .with_columns(pl.date(2024, 1, 1) + pl.duration(days=[1, 2, 3]))  # type: ignore[arg-type]
+        .unique()
+    )
+
+    print(q.filter(pl.col("id").is_in([1, 2, 3])).explain())
+    assert not q.filter(pl.col("id").is_in([1, 2, 3])).explain().startswith("FILTER")
+    assert q.filter(pl.col("id").sum() == pl.col("id")).explain().startswith("FILTER")

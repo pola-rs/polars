@@ -40,6 +40,7 @@ use arrow::datatypes::Metadata;
 use arrow::io::ipc::read::{StreamMetadata, StreamState};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
+use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 
 use crate::prelude::*;

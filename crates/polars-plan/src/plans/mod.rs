@@ -204,10 +204,10 @@ impl Clone for DslPlan {
 impl Default for DslPlan {
     fn default() -> Self {
         let df = DataFrame::empty();
-        let schema = df.schema();
+        let schema = df.schema().clone();
         DslPlan::DataFrameScan {
             df: Arc::new(df),
-            schema: Arc::new(schema),
+            schema,
         }
     }
 }

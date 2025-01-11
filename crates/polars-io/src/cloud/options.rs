@@ -287,14 +287,7 @@ impl CloudOptions {
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = {
-            if self.credential_provider.is_none() {
-                AmazonS3Builder::from_env()
-            } else {
-                AmazonS3Builder::new()
-            }
-        }
-        .with_url(url);
+        let mut builder = AmazonS3Builder::from_env().with_url(url);
         if let Some(options) = &self.config {
             let CloudConfig::Aws(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -407,6 +400,7 @@ impl CloudOptions {
     pub fn build_azure(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
+        let verbose = polars_core::config::verbose();
         let mut storage_account: Option<polars_utils::pl_str::PlSmallStr> = None;
 
         // The credential provider `self.credentials` is prioritized if it is set. We also need
@@ -430,19 +424,30 @@ impl CloudOptions {
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
-        // Prefer the one embedded in the path
-        storage_account = extract_adls_uri_storage_account(url)
-            .map(|x| x.into())
-            .or(storage_account);
-
         let builder = if let Some(v) = self.credential_provider.clone() {
+            if verbose {
+                eprintln!(
+                    "[CloudOptions::build_azure]: Using credential provider {:?}",
+                    &v
+                );
+            }
             builder.with_credentials(v.into_azure_provider())
-        } else if let Some(v) = storage_account
+        } else if let Some(v) = extract_adls_uri_storage_account(url) // Prefer the one embedded in the path
+            .map(|x| x.into())
+            .or(storage_account)
             .as_deref()
             .and_then(get_azure_storage_account_key)
         {
+            if verbose {
+                eprintln!("[CloudOptions::build_azure]: Retrieved account key from Azure CLI")
+            }
             builder.with_access_key(v)
         } else {
+            if verbose {
+                eprintln!(
+                    "[CloudOptions::build_azure]: Could not retrieve account key from Azure CLI"
+                )
+            }
             builder
         };
 

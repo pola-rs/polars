@@ -29,8 +29,17 @@ fn default_ipc_field(dtype: &ArrowDataType, current_id: &mut i64) -> IpcField {
             dictionary_id: None,
         },
         // multiple children => recurse
-        Union(fields, ..) | Struct(fields) => IpcField {
+        Struct(fields) => IpcField {
             fields: fields
+                .iter()
+                .map(|f| default_ipc_field(f.dtype(), current_id))
+                .collect(),
+            dictionary_id: None,
+        },
+        // multiple children => recurse
+        Union(u) => IpcField {
+            fields: u
+                .fields
                 .iter()
                 .map(|f| default_ipc_field(f.dtype(), current_id))
                 .collect(),

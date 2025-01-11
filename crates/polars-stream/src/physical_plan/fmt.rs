@@ -216,6 +216,7 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            ..
         }
         | PhysNodeKind::EquiJoin {
             input_left,
@@ -250,10 +251,10 @@ fn visualize_plan_rec(
         label
     ));
     for input in inputs {
-        visualize_plan_rec(*input, phys_sm, expr_arena, visited, out);
+        visualize_plan_rec(input.node, phys_sm, expr_arena, visited, out);
         out.push(format!(
             "{} -> {};",
-            input.data().as_ffi(),
+            input.node.data().as_ffi(),
             node_key.data().as_ffi()
         ));
     }

@@ -21,7 +21,7 @@ pub(crate) unsafe fn drop_list(ca: &ListChunked) {
             if let ArrowDataType::LargeList(fld) = lst_arr.dtype() {
                 let dtype = fld.dtype();
 
-                assert!(matches!(dtype, ArrowDataType::Extension(_, _, _)));
+                assert!(matches!(dtype, ArrowDataType::Extension(_)));
 
                 // recreate the polars extension so that the content is dropped
                 let arr = lst_arr.as_any().downcast_ref::<LargeListArray>().unwrap();

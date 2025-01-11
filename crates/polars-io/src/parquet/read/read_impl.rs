@@ -35,10 +35,10 @@ fn assert_dtypes(dtype: &ArrowDataType) {
     use ArrowDataType as D;
 
     match dtype {
-        // These should all be casted to the BinaryView / Utf8View variants
+        // These should all be cast to the BinaryView / Utf8View variants
         D::Utf8 | D::Binary | D::LargeUtf8 | D::LargeBinary => unreachable!(),
 
-        // These should be casted to Float32
+        // These should be cast to Float32
         D::Float16 => unreachable!(),
 
         // This should have been converted to a LargeList
@@ -49,7 +49,7 @@ fn assert_dtypes(dtype: &ArrowDataType) {
 
         // Recursive checks
         D::Dictionary(_, dtype, _) => assert_dtypes(dtype),
-        D::Extension(_, dtype, _) => assert_dtypes(dtype),
+        D::Extension(ext) => assert_dtypes(&ext.inner),
         D::LargeList(inner) => assert_dtypes(&inner.dtype),
         D::FixedSizeList(inner, _) => assert_dtypes(&inner.dtype),
         D::Struct(fields) => fields.iter().for_each(|f| assert_dtypes(f.dtype())),
@@ -671,7 +671,7 @@ fn rg_to_dfs_par_over_rg(
     store: &mmap::ColumnStore,
     row_group_start: usize,
     row_group_end: usize,
-    previous_row_count: &mut IdxSize,
+    rows_read: &mut IdxSize,
     slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
@@ -689,14 +689,33 @@ fn rg_to_dfs_par_over_rg(
         .sum();
     let slice_end = slice.0 + slice.1;
 
+    // rows_scanned is the number of rows that have been scanned so far when checking for overlap with the slice.
+    // rows_read is the number of rows found to overlap with the slice, and thus the number of rows that will be
+    // read into a dataframe.
+    let mut rows_scanned: IdxSize;
+
+    if row_group_start > 0 {
+        // In the case of async reads, we need to account for the fact that row_group_start may be greater than
+        // zero due to earlier processing.
+        // For details, see: https://github.com/pola-rs/polars/pull/20508#discussion_r1900165649
+        rows_scanned = (0..row_group_start)
+            .map(|i| file_metadata.row_groups[i].num_rows() as IdxSize)
+            .sum();
+    } else {
+        rows_scanned = 0;
+    }
+
     for i in row_group_start..row_group_end {
-        let row_count_start = *previous_row_count;
+        let row_count_start = rows_scanned;
         let rg_md = &file_metadata.row_groups[i];
+        let n_rows_this_file = rg_md.num_rows();
         let rg_slice =
-            split_slice_at_file(&mut n_rows_processed, rg_md.num_rows(), slice.0, slice_end);
-        *previous_row_count = previous_row_count
-            .checked_add(rg_slice.1 as IdxSize)
+            split_slice_at_file(&mut n_rows_processed, n_rows_this_file, slice.0, slice_end);
+        rows_scanned = rows_scanned
+            .checked_add(n_rows_this_file as IdxSize)
             .ok_or(ROW_COUNT_OVERFLOW_ERR)?;
+
+        *rows_read += rg_slice.1 as IdxSize;
 
         if rg_slice.1 == 0 {
             continue;

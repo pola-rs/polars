@@ -15,6 +15,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.dtype import _time_units
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import SearchStrategy
@@ -232,7 +233,7 @@ def test_rolling_by_invalid() -> None:
     df = pl.DataFrame(
         {"a": [1, 2, 3], "b": [4, 5, 6]}, schema_overrides={"a": pl.Int16}
     ).sort("a")
-    msg = "unsupported data type: i16 for `window_size`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time"
+    msg = "unsupported data type: i16 for temporal/index column, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time"
     with pytest.raises(InvalidOperationError, match=msg):
         df.select(pl.col("b").rolling_min_by("a", "2i"))
     df = pl.DataFrame({"a": [1, 2, 3], "b": [date(2020, 1, 1)] * 3}).sort("b")
@@ -739,11 +740,18 @@ def test_rolling_aggregations_with_over_11225() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_rolling() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 1])
-    assert_series_equal(s.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1]))
-    assert_series_equal(s.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2]))
-    assert_series_equal(s.rolling_sum(2), pl.Series("a", [None, 3, 5, 5, 3]))
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_rolling(dtype: PolarsDataType) -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 1], dtype=dtype)
+    assert_series_equal(
+        s.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1], dtype=dtype)
+    )
+    assert_series_equal(
+        s.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2], dtype=dtype)
+    )
+    assert_series_equal(
+        s.rolling_sum(2), pl.Series("a", [None, 3, 5, 5, 3], dtype=dtype)
+    )
     assert_series_equal(s.rolling_mean(2), pl.Series("a", [None, 1.5, 2.5, 2.5, 1.5]))
 
     assert s.rolling_std(2).to_list()[1] == pytest.approx(0.7071067811865476)

@@ -399,14 +399,14 @@ impl PhysicalExpr for WindowExpr {
         // 4. select the final column and return
 
         if df.is_empty() {
-            let field = self.phys_function.to_field(&df.schema())?;
+            let field = self.phys_function.to_field(df.schema())?;
             return Ok(Column::full_null(field.name().clone(), 0, field.dtype()));
         }
 
         let group_by_columns = self
             .group_by
             .iter()
-            .map(|e| e.evaluate(df, state).map(Column::from))
+            .map(|e| e.evaluate(df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
         // if the keys are sorted
@@ -551,7 +551,6 @@ impl PhysicalExpr for WindowExpr {
                     state,
                     &cache_key,
                 )
-                .map(Column::from)
             },
             Join => {
                 let out_column = ac.aggregated();
@@ -698,7 +697,7 @@ fn set_by_groups(
     if update_groups {
         return None;
     }
-    if s.dtype().to_physical().is_numeric() {
+    if s.dtype().to_physical().is_primitive_numeric() {
         let dtype = s.dtype();
         let s = s.to_physical_repr();
 

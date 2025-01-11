@@ -65,6 +65,10 @@ pub async fn read_metadata_async<R: AsyncRead + AsyncSeek + Send + Unpin>(
     Ok(_read_metadata_async(reader).await?)
 }
 
+fn convert_year_month(value: &[u8]) -> i32 {
+    i32::from_le_bytes(value[..4].try_into().unwrap())
+}
+
 fn convert_days_ms(value: &[u8]) -> arrow::types::days_ms {
     arrow::types::days_ms(
         i32::from_le_bytes(value[4..8].try_into().unwrap()),

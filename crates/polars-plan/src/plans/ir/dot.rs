@@ -229,16 +229,13 @@ impl<'a> IRDotDisplay<'a> {
             DataFrameScan {
                 schema,
                 output_schema,
-                filter: selection,
                 ..
             } => {
                 let num_columns = NumColumnsSchema(output_schema.as_ref().map(|p| p.as_ref()));
-                let selection = selection.as_ref().map(|e| self.display_expr(e));
-                let selection = OptionExprIRDisplay(selection);
                 let total_columns = schema.len();
 
                 write_label(f, id, |f| {
-                    write!(f, "TABLE\nπ {num_columns}/{total_columns};\nσ {selection}")
+                    write!(f, "TABLE\nπ {num_columns}/{total_columns}")
                 })?;
             },
             Scan {
@@ -339,7 +336,6 @@ pub struct PathsDisplay<'a>(pub &'a [PathBuf]);
 pub struct ScanSourcesDisplay<'a>(pub &'a ScanSources);
 struct NumColumns<'a>(Option<&'a [PlSmallStr]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
-struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 
 impl fmt::Display for ScanSourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -397,15 +393,6 @@ impl fmt::Display for NumColumnsSchema<'_> {
         match self.0 {
             None => f.write_str("*"),
             Some(columns) => columns.len().fmt(f),
-        }
-    }
-}
-
-impl fmt::Display for OptionExprIRDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            None => f.write_str("None"),
-            Some(expr) => expr.fmt(f),
         }
     }
 }

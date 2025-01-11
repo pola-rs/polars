@@ -1,4 +1,3 @@
-use std::borrow::Cow;
 use std::fmt::{self, Display, Formatter};
 
 use polars_core::datatypes::AnyValue;
@@ -260,7 +259,6 @@ impl<'a> IRDisplay<'a> {
             DataFrameScan {
                 schema,
                 output_schema,
-                filter: selection,
                 ..
             } => {
                 let total_columns = schema.len();
@@ -269,18 +267,13 @@ impl<'a> IRDisplay<'a> {
                 } else {
                     "*".to_string()
                 };
-                let selection = match selection {
-                    Some(s) => Cow::Owned(self.display_expr(s).to_string()),
-                    None => Cow::Borrowed("None"),
-                };
                 write!(
                     f,
-                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS; SELECTION: {}",
+                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS",
                     "",
                     schema.iter_names().take(4).collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
-                    selection,
                 )
             },
             Select { expr, input, .. } => {
@@ -326,13 +319,25 @@ impl<'a> IRDisplay<'a> {
                 let left_on = self.display_expr_slice(left_on);
                 let right_on = self.display_expr_slice(right_on);
 
-                let how = &options.args.how;
-                write!(f, "{:indent$}{how} JOIN:", "")?;
-                write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
-                self.with_root(*input_left)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                self.with_root(*input_right)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}END {how} JOIN", "")
+                // Fused cross + filter (show as nested loop join)
+                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                    let predicate = self.display_expr(predicate);
+                    let name = "NESTED LOOP";
+                    write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {name} JOIN", "")
+                } else {
+                    let how = &options.args.how;
+                    write!(f, "{:indent$}{how} JOIN:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {how} JOIN", "")
+                }
             },
             HStack { input, exprs, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?

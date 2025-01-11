@@ -39,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.9', '3.12']
+        python-version: ['3.9', '3.13']
 
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +58,9 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        run: uv pip install -r requirements-dev.txt -r requirements-lint.txt
+        # TODO: Fix typing issues for newer NumPy versions
+        # https://github.com/pola-rs/polars/issues/20561
+        run: uv pip install -r requirements-dev.txt -r requirements-lint.txt 'numpy<2.1'
 
       # Allow untyped calls for older Python versions
       - name: Run mypy

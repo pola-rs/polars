@@ -27,6 +27,7 @@ fn test_chunked_left_join() -> PolarsResult<()> {
         ["name"],
         ["name"],
         JoinArgs::new(JoinType::Left),
+        None,
     )?;
     let expected = df![
         "name" => ["john", "paul", "keith"],
@@ -135,6 +136,7 @@ fn test_full_outer_join() -> PolarsResult<()> {
         ["days"],
         ["days"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(joined.height(), 5);
     assert_eq!(
@@ -162,6 +164,7 @@ fn test_full_outer_join() -> PolarsResult<()> {
         ["a"],
         ["a"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(out.column("c_right")?.null_count(), 1);
 
@@ -260,13 +263,25 @@ fn test_join_multiple_columns() {
 
     // now check the join with multiple columns
     let joined = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Left.into(),
+            None,
+        )
         .unwrap();
     let ca = joined.column("ham").unwrap().str().unwrap();
     assert_eq!(Vec::from(ca), correct_ham);
     let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_inner = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Inner.into(),
+            None,
+        )
         .unwrap();
 
     assert!(joined_inner_hack
@@ -281,6 +296,7 @@ fn test_join_multiple_columns() {
             ["a", "b"],
             ["foo", "bar"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
     assert!(joined_full_outer_hack
@@ -309,7 +325,7 @@ fn test_join_categorical() {
     .unwrap();
 
     let out = df_a
-        .join(&df_b, ["b"], ["bar"], JoinType::Left.into())
+        .join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None)
         .unwrap();
     assert_eq!(out.shape(), (6, 5));
     let correct_ham = &[
@@ -327,7 +343,7 @@ fn test_join_categorical() {
 
     // test dispatch
     for jt in [JoinType::Left, JoinType::Inner, JoinType::Full] {
-        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
+        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into(), None).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(
             out.dtype(),
@@ -350,7 +366,7 @@ fn test_join_categorical() {
         s.cast(&DataType::Categorical(None, Default::default()))
     })
     .unwrap();
-    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into());
+    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None);
     assert!(out.is_err());
 }
 
@@ -444,7 +460,13 @@ fn test_join_err() -> PolarsResult<()> {
 
     // dtypes don't match, error
     assert!(df1
-        .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left.into())
+        .join(
+            &df2,
+            vec!["a", "b"],
+            vec!["a", "b"],
+            JoinType::Left.into(),
+            None
+        )
         .is_err());
     Ok(())
 }
@@ -490,6 +512,7 @@ fn test_joins_with_duplicates() -> PolarsResult<()> {
             ["col1"],
             ["join_col1"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
 
@@ -532,6 +555,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinType::Inner.into(),
+            None,
         )
         .unwrap();
 
@@ -547,6 +571,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinType::Left.into(),
+            None,
         )
         .unwrap();
 
@@ -562,6 +587,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
 
@@ -594,6 +620,7 @@ fn test_join_floats() -> PolarsResult<()> {
         vec!["a", "c"],
         vec!["foo", "bar"],
         JoinType::Left.into(),
+        None,
     )?;
     assert_eq!(
         Vec::from(out.column("ham")?.str()?),
@@ -605,6 +632,7 @@ fn test_join_floats() -> PolarsResult<()> {
         vec!["a", "c"],
         vec!["foo", "bar"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(
         out.dtypes(),

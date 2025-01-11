@@ -89,7 +89,9 @@ impl<'a> AnyValueBuffer<'a> {
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Date(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-date")]
-            (Date(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Date(builder), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
@@ -100,7 +102,7 @@ impl<'a> AnyValueBuffer<'a> {
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder, _, _), val) if val.is_numeric() => {
+            (Datetime(builder, _, _), val) if val.is_primitive_numeric() => {
                 builder.append_value(val.extract()?)
             },
             #[cfg(feature = "dtype-duration")]
@@ -111,13 +113,17 @@ impl<'a> AnyValueBuffer<'a> {
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-duration")]
-            (Duration(builder, _), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Duration(builder, _), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-time")]
-            (Time(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Time(builder), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use AnyValues for that
             (All(_, vals), v) => vals.push(v),

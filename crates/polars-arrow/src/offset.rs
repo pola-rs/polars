@@ -398,6 +398,11 @@ impl<O: Offset> OffsetsBuffer<O> {
         Self(vec![O::zero()].into())
     }
 
+    #[inline]
+    pub fn one_with_length(length: O) -> Self {
+        Self(vec![O::zero(), length].into())
+    }
+
     /// Copy-on-write API to convert [`OffsetsBuffer`] into [`Offsets`].
     #[inline]
     pub fn into_mut(self) -> either::Either<Self, Offsets<O>> {

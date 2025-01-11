@@ -5,7 +5,7 @@ use polars_core::with_match_physical_numeric_polars_type;
 /// Set values outside the given boundaries to the boundary value.
 pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
     polars_ensure!(
-        s.dtype().to_physical().is_numeric(),
+        s.dtype().to_physical().is_primitive_numeric(),
         InvalidOperation: "`clip` only supports physical numeric types"
     );
 
@@ -19,7 +19,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
     );
 
     match s.dtype() {
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();
@@ -39,7 +39,7 @@ pub fn clip(s: &Series, min: &Series, max: &Series) -> PolarsResult<Series> {
 /// Set values above the given maximum to the maximum value.
 pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
     polars_ensure!(
-        s.dtype().to_physical().is_numeric(),
+        s.dtype().to_physical().is_primitive_numeric(),
         InvalidOperation: "`clip` only supports physical numeric types"
     );
 
@@ -49,7 +49,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
     let (s, max) = (s.to_physical_repr(), max.to_physical_repr());
 
     match s.dtype() {
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let max: &ChunkedArray<$T> = max.as_ref().as_ref().as_ref();
@@ -68,7 +68,7 @@ pub fn clip_max(s: &Series, max: &Series) -> PolarsResult<Series> {
 /// Set values below the given minimum to the minimum value.
 pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
     polars_ensure!(
-        s.dtype().to_physical().is_numeric(),
+        s.dtype().to_physical().is_primitive_numeric(),
         InvalidOperation: "`clip` only supports physical numeric types"
     );
 
@@ -78,7 +78,7 @@ pub fn clip_min(s: &Series, min: &Series) -> PolarsResult<Series> {
     let (s, min) = (s.to_physical_repr(), min.to_physical_repr());
 
     match s.dtype() {
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let min: &ChunkedArray<$T> = min.as_ref().as_ref().as_ref();

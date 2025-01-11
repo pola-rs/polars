@@ -146,6 +146,10 @@ pub(super) fn par_sorted_merge_inner_no_nulls(
         DataType::Int64 => {
             par_sorted_merge_inner_impl(s_left.i64().unwrap(), s_right.i64().unwrap())
         },
+        #[cfg(feature = "dtype-i128")]
+        DataType::Int128 => {
+            par_sorted_merge_inner_impl(s_left.i128().unwrap(), s_right.i128().unwrap())
+        },
         DataType::Float32 => {
             par_sorted_merge_inner_impl(s_left.f32().unwrap(), s_right.f32().unwrap())
         },
@@ -205,7 +209,7 @@ pub(crate) fn _sort_or_hash_inner(
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
-    let is_numeric = s_left.dtype().to_physical().is_numeric();
+    let is_numeric = s_left.dtype().to_physical().is_primitive_numeric();
 
     if validate.needs_checks() {
         return s_left.hash_join_inner(s_right, validate, join_nulls);
@@ -307,7 +311,7 @@ pub(crate) fn sort_or_hash_left(
     let size_factor_acceptable = std::env::var("POLARS_JOIN_SORT_FACTOR")
         .map(|s| s.parse::<f32>().unwrap())
         .unwrap_or(1.0);
-    let is_numeric = s_left.dtype().to_physical().is_numeric();
+    let is_numeric = s_left.dtype().to_physical().is_primitive_numeric();
 
     let no_nulls = s_left.null_count() == 0 && s_right.null_count() == 0;
 

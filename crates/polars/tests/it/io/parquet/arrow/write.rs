@@ -19,24 +19,12 @@ fn round_trip_opt_stats(
     compression: CompressionOptions,
     encodings: Vec<Encoding>,
 ) -> PolarsResult<()> {
-    let (array, _statistics) = match file {
-        "nested" => (
-            pyarrow_nested_nullable(column),
-            pyarrow_nested_nullable_statistics(column),
-        ),
-        "nullable" => (
-            pyarrow_nullable(column),
-            pyarrow_nullable_statistics(column),
-        ),
-        "required" => (
-            pyarrow_required(column),
-            pyarrow_required_statistics(column),
-        ),
-        "struct" => (pyarrow_struct(column), pyarrow_struct_statistics(column)),
-        "nested_edge" => (
-            pyarrow_nested_edge(column),
-            pyarrow_nested_edge_statistics(column),
-        ),
+    let array = match file {
+        "nested" => pyarrow_nested_nullable(column),
+        "nullable" => pyarrow_nullable(column),
+        "required" => pyarrow_required(column),
+        "struct" => pyarrow_struct(column),
+        "nested_edge" => pyarrow_nested_edge(column),
         _ => unreachable!(),
     };
 

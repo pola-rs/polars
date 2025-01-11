@@ -29,7 +29,7 @@ pub struct StreamMetadata {
 }
 
 /// Reads the metadata of the stream
-pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetadata> {
+pub fn read_stream_metadata(reader: &mut dyn std::io::Read) -> PolarsResult<StreamMetadata> {
     // determine metadata length
     let mut meta_size: [u8; 4] = [0; 4];
     reader.read_exact(&mut meta_size)?;
@@ -48,10 +48,7 @@ pub fn read_stream_metadata<R: Read>(reader: &mut R) -> PolarsResult<StreamMetad
 
     let mut buffer = vec![];
     buffer.try_reserve(length)?;
-    reader
-        .by_ref()
-        .take(length as u64)
-        .read_to_end(&mut buffer)?;
+    reader.take(length as u64).read_to_end(&mut buffer)?;
 
     deserialize_stream_metadata(&buffer)
 }

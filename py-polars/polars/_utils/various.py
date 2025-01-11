@@ -446,7 +446,7 @@ NoDefault = Literal[_NoDefault.no_default]
 
 def find_stacklevel() -> int:
     """
-    Find the first place in the stack that is not inside polars.
+    Find the first place in the stack that is not inside Polars.
 
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
@@ -652,6 +652,7 @@ def re_escape(s: str) -> str:
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
 
 
+# Don't rename or move. This is used by polars cloud
 def display_dot_graph(
     *,
     dot: str,

@@ -49,6 +49,8 @@ impl FunctionExpr {
             Hash(..) => mapper.with_dtype(DataType::UInt64),
             #[cfg(feature = "arg_where")]
             ArgWhere => mapper.with_dtype(IDX_DTYPE),
+            #[cfg(feature = "index_of")]
+            IndexOf => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "range")]
@@ -200,7 +202,7 @@ impl FunctionExpr {
                 // but we because only the numeric types deviate in
                 // bit size this will likely not lead to issues
                 mapper.map_dtype(|dt| {
-                    if dt.is_numeric() {
+                    if dt.is_primitive_numeric() {
                         if dt.is_float() {
                             DataType::Float32
                         } else if dt.is_unsigned_integer() {
@@ -331,14 +333,21 @@ impl FunctionExpr {
             MinHorizontal => mapper.map_to_supertype(),
             SumHorizontal { .. } => {
                 mapper.map_to_supertype().map(|mut f| {
-                    match f.dtype {
-                        // Booleans sum to UInt32.
-                        DataType::Boolean => { f.dtype = DataType::UInt32; f},
-                        _ => f,
+                    if f.dtype == DataType::Boolean {
+                        f.dtype = IDX_DTYPE;
                     }
+                    f
                 })
             },
-            MeanHorizontal { .. } => mapper.map_to_float_dtype(),
+            MeanHorizontal { .. } => {
+                mapper.map_to_supertype().map(|mut f| {
+                    match f.dtype {
+                        dt @ DataType::Float32 => { f.dtype = dt; },
+                        _ => { f.dtype = DataType::Float64; },
+                    };
+                    f
+                })
+            }
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_to_float_dtype(),
             #[cfg(feature = "ewma_by")]
@@ -429,7 +438,7 @@ impl<'a> FieldsMapper<'a> {
     /// Map to a float supertype if numeric, else preserve
     pub fn map_numeric_to_float_dtype(&self) -> PolarsResult<Field> {
         self.map_dtype(|dtype| {
-            if dtype.is_numeric() {
+            if dtype.is_primitive_numeric() {
                 match dtype {
                     DataType::Float32 => DataType::Float32,
                     _ => DataType::Float64,

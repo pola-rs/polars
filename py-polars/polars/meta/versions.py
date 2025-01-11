@@ -48,7 +48,7 @@ def show_versions() -> None:
 
     deps = _get_dependency_list()
     core_properties = ("Polars", "Index type", "Platform", "Python", "LTS CPU")
-    keylen = max(len(x) for x in [*core_properties, *deps]) + 1
+    keylen = max(len(x) for x in [*core_properties, "Azure CLI", *deps]) + 1
 
     print("--------Version info---------")
     print(f"{'Polars:':{keylen}s} {get_polars_version()}")
@@ -58,6 +58,12 @@ def show_versions() -> None:
     print(f"{'LTS CPU:':{keylen}s} {get_lts_cpu()}")
 
     print("\n----Optional dependencies----")
+
+    from polars.io.cloud.credential_provider import CredentialProviderAzure
+
+    print(f"{'Azure CLI':{keylen}s} ", end="", flush=True)
+    print(CredentialProviderAzure._azcli_version() or "<not installed>")
+
     for name in deps:
         print(f"{name:{keylen}s} ", end="", flush=True)
         print(_get_dependency_version(name))

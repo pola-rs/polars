@@ -688,8 +688,8 @@ def test_json_decode_primitive_to_list_11053() -> None:
     )
 
     output = df.select(
-        pl.col("json").str.json_decode(schema).alias("casted_json")
-    ).unnest("casted_json")
+        pl.col("json").str.json_decode(schema).alias("decoded_json")
+    ).unnest("decoded_json")
     expected = pl.DataFrame({"col1": [["123"], ["xyz"]], "col2": [["123"], None]})
     assert_frame_equal(output, expected)
 
@@ -1813,7 +1813,7 @@ def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
 
 
 def test_json_decode_struct_schema() -> None:
-    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+    with pytest.raises(ComputeError, match="extra field in struct data: b"):
         pl.Series([r'{"a": 1}', r'{"a": 2, "b": 2}']).str.json_decode(
             infer_schema_length=1
         )

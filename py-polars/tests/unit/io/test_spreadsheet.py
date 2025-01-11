@@ -4,6 +4,7 @@ import warnings
 from collections import OrderedDict
 from datetime import date, datetime
 from io import BytesIO
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
@@ -16,7 +17,6 @@ from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from pathlib import Path
 
     from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
 
@@ -823,6 +823,7 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         # note that the totals are written as formulae, so we
         # won't have the calculated values in the dataframe
         xldf = pl.read_excel(xls, sheet_name="misc", engine=engine)
+
         assert xldf.columns == ["id", "q1", "q2", "q3", "q4", "trend", "h1", "h2"]
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
@@ -836,18 +837,92 @@ def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
     xls = BytesIO()
     df.write_excel(xls, worksheet="data")
 
-    # expect string conversion (only scalar values are supported)
-    xldf = pl.read_excel(
+    # also test reading from the various flavours of supported binary data
+    # across all backend engines (check bytesio, bytes, and memoryview)
+    for binary_data in (
         xls,
-        sheet_name="data",
-        engine=engine,
-        include_file_paths="wbook",
+        xls.getvalue(),
+        xls.getbuffer(),
+    ):
+        xldf = pl.read_excel(
+            binary_data,
+            sheet_name="data",
+            engine=engine,
+            include_file_paths="wbook",
+        )
+
+        # expect string conversion (only scalar values are supported)
+        assert xldf.rows() == [
+            ("[1, 2]", "{'y': 'a', 'z': 9}", "in-mem"),
+            ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
+            ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
+        ]
+
+
+def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
+    df = pl.DataFrame(
+        {
+            "x": ["aa", "bb", "cc"],
+            "y": [100, 325, -250],
+            "z": [975, -444, 123],
+        }
     )
-    assert xldf.rows() == [
-        ("[1, 2]", "{'y': 'a', 'z': 9}", "in-mem"),
-        ("[3, 4]", "{'y': 'b', 'z': 8}", "in-mem"),
-        ("[5, 6]", "{'y': 'c', 'z': 7}", "in-mem"),
-    ]
+    # when we read back a named table object with a total row we expect the read
+    # to automatically omit that row as it is *not* part of the actual table data
+    wb_path = Path(tmp_path).joinpath("test_named_table_read.xlsx")
+    df.write_excel(
+        wb_path,
+        worksheet="data",
+        table_name="PolarsFrameTable",
+        column_totals=True,
+    )
+    for engine in ("calamine", "openpyxl"):
+        xldf = pl.read_excel(wb_path, table_name="PolarsFrameTable", engine=engine)
+        assert_frame_equal(df, xldf)
+
+    # xlsx2csv doesn't support reading named tables, so we see the
+    # column total if we don't filter it out after reading the data
+    with pytest.raises(
+        ValueError,
+        match="the `table_name` parameter is not supported by the 'xlsx2csv' engine",
+    ):
+        pl.read_excel(wb_path, table_name="PolarsFrameTable", engine="xlsx2csv")
+
+    xldf = pl.read_excel(wb_path, sheet_name="data", engine="xlsx2csv")
+    assert_frame_equal(df, xldf.head(3))
+    assert xldf.height == 4
+    assert xldf.row(3) == (None, 0, 0)
+
+
+@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+def test_excel_write_to_file_object(
+    engine: ExcelSpreadsheetEngine, tmp_path: Path
+) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": ["aaa", "bbb", "ccc"], "y": [123, 456, 789]})
+
+    # write to bytesio
+    xls = BytesIO()
+    df.write_excel(xls, worksheet="data")
+    assert_frame_equal(df, pl.read_excel(xls, engine=engine))
+
+    # write to file path
+    path = Path(tmp_path).joinpath("test_write_path.xlsx")
+    df.write_excel(path, worksheet="data")
+    assert_frame_equal(df, pl.read_excel(xls, engine=engine))
+
+    # write to file path (as string)
+    path = Path(tmp_path).joinpath("test_write_path_str.xlsx")
+    df.write_excel(str(path), worksheet="data")
+    assert_frame_equal(df, pl.read_excel(xls, engine=engine))
+
+    # write to file object
+    path = Path(tmp_path).joinpath("test_write_file_object.xlsx")
+    with path.open("wb") as tgt:
+        df.write_excel(tgt, worksheet="data")
+    with path.open("rb") as src:
+        assert_frame_equal(df, pl.read_excel(src, engine=engine))
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
@@ -868,7 +943,7 @@ def test_excel_write_sparklines(engine: ExcelSpreadsheetEngine) -> None:
     from xlsxwriter import Workbook
 
     # note that we don't (quite) expect sparkline export to round-trip as we
-    # inject additional empty columns to hold them (which will read as nulls).
+    # inject additional empty columns to hold them (which will read as nulls)
     df = pl.DataFrame(
         {
             "id": ["aaa", "bbb", "ccc", "ddd", "eee"],
@@ -951,18 +1026,24 @@ def test_excel_write_multiple_tables() -> None:
     # write multiple frames to multiple worksheets
     xls = BytesIO()
     with Workbook(xls) as wb:
-        df.write_excel(workbook=wb, worksheet="sheet1", position="A1")
-        df.write_excel(workbook=wb, worksheet="sheet1", position="A6")
-        df.write_excel(workbook=wb, worksheet="sheet2", position="A1")
+        df.rename({"colx": "colx0", "coly": "coly0", "colz": "colz0"}).write_excel(
+            workbook=wb, worksheet="sheet1", position="A1"
+        )
+        df.rename({"colx": "colx1", "coly": "coly1", "colz": "colz1"}).write_excel(
+            workbook=wb, worksheet="sheet1", position="X10"
+        )
+        df.rename({"colx": "colx2", "coly": "coly2", "colz": "colz2"}).write_excel(
+            workbook=wb, worksheet="sheet2", position="C25"
+        )
 
-        # validate integration of externally-added formats
+        # also validate integration of externally-added formats
         fmt = wb.add_format({"bg_color": "#ffff00"})
-        df.write_excel(
+        df.rename({"colx": "colx3", "coly": "coly3", "colz": "colz3"}).write_excel(
             workbook=wb,
             worksheet="sheet3",
-            position="A1",
+            position="D4",
             conditional_formats={
-                "colz": {
+                "colz3": {
                     "type": "formula",
                     "criteria": "=C2=B2",
                     "format": fmt,
@@ -970,13 +1051,37 @@ def test_excel_write_multiple_tables() -> None:
             },
         )
 
-    table_names: set[str] = set()
-    for sheet in ("sheet1", "sheet2", "sheet3"):
-        table_names.update(
-            tbl["name"] for tbl in wb.get_worksheet_by_name(sheet).tables
-        )
+    table_names = {
+        tbl["name"]
+        for sheet in wb.sheetnames
+        for tbl in wb.get_worksheet_by_name(sheet).tables
+    }
     assert table_names == {f"Frame{n}" for n in range(4)}
     assert pl.read_excel(xls, sheet_name="sheet3").rows() == []
+
+    # test loading one of the written tables by name
+    for engine in ("calamine", "openpyxl"):
+        df1 = pl.read_excel(
+            xls,
+            sheet_name="sheet2",
+            table_name="Frame2",
+            engine=engine,
+        )
+        df2 = pl.read_excel(
+            xls,
+            table_name="Frame2",
+            engine=engine,
+        )
+        assert df1.columns == ["colx2", "coly2", "colz2"]
+        assert_frame_equal(df1, df2)
+
+        # if we supply a sheet name (which is optional when using `table_name`),
+        # then the table name must be present in *that* sheet, or we raise an error
+        with pytest.raises(
+            RuntimeError,
+            match="table named 'Frame3' not found in sheet 'sheet1'",
+        ):
+            pl.read_excel(xls, sheet_name="sheet1", table_name="Frame3")
 
 
 def test_excel_write_worksheet_object() -> None:

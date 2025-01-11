@@ -1055,7 +1055,7 @@ pub fn ensure_duration_matches_dtype(
                 InvalidOperation: "`{}` duration may not be a parsed integer (i.e. use '2d', not '2i') when working with a temporal column", variable_name);
         },
         _ => {
-            polars_bail!(InvalidOperation: "unsupported data type: {} for `{}`, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", dtype, variable_name)
+            polars_bail!(InvalidOperation: "unsupported data type: {} for temporal/index column, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time", dtype)
         },
     }
     Ok(())

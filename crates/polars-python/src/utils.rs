@@ -13,6 +13,7 @@ macro_rules! apply_method_all_arrow_series2 {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
+            DataType::Int128 => $self.i128().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Date => $self.date().unwrap().$method($($args),*),

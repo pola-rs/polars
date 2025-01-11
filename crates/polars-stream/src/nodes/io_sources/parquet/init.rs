@@ -159,8 +159,8 @@ impl ParquetSourceNode {
         }));
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
-        // it is purely a dispatch loop.
-        let distribute_task = AbortOnDropHandle(io_runtime.spawn(async move {
+        // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
+        let distribute_task = async_executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
             while let Some(decode_fut) = decode_recv.recv().await {
                 let df = decode_fut.await?;
@@ -176,13 +176,13 @@ impl ParquetSourceNode {
                 }
             }
             PolarsResult::Ok(())
-        }));
+        });
 
         let join_task = io_runtime.spawn(async move {
             metadata_task.await.unwrap()?;
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
-            distribute_task.await.unwrap()?;
+            distribute_task.await?;
             Ok(())
         });
 

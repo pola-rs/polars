@@ -8,8 +8,8 @@ use polars_utils::pl_str::PlSmallStr;
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
 use crate::datatypes::{
-    get_extension, ArrowDataType, ArrowSchema, Extension, Field, IntegerType, IntervalUnit,
-    Metadata, TimeUnit, UnionMode,
+    get_extension, ArrowDataType, ArrowSchema, Extension, ExtensionType, Field, IntegerType,
+    IntervalUnit, Metadata, TimeUnit, UnionMode, UnionType,
 };
 
 fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
@@ -72,7 +72,8 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
         (32, false) => IntegerType::UInt32,
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
-        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32 or 64."),
+        (128, true) => IntegerType::Int128,
+        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32, 64 or 128."),
     })
 }
 
@@ -131,7 +132,10 @@ fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(ArrowDa
         fields: ipc_fields,
         dictionary_id: None,
     };
-    Ok((ArrowDataType::Union(fields, ids, mode), ipc_field))
+    Ok((
+        ArrowDataType::Union(Box::new(UnionType { fields, ids, mode })),
+        ipc_field,
+    ))
 }
 
 fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
@@ -257,7 +261,11 @@ fn get_dtype(
         let (name, metadata) = extension;
         let (dtype, fields) = get_dtype(field, None, false)?;
         return Ok((
-            ArrowDataType::Extension(name, Box::new(dtype), metadata),
+            ArrowDataType::Extension(Box::new(ExtensionType {
+                name,
+                inner: dtype,
+                metadata,
+            })),
             fields,
         ));
     }
@@ -362,7 +370,7 @@ pub fn deserialize_schema(
     message: &[u8],
 ) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
-        .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
+        .map_err(|err| polars_err!(oos = format!("Unable deserialize message: {err:?}")))?;
 
     let schema = match message
         .header()?
@@ -429,7 +437,7 @@ pub(super) fn fb_to_schema(
 
 pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
     let message = arrow_format::ipc::MessageRef::read_as_root(meta)
-        .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
+        .map_err(|err| polars_err!(oos = format!("Unable to get root as message: {err:?}")))?;
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message

@@ -187,6 +187,8 @@ pub fn cum_prod(s: &Series, reverse: bool) -> PolarsResult<Series> {
         },
         Int64 => cum_prod_numeric(s.i64()?, reverse).into_series(),
         UInt64 => cum_prod_numeric(s.u64()?, reverse).into_series(),
+        #[cfg(feature = "dtype-i128")]
+        Int128 => cum_prod_numeric(s.i128()?, reverse).into_series(),
         Float32 => cum_prod_numeric(s.f32()?, reverse).into_series(),
         Float64 => cum_prod_numeric(s.f64()?, reverse).into_series(),
         dt => polars_bail!(opq = cum_prod, dt),
@@ -213,6 +215,8 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
         UInt32 => cum_sum_numeric(s.u32()?, reverse).into_series(),
         Int64 => cum_sum_numeric(s.i64()?, reverse).into_series(),
         UInt64 => cum_sum_numeric(s.u64()?, reverse).into_series(),
+        #[cfg(feature = "dtype-i128")]
+        Int128 => cum_sum_numeric(s.i128()?, reverse).into_series(),
         Float32 => cum_sum_numeric(s.f32()?, reverse).into_series(),
         Float64 => cum_sum_numeric(s.f64()?, reverse).into_series(),
         #[cfg(feature = "dtype-duration")]
@@ -232,7 +236,7 @@ pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_min_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_min_numeric(ca, reverse).into_series();
@@ -253,7 +257,7 @@ pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
     let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_max_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_max_numeric(ca, reverse).into_series();

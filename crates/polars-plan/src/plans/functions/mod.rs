@@ -267,7 +267,7 @@ impl FunctionIR {
                 validate_output,
                 schema,
                 ..
-            }) => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
+            }) => python_udf::call_python_udf(function, df, *validate_output, schema.clone()),
             FastCount {
                 sources,
                 scan_type,

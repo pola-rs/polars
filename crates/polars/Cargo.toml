@@ -153,7 +153,6 @@ month_start = ["polars-lazy?/month_start"]
 month_end = ["polars-lazy?/month_end"]
 offset_by = ["polars-lazy?/offset_by"]
 decompress = ["polars-io/decompress"]
-decompress-fast = ["polars-io/decompress-fast"]
 describe = ["polars-core/describe"]
 diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat", "polars-sql?/diagonal_concat"]
 diff = ["polars-ops/diff", "polars-lazy?/diff"]
@@ -212,6 +211,7 @@ rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window"]
 rolling_window_by = ["polars-core/rolling_window_by", "polars-lazy?/rolling_window_by", "polars-time/rolling_window_by"]
 round_series = ["polars-ops/round_series", "polars-lazy?/round_series"]
 row_hash = ["polars-core/row_hash", "polars-lazy?/row_hash"]
+index_of = ["polars-lazy?/index_of"]
 search_sorted = ["polars-lazy?/search_sorted"]
 semi_anti_join = ["polars-lazy?/semi_anti_join", "polars-ops/semi_anti_join", "polars-sql?/semi_anti_join"]
 sign = ["polars-lazy?/sign"]
@@ -266,6 +266,7 @@ dtype-full = [
   "dtype-array",
   "dtype-i8",
   "dtype-i16",
+  "dtype-i128",
   "dtype-decimal",
   "dtype-u8",
   "dtype-u16",
@@ -319,12 +320,21 @@ dtype-i8 = [
   "polars-io/dtype-i8",
   "polars-lazy?/dtype-i8",
   "polars-ops/dtype-i8",
+  "polars-time?/dtype-i8",
 ]
 dtype-i16 = [
   "polars-core/dtype-i16",
   "polars-io/dtype-i16",
   "polars-lazy?/dtype-i16",
   "polars-ops/dtype-i16",
+  "polars-time?/dtype-i16",
+]
+dtype-i128 = [
+  "polars-core/dtype-i128",
+  "polars-io/dtype-i128",
+  "polars-lazy?/dtype-i128",
+  "polars-ops/dtype-i128",
+  "polars-time?/dtype-i128",
 ]
 dtype-decimal = [
   "polars-core/dtype-decimal",
@@ -338,12 +348,14 @@ dtype-u8 = [
   "polars-io/dtype-u8",
   "polars-lazy?/dtype-u8",
   "polars-ops/dtype-u8",
+  "polars-time?/dtype-u8",
 ]
 dtype-u16 = [
   "polars-core/dtype-u16",
   "polars-io/dtype-u16",
   "polars-lazy?/dtype-u16",
   "polars-ops/dtype-u16",
+  "polars-time?/dtype-u16",
 ]
 dtype-categorical = [
   "polars-core/dtype-categorical",

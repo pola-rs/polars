@@ -10,6 +10,7 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
+from tests.unit.conftest import INTEGER_DTYPES, SIGNED_INTEGER_DTYPES
 
 
 @given(
@@ -309,16 +310,7 @@ def test_df_getitem() -> None:
     assert_frame_equal(df[pl.Series("", ["a", "b"])], df)
 
     # pl.Series: positive idxs or empty idxs for row selection.
-    for pl_dtype in (
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-    ):
+    for pl_dtype in INTEGER_DTYPES:
         assert_frame_equal(
             df[pl.Series("", [1, 0, 3, 2, 3, 0], dtype=pl_dtype)],
             pl.DataFrame(
@@ -328,7 +320,7 @@ def test_df_getitem() -> None:
         assert df[pl.Series("", [], dtype=pl_dtype)].columns == ["a", "b"]
 
     # pl.Series: positive and negative idxs for row selection.
-    for pl_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
+    for pl_dtype in SIGNED_INTEGER_DTYPES:
         assert_frame_equal(
             df[pl.Series("", [-1, 0, -3, -2, 3, -4], dtype=pl_dtype)],
             pl.DataFrame(

@@ -432,31 +432,6 @@ impl PyDataFrame {
 
         let compression = parse_parquet_compression(compression, compression_level)?;
 
-        if let Some(partition_by) = partition_by {
-            // TODO: Support cloud
-            let path = py_f.extract::<String>(py)?;
-
-            py.allow_threads(|| {
-                let write_options = ParquetWriteOptions {
-                    compression,
-                    statistics: statistics.0,
-                    row_group_size,
-                    data_page_size,
-                    maintain_order: true,
-                };
-                write_partitioned_dataset(
-                    &mut self.df,
-                    std::path::Path::new(path.as_str()),
-                    partition_by.as_slice(),
-                    &write_options,
-                    partition_chunk_size_bytes,
-                )
-                .map_err(PyPolarsErr::from)
-            })?;
-
-            return Ok(());
-        };
-
         #[cfg(feature = "cloud")]
         let cloud_options = if let Ok(path) = py_f.extract::<Cow<str>>(py) {
             let cloud_options = parse_cloud_options(&path, cloud_options.unwrap_or_default())?;
@@ -473,6 +448,31 @@ impl PyDataFrame {
 
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
+
+        if let Some(partition_by) = partition_by {
+            let path = py_f.extract::<String>(py)?;
+
+            py.allow_threads(|| {
+                let write_options = ParquetWriteOptions {
+                    compression,
+                    statistics: statistics.0,
+                    row_group_size,
+                    data_page_size,
+                    maintain_order: true,
+                };
+                write_partitioned_dataset(
+                    &mut self.df,
+                    std::path::Path::new(path.as_str()),
+                    partition_by.into_iter().map(|x| x.into()).collect(),
+                    &write_options,
+                    cloud_options.as_ref(),
+                    partition_chunk_size_bytes,
+                )
+                .map_err(PyPolarsErr::from)
+            })?;
+
+            return Ok(());
+        };
 
         let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 

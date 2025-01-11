@@ -278,6 +278,8 @@ impl PredicatePushDown<'_> {
 
         match lp {
             Filter {
+                // Note: We assume AND'ed predicates have already been split to separate IR filter
+                // nodes during DSL conversion so we don't do that here.
                 ref predicate,
                 input,
             } => {
@@ -341,15 +343,20 @@ impl PredicatePushDown<'_> {
                 df,
                 schema,
                 output_schema,
-                filter: selection,
             } => {
-                let selection = predicate_at_scan(acc_predicates, selection, expr_arena);
-                let lp = DataFrameScan {
+                let selection = predicate_at_scan(acc_predicates, None, expr_arena);
+                let mut lp = DataFrameScan {
                     df,
                     schema,
                     output_schema,
-                    filter: selection,
                 };
+
+                if let Some(predicate) = selection {
+                    let input = lp_arena.add(lp);
+
+                    lp = IR::Filter { input, predicate }
+                }
+
                 Ok(lp)
             },
             Scan {
@@ -430,7 +437,6 @@ impl PredicatePushDown<'_> {
                                     df: Arc::new(df),
                                     schema: schema.clone(),
                                     output_schema: None,
-                                    filter: None,
                                 });
                             } else {
                                 sources = ScanSources::Paths(new_paths.into());
@@ -484,25 +490,38 @@ impl PredicatePushDown<'_> {
                 Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
             Distinct { input, options } => {
-                if let Some(ref subset) = options.subset {
-                    // Predicates on the subset can pass.
-                    let subset = subset.clone();
-                    let mut names_set = PlHashSet::<PlSmallStr>::with_capacity(subset.len());
-                    for name in subset.iter() {
-                        names_set.insert(name.clone());
-                    }
-
-                    let condition = |name: &PlSmallStr| !names_set.contains(name.as_str());
-                    let local_predicates =
-                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition);
-
-                    self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
-                    let lp = Distinct { input, options };
-                    Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
+                let subset = if let Some(ref subset) = options.subset {
+                    subset.as_ref()
                 } else {
-                    let lp = Distinct { input, options };
-                    self.no_pushdown_restart_opt(lp, acc_predicates, lp_arena, expr_arena)
+                    &[]
+                };
+                let mut names_set = PlHashSet::<PlSmallStr>::with_capacity(subset.len());
+                for name in subset.iter() {
+                    names_set.insert(name.clone());
                 }
+
+                let local_predicates = match options.keep_strategy {
+                    UniqueKeepStrategy::Any => {
+                        let condition = |e: &ExprIR| {
+                            let ae = expr_arena.get(e.node());
+                            // if not elementwise -> to local
+                            !is_elementwise_rec(ae, expr_arena)
+                        };
+                        transfer_to_local_by_expr_ir(expr_arena, &mut acc_predicates, condition)
+                    },
+                    UniqueKeepStrategy::First
+                    | UniqueKeepStrategy::Last
+                    | UniqueKeepStrategy::None => {
+                        let condition = |name: &PlSmallStr| {
+                            !subset.is_empty() && !names_set.contains(name.as_str())
+                        };
+                        transfer_to_local_by_name(expr_arena, &mut acc_predicates, condition)
+                    },
+                };
+
+                self.pushdown_and_assign(input, acc_predicates, lp_arena, expr_arena)?;
+                let lp = Distinct { input, options };
+                Ok(self.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
             },
             Join {
                 input_left,

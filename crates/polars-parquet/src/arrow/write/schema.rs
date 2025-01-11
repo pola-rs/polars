@@ -1,4 +1,4 @@
-use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, TimeUnit};
+use arrow::datatypes::{ArrowDataType, ArrowSchema, ExtensionType, Field, TimeUnit};
 use arrow::io::ipc::write::{default_ipc_fields, schema_to_bytes};
 use base64::engine::general_purpose;
 use base64::Engine as _;
@@ -39,9 +39,12 @@ fn convert_dtype(dtype: ArrowDataType) -> ArrowDataType {
             let dtype = convert_dtype(*dtype);
             D::Dictionary(it, Box::new(dtype), sorted)
         },
-        D::Extension(name, dtype, metadata) => {
-            let dtype = convert_dtype(*dtype);
-            D::Extension(name, Box::new(dtype), metadata)
+        D::Extension(ext) => {
+            let dtype = convert_dtype(ext.inner);
+            D::Extension(Box::new(ExtensionType {
+                inner: dtype,
+                ..*ext
+            }))
         },
         dt => dt,
     }

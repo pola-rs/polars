@@ -20,6 +20,7 @@ use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
 mod chunks;
+pub use chunks::chunk_df_for_writing;
 pub mod column;
 pub mod explode;
 mod from;
@@ -176,6 +177,10 @@ pub struct DataFrame {
 }
 
 impl DataFrame {
+    pub fn clear_schema(&mut self) {
+        self.cached_schema = OnceLock::new();
+    }
+
     #[inline]
     pub fn materialized_column_iter(&self) -> impl ExactSizeIterator<Item = &Series> {
         self.columns.iter().map(Column::as_materialized_series)
@@ -416,6 +421,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn pop(&mut self) -> Option<Column> {
+        self.clear_schema();
+
         self.columns.pop()
     }
 
@@ -477,6 +484,7 @@ impl DataFrame {
         );
         ca.set_sorted_flag(IsSorted::Ascending);
 
+        self.clear_schema();
         self.columns.insert(0, ca.into_series().into());
         self
     }
@@ -687,14 +695,22 @@ impl DataFrame {
     /// let f2: Field = Field::new("Diameter (m)".into(), DataType::Float64);
     /// let sc: Schema = Schema::from_iter(vec![f1, f2]);
     ///
-    /// assert_eq!(df.schema(), sc);
+    /// assert_eq!(&**df.schema(), &sc);
     /// # Ok::<(), PolarsError>(())
     /// ```
-    pub fn schema(&self) -> Schema {
-        self.columns
-            .iter()
-            .map(|x| (x.name().clone(), x.dtype().clone()))
-            .collect()
+    pub fn schema(&self) -> &SchemaRef {
+        let out = self.cached_schema.get_or_init(|| {
+            Arc::new(
+                self.columns
+                    .iter()
+                    .map(|x| (x.name().clone(), x.dtype().clone()))
+                    .collect(),
+            )
+        });
+
+        debug_assert_eq!(out.len(), self.width());
+
+        out
     }
 
     /// Get a reference to the [`DataFrame`] columns.
@@ -723,6 +739,8 @@ impl DataFrame {
     ///
     /// The caller must ensure the length of all [`Series`] remains equal to `height` or
     /// [`DataFrame::set_height`] is called afterwards with the appropriate `height`.
+    /// The caller must ensure that the cached schema is cleared if it modifies the schema by
+    /// calling [`DataFrame::clear_schema`].
     pub unsafe fn get_columns_mut(&mut self) -> &mut Vec<Column> {
         &mut self.columns
     }
@@ -730,7 +748,8 @@ impl DataFrame {
     #[inline]
     /// Remove all the columns in the [`DataFrame`] but keep the `height`.
     pub fn clear_columns(&mut self) {
-        unsafe { self.get_columns_mut() }.clear()
+        unsafe { self.get_columns_mut() }.clear();
+        self.clear_schema();
     }
 
     #[inline]
@@ -744,7 +763,8 @@ impl DataFrame {
     ///   `DataFrame`]s with no columns (ZCDFs), it is important that the height is set afterwards
     ///   with [`DataFrame::set_height`].
     pub unsafe fn column_extend_unchecked(&mut self, iter: impl IntoIterator<Item = Column>) {
-        unsafe { self.get_columns_mut() }.extend(iter)
+        unsafe { self.get_columns_mut() }.extend(iter);
+        self.clear_schema();
     }
 
     /// Take ownership of the underlying columns vec.
@@ -834,6 +854,7 @@ impl DataFrame {
                 s
             })
             .collect();
+        self.clear_schema();
         Ok(())
     }
 
@@ -1194,6 +1215,7 @@ impl DataFrame {
                 Ok(())
             })?;
         self.height += other.height;
+        self.clear_schema();
         Ok(())
     }
 
@@ -1215,6 +1237,7 @@ impl DataFrame {
     /// ```
     pub fn drop_in_place(&mut self, name: &str) -> PolarsResult<Column> {
         let idx = self.check_name_to_idx(name)?;
+        self.clear_schema();
         Ok(self.columns.remove(idx))
     }
 
@@ -1347,6 +1370,7 @@ impl DataFrame {
         }
 
         self.columns.insert(index, column);
+        self.clear_schema();
         Ok(self)
     }
 
@@ -1370,6 +1394,7 @@ impl DataFrame {
             }
 
             self.columns.push(column);
+            self.clear_schema();
         }
         Ok(())
     }
@@ -1417,6 +1442,7 @@ impl DataFrame {
             unsafe { self.set_height(column.len()) };
         }
         unsafe { self.get_columns_mut() }.push(column);
+        self.clear_schema();
 
         self
     }
@@ -1433,6 +1459,7 @@ impl DataFrame {
                     }
 
                     self.columns.push(c);
+                    self.clear_schema();
                 }
                 // Schema is incorrect fallback to search
                 else {
@@ -1448,6 +1475,7 @@ impl DataFrame {
             }
 
             self.columns.push(c);
+            self.clear_schema();
         }
 
         Ok(())
@@ -1637,7 +1665,7 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn get_column_index(&self, name: &str) -> Option<usize> {
-        let schema = self.cached_schema.get_or_init(|| Arc::new(self.schema()));
+        let schema = self.schema();
         if let Some(idx) = schema.index_of(name) {
             if self
                 .get_columns()
@@ -1775,7 +1803,7 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        debug_ensure_matching_schema_names(schema, &self.schema())?;
+        debug_ensure_matching_schema_names(schema, self.schema())?;
 
         cols.iter()
             .map(|name| {
@@ -1984,7 +2012,7 @@ impl DataFrame {
             return Ok(self);
         }
         polars_ensure!(
-            self.columns.iter().all(|c| c.name() != &name),
+            !self.schema().contains(&name),
             Duplicate: "column rename attempted with already existing name \"{name}\""
         );
 
@@ -2326,6 +2354,7 @@ impl DataFrame {
         );
         let old_col = &mut self.columns[index];
         mem::swap(old_col, &mut new_column);
+        self.clear_schema();
         Ok(self)
     }
 
@@ -3549,42 +3578,5 @@ mod test {
 
         assert_eq!(df.get_column_names(), &["a", "b", "c"]);
         Ok(())
-    }
-
-    #[cfg(feature = "serde")]
-    #[test]
-    fn test_deserialize_height_validation_8751() {
-        // Construct an invalid directly from the inner fields as the `new_unchecked_*` functions
-        // have debug assertions
-
-        use polars_utils::pl_serialize;
-
-        let df = DataFrame {
-            height: 2,
-            columns: vec![
-                Int64Chunked::full("a".into(), 1, 2).into_column(),
-                Int64Chunked::full("b".into(), 1, 1).into_column(),
-            ],
-            cached_schema: OnceLock::new(),
-        };
-
-        // We rely on the fact that the serialization doesn't check the heights of all columns
-        let serialized = serde_json::to_string(&df).unwrap();
-        let err = serde_json::from_str::<DataFrame>(&serialized).unwrap_err();
-
-        assert!(err.to_string().contains(
-            "successful parse invalid data: lengths don't match: could not create a new DataFrame:",
-        ));
-
-        let serialized = pl_serialize::SerializeOptions::default()
-            .serialize_to_bytes(&df)
-            .unwrap();
-        let err = pl_serialize::SerializeOptions::default()
-            .deserialize_from_reader::<DataFrame, _>(serialized.as_slice())
-            .unwrap_err();
-
-        assert!(err.to_string().contains(
-            "successful parse invalid data: lengths don't match: could not create a new DataFrame:",
-        ));
     }
 }

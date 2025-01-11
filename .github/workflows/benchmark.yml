@@ -34,7 +34,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Set up Graphviz
         uses: ts-graphviz/setup-graphviz@v2
@@ -52,8 +52,8 @@ jobs:
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
           # doesn't have an up-to-date typing-extensions, see
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
-          uv pip install -U typing-extensions 
-          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
+          uv pip install -U typing-extensions
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose --index-strategy=unsafe-best-match
 
       - name: Set up Rust
         run: rustup show
@@ -67,11 +67,59 @@ jobs:
       - name: Run sccache-cache
         uses: mozilla-actions/sccache-action@v0.0.4
 
-      - name: Install Polars release build
-        env:
-          RUSTFLAGS: -C embed-bitcode -D warnings
+      - name: Build Polars release build
         working-directory: py-polars
-        run: maturin develop --release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+        run: maturin build --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
+
+      - name: Install Polars release build
+        run: pip install target/wheels/polars*.whl
+
+      - name: Set wheel size
+        run: |
+          LIB_SIZE=$(ls -l target/wheels/polars*.whl | awk '{ print $5 }')
+          echo "LIB_SIZE=$LIB_SIZE" >> $GITHUB_ENV
+
+      - name: Comment wheel size
+        uses: actions/github-script@v7
+        if: github.ref_name != 'main'
+        with:
+          script: |
+              const currentSize = process.env.LIB_SIZE || 'Unknown';
+
+              // Convert to MB
+              const currentSizeMB = currentSize !== 'Unknown' ? (currentSize / 1024 / 1024).toFixed(4) : 'Unknown';
+
+              let commentBody = `The uncompressed lib size after this PR is **${currentSizeMB} MB**.`;
+
+              const { data: comments } = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+
+              // Look for an existing comment
+              const existingComment = comments.find(comment =>
+                comment.body.includes('The previous uncompressed lib size was')
+              );
+
+              if (existingComment) {
+                // Update the existing comment
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                  body: commentBody,
+                });
+              } else {
+                // Create a new comment
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body: commentBody,
+                });
+              }
+        continue-on-error: true 
 
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v3

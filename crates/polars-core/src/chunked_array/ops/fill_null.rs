@@ -85,11 +85,11 @@ impl Series {
         let physical_type = self.dtype().to_physical();
 
         match strategy {
-            FillNullStrategy::Forward(None) if !physical_type.is_numeric() => {
+            FillNullStrategy::Forward(None) if !physical_type.is_primitive_numeric() => {
                 fill_forward_gather(self)
             },
             FillNullStrategy::Forward(Some(limit)) => fill_forward_gather_limit(self, limit),
-            FillNullStrategy::Backward(None) if !physical_type.is_numeric() => {
+            FillNullStrategy::Backward(None) if !physical_type.is_primitive_numeric() => {
                 fill_backward_gather(self)
             },
             FillNullStrategy::Backward(Some(limit)) => fill_backward_gather_limit(self, limit),
@@ -108,7 +108,7 @@ impl Series {
                         let ca = s.binary().unwrap();
                         fill_null_binary(ca, strategy).map(|ca| ca.into_series())
                     },
-                    dt if dt.is_numeric() => {
+                    dt if dt.is_primitive_numeric() => {
                         with_match_physical_numeric_polars_type!(dt, |$T| {
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                                 fill_null_numeric(ca, strategy).map(|ca| ca.into_series())

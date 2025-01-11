@@ -458,9 +458,9 @@ fn get_encoder(
             )
         },
 
-        D::Union(_, _, _) => unreachable!(),
+        D::Union(_) => unreachable!(),
         D::Map(_, _) => unreachable!(),
-        D::Extension(_, _, _) => unreachable!(),
+        D::Extension(_) => unreachable!(),
         D::Unknown => unreachable!(),
 
         // All non-physical types
@@ -626,16 +626,16 @@ unsafe fn encode_flat_array(
             encode_strs(buffer, array.iter(), opt, offsets);
         },
 
-        // Lexical ordered Categorical are casted to PrimitiveArray above.
+        // Lexical ordered Categorical are cast to PrimitiveArray above.
         D::Dictionary(_, _, _) => todo!(),
 
         D::FixedSizeBinary(_) => todo!(),
         D::Decimal(_, _) => todo!(),
         D::Decimal256(_, _) => todo!(),
 
-        D::Union(_, _, _) => todo!(),
+        D::Union(_) => todo!(),
         D::Map(_, _) => todo!(),
-        D::Extension(_, _, _) => todo!(),
+        D::Extension(_) => todo!(),
         D::Unknown => todo!(),
 
         // All are non-physical types.

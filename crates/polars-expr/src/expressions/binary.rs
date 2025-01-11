@@ -46,7 +46,9 @@ fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResu
     match op {
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
-        Operator::Multiply if left.dtype().is_numeric() && right.dtype().is_numeric() => {
+        Operator::Multiply
+            if left.dtype().is_primitive_numeric() && right.dtype().is_primitive_numeric() =>
+        {
             left.try_mul_owned(right)
         },
         _ => apply_operator(&left, &right, op),

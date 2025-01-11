@@ -221,7 +221,12 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
 
     if let Some(v) = extra_field {
         if !allow_extra_fields_in_struct {
-            polars_bail!(ComputeError: "extra key in struct data: {}", v)
+            polars_bail!(
+               ComputeError:
+               "extra field in struct data: {}, consider increasing infer_schema_length, or \
+               manually specifying the full schema to ignore extra fields",
+               v
+            )
         }
     }
 

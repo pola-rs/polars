@@ -11,6 +11,7 @@ pub fn search_sorted(
     let original_dtype = s.dtype();
 
     if s.dtype().is_categorical() {
+        // See https://github.com/pola-rs/polars/issues/20171
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
 
@@ -65,7 +66,7 @@ pub fn search_sorted(
 
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             let search_values = search_values.to_physical_repr();
 
             let idx = with_match_physical_numeric_polars_type!(s.dtype(), |$T| {

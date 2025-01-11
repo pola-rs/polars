@@ -244,8 +244,8 @@ def test_collapse_joins() -> None:
 
     dont_mix = cross.filter(pl.col.x + pl.col.a != 0)
     e = dont_mix.explain()
-    assert "CROSS JOIN" in e
-    assert "FILTER" in e
+    assert "NESTED LOOP JOIN" in e
+    assert "FILTER" not in e
     assert_frame_equal(
         dont_mix.collect(collapse_joins=False),
         dont_mix.collect(),
@@ -254,7 +254,7 @@ def test_collapse_joins() -> None:
 
     no_literals = cross.filter(pl.col.x == 2)
     e = no_literals.explain()
-    assert "CROSS JOIN" in e
+    assert "NESTED LOOP JOIN" in e
     assert_frame_equal(
         no_literals.collect(collapse_joins=False),
         no_literals.collect(),
@@ -264,6 +264,7 @@ def test_collapse_joins() -> None:
     iejoin = cross.filter(pl.col.x >= pl.col.a)
     e = iejoin.explain()
     assert "IEJOIN" in e
+    assert "NESTED LOOP JOIN" not in e
     assert "CROSS JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
@@ -276,6 +277,7 @@ def test_collapse_joins() -> None:
     e = iejoin.explain()
     assert "IEJOIN" in e
     assert "CROSS JOIN" not in e
+    assert "NESTED LOOP JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
         iejoin.collect(collapse_joins=False), iejoin.collect(), check_row_order=False

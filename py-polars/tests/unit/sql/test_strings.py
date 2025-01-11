@@ -249,6 +249,32 @@ def test_string_like(pattern: str, like: str, expected: list[int]) -> None:
             assert res == expected
 
 
+def test_string_like_multiline() -> None:
+    s1 = "Hello World"
+    s2 = "Hello\nWorld"
+    s3 = "hello\nWORLD"
+
+    df = pl.DataFrame({"idx": [0, 1, 2], "txt": [s1, s2, s3]})
+
+    # starts with...
+    res1 = df.sql("SELECT * FROM self WHERE txt LIKE 'Hello%' ORDER BY idx")
+    res2 = df.sql("SELECT * FROM self WHERE txt ILIKE 'HELLO%' ORDER BY idx")
+
+    assert res1["txt"].to_list() == [s1, s2]
+    assert res2["txt"].to_list() == [s1, s2, s3]
+
+    # ends with...
+    res3 = df.sql("SELECT * FROM self WHERE txt LIKE '%WORLD' ORDER BY idx")
+    res4 = df.sql("SELECT * FROM self WHERE txt ILIKE '%\nWORLD' ORDER BY idx")
+
+    assert res3["txt"].to_list() == [s3]
+    assert res4["txt"].to_list() == [s2, s3]
+
+    # exact match
+    for s in (s1, s2, s3):
+        assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").item() == s
+
+
 def test_string_position() -> None:
     df = pl.Series(
         name="city",

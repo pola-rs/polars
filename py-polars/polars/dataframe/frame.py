@@ -1154,11 +1154,11 @@ class DataFrame:
     def __le__(self, other: Any) -> DataFrame:
         return self._comp(other, "lt_eq")
 
-    def __getstate__(self) -> list[Series]:
-        return self.get_columns()
+    def __getstate__(self) -> bytes:
+        return self.serialize()
 
-    def __setstate__(self, state: list[Series]) -> None:
-        self._df = DataFrame(state)._df
+    def __setstate__(self, state: bytes) -> None:
+        self._df = self.deserialize(BytesIO(state))._df
 
     def __mul__(self, other: DataFrame | Series | int | float) -> DataFrame:
         if isinstance(other, DataFrame):
@@ -2635,8 +2635,8 @@ class DataFrame:
         ...     }
         ... )
         >>> bytes = df.serialize()
-        >>> bytes  # doctest: +ELLIPSIS
-        b'x\x01bb@\x80\x15...'
+        >>> type(bytes)
+        <class 'bytes'>
 
         The bytes can later be deserialized back into a DataFrame.
 
@@ -3106,8 +3106,8 @@ class DataFrame:
         Parameters
         ----------
         workbook : {str, Workbook}
-            String name or path of the workbook to create, BytesIO object to write
-            into, or an open `xlsxwriter.Workbook` object that has not been closed.
+            String name or path of the workbook to create, BytesIO object, file opened
+            in binary-mode, or an `xlsxwriter.Workbook` object that has not been closed.
             If None, writes to a `dataframe.xlsx` workbook in the working directory.
         worksheet : {str, Worksheet}
             Name of target worksheet or an `xlsxwriter.Worksheet` object (in which
@@ -6940,7 +6940,8 @@ class DataFrame:
         This is similar to a left-join except that we match on nearest key rather than
         equal keys.
 
-        Both DataFrames must be sorted by the asof_join key.
+        Both DataFrames must be sorted by the `on` key (within each `by` group, if
+        specified).
 
         For each row in the left DataFrame:
 
@@ -7391,7 +7392,20 @@ class DataFrame:
         │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
         └──────┴──────┴──────┴───────┴───────────┘
 
-        >>> df.join(other_df, on="ham", how="left", coalesce=True)
+        >>> df.join(other_df, on="ham", how="full", coalesce=True)
+        shape: (4, 4)
+        ┌──────┬──────┬─────┬───────┐
+        │ foo  ┆ bar  ┆ ham ┆ apple │
+        │ ---  ┆ ---  ┆ --- ┆ ---   │
+        │ i64  ┆ f64  ┆ str ┆ str   │
+        ╞══════╪══════╪═════╪═══════╡
+        │ 1    ┆ 6.0  ┆ a   ┆ x     │
+        │ 2    ┆ 7.0  ┆ b   ┆ y     │
+        │ null ┆ null ┆ d   ┆ z     │
+        │ 3    ┆ 8.0  ┆ c   ┆ null  │
+        └──────┴──────┴─────┴───────┘
+
+        >>> df.join(other_df, on="ham", how="left")
         shape: (3, 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
@@ -7936,7 +7950,7 @@ class DataFrame:
             Mapping of column names (or selector) to dtypes, or a single dtype
             to which all columns will be cast.
         strict
-            Raise if cast is invalid on rows after predicates are pusded down.
+            Raise if cast is invalid on rows after predicates are pushed down.
             If `False`, invalid casts will produce null values.
 
         Examples
@@ -10355,7 +10369,7 @@ class DataFrame:
         Apply a horizontal reduction on a DataFrame.
 
         This can be used to effectively determine aggregations on a row level, and can
-        be applied to any DataType that can be supercasted (casted to a similar parent
+        be applied to any DataType that can be supercast (cast to a similar parent
         type).
 
         An example of the supercast rules when applying an arithmetic operation on two

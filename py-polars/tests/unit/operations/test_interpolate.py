@@ -7,6 +7,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PolarsTemporalType
@@ -21,6 +22,7 @@ from zoneinfo import ZoneInfo
         (pl.Int16, pl.Float64),
         (pl.Int32, pl.Float64),
         (pl.Int64, pl.Float64),
+        (pl.Int128, pl.Float64),
         (pl.UInt8, pl.Float64),
         (pl.UInt16, pl.Float64),
         (pl.UInt32, pl.Float64),
@@ -85,21 +87,7 @@ def test_interpolate_temporal_linear(
     assert_frame_equal(result.collect(), expected)
 
 
-@pytest.mark.parametrize(
-    "input_dtype",
-    [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Float32,
-        pl.Float64,
-    ],
-)
+@pytest.mark.parametrize("input_dtype", NUMERIC_DTYPES)
 def test_interpolate_nearest(input_dtype: PolarsDataType) -> None:
     df = pl.LazyFrame({"a": [1, None, 2, None, 3]}, schema={"a": input_dtype})
     result = df.with_columns(pl.all().interpolate(method="nearest"))

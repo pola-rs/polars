@@ -89,7 +89,7 @@ pub(super) fn group_by_helper(
         rayon::join(get_columns, get_agg)
     });
 
-    columns.extend(agg_columns?.into_iter().map(Column::from));
+    columns.extend(agg_columns?);
     DataFrame::new(columns)
 }
 
@@ -98,7 +98,7 @@ impl GroupByExec {
         let keys = self
             .keys
             .iter()
-            .map(|e| e.evaluate(&df, state).map(Column::from))
+            .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<_>>()?;
         group_by_helper(
             df,

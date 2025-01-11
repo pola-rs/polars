@@ -566,6 +566,8 @@ impl SQLContext {
                     | JoinOperator::LeftOuter(constraint)
                     | JoinOperator::RightOuter(constraint)
                     | JoinOperator::Inner(constraint)
+                    | JoinOperator::Anti(constraint)
+                    | JoinOperator::Semi(constraint)
                     | JoinOperator::LeftAnti(constraint)
                     | JoinOperator::LeftSemi(constraint)
                     | JoinOperator::RightAnti(constraint)
@@ -592,9 +594,9 @@ impl SQLContext {
                                 JoinOperator::RightOuter(_) => JoinType::Right,
                                 JoinOperator::Inner(_) => JoinType::Inner,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
+                                JoinOperator::Anti(_) | JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::LeftSemi(_) | JoinOperator::RightSemi(_) => JoinType::Semi,
+                                JoinOperator::Semi(_) | JoinOperator::LeftSemi(_) | JoinOperator::RightSemi(_) => JoinType::Semi,
                                 join_type => polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type),
                             },
                         )?
@@ -1028,10 +1030,10 @@ impl SQLContext {
                         .columns
                         .iter()
                         .map(|c| {
-                            if c.value.is_empty() {
+                            if c.name.value.is_empty() {
                                 None
                             } else {
-                                Some(PlSmallStr::from_str(c.value.as_str()))
+                                Some(PlSmallStr::from_str(c.name.value.as_str()))
                             }
                         })
                         .collect();
@@ -1353,7 +1355,7 @@ impl SQLContext {
                 .replace('%', ".*")
                 .replace('_', ".");
 
-            modifiers.ilike = Some(regex::Regex::new(format!("^(?i){}$", rx).as_str()).unwrap());
+            modifiers.ilike = Some(regex::Regex::new(format!("^(?is){}$", rx).as_str()).unwrap());
         }
 
         // SELECT * RENAME
@@ -1399,7 +1401,8 @@ impl SQLContext {
                 )
             } else {
                 let existing_columns: Vec<_> = schema.iter_names().collect();
-                let new_columns: Vec<_> = alias.columns.iter().map(|c| c.value.clone()).collect();
+                let new_columns: Vec<_> =
+                    alias.columns.iter().map(|c| c.name.value.clone()).collect();
                 Ok(lf.rename(existing_columns, new_columns, true))
             }
         }

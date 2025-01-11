@@ -167,7 +167,7 @@ pub fn apply_lambda_with_primitive_out_type<'a, D>(
     first_value: Option<D::Native>,
 ) -> PyResult<ChunkedArray<D>>
 where
-    D: PyArrowPrimitiveType,
+    D: PyPolarsNumericType,
     D::Native: IntoPyObject<'a> + FromPyObject<'a>,
 {
     let skip = usize::from(first_value.is_some());
@@ -267,9 +267,9 @@ pub fn apply_lambda_with_list_out_type<'a>(
                     if val.is_none() {
                         Ok(None)
                     } else {
-                        Err(PyValueError::new_err(
-                            "should return a Series, got a {val:?}",
-                        ))
+                        Err(PyValueError::new_err(format!(
+                            "should return a Series, got a {val:?}"
+                        )))
                     }
                 },
             }

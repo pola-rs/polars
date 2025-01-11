@@ -1,6 +1,6 @@
 use arrow::array::growable::{Growable, GrowableList};
 use arrow::array::{Array, ListArray, MutableListArray, MutablePrimitiveArray, TryExtend};
-use arrow::datatypes::ArrowDataType;
+use arrow::datatypes::{ArrowDataType, ExtensionType};
 
 fn create_list_array(data: Vec<Option<Vec<Option<i32>>>>) -> ListArray<i32> {
     let mut array = MutableListArray::<i32, MutablePrimitiveArray<i32>>::new();
@@ -18,7 +18,11 @@ fn extension() {
 
     let array = create_list_array(data);
 
-    let dtype = ArrowDataType::Extension("ext".into(), Box::new(array.dtype().clone()), None);
+    let dtype = ArrowDataType::Extension(Box::new(ExtensionType {
+        name: "ext".into(),
+        inner: array.dtype().clone(),
+        metadata: None,
+    }));
     let array_ext = ListArray::new(
         dtype,
         array.offsets().clone(),

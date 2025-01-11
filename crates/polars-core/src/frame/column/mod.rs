@@ -871,6 +871,19 @@ impl Column {
         }
     }
 
+    /// Returns whether the flags were set
+    pub fn set_flags(&mut self, flags: StatisticsFlags) -> bool {
+        match self {
+            Column::Series(s) => {
+                s.set_flags(flags);
+                true
+            },
+            // @partition-opt
+            Column::Partitioned(_) => false,
+            Column::Scalar(_) => false,
+        }
+    }
+
     pub fn vec_hash(&self, build_hasher: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         // @scalar-opt?
         self.as_materialized_series().vec_hash(build_hasher, buf)
@@ -1077,8 +1090,27 @@ impl Column {
     pub fn rechunk(&self) -> Column {
         match self {
             Column::Series(s) => s.rechunk().into(),
-            Column::Partitioned(_) => self.clone(),
-            Column::Scalar(_) => self.clone(),
+            Column::Partitioned(s) => {
+                if let Some(s) = s.lazy_as_materialized_series() {
+                    // This should always hold for partitioned.
+                    debug_assert_eq!(s.n_chunks(), 1)
+                }
+                self.clone()
+            },
+            Column::Scalar(s) => {
+                if s.lazy_as_materialized_series()
+                    .filter(|x| x.n_chunks() > 1)
+                    .is_some()
+                {
+                    Column::Scalar(ScalarColumn::new(
+                        s.name().clone(),
+                        s.scalar().clone(),
+                        s.len(),
+                    ))
+                } else {
+                    self.clone()
+                }
+            },
         }
     }
 
@@ -1687,7 +1719,14 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
-            Column::Scalar(_) | Column::Partitioned(_) => 1,
+            Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
+            Column::Partitioned(s) => {
+                if let Some(s) = s.lazy_as_materialized_series() {
+                    // This should always hold for partitioned.
+                    debug_assert_eq!(s.n_chunks(), 1)
+                }
+                1
+            },
         }
     }
 

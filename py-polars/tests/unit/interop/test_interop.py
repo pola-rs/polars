@@ -857,3 +857,8 @@ def test_from_arrow_string_cache_20271() -> None:
         assert_series_equal(
             df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
         )
+
+
+def test_to_arrow_empty_chunks_20627() -> None:
+    df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
+    assert df.to_arrow().shape == (1, 1)

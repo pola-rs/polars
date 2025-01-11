@@ -1,3 +1,5 @@
+#[cfg(feature = "iejoin")]
+use polars::prelude::JoinTypeOptionsIR;
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
@@ -373,7 +375,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             df,
             schema: _,
             output_schema,
-            filter: selection,
         } => DataFrameScan {
             df: PyDataFrame::new((**df).clone()),
             projection: output_schema.as_ref().map_or_else(
@@ -385,7 +386,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .into_py_any(py)
                 },
             )?,
-            selection: selection.as_ref().map(|e| e.into()),
+            selection: None,
         }
         .into_py_any(py),
         IR::SimpleProjection { input, columns: _ } => {
@@ -472,15 +473,26 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                             return Err(PyNotImplementedError::new_err("asof join"))
                         },
                         #[cfg(feature = "iejoin")]
-                        JoinType::IEJoin(ie_options) => (
-                            name,
-                            crate::Wrap(ie_options.operator1).into_py_any(py)?,
-                            ie_options.operator2.as_ref().map_or_else(
-                                || Ok(py.None()),
-                                |op| crate::Wrap(*op).into_py_any(py),
-                            )?,
-                        )
-                            .into_py_any(py)?,
+                        JoinType::IEJoin => {
+                            let Some(JoinTypeOptionsIR::IEJoin(ie_options)) = &options.options
+                            else {
+                                unreachable!()
+                            };
+                            (
+                                name,
+                                crate::Wrap(ie_options.operator1).into_py_any(py)?,
+                                ie_options.operator2.as_ref().map_or_else(
+                                    || Ok(py.None()),
+                                    |op| crate::Wrap(*op).into_py_any(py),
+                                )?,
+                            )
+                                .into_py_any(py)?
+                        },
+                        // This is a cross join fused with a predicate. Shown in the IR::explain as
+                        // NESTED LOOP JOIN
+                        JoinType::Cross if options.options.is_some() => {
+                            return Err(PyNotImplementedError::new_err("nested loop join"))
+                        },
                         _ => name.into_any().unbind(),
                     },
                     options.args.join_nulls,

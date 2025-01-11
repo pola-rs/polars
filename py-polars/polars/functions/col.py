@@ -2,26 +2,40 @@ from __future__ import annotations
 
 import contextlib
 from collections.abc import Iterable
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import is_polars_dtype
+from polars.datatypes import Datetime, Duration, is_polars_dtype, parse_into_dtype
+from polars.datatypes.group import (
+    DATETIME_DTYPES,
+    DURATION_DTYPES,
+    FLOAT_DTYPES,
+    INTEGER_DTYPES,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsDataType
+    from polars._typing import PolarsDataType, PythonDataType
     from polars.expr.expr import Expr
 
 __all__ = ["col"]
 
 
 def _create_col(
-    name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-    *more_names: str | PolarsDataType,
+    name: (
+        str
+        | PolarsDataType
+        | PythonDataType
+        | Iterable[str]
+        | Iterable[PolarsDataType | PythonDataType]
+    ),
+    *more_names: str | PolarsDataType | PythonDataType,
 ) -> Expr:
     """Create one or more column expressions representing column(s) in a DataFrame."""
+    dtypes: list[PolarsDataType]
     if more_names:
         if isinstance(name, str):
             names_str = [name]
@@ -41,7 +55,11 @@ def _create_col(
     if isinstance(name, str):
         return wrap_expr(plr.col(name))
     elif is_polars_dtype(name):
-        return wrap_expr(plr.dtype_cols([name]))
+        dtypes = _polars_dtype_match(name)
+        return wrap_expr(plr.dtype_cols(dtypes))
+    elif isinstance(name, type):
+        dtypes = _python_dtype_match(name)
+        return wrap_expr(plr.dtype_cols(dtypes))
     elif isinstance(name, Iterable):
         names = list(name)
         if not names:
@@ -51,7 +69,15 @@ def _create_col(
         if isinstance(item, str):
             return wrap_expr(plr.cols(names))
         elif is_polars_dtype(item):
-            return wrap_expr(plr.dtype_cols(names))
+            dtypes = []
+            for nm in names:
+                dtypes.extend(_polars_dtype_match(nm))  # type: ignore[arg-type]
+            return wrap_expr(plr.dtype_cols(dtypes))
+        elif isinstance(item, type):
+            dtypes = []
+            for nm in names:
+                dtypes.extend(_python_dtype_match(nm))  # type: ignore[arg-type]
+            return wrap_expr(plr.dtype_cols(dtypes))
         else:
             msg = (
                 "invalid input for `col`"
@@ -67,6 +93,26 @@ def _create_col(
         raise TypeError(msg)
 
 
+def _python_dtype_match(tp: PythonDataType) -> list[PolarsDataType]:
+    if tp is int:
+        return list(INTEGER_DTYPES)
+    elif tp is float:
+        return list(FLOAT_DTYPES)
+    elif tp is datetime:
+        return list(DATETIME_DTYPES)
+    elif tp is timedelta:
+        return list(DURATION_DTYPES)
+    return [parse_into_dtype(tp)]
+
+
+def _polars_dtype_match(tp: PolarsDataType) -> list[PolarsDataType]:
+    if Datetime.is_(tp):
+        return list(DATETIME_DTYPES)
+    elif Duration.is_(tp):
+        return list(DURATION_DTYPES)
+    return [tp]
+
+
 class Col:
     """
     Create Polars column expressions.
@@ -79,8 +125,7 @@ class Col:
 
     This helper class enables an alternative syntax for creating a column expression
     through attribute lookup. For example `col.foo` creates an expression equal to
-    `col("foo")`.
-    See the :func:`__getattr__` method for further documentation.
+    `col("foo")`. See the :func:`__getattr__` method for further documentation.
 
     The function call syntax is considered the idiomatic way of constructing a column
     expression. The alternative attribute syntax can be useful for quick prototyping as
@@ -126,18 +171,24 @@ class Col:
 
     def __call__(
         self,
-        name: str | PolarsDataType | Iterable[str] | Iterable[PolarsDataType],
-        *more_names: str | PolarsDataType,
+        name: (
+            str
+            | PolarsDataType
+            | PythonDataType
+            | Iterable[str]
+            | Iterable[PolarsDataType | PythonDataType]
+        ),
+        *more_names: str | PolarsDataType | PythonDataType,
     ) -> Expr:
         """
-        Create one or more column expressions representing column(s) in a DataFrame.
+        Create one or more expressions representing columns in a DataFrame.
 
         Parameters
         ----------
         name
             The name or datatype of the column(s) to represent.
-            Accepts regular expression input.
-            Regular expressions should start with `^` and end with `$`.
+            Accepts regular expression input; regular expressions
+            should start with `^` and end with `$`.
         *more_names
             Additional names or datatypes of columns to represent,
             specified as positional arguments.

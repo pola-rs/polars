@@ -200,7 +200,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         match ca.inner_dtype() {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
-            dt if dt.is_numeric() => Ok(sum_list_numerical(ca, dt)),
+            dt if dt.is_primitive_numeric() => Ok(sum_list_numerical(ca, dt)),
             dt => sum_with_nulls(ca, dt),
         }
     }
@@ -213,7 +213,7 @@ pub trait ListNameSpaceImpl: AsList {
         };
 
         match ca.inner_dtype() {
-            dt if dt.is_numeric() => mean_list_numerical(ca, dt),
+            dt if dt.is_primitive_numeric() => mean_list_numerical(ca, dt),
             _ => sum_mean::mean_with_nulls(ca),
         }
     }

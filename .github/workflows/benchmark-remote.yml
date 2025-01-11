@@ -26,12 +26,12 @@ jobs:
 
       - name: Clone Polars-benchmark
         run: |
-          git clone --depth=1 https://github.com/pola-rs/polars-benchmark.git 
+          git clone --depth=1 https://github.com/pola-rs/polars-benchmark.git
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: '3.13'
 
       - name: Create virtual environment
         run: |
@@ -46,8 +46,8 @@ jobs:
           # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
           # doesn't have an up-to-date typing-extensions, see
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
-          uv pip install -U typing-extensions 
-          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
+          uv pip install -U typing-extensions
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose --index-strategy=unsafe-best-match
 
       - name: Install Polars-Benchmark dependencies
         working-directory: polars-benchmark
@@ -68,7 +68,7 @@ jobs:
         working-directory: polars-benchmark
         run: |
           "$HOME/py-polars-cache/run-benchmarks.sh" | tee ../py-polars/benchmark-results
-      
+
       - name: Cache the Polars build
         if: ${{ github.ref == 'refs/heads/main' }}
         working-directory: py-polars

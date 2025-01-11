@@ -525,7 +525,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
 
-    def strip_chars(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
@@ -582,7 +582,7 @@ class ExprStringNameSpace:
         characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
 
-    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars_start(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading characters.
 
@@ -651,7 +651,7 @@ class ExprStringNameSpace:
         characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
 
-    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars_end(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove trailing characters.
 
@@ -1233,8 +1233,8 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
+        json_path_match : Extract the first match from a JSON string using the provided
+            JSONPath.
 
         Examples
         --------
@@ -1260,19 +1260,18 @@ class ExprStringNameSpace:
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
-        Extract the first match of JSON string with the provided JSONPath expression.
+        Extract the first match from a JSON string using the provided JSONPath.
 
-        Throws errors if invalid JSON strings are encountered.
-        All return values will be cast to :class:`String` regardless of the original
-        value.
+        Throws errors if invalid JSON strings are encountered. All return values
+        are cast to :class:`String`, regardless of the original value.
 
-        Documentation on JSONPath standard can be found
+        Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string.
+            A valid JSONPath query string.
 
         Returns
         -------

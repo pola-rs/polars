@@ -19,13 +19,12 @@ use super::parser::{
 };
 use super::reader::prepare_csv_schema;
 use super::schema_inference::{check_decimal_comma, infer_file_schema};
-#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+#[cfg(feature = "decompress")]
 use super::utils::decompress;
 use super::CsvParseOptions;
 use crate::csv::read::parser::skip_this_line_naive;
 use crate::mmap::ReaderBytes;
 use crate::predicates::PhysicalIoExpr;
-#[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
 use crate::utils::compression::SupportedCompression;
 use crate::utils::update_row_counts2;
 use crate::RowIndex;
@@ -161,20 +160,19 @@ impl<'a> CoreReader<'a> {
         let separator = parse_options.separator;
 
         check_decimal_comma(parse_options.decimal_comma, separator)?;
-        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+        #[cfg(feature = "decompress")]
         let mut reader_bytes = reader_bytes;
 
-        #[cfg(not(any(feature = "decompress", feature = "decompress-fast")))]
-        if SupportedCompression::check(&reader_bytes).is_some() {
+        if !cfg!(feature = "decompress") && SupportedCompression::check(&reader_bytes).is_some() {
             polars_bail!(
                 ComputeError: "cannot read compressed CSV file; \
-                compile with feature 'decompress' or 'decompress-fast'"
+                compile with feature 'decompress'"
             );
         }
         // We keep track of the inferred schema bool
         // In case the file is compressed this schema inference is wrong and has to be done
         // again after decompression.
-        #[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+        #[cfg(feature = "decompress")]
         {
             let total_n_rows =
                 n_rows.map(|n| skip_rows + (has_header as usize) + skip_rows_after_header + n);

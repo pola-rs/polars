@@ -138,7 +138,6 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features azure              \
 		--exclude-features cloud              \
 		--exclude-features decompress         \
-		--exclude-features decompress-fast    \
 		--exclude-features default            \
 		--exclude-features docs-selection     \
 		--exclude-features extract_jsonpath   \

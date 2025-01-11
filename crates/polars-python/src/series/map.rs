@@ -141,6 +141,17 @@ impl PySeries {
                     )?;
                     ca.into_series()
                 },
+                Some(DataType::Int128) => {
+                    let ca: Int128Chunked = dispatch_apply!(
+                        series,
+                        apply_lambda_with_primitive_out_type,
+                        py,
+                        function,
+                        0,
+                        None
+                    )?;
+                    ca.into_series()
+                },
                 Some(DataType::UInt8) => {
                     let ca: UInt8Chunked = dispatch_apply!(
                         series,

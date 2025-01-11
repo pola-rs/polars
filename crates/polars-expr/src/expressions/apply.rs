@@ -326,15 +326,10 @@ impl PhysicalExpr for ApplyExpr {
                 self.inputs
                     .par_iter()
                     .map(f)
-                    .map(|v| v.map(Column::from))
                     .collect::<PolarsResult<Vec<_>>>()
             })
         } else {
-            self.inputs
-                .iter()
-                .map(f)
-                .map(|v| v.map(Column::from))
-                .collect::<PolarsResult<Vec<_>>>()
+            self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
         if self.allow_rename {
@@ -550,7 +545,6 @@ fn apply_multiple_elementwise<'a>(
 
                     ac.flat_naive().into_owned()
                 })
-                .map(Column::from)
                 .collect::<Vec<_>>();
 
             let input_len = c[0].len();

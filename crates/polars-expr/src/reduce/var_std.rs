@@ -11,7 +11,7 @@ pub fn new_var_std_reduction(dtype: DataType, is_std: bool, ddof: u8) -> Box<dyn
     use VecGroupedReduction as VGR;
     match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolVarStdReducer { is_std, ddof })),
-        _ if dtype.is_numeric() => {
+        _ if dtype.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VGR::new(dtype, VarStdReducer::<$T> {
                     is_std,

@@ -202,7 +202,7 @@ where
                 };
                 let categories = rev_map.get_categories();
                 // Check if indices are in bounds
-                if let Some(m) = ca.max() {
+                if let Some(m) = ChunkAgg::max(&ca) {
                     if m >= categories.len() as u32 {
                         polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
                     }
@@ -477,7 +477,7 @@ impl ChunkCast for ListChunked {
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_list(self, child_type, options)?;
-                        // SAFETY: we just casted so the dtype matches.
+                        // SAFETY: we just cast so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
@@ -499,7 +499,7 @@ impl ChunkCast for ListChunked {
 
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(self.chunks(), &physical_type, options)?;
-                // SAFETY: we just casted so the dtype matches.
+                // SAFETY: we just cast so the dtype matches.
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(
@@ -550,7 +550,7 @@ impl ChunkCast for ArrayChunked {
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_fixed_size_list(self, child_type, options)?;
-                        // SAFETY: we just casted so the dtype matches.
+                        // SAFETY: we just cast so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
@@ -566,7 +566,7 @@ impl ChunkCast for ArrayChunked {
                 let physical_type = dtype.to_physical();
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(self.chunks(), &physical_type, options)?;
-                // SAFETY: we just casted so the dtype matches.
+                // SAFETY: we just cast so the dtype matches.
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(

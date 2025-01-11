@@ -2,7 +2,6 @@ use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_series;
 use polars_row::RowEncodingOptions;
-use polars_utils::pl_serialize;
 use pyo3::exceptions::{PyIndexError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
@@ -368,10 +367,10 @@ impl PySeries {
         let lhs_dtype = self.series.dtype();
         let rhs_dtype = other.series.dtype();
 
-        if !lhs_dtype.is_numeric() {
+        if !lhs_dtype.is_primitive_numeric() {
             return Err(PyPolarsErr::from(polars_err!(opq = dot, lhs_dtype)).into());
         };
-        if !rhs_dtype.is_numeric() {
+        if !rhs_dtype.is_primitive_numeric() {
             return Err(PyPolarsErr::from(polars_err!(opq = dot, rhs_dtype)).into());
         }
 
@@ -390,14 +389,10 @@ impl PySeries {
 
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
-        let mut buf: Vec<u8> = vec![];
-
-        pl_serialize::SerializeOptions::default()
-            .with_compression(true)
-            .serialize_into_writer(&mut buf, &self.series)
-            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-
-        Ok(PyBytes::new(py, &buf))
+        Ok(PyBytes::new(
+            py,
+            &py.allow_threads(|| self.series.serialize_to_bytes().map_err(PyPolarsErr::from))?,
+        ))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -405,14 +400,11 @@ impl PySeries {
 
         use pyo3::pybacked::PyBackedBytes;
         match state.extract::<PyBackedBytes>(py) {
-            Ok(s) => {
-                let s: Series = pl_serialize::SerializeOptions::default()
-                    .with_compression(true)
-                    .deserialize_from_reader(&*s)
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+            Ok(s) => py.allow_threads(|| {
+                let s = Series::deserialize_from_reader(&mut &*s).map_err(PyPolarsErr::from)?;
                 self.series = s;
                 Ok(())
-            },
+            }),
             Err(e) => Err(e),
         }
     }

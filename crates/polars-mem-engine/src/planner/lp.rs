@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 
@@ -209,30 +210,29 @@ fn create_physical_plan_impl(
                 })
                 .map_or(Ok(None), |v| v.map(Some))?;
 
+            if sources.len() > 1
+                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
+                && !matches!(scan_type, FileScan::Anonymous { .. })
+            {
+                return Ok(Box::new(executors::MultiScanExec::new(
+                    sources,
+                    file_info,
+                    hive_parts,
+                    predicate,
+                    file_options,
+                    scan_type,
+                )));
+            }
+
             match scan_type.clone() {
                 #[cfg(feature = "csv")]
-                FileScan::Csv { options, .. } => {
-                    if sources.len() > 1
-                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
-                    {
-                        Ok(Box::new(executors::MultiScanExec::new(
-                            sources,
-                            file_info,
-                            hive_parts,
-                            predicate,
-                            file_options,
-                            scan_type,
-                        )))
-                    } else {
-                        Ok(Box::new(executors::CsvExec {
-                            sources,
-                            file_info,
-                            options,
-                            predicate,
-                            file_options,
-                        }))
-                    }
-                },
+                FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
+                    sources,
+                    file_info,
+                    options,
+                    predicate,
+                    file_options,
+                })),
                 #[cfg(feature = "ipc")]
                 FileScan::Ipc {
                     options,
@@ -246,37 +246,23 @@ fn create_physical_plan_impl(
                     file_options,
                     hive_parts,
                     cloud_options,
+                    metadata,
                 })),
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet {
                     options,
                     cloud_options,
                     metadata,
-                } => {
-                    if sources.len() > 1
-                        && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
-                    {
-                        Ok(Box::new(executors::MultiScanExec::new(
-                            sources,
-                            file_info,
-                            hive_parts,
-                            predicate,
-                            file_options,
-                            scan_type,
-                        )))
-                    } else {
-                        Ok(Box::new(executors::ParquetExec::new(
-                            sources,
-                            file_info,
-                            hive_parts,
-                            predicate,
-                            options,
-                            cloud_options,
-                            file_options,
-                            metadata,
-                        )))
-                    }
-                },
+                } => Ok(Box::new(executors::ParquetExec::new(
+                    sources,
+                    file_info,
+                    hive_parts,
+                    predicate,
+                    options,
+                    cloud_options,
+                    file_options,
+                    metadata,
+                ))),
                 #[cfg(feature = "json")]
                 FileScan::NDJson { options, .. } => Ok(Box::new(executors::JsonExec::new(
                     sources,
@@ -336,25 +322,11 @@ fn create_physical_plan_impl(
             }))
         },
         DataFrameScan {
+            df, output_schema, ..
+        } => Ok(Box::new(executors::DataFrameExec {
             df,
-            filter: predicate,
-            schema,
-            output_schema,
-            ..
-        } => {
-            let mut state = ExpressionConversionState::new(true, state.expr_depth);
-            let selection = predicate
-                .map(|pred| {
-                    create_physical_expr(&pred, Context::Default, expr_arena, &schema, &mut state)
-                })
-                .transpose()?;
-            Ok(Box::new(executors::DataFrameExec {
-                df,
-                projection: output_schema.map(|s| s.iter_names_cloned().collect()),
-                filter: selection,
-                predicate_has_windows: state.has_windows,
-            }))
-        },
+            projection: output_schema.map(|s| s.iter_names_cloned().collect()),
+        })),
         Sort {
             input,
             by_column,
@@ -498,6 +470,7 @@ fn create_physical_plan_impl(
             left_on,
             right_on,
             options,
+            schema,
             ..
         } => {
             let parallel = if options.force_parallel {
@@ -535,6 +508,33 @@ fn create_physical_plan_impl(
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
             let options = Arc::try_unwrap(options).unwrap_or_else(|options| (*options).clone());
+
+            // Convert the join options, to the physical join options. This requires the physical
+            // planner, so we do this last minute.
+            let join_type_options = options
+                .options
+                .map(|o| {
+                    o.compile(|e| {
+                        let phys_expr = create_physical_expr(
+                            e,
+                            Context::Default,
+                            expr_arena,
+                            &schema,
+                            &mut ExpressionConversionState::new(false, state.expr_depth),
+                        )?;
+
+                        let execution_state = ExecutionState::default();
+
+                        Ok(Arc::new(move |df: DataFrame| {
+                            let mask = phys_expr.evaluate(&df, &execution_state)?;
+                            let mask = mask.as_materialized_series();
+                            let mask = mask.bool()?;
+                            df._filter_seq(mask)
+                        }))
+                    })
+                })
+                .transpose()?;
+
             Ok(Box::new(executors::JoinExec::new(
                 input_left,
                 input_right,
@@ -542,6 +542,7 @@ fn create_physical_plan_impl(
                 right_on,
                 parallel,
                 options.args,
+                join_type_options,
             )))
         },
         HStack {

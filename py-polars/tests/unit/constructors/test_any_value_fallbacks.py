@@ -398,16 +398,16 @@ def test_fallback_with_dtype_strict_failure_decimal_precision() -> None:
         PySeries.new_from_any_values_and_dtype("", values, dtype, strict=True)
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_lit_18874() -> None:
-    with pl.StringCache():
-        assert_frame_equal(
-            pl.DataFrame(
-                {"a": [1, 2, 3]},
-            ).with_columns(b=pl.lit("foo").cast(pl.Categorical)),
-            pl.DataFrame(
-                [
-                    pl.Series("a", [1, 2, 3]),
-                    pl.Series("b", ["foo"] * 3, pl.Categorical),
-                ]
-            ),
-        )
+    assert_frame_equal(
+        pl.DataFrame(
+            {"a": [1, 2, 3]},
+        ).with_columns(b=pl.lit("foo").cast(pl.Categorical)),
+        pl.DataFrame(
+            [
+                pl.Series("a", [1, 2, 3]),
+                pl.Series("b", ["foo"] * 3, pl.Categorical),
+            ]
+        ),
+    )

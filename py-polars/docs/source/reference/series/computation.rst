@@ -46,6 +46,7 @@ Computation
     Series.first
     Series.hash
     Series.hist
+    Series.index_of
     Series.is_between
     Series.kurtosis
     Series.last

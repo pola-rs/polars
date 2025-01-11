@@ -97,6 +97,7 @@ dtype-full = [
   "dtype-decimal",
   "dtype-duration",
   "dtype-i16",
+  "dtype-i128",
   "dtype-i8",
   "dtype-struct",
   "dtype-time",
@@ -144,6 +145,7 @@ dtype-duration = [
   "polars-mem-engine/dtype-duration",
 ]
 dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16", "polars-expr/dtype-i16", "polars-mem-engine/dtype-i16"]
+dtype-i128 = ["polars-plan/dtype-i128", "polars-pipe?/dtype-i128", "polars-expr/dtype-i128"]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8"]
 dtype-struct = [
   "polars-plan/dtype-struct",
@@ -246,6 +248,7 @@ string_normalize = ["polars-plan/string_normalize"]
 string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
+index_of = ["polars-plan/index_of"]
 search_sorted = ["polars-plan/search_sorted"]
 merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted"]
 meta = ["polars-plan/meta"]
@@ -313,6 +316,7 @@ test_all = [
   "row_hash",
   "string_pad",
   "string_to_integer",
+  "index_of",
   "search_sorted",
   "top_k",
   "pivot",
@@ -359,6 +363,7 @@ features = [
   "fused",
   "futures",
   "hist",
+  "index_of",
   "interpolate",
   "interpolate_by",
   "ipc",

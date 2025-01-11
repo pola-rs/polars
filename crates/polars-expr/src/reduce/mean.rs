@@ -10,7 +10,7 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
     use VecGroupedReduction as VGR;
     match dtype {
         Boolean => Box::new(VGR::new(dtype, BoolMeanReducer)),
-        _ if dtype.is_numeric() || dtype.is_temporal() => {
+        _ if dtype.is_primitive_numeric() || dtype.is_temporal() => {
             with_match_physical_numeric_polars_type!(dtype.to_physical(), |$T| {
                 Box::new(VGR::new(dtype, NumMeanReducer::<$T>(PhantomData)))
             })
@@ -30,7 +30,7 @@ fn finish_output(values: Vec<(f64, usize)>, dtype: &DataType) -> Series {
                 .collect_ca(PlSmallStr::EMPTY);
             ca.into_series()
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             let ca: Float64Chunked = values
                 .into_iter()
                 .map(|(s, c)| (c != 0).then(|| s / c as f64))

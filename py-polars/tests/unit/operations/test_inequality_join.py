@@ -297,8 +297,7 @@ def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     )
 
     explained = q.explain()
-    assert "CROSS" in explained
-    assert "FILTER" in explained
+    assert "NESTED LOOP" in explained
     actual = q.collect()
     assert actual.to_dict(as_series=False) == {
         "group": [0, 0, 0, 0, 0, 0, 1, 1, 1],
@@ -462,17 +461,6 @@ def test_raise_on_ambiguous_name() -> None:
         df.join_where(df, pl.col("id") >= pl.col("id"))
 
 
-def test_raise_on_multiple_binary_comparisons() -> None:
-    df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="only one binary comparison allowed in each 'join_where' predicate; found ",
-    ):
-        df.join_where(
-            df, (pl.col("id") < pl.col("id")) ^ (pl.col("id") >= pl.col("id"))
-        )
-
-
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
     with pytest.raises(
@@ -603,7 +591,7 @@ def test_join_on_strings() -> None:
 
     q = df.join_where(df, pl.col("a").ge(pl.col("a_right")))
 
-    assert "CROSS JOIN" in q.explain()
+    assert "NESTED LOOP JOIN" in q.explain()
     assert q.collect().to_dict(as_series=False) == {
         "a": ["a", "b", "b", "c", "c", "c"],
         "b": ["b", "b", "b", "b", "b", "b"],
@@ -682,3 +670,14 @@ def test_join_where_literal_20061() -> None:
         "value_right": [5, 5, 5, 25],
         "flag_right": [1, 1, 1, 1],
     }
+
+
+def test_boolean_predicate_join_where() -> None:
+    urls = pl.LazyFrame({"url": "abcd.com/page"})
+    categories = pl.LazyFrame({"base_url": "abcd.com", "category": "landing page"})
+    assert (
+        "NESTED LOOP JOIN"
+        in urls.join_where(
+            categories, pl.col("url").str.starts_with(pl.col("base_url"))
+        ).explain()
+    )

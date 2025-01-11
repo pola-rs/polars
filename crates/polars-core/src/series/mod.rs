@@ -448,7 +448,7 @@ impl Series {
             #[cfg(feature = "dtype-struct")]
             DataType::Struct(_) => self.struct_().unwrap().cast_unchecked(dtype),
             DataType::List(_) => self.list().unwrap().cast_unchecked(dtype),
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 with_match_physical_numeric_polars_type!(dt, |$T| {
                     let ca: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
                         ca.cast_unchecked(dtype)
@@ -594,7 +594,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_nan()),
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
@@ -608,7 +608,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_not_nan()),
             DataType::Float64 => Ok(self.f64().unwrap().is_not_nan()),
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
@@ -622,7 +622,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_finite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_finite()),
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), true, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
@@ -636,7 +636,7 @@ impl Series {
         match self.dtype() {
             DataType::Float32 => Ok(self.f32().unwrap().is_infinite()),
             DataType::Float64 => Ok(self.f64().unwrap().is_infinite()),
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 let arr = BooleanArray::full(self.len(), false, ArrowDataType::Boolean)
                     .with_validity(self.rechunk_validity());
                 Ok(BooleanChunked::with_chunk(self.name().clone(), arr))
@@ -747,6 +747,8 @@ impl Series {
                 },
                 Int64 => Ok(self.i64().unwrap().prod_reduce()),
                 UInt64 => Ok(self.u64().unwrap().prod_reduce()),
+                #[cfg(feature = "dtype-i128")]
+                Int128 => Ok(self.i128().unwrap().prod_reduce()),
                 Float32 => Ok(self.f32().unwrap().prod_reduce()),
                 Float64 => Ok(self.f64().unwrap().prod_reduce()),
                 dt => {

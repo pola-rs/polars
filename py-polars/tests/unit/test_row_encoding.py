@@ -10,6 +10,7 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes, series
 from polars.testing.parametric.strategies.dtype import dtypes
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -78,19 +79,7 @@ def test_bool(field: tuple[bool, bool, bool]) -> None:
     roundtrip_series_re([True, False], pl.Boolean, field)
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-    ],
-)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 @pytest.mark.parametrize("field", FIELD_COMBS)
 def test_int(dtype: pl.DataType, field: tuple[bool, bool, bool]) -> None:
     min = pl.select(x=dtype.min()).item()  # type: ignore[attr-defined]
@@ -106,13 +95,7 @@ def test_int(dtype: pl.DataType, field: tuple[bool, bool, bool]) -> None:
     roundtrip_series_re([min, 0, max], dtype, field)
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [
-        pl.Float32,
-        pl.Float64,
-    ],
-)
+@pytest.mark.parametrize("dtype", FLOAT_DTYPES)
 @pytest.mark.parametrize("field", FIELD_COMBS)
 def test_float(dtype: pl.DataType, field: tuple[bool, bool, bool]) -> None:
     inf = float("inf")

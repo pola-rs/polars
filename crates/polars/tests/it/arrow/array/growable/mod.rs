@@ -11,7 +11,7 @@ mod utf8;
 
 use arrow::array::growable::make_growable;
 use arrow::array::*;
-use arrow::datatypes::{ArrowDataType, Field};
+use arrow::datatypes::{ArrowDataType, ExtensionType, Field};
 
 #[test]
 fn test_make_growable() {
@@ -44,20 +44,20 @@ fn test_make_growable_extension() {
     .unwrap();
     make_growable(&[&array], false, 2);
 
-    let dtype = ArrowDataType::Extension("ext".into(), Box::new(ArrowDataType::Int32), None);
+    let dtype = ArrowDataType::Extension(Box::new(ExtensionType {
+        name: "ext".into(),
+        inner: ArrowDataType::Int32,
+        metadata: None,
+    }));
     let array = Int32Array::from_slice([1, 2]).to(dtype.clone());
     let array_grown = make_growable(&[&array], false, 2).as_box();
     assert_eq!(array_grown.dtype(), &dtype);
 
-    let dtype = ArrowDataType::Extension(
-        "ext".into(),
-        Box::new(ArrowDataType::Struct(vec![Field::new(
-            "a".into(),
-            ArrowDataType::Int32,
-            false,
-        )])),
-        None,
-    );
+    let dtype = ArrowDataType::Extension(Box::new(ExtensionType {
+        name: "ext".into(),
+        inner: ArrowDataType::Struct(vec![Field::new("a".into(), ArrowDataType::Int32, false)]),
+        metadata: None,
+    }));
     let array = StructArray::new(
         dtype.clone(),
         2,

@@ -28,7 +28,7 @@ avro-schema = { version = "0.3" }
 base64 = "0.22.0"
 bincode = "1.3.3"
 bitflags = "2"
-bytemuck = { version = "1.11", features = ["derive", "extern_crate_alloc"] }
+bytemuck = { version = "1.21", features = ["derive", "extern_crate_alloc"] }
 bytes = { version = "1.7" }
 chrono = { version = "0.4.31", default-features = false, features = ["std"] }
 chrono-tz = "0.10"
@@ -53,7 +53,7 @@ itoap = { version = "1", features = ["simd"] }
 libc = "0.2"
 memchr = "2.6"
 memmap = { package = "memmap2", version = "0.9" }
-multiversion = "0.7"
+multiversion = "0.8"
 ndarray = { version = "0.16", default-features = false }
 num-traits = "0.2"
 numpy = "0.23"
@@ -77,7 +77,7 @@ serde_json = "1"
 simd-json = { version = "0.14", features = ["known-key"] }
 simdutf8 = "0.1.4"
 slotmap = "1"
-sqlparser = "0.52"
+sqlparser = "0.53"
 stacker = "0.1"
 streaming-iterator = "0.1.9"
 strength_reduce = "0.2"

@@ -62,5 +62,5 @@ pub(super) fn time_ranges(
     let out = temporal_ranges_impl_broadcast(start, end, range_impl, &mut builder)?;
 
     let to_type = DataType::List(Box::new(DataType::Time));
-    out.cast(&to_type).map(Column::from)
+    out.cast(&to_type)
 }

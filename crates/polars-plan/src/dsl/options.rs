@@ -1,3 +1,10 @@
+use std::hash::Hash;
+use std::sync::Arc;
+
+use polars_core::error::PolarsResult;
+#[cfg(feature = "iejoin")]
+use polars_ops::frame::IEJoinOptions;
+use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
 use polars_ops::prelude::{JoinArgs, JoinType};
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
@@ -7,6 +14,7 @@ use polars_utils::IdxSize;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use super::ExprIR;
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -42,12 +50,53 @@ impl Default for StrptimeOptions {
     }
 }
 
+#[derive(Clone, PartialEq, Eq, IntoStaticStr, Debug)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
+pub enum JoinTypeOptionsIR {
+    #[cfg(feature = "iejoin")]
+    IEJoin(IEJoinOptions),
+    #[cfg_attr(feature = "serde", serde(skip))]
+    // Fused cross join and filter (only in in-memory engine)
+    Cross { predicate: ExprIR },
+}
+
+impl Hash for JoinTypeOptionsIR {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use JoinTypeOptionsIR::*;
+        match self {
+            #[cfg(feature = "iejoin")]
+            IEJoin(opt) => opt.hash(state),
+            Cross { predicate } => predicate.node().hash(state),
+        }
+    }
+}
+
+impl JoinTypeOptionsIR {
+    pub fn compile<C: FnOnce(&ExprIR) -> PolarsResult<Arc<dyn CrossJoinFilter>>>(
+        self,
+        plan: C,
+    ) -> PolarsResult<JoinTypeOptions> {
+        use JoinTypeOptionsIR::*;
+        match self {
+            Cross { predicate } => {
+                let predicate = plan(&predicate)?;
+
+                Ok(JoinTypeOptions::Cross(CrossJoinOptions { predicate }))
+            },
+            #[cfg(feature = "iejoin")]
+            IEJoin(opt) => Ok(JoinTypeOptions::IEJoin(opt)),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct JoinOptions {
     pub allow_parallel: bool,
     pub force_parallel: bool,
     pub args: JoinArgs,
+    pub options: Option<JoinTypeOptionsIR>,
     /// Proxy of the number of rows in both sides of the joins
     /// Holds `(Option<known_size>, estimated_size)`
     pub rows_left: (Option<usize>, usize),
@@ -59,7 +108,9 @@ impl Default for JoinOptions {
         JoinOptions {
             allow_parallel: true,
             force_parallel: false,
+            // Todo!: make default
             args: JoinArgs::new(JoinType::Left),
+            options: Default::default(),
             rows_left: (None, usize::MAX),
             rows_right: (None, usize::MAX),
         }
