@@ -182,14 +182,14 @@ def test_empty_list_in_map_elements() -> None:
 
 @pytest.mark.parametrize("value", [1, True, "abc", [1, 2], {"a": 1}])
 @pytest.mark.parametrize("return_value", [1, True, "abc", [1, 2], {"a": 1}])
-@pytest.mark.parametrize("skip_nulls", [True, False])
-def test_map_elements_skip_nulls(
-    value: Any, return_value: Any, skip_nulls: bool
-) -> None:
+def test_map_elements_skip_nulls(value: Any, return_value: Any) -> None:
     s = pl.Series([value, None])
-    result = s.map_elements(lambda x: return_value, skip_nulls=skip_nulls).to_list()
-    expected = [return_value, None] if skip_nulls else [return_value, return_value]
-    assert result == expected
+
+    result = s.map_elements(lambda x: return_value, skip_nulls=True).to_list()
+    assert result == [return_value, None]
+
+    result = s.map_elements(lambda x: return_value, skip_nulls=False).to_list()
+    assert result == [return_value, return_value]
 
 
 def test_map_elements_object_dtypes() -> None:
