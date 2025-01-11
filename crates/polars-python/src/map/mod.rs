@@ -5,6 +5,7 @@ pub mod series;
 use std::collections::BTreeMap;
 
 use polars::chunked_array::builder::get_list_builder;
+use polars::export::arrow::bitmap::MutableBitmap;
 use polars::prelude::*;
 use polars_core::export::rayon::prelude::*;
 use polars_core::utils::CustomIterTools;
@@ -72,14 +73,20 @@ fn iterator_to_struct<'a>(
         struct_fields.insert(fld.name().clone(), buf);
     }
 
+    let mut validity = MutableBitmap::with_capacity(capacity);
+    validity.extend_constant(init_null_count, false);
+    validity.push(true);
+
     for dict in it {
         match dict? {
             None => {
+                validity.push(false);
                 for field_items in struct_fields.values_mut() {
                     field_items.push(AnyValue::Null);
                 }
             },
             Some(dict) => {
+                validity.push(true);
                 let dict = dict.downcast::<PyDict>()?;
                 let current_len = struct_fields
                     .values()
@@ -129,6 +136,7 @@ fn iterator_to_struct<'a>(
     Ok(
         StructChunked::from_series(name, fields[0].len(), fields.iter())
             .unwrap()
+            .with_outer_validity(Some(validity.freeze()))
             .into_series()
             .into(),
     )
