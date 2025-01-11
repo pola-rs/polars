@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import numpy as np
 import pytest
@@ -179,17 +180,16 @@ def test_empty_list_in_map_elements() -> None:
     ).to_dict(as_series=False) == {"a": [[], [1, 2], [], [5]]}
 
 
-def test_map_elements_skip_nulls() -> None:
-    some_map = {None: "a", 1: "b"}
-    s = pl.Series([None, 1])
-
-    assert s.map_elements(
-        lambda x: some_map[x], return_dtype=pl.String, skip_nulls=True
-    ).to_list() == [None, "b"]
-
-    assert s.map_elements(
-        lambda x: some_map[x], return_dtype=pl.String, skip_nulls=False
-    ).to_list() == ["a", "b"]
+@pytest.mark.parametrize("value", [1, True, "abc", [1, 2], {"a": 1}])
+@pytest.mark.parametrize("return_value", [1, True, "abc", [1, 2], {"a": 1}])
+@pytest.mark.parametrize("skip_nulls", [True, False])
+def test_map_elements_skip_nulls(
+    value: Any, return_value: Any, skip_nulls: bool
+) -> None:
+    s = pl.Series([value, None])
+    result = s.map_elements(lambda x: return_value, skip_nulls=skip_nulls).to_list()
+    expected = [return_value, None] if skip_nulls else [return_value, return_value]
+    assert result == expected
 
 
 def test_map_elements_object_dtypes() -> None:
