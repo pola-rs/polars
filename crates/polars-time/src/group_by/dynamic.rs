@@ -334,7 +334,7 @@ impl Wrap<&DataFrame> {
 
             // Include boundaries cannot be parallel (easily).
             if include_lower_bound | include_upper_bound {
-                POOL.install(|| match groups {
+                POOL.install(|| match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
                         let ir = groups
                             .par_iter()
@@ -411,7 +411,7 @@ impl Wrap<&DataFrame> {
                     },
                 })
             } else {
-                POOL.install(|| match groups {
+                POOL.install(|| match groups.as_ref() {
                     GroupsProxy::Idx(groups) => {
                         let groupsidx = groups
                             .par_iter()
@@ -556,7 +556,7 @@ impl Wrap<&DataFrame> {
 
             // continue determining the rolling indexes.
 
-            POOL.install(|| match groups {
+            POOL.install(|| match groups.as_ref() {
                 GroupsProxy::Idx(groups) => {
                     let idx = groups
                         .par_iter()

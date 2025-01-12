@@ -3039,7 +3039,7 @@ impl DataFrame {
     #[cfg(feature = "algorithm_group_by")]
     pub fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names_owned())?;
-        let groups = gb.take_groups();
+        let groups = gb.get_groups();
         Ok(is_unique_helper(
             groups,
             self.height() as IdxSize,
@@ -3064,7 +3064,7 @@ impl DataFrame {
     #[cfg(feature = "algorithm_group_by")]
     pub fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names_owned())?;
-        let groups = gb.take_groups();
+        let groups = gb.get_groups();
         Ok(is_unique_helper(
             groups,
             self.height() as IdxSize,
@@ -3174,7 +3174,7 @@ impl DataFrame {
         // don't parallelize this
         // there is a lot of parallelization in take and this may easily SO
         POOL.install(|| {
-            match groups {
+            match groups.as_ref() {
                 GroupsProxy::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
                     let mut df = df.clone();
@@ -3191,7 +3191,7 @@ impl DataFrame {
                 },
                 GroupsProxy::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
-                    .map(|[first, len]| df.slice(first as i64, len as usize))
+                    .map(|[first, len]| df.slice(*first as i64, *len as usize))
                     .collect()),
             }
         })

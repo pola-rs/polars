@@ -160,7 +160,7 @@ pub fn write_partitioned_dataset(
         }
     };
 
-    POOL.install(|| match groups {
+    POOL.install(|| match groups.as_ref() {
         GroupsProxy::Idx(idx) => idx
             .all()
             .chunks(MAX_OPEN_FILES)

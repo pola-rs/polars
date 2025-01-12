@@ -98,7 +98,7 @@ impl DataFrame {
                 rows.group_tuples(multithreaded, sorted)
             }
         };
-        Ok(GroupBy::new(self, by, groups?, None))
+        Ok(GroupBy::new(self, by, groups?.sliced(), None))
     }
 
     /// Group DataFrame using a Series column.
@@ -184,20 +184,20 @@ impl DataFrame {
 /// ```
 ///
 #[derive(Debug, Clone)]
-pub struct GroupBy<'df> {
-    pub df: &'df DataFrame,
+pub struct GroupBy<'a> {
+    pub df: &'a DataFrame,
     pub(crate) selected_keys: Vec<Column>,
     // [first idx, [other idx]]
-    groups: GroupsProxy,
+    groups: SlicedGroups,
     // columns selected for aggregation
     pub(crate) selected_agg: Option<Vec<PlSmallStr>>,
 }
 
-impl<'df> GroupBy<'df> {
+impl<'a> GroupBy<'a> {
     pub fn new(
-        df: &'df DataFrame,
+        df: &'a DataFrame,
         by: Vec<Column>,
-        groups: GroupsProxy,
+        groups: SlicedGroups,
         selected_agg: Option<Vec<PlSmallStr>>,
     ) -> Self {
         GroupBy {
@@ -223,7 +223,7 @@ impl<'df> GroupBy<'df> {
     /// The Vec returned contains:
     ///     (first_idx, [`Vec<indexes>`])
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &GroupsProxy {
+    pub fn get_groups(&self) -> &SlicedGroups {
         &self.groups
     }
 
@@ -235,15 +235,15 @@ impl<'df> GroupBy<'df> {
     /// # Safety
     /// Groups should always be in bounds of the `DataFrame` hold by this [`GroupBy`].
     /// If you mutate it, you must hold that invariant.
-    pub unsafe fn get_groups_mut(&mut self) -> &mut GroupsProxy {
+    pub unsafe fn get_groups_mut(&mut self) -> &mut SlicedGroups {
         &mut self.groups
     }
 
-    pub fn take_groups(self) -> GroupsProxy {
+    pub fn take_groups(self) -> SlicedGroups {
         self.groups
     }
 
-    pub fn take_groups_mut(&mut self) -> GroupsProxy {
+    pub fn take_groups_mut(&mut self) -> SlicedGroups {
         std::mem::take(&mut self.groups)
     }
 
@@ -846,7 +846,7 @@ impl<'df> GroupBy<'df> {
         match slice {
             None => self,
             Some((offset, length)) => {
-                self.groups = (*self.groups.slice(offset, length)).clone();
+                self.groups = (self.groups.slice(offset, length)).clone();
                 self.selected_keys = self.keys_sliced(slice);
                 self
             },

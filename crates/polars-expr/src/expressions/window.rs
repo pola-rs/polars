@@ -60,7 +60,7 @@ impl WindowExpr {
         let mut take_idx = vec![];
 
         // groups are not changed, we can map by doing a standard arg_sort.
-        if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
+        if std::ptr::eq(ac.groups().as_ref(), gb.get_groups().as_ref()) {
             let mut iter = 0..flattened.len() as IdxSize;
             match ac.groups().as_ref() {
                 GroupsProxy::Idx(groups) => {
@@ -79,7 +79,7 @@ impl WindowExpr {
         // and sort by the old indexes
         else {
             let mut original_idx = Vec::with_capacity(out_column.len());
-            match gb.get_groups() {
+            match gb.get_groups().as_ref() {
                 GroupsProxy::Idx(groups) => {
                     for g in groups.all() {
                         original_idx.extend_from_slice(g)
@@ -333,7 +333,7 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
-                if let GroupsProxy::Slice { .. } = gb.get_groups() {
+                if let GroupsProxy::Slice { .. } = gb.get_groups().as_ref() {
                     // Result can be directly exploded if the input was sorted.
                     Ok(MapStrategy::Explode)
                 } else {
