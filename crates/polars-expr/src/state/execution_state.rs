@@ -11,7 +11,7 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsTypeCache = Arc<RwLock<PlHashMap<String, GroupPositions>>>;
+pub type GroupsTypeCache = Arc<Mutex<PlHashMap<String, GroupPositions>>>;
 
 bitflags! {
     #[repr(transparent)]
@@ -178,7 +178,7 @@ impl ExecutionState {
     /// Clear the cache used by the Window expressions
     pub fn clear_window_expr_cache(&self) {
         {
-            let mut lock = self.group_tuples.write().unwrap();
+            let mut lock = self.group_tuples.lock().unwrap();
             lock.clear();
         }
         let mut lock = self.join_tuples.lock().unwrap();
