@@ -146,7 +146,7 @@ impl<'a> AggregationContext<'a> {
                                 groups,
                                 rolling: false,
                             }
-                            .sliced(),
+                            .into_sliceable(),
                         )
                     },
                     // sliced groups are already in correct order
@@ -287,7 +287,7 @@ impl<'a> AggregationContext<'a> {
                         groups,
                         rolling: false,
                     }
-                    .sliced(),
+                    .into_sliceable(),
                 );
             },
             _ => {
@@ -314,7 +314,7 @@ impl<'a> AggregationContext<'a> {
                         groups,
                         rolling: false,
                     }
-                    .sliced(),
+                    .into_sliceable(),
                 );
             },
         }

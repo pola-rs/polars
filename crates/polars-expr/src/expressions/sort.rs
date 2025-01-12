@@ -98,7 +98,7 @@ impl PhysicalExpr for SortExpr {
                     }
                 });
                 let groups = GroupsType::Idx(groups);
-                ac.with_groups(groups.sliced());
+                ac.with_groups(groups.into_sliceable());
             },
         }
 

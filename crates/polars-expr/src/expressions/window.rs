@@ -444,7 +444,7 @@ impl PhysicalExpr for WindowExpr {
                 let order_by = order_by.evaluate(df, state)?;
                 polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
                 groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
-                    .sliced()
+                    .into_sliceable()
             }
 
             let out: PolarsResult<GroupPositions> = Ok(groups);

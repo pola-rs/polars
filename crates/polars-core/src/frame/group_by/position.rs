@@ -1,7 +1,7 @@
 use std::mem::ManuallyDrop;
 use std::ops::{Deref, DerefMut};
 
-use arrow::offset::{self, OffsetsBuffer};
+use arrow::offset::OffsetsBuffer;
 use polars_utils::idx_vec::IdxVec;
 use rayon::iter::plumbing::UnindexedConsumer;
 use rayon::prelude::*;
@@ -471,14 +471,10 @@ impl GroupsType {
         }
     }
 
-    pub fn sliced(self) -> GroupPositions {
+    pub fn into_sliceable(self) -> GroupPositions {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
     }
-
-    //pub fn slice(self, offset: i64, len: usize) -> GroupPositions {
-    //    slice_groups(Arc::new(self), offset, len)
-    //}
 }
 
 impl From<GroupsIdx> for GroupsType {
@@ -589,8 +585,7 @@ impl<'a> ParallelIterator for GroupsTypeParIter<'a> {
 #[derive(Clone, Debug)]
 pub struct GroupPositions {
     sliced: ManuallyDrop<GroupsType>,
-    #[allow(dead_code)]
-    // we need the lifetime to ensure the slice remains valid
+    // Unsliced buffer
     original: Arc<GroupsType>,
     offset: i64,
     len: usize,
@@ -618,7 +613,7 @@ impl Deref for GroupPositions {
 
 impl Default for GroupPositions {
     fn default() -> Self {
-        GroupsType::default().sliced()
+        GroupsType::default().into_sliceable()
     }
 }
 
@@ -684,7 +679,7 @@ fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<G
         },
         GroupsType::Slice { groups, rolling } => {
             let groups = unsafe {
-                let groups = slice_slice(&groups, offset, len);
+                let groups = slice_slice(groups, offset, len);
                 let ptr = groups.as_ptr() as *mut _;
                 Vec::from_raw_parts(ptr, groups.len(), groups.len())
             };

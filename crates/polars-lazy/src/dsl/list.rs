@@ -42,7 +42,7 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
             groups,
             rolling: false,
         }
-        .sliced(),
+        .into_sliceable(),
     )
 }
 

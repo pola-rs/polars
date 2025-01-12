@@ -16,10 +16,10 @@ pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
 mod perfect;
-mod proxy;
+mod position;
 
 pub use into_groups::*;
-pub use proxy::*;
+pub use position::*;
 
 use crate::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered,
@@ -98,7 +98,7 @@ impl DataFrame {
                 rows.group_tuples(multithreaded, sorted)
             }
         };
-        Ok(GroupBy::new(self, by, groups?.sliced(), None))
+        Ok(GroupBy::new(self, by, groups?.into_sliceable(), None))
     }
 
     /// Group DataFrame using a Series column.

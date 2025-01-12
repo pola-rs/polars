@@ -396,7 +396,7 @@ impl PhysicalExpr for SortByExpr {
             ac_in.with_values(s.explode().unwrap(), false, None)?;
         }
 
-        ac_in.with_groups(groups.sliced());
+        ac_in.with_groups(groups.into_sliceable());
         Ok(ac_in)
     }
 

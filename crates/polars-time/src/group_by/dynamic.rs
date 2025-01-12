@@ -509,7 +509,7 @@ impl Wrap<&DataFrame> {
         dt.into_datetime(tu, None)
             .into_column()
             .cast(time_type)
-            .map(|s| (s, by, groups.sliced()))
+            .map(|s| (s, by, groups.into_sliceable()))
     }
 
     /// Returns: time_keys, keys, groupsproxy
@@ -612,7 +612,7 @@ impl Wrap<&DataFrame> {
 
         let dt = dt.cast(time_type).unwrap();
 
-        Ok((dt, group_by, groups.sliced()))
+        Ok((dt, group_by, groups.into_sliceable()))
     }
 }
 
@@ -917,7 +917,7 @@ mod test {
             ]
             .into(),
         )
-        .sliced();
+        .into_sliceable();
         assert_eq!(expected, groups);
         Ok(())
     }

@@ -263,7 +263,8 @@ impl PhysicalExpr for SliceExpr {
             },
         };
 
-        ac.with_groups(groups.sliced()).set_original_len(false);
+        ac.with_groups(groups.into_sliceable())
+            .set_original_len(false);
 
         Ok(ac)
     }

@@ -3184,7 +3184,7 @@ impl DataFrame {
                         .map(|(_, group)| {
                             // groups are in bounds
                             unsafe {
-                                df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending)
+                                df._take_unchecked_slice_sorted(group, false, IsSorted::Ascending)
                             }
                         })
                         .collect())
