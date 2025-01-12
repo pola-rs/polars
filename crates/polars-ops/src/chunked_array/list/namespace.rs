@@ -573,13 +573,13 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.str().unwrap();
-                    let mut fill_values = StringChunked::new(
+                    let mut filled_values = StringChunked::new(
                         PlSmallStr::EMPTY,
                         vec![fill_value.unwrap(); (max_len - ca.len()).try_into().unwrap()],
                     );
 
-                    let _ = fill_values.append(ca);
-                    Some(fill_values.into())
+                    let _ = filled_values.append(ca);
+                    Some(filled_values.into())
                 })
             },
             dt => {
