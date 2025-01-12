@@ -221,7 +221,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     TanD,
     /// SQL 'acos' function
-    /// Compute inverse cosinus of the input expression (in radians).
+    /// Compute inverse cosine of the input expression (in radians).
     /// ```sql
     /// SELECT ACOS(column_1) FROM df;
     /// ```
@@ -245,7 +245,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Atan2,
     /// SQL 'acosd' function
-    /// Compute inverse cosinus of the input expression (in degrees).
+    /// Compute inverse cosine of the input expression (in degrees).
     /// ```sql
     /// SELECT ACOSD(column_1) FROM df;
     /// ```
