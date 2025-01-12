@@ -35,7 +35,7 @@ impl PhysicalExpr for RollingExpr {
                 // We cannot cache those as mutexes under rayon can deadlock.
                 // TODO! precompute all groups up front.
                 let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
-                Cow::Owned(groups)
+                Cow::Owned(groups.sliced())
             },
         };
 

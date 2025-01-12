@@ -1,5 +1,5 @@
 use std::mem::ManuallyDrop;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use arrow::offset::{self, OffsetsBuffer};
 use polars_utils::idx_vec::IdxVec;
@@ -471,24 +471,6 @@ impl GroupsProxy {
         }
     }
 
-    pub fn unroll(self) -> GroupsProxy {
-        match self {
-            GroupsProxy::Idx(_) => self,
-            GroupsProxy::Slice { rolling: false, .. } => self,
-            GroupsProxy::Slice { mut groups, .. } => {
-                let mut offset = 0 as IdxSize;
-                for g in groups.iter_mut() {
-                    g[0] = offset;
-                    offset += g[1];
-                }
-                GroupsProxy::Slice {
-                    groups,
-                    rolling: false,
-                }
-            },
-        }
-    }
-
     pub fn sliced(self) -> SlicedGroups {
         let len = self.len();
         slice_groups(Arc::new(self), 0, len)
@@ -647,6 +629,24 @@ impl SlicedGroups {
             original.sort();
 
             self.sliced = slice_groups_inner(original, self.offset, self.len);
+        }
+    }
+
+    pub fn unroll(mut self) -> SlicedGroups {
+        match self.sliced.deref_mut() {
+            GroupsProxy::Idx(_) => self,
+            GroupsProxy::Slice { rolling: false, .. } => self,
+            GroupsProxy::Slice {
+                groups, rolling, ..
+            } => {
+                let mut offset = 0 as IdxSize;
+                for g in groups.iter_mut() {
+                    g[0] = offset;
+                    offset += g[1];
+                }
+                *rolling = false;
+                self
+            },
         }
     }
 }

@@ -141,7 +141,7 @@ impl PhysicalExpr for FilterExpr {
                 })
             };
 
-            ac_s.with_groups(groups).set_original_len(false);
+            ac_s.with_groups(groups.sliced()).set_original_len(false);
             Ok(ac_s)
         }
     }

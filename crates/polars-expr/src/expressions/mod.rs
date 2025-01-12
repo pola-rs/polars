@@ -499,7 +499,7 @@ impl<'a> AggregationContext<'a> {
                 // [1, 2]
                 // [3, 4]
                 let groups = groups.unroll();
-                (flattened, Cow::Owned(groups.sliced()))
+                (flattened, Cow::Owned(groups))
             },
         }
     }
