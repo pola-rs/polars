@@ -1373,5 +1373,6 @@ class ExprListNameSpace:
         other = parse_into_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
-    def pad_start(self) -> Expr:
-        return wrap_expr(self._pyexpr.list_pad_start())
+    def pad_start(self, *, fill_value: IntoExpr) -> Expr:
+        fill_value = parse_into_expression(fill_value, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_pad_start(fill_value))

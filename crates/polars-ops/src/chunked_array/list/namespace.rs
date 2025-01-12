@@ -513,10 +513,18 @@ pub trait ListNameSpaceImpl: AsList {
         list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
     }
 
-    fn lst_pad_start(&self) -> PolarsResult<ListChunked> {
-        let list_ca = self.as_list();
+    fn lst_pad_start(&self, fill_value: &Column) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+        let inner_dtype = ca.inner_dtype();
+        let fill_dtype = fill_value.dtype();
+        let super_type = try_get_supertype(&inner_dtype, fill_dtype)?;
 
-        let max_len = list_ca
+        let dtype = &DataType::List(Box::new(super_type.clone()));
+        let ca = ca.cast(dtype)?;
+        let ca = ca.list().unwrap();
+
+        // Length of largest sublist
+        let max_len = ca
             .iter()
             .map(|opt_v| match opt_v {
                 Some(v) => v.len(),
@@ -527,19 +535,57 @@ pub trait ListNameSpaceImpl: AsList {
             .max()
             .unwrap_or(0);
 
-        let out: ListChunked = list_ca.apply_amortized(|s| {
-            let s: &Series = s.as_ref();
-            let ca: &Int64Chunked = s.i64().unwrap();
-            if ca.len() == max_len {
-                return *s;
-            }
-            let mut fill_values = Int64Chunked::new_vec(
-                PlSmallStr::EMPTY,
-                vec![fill_value; (max_len - ca.len()).try_into().unwrap()],
-            );
-            let _ = fill_values.append(ca);
-            fill_values.into()
-        });
+        let out: ListChunked = match super_type {
+            DataType::Int64 => {
+                let fill_value = fill_value.i64().unwrap();
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.i64().unwrap();
+                    let mut fill_values = Int64Chunked::new_vec(
+                        PlSmallStr::EMPTY,
+                        vec![fill_value.unwrap(); (max_len - ca.len()).try_into().unwrap()],
+                    );
+
+                    let _ = fill_values.append(ca);
+                    Some(fill_values.into())
+                })
+            },
+
+            DataType::Float64 => {
+                let fill_value = fill_value.f64().unwrap();
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.f64().unwrap();
+                    let mut fill_values = Float64Chunked::new_vec(
+                        PlSmallStr::EMPTY,
+                        vec![fill_value.unwrap(); (max_len - ca.len()).try_into().unwrap()],
+                    );
+
+                    let _ = fill_values.append(ca);
+                    Some(fill_values.into())
+                })
+            },
+            DataType::String => {
+                let fill_value = fill_value.str().unwrap();
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.str().unwrap();
+                    let mut fill_values = StringChunked::new(
+                        PlSmallStr::EMPTY,
+                        vec![fill_value.unwrap(); (max_len - ca.len()).try_into().unwrap()],
+                    );
+
+                    let _ = fill_values.append(ca);
+                    Some(fill_values.into())
+                })
+            },
+            dt => {
+                polars_bail!(InvalidOperation: "list.pad_start() doesn't work on data type {}", dt)
+            },
+        };
 
         Ok(out)
     }

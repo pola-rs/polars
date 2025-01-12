@@ -369,10 +369,10 @@ impl ListNameSpace {
 
     /// Add elements in each sub-list until it matches the length of the longest
     /// sub-list.
-    pub fn pad_start(self) -> Expr {
+    pub fn pad_start(self, fill_value: Expr) -> Expr {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::PadStart),
-            &[],
+            &[fill_value],
             false,
             None,
         )
