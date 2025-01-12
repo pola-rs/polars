@@ -2357,16 +2357,22 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let mut null_count = 0;
 
         for val in iter_struct(self) {
-            let out = lambda.call1((Wrap(val),))?;
-            if out.is_none() {
-                null_count += 1;
-                continue;
+            match val {
+                AnyValue::Null => null_count += 1,
+                _ => {
+                    let out = lambda.call1((Wrap(val),))?;
+                    if out.is_none() {
+                        null_count += 1;
+                        continue;
+                    }
+                    return infer_and_finish(self, py, lambda, &out, null_count);
+                },
             }
-            return infer_and_finish(self, py, lambda, &out, null_count);
         }
 
-        // todo! full null
-        Ok(self.clone().into_series().into())
+        Ok(Self::full_null(self.name().clone(), self.len())
+            .into_series()
+            .into())
     }
 
     fn apply_into_struct(
@@ -2379,7 +2385,10 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = 1;
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| lambda.call1((Wrap(val),)).map(Some));
+            .map(|val| match val {
+                AnyValue::Null => Ok(None),
+                _ => lambda.call1((Wrap(val),)).map(Some),
+            });
         iterator_to_struct(
             py,
             it,
@@ -2404,7 +2413,10 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
+            .map(|val| match val {
+                AnyValue::Null => Ok(None),
+                _ => call_lambda_and_extract(py, lambda, Wrap(val)),
+            });
 
         iterator_to_primitive(
             it,
@@ -2425,7 +2437,10 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
+            .map(|val| match val {
+                AnyValue::Null => Ok(None),
+                _ => call_lambda_and_extract(py, lambda, Wrap(val)),
+            });
 
         iterator_to_bool(
             it,
@@ -2446,7 +2461,10 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
+            .map(|val| match val {
+                AnyValue::Null => Ok(None),
+                _ => call_lambda_and_extract(py, lambda, Wrap(val)),
+            });
 
         iterator_to_string(
             it,
@@ -2468,7 +2486,10 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let lambda = lambda.bind(py);
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_series_out(py, lambda, Wrap(val)).map(Some));
+            .map(|val| match val {
+                AnyValue::Null => Ok(None),
+                _ => call_lambda_series_out(py, lambda, Wrap(val)).map(Some),
+            });
         iterator_to_list(
             dt,
             it,
@@ -2513,7 +2534,10 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         let skip = usize::from(first_value.is_some());
         let it = iter_struct(self)
             .skip(init_null_count + skip)
-            .map(|val| call_lambda_and_extract(py, lambda, Wrap(val)));
+            .map(|val| match val {
+                AnyValue::Null => Ok(None),
+                _ => call_lambda_and_extract(py, lambda, Wrap(val)),
+            });
 
         iterator_to_object(
             it,
