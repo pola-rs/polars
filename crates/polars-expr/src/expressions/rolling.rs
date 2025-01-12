@@ -53,7 +53,7 @@ impl PhysicalExpr for RollingExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupsProxy,
+        _groups: &'a GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "rolling expression not allowed in aggregation");

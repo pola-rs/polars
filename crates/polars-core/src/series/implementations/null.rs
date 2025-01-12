@@ -106,11 +106,11 @@ impl PrivateSeries for NullChunked {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
         Ok(if self.is_empty() {
-            GroupsProxy::default()
+            GroupsType::default()
         } else {
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: vec![[0, self.length]],
                 rolling: false,
             }
@@ -118,7 +118,7 @@ impl PrivateSeries for NullChunked {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         AggList::agg_list(self, groups)
     }
 

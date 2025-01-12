@@ -18,7 +18,7 @@ use crate::prelude::*;
 struct PivotExpr(Expr);
 
 impl PhysicalAggExpr for PivotExpr {
-    fn evaluate(&self, df: &DataFrame, groups: &GroupsProxy) -> PolarsResult<Series> {
+    fn evaluate(&self, df: &DataFrame, groups: &GroupPositions) -> PolarsResult<Series> {
         let state = ExecutionState::new();
         let dtype = df.get_columns()[0].dtype();
         let phys_expr = prepare_expression_for_context(

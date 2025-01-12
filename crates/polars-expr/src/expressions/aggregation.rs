@@ -157,7 +157,7 @@ impl PhysicalExpr for AggregationExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
@@ -287,8 +287,8 @@ impl PhysicalExpr for AggregationExpr {
                                 let out: IdxCa = if matches!(s.dtype(), &DataType::Null) {
                                     IdxCa::full(s.name().clone(), 0, groups.len())
                                 } else {
-                                    match groups.as_ref() {
-                                        GroupsProxy::Idx(idx) => {
+                                    match groups.as_ref().as_ref() {
+                                        GroupsType::Idx(idx) => {
                                             let s = s.rechunk();
                                             // @scalar-opt
                                             // @partition-opt
@@ -307,7 +307,7 @@ impl PhysicalExpr for AggregationExpr {
                                                 })
                                                 .collect_ca_trusted_with_dtype(keep_name, IDX_DTYPE)
                                         },
-                                        GroupsProxy::Slice { groups, .. } => {
+                                        GroupsType::Slice { groups, .. } => {
                                             // Slice and use computed null count
                                             groups
                                                 .iter()
@@ -459,7 +459,7 @@ impl PartitionedAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let expr = self.input.as_partitioned_aggregator().unwrap();
@@ -547,7 +547,7 @@ impl PartitionedAggregation for AggregationExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         match self.agg_type.groupby {
@@ -605,8 +605,8 @@ impl PartitionedAggregation for AggregationExpr {
                     Ok(())
                 };
 
-                match groups {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref() {
+                    GroupsType::Idx(groups) => {
                         for (_, idx) in groups {
                             let ca = unsafe {
                                 // SAFETY:
@@ -616,7 +616,7 @@ impl PartitionedAggregation for AggregationExpr {
                             process_group(ca)?;
                         }
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         for [first, len] in groups {
                             let len = *len as usize;
                             let ca = ca.slice(*first as i64, len);
@@ -712,7 +712,7 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;

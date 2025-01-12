@@ -130,17 +130,17 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
                 self.0.agg_min(groups)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
                 self.0.agg_max(groups)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
                 use DataType::*;
                 match self.dtype() {
                     Int8 | UInt8 | Int16 | UInt16 => self
@@ -152,30 +152,30 @@ macro_rules! impl_dyn_series {
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+            unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
                 self.0.agg_std(groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+            unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
                 self.0.agg_var(groups, ddof)
             }
 
             #[cfg(feature = "algorithm_group_by")]
-            unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
                 self.0.agg_list(groups)
             }
 
             #[cfg(feature = "bitwise")]
-            unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
                 self.0.agg_and(groups)
             }
             #[cfg(feature = "bitwise")]
-            unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
                 self.0.agg_or(groups)
             }
             #[cfg(feature = "bitwise")]
-            unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+            unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
                 self.0.agg_xor(groups)
             }
 
@@ -195,8 +195,8 @@ macro_rules! impl_dyn_series {
                 NumOpsDispatch::remainder(&self.0, rhs)
             }
             #[cfg(feature = "algorithm_group_by")]
-            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-                IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+            fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+                IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
             }
 
             fn arg_sort_multiple(
