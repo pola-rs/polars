@@ -86,13 +86,13 @@ pub trait PolarsTemporalGroupby {
         &self,
         group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)>;
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)>;
 
     fn group_by_dynamic(
         &self,
         group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)>;
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)>;
 }
 
 impl PolarsTemporalGroupby for DataFrame {
@@ -100,7 +100,7 @@ impl PolarsTemporalGroupby for DataFrame {
         &self,
         group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)> {
         Wrap(self).rolling(group_by, options)
     }
 
@@ -108,7 +108,7 @@ impl PolarsTemporalGroupby for DataFrame {
         &self,
         group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)> {
         Wrap(self).group_by_dynamic(group_by, options)
     }
 }
@@ -118,7 +118,7 @@ impl Wrap<&DataFrame> {
         &self,
         group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)> {
         polars_ensure!(
                         !options.period.is_zero() && !options.period.negative,
                         ComputeError:
@@ -192,7 +192,7 @@ impl Wrap<&DataFrame> {
         &self,
         group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)> {
         let time = self.0.column(&options.index_column)?.rechunk();
         if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
@@ -266,10 +266,10 @@ impl Wrap<&DataFrame> {
         options: &DynamicGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)> {
         polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
         if dt.is_empty() {
-            return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
+            return dt.cast(time_type).map(|s| (s, by, Default::default()));
         }
 
         // A requirement for the index so we can set this such that downstream code has this info.
@@ -509,7 +509,7 @@ impl Wrap<&DataFrame> {
         dt.into_datetime(tu, None)
             .into_column()
             .cast(time_type)
-            .map(|s| (s, by, groups))
+            .map(|s| (s, by, groups.sliced()))
     }
 
     /// Returns: time_keys, keys, groupsproxy
@@ -521,7 +521,7 @@ impl Wrap<&DataFrame> {
         tu: TimeUnit,
         tz: Option<Tz>,
         time_type: &DataType,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, SlicedGroups)> {
         let mut dt = dt.rechunk();
 
         let groups = if group_by.is_empty() {
@@ -612,7 +612,7 @@ impl Wrap<&DataFrame> {
 
         let dt = dt.cast(time_type).unwrap();
 
-        Ok((dt, group_by, groups))
+        Ok((dt, group_by, groups.sliced()))
     }
 }
 
@@ -916,7 +916,8 @@ mod test {
                 (4, unitvec![4]),
             ]
             .into(),
-        );
+        )
+        .sliced();
         assert_eq!(expected, groups);
         Ok(())
     }

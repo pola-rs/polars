@@ -316,7 +316,7 @@ impl PartitionGroupByExec {
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
-            groups = sliced_groups.as_deref().unwrap();
+            groups = sliced_groups.as_ref().unwrap();
         }
 
         let get_columns = || gb.keys_sliced(self.slice);

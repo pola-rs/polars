@@ -596,6 +596,12 @@ pub struct SlicedGroups {
     len: usize,
 }
 
+impl PartialEq for SlicedGroups {
+    fn eq(&self, other: &Self) -> bool {
+        self.offset == other.offset && self.len == other.len && self.sliced == other.sliced
+    }
+}
+
 impl AsRef<GroupsProxy> for SlicedGroups {
     fn as_ref(&self) -> &GroupsProxy {
         self.sliced.deref()
