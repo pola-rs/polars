@@ -130,7 +130,7 @@ impl PhysicalExpr for SliceExpr {
                 }
                 let groups = ac.groups();
 
-                match groups.as_ref() {
+                match groups.as_ref().as_ref() {
                     GroupsProxy::Idx(groups) => {
                         let groups = groups
                             .iter()
@@ -159,7 +159,7 @@ impl PhysicalExpr for SliceExpr {
                 let length = length.cast(&IDX_DTYPE)?;
                 let length = length.idx().unwrap();
 
-                match groups.as_ref() {
+                match groups.as_ref().as_ref() {
                     GroupsProxy::Idx(groups) => {
                         let groups = groups
                             .iter()
@@ -194,7 +194,7 @@ impl PhysicalExpr for SliceExpr {
                 let offset = offset.cast(&DataType::Int64)?;
                 let offset = offset.i64().unwrap();
 
-                match groups.as_ref() {
+                match groups.as_ref().as_ref() {
                     GroupsProxy::Idx(groups) => {
                         let groups = groups
                             .iter()
@@ -233,7 +233,7 @@ impl PhysicalExpr for SliceExpr {
                 let length = length.cast(&IDX_DTYPE)?;
                 let length = length.idx().unwrap();
 
-                match groups.as_ref() {
+                match groups.as_ref().as_ref() {
                     GroupsProxy::Idx(groups) => {
                         let groups = groups
                             .iter()

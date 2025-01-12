@@ -88,7 +88,7 @@ impl PartitionedAggregation for AliasExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
@@ -99,7 +99,7 @@ impl PartitionedAggregation for AliasExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();

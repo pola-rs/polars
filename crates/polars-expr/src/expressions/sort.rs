@@ -72,7 +72,7 @@ impl PhysicalExpr for SortExpr {
                 let mut sort_options = self.options;
                 sort_options.multithreaded = false;
                 let groups = POOL.install(|| {
-                    match ac.groups().as_ref() {
+                    match ac.groups().as_ref().as_ref() {
                         GroupsProxy::Idx(groups) => {
                             groups
                                 .par_iter()

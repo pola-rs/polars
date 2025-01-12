@@ -68,7 +68,7 @@ impl PartitionedAggregation for CountExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         // SAFETY: groups are in bounds.

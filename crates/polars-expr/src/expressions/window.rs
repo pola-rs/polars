@@ -60,9 +60,9 @@ impl WindowExpr {
         let mut take_idx = vec![];
 
         // groups are not changed, we can map by doing a standard arg_sort.
-        if std::ptr::eq(ac.groups().as_ref(), gb.get_groups().as_ref()) {
+        if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
             let mut iter = 0..flattened.len() as IdxSize;
-            match ac.groups().as_ref() {
+            match ac.groups().as_ref().as_ref() {
                 GroupsProxy::Idx(groups) => {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut iter));
@@ -94,7 +94,7 @@ impl WindowExpr {
 
             let mut original_idx_iter = original_idx.iter().copied();
 
-            match ac.groups().as_ref() {
+            match ac.groups().as_ref().as_ref() {
                 GroupsProxy::Idx(groups) => {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
@@ -444,9 +444,10 @@ impl PhysicalExpr for WindowExpr {
                 let order_by = order_by.evaluate(df, state)?;
                 polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
                 groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
+                    .sliced()
             }
 
-            let out: PolarsResult<GroupsProxy> = Ok(groups);
+            let out: PolarsResult<SlicedGroups> = Ok(groups);
             out
         };
 

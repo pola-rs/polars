@@ -11,7 +11,7 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
+pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, SlicedGroups>>>;
 
 bitflags! {
     #[repr(transparent)]

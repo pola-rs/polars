@@ -168,7 +168,7 @@ impl PartitionedAggregation for LiteralExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        _groups: &GroupsProxy,
+        _groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         self.evaluate(df, state)
@@ -177,7 +177,7 @@ impl PartitionedAggregation for LiteralExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &SlicedGroups,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

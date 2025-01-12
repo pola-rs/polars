@@ -526,7 +526,7 @@ impl PartitionedAggregation for BinaryExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let left = self.left.as_partitioned_aggregator().unwrap();
@@ -539,7 +539,7 @@ impl PartitionedAggregation for BinaryExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &SlicedGroups,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

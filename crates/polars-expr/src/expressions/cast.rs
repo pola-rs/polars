@@ -111,7 +111,7 @@ impl PartitionedAggregation for CastExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let e = self.input.as_partitioned_aggregator().unwrap();
@@ -121,7 +121,7 @@ impl PartitionedAggregation for CastExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let agg = self.input.as_partitioned_aggregator().unwrap();

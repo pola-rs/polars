@@ -699,7 +699,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
@@ -716,7 +716,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &SlicedGroups,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

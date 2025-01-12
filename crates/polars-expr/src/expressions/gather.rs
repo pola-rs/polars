@@ -129,7 +129,7 @@ impl GatherExpr {
             let groups = ac.groups();
 
             // Determine the gather indices.
-            let idx: IdxCa = match groups.as_ref() {
+            let idx: IdxCa = match groups.as_ref().as_ref() {
                 GroupsProxy::Idx(groups) => {
                     if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
                         None => false,
@@ -207,7 +207,7 @@ impl GatherExpr {
                     let groups = ac.groups();
 
                     // We offset the groups first by idx.
-                    let idx: NoNull<IdxCa> = match groups.as_ref() {
+                    let idx: NoNull<IdxCa> = match groups.as_ref().as_ref() {
                         GroupsProxy::Idx(groups) => {
                             if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
                                 self.oob_err()?;

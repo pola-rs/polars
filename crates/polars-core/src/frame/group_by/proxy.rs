@@ -640,15 +640,24 @@ impl SlicedGroups {
         assert!(len <= self.len);
         slice_groups(self.original.clone(), offset, len)
     }
+
+    pub fn sort(&mut self) {
+        if !self.as_ref().is_sorted_flag() {
+            let original = Arc::make_mut(&mut self.original);
+            original.sort();
+
+            self.sliced = slice_groups_inner(original, self.offset, self.len);
+        }
+    }
 }
 
-fn slice_groups(g: Arc<GroupsProxy>, offset: i64, len: usize) -> SlicedGroups {
+fn slice_groups_inner(g: &GroupsProxy, offset: i64, len: usize) -> ManuallyDrop<GroupsProxy> {
     // SAFETY:
     // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
     // so that we never call drop on them.
     // These groups lifetimes are bounded to the `g`. This must remain valid
     // for the scope of the aggregation.
-    let sliced = match &*g {
+    match g {
         GroupsProxy::Idx(groups) => {
             let first = unsafe {
                 let first = slice_slice(groups.first(), offset, len);
@@ -679,7 +688,11 @@ fn slice_groups(g: Arc<GroupsProxy>, offset: i64, len: usize) -> SlicedGroups {
                 rolling: *rolling,
             })
         },
-    };
+    }
+}
+
+fn slice_groups(g: Arc<GroupsProxy>, offset: i64, len: usize) -> SlicedGroups {
+    let sliced = slice_groups_inner(g.as_ref(), offset, len);
 
     SlicedGroups {
         sliced,

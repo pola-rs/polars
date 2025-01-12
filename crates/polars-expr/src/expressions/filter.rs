@@ -99,7 +99,7 @@ impl PhysicalExpr for FilterExpr {
                 let predicate = predicate.rechunk();
                 let predicate = predicate.downcast_iter().next().unwrap();
                 POOL.install(|| {
-                    match groups.as_ref() {
+                    match groups.as_ref().as_ref() {
                         GroupsProxy::Idx(groups) => {
                             let groups = groups
                                 .par_iter()
