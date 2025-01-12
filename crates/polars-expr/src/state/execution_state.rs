@@ -15,16 +15,20 @@ use super::NodeTimer;
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
 
 #[derive(Clone, Default)]
-struct GroupsTypeCache {
+pub struct GroupsTypeCache {
     inner: Arc<Mutex<PlHashMap<String, (Option<GroupPositions>, Arc<Condvar>)>>>,
 }
 
 impl GroupsTypeCache {
+    pub(crate) fn clear(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.clear();
+    }
     // The `None` value will be set on first entry. Then the cond_var will be returned.
     // The caller then must compute the groups and insert them later.
     // Upon insert, the value will be set to `Some` and the cond_var will notify the
     // waiting threads.
-    pub(super) fn get(&self, key: &str) -> Either<GroupPositions, Arc<Condvar>> {
+    pub fn get(&self, key: &str) -> Option<GroupPositions> {
         let mut g = self.inner.lock().unwrap();
         match g.entry(key.to_string()) {
             Entry::Occupied(occupied) => match &occupied.get() {
@@ -34,22 +38,22 @@ impl GroupsTypeCache {
                     loop {
                         let entry = g.get(key).unwrap();
                         if let Some(groups) = &entry.0 {
-                            return Either::Left(groups.clone());
+                            return Some(groups.clone());
                         }
                         g = cond_var.wait(g).unwrap();
                     }
                 },
-                (Some(groups), _cond_var) => Either::Left(groups.clone()),
+                (Some(groups), _cond_var) => Some(groups.clone()),
             },
             Entry::Vacant(vacant) => {
                 let cond_var = Arc::new(Condvar::new());
                 vacant.insert((None, cond_var.clone()));
-                Either::Right(cond_var)
+                None
             },
         }
     }
 
-    pub(super) fn insert(&self, key: String, groups: &GroupPositions) {
+    pub fn insert(&self, key: String, groups: &GroupPositions) {
         let mut g = self.inner.lock().unwrap();
 
         g.entry(key)
@@ -228,10 +232,7 @@ impl ExecutionState {
 
     /// Clear the cache used by the Window expressions
     pub fn clear_window_expr_cache(&self) {
-        {
-            let mut lock = self.group_tuples.lock().unwrap();
-            lock.clear();
-        }
+        self.group_tuples.clear();
         let mut lock = self.join_tuples.lock().unwrap();
         lock.clear();
     }

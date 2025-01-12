@@ -26,7 +26,6 @@ polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
 rand = { workspace = true }
 rayon = { workspace = true }
-either = { workspace = true }
 
 [features]
 nightly = ["polars-core/nightly", "polars-plan/nightly"]

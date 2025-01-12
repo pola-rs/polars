@@ -109,7 +109,6 @@ impl WindowExpr {
             original_idx.clear();
             take_idx = original_idx;
         }
-        cache_gb(gb, state, cache_key);
         // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
@@ -452,7 +451,7 @@ impl PhysicalExpr for WindowExpr {
         };
 
         // Try to get cached grouptuples
-        let (mut groups, _, cache_key) = if state.cache_window() {
+        let (mut groups, cache_key) = if state.cache_window() {
             let mut cache_key = String::with_capacity(32 * group_by_columns.len());
             write!(&mut cache_key, "{}", state.branch_idx).unwrap();
             for s in &group_by_columns {
@@ -468,26 +467,16 @@ impl PhysicalExpr for WindowExpr {
                 window_function_format_order_by(&mut cache_key, e, options)
             }
 
-            let mut gt_map_guard = state.group_tuples.lock().unwrap();
-            // we run sequential and partitioned
-            // and every partition run the cache should be empty so we expect a max of 1.
-            debug_assert!(gt_map_guard.len() <= 1);
-            if let Some(gt) = gt_map_guard.get_mut(&cache_key) {
-                if df.height() > 0 {
-                    assert!(!gt.is_empty());
-                };
-
-                // We take now, but it is important that we set this before we return!
-                // a next windows function may get this cached key and get an empty if this
-                // does not happen
-                (std::mem::take(gt), true, cache_key)
-            } else {
-                // Drop guard as we go into rayon when creating groups.
-                drop(gt_map_guard);
-                (create_groups()?, false, cache_key)
-            }
+            let groups = match state.group_tuples.get(&cache_key) {
+                Some(groups) => groups,
+                None => {
+                    let groups = create_groups()?;
+                    groups
+                },
+            };
+            (groups, cache_key)
         } else {
-            (create_groups()?, false, "".to_string())
+            (create_groups()?, "".to_string())
         };
 
         // 2. create GroupBy object and apply aggregation
@@ -498,7 +487,8 @@ impl PhysicalExpr for WindowExpr {
         // the groups, so that the cached groups and join keys
         // are consistent among all windows
         if sort_groups || state.cache_window() {
-            groups.sort()
+            groups.sort();
+            state.group_tuples.insert(cache_key.clone(), &groups);
         }
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
@@ -518,7 +508,6 @@ impl PhysicalExpr for WindowExpr {
                 if ac.is_literal() {
                     out = out.new_from_index(0, df.height())
                 }
-                cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
                 }
@@ -526,7 +515,6 @@ impl PhysicalExpr for WindowExpr {
             },
             Explode => {
                 let mut out = ac.aggregated().explode()?;
-                cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
                 }
@@ -565,13 +553,9 @@ impl PhysicalExpr for WindowExpr {
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
-                    (UpdateGroups::No, Some(out)) => {
-                        cache_gb(gb, state, &cache_key);
-                        Ok(out.into_column())
-                    },
+                    (UpdateGroups::No, Some(out)) => Ok(out.into_column()),
                     (_, _) => {
                         let keys = gb.keys();
-                        cache_gb(gb, state, &cache_key);
 
                         let get_join_tuples = || {
                             if group_by_columns.len() == 1 {
@@ -677,14 +661,6 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
             },
             Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
         }
-    }
-}
-
-fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
-    if state.cache_window() {
-        let groups = gb.take_groups();
-        let mut gt_map = state.group_tuples.lock().unwrap();
-        gt_map.insert(cache_key.to_string(), groups);
     }
 }
 
