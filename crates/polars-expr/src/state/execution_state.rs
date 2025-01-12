@@ -1,8 +1,10 @@
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Condvar, Mutex, RwLock};
 
+use arrow::Either;
 use bitflags::bitflags;
+use hashbrown::hash_map::Entry;
 use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
@@ -11,7 +13,56 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsTypeCache = Arc<Mutex<PlHashMap<String, GroupPositions>>>;
+
+#[derive(Clone, Default)]
+struct GroupsTypeCache {
+    inner: Arc<Mutex<PlHashMap<String, (Option<GroupPositions>, Arc<Condvar>)>>>,
+}
+
+impl GroupsTypeCache {
+    // The `None` value will be set on first entry. Then the cond_var will be returned.
+    // The caller then must compute the groups and insert them later.
+    // Upon insert, the value will be set to `Some` and the cond_var will notify the
+    // waiting threads.
+    pub(super) fn get(&self, key: &str) -> Either<GroupPositions, Arc<Condvar>> {
+        let mut g = self.inner.lock().unwrap();
+        match g.entry(key.to_string()) {
+            Entry::Occupied(occupied) => match &occupied.get() {
+                (None, cond_var) => {
+                    // Block this thread until the condvar wakes and the groups are set.
+                    let cond_var = cond_var.clone();
+                    loop {
+                        let entry = g.get(key).unwrap();
+                        if let Some(groups) = &entry.0 {
+                            return Either::Left(groups.clone());
+                        }
+                        g = cond_var.wait(g).unwrap();
+                    }
+                },
+                (Some(groups), _cond_var) => Either::Left(groups.clone()),
+            },
+            Entry::Vacant(vacant) => {
+                let cond_var = Arc::new(Condvar::new());
+                vacant.insert((None, cond_var.clone()));
+                Either::Right(cond_var)
+            },
+        }
+    }
+
+    pub(super) fn insert(&self, key: String, groups: &GroupPositions) {
+        let mut g = self.inner.lock().unwrap();
+
+        g.entry(key)
+            .and_modify(|v| {
+                v.0 = Some(groups.clone());
+                v.1.notify_all();
+            })
+            .or_insert_with(|| {
+                let cond_var = Arc::new(Condvar::new());
+                (Some(groups.clone()), cond_var)
+            });
+    }
+}
 
 bitflags! {
     #[repr(transparent)]

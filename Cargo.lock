@@ -3130,6 +3130,7 @@ version = "0.45.1"
 dependencies = [
  "ahash",
  "bitflags",
+ "either",
  "hashbrown 0.15.2",
  "num-traits",
  "once_cell",
