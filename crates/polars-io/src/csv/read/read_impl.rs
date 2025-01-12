@@ -206,6 +206,11 @@ impl<'a> CoreReader<'a> {
             },
         };
         if let Some(dtypes) = dtype_overwrite {
+            if dtypes.len() > schema.len() {
+                polars_bail!(InvalidOperation:
+                    "The number of schema overrides must be less than or equal to the number of fields".to_string(),
+                )
+            }
             let s = Arc::make_mut(&mut schema);
             for (index, dt) in dtypes.iter().enumerate() {
                 s.set_dtype_at_index(index, dt.clone()).unwrap();
