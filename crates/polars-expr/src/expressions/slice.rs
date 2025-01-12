@@ -100,7 +100,7 @@ impl PhysicalExpr for SliceExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut results = POOL.install(|| {

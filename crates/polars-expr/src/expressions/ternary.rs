@@ -107,7 +107,7 @@ impl PhysicalExpr for TernaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);

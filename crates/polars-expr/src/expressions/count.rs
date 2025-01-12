@@ -28,7 +28,7 @@ impl PhysicalExpr for CountExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a SlicedGroups,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let ca = groups.group_count().with_name(PlSmallStr::from_static(LEN));
@@ -56,7 +56,7 @@ impl PartitionedAggregation for CountExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         self.evaluate_on_groups(df, groups, state)

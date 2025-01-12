@@ -654,7 +654,7 @@ impl PhysicalExpr for WindowExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupsProxy,
+        _groups: &'a SlicedGroups,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "window expression not allowed in aggregation");

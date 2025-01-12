@@ -168,7 +168,7 @@ impl PhysicalExpr for ColumnExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = self.evaluate(df, state)?;

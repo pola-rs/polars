@@ -75,7 +75,7 @@ impl ApplyExpr {
     fn prepare_multiple_inputs<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
@@ -362,7 +362,7 @@ impl PhysicalExpr for ApplyExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_ensure!(

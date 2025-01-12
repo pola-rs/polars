@@ -38,7 +38,7 @@ impl PhysicalExpr for FilterExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a SlicedGroups,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
