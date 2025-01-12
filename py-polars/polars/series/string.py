@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
 from polars.datatypes.constants import N_INFER_DEFAULT
@@ -271,6 +271,7 @@ class StringNameSpace:
         ]
         """
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
