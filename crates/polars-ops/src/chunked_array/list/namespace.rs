@@ -529,7 +529,7 @@ pub trait ListNameSpaceImpl: AsList {
             fill_value
         };
 
-        // Length of largest sublist
+        // Length of largest sublist.
         let max_len = ca
             .iter()
             .map(|opt_v| match opt_v {
