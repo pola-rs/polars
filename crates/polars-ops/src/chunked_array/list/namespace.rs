@@ -523,6 +523,12 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = ca.cast(dtype)?;
         let ca = ca.list().unwrap();
 
+        let fill_value = if fill_value.len() == 1 {
+            &fill_value.new_from_index(0, ca.len())
+        } else {
+            fill_value
+        };
+
         // Length of largest sublist
         let max_len = ca
             .iter()
