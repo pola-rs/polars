@@ -2079,7 +2079,7 @@ def test_read_csv_invalid_schema_overrides_length() -> None:
     else:
         err = InvalidOperationError
         match = "The number of schema overrides must be less than or equal to the number of fields"
-    
+
     with pytest.raises(err, match=match):
         pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 

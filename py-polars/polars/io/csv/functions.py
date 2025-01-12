@@ -1399,7 +1399,8 @@ def _scan_csv_impl(
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
         if not isinstance(schema_overrides, dict):
-            raise TypeError("expected 'schema_overrides' dict, found 'list'")
+            msg = "expected 'schema_overrides' dict, found 'list'"
+            raise TypeError(msg)
         dtype_list = []
         for k, v in schema_overrides.items():
             dtype_list.append((k, parse_into_dtype(v)))
