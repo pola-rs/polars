@@ -96,41 +96,41 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        unsafe fn agg_std(&self, groups: &GroupsType, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        unsafe fn agg_var(&self, groups: &GroupsType, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -138,7 +138,7 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "bitwise")]
-        unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -146,7 +146,7 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "bitwise")]
-        unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -154,7 +154,7 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "bitwise")]
-        unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -174,7 +174,7 @@ pub(crate) mod private {
             polars_bail!(opq = remainder, self._dtype());
         }
         #[cfg(feature = "algorithm_group_by")]
-        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
             polars_bail!(opq = group_tuples, self._dtype());
         }
         #[cfg(feature = "zip_with")]

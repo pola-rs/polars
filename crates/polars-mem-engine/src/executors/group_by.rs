@@ -5,7 +5,7 @@ use super::*;
 pub(super) fn evaluate_aggs(
     df: &DataFrame,
     aggs: &[Arc<dyn PhysicalExpr>],
-    groups: &SlicedGroups,
+    groups: &GroupPositions,
     state: &ExecutionState,
 ) -> PolarsResult<Vec<Column>> {
     POOL.install(|| {

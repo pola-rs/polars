@@ -70,7 +70,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         self.0
             .agg_min(groups)
             .into_duration(self.0.time_unit())
@@ -78,7 +78,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0
             .agg_max(groups)
             .into_duration(self.0.time_unit())
@@ -86,7 +86,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.0
             .agg_sum(groups)
             .into_duration(self.0.time_unit())
@@ -94,7 +94,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+    unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
         self.0
             .agg_std(groups, ddof)
             // cast f64 back to physical type
@@ -105,7 +105,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+    unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
         self.0
             .agg_var(groups, ddof)
             // cast f64 back to physical type
@@ -116,7 +116,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
             .agg_list(groups)
@@ -245,7 +245,7 @@ impl private::PrivateSeries for SeriesWrap<DurationChunked> {
             .into_series())
     }
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.group_tuples(multithreaded, sorted)
     }
 

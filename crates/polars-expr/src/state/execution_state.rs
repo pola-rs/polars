@@ -11,7 +11,7 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, SlicedGroups>>>;
+pub type GroupsTypeCache = Arc<RwLock<PlHashMap<String, GroupPositions>>>;
 
 bitflags! {
     #[repr(transparent)]
@@ -63,7 +63,7 @@ pub struct ExecutionState {
     df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
     pub schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expression to prevent redundant grouping
-    pub group_tuples: GroupsProxyCache,
+    pub group_tuples: GroupsTypeCache,
     /// Used by Window Expression to prevent redundant joins
     pub join_tuples: JoinTuplesCache,
     // every join/union split gets an increment to distinguish between schema state

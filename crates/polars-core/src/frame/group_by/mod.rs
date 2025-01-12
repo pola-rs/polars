@@ -84,7 +84,7 @@ impl DataFrame {
                 } else {
                     vec![[0, self.height() as IdxSize]]
                 };
-                Ok(GroupsProxy::Slice {
+                Ok(GroupsType::Slice {
                     groups,
                     rolling: false,
                 })
@@ -188,7 +188,7 @@ pub struct GroupBy<'a> {
     pub df: &'a DataFrame,
     pub(crate) selected_keys: Vec<Column>,
     // [first idx, [other idx]]
-    groups: SlicedGroups,
+    groups: GroupPositions,
     // columns selected for aggregation
     pub(crate) selected_agg: Option<Vec<PlSmallStr>>,
 }
@@ -197,7 +197,7 @@ impl<'a> GroupBy<'a> {
     pub fn new(
         df: &'a DataFrame,
         by: Vec<Column>,
-        groups: SlicedGroups,
+        groups: GroupPositions,
         selected_agg: Option<Vec<PlSmallStr>>,
     ) -> Self {
         GroupBy {
@@ -223,7 +223,7 @@ impl<'a> GroupBy<'a> {
     /// The Vec returned contains:
     ///     (first_idx, [`Vec<indexes>`])
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &SlicedGroups {
+    pub fn get_groups(&self) -> &GroupPositions {
         &self.groups
     }
 
@@ -235,15 +235,15 @@ impl<'a> GroupBy<'a> {
     /// # Safety
     /// Groups should always be in bounds of the `DataFrame` hold by this [`GroupBy`].
     /// If you mutate it, you must hold that invariant.
-    pub unsafe fn get_groups_mut(&mut self) -> &mut SlicedGroups {
+    pub unsafe fn get_groups_mut(&mut self) -> &mut GroupPositions {
         &mut self.groups
     }
 
-    pub fn take_groups(self) -> SlicedGroups {
+    pub fn take_groups(self) -> GroupPositions {
         self.groups
     }
 
-    pub fn take_groups_mut(&mut self) -> SlicedGroups {
+    pub fn take_groups_mut(&mut self) -> GroupPositions {
         std::mem::take(&mut self.groups)
     }
 
@@ -264,7 +264,7 @@ impl<'a> GroupBy<'a> {
                 .map(Column::as_materialized_series)
                 .map(|s| {
                     match groups {
-                        GroupsProxy::Idx(groups) => {
+                        GroupsType::Idx(groups) => {
                             // SAFETY: groups are always in bounds.
                             let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
                             if groups.sorted {
@@ -272,7 +272,7 @@ impl<'a> GroupBy<'a> {
                             };
                             out
                         },
-                        GroupsProxy::Slice { groups, rolling } => {
+                        GroupsType::Slice { groups, rolling } => {
                             if *rolling && !groups.is_empty() {
                                 // Groups can be sliced.
                                 let offset = groups[0][0];

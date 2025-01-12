@@ -107,7 +107,7 @@ impl PhysicalExpr for TernaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let op_mask = || self.predicate.evaluate_on_groups(df, groups, state);
@@ -343,7 +343,7 @@ impl PartitionedAggregation for TernaryExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &SlicedGroups,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let truthy = self.truthy.as_partitioned_aggregator().unwrap();
@@ -361,7 +361,7 @@ impl PartitionedAggregation for TernaryExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &SlicedGroups,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

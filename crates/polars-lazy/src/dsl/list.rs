@@ -21,7 +21,7 @@ impl IntoListNameSpace for ListNameSpace {
     }
 }
 
-fn offsets_to_groups(offsets: &[i64]) -> Option<SlicedGroups> {
+fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
     let mut start = offsets[0];
     let end = *offsets.last().unwrap();
     if IdxSize::try_from(end - start).is_err() {
@@ -38,7 +38,7 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<SlicedGroups> {
         })
         .collect();
     Some(
-        GroupsProxy::Slice {
+        GroupsType::Slice {
             groups,
             rolling: false,
         }

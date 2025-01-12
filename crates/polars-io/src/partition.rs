@@ -161,7 +161,7 @@ pub fn write_partitioned_dataset(
     };
 
     POOL.install(|| match groups.as_ref() {
-        GroupsProxy::Idx(idx) => idx
+        GroupsType::Idx(idx) => idx
             .all()
             .chunks(MAX_OPEN_FILES)
             .map(|chunk| {
@@ -179,7 +179,7 @@ pub fn write_partitioned_dataset(
                     )
             })
             .collect::<PolarsResult<Vec<()>>>(),
-        GroupsProxy::Slice { groups, .. } => groups
+        GroupsType::Slice { groups, .. } => groups
             .chunks(MAX_OPEN_FILES)
             .map(|chunk| {
                 chunk

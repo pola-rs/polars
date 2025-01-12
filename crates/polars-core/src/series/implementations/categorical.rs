@@ -98,7 +98,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         let list = self.0.physical().agg_list(groups);
         let mut list = list.list().unwrap().clone();
@@ -107,7 +107,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         #[cfg(feature = "performant")]
         {
             Ok(self.0.group_tuples_perfect(multithreaded, sorted))

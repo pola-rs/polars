@@ -26,7 +26,7 @@ fn finish_is_unique_helper(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: &SlicedGroups,
+    groups: &GroupPositions,
     len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
@@ -34,11 +34,11 @@ pub(crate) fn is_unique_helper(
     debug_assert_ne!(unique_val, duplicated_val);
 
     let idx = match groups.deref() {
-        GroupsProxy::Idx(groups) => groups
+        GroupsType::Idx(groups) => groups
             .iter()
             .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
             .collect::<Vec<_>>(),
-        GroupsProxy::Slice { groups, .. } => groups
+        GroupsType::Slice { groups, .. } => groups
             .iter()
             .filter_map(|[first, len]| if *len == 1 { Some(*first) } else { None })
             .collect(),

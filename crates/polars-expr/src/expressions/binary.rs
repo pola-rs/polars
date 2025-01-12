@@ -224,7 +224,7 @@ impl PhysicalExpr for BinaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
@@ -526,7 +526,7 @@ impl PartitionedAggregation for BinaryExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &SlicedGroups,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let left = self.left.as_partitioned_aggregator().unwrap();
@@ -539,7 +539,7 @@ impl PartitionedAggregation for BinaryExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &SlicedGroups,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

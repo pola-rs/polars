@@ -129,7 +129,7 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
         sample_size = set_size;
     }
 
-    let finish = |groups: &GroupsProxy| {
+    let finish = |groups: &GroupsType| {
         let u = groups.len() as f64;
         let ui = if groups.len() == sample_size {
             u

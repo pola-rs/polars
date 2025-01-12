@@ -63,12 +63,12 @@ impl WindowExpr {
         if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
             let mut iter = 0..flattened.len() as IdxSize;
             match ac.groups().as_ref().as_ref() {
-                GroupsProxy::Idx(groups) => {
+                GroupsType::Idx(groups) => {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut iter));
                     }
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut iter));
                     }
@@ -80,12 +80,12 @@ impl WindowExpr {
         else {
             let mut original_idx = Vec::with_capacity(out_column.len());
             match gb.get_groups().as_ref() {
-                GroupsProxy::Idx(groups) => {
+                GroupsType::Idx(groups) => {
                     for g in groups.all() {
                         original_idx.extend_from_slice(g)
                     }
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         original_idx.extend(first..first + len)
                     }
@@ -95,12 +95,12 @@ impl WindowExpr {
             let mut original_idx_iter = original_idx.iter().copied();
 
             match ac.groups().as_ref().as_ref() {
-                GroupsProxy::Idx(groups) => {
+                GroupsType::Idx(groups) => {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
                     }
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut original_idx_iter));
                     }
@@ -333,7 +333,7 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
-                if let GroupsProxy::Slice { .. } = gb.get_groups().as_ref() {
+                if let GroupsType::Slice { .. } = gb.get_groups().as_ref() {
                     // Result can be directly exploded if the input was sorted.
                     Ok(MapStrategy::Explode)
                 } else {
@@ -447,7 +447,7 @@ impl PhysicalExpr for WindowExpr {
                     .sliced()
             }
 
-            let out: PolarsResult<SlicedGroups> = Ok(groups);
+            let out: PolarsResult<GroupPositions> = Ok(groups);
             out
         };
 
@@ -655,7 +655,7 @@ impl PhysicalExpr for WindowExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a SlicedGroups,
+        _groups: &'a GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "window expression not allowed in aggregation");
@@ -691,7 +691,7 @@ fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
 /// Simple reducing aggregation can be set by the groups
 fn set_by_groups(
     s: &Column,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
@@ -715,7 +715,7 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy, len: usize) -> Series
+fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
@@ -729,7 +729,7 @@ where
     if ca.null_count() == 0 {
         let ca = ca.rechunk();
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
                 POOL.install(|| {
                     agg_vals
@@ -744,7 +744,7 @@ where
                         })
                 })
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
                 POOL.install(|| {
                     agg_vals
@@ -777,7 +777,7 @@ where
         let offsets = _split_offsets(ca.len(), n_threads);
 
         match groups {
-            GroupsProxy::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
+            GroupsType::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
                 let offset = *offset;
                 let offset_len = *offset_len;
                 let ca = ca.slice(offset as i64, offset_len);
@@ -804,7 +804,7 @@ where
                     }
                 })
             }),
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 offsets.par_iter().for_each(|(offset, offset_len)| {
                     let offset = *offset;
                     let offset_len = *offset_len;

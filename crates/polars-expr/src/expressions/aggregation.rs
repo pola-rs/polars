@@ -157,7 +157,7 @@ impl PhysicalExpr for AggregationExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
@@ -288,7 +288,7 @@ impl PhysicalExpr for AggregationExpr {
                                     IdxCa::full(s.name().clone(), 0, groups.len())
                                 } else {
                                     match groups.as_ref().as_ref() {
-                                        GroupsProxy::Idx(idx) => {
+                                        GroupsType::Idx(idx) => {
                                             let s = s.rechunk();
                                             // @scalar-opt
                                             // @partition-opt
@@ -307,7 +307,7 @@ impl PhysicalExpr for AggregationExpr {
                                                 })
                                                 .collect_ca_trusted_with_dtype(keep_name, IDX_DTYPE)
                                         },
-                                        GroupsProxy::Slice { groups, .. } => {
+                                        GroupsType::Slice { groups, .. } => {
                                             // Slice and use computed null count
                                             groups
                                                 .iter()
@@ -459,7 +459,7 @@ impl PartitionedAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &SlicedGroups,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let expr = self.input.as_partitioned_aggregator().unwrap();
@@ -547,7 +547,7 @@ impl PartitionedAggregation for AggregationExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &SlicedGroups,
+        groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         match self.agg_type.groupby {
@@ -606,7 +606,7 @@ impl PartitionedAggregation for AggregationExpr {
                 };
 
                 match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                    GroupsType::Idx(groups) => {
                         for (_, idx) in groups {
                             let ca = unsafe {
                                 // SAFETY:
@@ -616,7 +616,7 @@ impl PartitionedAggregation for AggregationExpr {
                             process_group(ca)?;
                         }
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         for [first, len] in groups {
                             let len = *len as usize;
                             let ca = ca.slice(*first as i64, len);
@@ -712,7 +712,7 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;

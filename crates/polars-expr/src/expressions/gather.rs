@@ -28,7 +28,7 @@ impl PhysicalExpr for GatherExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.phys_expr.evaluate_on_groups(df, groups, state)?;
@@ -130,7 +130,7 @@ impl GatherExpr {
 
             // Determine the gather indices.
             let idx: IdxCa = match groups.as_ref().as_ref() {
-                GroupsProxy::Idx(groups) => {
+                GroupsType::Idx(groups) => {
                     if groups.all().iter().zip(idx).any(|(g, idx)| match idx {
                         None => false,
                         Some(idx) => idx >= g.len() as IdxSize,
@@ -149,7 +149,7 @@ impl GatherExpr {
                         })
                         .collect_trusted()
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     if groups.iter().zip(idx).any(|(g, idx)| match idx {
                         None => false,
                         Some(idx) => idx >= g[1],
@@ -208,7 +208,7 @@ impl GatherExpr {
 
                     // We offset the groups first by idx.
                     let idx: NoNull<IdxCa> = match groups.as_ref().as_ref() {
-                        GroupsProxy::Idx(groups) => {
+                        GroupsType::Idx(groups) => {
                             if groups.all().iter().any(|g| idx >= g.len() as IdxSize) {
                                 self.oob_err()?;
                             }
@@ -221,7 +221,7 @@ impl GatherExpr {
                                 })
                                 .collect_trusted()
                         },
-                        GroupsProxy::Slice { groups, .. } => {
+                        GroupsType::Slice { groups, .. } => {
                             if groups.iter().any(|g| idx >= g[1]) {
                                 self.oob_err()?;
                             }
@@ -251,7 +251,7 @@ impl GatherExpr {
         &self,
         mut ac: AggregationContext<'b>,
         mut idx: AggregationContext<'b>,
-        groups: &'b GroupsProxy,
+        groups: &'b GroupsType,
     ) -> PolarsResult<AggregationContext<'b>> {
         let mut builder = get_list_builder(
             &ac.dtype(),

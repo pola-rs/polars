@@ -3175,7 +3175,7 @@ impl DataFrame {
         // there is a lot of parallelization in take and this may easily SO
         POOL.install(|| {
             match groups.as_ref() {
-                GroupsProxy::Idx(idx) => {
+                GroupsType::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
                     let mut df = df.clone();
                     df.as_single_chunk_par();
@@ -3189,7 +3189,7 @@ impl DataFrame {
                         })
                         .collect())
                 },
-                GroupsProxy::Slice { groups, .. } => Ok(groups
+                GroupsType::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
                     .map(|[first, len]| df.slice(*first as i64, *len as usize))
                     .collect()),

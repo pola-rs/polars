@@ -168,7 +168,7 @@ impl PhysicalExpr for ColumnExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = self.evaluate(df, state)?;
@@ -211,7 +211,7 @@ impl PartitionedAggregation for ColumnExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        _groups: &SlicedGroups,
+        _groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         self.evaluate(df, state)
@@ -220,7 +220,7 @@ impl PartitionedAggregation for ColumnExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &SlicedGroups,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

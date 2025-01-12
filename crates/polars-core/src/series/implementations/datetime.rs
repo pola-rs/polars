@@ -63,7 +63,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         self.0
             .agg_min(groups)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
@@ -71,14 +71,14 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0
             .agg_max(groups)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
             .agg_list(groups)
@@ -131,7 +131,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         polars_bail!(opq = rem, self.dtype(), rhs.dtype());
     }
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.group_tuples(multithreaded, sorted)
     }
 

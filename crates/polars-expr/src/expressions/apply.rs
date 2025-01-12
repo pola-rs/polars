@@ -75,7 +75,7 @@ impl ApplyExpr {
     fn prepare_multiple_inputs<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
@@ -362,7 +362,7 @@ impl PhysicalExpr for ApplyExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a SlicedGroups,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_ensure!(
@@ -699,7 +699,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &SlicedGroups,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
@@ -716,7 +716,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &SlicedGroups,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)
