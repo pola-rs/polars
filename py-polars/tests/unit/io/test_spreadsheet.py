@@ -283,7 +283,7 @@ def test_read_excel_all_sheets(
 
 @pytest.mark.parametrize(
     "engine",
-    ["xlsx2csv", "calamine", "openpyxl"],
+    ["calamine", "openpyxl", "xlsx2csv"],
 )
 def test_read_excel_basic_datatypes(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
@@ -471,7 +471,7 @@ def test_read_mixed_dtype_columns(
     )
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
 def test_write_excel_bytes(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
 
@@ -634,7 +634,7 @@ def test_unsupported_binary_workbook(path_xlsb: Path) -> None:
         pl.read_excel(path_xlsb, engine="openpyxl")
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
 def test_read_excel_all_sheets_with_sheet_name(path_xlsx: Path, engine: str) -> None:
     with pytest.raises(
         ValueError,
@@ -793,7 +793,7 @@ def test_excel_round_trip(write_params: dict[str, Any]) -> None:
         assert_frame_equal(df, xldf)
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "calamine"])
+@pytest.mark.parametrize("engine", ["calamine", "xlsx2csv"])
 def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {
@@ -828,7 +828,7 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
 def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
@@ -925,7 +925,7 @@ def test_excel_write_to_file_object(
         assert_frame_equal(df, pl.read_excel(src, engine=engine))
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
 def test_excel_read_no_headers(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
         {"colx": [1, 2, 3], "coly": ["aaa", "bbb", "ccc"], "colz": [0.5, 0.0, -1.0]}
@@ -938,7 +938,7 @@ def test_excel_read_no_headers(engine: ExcelSpreadsheetEngine) -> None:
     assert_frame_equal(df, expected)
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
 def test_excel_write_sparklines(engine: ExcelSpreadsheetEngine) -> None:
     from xlsxwriter import Workbook
 
@@ -1217,7 +1217,7 @@ def test_excel_mixed_calamine_float_data(io_files_path: Path) -> None:
     )
 
 
-@pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch, _read_spreadsheet_xlsx2csv needs to be changed not to call `_reorder_columns` on the df
 def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None:
     df = pl.DataFrame(
@@ -1255,36 +1255,26 @@ def test_excel_type_inference_with_nulls(engine: ExcelSpreadsheetEngine) -> None
         assert_frame_equal(df.select(reversed_cols), read_df)
 
 
-def test_drop_empty_rows(path_empty_rows_excel: Path) -> None:
-    df1 = pl.read_excel(source=path_empty_rows_excel, engine="xlsx2csv")
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+def test_drop_empty_rows(
+    path_empty_rows_excel: Path, engine: ExcelSpreadsheetEngine
+) -> None:
+    df1 = pl.read_excel(
+        source=path_empty_rows_excel,
+        engine=engine,
+    )  # check default
     assert df1.shape == (8, 4)
+
     df2 = pl.read_excel(
-        source=path_empty_rows_excel, engine="xlsx2csv", drop_empty_rows=True
+        source=path_empty_rows_excel,
+        engine=engine,
+        drop_empty_rows=True,
     )
     assert df2.shape == (8, 4)
+
     df3 = pl.read_excel(
-        source=path_empty_rows_excel, engine="xlsx2csv", drop_empty_rows=False
+        source=path_empty_rows_excel,
+        engine=engine,
+        drop_empty_rows=False,
     )
     assert df3.shape == (10, 4)
-
-    df4 = pl.read_excel(source=path_empty_rows_excel, engine="openpyxl")
-    assert df4.shape == (8, 4)
-    df5 = pl.read_excel(
-        source=path_empty_rows_excel, engine="openpyxl", drop_empty_rows=True
-    )
-    assert df5.shape == (8, 4)
-    df6 = pl.read_excel(
-        source=path_empty_rows_excel, engine="openpyxl", drop_empty_rows=False
-    )
-    assert df6.shape == (10, 4)
-
-    df7 = pl.read_excel(source=path_empty_rows_excel, engine="calamine")
-    assert df7.shape == (8, 4)
-    df8 = pl.read_excel(
-        source=path_empty_rows_excel, engine="calamine", drop_empty_rows=True
-    )
-    assert df8.shape == (8, 4)
-    df9 = pl.read_excel(
-        source=path_empty_rows_excel, engine="calamine", drop_empty_rows=False
-    )
-    assert df9.shape == (10, 4)
