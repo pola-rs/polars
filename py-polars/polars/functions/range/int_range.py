@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import Expr, Series
-    from polars._typing import IntoExprColumn, PolarsIntegerType
+    from polars._typing import ClosedInterval, IntoExprColumn, PolarsIntegerType
 
 
 @overload
@@ -330,6 +330,25 @@ def int_ranges(
     end = parse_into_expression(end)
     step = parse_into_expression(step)
     result = wrap_expr(plr.int_ranges(start, end, step, dtype))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+def linear_space(
+    start: int | float | IntoExprColumn,
+    end: int | float | IntoExprColumn,
+    num_samples: int,
+    closed: ClosedInterval = "both",
+    *,
+    eager: bool = False,
+) -> Expr | Series:
+    """Linearly-spaced elements."""
+    start = parse_into_expression(start)
+    end = parse_into_expression(end)
+    result = wrap_expr(plr.linear_space(start, end, num_samples, closed))
 
     if eager:
         return F.select(result).to_series()

@@ -3,6 +3,7 @@ mod date_range;
 #[cfg(feature = "dtype-datetime")]
 mod datetime_range;
 mod int_range;
+mod linear_space;
 #[cfg(feature = "dtype-time")]
 mod time_range;
 mod utils;
@@ -10,6 +11,7 @@ mod utils;
 use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
+use polars_ops::series::ClosedInterval;
 #[cfg(feature = "temporal")]
 use polars_time::{ClosedWindow, Duration};
 #[cfg(feature = "serde")]
@@ -28,6 +30,10 @@ pub enum RangeFunction {
         dtype: DataType,
     },
     IntRanges,
+    LinearSpace {
+        num_samples: i64,
+        closed: ClosedInterval,
+    },
     #[cfg(feature = "dtype-date")]
     DateRange {
         interval: Duration,
@@ -70,6 +76,10 @@ impl RangeFunction {
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
             IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
+            LinearSpace {
+                num_samples: _,
+                closed: _,
+            } => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => mapper.with_dtype(DataType::Date),
             #[cfg(feature = "dtype-date")]
@@ -112,6 +122,7 @@ impl Display for RangeFunction {
         let s = match self {
             IntRange { .. } => "int_range",
             IntRanges => "int_ranges",
+            LinearSpace { .. } => "linear_space",
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
@@ -138,6 +149,12 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             },
             IntRanges => {
                 map_as_slice!(int_range::int_ranges)
+            },
+            LinearSpace {
+                num_samples,
+                closed,
+            } => {
+                map_as_slice!(linear_space::linear_space, num_samples, closed)
             },
             #[cfg(feature = "dtype-date")]
             DateRange { interval, closed } => {
