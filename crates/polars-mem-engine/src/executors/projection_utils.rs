@@ -35,7 +35,7 @@ fn rolling_evaluate(
                 // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
                 // rolling expression try to get read access.
                 {
-                    let mut groups_map = state.group_tuples.write().unwrap();
+                    let mut groups_map = state.group_tuples.lock().unwrap();
                     groups_map.insert(groups_key, groups);
                 }
                 partition

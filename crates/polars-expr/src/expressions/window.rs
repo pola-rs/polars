@@ -468,7 +468,7 @@ impl PhysicalExpr for WindowExpr {
                 window_function_format_order_by(&mut cache_key, e, options)
             }
 
-            let mut gt_map_guard = state.group_tuples.write().unwrap();
+            let mut gt_map_guard = state.group_tuples.lock().unwrap();
             // we run sequential and partitioned
             // and every partition run the cache should be empty so we expect a max of 1.
             debug_assert!(gt_map_guard.len() <= 1);
@@ -683,7 +683,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
 fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
     if state.cache_window() {
         let groups = gb.take_groups();
-        let mut gt_map = state.group_tuples.write().unwrap();
+        let mut gt_map = state.group_tuples.lock().unwrap();
         gt_map.insert(cache_key.to_string(), groups);
     }
 }
