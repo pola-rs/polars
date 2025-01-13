@@ -156,8 +156,8 @@ class CredentialProviderAzure(CredentialProvider):
         self,
         *,
         scopes: list[str] | None = None,
-        storage_account: str | None = None,
         tenant_id: str | None = None,
+        _storage_account: str | None = None,
         _verbose: bool = False,
     ) -> None:
         """
@@ -169,11 +169,6 @@ class CredentialProviderAzure(CredentialProvider):
         ----------
         scopes
             Scopes to pass to `get_token`
-        storage_account
-            If specified, an attempt will be made to retrieve the account keys
-            for this account using the Azure CLI. If this is successful, the
-            account keys will be used instead of
-            `DefaultAzureCredential.get_token()`
         tenant_id
             Azure tenant ID.
         """
@@ -182,7 +177,7 @@ class CredentialProviderAzure(CredentialProvider):
 
         self._check_module_availability()
 
-        self.account_name = storage_account
+        self.account_name = _storage_account
         self.tenant_id = tenant_id
         # Done like this to bypass mypy, we don't have stubs for azure.identity
         self.credential = importlib.import_module("azure.identity").__dict__[
@@ -196,7 +191,7 @@ class CredentialProviderAzure(CredentialProvider):
         if self._verbose:
             print(
                 (
-                    "CredentialProviderAzure "
+                    "[CredentialProviderAzure]: "
                     f"{self.account_name = } "
                     f"{self.tenant_id = } "
                     f"{self.scopes = } "
@@ -206,7 +201,22 @@ class CredentialProviderAzure(CredentialProvider):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
-        if self.account_name is not None:
+        POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(
+            "POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY"
+        )
+
+        if self._verbose:
+            print(
+                "[CredentialProviderAzure]: "
+                f"{self.account_name = } "
+                f"{POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = }",
+                file=sys.stderr,
+            )
+
+        if (
+            self.account_name is not None
+            and POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY == "1"
+        ):
             try:
                 creds = {
                     "account_key": self._get_azure_storage_account_key_az_cli(
@@ -453,9 +463,9 @@ def _maybe_init_credential_provider(
             )
 
             provider = CredentialProviderAzure(
-                storage_account=storage_account,
                 tenant_id=tenant_id,
                 _verbose=verbose,
+                _storage_account=storage_account,
             )
         elif storage_options is not None:
             return None
