@@ -362,6 +362,7 @@ impl Decoder for BooleanDecoder {
                     (Some(Filter::Mask(mask)), Some(page_validity)) => {
                         decode_masked_optional_plain(values, target, page_validity, mask)
                     },
+                    (Some(Filter::Expr(_)), _) => todo!(),
                 }?;
 
                 Ok(())
@@ -408,6 +409,7 @@ impl Decoder for BooleanDecoder {
                         &page_validity,
                         &filter_from_range(rng.clone()),
                     ),
+                    (Some(Filter::Expr(_)), _) => todo!(),
                 }?;
 
                 Ok(())

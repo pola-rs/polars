@@ -111,6 +111,7 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             optional_masked_dense::decode(values, dict, filter, page_validity, target)
         },
+        (Some(Filter::Expr(_)), _) => todo!(),
     }?;
 
     if cfg!(debug_assertions) && is_optional {
@@ -128,7 +129,7 @@ pub(crate) fn append_validity(
 ) {
     match (page_validity, filter) {
         (None, None) => validity.extend_constant(values_len, true),
-        (None, Some(f)) => validity.extend_constant(f.num_rows(), true),
+        (None, Some(f)) => validity.extend_constant(f.num_rows(values_len), true),
         (Some(page_validity), None) => validity.extend_from_bitmap(page_validity),
         (Some(page_validity), Some(Filter::Range(rng))) => {
             let page_validity = page_validity.clone();
@@ -137,6 +138,7 @@ pub(crate) fn append_validity(
         (Some(page_validity), Some(Filter::Mask(mask))) => {
             validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
         },
+        (_, Some(Filter::Expr(_))) => todo!(),
     }
 }
 
@@ -148,15 +150,11 @@ pub(crate) fn constrain_page_validity(
     let num_unfiltered_rows = match (filter.as_ref(), page_validity) {
         (None, None) => values_len,
         (None, Some(pv)) => pv.len(),
-        (Some(f), v) => {
-            if cfg!(debug_assertions) {
-                if let Some(v) = v {
-                    assert!(v.len() >= f.max_offset());
-                }
-            }
-
-            f.max_offset()
+        (Some(f), Some(pv)) => {
+            debug_assert!(pv.len() >= f.max_offset(pv.len()));
+            f.max_offset(pv.len())
         },
+        (Some(f), None) => f.max_offset(values_len),
     };
 
     page_validity.map(|pv| {

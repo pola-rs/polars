@@ -194,6 +194,7 @@ fn decode_fsb_plain(
                             offset += num_filtered;
                         }
                     },
+                    Filter::Expr(_) => todo!(),
                 },
                 (Some(validity), None) => {
                     let mut iter = validity.iter();
@@ -240,6 +241,7 @@ fn decode_fsb_plain(
                             offset += usize::from(is_valid);
                         }
                     },
+                    Filter::Expr(_) => todo!(),
                 },
             }
 
@@ -346,6 +348,7 @@ fn decode_fsb_dict(
                             offset += num_filtered;
                         }
                     },
+                    Filter::Expr(_) => todo!(),
                 },
                 (Some(validity), None) => {
                     let mut iter = validity.iter();
@@ -402,6 +405,7 @@ fn decode_fsb_dict(
                             offset += usize::from(is_valid);
                         }
                     },
+                    Filter::Expr(_) => todo!(),
                 },
             }
 

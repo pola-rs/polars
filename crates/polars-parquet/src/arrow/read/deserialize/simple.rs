@@ -32,7 +32,7 @@ pub fn page_iter_to_array(
     let dtype = field.dtype;
 
     Ok(match (physical_type, dtype.to_logical_type()) {
-        (_, Null) => null::iter_to_arrays(pages, dtype, filter)?,
+        (_, Null) => Box::new(PageDecoder::new(pages, dtype, null::NullDecoder)?.collect_n(filter)?),
         (PhysicalType::Boolean, Boolean) => {
             Box::new(PageDecoder::new(pages, dtype, boolean::BooleanDecoder)?.collect_n(filter)?)
         },

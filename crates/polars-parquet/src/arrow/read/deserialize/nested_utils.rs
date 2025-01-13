@@ -638,6 +638,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
                 },
                 mask,
             ),
+            Some(Filter::Expr(_)) => todo!(),
         };
 
         let mut top_level_filter = top_level_filter.iter();

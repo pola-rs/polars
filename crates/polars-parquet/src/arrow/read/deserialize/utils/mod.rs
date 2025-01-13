@@ -170,6 +170,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
                 filter = None;
             }
         },
+        Some(Filter::Expr(_)) => todo!(),
     };
 
     page_validity = page_validity.filter(|pv| pv.unset_bits() > 0);
@@ -266,6 +267,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             validity.extend_from_bitmap(&page_validity);
         },
+        (Some(Filter::Expr(_)), _) => todo!(),
     }
 
     Ok(())
@@ -356,11 +358,13 @@ impl<D: Decoder> PageDecoder<D> {
             };
             let page = page?;
 
+            let page_num_values = page.num_values();
+
             let state_filter;
-            (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
+            (state_filter, filter) = Filter::opt_split_at(&filter, page_num_values);
 
             // Skip the whole page if we don't need any rows from it
-            if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
+            if state_filter.as_ref().is_some_and(|f| f.num_rows(page_num_values) == 0) {
                 continue;
             }
 

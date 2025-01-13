@@ -4,6 +4,7 @@
 mod deserialize;
 pub mod schema;
 pub mod statistics;
+pub mod expr;
 
 use std::io::{Read, Seek};
 

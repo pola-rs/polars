@@ -2,7 +2,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
@@ -90,12 +89,6 @@ impl utils::ExactSize for DecodedStateTuple {
     }
 }
 
-impl utils::ExactSize for (Vec<View>, Vec<Buffer<u8>>) {
-    fn len(&self) -> usize {
-        self.0.len()
-    }
-}
-
 #[allow(clippy::too_many_arguments)]
 pub fn decode_plain(
     values: &[u8],
@@ -160,6 +153,7 @@ pub fn decode_plain(
             &filter_from_range(rng.clone()),
             verify_utf8,
         ),
+        (Some(Filter::Expr(_)), _) => todo!(),
     }?;
 
     Ok(())
