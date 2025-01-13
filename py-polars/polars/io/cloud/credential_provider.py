@@ -201,7 +201,6 @@ class CredentialProviderAzure(CredentialProvider):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
-
         POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(
             "POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY"
         )
