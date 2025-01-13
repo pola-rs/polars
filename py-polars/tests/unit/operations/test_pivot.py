@@ -285,6 +285,36 @@ def test_pivot_index_struct_14101() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_pivot_nested_struct_17065() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": ["one", "two", "one", "two"],
+            "bar": ["x", "x", "y", "y"],
+            "baz": [
+                {"a": 1, "b": {"c": 2}},
+                {"a": 3, "b": {"c": 4}},
+                {"a": 5, "b": {"c": 6}},
+                {"a": 7, "b": {"c": 8}},
+            ],
+        }
+    )
+    result = df.pivot(on="bar", index="foo", values="baz")
+    expected = pl.DataFrame(
+        {
+            "foo": ["one", "two"],
+            "x": [
+                {"a": 1, "b": {"c": 2}},
+                {"a": 3, "b": {"c": 4}},
+            ],
+            "y": [
+                {"a": 5, "b": {"c": 6}},
+                {"a": 7, "b": {"c": 8}},
+            ],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_pivot_name_already_exists() -> None:
     # This should be extremely rare...but still, good to check it
     df = pl.DataFrame(

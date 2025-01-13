@@ -1217,3 +1217,12 @@ def test_struct_field_list_eval_17356() -> None:
 @pytest.mark.parametrize("data", [[1], [[1]], {"a": 1}, [{"a": 1}]])
 def test_leaf_list_eq_19613(data: Any) -> None:
     assert not pl.DataFrame([data]).equals(pl.DataFrame([[data]]))
+
+
+def test_nested_object_raises_15237() -> None:
+    obj = object()
+    df = pl.DataFrame({"a": [obj]})
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="nested objects are not allowed"
+    ):
+        df.select(pl.struct("a"))

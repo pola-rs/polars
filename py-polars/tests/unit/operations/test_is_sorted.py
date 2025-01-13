@@ -422,3 +422,8 @@ def test_is_sorted_chunked_select() -> None:
         .set_sorted("a")
         .select(pl.col("a").alias("b"))
     )["b"].flags["SORTED_ASC"]
+
+
+def test_is_sorted_arithmetic_overflow_14106() -> None:
+    s = pl.Series([0, 200], dtype=pl.UInt8).sort()
+    assert not (s + 200).is_sorted()
