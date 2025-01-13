@@ -4,6 +4,9 @@ use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyNone};
 use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
+use std::time::Instant;
+use std::time::Duration;
+use polars_expr::state::node_timer::NodeTimer;
 
 use super::*;
 
@@ -11,6 +14,30 @@ pub(crate) struct PythonScanExec {
     pub(crate) options: PythonOptions,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) predicate_serialized: Option<Vec<u8>>,
+}
+
+#[pyclass]
+pub struct PyNodeTimer {
+    timer: Option<NodeTimer>,
+}
+
+#[pymethods]
+impl PyNodeTimer {
+    pub fn store(&self, name: &str, start_ns: u64, end_ns: u64) -> PyResult<()> {
+        if let Some(timer) = &self.timer {
+            let now = Instant::now();
+            let start = now + Duration::from_nanos(start_ns);
+            let end = now + Duration::from_nanos(end_ns);
+            timer.store(start, end, name.to_string())
+        }
+        Ok(())
+    }
+}
+
+impl PyNodeTimer {
+    pub fn new(timer: Option<NodeTimer>) -> Self {
+        PyNodeTimer { timer }
+    }
 }
 
 fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
@@ -66,11 +93,13 @@ impl Executor for PythonScanExec {
                 self.options.python_source,
                 PythonScanSource::Pyarrow | PythonScanSource::Cuda
             ) {
+                let py_node_timer = PyNodeTimer::new(state.node_timer.clone());
                 let args = (
                     python_scan_function,
                     with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                     predicate,
                     n_rows,
+                    Py::new(py, py_node_timer).unwrap(),
                 );
                 callable.call1(args).map_err(to_compute_err)
             } else {

@@ -70,7 +70,7 @@ pub struct ExecutionState {
     pub branch_idx: usize,
     pub flags: AtomicU8,
     pub ext_contexts: Arc<Vec<DataFrame>>,
-    node_timer: Option<NodeTimer>,
+    pub node_timer: Option<NodeTimer>,
     stop: Arc<AtomicBool>,
 }
 

@@ -747,6 +747,18 @@ impl LazyFrame {
         self._collect_post_opt(|_, _, _| Ok(()))
     }
 
+    /// Profile a LazyFrame, but also allow a post-optimization callback (e.g. for GPU).
+    pub fn _profile_post_opt<P>(self, post_opt: P) -> PolarsResult<(DataFrame, DataFrame)>
+    where
+        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
+    {
+        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
+        state.time_nodes();
+        let df = physical_plan.execute(&mut state)?;
+        let timer_df = state.finish_timer()?;
+        Ok((df, timer_df))
+    }
+
     /// Profile a LazyFrame.
     ///
     /// This will run the query and return a tuple

@@ -602,12 +602,46 @@ impl PyLazyFrame {
         ldf.cache().into()
     }
 
-    fn profile(&self, py: Python) -> PyResult<(PyDataFrame, PyDataFrame)> {
+    #[pyo3(signature = (lambda_post_opt=None))]
+    fn profile(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<(PyDataFrame, PyDataFrame)> {
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         let (df, time_df) = py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.profile().map_err(PyPolarsErr::from)
+            if let Some(lambda) = lambda_post_opt {
+                ldf._profile_post_opt(|root, lp_arena, expr_arena| {
+                    Python::with_gil(|py| {
+                        let nt = NodeTraverser::new(
+                            root,
+                            std::mem::take(lp_arena),
+                            std::mem::take(expr_arena),
+                        );
+
+                        // Get a copy of the arena's.
+                        let arenas = nt.get_arenas();
+
+                        // Pass the node visitor which allows the python callback to replace parts of the query plan.
+                        // Remove "cuda" or specify better once we have multiple post-opt callbacks.
+                        lambda.call1(py, (nt,)).map_err(
+                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
+                        )?;
+    
+                        // ... unwrap the updated arenas, etc ...
+                        // This step ensures that any IR rewriting done by Python
+                        // gets placed back into the polars arenas.
+
+                        // Unpack the arena's.
+                        // At this point the `nt` is useless.
+                        std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
+                        std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
+
+                        Ok(())
+                    })
+                })
+            } else {
+                ldf.profile()
+            }
+            .map_err(PyPolarsErr::from)
         })?;
         Ok((df.into(), time_df.into()))
     }
