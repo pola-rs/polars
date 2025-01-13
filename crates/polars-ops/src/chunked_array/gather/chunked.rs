@@ -623,7 +623,7 @@ where
                 buffers.extend(data_buffers.iter().cloned());
                 v.insert(offset);
                 offset
-            }
+            },
         };
         buffer_offsets.push(offset);
     }

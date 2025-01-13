@@ -5,6 +5,7 @@ import os
 import random
 import string
 import sys
+import time
 import tracemalloc
 from typing import TYPE_CHECKING, Any, cast
 
@@ -205,7 +206,11 @@ class MemoryUsage:
         return tracemalloc.get_traced_memory()[1]
 
 
-@pytest.fixture
+# The bizarre syntax is from
+# https://github.com/pytest-dev/pytest/issues/1368#issuecomment-2344450259 - we
+# need to mark any test using this fixture as slow because we have a sleep
+# added to work around a CPython bug, see the end of the function.
+@pytest.fixture(params=[pytest.param(0, marks=pytest.mark.slow)])
 def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     Provide an API for measuring peak memory usage.
@@ -231,6 +236,10 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     try:
         yield MemoryUsage()
     finally:
+        # Workaround for https://github.com/python/cpython/issues/128679
+        time.sleep(1)
+        gc.collect()
+
         tracemalloc.stop()
 
 
