@@ -1,7 +1,16 @@
 //! Utilities for converting dates, times, datetimes, and so on.
 
+use std::str::FromStr;
+
+use chrono_tz::Tz;
 use polars::datatypes::TimeUnit;
-use polars_core::export::chrono::{NaiveDateTime, NaiveTime, TimeDelta};
+use polars_core::datatypes::TimeZone;
+use polars_core::export::chrono::{
+    DateTime, FixedOffset, NaiveDateTime, NaiveTime, TimeDelta, TimeZone as _,
+};
+use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python};
+
+use crate::error::PyPolarsErr;
 
 pub fn elapsed_offset_to_timedelta(elapsed: i64, time_unit: TimeUnit) -> TimeDelta {
     let (in_second, nano_multiplier) = match time_unit {
@@ -28,4 +37,27 @@ pub fn timestamp_to_naive_datetime(since_epoch: i64, time_unit: TimeUnit) -> Nai
 pub fn nanos_since_midnight_to_naivetime(nanos_since_midnight: i64) -> NaiveTime {
     NaiveTime::from_hms_opt(0, 0, 0).unwrap()
         + elapsed_offset_to_timedelta(nanos_since_midnight, TimeUnit::Nanoseconds)
+}
+
+pub fn datetime_to_py_object<'py>(
+    py: Python<'py>,
+    v: i64,
+    tu: TimeUnit,
+    tz: Option<&TimeZone>,
+) -> PyResult<Bound<'py, PyAny>> {
+    if let Some(time_zone) = tz {
+        if let Ok(tz) = Tz::from_str(time_zone) {
+            let utc_datetime = DateTime::UNIX_EPOCH + elapsed_offset_to_timedelta(v, tu);
+            let datetime = utc_datetime.with_timezone(&tz);
+            datetime.into_pyobject(py)
+        } else if let Ok(tz) = FixedOffset::from_str(time_zone) {
+            let naive_datetime = timestamp_to_naive_datetime(v, tu);
+            let datetime = tz.from_utc_datetime(&naive_datetime);
+            datetime.into_pyobject(py)
+        } else {
+            Err(PyPolarsErr::Other(format!("Could not parse timezone: {time_zone}")).into())
+        }
+    } else {
+        timestamp_to_naive_datetime(v, tu).into_pyobject(py)
+    }
 }

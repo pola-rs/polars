@@ -3425,6 +3425,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "bytes",
+ "chrono-tz",
  "either",
  "flate2",
  "itoa",
@@ -3680,6 +3681,7 @@ checksum = "57fe09249128b3173d092de9523eaa75136bf7ba85e0d69eca241c7939c933cc"
 dependencies = [
  "cfg-if",
  "chrono",
+ "chrono-tz",
  "indoc",
  "inventory",
  "libc",
