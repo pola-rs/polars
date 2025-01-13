@@ -1,3 +1,6 @@
+use std::result;
+
+use arrow::pushable::Pushable;
 use polars_plan::constants::CSE_REPLACED;
 use polars_utils::itertools::Itertools;
 
@@ -60,35 +63,39 @@ fn window_evaluate(
                 // inform the expression it has window functions.
                 state.insert_has_window_function_flag();
 
-                // don't bother caching if we only have a single window function in this partition
-                if partition.len() == 1 {
-                    state.remove_cache_window_flag();
-                } else {
+                // caching more than one window expression is a complicated topic for another day
+                // see issue #2523
+                let cache = partition.len() > 1
+                    && partition.iter().all(|(_, e)| {
+                        e.as_expression()
+                            .unwrap()
+                            .into_iter()
+                            .filter(|e| matches!(e, Expr::Window { .. }))
+                            .count()
+                            == 1
+                    });
+                let mut first_result = None;
+                // First run 1 to fill the cache. Condvars and such don't work as
+                //  rayon threads should not be blocked.
+                if cache {
+                    let first = &partition[0];
+                    let c = first.1.evaluate(df, &state)?;
+                    first_result = Some((first.0, c));
                     state.insert_cache_window_flag();
+                } else {
+                    state.remove_cache_window_flag();
                 }
 
-                let mut out = Vec::with_capacity(partition.len());
-                // Don't parallelize here, as this will hold a mutex and Deadlock.
-                for (index, e) in partition {
-                    if e.as_expression()
-                        .unwrap()
-                        .into_iter()
-                        .filter(|e| matches!(e, Expr::Window { .. }))
-                        .count()
-                        == 1
-                    {
-                        state.insert_cache_window_flag();
-                    }
-                    // caching more than one window expression is a complicated topic for another day
-                    // see issue #2523
-                    else {
-                        state.remove_cache_window_flag();
-                    }
+                let mut results = partition[first_result.is_some() as usize..]
+                    .par_iter()
+                    .map(|(index, e)| e.evaluate(df, &state).map(|c| (*index, c)))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-                    let s = e.evaluate(df, &state)?;
-                    out.push((*index, s));
+                if let Some(item) = first_result {
+                    results.push(item)
                 }
-                Ok(out)
+
+                Ok(results)
             })
             .collect()
     })
