@@ -1,3 +1,4 @@
+use arrow::array::Array;
 use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
@@ -600,7 +601,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
         })
     }
 
-    pub fn collect_n(mut self, filter: Option<Filter>) -> ParquetResult<(NestedState, D::Output)> {
+    pub fn collect(mut self, filter: Option<Filter>) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
         // @TODO: We should probably count the filter so that we don't overallocate
         let mut target = self.decoder.with_capacity(self.iter.total_num_values());
         // @TODO: Self capacity
@@ -715,6 +716,12 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
 
         let array = self.decoder.finalize(self.dtype, self.dict, target)?;
 
-        Ok((nested_state, array))
+        Ok((nested_state, array, Bitmap::new()))
+    }
+
+    pub fn collect_boxed(self, filter: Option<Filter>) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
+        use arrow::array::IntoBoxedArray;
+        let (nested, array, ptm) = self.collect(filter)?;
+        Ok((nested, array.into_boxed(), ptm))
     }
 }

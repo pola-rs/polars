@@ -6,8 +6,8 @@ use arrow::array::NullArray;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
-use super::utils;
 use super::utils::filter::Filter;
+use super::utils::{self};
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 

@@ -47,7 +47,7 @@ impl Filter {
         }
     }
 
-    pub(crate) fn split_at(&self, at: usize) -> (Filter, Filter) {
+    pub(crate) fn split_at(&self, at: usize) -> (Self, Self) {
         match self {
             Self::Range(range) => {
                 let start = range.start;
@@ -69,10 +69,7 @@ impl Filter {
         }
     }
 
-    pub(crate) fn opt_split_at(
-        filter: &Option<Self>,
-        at: usize,
-    ) -> (Option<Filter>, Option<Filter>) {
+    pub(crate) fn opt_split_at(filter: &Option<Self>, at: usize) -> (Option<Self>, Option<Self>) {
         let Some(filter) = filter else {
             return (None, None);
         };

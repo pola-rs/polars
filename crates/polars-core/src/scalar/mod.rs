@@ -41,6 +41,11 @@ impl Scalar {
     }
 
     #[inline(always)]
+    pub fn into_value(self) -> AnyValue<'static> {
+        self.value
+    }
+
+    #[inline(always)]
     pub fn value(&self) -> &AnyValue<'static> {
         &self.value
     }

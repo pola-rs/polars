@@ -92,10 +92,6 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     target: &mut Vec<B>,
     pred_true_mask: &mut MutableBitmap,
 ) -> ParquetResult<()> {
-    if cfg!(debug_assertions) && is_optional {
-        assert_eq!(target.len(), validity.len());
-    }
-
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
     }
@@ -120,30 +116,48 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
         },
         (Some(Filter::Predicate(p)), None) => {
             let dict_mask = dict_mask.unwrap();
-
-            if p.include_values {
-                todo!()
-            }
-
             let num_filtered_dict_values = dict_mask.set_bits();
+
+            let expected_pred_true_mask_len = pred_true_mask.len() + values.len();
 
             // @NOTE: this has to be changed when there are nulls null
             if num_filtered_dict_values == 0 {
                 pred_true_mask.extend_constant(values.len(), false);
-                return Ok(());
             } else if num_filtered_dict_values == 1 {
                 let needle = dict_mask.leading_zeros();
-                predicate::decode_single_no_values(values, needle as u32, pred_true_mask)
+                let start_mask_length = pred_true_mask.len();
+
+                predicate::decode_single_no_values(values, needle as u32, pred_true_mask)?;
+
+                if p.include_values {
+                    let num_values = BitMask::new(
+                        pred_true_mask.as_slice(),
+                        start_mask_length,
+                        pred_true_mask.len() - start_mask_length,
+                    )
+                    .set_bits();
+                    target.resize(target.len() + num_values, dict.get(needle as u32).unwrap());
+                }
             } else {
-                predicate::decode_multiple_no_values(values, dict_mask, pred_true_mask)
+                if p.include_values {
+                    predicate::decode_multiple_values(
+                        values,
+                        dict,
+                        dict_mask,
+                        target,
+                        pred_true_mask,
+                    )?;
+                } else {
+                    predicate::decode_multiple_no_values(values, dict_mask, pred_true_mask)?;
+                }
             }
+
+            assert_eq!(expected_pred_true_mask_len, pred_true_mask.len());
+
+            Ok(())
         },
         (Some(Filter::Predicate(_)), Some(_)) => todo!(),
     }?;
-
-    if cfg!(debug_assertions) && is_optional {
-        assert_eq!(target.len(), validity.len());
-    }
 
     Ok(())
 }

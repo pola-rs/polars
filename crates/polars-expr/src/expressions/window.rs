@@ -660,6 +660,16 @@ impl PhysicalExpr for WindowExpr {
         self.phys_function.collect_live_columns(lv);
     }
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,

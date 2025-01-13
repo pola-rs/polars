@@ -135,6 +135,7 @@ where
             &mut MutableBitmap::new(),
             &mut self.0.intermediate,
             &mut target,
+            &mut MutableBitmap::new(),
             self.0.decoder,
         )?;
         Ok(PrimitiveArray::new(
@@ -160,6 +161,7 @@ where
                 &mut decoded.1,
                 &mut self.0.intermediate,
                 &mut decoded.0,
+                pred_true_mask,
                 self.0.decoder,
             ),
             StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(

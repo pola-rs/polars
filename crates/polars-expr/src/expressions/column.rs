@@ -183,6 +183,33 @@ impl PhysicalExpr for ColumnExpr {
         lv.insert(self.name.clone());
     }
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
+    fn to_column(&self) -> Option<&PlSmallStr> {
+        Some(&self.name)
+    }
+
+    fn replace_elementwise_const_columns(
+        &self,
+        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
+    ) -> Option<Arc<dyn PhysicalExpr>> {
+        if let Some(av) = const_columns.get(&self.name) {
+            let lv = LiteralValue::from(av.clone());
+            let le = LiteralExpr::new(lv, self.expr.clone());
+            return Some(Arc::new(le));
+        }
+
+        None
+    }
+
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         input_schema.get_field(&self.name).ok_or_else(|| {
             polars_err!(

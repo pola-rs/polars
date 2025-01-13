@@ -446,6 +446,16 @@ impl PhysicalExpr for AggregationExpr {
         self.input.collect_live_columns(lv);
     }
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
     fn is_scalar(&self) -> bool {
         true
     }
@@ -738,6 +748,16 @@ impl PhysicalExpr for AggQuantileExpr {
     fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
         self.input.collect_live_columns(lv);
         self.quantile.collect_live_columns(lv);
+    }
+
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

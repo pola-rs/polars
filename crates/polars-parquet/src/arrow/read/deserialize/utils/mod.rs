@@ -3,7 +3,7 @@ pub(crate) mod filter;
 
 use std::ops::Range;
 
-use arrow::array::{Array, Splitable};
+use arrow::array::{Array, IntoBoxedArray, Splitable};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -36,7 +36,12 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
 }
 
 impl<'a, D: Decoder> State<'a, D> {
-    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>, dict_mask: Option<&'a Bitmap>) -> ParquetResult<Self> {
+    pub fn new(
+        decoder: &D,
+        page: &'a DataPage,
+        dict: Option<&'a D::Dict>,
+        dict_mask: Option<&'a Bitmap>,
+    ) -> ParquetResult<Self> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
@@ -292,7 +297,7 @@ pub(super) trait Decoder: Sized {
     /// The target state that this Decoder decodes into.
     type DecodedState: ExactSize;
 
-    type Output;
+    type Output: IntoBoxedArray;
 
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
@@ -348,18 +353,20 @@ impl<D: Decoder> PageDecoder<D> {
         })
     }
 
-    pub fn collect_n(mut self, mut filter: Option<Filter>) -> ParquetResult<D::Output> {
+    pub fn collect(mut self, mut filter: Option<Filter>) -> ParquetResult<(D::Output, Bitmap)> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
         // @TODO: Don't allocate if include_values == false
         let mut target = self.decoder.with_capacity(num_rows_remaining);
         let mut pred_true_mask = MutableBitmap::new();
 
+        let mut pred_tracks_nulls = true;
         let mut dict_mask = None;
         if let Some(dict) = self.dict.as_ref() {
             self.decoder.apply_dictionary(&mut target, dict)?;
 
             if let Some(Filter::Predicate(p)) = &filter {
+                pred_tracks_nulls = p.predicate.evaluate_null();
                 pred_true_mask.reserve(num_rows_remaining);
                 dict_mask = Some(p.predicate.evaluate(dict));
             }
@@ -377,7 +384,22 @@ impl<D: Decoder> PageDecoder<D> {
             (state_filter, filter) = Filter::opt_split_at(&filter, page_num_values);
 
             // Skip the whole page if we don't need any rows from it
-            if state_filter.as_ref().is_some_and(|f| f.num_rows(page_num_values) == 0) {
+            if state_filter
+                .as_ref()
+                .is_some_and(|f| f.num_rows(page_num_values) == 0)
+            {
+                continue;
+            }
+
+            // Skip a dictionary encoded page if none of the dictionary values match the predicate.
+            // This is essentially a slower version of statistics skipping.
+            if dict_mask.as_ref().is_some_and(|dm| dm.set_bits() == 0)
+                && page.page().header().is_dictionary_encoded()
+                && (page.page().descriptor.primitive_type.field_info.repetition
+                    != Repetition::Optional
+                    || !pred_tracks_nulls)
+            {
+                pred_true_mask.extend_constant(page.num_values(), false);
                 continue;
             }
 
@@ -386,7 +408,12 @@ impl<D: Decoder> PageDecoder<D> {
             let state = State::new(&self.decoder, &page, self.dict.as_ref(), dict_mask.as_ref())?;
 
             let start_length = target.len();
-            state.decode(&mut self.decoder, &mut target, &mut pred_true_mask, state_filter)?;
+            state.decode(
+                &mut self.decoder,
+                &mut target,
+                &mut pred_true_mask,
+                state_filter,
+            )?;
             let end_length = target.len();
 
             num_rows_remaining -= end_length - start_length;
@@ -394,7 +421,13 @@ impl<D: Decoder> PageDecoder<D> {
             self.iter.reuse_page_buffer(page);
         }
 
-        self.decoder.finalize(self.dtype, self.dict, target)
+        let array = self.decoder.finalize(self.dtype, self.dict, target)?;
+        Ok((array, pred_true_mask.freeze()))
+    }
+
+    pub fn collect_boxed(self, filter: Option<Filter>) -> ParquetResult<(Box<dyn Array>, Bitmap)> {
+        self.collect(filter)
+            .map(|(arr, ptm)| (arr.into_boxed(), ptm))
     }
 }
 

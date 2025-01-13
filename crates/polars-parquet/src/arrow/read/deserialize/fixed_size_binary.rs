@@ -125,6 +125,7 @@ fn decode_fsb_plain(
     size: usize,
     values: &[u8],
     target: &mut FSBVec,
+    pred_true_mask: &mut MutableBitmap,
     validity: &mut MutableBitmap,
     is_optional: bool,
     filter: Option<Filter>,
@@ -145,6 +146,7 @@ fn decode_fsb_plain(
                 filter,
                 validity,
                 $target,
+                pred_true_mask,
             )
         }};
     }
@@ -448,6 +450,7 @@ impl Decoder for BinaryDecoder {
             page.buffer.as_ref(),
             &mut target,
             &mut MutableBitmap::new(),
+            &mut MutableBitmap::new(),
             false,
             None,
             None,
@@ -487,6 +490,7 @@ impl Decoder for BinaryDecoder {
                 size,
                 values,
                 &mut decoded.0,
+                pred_true_mask,
                 &mut decoded.1,
                 state.is_optional,
                 filter,

@@ -1,4 +1,7 @@
+use arrow::array::Array;
+use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
+use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +20,150 @@ pub trait PhysicalIoExpr: Send + Sync {
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         None
     }
+
+    fn isolate_column_expr(
+        &self,
+        name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalIoExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        _ = name;
+        None
+    }
+}
+
+#[derive(Clone)]
+pub enum SpecializedColumnPredicateExpr {
+    Eq(Scalar),
+    EqMissing(Scalar),
+}
+
+#[derive(Clone)]
+pub struct ColumnPredicateExpr {
+    column_name: PlSmallStr,
+    dtype: DataType,
+    specialized: Option<SpecializedColumnPredicateExpr>,
+    expr: Arc<dyn PhysicalIoExpr>,
+}
+
+impl ColumnPredicateExpr {
+    pub fn new(
+        column_name: PlSmallStr,
+        dtype: DataType,
+        expr: Arc<dyn PhysicalIoExpr>,
+        specialized: Option<SpecializedColumnPredicateExpr>,
+    ) -> Self {
+        Self {
+            column_name,
+            dtype,
+            specialized,
+            expr,
+        }
+    }
+
+    pub fn is_eq_scalar(&self) -> bool {
+        self.to_eq_scalar().is_some()
+    }
+    pub fn to_eq_scalar(&self) -> Option<&Scalar> {
+        match &self.specialized {
+            Some(
+                SpecializedColumnPredicateExpr::Eq(sc)
+                | SpecializedColumnPredicateExpr::EqMissing(sc),
+            ) => Some(sc),
+            _ => None,
+        }
+    }
+}
+
+impl ParquetColumnExpr for ColumnPredicateExpr {
+    fn evaluate_mut(&self, values: &dyn Array, bm: &mut MutableBitmap) {
+        // We should never evaluate nulls with this.
+        assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
+        assert_eq!(
+            &self.dtype.to_physical().to_arrow(CompatLevel::newest()),
+            values.dtype()
+        );
+
+        let series = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                self.column_name.clone(),
+                vec![values.to_boxed()],
+                &self.dtype,
+            )
+        };
+        let column = series.into_column();
+        let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
+
+        // @TODO: Probably thes unwraps should be removed.
+        let true_mask = self.expr.evaluate_io(&df).unwrap();
+        let true_mask = true_mask.bool().unwrap();
+
+        bm.reserve(true_mask.len());
+        for chunk in true_mask.downcast_iter() {
+            match chunk.validity() {
+                None => bm.extend(chunk.values()),
+                Some(v) => bm.extend(chunk.values() & v),
+            }
+        }
+    }
+    fn evaluate_null(&self) -> bool {
+        let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
+        let df = unsafe { DataFrame::new_no_checks(1, vec![column]) };
+
+        // @TODO: Probably thes unwraps should be removed.
+        let true_mask = self.expr.evaluate_io(&df).unwrap();
+        let true_mask = true_mask.bool().unwrap();
+
+        true_mask.get(0).unwrap_or(false)
+    }
+
+    fn to_equals_scalar(&self) -> Option<ParquetScalar> {
+        self.to_eq_scalar()
+            .and_then(|s| cast_to_parquet_scalar(s.clone()))
+    }
+
+    fn to_range_scalar(&self) -> Option<ParquetScalarRange> {
+        None
+    }
+}
+
+fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
+    use {AnyValue as A, ParquetScalar as P};
+
+    Some(match scalar.into_value() {
+        A::Null => P::Null,
+        A::Boolean(v) => P::Boolean(v),
+
+        A::UInt8(v) => P::UInt8(v),
+        A::UInt16(v) => P::UInt16(v),
+        A::UInt32(v) => P::UInt32(v),
+        A::UInt64(v) => P::UInt64(v),
+
+        A::Int8(v) => P::Int8(v),
+        A::Int16(v) => P::Int16(v),
+        A::Int32(v) | A::Date(v) => P::Int32(v),
+        A::Int64(v)
+        | A::Datetime(v, _, _)
+        | A::DatetimeOwned(v, _, _)
+        | A::Duration(v, _)
+        | A::Time(v) => P::Int64(v),
+
+        A::Float32(v) => P::Float32(v),
+        A::Float64(v) => P::Float64(v),
+
+        // @TODO: Cast to string
+        A::Categorical(_, _, _)
+        | A::CategoricalOwned(_, _, _)
+        | A::Enum(_, _, _)
+        | A::EnumOwned(_, _, _) => return None,
+
+        A::String(v) => P::String(v.into()),
+        A::StringOwned(v) => P::String(v.as_str().into()),
+        A::Binary(v) => P::Binary(v.into()),
+        A::BinaryOwned(v) => P::Binary(v.into()),
+        _ => return None,
+    })
 }
 
 pub trait StatsEvaluator {
