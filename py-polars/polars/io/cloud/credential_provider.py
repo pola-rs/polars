@@ -157,6 +157,7 @@ class CredentialProviderAzure(CredentialProvider):
         *,
         scopes: list[str] | None = None,
         tenant_id: str | None = None,
+        _storage_account: str | None = None,
         _verbose: bool = False,
     ) -> None:
         """
@@ -176,6 +177,7 @@ class CredentialProviderAzure(CredentialProvider):
 
         self._check_module_availability()
 
+        self.account_name = _storage_account
         self.tenant_id = tenant_id
         # Done like this to bypass mypy, we don't have stubs for azure.identity
         self.credential = importlib.import_module("azure.identity").__dict__[
@@ -189,7 +191,8 @@ class CredentialProviderAzure(CredentialProvider):
         if self._verbose:
             print(
                 (
-                    "CredentialProviderAzure "
+                    "[CredentialProviderAzure]: "
+                    f"{self.account_name = } "
                     f"{self.tenant_id = } "
                     f"{self.scopes = } "
                 ),
@@ -198,6 +201,44 @@ class CredentialProviderAzure(CredentialProvider):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
+
+        POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(
+            "POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY"
+        )
+
+        if self._verbose:
+            print(
+                "[CredentialProviderAzure]: "
+                f"{self.account_name = } "
+                f"{POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = }",
+                file=sys.stderr,
+            )
+
+        if (
+            self.account_name is not None
+            and POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY == "1"
+        ):
+            try:
+                creds = {
+                    "account_key": self._get_azure_storage_account_key_az_cli(
+                        self.account_name
+                    )
+                }
+
+                if self._verbose:
+                    print(
+                        "[CredentialProviderAzure]: Retrieved account key from Azure CLI",
+                        file=sys.stderr,
+                    )
+            except Exception as e:
+                if self._verbose:
+                    print(
+                        f"[CredentialProviderAzure]: Could not retrieve account key from Azure CLI: {e}",
+                        file=sys.stderr,
+                    )
+            else:
+                return creds, None  # type: ignore[return-value]
+
         token = self.credential.get_token(*self.scopes, tenant_id=self.tenant_id)
 
         return {
@@ -209,6 +250,51 @@ class CredentialProviderAzure(CredentialProvider):
         if importlib.util.find_spec("azure.identity") is None:
             msg = "azure-identity must be installed to use `CredentialProviderAzure`"
             raise ImportError(msg)
+
+    @staticmethod
+    def _extract_adls_uri_storage_account(uri: str) -> str | None:
+        # "abfss://{CONTAINER}@{STORAGE_ACCOUNT}.dfs.core.windows.net/"
+        #                      ^^^^^^^^^^^^^^^^^
+        try:
+            return (
+                uri.split("://", 1)[1]
+                .split("/", 1)[0]
+                .split("@", 1)[1]
+                .split(".dfs.core.windows.net", 1)[0]
+            )
+
+        except IndexError:
+            return None
+
+    @classmethod
+    def _get_azure_storage_account_key_az_cli(cls, account_name: str) -> str:
+        # [
+        #     {
+        #         "creationTime": "1970-01-01T00:00:00.000000+00:00",
+        #         "keyName": "key1",
+        #         "permissions": "FULL",
+        #         "value": "..."
+        #     },
+        #     {
+        #         "creationTime": "1970-01-01T00:00:00.000000+00:00",
+        #         "keyName": "key2",
+        #         "permissions": "FULL",
+        #         "value": "..."
+        #     }
+        # ]
+
+        return json.loads(
+            cls._azcli(
+                "storage",
+                "account",
+                "keys",
+                "list",
+                "--output",
+                "json",
+                "--account-name",
+                account_name,
+            )
+        )[0]["value"]
 
     @classmethod
     def _azcli_version(cls) -> str | None:
@@ -348,6 +434,7 @@ def _maybe_init_credential_provider(
         # For Azure we dispatch to `azure.identity` as much as possible
         if _is_azure_cloud(scheme):
             tenant_id = None
+            storage_account = None
 
             if storage_options is not None:
                 for k, v in storage_options.items():
@@ -361,21 +448,25 @@ def _maybe_init_credential_provider(
                         "authority_id",
                     }:
                         tenant_id = v
-                    elif k in {
-                        "azure_storage_account_name",
-                        "account_name",
-                        "azure_use_azure_cli",
-                        "use_azure_cli",
-                    }:
+                    elif k in {"azure_storage_account_name", "account_name"}:
+                        storage_account = v
+                    elif k in {"azure_use_azure_cli", "use_azure_cli"}:
                         continue
                     else:
                         # We assume some sort of access key was given, so we
                         # just dispatch to the rust side.
                         return None
 
+            storage_account = (
+                # Prefer the one embedded in the path
+                CredentialProviderAzure._extract_adls_uri_storage_account(str(path))
+                or storage_account
+            )
+
             provider = CredentialProviderAzure(
                 tenant_id=tenant_id,
                 _verbose=verbose,
+                _storage_account=storage_account,
             )
         elif storage_options is not None:
             return None
