@@ -106,6 +106,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
         combine_validities_and(a.as_ref(), Some(&b))
     });
 
+    // At this point the output height and all arrays should have non-zero length
     let out = if all_unit_len && width > 0 {
         // Fast-path for all scalars
         let inner_arr = unsafe { horizontal_flatten_unchecked(&arrays, &widths, 1) };
