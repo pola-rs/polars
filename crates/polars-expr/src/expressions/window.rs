@@ -187,12 +187,12 @@ impl WindowExpr {
             if let Some(idx) = state.window_cache.get_map(&cache_key) {
                 idx
             } else {
-                let idx = Arc::new(self.map_list_agg_by_arg_sort(out_column, &flattened, ac, gb)?);
+                let idx = Arc::new(self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb)?);
                 state.window_cache.insert_map(cache_key, idx.clone());
                 idx
             }
         } else {
-            Arc::new(self.map_list_agg_by_arg_sort(out_column, &flattened, ac, gb)?)
+            Arc::new(self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb)?)
         };
 
         // SAFETY:
@@ -478,10 +478,7 @@ impl PhysicalExpr for WindowExpr {
 
             let groups = match state.window_cache.get_groups(&cache_key) {
                 Some(groups) => groups,
-                None => {
-                    let groups = create_groups()?;
-                    groups
-                },
+                None => create_groups()?,
             };
             (groups, cache_key)
         } else {
