@@ -174,3 +174,14 @@ def test_concat_arr_zero_fields() -> None:
             dtype=pl.Array(pl.Struct({"x": pl.Array(pl.Int64, 0)}), 2),
         ),
     )
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_concat_arr_scalar() -> None:
+    lit = pl.lit([b"A"], dtype=pl.Array(pl.Binary, 1))
+    df = pl.select(pl.repeat(lit, 10))
+
+    assert df._to_metadata()["repr"].to_list() == ["scalar"]
+
+    out = df.with_columns(out=pl.concat_arr(pl.first(), pl.first()))
+    assert out._to_metadata()["repr"].to_list() == ["scalar", "scalar"]
