@@ -257,3 +257,16 @@ def test_predicate_pushdown_unique() -> None:
     print(q.filter(pl.col("id").is_in([1, 2, 3])).explain())
     assert not q.filter(pl.col("id").is_in([1, 2, 3])).explain().startswith("FILTER")
     assert q.filter(pl.col("id").sum() == pl.col("id")).explain().startswith("FILTER")
+
+
+def test_unique_enum_19338() -> None:
+    for data in [
+        {"enum": ["A"]},
+        [{"enum": "A"}],
+    ]:
+        df = pl.DataFrame(data, schema={"enum": pl.Enum(["A", "B", "C"])})
+        result = df.select(pl.col("enum").unique())
+        expected = pl.DataFrame(
+            {"enum": ["A"]}, schema={"enum": pl.Enum(["A", "B", "C"])}
+        )
+        assert_frame_equal(result, expected)

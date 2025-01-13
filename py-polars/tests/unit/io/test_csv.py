@@ -2486,3 +2486,18 @@ def test_csv_compressed_new_columns_19916() -> None:
 
     q = pl.scan_csv(b, has_header=False, new_columns=["a", "b", "c", "d", "e", "f"])
     assert_frame_equal(q.collect(), df)
+
+
+def test_trailing_separator_8240() -> None:
+    csv = "A|B|"
+
+    expected = pl.DataFrame(
+        {"column_1": ["A"], "column_2": ["B"], "column_3": [None]},
+        schema={"column_1": pl.String, "column_2": pl.String, "column_3": pl.String},
+    )
+
+    result = pl.read_csv(io.StringIO(csv), separator="|", has_header=False)
+    assert_frame_equal(result, expected)
+
+    result = pl.scan_csv(io.StringIO(csv), separator="|", has_header=False).collect()
+    assert_frame_equal(result, expected)
