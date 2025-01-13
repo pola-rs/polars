@@ -1,6 +1,3 @@
-use std::result;
-
-use arrow::pushable::Pushable;
 use polars_plan::constants::CSE_REPLACED;
 use polars_utils::itertools::Itertools;
 
@@ -37,9 +34,7 @@ fn rolling_evaluate(
                 // Set the groups so all expressions in partition can use it.
                 // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
                 // rolling expression try to get read access.
-                {
-                    state.group_tuples.insert(groups_key, &groups);
-                }
+                state.window_cache.insert_groups(groups_key, groups);
                 partition
                     .par_iter()
                     .map(|(idx, expr)| expr.evaluate(df, &state).map(|s| (*idx, s)))

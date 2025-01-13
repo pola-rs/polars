@@ -24,7 +24,7 @@ impl PhysicalExpr for RollingExpr {
 
         let groups = {
             // Groups must be set by expression runner.
-            state.group_tuples.get(&groups_key).clone()
+            state.window_cache.get_groups(&groups_key).clone()
         };
 
         // There can be multiple rolling expressions in a single expr.
@@ -34,7 +34,7 @@ impl PhysicalExpr for RollingExpr {
             Some(groups) => groups,
             None => {
                 let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
-                state.group_tuples.insert(groups_key, &groups);
+                state.window_cache.insert_groups(groups_key, groups.clone());
                 groups
             },
         };

@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds};
+use polars_ops::frame::join::{private_left_join_multiple_keys, ChunkJoinOptIds};
 use polars_ops::frame::SeriesJoin;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
@@ -46,12 +46,10 @@ impl WindowExpr {
     fn map_list_agg_by_arg_sort(
         &self,
         out_column: Column,
-        flattened: Column,
+        flattened: &Column,
         mut ac: AggregationContext,
         gb: GroupBy,
-        state: &ExecutionState,
-        cache_key: &str,
-    ) -> PolarsResult<Column> {
+    ) -> PolarsResult<IdxCa> {
         // idx (new-idx, original-idx)
         let mut idx_mapping = Vec::with_capacity(out_column.len());
 
@@ -112,11 +110,7 @@ impl WindowExpr {
         // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
-        let idx = IdxCa::from_vec(PlSmallStr::EMPTY, take_idx);
-
-        // SAFETY:
-        // groups should always be in bounds.
-        unsafe { Ok(flattened.take_unchecked(&idx)) }
+        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, take_idx))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -124,12 +118,12 @@ impl WindowExpr {
         &self,
         df: &DataFrame,
         out_column: Column,
-        flattened: Column,
+        flattened: &Column,
         mut ac: AggregationContext,
         group_by_columns: &[Column],
         gb: GroupBy,
+        cache_key: String,
         state: &ExecutionState,
-        cache_key: &str,
     ) -> PolarsResult<Column> {
         // we use an arg_sort to map the values back
 
@@ -188,7 +182,22 @@ impl WindowExpr {
                 );
             };
         }
-        self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb, state, cache_key)
+
+        let idx = if state.cache_window() {
+            if let Some(idx) = state.window_cache.get_map(&cache_key) {
+                idx
+            } else {
+                let idx = Arc::new(self.map_list_agg_by_arg_sort(out_column, &flattened, ac, gb)?);
+                state.window_cache.insert_map(cache_key, idx.clone());
+                idx
+            }
+        } else {
+            Arc::new(self.map_list_agg_by_arg_sort(out_column, &flattened, ac, gb)?)
+        };
+
+        // SAFETY:
+        // groups should always be in bounds.
+        unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
 
     fn run_aggregation<'a>(
@@ -467,7 +476,7 @@ impl PhysicalExpr for WindowExpr {
                 window_function_format_order_by(&mut cache_key, e, options)
             }
 
-            let groups = match state.group_tuples.get(&cache_key) {
+            let groups = match state.window_cache.get_groups(&cache_key) {
                 Some(groups) => groups,
                 None => {
                     let groups = create_groups()?;
@@ -488,7 +497,9 @@ impl PhysicalExpr for WindowExpr {
         // are consistent among all windows
         if sort_groups || state.cache_window() {
             groups.sort();
-            state.group_tuples.insert(cache_key.clone(), &groups);
+            state
+                .window_cache
+                .insert_groups(cache_key.clone(), groups.clone());
         }
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
@@ -533,12 +544,12 @@ impl PhysicalExpr for WindowExpr {
                 self.map_by_arg_sort(
                     df,
                     out_column,
-                    flattened,
+                    &flattened,
                     ac,
                     &group_by_columns,
                     gb,
+                    cache_key,
                     state,
-                    &cache_key,
                 )
             },
             Join => {
@@ -561,7 +572,7 @@ impl PhysicalExpr for WindowExpr {
                             if group_by_columns.len() == 1 {
                                 // group key from right column
                                 let right = &keys[0];
-                                PolarsResult::Ok(
+                                PolarsResult::Ok(Arc::new(
                                     group_by_columns[0]
                                         .as_materialized_series()
                                         .hash_join_left(
@@ -571,29 +582,29 @@ impl PhysicalExpr for WindowExpr {
                                         )
                                         .unwrap()
                                         .1,
-                                )
+                                ))
                             } else {
                                 let df_right =
                                     unsafe { DataFrame::new_no_checks_height_from_first(keys) };
                                 let df_left = unsafe {
                                     DataFrame::new_no_checks_height_from_first(group_by_columns)
                                 };
-                                Ok(private_left_join_multiple_keys(&df_left, &df_right, true)?.1)
+                                Ok(Arc::new(
+                                    private_left_join_multiple_keys(&df_left, &df_right, true)?.1,
+                                ))
                             }
                         };
 
                         // try to get cached join_tuples
                         let join_opt_ids = if state.cache_window() {
-                            let mut jt_map_guard = state.join_tuples.lock().unwrap();
-                            // we run sequential and partitioned
-                            // and every partition run the cache should be empty so we expect a max of 1.
-                            debug_assert!(jt_map_guard.len() <= 1);
-                            if let Some(opt_join_tuples) = jt_map_guard.get_mut(&cache_key) {
-                                std::mem::replace(opt_join_tuples, default_join_ids())
+                            if let Some(jt) = state.window_cache.get_join(&cache_key) {
+                                jt
                             } else {
-                                // Drop guard as we go into rayon when computing join tuples.
-                                drop(jt_map_guard);
-                                get_join_tuples()?
+                                let jt = get_join_tuples()?;
+                                state
+                                    .window_cache
+                                    .insert_join(cache_key.clone(), jt.clone());
+                                jt
                             }
                         } else {
                             get_join_tuples()?
@@ -603,11 +614,6 @@ impl PhysicalExpr for WindowExpr {
 
                         if let Some(name) = &self.out_name {
                             out.rename(name.clone());
-                        }
-
-                        if state.cache_window() {
-                            let mut jt_map = state.join_tuples.lock().unwrap();
-                            jt_map.insert(cache_key, join_opt_ids);
                         }
 
                         Ok(out.into_column())
