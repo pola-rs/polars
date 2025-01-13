@@ -940,20 +940,20 @@ def test_scan_csv_bytesio_memory_usage(
 ) -> None:
     memory_usage = memory_usage_without_pyarrow
 
-    # Create CSV that is ~70-85 MB in size:
+    # Create CSV that is ~6-7 MB in size:
     f = io.BytesIO()
-    df = pl.DataFrame({"mydata": pl.int_range(0, 10_000_000, eager=True)})
+    df = pl.DataFrame({"mydata": pl.int_range(0, 1_000_000, eager=True)})
     df.write_csv(f)
-    assert 70_000_000 < f.tell() < 85_000_000
+    assert 6_000_000 < f.tell() < 7_000_000
     f.seek(0, 0)
 
     # A lazy scan shouldn't make a full copy of the data:
     starting_memory = memory_usage.get_current()
     assert (
         pl.scan_csv(f)
-        .filter(pl.col("mydata") == 9_999_999)
+        .filter(pl.col("mydata") == 999_999)
         .collect(new_streaming=streaming)  # type: ignore[call-overload]
         .item()
-        == 9_999_999
+        == 999_999
     )
-    assert memory_usage.get_peak() - starting_memory < 10_000_000
+    assert memory_usage.get_peak() - starting_memory < 1_000_000
