@@ -18,6 +18,7 @@ use crate::parquet::schema::Repetition;
 #[derive(Debug)]
 pub(crate) struct State<'a, D: Decoder> {
     pub(crate) dict: Option<&'a D::Dict>,
+    pub(crate) dict_mask: Option<&'a Bitmap>,
     pub(crate) is_optional: bool,
     pub(crate) page_validity: Option<Bitmap>,
     pub(crate) translation: D::Translation<'a>,
@@ -35,7 +36,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
 }
 
 impl<'a, D: Decoder> State<'a, D> {
-    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>) -> ParquetResult<Self> {
+    pub fn new(decoder: &D, page: &'a DataPage, dict: Option<&'a D::Dict>, dict_mask: Option<&'a Bitmap>) -> ParquetResult<Self> {
         let is_optional =
             page.descriptor.primitive_type.field_info.repetition == Repetition::Optional;
 
@@ -51,6 +52,7 @@ impl<'a, D: Decoder> State<'a, D> {
 
         Ok(Self {
             dict,
+            dict_mask,
             is_optional,
             page_validity,
             translation,
@@ -77,6 +79,7 @@ impl<'a, D: Decoder> State<'a, D> {
 
         Ok(Self {
             dict,
+            dict_mask: None,
             translation,
             is_optional,
             page_validity,
@@ -87,9 +90,10 @@ impl<'a, D: Decoder> State<'a, D> {
         self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
+        pred_true_mask: &mut MutableBitmap,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        decoder.extend_filtered_with_state(self, decoded, filter)
+        decoder.extend_filtered_with_state(self, decoded, pred_true_mask, filter)
     }
 }
 
@@ -170,7 +174,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
                 filter = None;
             }
         },
-        Some(Filter::Expr(_)) => todo!(),
+        Some(Filter::Predicate(_)) => todo!(),
     };
 
     page_validity = page_validity.filter(|pv| pv.unset_bits() > 0);
@@ -267,7 +271,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             validity.extend_from_bitmap(&page_validity);
         },
-        (Some(Filter::Expr(_)), _) => todo!(),
+        (Some(Filter::Predicate(_)), _) => todo!(),
     }
 
     Ok(())
@@ -300,6 +304,7 @@ pub(super) trait Decoder: Sized {
         &mut self,
         state: State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut MutableBitmap,
         filter: Option<Filter>,
     ) -> ParquetResult<()>;
 
@@ -346,10 +351,18 @@ impl<D: Decoder> PageDecoder<D> {
     pub fn collect_n(mut self, mut filter: Option<Filter>) -> ParquetResult<D::Output> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
+        // @TODO: Don't allocate if include_values == false
         let mut target = self.decoder.with_capacity(num_rows_remaining);
+        let mut pred_true_mask = MutableBitmap::new();
 
+        let mut dict_mask = None;
         if let Some(dict) = self.dict.as_ref() {
             self.decoder.apply_dictionary(&mut target, dict)?;
+
+            if let Some(Filter::Predicate(p)) = &filter {
+                pred_true_mask.reserve(num_rows_remaining);
+                dict_mask = Some(p.predicate.evaluate(dict));
+            }
         }
 
         while num_rows_remaining > 0 {
@@ -370,10 +383,10 @@ impl<D: Decoder> PageDecoder<D> {
 
             let page = page.decompress(&mut self.iter)?;
 
-            let state = State::new(&self.decoder, &page, self.dict.as_ref())?;
+            let state = State::new(&self.decoder, &page, self.dict.as_ref(), dict_mask.as_ref())?;
 
             let start_length = target.len();
-            state.decode(&mut self.decoder, &mut target, state_filter)?;
+            state.decode(&mut self.decoder, &mut target, &mut pred_true_mask, state_filter)?;
             let end_length = target.len();
 
             num_rows_remaining -= end_length - start_length;

@@ -3,7 +3,7 @@
 //! `DecodedState`.
 
 use arrow::array::NullArray;
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
 use super::utils;
@@ -70,8 +70,13 @@ impl utils::Decoder for NullDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        _pred_true_mask: &mut MutableBitmap,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
+        if matches!(filter, Some(Filter::Predicate(_))) {
+            todo!()
+        }
+
         decoded.length += Filter::opt_num_rows(&filter, state.translation.num_rows);
         Ok(())
     }

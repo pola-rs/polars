@@ -99,16 +99,19 @@ impl utils::Decoder for CategoricalDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut MutableBitmap,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
         super::dictionary_encoded::decode_dict_dispatch(
             state.translation,
             self.dict_size,
+            state.dict_mask,
             state.is_optional,
             state.page_validity.as_ref(),
             filter,
             &mut decoded.1,
             <<u32 as NativeType>::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(&mut decoded.0),
+            pred_true_mask,
         )
     }
 }

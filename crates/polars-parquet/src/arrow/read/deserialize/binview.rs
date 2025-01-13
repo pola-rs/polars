@@ -153,7 +153,7 @@ pub fn decode_plain(
             &filter_from_range(rng.clone()),
             verify_utf8,
         ),
-        (Some(Filter::Expr(_)), _) => todo!(),
+        (Some(Filter::Predicate(_)), _) => todo!(),
     }?;
 
     Ok(())
@@ -500,6 +500,7 @@ impl utils::Decoder for BinViewDecoder {
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut MutableBitmap,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
@@ -521,11 +522,13 @@ impl utils::Decoder for BinViewDecoder {
                 dictionary_encoded::decode_dict(
                     indexes.clone(),
                     dict.views().as_slice(),
+                    state.dict_mask,
                     state.is_optional,
                     state.page_validity.as_ref(),
                     filter,
                     &mut decoded.1,
                     unsafe { decoded.0.views_mut() },
+                    pred_true_mask,
                 )?;
 
                 let total_length: usize = decoded

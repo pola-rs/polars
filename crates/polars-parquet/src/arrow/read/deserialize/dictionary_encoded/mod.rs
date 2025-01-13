@@ -10,6 +10,7 @@ use crate::read::Filter;
 
 mod optional;
 mod optional_masked_dense;
+mod predicate;
 mod required;
 mod required_masked_dense;
 
@@ -58,20 +59,24 @@ impl IndexMapping for usize {
 pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
+    dict_mask: Option<&Bitmap>,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
     target: &mut Vec<T>,
+    pred_true_mask: &mut MutableBitmap,
 ) -> ParquetResult<()> {
     decode_dict_dispatch(
         values,
         bytemuck::cast_slice(dict),
+        dict_mask,
         is_optional,
         page_validity,
         filter,
         validity,
         <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
+        pred_true_mask,
     )
 }
 
@@ -79,11 +84,13 @@ pub fn decode_dict<T: NativeType>(
 pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
+    dict_mask: Option<&Bitmap>,
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
     validity: &mut MutableBitmap,
     target: &mut Vec<B>,
+    pred_true_mask: &mut MutableBitmap,
 ) -> ParquetResult<()> {
     if cfg!(debug_assertions) && is_optional {
         assert_eq!(target.len(), validity.len());
@@ -111,7 +118,27 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             optional_masked_dense::decode(values, dict, filter, page_validity, target)
         },
-        (Some(Filter::Expr(_)), _) => todo!(),
+        (Some(Filter::Predicate(p)), None) => {
+            let dict_mask = dict_mask.unwrap();
+
+            if p.include_values {
+                todo!()
+            }
+
+            let num_filtered_dict_values = dict_mask.set_bits();
+
+            // @NOTE: this has to be changed when there are nulls null
+            if num_filtered_dict_values == 0 {
+                pred_true_mask.extend_constant(values.len(), false);
+                return Ok(());
+            } else if num_filtered_dict_values == 1 {
+                let needle = dict_mask.leading_zeros();
+                predicate::decode_single_no_values(values, needle as u32, pred_true_mask)
+            } else {
+                predicate::decode_multiple_no_values(values, dict_mask, pred_true_mask)
+            }
+        },
+        (Some(Filter::Predicate(_)), Some(_)) => todo!(),
     }?;
 
     if cfg!(debug_assertions) && is_optional {
@@ -138,7 +165,7 @@ pub(crate) fn append_validity(
         (Some(page_validity), Some(Filter::Mask(mask))) => {
             validity.extend_from_bitmap(&filter_boolean_kernel(page_validity, mask))
         },
-        (_, Some(Filter::Expr(_))) => todo!(),
+        (_, Some(Filter::Predicate(_))) => todo!(),
     }
 }
 

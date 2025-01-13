@@ -110,7 +110,7 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             decode_masked_optional(values, page_validity, filter, target)
         },
-        (Some(Filter::Expr(_)), _) => todo!(),
+        (Some(Filter::Predicate(_)), _) => todo!(),
     }?;
 
     Ok(())

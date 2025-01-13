@@ -638,7 +638,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
                 },
                 mask,
             ),
-            Some(Filter::Expr(_)) => todo!(),
+            Some(Filter::Predicate(_)) => todo!(),
         };
 
         let mut top_level_filter = top_level_filter.iter();
@@ -699,6 +699,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
             state.decode(
                 &mut self.decoder,
                 &mut target,
+                &mut MutableBitmap::new(), // This will not get used or filled
                 Some(Filter::Mask(leaf_filter)),
             )?;
 

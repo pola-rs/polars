@@ -6,10 +6,16 @@ use arrow::bitmap::Bitmap;
 use crate::read::expr::ParquetColumnExprRef;
 
 #[derive(Clone)]
+pub struct PredicateFilter {
+    pub predicate: ParquetColumnExprRef,
+    pub include_values: bool,
+}
+
+#[derive(Clone)]
 pub enum Filter {
     Range(Range<usize>),
     Mask(Bitmap),
-    Expr(ParquetColumnExprRef),
+    Predicate(PredicateFilter),
 }
 
 impl Filter {
@@ -29,7 +35,7 @@ impl Filter {
         match self {
             Self::Range(range) => range.len(),
             Self::Mask(bitmap) => bitmap.set_bits(),
-            Self::Expr(_) => total_num_rows,
+            Self::Predicate { .. } => total_num_rows,
         }
     }
 
@@ -37,7 +43,7 @@ impl Filter {
         match self {
             Self::Range(range) => range.end,
             Self::Mask(bitmap) => bitmap.len(),
-            Self::Expr(_) => total_num_rows,
+            Self::Predicate { .. } => total_num_rows,
         }
     }
 
@@ -59,7 +65,7 @@ impl Filter {
                 let (lhs, rhs) = bitmap.split_at(at);
                 (Self::Mask(lhs), Self::Mask(rhs))
             },
-            Self::Expr(e) => (Self::Expr(e.clone()), Self::Expr(e.clone())),
+            Self::Predicate(e) => (Self::Predicate(e.clone()), Self::Predicate(e.clone())),
         }
     }
 

@@ -148,6 +148,7 @@ where
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut MutableBitmap,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
@@ -164,11 +165,13 @@ where
             StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
                 indexes.clone(),
                 state.dict.unwrap().values().as_slice(),
+                state.dict_mask,
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,
                 &mut decoded.1,
                 &mut decoded.0,
+                pred_true_mask,
             ),
             StateTranslation::ByteStreamSplit(mut decoder) => {
                 let num_rows = decoder.len();

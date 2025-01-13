@@ -194,7 +194,7 @@ fn decode_fsb_plain(
                             offset += num_filtered;
                         }
                     },
-                    Filter::Expr(_) => todo!(),
+                    Filter::Predicate(_) => todo!(),
                 },
                 (Some(validity), None) => {
                     let mut iter = validity.iter();
@@ -241,7 +241,7 @@ fn decode_fsb_plain(
                             offset += usize::from(is_valid);
                         }
                     },
-                    Filter::Expr(_) => todo!(),
+                    Filter::Predicate(_) => todo!(),
                 },
             }
 
@@ -255,7 +255,9 @@ fn decode_fsb_dict(
     size: usize,
     values: HybridRleDecoder<'_>,
     dict: &FixedSizeBinaryArray,
+    dict_mask: Option<&Bitmap>,
     target: &mut FSBVec,
+    pred_true_mask: &mut MutableBitmap,
     validity: &mut MutableBitmap,
     is_optional: bool,
     filter: Option<Filter>,
@@ -272,11 +274,13 @@ fn decode_fsb_dict(
             super::dictionary_encoded::decode_dict_dispatch(
                 values,
                 dict,
+                dict_mask,
                 is_optional,
                 page_validity,
                 filter,
                 validity,
                 $target,
+                pred_true_mask,
             )
         }};
     }
@@ -348,7 +352,7 @@ fn decode_fsb_dict(
                             offset += num_filtered;
                         }
                     },
-                    Filter::Expr(_) => todo!(),
+                    Filter::Predicate(_) => todo!(),
                 },
                 (Some(validity), None) => {
                     let mut iter = validity.iter();
@@ -405,7 +409,7 @@ fn decode_fsb_dict(
                             offset += usize::from(is_valid);
                         }
                     },
-                    Filter::Expr(_) => todo!(),
+                    Filter::Predicate(_) => todo!(),
                 },
             }
 
@@ -475,6 +479,7 @@ impl Decoder for BinaryDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut MutableBitmap,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
@@ -491,7 +496,9 @@ impl Decoder for BinaryDecoder {
                 self.size,
                 values,
                 state.dict.unwrap(),
+                state.dict_mask,
                 &mut decoded.0,
+                pred_true_mask,
                 &mut decoded.1,
                 state.is_optional,
                 filter,
