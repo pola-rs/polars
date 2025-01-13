@@ -401,7 +401,6 @@ impl CloudOptions {
         use super::credential_provider::IntoCredentialProvider;
 
         let verbose = polars_core::config::verbose();
-        let mut storage_account: Option<polars_utils::pl_str::PlSmallStr> = None;
 
         // The credential provider `self.credentials` is prioritized if it is set. We also need
         // `from_env()` as it may source environment configured storage account name.
@@ -412,9 +411,6 @@ impl CloudOptions {
                 panic!("impl error: cloud type mismatch")
             };
             for (key, value) in options.iter() {
-                if key == &AzureConfigKey::AccountName {
-                    storage_account = Some(value.into());
-                }
                 builder = builder.with_config(*key, value);
             }
         }
@@ -432,22 +428,7 @@ impl CloudOptions {
                 );
             }
             builder.with_credentials(v.into_azure_provider())
-        } else if let Some(v) = extract_adls_uri_storage_account(url) // Prefer the one embedded in the path
-            .map(|x| x.into())
-            .or(storage_account)
-            .as_deref()
-            .and_then(get_azure_storage_account_key)
-        {
-            if verbose {
-                eprintln!("[CloudOptions::build_azure]: Retrieved account key from Azure CLI")
-            }
-            builder.with_access_key(v)
         } else {
-            if verbose {
-                eprintln!(
-                    "[CloudOptions::build_azure]: Could not retrieve account key from Azure CLI"
-                )
-            }
             builder
         };
 
@@ -628,99 +609,6 @@ impl CloudOptions {
             },
         }
     }
-}
-
-/// ```text
-/// "abfss://{CONTAINER}@{STORAGE_ACCOUNT}.dfs.core.windows.net/"
-///                      ^^^^^^^^^^^^^^^^^
-/// ```
-#[cfg(feature = "azure")]
-fn extract_adls_uri_storage_account(path: &str) -> Option<&str> {
-    Some(
-        path.split_once("://")?
-            .1
-            .split_once('/')?
-            .0
-            .split_once('@')?
-            .1
-            .split_once(".dfs.core.windows.net")?
-            .0,
-    )
-}
-
-/// Attempt to retrieve the storage account key for this account using the Azure CLI.
-#[cfg(feature = "azure")]
-fn get_azure_storage_account_key(account_name: &str) -> Option<String> {
-    if polars_core::config::verbose() {
-        eprintln!(
-            "get_azure_storage_account_key: storage_account_name: {}",
-            account_name
-        );
-    }
-
-    let mut cmd = if cfg!(target_family = "windows") {
-        // https://github.com/apache/arrow-rs/blob/565c24b8071269b02c3937e34c51eacf0f4cbad6/object_store/src/azure/credential.rs#L877-L894
-        let mut v = std::process::Command::new("cmd");
-        v.args([
-            "/C",
-            "az",
-            "storage",
-            "account",
-            "keys",
-            "list",
-            "--output",
-            "json",
-            "--account-name",
-            account_name,
-        ]);
-        v
-    } else {
-        let mut v = std::process::Command::new("az");
-        v.args([
-            "storage",
-            "account",
-            "keys",
-            "list",
-            "--output",
-            "json",
-            "--account-name",
-            account_name,
-        ]);
-        v
-    };
-
-    let json_resp = cmd
-        .output()
-        .ok()
-        .filter(|x| x.status.success())
-        .map(|x| String::from_utf8(x.stdout))?
-        .ok()?;
-
-    // [
-    //     {
-    //         "creationTime": "1970-01-01T00:00:00.000000+00:00",
-    //         "keyName": "key1",
-    //         "permissions": "FULL",
-    //         "value": "..."
-    //     },
-    //     {
-    //         "creationTime": "1970-01-01T00:00:00.000000+00:00",
-    //         "keyName": "key2",
-    //         "permissions": "FULL",
-    //         "value": "..."
-    //     }
-    // ]
-
-    #[derive(Debug, serde::Deserialize)]
-    struct S {
-        value: String,
-    }
-
-    let resp: Vec<S> = serde_json::from_str(&json_resp).ok()?;
-
-    let access_key = resp.into_iter().next()?.value;
-
-    Some(access_key)
 }
 
 #[cfg(feature = "cloud")]
