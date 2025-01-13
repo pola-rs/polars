@@ -23,9 +23,8 @@ impl PhysicalExpr for RollingExpr {
         let groups_key = format!("{:?}", &self.options);
 
         let groups = {
-            let groups_map = state.group_tuples.lock().unwrap();
             // Groups must be set by expression runner.
-            groups_map.get(&groups_key).cloned()
+            state.window_cache.get_groups(&groups_key).clone()
         };
 
         // There can be multiple rolling expressions in a single expr.
@@ -35,8 +34,7 @@ impl PhysicalExpr for RollingExpr {
             Some(groups) => groups,
             None => {
                 let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
-                let mut groups_map = state.group_tuples.lock().unwrap();
-                groups_map.insert(groups_key, groups.clone());
+                state.window_cache.insert_groups(groups_key, groups.clone());
                 groups
             },
         };
