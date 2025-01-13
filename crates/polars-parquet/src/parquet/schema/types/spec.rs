@@ -127,13 +127,8 @@ pub fn check_converted_invariants(
 
 pub fn check_logical_invariants(
     physical_type: &PhysicalType,
-    logical_type: &Option<PrimitiveLogicalType>,
+    logical_type: PrimitiveLogicalType,
 ) -> ParquetResult<()> {
-    if logical_type.is_none() {
-        return Ok(());
-    };
-    let logical_type = logical_type.unwrap();
-
     // Check that logical type and physical type are compatible
     use PrimitiveLogicalType::*;
     match (logical_type, physical_type) {
