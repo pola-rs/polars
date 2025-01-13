@@ -221,6 +221,15 @@ fn to_graph_rec<'a>(
                     nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
                     [(input_key, input.port)],
                 ),
+                #[cfg(feature = "ipc")]
+                FileType::Parquet(ipc_writer_options) => ctx.graph.add_node(
+                    nodes::io_sinks::parquet::ParquetSinkNode::new(
+                        input_schema,
+                        path,
+                        ipc_writer_options,
+                    )?,
+                    [(input_key, input.port)],
+                ),
                 _ => todo!(),
             }
         },
