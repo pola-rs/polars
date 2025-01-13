@@ -459,7 +459,7 @@ pub fn decode_plain_generic(
 
 impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = (Vec<View>, Vec<Buffer<u8>>);
+    type Dict = BinaryViewArray;
     type DecodedState = DecodedStateTuple;
     type Output = Box<dyn Array>;
 
@@ -475,13 +475,13 @@ impl utils::Decoder for BinViewDecoder {
         (values, _): &mut Self::DecodedState,
         dict: &Self::Dict,
     ) -> ParquetResult<()> {
-        if values.completed_buffers().len() < dict.1.len() {
-            for buffer in &dict.1 {
+        if values.completed_buffers().len() < dict.data_buffers().len() {
+            for buffer in dict.data_buffers().as_ref() {
                 values.push_buffer(buffer.clone());
             }
         }
 
-        assert!(values.completed_buffers().len() == dict.1.len());
+        assert!(values.completed_buffers().len() == dict.data_buffers().len());
 
         Ok(())
     }
@@ -499,9 +499,7 @@ impl utils::Decoder for BinViewDecoder {
             self.check_utf8.load(Ordering::Relaxed),
         )?;
 
-        let (views, buffers) = arr.take();
-
-        Ok((views, buffers))
+        Ok(arr.freeze())
     }
 
     fn extend_filtered_with_state(
@@ -522,13 +520,13 @@ impl utils::Decoder for BinViewDecoder {
                 self.check_utf8.load(Ordering::Relaxed),
             ),
             StateTranslation::Dictionary(ref mut indexes) => {
-                let (dict, _) = state.dict.unwrap();
+                let dict = state.dict.unwrap();
 
                 let start_length = decoded.0.views().len();
 
                 dictionary_encoded::decode_dict(
                     indexes.clone(),
-                    dict,
+                    dict.views().as_slice(),
                     state.is_optional,
                     state.page_validity.as_ref(),
                     filter,

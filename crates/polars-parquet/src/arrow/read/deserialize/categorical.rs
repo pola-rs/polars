@@ -4,9 +4,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::types::{AlignedBytes, NativeType};
 
 use super::binview::BinViewDecoder;
-use super::utils::{
-    self, dict_indices_decoder, freeze_validity, Decoder, ExactSize, StateTranslation,
-};
+use super::utils::{self, dict_indices_decoder, freeze_validity, Decoder, StateTranslation};
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
@@ -80,12 +78,14 @@ impl utils::Decoder for CategoricalDecoder {
         let dict = dict.unwrap();
         let keys = PrimitiveArray::new(ArrowDataType::UInt32, values.into(), validity);
 
-        let mut view_dict = MutableBinaryViewArray::with_capacity(dict.0.len());
-        for buffer in dict.1 {
-            view_dict.push_buffer(buffer);
+        let mut view_dict = MutableBinaryViewArray::with_capacity(dict.len());
+        let (views, buffers, _, _, _) = dict.into_inner();
+
+        for buffer in buffers.iter() {
+            view_dict.push_buffer(buffer.clone());
         }
-        unsafe { view_dict.views_mut().extend(dict.0.iter()) };
-        unsafe { view_dict.set_total_bytes_len(dict.0.iter().map(|v| v.length as usize).sum()) };
+        unsafe { view_dict.views_mut().extend(views.iter()) };
+        unsafe { view_dict.set_total_bytes_len(views.iter().map(|v| v.length as usize).sum()) };
         let view_dict = view_dict.freeze();
 
         // SAFETY: This was checked during construction of the dictionary

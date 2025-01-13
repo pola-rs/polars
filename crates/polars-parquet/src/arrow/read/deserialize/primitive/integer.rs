@@ -147,7 +147,7 @@ where
     D: DecoderFunction<P, T>,
 {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = Vec<T>;
+    type Dict = PrimitiveArray<T>;
     type DecodedState = (Vec<T>, MutableBitmap);
     type Output = PrimitiveArray<T>;
 
@@ -172,7 +172,11 @@ where
             &mut target,
             self.0.decoder,
         )?;
-        Ok(target)
+        Ok(PrimitiveArray::new(
+            T::PRIMITIVE.into(),
+            target.into(),
+            None,
+        ))
     }
 
     fn finalize(
@@ -204,7 +208,7 @@ where
             ),
             StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
                 indexes.clone(),
-                state.dict.unwrap(),
+                state.dict.unwrap().values().as_slice(),
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,

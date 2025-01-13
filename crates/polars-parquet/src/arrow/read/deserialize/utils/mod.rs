@@ -3,7 +3,7 @@ pub(crate) mod filter;
 
 use std::ops::Range;
 
-use arrow::array::Splitable;
+use arrow::array::{Array, Splitable};
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
@@ -282,7 +282,7 @@ pub(super) trait Decoder: Sized {
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
     type Translation<'a>: StateTranslation<'a, Self>;
     /// The dictionary representation that the decoder uses
-    type Dict: ExactSize;
+    type Dict: Array;
     /// The target state that this Decoder decodes into.
     type DecodedState: ExactSize;
 

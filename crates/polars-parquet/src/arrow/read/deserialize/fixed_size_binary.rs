@@ -100,12 +100,6 @@ impl FSBVec {
     }
 }
 
-impl<T> utils::ExactSize for Vec<T> {
-    fn len(&self) -> usize {
-        Vec::len(self)
-    }
-}
-
 impl utils::ExactSize for FSBVec {
     fn len(&self) -> usize {
         match self {
@@ -258,7 +252,7 @@ fn decode_fsb_plain(
 fn decode_fsb_dict(
     size: usize,
     values: HybridRleDecoder<'_>,
-    dict: &FSBVec,
+    dict: &FixedSizeBinaryArray,
     target: &mut FSBVec,
     validity: &mut MutableBitmap,
     is_optional: bool,
@@ -269,9 +263,13 @@ fn decode_fsb_dict(
 
     macro_rules! decode_static_size {
         ($dict:ident, $target:ident) => {{
+            let dict = $dict.values().as_slice();
+            // @NOTE: We initialize the dict with the right alignment for this to work.
+            let dict = bytemuck::cast_slice(dict);
+
             super::dictionary_encoded::decode_dict_dispatch(
                 values,
-                $dict.as_slice(),
+                dict,
                 is_optional,
                 page_validity,
                 filter,
@@ -282,17 +280,19 @@ fn decode_fsb_dict(
     }
 
     use FSBVec as T;
-    match (dict, target) {
-        (T::Size1(dict), T::Size1(target)) => decode_static_size!(dict, target),
-        (T::Size2(dict), T::Size2(target)) => decode_static_size!(dict, target),
-        (T::Size4(dict), T::Size4(target)) => decode_static_size!(dict, target),
-        (T::Size8(dict), T::Size8(target)) => decode_static_size!(dict, target),
-        (T::Size12(dict), T::Size12(target)) => decode_static_size!(dict, target),
-        (T::Size16(dict), T::Size16(target)) => decode_static_size!(dict, target),
-        (T::Size32(dict), T::Size32(target)) => decode_static_size!(dict, target),
-        (T::Other(dict, _), T::Other(target, _)) => {
+    match target {
+        T::Size1(target) => decode_static_size!(dict, target),
+        T::Size2(target) => decode_static_size!(dict, target),
+        T::Size4(target) => decode_static_size!(dict, target),
+        T::Size8(target) => decode_static_size!(dict, target),
+        T::Size12(target) => decode_static_size!(dict, target),
+        T::Size16(target) => decode_static_size!(dict, target),
+        T::Size32(target) => decode_static_size!(dict, target),
+        T::Other(target, _) => {
             // @NOTE: All these kernels are quite slow, but they should be very uncommon and the
             // general case requires arbitrary length memcopies anyway.
+
+            let dict = dict.values().as_slice();
 
             if is_optional {
                 append_validity(
@@ -407,13 +407,12 @@ fn decode_fsb_dict(
 
             Ok(())
         },
-        _ => unreachable!(),
     }
 }
 
 impl Decoder for BinaryDecoder {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = FSBVec;
+    type Dict = FixedSizeBinaryArray;
     type DecodedState = (FSBVec, MutableBitmap);
     type Output = FixedSizeBinaryArray;
 
@@ -445,7 +444,12 @@ impl Decoder for BinaryDecoder {
             None,
             None,
         )?;
-        Ok(target)
+
+        Ok(FixedSizeBinaryArray::new(
+            ArrowDataType::FixedSizeBinary(self.size),
+            target.into_bytes_buffer(),
+            None,
+        ))
     }
 
     fn finalize(

@@ -38,7 +38,7 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
 
 impl utils::Decoder for NullDecoder {
     type Translation<'a> = ();
-    type Dict = ();
+    type Dict = NullArray;
     type DecodedState = NullArrayLength;
     type Output = NullArray;
 
@@ -48,7 +48,7 @@ impl utils::Decoder for NullDecoder {
     }
 
     fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
-        Ok(())
+        Ok(NullArray::new_empty(ArrowDataType::Null))
     }
 
     fn finalize(

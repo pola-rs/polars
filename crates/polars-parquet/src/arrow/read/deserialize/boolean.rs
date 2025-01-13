@@ -282,17 +282,11 @@ impl ExactSize for (MutableBitmap, MutableBitmap) {
     }
 }
 
-impl ExactSize for () {
-    fn len(&self) -> usize {
-        0
-    }
-}
-
 pub(crate) struct BooleanDecoder;
 
 impl Decoder for BooleanDecoder {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = ();
+    type Dict = BooleanArray;
     type DecodedState = (MutableBitmap, MutableBitmap);
     type Output = BooleanArray;
 
@@ -304,7 +298,7 @@ impl Decoder for BooleanDecoder {
     }
 
     fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
-        Ok(())
+        Ok(BooleanArray::new_empty(ArrowDataType::Boolean))
     }
 
     fn finalize(
