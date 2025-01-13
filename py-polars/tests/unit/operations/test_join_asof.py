@@ -263,6 +263,18 @@ def test_join_asof_tolerance() -> None:
         "quote": [100, None, 300, None],
     }
 
+    for invalid_tolerance, match in [
+        ("foo", "expected leading integer"),
+        ([None], "could not extract number"),
+    ]:
+        with pytest.raises(pl.exceptions.PolarsError, match=match):
+            df_trades.join_asof(
+                df_quotes,
+                on="time",
+                by="stock",
+                tolerance=invalid_tolerance,  # type: ignore[arg-type]
+            )
+
 
 def test_join_asof_tolerance_forward() -> None:
     df_quotes = pl.DataFrame(

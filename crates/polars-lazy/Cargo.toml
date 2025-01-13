@@ -244,6 +244,7 @@ python = [
 row_hash = ["polars-plan/row_hash"]
 reinterpret = ["polars-plan/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-plan/string_pad"]
+string_normalize = ["polars-plan/string_normalize"]
 string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
@@ -414,6 +415,7 @@ features = [
   "sign",
   "streaming",
   "string_encoding",
+  "string_normalize",
   "string_pad",
   "string_reverse",
   "string_to_integer",

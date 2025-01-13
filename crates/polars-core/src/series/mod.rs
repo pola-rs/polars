@@ -1006,55 +1006,41 @@ impl Default for Series {
     }
 }
 
-fn equal_outer_type<T: 'static + PolarsDataType>(dtype: &DataType) -> bool {
-    match (T::get_dtype(), dtype) {
-        (DataType::List(_), DataType::List(_)) => true,
-        #[cfg(feature = "dtype-array")]
-        (DataType::Array(_, _), DataType::Array(_, _)) => true,
-        #[cfg(feature = "dtype-struct")]
-        (DataType::Struct(_), DataType::Struct(_)) => true,
-        (a, b) => &a == b,
-    }
-}
-
 impl<T> AsRef<ChunkedArray<T>> for dyn SeriesTrait + '_
 where
-    T: 'static + PolarsDataType,
+    T: 'static + PolarsDataType<IsLogical = FalseT>,
 {
     fn as_ref(&self) -> &ChunkedArray<T> {
-        let dtype = self.dtype();
+        // @NOTE: SeriesTrait `as_any` returns a std::any::Any for the underlying ChunkedArray /
+        // Logical (so not the SeriesWrap).
+        let Some(ca) = self.as_any().downcast_ref::<ChunkedArray<T>>() else {
+            panic!(
+                "implementation error, cannot get ref {:?} from {:?}",
+                T::get_dtype(),
+                self.dtype()
+            );
+        };
 
-        #[cfg(feature = "dtype-decimal")]
-        if dtype.is_decimal() {
-            let logical = self.as_any().downcast_ref::<DecimalChunked>().unwrap();
-            let ca = logical.physical();
-            return ca.as_any().downcast_ref::<ChunkedArray<T>>().unwrap();
-        }
-        let eq = equal_outer_type::<T>(dtype);
-        assert!(
-            eq,
-            "implementation error, cannot get ref {:?} from {:?}",
-            T::get_dtype(),
-            self.dtype()
-        );
-        // SAFETY: we just checked the type.
-        unsafe { &*(self as *const dyn SeriesTrait as *const ChunkedArray<T>) }
+        ca
     }
 }
 
 impl<T> AsMut<ChunkedArray<T>> for dyn SeriesTrait + '_
 where
-    T: 'static + PolarsDataType,
+    T: 'static + PolarsDataType<IsLogical = FalseT>,
 {
     fn as_mut(&mut self) -> &mut ChunkedArray<T> {
-        let eq = equal_outer_type::<T>(self.dtype());
-        assert!(
-            eq,
-            "implementation error, cannot get ref {:?} from {:?}",
-            T::get_dtype(),
-            self.dtype()
-        );
-        unsafe { &mut *(self as *mut dyn SeriesTrait as *mut ChunkedArray<T>) }
+        if !self.as_any_mut().is::<ChunkedArray<T>>() {
+            panic!(
+                "implementation error, cannot get ref {:?} from {:?}",
+                T::get_dtype(),
+                self.dtype()
+            );
+        }
+
+        // @NOTE: SeriesTrait `as_any` returns a std::any::Any for the underlying ChunkedArray /
+        // Logical (so not the SeriesWrap).
+        self.as_any_mut().downcast_mut::<ChunkedArray<T>>().unwrap()
     }
 }
 

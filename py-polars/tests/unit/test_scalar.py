@@ -79,3 +79,8 @@ def test_scalar_identification_function_expr_in_binary() -> None:
         pl.select(x).with_columns(o=pl.col("x").null_count() > 0),
         pl.select(x, o=False),
     )
+
+
+def test_scalar_rechunk_20627() -> None:
+    df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
+    assert df.rechunk().to_series().n_chunks() == 1

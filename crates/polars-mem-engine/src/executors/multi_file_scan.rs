@@ -1,5 +1,4 @@
 use std::borrow::Cow;
-use std::cell::OnceCell;
 
 use hive::HivePartitions;
 use polars_core::config;
@@ -13,55 +12,42 @@ use polars_io::RowIndex;
 use super::Executor;
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
+#[cfg(feature = "ipc")]
+use crate::executors::IpcExec;
+#[cfg(feature = "json")]
+use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
 
-pub trait IOFileMetadata: Send + Sync {
-    fn as_any(&self) -> &dyn std::any::Any;
-    fn num_rows(&self) -> PolarsResult<IdxSize>;
-    fn schema(&self) -> PolarsResult<Schema>;
-}
-
-pub(super) struct BasicFileMetadata {
-    pub schema: Schema,
-    pub num_rows: IdxSize,
-}
-
-impl IOFileMetadata for BasicFileMetadata {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-
-    fn num_rows(&self) -> PolarsResult<IdxSize> {
-        Ok(self.num_rows)
-    }
-
-    fn schema(&self) -> PolarsResult<Schema> {
-        Ok(self.schema.clone())
-    }
-}
-
+/// An [`Executor`] that scans over some IO.
 pub trait ScanExec {
+    /// Read the source.
     fn read(
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         row_index: Option<RowIndex>,
-        metadata: Option<Box<dyn IOFileMetadata>>,
-        schema: Schema,
     ) -> PolarsResult<DataFrame>;
 
-    fn metadata(&mut self) -> PolarsResult<Box<dyn IOFileMetadata>>;
+    /// Get the full schema for the source behind this [`Executor`].
+    ///
+    /// Note that this might be called several times so attempts should be made to cache the result.
+    fn schema(&mut self) -> PolarsResult<&SchemaRef>;
+    /// Get the number of rows for the source behind this [`Executor`].
+    ///
+    /// Note that this might be called several times so attempts should be made to cache the result.
+    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize>;
 }
 
-fn source_to_scan_exec(
+fn source_to_exec(
     source: ScanSourceRef,
     scan_type: &FileScan,
     file_info: &FileInfo,
     file_options: &FileScanOptions,
-    metadata: Option<&dyn IOFileMetadata>,
+    allow_missing_columns: bool,
+    file_index: usize,
 ) -> PolarsResult<Box<dyn ScanExec>> {
     let source = match source {
         ScanSourceRef::Path(path) => ScanSources::Paths([path.to_path_buf()].into()),
@@ -70,76 +56,100 @@ fn source_to_scan_exec(
         },
     };
 
+    let is_first_file = file_index == 0;
+
+    let mut file_info = file_info.clone();
+
+    if allow_missing_columns && !is_first_file {
+        file_info.reader_schema.take();
+    }
+
     Ok(match scan_type {
         #[cfg(feature = "parquet")]
         FileScan::Parquet {
             options,
             cloud_options,
-            ..
-        } => Box::new(ParquetExec::new(
-            source,
-            file_info.clone(),
-            None,
-            None,
-            options.clone(),
-            cloud_options.clone(),
-            file_options.clone(),
-            metadata.map(|md| {
-                md.as_any()
-                    .downcast_ref::<Arc<polars_io::parquet::read::FileMetadata>>()
-                    .unwrap()
-                    .clone()
-            }),
-        )) as _,
+            metadata,
+        } => {
+            let metadata = metadata.as_ref().take_if(|_| is_first_file);
+
+            let mut options = options.clone();
+
+            if allow_missing_columns && !is_first_file {
+                options.schema.take();
+            }
+
+            Box::new(ParquetExec::new(
+                source,
+                file_info,
+                None,
+                None,
+                options,
+                cloud_options.clone(),
+                file_options.clone(),
+                metadata.cloned(),
+            ))
+        },
         #[cfg(feature = "csv")]
-        FileScan::Csv { options, .. } => Box::new(CsvExec {
-            sources: source,
-            file_info: file_info.clone(),
-            options: options.clone(),
-            file_options: file_options.clone(),
-            predicate: None,
-        }),
-        _ => todo!(),
+        FileScan::Csv { options, .. } => {
+            let mut options = options.clone();
+            let file_options = file_options.clone();
+
+            if allow_missing_columns && !is_first_file {
+                options.schema.take();
+            }
+
+            Box::new(CsvExec {
+                sources: source,
+                file_info,
+                options,
+                file_options,
+                predicate: None,
+            })
+        },
+        #[cfg(feature = "ipc")]
+        FileScan::Ipc {
+            options,
+            cloud_options,
+            metadata,
+        } => {
+            let metadata = metadata.as_ref().take_if(|_| is_first_file);
+
+            let options = options.clone();
+            let file_options = file_options.clone();
+            let cloud_options = cloud_options.clone();
+
+            Box::new(IpcExec {
+                sources: source,
+                file_info,
+                options,
+                file_options,
+                predicate: None,
+                hive_parts: None,
+                cloud_options,
+                metadata: metadata.cloned(),
+            })
+        },
+        #[cfg(feature = "json")]
+        FileScan::NDJson {
+            options,
+            cloud_options,
+            ..
+        } => {
+            let options = options.clone();
+            let file_options = file_options.clone();
+            _ = cloud_options; // @TODO: Use these?
+
+            Box::new(JsonExec::new(
+                source,
+                options,
+                file_options,
+                file_info,
+                None,
+            ))
+        },
+        FileScan::Anonymous { .. } => unreachable!(),
     })
-}
-
-pub struct Source {
-    scan_exec: Box<dyn ScanExec>,
-    metadata: OnceCell<Box<dyn IOFileMetadata>>,
-}
-
-impl Source {
-    fn new(
-        source: ScanSourceRef,
-        scan_type: &FileScan,
-        file_info: &FileInfo,
-        file_options: &FileScanOptions,
-        metadata: Option<&dyn IOFileMetadata>,
-    ) -> PolarsResult<Self> {
-        let scan_exec = source_to_scan_exec(source, scan_type, file_info, file_options, metadata)?;
-        Ok(Self {
-            scan_exec,
-            metadata: OnceCell::new(),
-        })
-    }
-
-    fn get_metadata(&mut self) -> PolarsResult<&dyn IOFileMetadata> {
-        match self.metadata.get() {
-            None => {
-                let metadata = self.scan_exec.metadata()?;
-                Ok(self.metadata.get_or_init(|| metadata).as_ref())
-            },
-            Some(metadata) => Ok(metadata.as_ref()),
-        }
-    }
-
-    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
-        self.get_metadata()?.num_rows()
-    }
-
-    fn schema(&mut self) -> PolarsResult<Schema> {
-        self.get_metadata()?.schema()
-    }
 }
 
 /// Scan over multiple sources and combine their results.
@@ -150,8 +160,6 @@ pub struct MultiScanExec {
     predicate: Option<Arc<dyn PhysicalExpr>>,
     file_options: FileScanOptions,
     scan_type: FileScan,
-
-    first_file_metadata: Option<Box<dyn IOFileMetadata>>,
 }
 
 impl MultiScanExec {
@@ -161,14 +169,8 @@ impl MultiScanExec {
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<Arc<dyn PhysicalExpr>>,
         file_options: FileScanOptions,
-        mut scan_type: FileScan,
+        scan_type: FileScan,
     ) -> Self {
-        let first_file_metadata = match &mut scan_type {
-            #[cfg(feature = "parquet")]
-            FileScan::Parquet { metadata, .. } => metadata.take().map(|md| Box::new(md) as _),
-            _ => None,
-        };
-
         Self {
             sources,
             file_info,
@@ -176,7 +178,6 @@ impl MultiScanExec {
             predicate,
             file_options,
             scan_type,
-            first_file_metadata,
         }
     }
 
@@ -191,12 +192,13 @@ impl MultiScanExec {
 
         for i in (0..self.sources.len()).rev() {
             let source = self.sources.get(i).unwrap();
-            let mut exec_source = Source::new(
+            let mut exec_source = source_to_exec(
                 source,
                 &self.scan_type,
                 &self.file_info,
                 &self.file_options,
-                self.first_file_metadata.as_deref().filter(|_| i == 0),
+                self.file_options.allow_missing_columns,
+                i,
             )?;
 
             let num_rows = exec_source.num_unfiltered_rows()? as usize;
@@ -260,10 +262,6 @@ impl MultiScanExec {
         let mut row_index = self.file_options.row_index.take();
         let slice = self.file_options.slice.take();
 
-        let current_schema = self.file_info.schema.clone();
-        let output_schema = current_schema.clone();
-        let mut missing_columns = Vec::new();
-
         let mut first_slice_file = None;
         let mut slice = match slice {
             None => None,
@@ -277,6 +275,14 @@ impl MultiScanExec {
                 }
             }),
         };
+
+        let final_per_source_schema = &self.file_info.schema;
+        let file_output_schema = if let Some(file_with_columns) = file_with_columns.as_ref() {
+            Arc::new(final_per_source_schema.try_project(file_with_columns.as_ref())?)
+        } else {
+            final_per_source_schema.clone()
+        };
+        let mut missing_columns = Vec::new();
 
         let verbose = config::verbose();
         let mut dfs = Vec::with_capacity(self.sources.len());
@@ -296,12 +302,13 @@ impl MultiScanExec {
                 break;
             }
 
-            let mut exec_source = Source::new(
+            let mut exec_source = source_to_exec(
                 source,
                 &self.scan_type,
                 &self.file_info,
                 &self.file_options,
-                self.first_file_metadata.as_deref().filter(|_| i == 0),
+                allow_missing_columns,
+                i,
             )?;
 
             if verbose {
@@ -311,36 +318,20 @@ impl MultiScanExec {
                 );
             }
 
-            // @TODO: There are cases where we can ignore reading. E.g. no row index + empty with columns + no predicate
-            let mut schema = exec_source.schema()?;
-            let mut extra_columns = Vec::new();
+            let mut do_skip_file = false;
+            if let Some(slice) = &slice {
+                let allow_slice_skip = match first_slice_file {
+                    None => slice.0 as IdxSize >= exec_source.num_unfiltered_rows()?,
+                    Some(f) => i < f,
+                };
 
-            if let Some(file_with_columns) = &file_with_columns {
-                if allow_missing_columns {
-                    schema = schema.try_project(
-                        file_with_columns
-                            .iter()
-                            .filter(|c| schema.contains(c.as_str())),
-                    )?;
-                } else {
-                    schema = schema.try_project(file_with_columns.iter())?;
+                if allow_slice_skip && verbose {
+                    eprintln!(
+                        "Slice allows skipping of '{}'",
+                        source.to_include_path_name()
+                    );
                 }
-            }
-
-            if allow_missing_columns {
-                missing_columns.clear();
-                extra_columns.clear();
-
-                current_schema.as_ref().field_compare(
-                    &schema,
-                    &mut missing_columns,
-                    &mut extra_columns,
-                );
-
-                if !extra_columns.is_empty() {
-                    // @TODO: Better error
-                    polars_bail!(InvalidOperation: "More schema in file after first");
-                }
+                do_skip_file |= allow_slice_skip;
             }
 
             // Insert the hive partition values into the predicate. This allows the predicate
@@ -360,9 +351,10 @@ impl MultiScanExec {
                         .into_static();
                     const_columns.insert(column.clone(), value);
                 }
-                for (_, (missing_column, _)) in &missing_columns {
-                    const_columns.insert((*missing_column).clone(), AnyValue::Null);
-                }
+                // @TODO: It would be nice to get this somehow.
+                // for (_, (missing_column, _)) in &missing_columns {
+                //     const_columns.insert((*missing_column).clone(), AnyValue::Null);
+                // }
 
                 file_predicate = predicate.replace_elementwise_const_columns(&const_columns);
 
@@ -387,22 +379,6 @@ impl MultiScanExec {
                         );
                     }
                 }
-            }
-
-            let mut do_skip_file = false;
-            if let Some(slice) = &slice {
-                let allow_slice_skip = match first_slice_file {
-                    None => slice.0 as IdxSize >= exec_source.num_unfiltered_rows()?,
-                    Some(f) => i < f,
-                };
-
-                if allow_slice_skip && verbose {
-                    eprintln!(
-                        "Slice allows skipping of '{}'",
-                        source.to_include_path_name()
-                    );
-                }
-                do_skip_file |= allow_slice_skip;
             }
 
             let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
@@ -438,32 +414,67 @@ impl MultiScanExec {
                 continue;
             }
 
-            let with_columns = if allow_missing_columns {
-                file_with_columns
-                    .as_ref()
-                    .map(|_| schema.iter_names().cloned().collect())
-            } else {
-                file_with_columns.clone()
-            };
+            // @TODO: There are cases where we can ignore reading. E.g. no row index + empty with columns + no predicate
+            let mut current_source_with_columns = Cow::Borrowed(&file_with_columns);
 
-            // Read the DataFrame and needed metadata.
-            let num_unfiltered_rows = exec_source.num_unfiltered_rows()?;
-            let mut df = exec_source.scan_exec.read(
-                with_columns,
+            // If we allow missing columns, we need to determine the set of missing columns and
+            // possibly update the with_columns to reflect that.
+            if allow_missing_columns {
+                let current_source_schema = exec_source.schema()?;
+
+                missing_columns.clear();
+
+                let mut extra_columns = Vec::new();
+                final_per_source_schema.as_ref().field_compare(
+                    current_source_schema.as_ref(),
+                    &mut missing_columns,
+                    &mut extra_columns,
+                );
+
+                if !extra_columns.is_empty() {
+                    let source_name = match source {
+                        ScanSourceRef::Path(path) => path.to_string_lossy().into_owned(),
+                        ScanSourceRef::File(_) => format!("file descriptor #{}", i + 1),
+                        ScanSourceRef::Buffer(_) => format!("in-memory buffer #{}", i + 1),
+                    };
+                    let columns = extra_columns
+                        .iter()
+                        .map(|(_, (name, _))| format!("'{}'", name))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    polars_bail!(
+                        SchemaMismatch:
+                        "'{source_name}' contains column(s) {columns}, which are not present in the first scanned file"
+                    );
+                }
+
+                // Update `with_columns` to not include any columns not present in the file.
+                current_source_with_columns =
+                    Cow::Owned(current_source_with_columns.as_deref().map(|with_columns| {
+                        with_columns
+                            .iter()
+                            .filter(|c| current_source_schema.contains(c))
+                            .cloned()
+                            .collect()
+                    }));
+            }
+
+            // Read the DataFrame.
+            let mut df = exec_source.read(
+                current_source_with_columns.into_owned(),
                 slice,
                 file_predicate,
                 row_index.clone(),
-                exec_source.metadata.take(),
-                schema,
             )?;
 
             // Update the row_index to the proper offset.
             if let Some(row_index) = row_index.as_mut() {
-                row_index.offset += num_unfiltered_rows;
+                row_index.offset += exec_source.num_unfiltered_rows()?;
             }
             // Update the slice.
             if let Some(slice) = slice.as_mut() {
                 if first_slice_file.is_none_or(|f| i >= f) {
+                    let num_unfiltered_rows = exec_source.num_unfiltered_rows()?;
                     slice.1 = slice
                         .1
                         .saturating_sub(num_unfiltered_rows as usize - slice.0);
@@ -503,7 +514,7 @@ impl MultiScanExec {
             }
 
             // Project to ensure that all DataFrames have the proper order.
-            df = df.select(output_schema.iter_names().cloned())?;
+            df = df.select(file_output_schema.iter_names().cloned())?;
             dfs.push(df);
         }
 

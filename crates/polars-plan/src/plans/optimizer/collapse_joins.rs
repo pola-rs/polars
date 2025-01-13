@@ -85,7 +85,7 @@ fn remove_suffix(
         stack.push(expr.node());
         while let Some(node) = stack.pop() {
             let expr = expr_arena.get_mut(node);
-            expr.nodes(&mut stack);
+            expr.inputs_rev(&mut stack);
 
             let AExpr::Column(colname) = expr else {
                 continue;

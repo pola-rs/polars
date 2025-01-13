@@ -43,7 +43,7 @@ fn extract_args(offset: &Column, length: &Column, expr: &Expr) -> PolarsResult<(
     Ok((extract_offset(offset, expr)?, extract_length(length, expr)?))
 }
 
-fn check_argument(arg: &Column, groups: &GroupsProxy, name: &str, expr: &Expr) -> PolarsResult<()> {
+fn check_argument(arg: &Column, groups: &GroupsType, name: &str, expr: &Expr) -> PolarsResult<()> {
     polars_ensure!(
         !matches!(arg.dtype(), DataType::List(_)), expr = expr, ComputeError:
         "invalid slice argument: cannot use an array as {} argument", name,
@@ -100,7 +100,7 @@ impl PhysicalExpr for SliceExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut results = POOL.install(|| {
@@ -130,20 +130,20 @@ impl PhysicalExpr for SliceExpr {
                 }
                 let groups = ac.groups();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .map(|(first, idx)| slice_groups_idx(offset, length, first, idx))
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .map(|&[first, len]| slice_groups_slice(offset, length, first, len))
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -159,8 +159,8 @@ impl PhysicalExpr for SliceExpr {
                 let length = length.cast(&IDX_DTYPE)?;
                 let length = length.idx().unwrap();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .zip(length.into_no_null_iter())
@@ -168,9 +168,9 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(length.into_no_null_iter())
@@ -178,7 +178,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -194,8 +194,8 @@ impl PhysicalExpr for SliceExpr {
                 let offset = offset.cast(&DataType::Int64)?;
                 let offset = offset.i64().unwrap();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -203,9 +203,9 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length, first, idx)
                             })
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -213,7 +213,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -233,8 +233,8 @@ impl PhysicalExpr for SliceExpr {
                 let length = length.cast(&IDX_DTYPE)?;
                 let length = length.idx().unwrap();
 
-                match groups.as_ref() {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref().as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -243,9 +243,9 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_idx(offset, length as usize, first, idx)
                             })
                             .collect();
-                        GroupsProxy::Idx(groups)
+                        GroupsType::Idx(groups)
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .iter()
                             .zip(offset.into_no_null_iter())
@@ -254,7 +254,7 @@ impl PhysicalExpr for SliceExpr {
                                 slice_groups_slice(offset, length as usize, first, len)
                             })
                             .collect_trusted();
-                        GroupsProxy::Slice {
+                        GroupsType::Slice {
                             groups,
                             rolling: false,
                         }
@@ -263,7 +263,8 @@ impl PhysicalExpr for SliceExpr {
             },
         };
 
-        ac.with_groups(groups).set_original_len(false);
+        ac.with_groups(groups.into_sliceable())
+            .set_original_len(false);
 
         Ok(ac)
     }

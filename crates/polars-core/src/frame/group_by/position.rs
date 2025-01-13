@@ -1,5 +1,5 @@
 use std::mem::ManuallyDrop;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use arrow::offset::OffsetsBuffer;
 use polars_utils::idx_vec::IdxVec;
@@ -239,7 +239,7 @@ impl IntoParallelIterator for GroupsIdx {
 pub type GroupsSlice = Vec<[IdxSize; 2]>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum GroupsProxy {
+pub enum GroupsType {
     Idx(GroupsIdx),
     /// Slice is always sorted in ascending order.
     Slice {
@@ -250,17 +250,17 @@ pub enum GroupsProxy {
     },
 }
 
-impl Default for GroupsProxy {
+impl Default for GroupsType {
     fn default() -> Self {
-        GroupsProxy::Idx(GroupsIdx::default())
+        GroupsType::Idx(GroupsIdx::default())
     }
 }
 
-impl GroupsProxy {
+impl GroupsType {
     pub fn into_idx(self) -> GroupsIdx {
         match self {
-            GroupsProxy::Idx(groups) => groups,
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Idx(groups) => groups,
+            GroupsType::Slice { groups, .. } => {
                 polars_warn!("Had to reallocate groups, missed an optimization opportunity. Please open an issue.");
                 groups
                     .iter()
@@ -276,7 +276,7 @@ impl GroupsProxy {
     ) -> (Option<IdxCa>, OffsetsBuffer<i64>, bool) {
         let mut can_fast_explode = true;
         match self {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let mut list_offset = Vec::with_capacity(self.len() + 1);
                 let mut gather_offsets = Vec::with_capacity(total_len);
 
@@ -298,7 +298,7 @@ impl GroupsProxy {
                     )
                 }
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let mut list_offset = Vec::with_capacity(self.len() + 1);
                 let mut gather_offsets = Vec::with_capacity(total_len);
                 let mut len_so_far = 0i64;
@@ -325,18 +325,18 @@ impl GroupsProxy {
         }
     }
 
-    pub fn iter(&self) -> GroupsProxyIter {
-        GroupsProxyIter::new(self)
+    pub fn iter(&self) -> GroupsTypeIter {
+        GroupsTypeIter::new(self)
     }
 
     pub fn sort(&mut self) {
         match self {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 if !groups.is_sorted_flag() {
                     groups.sort()
                 }
             },
-            GroupsProxy::Slice { .. } => {
+            GroupsType::Slice { .. } => {
                 // invariant of the type
             },
         }
@@ -344,15 +344,15 @@ impl GroupsProxy {
 
     pub(crate) fn is_sorted_flag(&self) -> bool {
         match self {
-            GroupsProxy::Idx(groups) => groups.is_sorted_flag(),
-            GroupsProxy::Slice { .. } => true,
+            GroupsType::Idx(groups) => groups.is_sorted_flag(),
+            GroupsType::Slice { .. } => true,
         }
     }
 
     pub fn take_group_firsts(self) -> Vec<IdxSize> {
         match self {
-            GroupsProxy::Idx(mut groups) => std::mem::take(&mut groups.first),
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Idx(mut groups) => std::mem::take(&mut groups.first),
+            GroupsType::Slice { groups, .. } => {
                 groups.into_iter().map(|[first, _len]| first).collect()
             },
         }
@@ -363,20 +363,20 @@ impl GroupsProxy {
     /// all groups have members.
     pub unsafe fn take_group_lasts(self) -> Vec<IdxSize> {
         match self {
-            GroupsProxy::Idx(groups) => groups
+            GroupsType::Idx(groups) => groups
                 .all
                 .iter()
                 .map(|idx| *idx.get_unchecked(idx.len() - 1))
                 .collect(),
-            GroupsProxy::Slice { groups, .. } => groups
+            GroupsType::Slice { groups, .. } => groups
                 .into_iter()
                 .map(|[first, len]| first + len - 1)
                 .collect(),
         }
     }
 
-    pub fn par_iter(&self) -> GroupsProxyParIter {
-        GroupsProxyParIter::new(self)
+    pub fn par_iter(&self) -> GroupsTypeParIter {
+        GroupsTypeParIter::new(self)
     }
 
     /// Get a reference to the `GroupsIdx`.
@@ -386,8 +386,8 @@ impl GroupsProxy {
     /// panics if the groups are a slice.
     pub fn unwrap_idx(&self) -> &GroupsIdx {
         match self {
-            GroupsProxy::Idx(groups) => groups,
-            GroupsProxy::Slice { .. } => panic!("groups are slices not index"),
+            GroupsType::Idx(groups) => groups,
+            GroupsType::Slice { .. } => panic!("groups are slices not index"),
         }
     }
 
@@ -398,19 +398,19 @@ impl GroupsProxy {
     /// panics if the groups are an idx.
     pub fn unwrap_slice(&self) -> &GroupsSlice {
         match self {
-            GroupsProxy::Slice { groups, .. } => groups,
-            GroupsProxy::Idx(_) => panic!("groups are index not slices"),
+            GroupsType::Slice { groups, .. } => groups,
+            GroupsType::Idx(_) => panic!("groups are index not slices"),
         }
     }
 
     pub fn get(&self, index: usize) -> GroupsIndicator {
         match self {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let first = groups.first[index];
                 let all = &groups.all[index];
                 GroupsIndicator::Idx((first, all))
             },
-            GroupsProxy::Slice { groups, .. } => GroupsIndicator::Slice(groups[index]),
+            GroupsType::Slice { groups, .. } => GroupsIndicator::Slice(groups[index]),
         }
     }
 
@@ -421,15 +421,15 @@ impl GroupsProxy {
     /// panics if the groups are a slice.
     pub fn idx_mut(&mut self) -> &mut GroupsIdx {
         match self {
-            GroupsProxy::Idx(groups) => groups,
-            GroupsProxy::Slice { .. } => panic!("groups are slices not index"),
+            GroupsType::Idx(groups) => groups,
+            GroupsType::Slice { .. } => panic!("groups are slices not index"),
         }
     }
 
     pub fn len(&self) -> usize {
         match self {
-            GroupsProxy::Idx(groups) => groups.len(),
-            GroupsProxy::Slice { groups, .. } => groups.len(),
+            GroupsType::Idx(groups) => groups.len(),
+            GroupsType::Slice { groups, .. } => groups.len(),
         }
     }
 
@@ -439,14 +439,14 @@ impl GroupsProxy {
 
     pub fn group_count(&self) -> IdxCa {
         match self {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca: NoNull<IdxCa> = groups
                     .iter()
                     .map(|(_first, idx)| idx.len() as IdxSize)
                     .collect_trusted();
                 ca.into_inner()
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let ca: NoNull<IdxCa> = groups.iter().map(|[_first, len]| *len).collect_trusted();
                 ca.into_inner()
             },
@@ -454,14 +454,14 @@ impl GroupsProxy {
     }
     pub fn as_list_chunked(&self) -> ListChunked {
         match self {
-            GroupsProxy::Idx(groups) => groups
+            GroupsType::Idx(groups) => groups
                 .iter()
                 .map(|(_first, idx)| {
                     let ca: NoNull<IdxCa> = idx.iter().map(|&v| v as IdxSize).collect();
                     ca.into_inner().into_series()
                 })
                 .collect_trusted(),
-            GroupsProxy::Slice { groups, .. } => groups
+            GroupsType::Slice { groups, .. } => groups
                 .iter()
                 .map(|&[first, len]| {
                     let ca: NoNull<IdxCa> = (first..first + len).collect_trusted();
@@ -471,73 +471,15 @@ impl GroupsProxy {
         }
     }
 
-    pub fn unroll(self) -> GroupsProxy {
-        match self {
-            GroupsProxy::Idx(_) => self,
-            GroupsProxy::Slice { rolling: false, .. } => self,
-            GroupsProxy::Slice { mut groups, .. } => {
-                let mut offset = 0 as IdxSize;
-                for g in groups.iter_mut() {
-                    g[0] = offset;
-                    offset += g[1];
-                }
-                GroupsProxy::Slice {
-                    groups,
-                    rolling: false,
-                }
-            },
-        }
-    }
-
-    pub fn slice(&self, offset: i64, len: usize) -> SlicedGroups<'_> {
-        // SAFETY:
-        // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
-        // so that we never call drop on them.
-        // These groups lifetimes are bounded to the `self`. This must remain valid
-        // for the scope of the aggregation.
-        let sliced = match self {
-            GroupsProxy::Idx(groups) => {
-                let first = unsafe {
-                    let first = slice_slice(groups.first(), offset, len);
-                    let ptr = first.as_ptr() as *mut _;
-                    Vec::from_raw_parts(ptr, first.len(), first.len())
-                };
-
-                let all = unsafe {
-                    let all = slice_slice(groups.all(), offset, len);
-                    let ptr = all.as_ptr() as *mut _;
-                    Vec::from_raw_parts(ptr, all.len(), all.len())
-                };
-                ManuallyDrop::new(GroupsProxy::Idx(GroupsIdx::new(
-                    first,
-                    all,
-                    groups.is_sorted_flag(),
-                )))
-            },
-            GroupsProxy::Slice { groups, rolling } => {
-                let groups = unsafe {
-                    let groups = slice_slice(groups, offset, len);
-                    let ptr = groups.as_ptr() as *mut _;
-                    Vec::from_raw_parts(ptr, groups.len(), groups.len())
-                };
-
-                ManuallyDrop::new(GroupsProxy::Slice {
-                    groups,
-                    rolling: *rolling,
-                })
-            },
-        };
-
-        SlicedGroups {
-            sliced,
-            borrowed: self,
-        }
+    pub fn into_sliceable(self) -> GroupPositions {
+        let len = self.len();
+        slice_groups(Arc::new(self), 0, len)
     }
 }
 
-impl From<GroupsIdx> for GroupsProxy {
+impl From<GroupsIdx> for GroupsType {
     fn from(groups: GroupsIdx) -> Self {
-        GroupsProxy::Idx(groups)
+        GroupsType::Idx(groups)
     }
 }
 
@@ -564,21 +506,21 @@ impl GroupsIndicator<'_> {
     }
 }
 
-pub struct GroupsProxyIter<'a> {
-    vals: &'a GroupsProxy,
+pub struct GroupsTypeIter<'a> {
+    vals: &'a GroupsType,
     len: usize,
     idx: usize,
 }
 
-impl<'a> GroupsProxyIter<'a> {
-    fn new(vals: &'a GroupsProxy) -> Self {
+impl<'a> GroupsTypeIter<'a> {
+    fn new(vals: &'a GroupsType) -> Self {
         let len = vals.len();
         let idx = 0;
-        GroupsProxyIter { vals, len, idx }
+        GroupsTypeIter { vals, len, idx }
     }
 }
 
-impl<'a> Iterator for GroupsProxyIter<'a> {
+impl<'a> Iterator for GroupsTypeIter<'a> {
     type Item = GroupsIndicator<'a>;
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
@@ -593,11 +535,11 @@ impl<'a> Iterator for GroupsProxyIter<'a> {
 
         let out = unsafe {
             match self.vals {
-                GroupsProxy::Idx(groups) => {
+                GroupsType::Idx(groups) => {
                     let item = groups.get_unchecked(self.idx);
                     Some(GroupsIndicator::Idx(item))
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     Some(GroupsIndicator::Slice(*groups.get_unchecked(self.idx)))
                 },
             }
@@ -607,19 +549,19 @@ impl<'a> Iterator for GroupsProxyIter<'a> {
     }
 }
 
-pub struct GroupsProxyParIter<'a> {
-    vals: &'a GroupsProxy,
+pub struct GroupsTypeParIter<'a> {
+    vals: &'a GroupsType,
     len: usize,
 }
 
-impl<'a> GroupsProxyParIter<'a> {
-    fn new(vals: &'a GroupsProxy) -> Self {
+impl<'a> GroupsTypeParIter<'a> {
+    fn new(vals: &'a GroupsType) -> Self {
         let len = vals.len();
-        GroupsProxyParIter { vals, len }
+        GroupsTypeParIter { vals, len }
     }
 }
 
-impl<'a> ParallelIterator for GroupsProxyParIter<'a> {
+impl<'a> ParallelIterator for GroupsTypeParIter<'a> {
     type Item = GroupsIndicator<'a>;
 
     fn drive_unindexed<C>(self, consumer: C) -> C::Result
@@ -630,8 +572,8 @@ impl<'a> ParallelIterator for GroupsProxyParIter<'a> {
             .into_par_iter()
             .map(|i| unsafe {
                 match self.vals {
-                    GroupsProxy::Idx(groups) => GroupsIndicator::Idx(groups.get_unchecked(i)),
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Idx(groups) => GroupsIndicator::Idx(groups.get_unchecked(i)),
+                    GroupsType::Slice { groups, .. } => {
                         GroupsIndicator::Slice(*groups.get_unchecked(i))
                     },
                 }
@@ -640,17 +582,123 @@ impl<'a> ParallelIterator for GroupsProxyParIter<'a> {
     }
 }
 
-pub struct SlicedGroups<'a> {
-    sliced: ManuallyDrop<GroupsProxy>,
-    #[allow(dead_code)]
-    // we need the lifetime to ensure the slice remains valid
-    borrowed: &'a GroupsProxy,
+#[derive(Clone, Debug)]
+pub struct GroupPositions {
+    sliced: ManuallyDrop<GroupsType>,
+    // Unsliced buffer
+    original: Arc<GroupsType>,
+    offset: i64,
+    len: usize,
 }
 
-impl Deref for SlicedGroups<'_> {
-    type Target = GroupsProxy;
+impl PartialEq for GroupPositions {
+    fn eq(&self, other: &Self) -> bool {
+        self.offset == other.offset && self.len == other.len && self.sliced == other.sliced
+    }
+}
+
+impl AsRef<GroupsType> for GroupPositions {
+    fn as_ref(&self) -> &GroupsType {
+        self.sliced.deref()
+    }
+}
+
+impl Deref for GroupPositions {
+    type Target = GroupsType;
 
     fn deref(&self) -> &Self::Target {
         self.sliced.deref()
+    }
+}
+
+impl Default for GroupPositions {
+    fn default() -> Self {
+        GroupsType::default().into_sliceable()
+    }
+}
+
+impl GroupPositions {
+    pub fn slice(&self, offset: i64, len: usize) -> Self {
+        let offset = self.offset + offset;
+        assert!(len <= self.len);
+        slice_groups(self.original.clone(), offset, len)
+    }
+
+    pub fn sort(&mut self) {
+        if !self.as_ref().is_sorted_flag() {
+            let original = Arc::make_mut(&mut self.original);
+            original.sort();
+
+            self.sliced = slice_groups_inner(original, self.offset, self.len);
+        }
+    }
+
+    pub fn unroll(mut self) -> GroupPositions {
+        match self.sliced.deref_mut() {
+            GroupsType::Idx(_) => self,
+            GroupsType::Slice { rolling: false, .. } => self,
+            GroupsType::Slice {
+                groups, rolling, ..
+            } => {
+                let mut offset = 0 as IdxSize;
+                for g in groups.iter_mut() {
+                    g[0] = offset;
+                    offset += g[1];
+                }
+                *rolling = false;
+                self
+            },
+        }
+    }
+}
+
+fn slice_groups_inner(g: &GroupsType, offset: i64, len: usize) -> ManuallyDrop<GroupsType> {
+    // SAFETY:
+    // we create new `Vec`s from the sliced groups. But we wrap them in ManuallyDrop
+    // so that we never call drop on them.
+    // These groups lifetimes are bounded to the `g`. This must remain valid
+    // for the scope of the aggregation.
+    match g {
+        GroupsType::Idx(groups) => {
+            let first = unsafe {
+                let first = slice_slice(groups.first(), offset, len);
+                let ptr = first.as_ptr() as *mut _;
+                Vec::from_raw_parts(ptr, first.len(), first.len())
+            };
+
+            let all = unsafe {
+                let all = slice_slice(groups.all(), offset, len);
+                let ptr = all.as_ptr() as *mut _;
+                Vec::from_raw_parts(ptr, all.len(), all.len())
+            };
+            ManuallyDrop::new(GroupsType::Idx(GroupsIdx::new(
+                first,
+                all,
+                groups.is_sorted_flag(),
+            )))
+        },
+        GroupsType::Slice { groups, rolling } => {
+            let groups = unsafe {
+                let groups = slice_slice(groups, offset, len);
+                let ptr = groups.as_ptr() as *mut _;
+                Vec::from_raw_parts(ptr, groups.len(), groups.len())
+            };
+
+            ManuallyDrop::new(GroupsType::Slice {
+                groups,
+                rolling: *rolling,
+            })
+        },
+    }
+}
+
+fn slice_groups(g: Arc<GroupsType>, offset: i64, len: usize) -> GroupPositions {
+    let sliced = slice_groups_inner(g.as_ref(), offset, len);
+
+    GroupPositions {
+        sliced,
+        original: g,
+        offset,
+        len,
     }
 }

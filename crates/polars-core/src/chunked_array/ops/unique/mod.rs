@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::ops::Deref;
 
 use arrow::bitmap::MutableBitmap;
 use polars_compute::unique::BooleanUniqueKernelState;
@@ -25,21 +26,21 @@ fn finish_is_unique_helper(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: GroupsProxy,
+    groups: &GroupPositions,
     len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
 
-    let idx = match groups {
-        GroupsProxy::Idx(groups) => groups
-            .into_iter()
+    let idx = match groups.deref() {
+        GroupsType::Idx(groups) => groups
+            .iter()
             .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
             .collect::<Vec<_>>(),
-        GroupsProxy::Slice { groups, .. } => groups
-            .into_iter()
-            .filter_map(|[first, len]| if len == 1 { Some(first) } else { None })
+        GroupsType::Slice { groups, .. } => groups
+            .iter()
+            .filter_map(|[first, len]| if *len == 1 { Some(*first) } else { None })
             .collect(),
     };
     finish_is_unique_helper(idx, len, unique_val, duplicated_val)

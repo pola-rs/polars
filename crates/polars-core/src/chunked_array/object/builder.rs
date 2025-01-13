@@ -167,7 +167,7 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
 
     // SAFETY: 0..len is in bounds
     let list_s = unsafe {
-        s.agg_list(&GroupsProxy::Slice {
+        s.agg_list(&GroupsType::Slice {
             groups: vec![[0, s.len() as IdxSize]],
             rolling: false,
         })

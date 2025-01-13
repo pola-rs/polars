@@ -224,7 +224,7 @@ mod test {
         let ca = ObjectChunked::new(PlSmallStr::EMPTY, values);
 
         let groups =
-            GroupsProxy::Idx(vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into());
+            GroupsType::Idx(vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into());
         let out = unsafe { ca.agg_list(&groups) };
         assert!(matches!(out.dtype(), DataType::List(_)));
         assert_eq!(out.len(), groups.len());
@@ -248,7 +248,7 @@ mod test {
         let ca = ObjectChunked::new(PlSmallStr::EMPTY, values);
 
         let groups = vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into();
-        let out = unsafe { ca.agg_list(&GroupsProxy::Idx(groups)) };
+        let out = unsafe { ca.agg_list(&GroupsType::Idx(groups)) };
         let a = out.explode().unwrap();
 
         let ca_foo = a.as_any().downcast_ref::<ObjectChunked<Foo>>().unwrap();

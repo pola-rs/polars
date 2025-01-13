@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
 import sys
 import textwrap
 import zlib
@@ -375,7 +376,7 @@ def test_datetime_parsing_default_formats() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_partial_dtype_overwrite() -> None:
+def test_partial_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -389,7 +390,7 @@ def test_partial_dtype_overwrite() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_dtype_overwrite_with_column_name_selection() -> None:
+def test_schema_overrides_with_column_name_selection() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c,d
@@ -403,7 +404,7 @@ def test_dtype_overwrite_with_column_name_selection() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_dtype_overwrite_with_column_idx_selection() -> None:
+def test_schema_overrides_with_column_idx_selection() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c,d
@@ -503,7 +504,7 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_column_rename_and_dtype_overwrite() -> None:
+def test_column_rename_and_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -1242,7 +1243,7 @@ def test_skip_new_line_embedded_lines() -> None:
         }
 
 
-def test_csv_dtype_overwrite_bool() -> None:
+def test_csv_schema_overrides_bool() -> None:
     csv = "a, b\n" + ",false\n" + ",false\n" + ",false"
     df = pl.read_csv(
         csv.encode(),
@@ -2041,7 +2042,7 @@ def test_partial_read_compressed_file(
     assert df.shape == (30, 3)
 
 
-def test_read_csv_invalid_dtypes() -> None:
+def test_read_csv_invalid_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
         a,b
@@ -2055,6 +2056,32 @@ def test_read_csv_invalid_dtypes() -> None:
         TypeError, match="`schema_overrides` should be of type list or dict"
     ):
         pl.read_csv(f, schema_overrides={pl.Int64, pl.String})  # type: ignore[arg-type]
+
+
+def test_read_csv_invalid_schema_overrides_length() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,foo
+        2,bar
+        3,baz
+        """
+    )
+    f = io.StringIO(csv)
+
+    # streaming dispatches read_csv -> _scan_csv_impl which does not accept a list
+    if (
+        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
+        == "1"
+    ):
+        err = TypeError
+        match = "expected 'schema_overrides' dict, found 'list'"
+    else:
+        err = InvalidOperationError
+        match = "The number of schema overrides must be less than or equal to the number of fields"
+
+    with pytest.raises(err, match=match):
+        pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
 
 @pytest.mark.parametrize("columns", [["b"], "b"])
@@ -2357,7 +2384,7 @@ time
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_csv_read_time_dtype_overwrite() -> None:
+def test_csv_read_time_schema_overrides() -> None:
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
 
     assert_frame_equal(
@@ -2459,3 +2486,18 @@ def test_csv_compressed_new_columns_19916() -> None:
 
     q = pl.scan_csv(b, has_header=False, new_columns=["a", "b", "c", "d", "e", "f"])
     assert_frame_equal(q.collect(), df)
+
+
+def test_trailing_separator_8240() -> None:
+    csv = "A|B|"
+
+    expected = pl.DataFrame(
+        {"column_1": ["A"], "column_2": ["B"], "column_3": [None]},
+        schema={"column_1": pl.String, "column_2": pl.String, "column_3": pl.String},
+    )
+
+    result = pl.read_csv(io.StringIO(csv), separator="|", has_header=False)
+    assert_frame_equal(result, expected)
+
+    result = pl.scan_csv(io.StringIO(csv), separator="|", has_header=False).collect()
+    assert_frame_equal(result, expected)

@@ -129,7 +129,7 @@ fn estimate_unique_count(keys: &[Column], mut sample_size: usize) -> PolarsResul
         sample_size = set_size;
     }
 
-    let finish = |groups: &GroupsProxy| {
+    let finish = |groups: &GroupsType| {
         let u = groups.len() as f64;
         let ui = if groups.len() == sample_size {
             u
@@ -316,7 +316,7 @@ impl PartitionGroupByExec {
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
-            groups = sliced_groups.as_deref().unwrap();
+            groups = sliced_groups.as_ref().unwrap();
         }
 
         let get_columns = || gb.keys_sliced(self.slice);

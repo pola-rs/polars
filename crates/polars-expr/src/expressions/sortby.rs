@@ -46,7 +46,7 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
 
 static ERR_MSG: &str = "expressions in 'sort_by' produced a different number of groups";
 
-fn check_groups(a: &GroupsProxy, b: &GroupsProxy) -> PolarsResult<()> {
+fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
     polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
         a.len() == b.len()
     }), ComputeError: ERR_MSG);
@@ -54,10 +54,10 @@ fn check_groups(a: &GroupsProxy, b: &GroupsProxy) -> PolarsResult<()> {
 }
 
 pub(super) fn update_groups_sort_by(
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     sort_by_s: &Series,
     options: &SortOptions,
-) -> PolarsResult<GroupsProxy> {
+) -> PolarsResult<GroupsType> {
     // Will trigger a gather for every group, so rechunk before.
     let sort_by_s = sort_by_s.rechunk();
     let groups = POOL.install(|| {
@@ -67,7 +67,7 @@ pub(super) fn update_groups_sort_by(
             .collect::<PolarsResult<_>>()
     })?;
 
-    Ok(GroupsProxy::Idx(groups))
+    Ok(GroupsType::Idx(groups))
 }
 
 fn sort_by_groups_single_by(
@@ -293,7 +293,7 @@ impl PhysicalExpr for SortByExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
@@ -386,7 +386,7 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<_>>()
             });
-            GroupsProxy::Idx(groups?)
+            GroupsType::Idx(groups?)
         };
 
         // If the rhs is already aggregated once, it is reordered by the
@@ -396,7 +396,7 @@ impl PhysicalExpr for SortByExpr {
             ac_in.with_values(s.explode().unwrap(), false, None)?;
         }
 
-        ac_in.with_groups(groups);
+        ac_in.with_groups(groups.into_sliceable());
         Ok(ac_in)
     }
 

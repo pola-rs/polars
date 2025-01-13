@@ -608,8 +608,8 @@ impl Column {
     #[cfg(any(feature = "algorithm_group_by", feature = "bitwise"))]
     fn agg_with_unit_scalar(
         &self,
-        groups: &GroupsProxy,
-        series_agg: impl Fn(&Series, &GroupsProxy) -> Series,
+        groups: &GroupsType,
+        series_agg: impl Fn(&Series, &GroupsType) -> Series,
     ) -> Column {
         match self {
             Column::Series(s) => series_agg(s, groups).into_column(),
@@ -625,7 +625,7 @@ impl Column {
                 // 2. whether this aggregation is even defined
                 let series_aggregation = series_agg(
                     &s.as_single_value_series(),
-                    &GroupsProxy::Slice {
+                    &GroupsType::Slice {
                         // @NOTE: this group is always valid since s is non-empty.
                         groups: vec![[0, 1]],
                         rolling: false,
@@ -682,7 +682,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_min(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_min(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_min(g) })
     }
 
@@ -690,7 +690,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_max(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_max(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_max(g) })
     }
 
@@ -698,7 +698,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_mean(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_mean(g) })
     }
 
@@ -706,7 +706,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_sum(&self, groups: &GroupsType) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_sum(groups) }.into()
     }
@@ -715,7 +715,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_first(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_first(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_first(g) })
     }
 
@@ -723,7 +723,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_last(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_last(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_last(g) })
     }
 
@@ -731,7 +731,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_n_unique(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_n_unique(&self, groups: &GroupsType) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_n_unique(groups) }.into()
     }
@@ -742,7 +742,7 @@ impl Column {
     #[cfg(feature = "algorithm_group_by")]
     pub unsafe fn agg_quantile(
         &self,
-        groups: &GroupsProxy,
+        groups: &GroupsType,
         quantile: f64,
         method: QuantileMethod,
     ) -> Self {
@@ -758,7 +758,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_median(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_median(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_median(g) })
     }
 
@@ -766,7 +766,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Self {
+    pub unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_var(groups, ddof) }.into()
     }
@@ -775,7 +775,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Self {
+    pub unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_std(groups, ddof) }.into()
     }
@@ -784,7 +784,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub unsafe fn agg_list(&self, groups: &GroupsProxy) -> Self {
+    pub unsafe fn agg_list(&self, groups: &GroupsType) -> Self {
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_list(groups) }.into()
     }
@@ -793,7 +793,7 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "algorithm_group_by")]
-    pub fn agg_valid_count(&self, groups: &GroupsProxy) -> Self {
+    pub fn agg_valid_count(&self, groups: &GroupsType) -> Self {
         // @partition-opt
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_valid_count(groups) }.into()
@@ -803,21 +803,21 @@ impl Column {
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_and(&self, groups: &GroupsProxy) -> Self {
+    pub fn agg_and(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_and(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_or(&self, groups: &GroupsProxy) -> Self {
+    pub fn agg_or(&self, groups: &GroupsType) -> Self {
         self.agg_with_unit_scalar(groups, |s, g| unsafe { s.agg_or(g) })
     }
     /// # Safety
     ///
     /// Does no bounds checks, groups must be correct.
     #[cfg(feature = "bitwise")]
-    pub fn agg_xor(&self, groups: &GroupsProxy) -> Self {
+    pub fn agg_xor(&self, groups: &GroupsType) -> Self {
         // @partition-opt
         // @scalar-opt
         unsafe { self.as_materialized_series().agg_xor(groups) }.into()
@@ -1090,8 +1090,27 @@ impl Column {
     pub fn rechunk(&self) -> Column {
         match self {
             Column::Series(s) => s.rechunk().into(),
-            Column::Partitioned(_) => self.clone(),
-            Column::Scalar(_) => self.clone(),
+            Column::Partitioned(s) => {
+                if let Some(s) = s.lazy_as_materialized_series() {
+                    // This should always hold for partitioned.
+                    debug_assert_eq!(s.n_chunks(), 1)
+                }
+                self.clone()
+            },
+            Column::Scalar(s) => {
+                if s.lazy_as_materialized_series()
+                    .filter(|x| x.n_chunks() > 1)
+                    .is_some()
+                {
+                    Column::Scalar(ScalarColumn::new(
+                        s.name().clone(),
+                        s.scalar().clone(),
+                        s.len(),
+                    ))
+                } else {
+                    self.clone()
+                }
+            },
         }
     }
 
@@ -1700,7 +1719,14 @@ impl Column {
     pub fn n_chunks(&self) -> usize {
         match self {
             Column::Series(s) => s.n_chunks(),
-            Column::Scalar(_) | Column::Partitioned(_) => 1,
+            Column::Scalar(s) => s.lazy_as_materialized_series().map_or(1, |x| x.n_chunks()),
+            Column::Partitioned(s) => {
+                if let Some(s) = s.lazy_as_materialized_series() {
+                    // This should always hold for partitioned.
+                    debug_assert_eq!(s.n_chunks(), 1)
+                }
+                1
+            },
         }
     }
 

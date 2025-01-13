@@ -99,7 +99,7 @@ pub(crate) fn join_asof_numeric<T: PolarsNumericType>(
     let right = other.downcast_iter().next().unwrap();
 
     let out = if let Some(t) = tolerance {
-        let native_tolerance = t.extract::<T::Native>().unwrap();
+        let native_tolerance = t.try_extract::<T::Native>()?;
         let abs_tolerance = native_tolerance.abs_diff(T::Native::zero());
         let filter = |l: T::Native, r: T::Native| l.abs_diff(r) <= abs_tolerance;
         match strategy {

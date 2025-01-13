@@ -13,9 +13,9 @@ pub(crate) struct GroupByRollingExec {
 }
 
 #[cfg(feature = "dynamic_group_by")]
-unsafe fn update_keys(keys: &mut [Column], groups: &GroupsProxy) {
+unsafe fn update_keys(keys: &mut [Column], groups: &GroupsType) {
     match groups {
-        GroupsProxy::Idx(groups) => {
+        GroupsType::Idx(groups) => {
             let first = groups.first();
             // we don't use agg_first here, because the group
             // can be empty, but we still want to know the first value
@@ -24,7 +24,7 @@ unsafe fn update_keys(keys: &mut [Column], groups: &GroupsProxy) {
                 *key = key.take_slice_unchecked(first);
             }
         },
-        GroupsProxy::Slice { groups, .. } => {
+        GroupsType::Slice { groups, .. } => {
             for key in keys.iter_mut() {
                 let indices = groups
                     .iter()
@@ -70,7 +70,7 @@ impl GroupByRollingExec {
 
         if let Some((offset, len)) = self.slice {
             sliced_groups = Some(groups.slice(offset, len));
-            groups = sliced_groups.as_deref().unwrap();
+            groups = sliced_groups.as_ref().unwrap();
 
             time_key = time_key.slice(offset, len);
         }

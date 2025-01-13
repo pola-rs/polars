@@ -58,13 +58,13 @@ pub fn nan_max_s(s: &Series, name: PlSmallStr) -> Series {
     }
 }
 
-unsafe fn group_nan_max<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
+unsafe fn group_nan_max<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
 where
     T: PolarsFloatType,
     ChunkedArray<T>: IntoSeries,
 {
     match groups {
-        GroupsProxy::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+        GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
             if idx.is_empty() {
                 None
@@ -89,7 +89,7 @@ where
                 }
             }
         }),
-        GroupsProxy::Slice {
+        GroupsType::Slice {
             groups: groups_slice,
             ..
         } => {
@@ -127,13 +127,13 @@ where
     }
 }
 
-unsafe fn group_nan_min<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
+unsafe fn group_nan_min<T>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
 where
     T: PolarsFloatType,
     ChunkedArray<T>: IntoSeries,
 {
     match groups {
-        GroupsProxy::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
+        GroupsType::Idx(groups) => _agg_helper_idx::<T, _>(groups, |(first, idx)| {
             debug_assert!(idx.len() <= ca.len());
             if idx.is_empty() {
                 None
@@ -158,7 +158,7 @@ where
                 }
             }
         }),
-        GroupsProxy::Slice {
+        GroupsType::Slice {
             groups: groups_slice,
             ..
         } => {
@@ -198,7 +198,7 @@ where
 
 /// # Safety
 /// `groups` must be in bounds.
-pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
+pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();
@@ -214,7 +214,7 @@ pub unsafe fn group_agg_nan_min_s(s: &Series, groups: &GroupsProxy) -> Series {
 
 /// # Safety
 /// `groups` must be in bounds.
-pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsProxy) -> Series {
+pub unsafe fn group_agg_nan_max_s(s: &Series, groups: &GroupsType) -> Series {
     match s.dtype() {
         DataType::Float32 => {
             let ca = s.f32().unwrap();

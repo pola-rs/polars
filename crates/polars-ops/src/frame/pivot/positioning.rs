@@ -230,7 +230,7 @@ where
 pub(super) fn compute_col_idx(
     pivot_df: &DataFrame,
     column: &str,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
 ) -> PolarsResult<(Vec<IdxSize>, Column)> {
     let column_s = pivot_df.column(column)?;
     let column_agg = unsafe { column_s.agg_first(groups) };
@@ -401,7 +401,7 @@ fn compute_row_index_struct(
 pub(super) fn compute_row_idx(
     pivot_df: &DataFrame,
     index: &[PlSmallStr],
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     count: usize,
 ) -> PolarsResult<(Vec<IdxSize>, usize, Option<Vec<Column>>)> {
     let (row_locations, n_rows, row_index) = if index.len() == 1 {

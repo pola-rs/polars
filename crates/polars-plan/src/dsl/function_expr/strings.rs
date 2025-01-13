@@ -71,6 +71,10 @@ pub enum StringFunction {
         n: i64,
         literal: bool,
     },
+    #[cfg(feature = "string_normalize")]
+    Normalize {
+        form: UnicodeForm,
+    },
     #[cfg(feature = "string_reverse")]
     Reverse,
     #[cfg(feature = "string_pad")]
@@ -165,6 +169,8 @@ impl StringFunction {
             LenChars => mapper.with_dtype(DataType::UInt32),
             #[cfg(feature = "regex")]
             Replace { .. } => mapper.with_same_dtype(),
+            #[cfg(feature = "string_normalize")]
+            Normalize { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "string_reverse")]
             Reverse => mapper.with_same_dtype(),
             #[cfg(feature = "temporal")]
@@ -247,6 +253,8 @@ impl Display for StringFunction {
             PadStart { .. } => "pad_start",
             #[cfg(feature = "regex")]
             Replace { .. } => "replace",
+            #[cfg(feature = "string_normalize")]
+            Normalize { .. } => "normalize",
             #[cfg(feature = "string_reverse")]
             Reverse => "reverse",
             #[cfg(feature = "string_encoding")]
@@ -363,6 +371,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             } => map_as_slice!(strings::concat_hor, &delimiter, ignore_nulls),
             #[cfg(feature = "regex")]
             Replace { n, literal } => map_as_slice!(strings::replace, literal, n),
+            #[cfg(feature = "string_normalize")]
+            Normalize { form } => map!(strings::normalize, form.clone()),
             #[cfg(feature = "string_reverse")]
             Reverse => map!(strings::reverse),
             Uppercase => map!(uppercase),
@@ -979,6 +989,12 @@ pub(super) fn replace(s: &[Column], literal: bool, n: i64) -> PolarsResult<Colum
         replace_n(column, pat, val, literal, n as usize)
     }
     .map(|ca| ca.into_column())
+}
+
+#[cfg(feature = "string_normalize")]
+pub(super) fn normalize(s: &Column, form: UnicodeForm) -> PolarsResult<Column> {
+    let ca = s.str()?;
+    Ok(ca.str_normalize(form).into_column())
 }
 
 #[cfg(feature = "string_reverse")]

@@ -11,7 +11,52 @@ use polars_ops::prelude::ChunkJoinOptIds;
 use super::NodeTimer;
 
 pub type JoinTuplesCache = Arc<Mutex<PlHashMap<String, ChunkJoinOptIds>>>;
-pub type GroupsProxyCache = Arc<RwLock<PlHashMap<String, GroupsProxy>>>;
+
+#[derive(Default)]
+pub struct WindowCache {
+    groups: RwLock<PlHashMap<String, GroupPositions>>,
+    join_tuples: RwLock<PlHashMap<String, Arc<ChunkJoinOptIds>>>,
+    map_idx: RwLock<PlHashMap<String, Arc<IdxCa>>>,
+}
+
+impl WindowCache {
+    pub(crate) fn clear(&self) {
+        let mut g = self.groups.write().unwrap();
+        g.clear();
+        let mut g = self.join_tuples.write().unwrap();
+        g.clear();
+    }
+
+    pub fn get_groups(&self, key: &str) -> Option<GroupPositions> {
+        let g = self.groups.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_groups(&self, key: String, groups: GroupPositions) {
+        let mut g = self.groups.write().unwrap();
+        g.insert(key, groups);
+    }
+
+    pub fn get_join(&self, key: &str) -> Option<Arc<ChunkJoinOptIds>> {
+        let g = self.join_tuples.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_join(&self, key: String, join_tuples: Arc<ChunkJoinOptIds>) {
+        let mut g = self.join_tuples.write().unwrap();
+        g.insert(key, join_tuples);
+    }
+
+    pub fn get_map(&self, key: &str) -> Option<Arc<IdxCa>> {
+        let g = self.map_idx.read().unwrap();
+        g.get(key).cloned()
+    }
+
+    pub fn insert_map(&self, key: String, idx: Arc<IdxCa>) {
+        let mut g = self.map_idx.write().unwrap();
+        g.insert(key, idx);
+    }
+}
 
 bitflags! {
     #[repr(transparent)]
@@ -62,10 +107,8 @@ pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
     df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
     pub schema_cache: RwLock<Option<SchemaRef>>,
-    /// Used by Window Expression to prevent redundant grouping
-    pub group_tuples: GroupsProxyCache,
-    /// Used by Window Expression to prevent redundant joins
-    pub join_tuples: JoinTuplesCache,
+    /// Used by Window Expressions to cache intermediate state
+    pub window_cache: Arc<WindowCache>,
     // every join/union split gets an increment to distinguish between schema state
     pub branch_idx: usize,
     pub flags: AtomicU8,
@@ -83,8 +126,7 @@ impl ExecutionState {
         Self {
             df_cache: Default::default(),
             schema_cache: Default::default(),
-            group_tuples: Default::default(),
-            join_tuples: Default::default(),
+            window_cache: Default::default(),
             branch_idx: 0,
             flags: AtomicU8::new(StateFlags::init().as_u8()),
             ext_contexts: Default::default(),
@@ -135,8 +177,7 @@ impl ExecutionState {
         Self {
             df_cache: self.df_cache.clone(),
             schema_cache: Default::default(),
-            group_tuples: Default::default(),
-            join_tuples: Default::default(),
+            window_cache: Default::default(),
             branch_idx: self.branch_idx,
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),
@@ -177,12 +218,7 @@ impl ExecutionState {
 
     /// Clear the cache used by the Window expressions
     pub fn clear_window_expr_cache(&self) {
-        {
-            let mut lock = self.group_tuples.write().unwrap();
-            lock.clear();
-        }
-        let mut lock = self.join_tuples.lock().unwrap();
-        lock.clear();
+        self.window_cache.clear();
     }
 
     fn set_flags(&self, f: &dyn Fn(StateFlags) -> StateFlags) {
@@ -243,8 +279,7 @@ impl Clone for ExecutionState {
         Self {
             df_cache: self.df_cache.clone(),
             schema_cache: self.schema_cache.read().unwrap().clone().into(),
-            group_tuples: self.group_tuples.clone(),
-            join_tuples: self.join_tuples.clone(),
+            window_cache: self.window_cache.clone(),
             branch_idx: self.branch_idx,
             flags: AtomicU8::new(self.flags.load(Ordering::Relaxed)),
             ext_contexts: self.ext_contexts.clone(),

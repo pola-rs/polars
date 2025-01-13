@@ -41,15 +41,24 @@ pub struct FileMetadata {
 
 /// Read the row count by summing the length of the of the record batches
 pub fn get_row_count<R: Read + Seek>(reader: &mut R) -> PolarsResult<i64> {
-    let mut message_scratch: Vec<u8> = Default::default();
     let (_, footer_len) = read_footer_len(reader)?;
     let footer = read_footer(reader, footer_len)?;
     let (_, blocks) = deserialize_footer_blocks(&footer)?;
 
+    get_row_count_from_blocks(reader, &blocks)
+}
+
+///  Read the row count by summing the length of the of the record batches in blocks
+pub fn get_row_count_from_blocks<R: Read + Seek>(
+    reader: &mut R,
+    blocks: &[arrow_format::ipc::Block],
+) -> PolarsResult<i64> {
+    let mut message_scratch: Vec<u8> = Default::default();
+
     blocks
-        .into_iter()
+        .iter()
         .map(|block| {
-            let message = get_message_from_block(reader, &block, &mut message_scratch)?;
+            let message = get_message_from_block(reader, block, &mut message_scratch)?;
             let record_batch = get_record_batch(message)?;
             record_batch.length().map_err(|e| e.into())
         })

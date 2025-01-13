@@ -21,7 +21,7 @@ impl IntoListNameSpace for ListNameSpace {
     }
 }
 
-fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
+fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
     let mut start = offsets[0];
     let end = *offsets.last().unwrap();
     if IdxSize::try_from(end - start).is_err() {
@@ -37,10 +37,13 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
             [offset, len]
         })
         .collect();
-    Some(GroupsProxy::Slice {
-        groups,
-        rolling: false,
-    })
+    Some(
+        GroupsType::Slice {
+            groups,
+            rolling: false,
+        }
+        .into_sliceable(),
+    )
 }
 
 fn run_per_sublist(

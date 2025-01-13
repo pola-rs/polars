@@ -56,7 +56,7 @@ impl PhysicalExpr for SortExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
@@ -72,8 +72,8 @@ impl PhysicalExpr for SortExpr {
                 let mut sort_options = self.options;
                 sort_options.multithreaded = false;
                 let groups = POOL.install(|| {
-                    match ac.groups().as_ref() {
-                        GroupsProxy::Idx(groups) => {
+                    match ac.groups().as_ref().as_ref() {
+                        GroupsType::Idx(groups) => {
                             groups
                                 .par_iter()
                                 .map(|(first, idx)| {
@@ -86,7 +86,7 @@ impl PhysicalExpr for SortExpr {
                                 })
                                 .collect()
                         },
-                        GroupsProxy::Slice { groups, .. } => groups
+                        GroupsType::Slice { groups, .. } => groups
                             .par_iter()
                             .map(|&[first, len]| {
                                 let group = series.slice(first as i64, len as usize);
@@ -97,8 +97,8 @@ impl PhysicalExpr for SortExpr {
                             .collect(),
                     }
                 });
-                let groups = GroupsProxy::Idx(groups);
-                ac.with_groups(groups);
+                let groups = GroupsType::Idx(groups);
+                ac.with_groups(groups.into_sliceable());
             },
         }
 
