@@ -71,6 +71,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
+    "POLARS_DEFAULT_ENGINE",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -140,6 +141,7 @@ class ConfigParameters(TypedDict, total=False):
     set_trim_decimal_zeros: bool | None
     set_verbose: bool | None
     set_expr_depth_warning: int
+    set_gpu_engine: bool | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -1449,4 +1451,41 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(msg)
 
         os.environ["POLARS_MAX_EXPR_DEPTH"] = str(limit)
+        return cls
+
+    @classmethod
+    def set_gpu_engine(cls, active: bool | None = None) -> type[Config]:
+        """
+        Set the default engine to use the GPU.
+
+        Parameters
+        ----------
+        engine : bool
+            Whether or not to default to GPU polars on .collect() calls
+
+        Examples
+        --------
+        >>> pl.Config.set_gpu_engine(True)  # doctest: +SKIP
+        >>> pl.Config.set_verbose(True)  # doctest: +SKIP
+        >>> lf = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})  # doctest: +SKIP
+        >>> lf.max().collect()  # doctest: +SKIP
+        run PythonScanExec
+        run UdfExec
+        run StackExec
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ v   ┆ v2  │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        """
+        if active is None:
+            os.environ.pop("POLARS_DEFAULT_ENGINE", None)
+        else:
+            engine = "gpu" if active else "cpu"
+            os.environ["POLARS_DEFAULT_ENGINE"] = engine
         return cls
