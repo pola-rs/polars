@@ -1114,8 +1114,12 @@ def _read_spreadsheet_calamine(
     schema_overrides = schema_overrides or {}
     if read_options.get("schema_sample_rows") == 0:
         # ref: https://github.com/ToucanToco/fastexcel/issues/236
-        read_options["dtypes"] = dict.fromkeys(range(16384), "string")
-
+        del read_options["schema_sample_rows"]
+        read_options["dtypes"] = (
+            "string"
+            if fastexcel_version >= (0, 12, 1)
+            else dict.fromkeys(range(16384), "string")
+        )
     elif schema_overrides and fastexcel_version >= (0, 10):
         parser_dtypes = read_options.get("dtypes", {})
         for name, dtype in schema_overrides.items():
