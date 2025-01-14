@@ -705,8 +705,15 @@ def display_dot_graph(
 
 
 def display_mermaid_graph(
-    *, mermaid: str, show: bool = True, output_path: str | Path | None = None
-) -> None:
+    *,
+    mermaid: str,
+    show: bool = True,
+    output_path: str | Path | None = None,
+    raw_output: bool = False,
+) -> str | None:
+    if raw_output:
+        return mermaid
+
     # Make font monospace
     mermaid += r'%%{init: {"fontFamily": "monospace"}}%%' + "\n"
 
