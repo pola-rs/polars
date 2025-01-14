@@ -625,10 +625,6 @@ impl PyLazyFrame {
                         lambda.call1(py, (nt,)).map_err(
                             |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
                         )?;
-    
-                        // ... unwrap the updated arenas, etc ...
-                        // This step ensures that any IR rewriting done by Python
-                        // gets placed back into the polars arenas.
 
                         // Unpack the arena's.
                         // At this point the `nt` is useless.
