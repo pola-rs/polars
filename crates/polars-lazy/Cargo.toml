@@ -29,7 +29,7 @@ memchr = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
-regex = { workspace = true}
+regex = { workspace = true }
 tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
