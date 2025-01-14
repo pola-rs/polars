@@ -64,7 +64,11 @@ impl ReduceNode {
                     while let Ok(morsel) = recv.recv().await {
                         for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
                             let input = selector.evaluate(morsel.df(), state).await?;
-                            reducer.update_group(input.as_materialized_series(), 0)?;
+                            reducer.update_group(
+                                input.as_materialized_series(),
+                                0,
+                                morsel.seq().to_u64(),
+                            )?;
                         }
                     }
 

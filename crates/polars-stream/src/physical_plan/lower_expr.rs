@@ -564,6 +564,8 @@ fn lower_exprs_with_ctx(
                     input: ref mut inner,
                     ..
                 }
+                | IRAggExpr::First(ref mut inner)
+                | IRAggExpr::Last(ref mut inner)
                 | IRAggExpr::Sum(ref mut inner)
                 | IRAggExpr::Mean(ref mut inner)
                 | IRAggExpr::Var(ref mut inner, _ /* ddof */)
@@ -585,8 +587,6 @@ fn lower_exprs_with_ctx(
                 },
                 IRAggExpr::Median(_)
                 | IRAggExpr::NUnique(_)
-                | IRAggExpr::First(_)
-                | IRAggExpr::Last(_)
                 | IRAggExpr::Implode(_)
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::Count(_, _)

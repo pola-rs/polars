@@ -1,4 +1,5 @@
 mod convert;
+mod first_last;
 mod len;
 mod mean;
 mod min_max;
@@ -32,15 +33,29 @@ pub trait GroupedReduction: Any + Send + Sync {
     fn resize(&mut self, num_groups: IdxSize);
 
     /// Updates the specified group with the given values.
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()>;
+    ///
+    /// For order-sensitive grouped reductions, seq_id can be used to resolve
+    /// order between calls/multiple reductions.
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        seq_id: u64,
+    ) -> PolarsResult<()>;
 
     /// Updates this GroupedReduction with new values. values[i] should
-    /// be added to reduction self[group_idxs[i]].
+    /// be added to reduction self[group_idxs[i]]. For order-sensitive grouped
+    /// reductions, seq_id can be used to resolve order between calls/multiple
+    /// reductions.
     ///
     /// # Safety
     /// group_idxs[i] < self.num_groups() for all i.
-    unsafe fn update_groups(&mut self, values: &Series, group_idxs: &[IdxSize])
-        -> PolarsResult<()>;
+    unsafe fn update_groups(
+        &mut self,
+        values: &Series,
+        group_idxs: &[IdxSize],
+        seq_id: u64,
+    ) -> PolarsResult<()>;
 
     /// Combines this GroupedReduction with another. Group other[i]
     /// should be combined into group self[group_idxs[i]].
@@ -224,7 +239,12 @@ where
         self.values.resize(num_groups as usize, self.reducer.init());
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
@@ -237,6 +257,7 @@ where
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
         assert!(values.len() == group_idxs.len());
@@ -370,7 +391,12 @@ where
         self.mask.resize(num_groups as usize, false);
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
@@ -388,6 +414,7 @@ where
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
@@ -483,6 +510,100 @@ where
         let v = core::mem::take(&mut self.values);
         let m = core::mem::take(&mut self.mask);
         self.reducer.finish(v, Some(m.freeze()), &self.in_dtype)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+struct NullGroupedReduction {
+    dtype: DataType,
+    num_groups: IdxSize,
+}
+
+impl NullGroupedReduction {
+    fn new(dtype: DataType) -> Self {
+        Self {
+            dtype,
+            num_groups: 0,
+        }
+    }
+}
+
+impl GroupedReduction for NullGroupedReduction {
+    fn new_empty(&self) -> Box<dyn GroupedReduction> {
+        Box::new(Self {
+            dtype: self.dtype.clone(),
+            num_groups: self.num_groups,
+        })
+    }
+
+    fn reserve(&mut self, _additional: usize) {}
+
+    fn resize(&mut self, num_groups: IdxSize) {
+        self.num_groups = num_groups;
+    }
+
+    fn update_group(
+        &mut self,
+        _values: &Series,
+        _group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        Ok(())
+    }
+
+    unsafe fn update_groups(
+        &mut self,
+        _values: &Series,
+        _group_idxs: &[IdxSize],
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
+        Ok(())
+    }
+
+    unsafe fn combine(
+        &mut self,
+        _other: &dyn GroupedReduction,
+        _group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        Ok(())
+    }
+
+    unsafe fn gather_combine(
+        &mut self,
+        _other: &dyn GroupedReduction,
+        _subset: &[IdxSize],
+        _group_idxs: &[IdxSize],
+    ) -> PolarsResult<()> {
+        Ok(())
+    }
+
+    unsafe fn partition(
+        self: Box<Self>,
+        partition_sizes: &[IdxSize],
+        _partition_idxs: &[IdxSize],
+    ) -> Vec<Box<dyn GroupedReduction>> {
+        partition_sizes
+            .iter()
+            .map(|&num_groups| {
+                Box::new(Self {
+                    dtype: self.dtype.clone(),
+                    num_groups,
+                }) as _
+            })
+            .collect()
+    }
+
+    fn finalize(&mut self) -> PolarsResult<Series> {
+        let num_groups = self.num_groups;
+        self.num_groups = 0;
+        Ok(Series::full_null(
+            PlSmallStr::EMPTY,
+            num_groups as usize,
+            &self.dtype,
+        ))
     }
 
     fn as_any(&self) -> &dyn Any {

@@ -182,6 +182,8 @@ fn try_lower_elementwise_scalar_agg_expr(
             match agg {
                 IRAggExpr::Min { input, .. }
                 | IRAggExpr::Max { input, .. }
+                | IRAggExpr::First(input)
+                | IRAggExpr::Last(input)
                 | IRAggExpr::Mean(input)
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
@@ -209,8 +211,6 @@ fn try_lower_elementwise_scalar_agg_expr(
                 },
                 IRAggExpr::Median(..)
                 | IRAggExpr::NUnique(..)
-                | IRAggExpr::First(..)
-                | IRAggExpr::Last(..)
                 | IRAggExpr::Implode(..)
                 | IRAggExpr::Quantile { .. }
                 | IRAggExpr::Count(..)
