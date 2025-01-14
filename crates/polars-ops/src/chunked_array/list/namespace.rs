@@ -543,7 +543,7 @@ pub trait ListNameSpaceImpl: AsList {
 
         let out: ListChunked = match super_type {
             DataType::Int64 => {
-                let fill_value = fill_value.i64().unwrap();
+                let fill_value = fill_value.i64()?;
                 ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
@@ -559,7 +559,7 @@ pub trait ListNameSpaceImpl: AsList {
             },
 
             DataType::Float64 => {
-                let fill_value = fill_value.f64().unwrap();
+                let fill_value = fill_value.f64()?;
                 ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
@@ -574,7 +574,7 @@ pub trait ListNameSpaceImpl: AsList {
                 })
             },
             DataType::String => {
-                let fill_value = fill_value.str().unwrap();
+                let fill_value = fill_value.str()?;
                 ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
