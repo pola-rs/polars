@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -1182,3 +1183,14 @@ def test_group_by_map_groups_slice_pushdown_20002() -> None:
             }
         ),
     )
+
+
+@typing.no_type_check
+def test_group_by_lit_series(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    n = 10
+    df = pl.DataFrame({"x": np.ones(2 * n), "y": n * list(range(2))})
+    a = np.ones(n, dtype=float)
+    df.lazy().group_by("y").agg(pl.col("x").dot(a)).collect()
+    captured = capfd.readouterr().err
+    assert "are not partitionable" in captured
