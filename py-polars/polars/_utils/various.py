@@ -61,6 +61,8 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
     T = TypeVar("T")
 
+    from IPython.display import Markdown
+
 # note: reversed views don't match as instances of MappingView
 if sys.version_info >= (3, 11):
     _views: list[Reversible[Any]] = [{}.keys(), {}.values(), {}.items()]
@@ -702,3 +704,13 @@ def display_dot_graph(
         plt.imshow(img)
         plt.show()
         return None
+
+
+def display_mermaid_graph(mermaid: str) -> Markdown:
+    if not _in_notebook():
+        msg = "This function is only available in Jupyter notebooks."
+        raise OSError(msg)
+
+    from IPython.display import Markdown
+
+    return Markdown(f"```mermaid\n{mermaid}\n```")

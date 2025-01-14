@@ -38,6 +38,7 @@ from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
     _is_generator,
     display_dot_graph,
+    display_mermaid_graph,
     extend_bool,
     find_stacklevel,
     is_bool_sequence,
@@ -118,6 +119,7 @@ if TYPE_CHECKING:
         SchemaDefinition,
         SchemaDict,
         SerializationFormat,
+        ShowGraphFormat,
         StartBy,
         UniqueKeepStrategy,
     )
@@ -1130,6 +1132,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         show: bool = True,
         output_path: str | Path | None = None,
         raw_output: bool = False,
+        raw_output_format: ShowGraphFormat = "dot",
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
         _type_check: bool = True,
@@ -1147,8 +1150,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         Show a plot of the query plan.
 
-        Note that Graphviz must be installed to render the visualization (if not
-        already present, you can download it here: `<https://graphviz.org/download>`_).
+        Note that Graphviz must be installed to export the visualization
+        or show it outside of a notebook
+        (if not already present, you can download it here: `<https://graphviz.org/download>`_).
 
         Parameters
         ----------
@@ -1160,6 +1164,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Write the figure to disk.
         raw_output
             Return dot syntax. This cannot be combined with `show` and/or `output_path`.
+        raw_output_format
+            The format of the raw output.
         figsize
             Passed to matplotlib if `show == True`.
         type_coercion
@@ -1214,14 +1220,33 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=False,
         )
 
-        dot = _ldf.to_dot(optimized)
-        return display_dot_graph(
-            dot=dot,
-            show=show,
-            output_path=output_path,
-            raw_output=raw_output,
-            figsize=figsize,
-        )
+        if raw_output:
+            if raw_output_format == "dot":
+                return _ldf.to_dot(optimized)
+            elif raw_output_format == "mermaid":
+                return _ldf.to_mermaid(optimized)
+            else:
+                msg = f'raw_output_format must be one of ["dot", "mermaid"] but got {raw_output_format}'
+                raise ValueError(msg)
+
+        try:
+            dot = _ldf.to_dot(optimized)
+            return display_dot_graph(
+                dot=dot,
+                show=show,
+                output_path=output_path,
+                figsize=figsize,
+            )
+        except (ImportError, FileNotFoundError) as e:
+            missing_graphviz_error = e
+
+        # if we reach this point, we failed to display the graph using Graphviz
+        # we should try as mermaid instead
+        try:
+            mermaid = _ldf.to_mermaid(optimized)
+            return display_mermaid_graph(mermaid)
+        except OSError:
+            raise missing_graphviz_error from None
 
     def inspect(self, fmt: str = "{}") -> LazyFrame:
         """

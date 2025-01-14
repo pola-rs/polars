@@ -188,6 +188,7 @@ TorchExportType: TypeAlias = Literal["tensor", "dataset", "dict"]
 TransferEncoding: TypeAlias = Literal["hex", "base64"]
 WindowMappingStrategy: TypeAlias = Literal["group_to_rows", "join", "explode"]
 ExplainFormat: TypeAlias = Literal["plain", "tree"]
+ShowGraphFormat: TypeAlias = Literal["dot", "mermaid"]
 
 # type signature for allowed frame init
 FrameInitTypes: TypeAlias = Union[
