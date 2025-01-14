@@ -441,7 +441,7 @@ class _selector_proxy_(Expr):
                 name="xor",
             )
         else:
-            return self.as_expr().__or__(other)
+            return self.as_expr().__xor__(other)
 
     def __rxor__(self, other: Any) -> Expr:
         if is_column(other):
