@@ -148,6 +148,7 @@ dynamic_group_by = ["polars-core/dynamic_group_by"]
 ewma = ["polars-ops/ewma"]
 ewma_by = ["polars-ops/ewma_by"]
 dot_diagram = []
+mermaid_diagram = []
 unique_counts = ["polars-ops/unique_counts"]
 log = ["polars-ops/log"]
 chunked_ids = []
@@ -291,6 +292,7 @@ features = [
   "concat_str",
   "coalesce",
   "dot_diagram",
+  "mermaid_diagram",
   "trigonometry",
   "streaming",
   "true_div",

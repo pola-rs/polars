@@ -192,6 +192,7 @@ array_arithmetic = ["polars-core/array_arithmetic", "dtype-array"]
 array_to_struct = ["polars-ops/array_to_struct", "polars-lazy?/array_to_struct"]
 log = ["polars-ops/log", "polars-lazy?/log"]
 merge_sorted = ["polars-lazy?/merge_sorted"]
+mermaid_diagram = ["polars-lazy?/mermaid_diagram"]
 meta = ["polars-lazy?/meta"]
 mode = ["polars-ops/mode", "polars-lazy?/mode"]
 moment = ["polars-ops/moment", "polars-lazy?/moment"]
@@ -415,6 +416,7 @@ docs-selection = [
   "diagonal_concat",
   "abs",
   "dot_diagram",
+  "mermaid_diagram",
   "string_encoding",
   "product",
   "to_dummies",

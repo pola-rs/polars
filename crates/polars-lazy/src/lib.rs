@@ -200,12 +200,15 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 extern crate core;
 
-#[cfg(feature = "dot_diagram")]
+#[cfg(any(feature = "dot_diagram", feature = "mermaid_diagram"))]
 mod dot;
 pub mod dsl;
 pub mod frame;
 pub mod physical_plan;
 pub mod prelude;
+
+#[cfg(feature = "mermaid_diagram")]
+mod mermaid;
 
 mod scan;
 #[cfg(test)]
