@@ -746,4 +746,4 @@ def display_mermaid_graph(
 
     from IPython.display import Markdown, display
 
-    display(Markdown(f"```mermaid\n{mermaid}\n```"))
+    return display(Markdown(f"```mermaid\n{mermaid}\n```"))
