@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-import numpy as np
 import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
-
-if TYPE_CHECKING:
-    from polars._typing import ClosedInterval
 
 
 def test_int_range() -> None:
@@ -269,60 +265,16 @@ def test_int_ranges_broadcasting() -> None:
 
 
 # https://github.com/pola-rs/polars/issues/15307
+def test_int_range_non_int_dtype() -> None:
+    with pytest.raises(
+        ComputeError, match="non-integer `dtype` passed to `int_range`: String"
+    ):
+        pl.int_range(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
+
+
+# https://github.com/pola-rs/polars/issues/15307
 def test_int_ranges_non_int_dtype() -> None:
     with pytest.raises(
         ComputeError, match="non-integer `dtype` passed to `int_ranges`: String"
     ):
         pl.int_ranges(0, 3, dtype=pl.String, eager=True)  # type: ignore[arg-type]
-
-
-@pytest.mark.parametrize(
-    ("start", "end"),
-    [
-        (0, 0),
-        (0, 1),
-        (-1, 0),
-        (-2.1, 3.4),
-    ],
-)
-@pytest.mark.parametrize("num_samples", [0, 1, 2, 5, 1_000])
-@pytest.mark.parametrize("interval", ["both", "left", "right", "none"])
-@pytest.mark.parametrize("eager", [True, False])
-def test_linear_space(
-    start: int | float,
-    end: int | float,
-    num_samples: int,
-    interval: ClosedInterval,
-    eager: bool,
-) -> None:
-    if eager:
-        result = pl.select(
-            pl.linear_space(start, end, num_samples, closed=interval).alias("ls")
-        ).to_series()
-    else:
-        result = pl.linear_space(  # type: ignore[union-attr]
-            start, end, num_samples, closed=interval, eager=True
-        ).rename("ls")
-
-    if interval == "both":
-        expected = pl.Series("ls", np.linspace(start, end, num_samples))
-    elif interval == "left":
-        expected = pl.Series("ls", np.linspace(start, end, num_samples, endpoint=False))
-    elif interval == "right":
-        expected = pl.Series("ls", np.linspace(start, end, num_samples + 1)[1:])
-    elif interval == "none":
-        expected = pl.Series("ls", np.linspace(start, end, num_samples + 2)[1:-1])
-
-    assert_series_equal(result, expected)
-
-
-def test_linear_space_expr() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-
-    result = df.select(pl.linear_space(0, pl.col("a").len(), 3))
-    expected = pl.DataFrame({"literal": pl.Series([0.0, 2.5, 5.0], dtype=pl.Float64)})
-    assert_frame_equal(result, expected)
-
-    result = df.select(pl.linear_space(pl.col("a").len(), 0, 3))
-    expected = pl.DataFrame({"a": pl.Series([5.0, 2.5, 0.0], dtype=pl.Float64)})
-    assert_frame_equal(result, expected)
