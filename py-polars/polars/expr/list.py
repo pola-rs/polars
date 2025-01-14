@@ -1373,8 +1373,47 @@ class ExprListNameSpace:
         other = parse_into_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
-    def pad_start(self, *, fill_value: IntoExpr) -> Expr:
+    def pad_start(self, fill_value: IntoExpr) -> Expr:
         """
+        Fill each sub-list until it matches the length of the longest sub-list.
+
+        Parameters
+        ----------
+        fill_value
+            Add this value at the left of the sub-list until the length of the
+            sub-list is equal to the length of the longest sub-list.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {"a": [[1], [], [1, 2, 3]], "int": [0, 999, 2], "float": [0.0, 999, 2]}
+        ... )
+        >>> df.select(
+        ...     filled_int=pl.col("a").list.pad_start(fill_value=pl.col("int")),
+        ...     filled_float=pl.col("a").list.pad_start(fill_value=pl.col("float")),
+        ... )
+        shape: (3, 2)
+        ┌─────────────────┬───────────────────────┐
+        │ filled_int      ┆ filled_float          │
+        │ ---             ┆ ---                   │
+        │ list[i64]       ┆ list[f64]             │
+        ╞═════════════════╪═══════════════════════╡
+        │ [0, 0, 1]       ┆ [0.0, 0.0, 1.0]       │
+        │ [999, 999, 999] ┆ [999.0, 999.0, 999.0] │
+        │ [1, 2, 3]       ┆ [1.0, 2.0, 3.0]       │
+        └─────────────────┴───────────────────────┘
+        >>> df = pl.DataFrame({"a": [["a"], [], ["b", "c", "d"]]})
+        >>> df.select(pl.col("a").list.pad_start(fill_value="foo"))
+        shape: (3, 1)
+        ┌───────────────────────┐
+        │ a                     │
+        │ ---                   │
+        │ list[str]             │
+        ╞═══════════════════════╡
+        │ ["foo", "foo", "a"]   │
+        │ ["foo", "foo", "foo"] │
+        │ ["b", "c", "d"]       │
+        └───────────────────────┘
         """
         fill_value = parse_into_expression(fill_value, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_pad_start(fill_value))
