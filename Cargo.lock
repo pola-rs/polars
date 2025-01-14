@@ -3482,8 +3482,6 @@ name = "polars-sql"
 version = "0.45.1"
 dependencies = [
  "hex",
- "once_cell",
- "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-lazy",
@@ -3493,7 +3491,6 @@ dependencies = [
  "polars-utils",
  "rand",
  "serde",
- "serde_json",
  "sqlparser",
 ]
 
