@@ -84,6 +84,7 @@ features = [
   "list_eval",
   "list_to_struct",
   "list_arithmetic",
+  "list_pad",
   "array_arithmetic",
   "array_to_struct",
   "log",
@@ -164,6 +165,7 @@ list_any_all = ["polars/list_any_all"]
 array_any_all = ["polars/array_any_all", "polars/dtype-array"]
 list_drop_nulls = ["polars/list_drop_nulls"]
 list_sample = ["polars/list_sample"]
+list_pad = ["polars/list_pad"]
 cutqcut = ["polars/cutqcut"]
 rle = ["polars/rle"]
 extract_groups = ["polars/extract_groups"]
@@ -211,6 +213,7 @@ operations = [
   "list_any_all",
   "list_drop_nulls",
   "list_sample",
+  "list_pad",
   "cutqcut",
   "rle",
   "extract_groups",

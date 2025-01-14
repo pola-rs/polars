@@ -513,6 +513,7 @@ pub trait ListNameSpaceImpl: AsList {
         list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
     }
 
+    #[cfg(feature = "list_pad")]
     fn lst_pad_start(&self, fill_value: &Column) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let inner_dtype = ca.inner_dtype();

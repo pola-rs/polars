@@ -369,6 +369,7 @@ impl ListNameSpace {
 
     /// Add elements in each sub-list until it matches the length of the longest
     /// sub-list.
+    #[cfg(feature = "list_pad")]
     pub fn pad_start(self, fill_value: Expr) -> Expr {
         self.0.map_many_private(
             FunctionExpr::ListExpr(ListFunction::PadStart),

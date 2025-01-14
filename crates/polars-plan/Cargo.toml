@@ -176,6 +176,7 @@ list_sets = ["polars-ops/list_sets"]
 list_any_all = ["polars-ops/list_any_all"]
 list_drop_nulls = ["polars-ops/list_drop_nulls"]
 list_sample = ["polars-ops/list_sample"]
+list_pad = ["polars-ops/list_pad"]
 cutqcut = ["polars-ops/cutqcut"]
 rle = ["polars-ops/rle"]
 extract_groups = ["regex", "dtype-struct", "polars-ops/extract_groups"]
@@ -293,6 +294,7 @@ features = [
   "streaming",
   "true_div",
   "sign",
+  "list_pad"
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
