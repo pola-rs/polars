@@ -473,22 +473,22 @@ def test_pivot_struct() -> None:
         "id": ["a", "b", "c"],
         "1": [
             {"num1": 1, "num2": 4},
-            {"num1": None, "num2": None},
+            None,
             {"num1": 6, "num2": 6},
         ],
         "2": [
             {"num1": 3, "num2": 5},
-            {"num1": None, "num2": None},
-            {"num1": None, "num2": None},
+            None,
+            None,
         ],
         "3": [
-            {"num1": None, "num2": None},
+            None,
             {"num1": 5, "num2": 3},
             {"num1": 3, "num2": 6},
         ],
         "4": [
-            {"num1": None, "num2": None},
-            {"num1": None, "num2": None},
+            None,
+            None,
             {"num1": 4, "num2": 4},
         ],
     }
