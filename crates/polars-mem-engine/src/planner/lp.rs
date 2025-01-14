@@ -26,8 +26,9 @@ fn partitionable_gb(
         // in this case anything more than col("foo")
         for key in keys {
             if (expr_arena).iter(key.node()).count() > 1
-                || has_aexpr(key.node(), expr_arena, |ae| {
-                    matches!(ae, AExpr::Literal(LiteralValue::Series(_)))
+                || has_aexpr(key.node(), expr_arena, |ae| match ae {
+                    AExpr::Literal(lv) => !lv.is_scalar(),
+                    _ => false,
                 })
             {
                 return false;
