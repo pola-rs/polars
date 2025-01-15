@@ -299,6 +299,7 @@ dtype-datetime = [
 ]
 dtype-duration = [
   "polars-core/dtype-duration",
+  "polars-io/dtype-duration",
   "polars-lazy?/dtype-duration",
   "polars-time?/dtype-duration",
   "polars-ops/dtype-duration",

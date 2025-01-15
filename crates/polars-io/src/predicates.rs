@@ -143,17 +143,23 @@ fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
 
         A::Int8(v) => P::Int8(v),
         A::Int16(v) => P::Int16(v),
-        A::Int32(v) | A::Date(v) => P::Int32(v),
-        A::Int64(v)
-        | A::Datetime(v, _, _)
-        | A::DatetimeOwned(v, _, _)
-        | A::Duration(v, _)
-        | A::Time(v) => P::Int64(v),
+        A::Int32(v) => P::Int32(v),
+        A::Int64(v) => P::Int64(v),
+            
+        #[cfg(feature = "dtype-time")]
+        A::Date(v) => P::Int32(v),
+        #[cfg(feature = "dtype-datetime")]
+        A::Datetime(v, _, _) | A::DatetimeOwned(v, _, _) => P::Int64(v),
+        #[cfg(feature = "dtype-duration")]
+        A::Duration(v, _) => P::Int64(v),
+        #[cfg(feature = "dtype-time")]
+        A::Time(v) => P::Int64(v),
 
         A::Float32(v) => P::Float32(v),
         A::Float64(v) => P::Float64(v),
 
         // @TODO: Cast to string
+        #[cfg(feature = "dtype-categorical")]
         A::Categorical(_, _, _)
         | A::CategoricalOwned(_, _, _)
         | A::Enum(_, _, _)

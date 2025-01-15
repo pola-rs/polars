@@ -298,12 +298,16 @@ fn rg_to_dfs_prefiltered(
     }
 
     let do_parquet_expr = std::env::var("POLARS_NO_PARQUET_EXPR").as_deref() != Ok("1")
-        && live_columns.len() == 1
+        && live_columns.len() == 1 // Only do it with one column for now
+        && hive_partition_columns.is_none_or(|hc| {
+            !hc.iter()
+                .any(|c| c.name().as_str() == live_columns[0].as_str())
+        }) // No hive columns
         && !schema
             .get(live_columns[0].as_str())
             .unwrap()
             .dtype()
-            .is_nested();
+            .is_nested(); // No nested columns
     let column_exprs = do_parquet_expr.then(|| {
         live_columns
             .iter()
@@ -430,10 +434,11 @@ fn rg_to_dfs_prefiltered(
                             PlSmallStr::EMPTY,
                             [BooleanArray::new(ArrowDataType::Boolean, f.clone(), None)],
                         ))?;
-                        unsafe { df.column_extend_unchecked(live_columns) };
+                        unsafe { df.column_extend_unchecked(live_columns) }
                     } else {
                         df = DataFrame::new(live_columns).unwrap();
                     }
+
                     filter_mask = f.clone();
                 } else {
                     df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns.clone()) };

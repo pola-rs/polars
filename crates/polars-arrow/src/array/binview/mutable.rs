@@ -589,6 +589,19 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     }
 
     pub fn extend_from_array(&mut self, other: &BinaryViewArrayGeneric<T>) {
+        let slf_len = self.len();
+        match (&mut self.validity, other.validity()) {
+            (None, None) => {},
+            (Some(v), None) => v.extend_constant(other.len(), true),
+            (v @ None, Some(other)) => {
+                let mut bm = MutableBitmap::with_capacity(slf_len + other.len());
+                bm.extend_constant(slf_len, true);
+                bm.extend_from_bitmap(other);
+                *v = Some(bm);
+            }
+            (Some(slf), Some(other)) => slf.extend_from_bitmap(other),
+        }
+
         if other.total_buffer_len() == 0 {
             self.views.extend(other.views().iter().copied());
         } else {
