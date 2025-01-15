@@ -283,10 +283,14 @@ pub(crate) fn unspecialized_decode<T: Default>(
     Ok(())
 }
 
-/// An item with a known size
-pub(super) trait ExactSize {
+/// The state that will be decoded into.
+///
+/// This is usually an Array and a validity mask as a MutableBitmap.
+pub(super) trait Decoded {
     /// The number of items in the container
     fn len(&self) -> usize;
+    /// Extend the decoded state with `n` nulls.
+    fn extend_nulls(&mut self, n: usize);
 }
 
 /// A decoder that knows how to map `State` -> Array
@@ -296,7 +300,7 @@ pub(super) trait Decoder: Sized {
     /// The dictionary representation that the decoder uses
     type Dict: Array;
     /// The target state that this Decoder decodes into.
-    type DecodedState: ExactSize;
+    type DecodedState: Decoded;
 
     type Output: IntoBoxedArray;
 
@@ -474,6 +478,32 @@ impl<D: Decoder> PageDecoder<D> {
 
             let start_length = target.len();
             match &state_filter {
+                // Handle the case where column is held equal to Null. This can be the same for all
+                // non-nested columns.
+                Some(Filter::Predicate(p))
+                    if p.predicate
+                        .to_equals_scalar()
+                        .is_some_and(|sc| sc.is_null()) =>
+                {
+                    if state.is_optional {
+                        match &state.page_validity {
+                            None => pred_true_mask.extend_constant(page.num_values(), false),
+                            Some(v) => {
+                                pred_true_mask.extend_from_bitmap(v);
+                                if p.include_values {
+                                    target.extend_nulls(v.set_bits());
+                                }
+                            },
+                        }
+                    } else {
+                        pred_true_mask.extend_constant(page.num_values(), false);
+                    }
+                    drop(state);
+                },
+
+                // For now, we have a function that indicates whether the predicate can actually be
+                // handled in the kernels. If it cannot be handled in the kernels, catch it here
+                // and load it as if it weren't filtered.
                 Some(Filter::Predicate(p))
                     if !self.decoder.has_predicate_specialization(&state, p)? =>
                 {

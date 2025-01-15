@@ -68,10 +68,10 @@ impl utils::Decoder for CategoricalDecoder {
 
     fn has_predicate_specialization(
         &self,
-        _state: &utils::State<'_, Self>,
+        state: &utils::State<'_, Self>,
         _predicate: &PredicateFilter,
     ) -> ParquetResult<bool> {
-        Ok(true)
+        Ok(state.page_validity.is_none())
     }
 
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {

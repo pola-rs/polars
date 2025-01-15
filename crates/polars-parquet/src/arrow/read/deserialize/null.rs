@@ -22,9 +22,12 @@ pub(crate) struct NullArrayLength {
     length: usize,
 }
 
-impl utils::ExactSize for NullArrayLength {
+impl utils::Decoded for NullArrayLength {
     fn len(&self) -> usize {
         self.length
+    }
+    fn extend_nulls(&mut self, n: usize) {
+        self.length += n;
     }
 }
 

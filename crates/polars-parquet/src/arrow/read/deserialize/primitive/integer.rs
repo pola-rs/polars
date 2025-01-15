@@ -193,10 +193,17 @@ where
         state: &utils::State<'_, Self>,
         predicate: &PredicateFilter,
     ) -> ParquetResult<bool> {
-        Ok(
-            matches!(state.translation, StateTranslation::Dictionary(_))
-                || (matches!(state.translation, StateTranslation::Plain(_))
-                    && predicate.predicate.to_equals_scalar().is_some()))
+        let mut has_predicate_specialization = false;
+
+        has_predicate_specialization |=
+            matches!(state.translation, StateTranslation::Dictionary(_));
+        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
+            && predicate.predicate.to_equals_scalar().is_some();
+
+        // @TODO: This should be implemented
+        has_predicate_specialization &= state.page_validity.is_none();
+
+        Ok(has_predicate_specialization)
     }
 
     fn finalize(

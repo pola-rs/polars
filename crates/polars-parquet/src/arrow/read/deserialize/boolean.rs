@@ -7,7 +7,7 @@ use polars_compute::filter::filter_boolean_kernel;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
-    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoder, ExactSize,
+    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoded, Decoder,
 };
 use super::{Filter, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
@@ -282,9 +282,13 @@ fn decode_masked_optional_plain(
     Ok(())
 }
 
-impl ExactSize for (MutableBitmap, MutableBitmap) {
+impl Decoded for (MutableBitmap, MutableBitmap) {
     fn len(&self) -> usize {
         self.0.len()
+    }
+    fn extend_nulls(&mut self, n: usize) {
+        self.0.extend_constant(n, false);
+        self.1.extend_constant(n, false);
     }
 }
 

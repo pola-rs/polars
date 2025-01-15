@@ -106,9 +106,13 @@ where
     }
 }
 
-impl<T> utils::ExactSize for (Vec<T>, MutableBitmap) {
+impl<T: NativeType> utils::Decoded for (Vec<T>, MutableBitmap) {
     fn len(&self) -> usize {
         self.0.len()
+    }
+    fn extend_nulls(&mut self, n: usize) {
+        self.0.resize(self.0.len() + n, T::default());
+        self.1.extend_constant(n, false);
     }
 }
 
@@ -157,9 +161,17 @@ where
         state: &utils::State<'_, Self>,
         predicate: &PredicateFilter,
     ) -> ParquetResult<bool> {
-        Ok(matches!(state.translation, StateTranslation::Dictionary(_))
-            || (matches!(state.translation, StateTranslation::Plain(_))
-                && predicate.predicate.to_equals_scalar().is_some()))
+        let mut has_predicate_specialization = false;
+
+        has_predicate_specialization |=
+            matches!(state.translation, StateTranslation::Dictionary(_));
+        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
+            && predicate.predicate.to_equals_scalar().is_some();
+
+        // @TODO: This should be implemented
+        has_predicate_specialization &= state.page_validity.is_none();
+
+        Ok(has_predicate_specialization)
     }
 
     fn extend_decoded(

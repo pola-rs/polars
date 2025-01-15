@@ -7,6 +7,7 @@ use arrow::types::{
     Bytes12Alignment4, Bytes16Alignment16, Bytes1Alignment1, Bytes2Alignment2, Bytes32Alignment16,
     Bytes4Alignment4, Bytes8Alignment8,
 };
+use bytemuck::Zeroable;
 
 use super::dictionary_encoded::append_validity;
 use super::utils::array_chunks::ArrayChunks;
@@ -154,9 +155,7 @@ impl FSBVec {
             FSBVec::Other(v, _) => v.extend_from_slice(slice),
         }
     }
-}
 
-impl utils::ExactSize for FSBVec {
     fn len(&self) -> usize {
         match self {
             FSBVec::Size1(vec) => vec.len(),
@@ -171,9 +170,23 @@ impl utils::ExactSize for FSBVec {
     }
 }
 
-impl utils::ExactSize for (FSBVec, MutableBitmap) {
+impl utils::Decoded for (FSBVec, MutableBitmap) {
     fn len(&self) -> usize {
         self.0.len()
+    }
+    
+    fn extend_nulls(&mut self, n: usize) {
+        match &mut self.0 {
+            FSBVec::Size1(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size2(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size4(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size8(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size12(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size16(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Size32(v) => v.resize(v.len() + n, Zeroable::zeroed()),
+            FSBVec::Other(v, size) => v.resize(v.len() + n * *size, Zeroable::zeroed()),
+        }
+        self.1.extend_constant(n, false);
     }
 }
 
