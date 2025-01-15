@@ -1,28 +1,34 @@
 use arrow::temporal_conversions::MILLISECONDS_IN_DAY;
 use polars_core::prelude::*;
-// use polars_core::with_match_physical_integer_polars_type;
 use polars_ops::series::{new_linear_space_f32, new_linear_space_f64, ClosedInterval};
 
 use super::utils::ensure_range_bounds_contain_exactly_one_value;
 
-pub(super) fn linear_space(
-    s: &[Column],
-    num_samples: i64,
-    closed: ClosedInterval,
-) -> PolarsResult<Column> {
+pub(super) fn linear_space(s: &[Column], closed: ClosedInterval) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
+    let num_samples = &s[2];
     let name = start.name();
 
     ensure_range_bounds_contain_exactly_one_value(start, end)?;
-    let num_samples = u64::try_from(num_samples).map_err(|v| {
-        PolarsError::ComputeError(
-            format!("'num_samples' must be nonnegative integer, got {}", v).into(),
-        )
-    })?;
+    polars_ensure!(
+        num_samples.len() == 1,
+        ComputeError: "`num_samples` must contain exactly one value, got {} values", num_samples.len()
+    );
 
     let start = start.get(0).unwrap();
     let end = end.get(0).unwrap();
+    let num_samples = num_samples.get(0).unwrap();
+    let num_samples = num_samples
+        .extract::<u64>()
+        .ok_or(PolarsError::ComputeError(
+            format!(
+                "'num_samples' must be non-negative integer, got {}",
+                num_samples
+            )
+            .into(),
+        ))?;
+
     match (start.dtype(), end.dtype()) {
         (DataType::Float32, DataType::Float32) => new_linear_space_f32(
             start.extract::<f32>().unwrap(),

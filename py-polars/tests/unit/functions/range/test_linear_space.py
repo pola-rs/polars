@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError
+from polars.exceptions import ComputeError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -186,3 +186,29 @@ def test_linear_space_incompatible_temporals(
         ),
     ):
         pl.linear_space(value1, value2, 11, eager=True)
+
+
+def test_linear_space_expr_wrong_length() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    with pytest.raises(
+        ShapeError,
+        match="unable to add a column of length 6 to a DataFrame of height 5",
+    ):
+        df.with_columns(pl.linear_space(0, 1, 6))
+
+
+def test_linear_space_num_samples_expr() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    result = df.with_columns(pl.linear_space(0, 1, pl.len(), closed="left").alias("ls"))
+    expected = df.with_columns(
+        pl.Series([0, 0.2, 0.4, 0.6, 0.8], dtype=pl.Float64).alias("ls")
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_linear_space_invalid_num_samples_expr() -> None:
+    df = pl.DataFrame({"x": [1, 2, 3]})
+    with pytest.raises(
+        ComputeError, match="`num_samples` must contain exactly one value, got 3 values"
+    ):
+        df.select(pl.linear_space(0, 1, pl.col("x")))

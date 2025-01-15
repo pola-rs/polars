@@ -161,15 +161,12 @@ pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
 }
 
 /// Generate a series of equally-spaced points.
-pub fn linear_space(start: Expr, end: Expr, num_samples: i64, closed: ClosedInterval) -> Expr {
-    let input = vec![start, end];
+pub fn linear_space(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInterval) -> Expr {
+    let input = vec![start, end, num_samples];
 
     Expr::Function {
         input,
-        function: FunctionExpr::Range(RangeFunction::LinearSpace {
-            num_samples,
-            closed,
-        }),
+        function: FunctionExpr::Range(RangeFunction::LinearSpace { closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,

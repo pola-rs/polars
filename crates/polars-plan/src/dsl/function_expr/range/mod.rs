@@ -31,7 +31,6 @@ pub enum RangeFunction {
     },
     IntRanges,
     LinearSpace {
-        num_samples: i64,
         closed: ClosedInterval,
     },
     #[cfg(feature = "dtype-date")]
@@ -76,10 +75,7 @@ impl RangeFunction {
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
             IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
-            LinearSpace {
-                num_samples: _,
-                closed: _,
-            } => mapper.with_dtype(DataType::Float64),
+            LinearSpace { closed: _ } => mapper.with_dtype(DataType::Float64),
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => mapper.with_dtype(DataType::Date),
             #[cfg(feature = "dtype-date")]
@@ -150,11 +146,8 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             IntRanges => {
                 map_as_slice!(int_range::int_ranges)
             },
-            LinearSpace {
-                num_samples,
-                closed,
-            } => {
-                map_as_slice!(linear_space::linear_space, num_samples, closed)
+            LinearSpace { closed } => {
+                map_as_slice!(linear_space::linear_space, closed)
             },
             #[cfg(feature = "dtype-date")]
             DateRange { interval, closed } => {

@@ -165,11 +165,12 @@ pub fn time_ranges(
 pub fn linear_space(
     start: PyExpr,
     end: PyExpr,
-    num_samples: i64,
+    num_samples: PyExpr,
     closed: Wrap<ClosedInterval>,
 ) -> PyResult<PyExpr> {
     let start = start.inner;
     let end = end.inner;
+    let num_samples = num_samples.inner;
     let closed = closed.0;
     Ok(dsl::linear_space(start, end, num_samples, closed).into())
 }
