@@ -1226,3 +1226,55 @@ def test_raise_invalid_by_arg_13020() -> None:
             by_left=None,
             by_right=["entityId"],
         )
+
+
+def test_join_asof_no_exact_matches() -> None:
+    trades = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.038",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+            ],
+            "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+            "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+            "quantity": [75, 155, 100, 100, 100],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    quotes = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.030",
+                "2016-05-25 13:30:00.041",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.049",
+                "2016-05-25 13:30:00.072",
+                "2016-05-25 13:30:00.075",
+            ],
+            "ticker": ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"],
+            "bid": [720.50, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
+            "ask": [720.93, 51.96, 51.98, 52.00, 720.93, 98.01, 720.88, 52.03],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    assert trades.join_asof(
+        quotes, on="time", by="ticker", tolerance="10ms", allow_exact_matches=False
+    ).to_dict(as_series=False) == {
+        "time": [
+            datetime(2016, 5, 25, 13, 30, 0, 23000),
+            datetime(2016, 5, 25, 13, 30, 0, 38000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+        ],
+        "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+        "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+        "quantity": [75, 155, 100, 100, 100],
+        "bid": [None, 51.97, None, None, None],
+        "ask": [None, 51.98, None, None, None],
+    }

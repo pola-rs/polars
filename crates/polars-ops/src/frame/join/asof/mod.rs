@@ -1,6 +1,7 @@
 mod default;
 mod groups;
 use std::borrow::Cow;
+use std::cmp::Ordering;
 
 use default::*;
 pub use groups::AsofJoinBy;
@@ -15,21 +16,47 @@ use super::{_finish_join, build_tables};
 use crate::frame::IntoDf;
 use crate::series::SeriesMethods;
 
-trait AsofJoinState<T>: Default {
+#[inline]
+fn ge_allow_eq<T: PartialOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+    match l.partial_cmp(r) {
+        Some(Ordering::Equal) => allow_eq,
+        Some(Ordering::Greater) => true,
+        _ => false,
+    }
+}
+
+#[inline]
+fn lt_allow_eq<T: PartialOrd>(l: &T, r: &T, allow_eq: bool) -> bool {
+    match l.partial_cmp(r) {
+        Some(Ordering::Equal) => allow_eq,
+        Some(Ordering::Less) => true,
+        _ => false,
+    }
+}
+
+trait AsofJoinState<T> {
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
         left_val: &T,
         right: F,
         n_right: IdxSize,
     ) -> Option<IdxSize>;
+
+    fn new(allow_eq: bool) -> Self;
 }
 
-#[derive(Default)]
 struct AsofJoinForwardState {
     scan_offset: IdxSize,
+    allow_eq: bool,
 }
 
 impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
+    fn new(allow_eq: bool) -> Self {
+        AsofJoinForwardState {
+            scan_offset: Default::default(),
+            allow_eq,
+        }
+    }
     #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
@@ -39,7 +66,7 @@ impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
     ) -> Option<IdxSize> {
         while (self.scan_offset) < n_right {
             if let Some(right_val) = right(self.scan_offset) {
-                if right_val >= *left_val {
+                if ge_allow_eq(&right_val, left_val, self.allow_eq) {
                     return Some(self.scan_offset);
                 }
             }
@@ -49,14 +76,21 @@ impl<T: PartialOrd> AsofJoinState<T> for AsofJoinForwardState {
     }
 }
 
-#[derive(Default)]
 struct AsofJoinBackwardState {
     // best_bound is the greatest right index <= left_val.
     best_bound: Option<IdxSize>,
     scan_offset: IdxSize,
+    allow_eq: bool,
 }
 
 impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
+    fn new(allow_eq: bool) -> Self {
+        AsofJoinBackwardState {
+            scan_offset: Default::default(),
+            best_bound: Default::default(),
+            allow_eq,
+        }
+    }
     #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
@@ -66,7 +100,7 @@ impl<T: PartialOrd> AsofJoinState<T> for AsofJoinBackwardState {
     ) -> Option<IdxSize> {
         while self.scan_offset < n_right {
             if let Some(right_val) = right(self.scan_offset) {
-                if right_val <= *left_val {
+                if lt_allow_eq(&right_val, left_val, self.allow_eq) {
                     self.best_bound = Some(self.scan_offset);
                 } else {
                     break;
@@ -83,9 +117,17 @@ struct AsofJoinNearestState {
     // best_bound is the nearest value to left_val, with ties broken towards the last element.
     best_bound: Option<IdxSize>,
     scan_offset: IdxSize,
+    allow_eq: bool,
 }
 
 impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
+    fn new(allow_eq: bool) -> Self {
+        AsofJoinNearestState {
+            scan_offset: Default::default(),
+            best_bound: Default::default(),
+            allow_eq,
+        }
+    }
     #[inline]
     fn next<F: FnMut(IdxSize) -> Option<T>>(
         &mut self,
@@ -97,7 +139,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
         // cheaper than computing differences.
         while self.scan_offset < n_right {
             if let Some(scan_right_val) = right(self.scan_offset) {
-                if scan_right_val <= *left_val {
+                if lt_allow_eq(&scan_right_val, left_val, self.allow_eq) {
                     self.best_bound = Some(self.scan_offset);
                 } else {
                     // Now we must compute a difference to see if scan_right_val
@@ -107,7 +149,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
                         let best_diff = left_val.abs_diff(best_right_val);
                         let scan_diff = left_val.abs_diff(scan_right_val);
 
-                        scan_diff <= best_diff
+                        lt_allow_eq(&scan_diff, &best_diff, self.allow_eq)
                     } else {
                         true
                     };
@@ -120,7 +162,7 @@ impl<T: NumericNative> AsofJoinState<T> for AsofJoinNearestState {
                         // scan, so keep going on.
                         while self.scan_offset < n_right {
                             if let Some(next_right_val) = right(self.scan_offset) {
-                                if next_right_val == scan_right_val {
+                                if next_right_val == scan_right_val && self.allow_eq {
                                     self.best_bound = Some(self.scan_offset);
                                 } else {
                                     break;
@@ -155,6 +197,8 @@ pub struct AsOfOptions {
     pub tolerance_str: Option<PlSmallStr>,
     pub left_by: Option<Vec<PlSmallStr>>,
     pub right_by: Option<Vec<PlSmallStr>>,
+    /// Allow equal matches
+    pub allow_eq: bool,
 }
 
 fn check_asof_columns(
@@ -215,6 +259,7 @@ pub trait AsofJoin: IntoDf {
         suffix: Option<PlSmallStr>,
         slice: Option<(i64, usize)>,
         coalesce: bool,
+        allow_eq: bool,
     ) -> PolarsResult<DataFrame> {
         let self_df = self.to_df();
 
@@ -225,46 +270,46 @@ pub trait AsofJoin: IntoDf {
         let mut take_idx = match left_key.dtype() {
             DataType::Int64 => {
                 let ca = left_key.i64().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::Int32 => {
                 let ca = left_key.i32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::UInt64 => {
                 let ca = left_key.u64().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::UInt32 => {
                 let ca = left_key.u32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::Float32 => {
                 let ca = left_key.f32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::Float64 => {
                 let ca = left_key.f64().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
             DataType::Boolean => {
                 let ca = left_key.bool().unwrap();
-                join_asof::<BooleanType>(ca, &right_key, strategy)
+                join_asof::<BooleanType>(ca, &right_key, strategy, allow_eq)
             },
             DataType::Binary => {
                 let ca = left_key.binary().unwrap();
-                join_asof::<BinaryType>(ca, &right_key, strategy)
+                join_asof::<BinaryType>(ca, &right_key, strategy, allow_eq)
             },
             DataType::String => {
                 let ca = left_key.str().unwrap();
                 let right_binary = right_key.cast(&DataType::Binary).unwrap();
-                join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy)
+                join_asof::<BinaryType>(&ca.as_binary(), &right_binary, strategy, allow_eq)
             },
             _ => {
                 let left_key = left_key.cast(&DataType::Int32).unwrap();
                 let right_key = right_key.cast(&DataType::Int32).unwrap();
                 let ca = left_key.i32().unwrap();
-                join_asof_numeric(ca, &right_key, strategy, tolerance)
+                join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
         }?;
 
