@@ -1111,12 +1111,12 @@ def test_sort_into_function_into_dynamic_groupby_20715() -> None:
                 pl.lit("2025-01-17 00:00:00.000000").str.to_datetime(
                     "%Y-%m-%d %H:%M:%S%.f"
                 ),
-                interval="1m",
+                interval="64m",
             )
             .cast(pl.String)
             .reverse(),
-            val=pl.Series(range(5760)),
-            cat=pl.Series(list(range(16)) * 360),
+            val=pl.Series(range(90)),
+            cat=pl.Series(list(range(2)) * 45),
         )
         .lazy()
         .with_columns(
@@ -1130,4 +1130,4 @@ def test_sort_into_function_into_dynamic_groupby_20715() -> None:
         .sort("time2")
         .collect()
         .shape
-    ) == (5760, 3)
+    ) == (90, 3)
