@@ -13,7 +13,7 @@ use crate::read::deserialize::dictionary_encoded;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
-use crate::read::Filter;
+use crate::read::{Filter, PredicateFilter};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -55,6 +55,13 @@ where
                 )?))
             },
             _ => Err(utils::not_implemented(page)),
+        }
+    }
+    fn num_rows(&self) -> usize {
+        match self {
+            Self::Plain(v) => v.len() / size_of::<P>(),
+            Self::Dictionary(i) => i.len(),
+            Self::ByteStreamSplit(i) => i.len(),
         }
     }
 }
@@ -143,6 +150,36 @@ where
             target.into(),
             None,
         ))
+    }
+
+    fn has_predicate_specialization(
+        &self,
+        state: &utils::State<'_, Self>,
+        predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        Ok(matches!(state.translation, StateTranslation::Dictionary(_))
+            || (matches!(state.translation, StateTranslation::Plain(_))
+                && predicate.predicate.to_equals_scalar().is_some()))
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap();
+        decoded.0.extend(additional.values().iter().copied());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
     }
 
     fn extend_filtered_with_state(

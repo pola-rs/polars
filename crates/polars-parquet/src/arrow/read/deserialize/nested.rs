@@ -167,13 +167,15 @@ pub fn columns_to_iter_recursive(
             )?
             .collect_boxed(filter)
         },
-        BinaryView | Utf8View => {
+        dtype @ (BinaryView | Utf8View) => {
             init.push(InitNested::Primitive(field.is_nullable));
             types.pop();
             PageNestedDecoder::new(
                 columns.pop().unwrap(),
                 field.dtype().clone(),
-                binview::BinViewDecoder::default(),
+                binview::BinViewDecoder {
+                    is_string: matches!(dtype, Utf8View),
+                },
                 init,
             )?
             .collect_boxed(filter)
@@ -195,7 +197,7 @@ pub fn columns_to_iter_recursive(
                     let (nested, arr, ptm) = PageNestedDecoder::new(
                         columns.pop().unwrap(),
                         ArrowDataType::Utf8View,
-                        binview::BinViewDecoder::default(),
+                        binview::BinViewDecoder::new_string(),
                         init,
                     )?
                     .collect(filter)?;
@@ -443,7 +445,8 @@ pub fn columns_to_iter_recursive(
                         length,
                         field_arrays,
                         struct_validity,
-                    ).to_boxed(),
+                    )
+                    .to_boxed(),
                     Bitmap::new(),
                 ))
             },

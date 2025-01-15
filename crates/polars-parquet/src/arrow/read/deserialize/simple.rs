@@ -299,11 +299,15 @@ pub fn page_iter_to_array(
         },
         // Don't compile this code with `i32` as we don't use this in polars
         (PhysicalType::ByteArray, LargeBinary | LargeUtf8) => {
-            PageDecoder::new(pages, dtype, binview::BinViewDecoder::default())?.collect(filter)?
+            let is_string = matches!(dtype, LargeUtf8);
+            PageDecoder::new(pages, dtype, binview::BinViewDecoder { is_string })?
+                .collect(filter)?
         },
         (_, Binary | Utf8) => unreachable!(),
         (PhysicalType::ByteArray, BinaryView | Utf8View) => {
-            PageDecoder::new(pages, dtype, binview::BinViewDecoder::default())?.collect(filter)?
+            let is_string = matches!(dtype, Utf8View);
+            PageDecoder::new(pages, dtype, binview::BinViewDecoder { is_string })?
+                .collect(filter)?
         },
         (_, Dictionary(key_type, value_type, _)) => {
             // @NOTE: This should only hit in two cases:
@@ -317,7 +321,7 @@ pub fn page_iter_to_array(
                 let (array, ptm) = PageDecoder::new(
                     pages,
                     ArrowDataType::Utf8View,
-                    binview::BinViewDecoder::default(),
+                    binview::BinViewDecoder::new_string(),
                 )?
                 .collect(filter)?;
 

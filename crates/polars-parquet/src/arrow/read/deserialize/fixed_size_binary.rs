@@ -11,7 +11,7 @@ use arrow::types::{
 use super::dictionary_encoded::append_validity;
 use super::utils::array_chunks::ArrayChunks;
 use super::utils::{dict_indices_decoder, freeze_validity, Decoder};
-use super::Filter;
+use super::{Filter, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::{hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
@@ -55,6 +55,13 @@ impl<'a> utils::StateTranslation<'a, BinaryDecoder> for StateTranslation<'a> {
             _ => Err(utils::not_implemented(page)),
         }
     }
+
+    fn num_rows(&self) -> usize {
+        match self {
+            StateTranslation::Plain(v, n) => v.len() / n,
+            StateTranslation::Dictionary(i) => i.len(),
+        }
+    }
 }
 
 pub(crate) struct BinaryDecoder {
@@ -86,6 +93,19 @@ impl FSBVec {
         }
     }
 
+    fn size(&self) -> usize {
+        match self {
+            FSBVec::Size1(_) => 1,
+            FSBVec::Size2(_) => 2,
+            FSBVec::Size4(_) => 4,
+            FSBVec::Size8(_) => 8,
+            FSBVec::Size12(_) => 12,
+            FSBVec::Size16(_) => 16,
+            FSBVec::Size32(_) => 32,
+            FSBVec::Other(_, size) => *size,
+        }
+    }
+
     pub fn into_bytes_buffer(self) -> Buffer<u8> {
         Buffer::from_storage(match self {
             FSBVec::Size1(vec) => SharedStorage::bytes_from_pod_vec(vec),
@@ -97,6 +117,42 @@ impl FSBVec {
             FSBVec::Size32(vec) => SharedStorage::bytes_from_pod_vec(vec),
             FSBVec::Other(vec, _) => SharedStorage::from_vec(vec),
         })
+    }
+
+    pub fn extend_from_byte_slice(&mut self, slice: &[u8]) {
+        let size = self.size();
+        if size == 0 {
+            assert_eq!(slice.len(), 0);
+            return;
+        }
+
+        assert_eq!(slice.len() % size, 0);
+
+        macro_rules! extend_from_slice {
+            ($v:expr) => {{
+                $v.reserve(slice.len() / size);
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        slice.as_ptr(),
+                        $v.as_mut_ptr().add($v.len()) as *mut _,
+                        slice.len(),
+                    )
+                }
+                let new_len = $v.len() + slice.len() / size;
+                unsafe { $v.set_len(new_len) };
+            }};
+        }
+
+        match self {
+            FSBVec::Size1(v) => extend_from_slice!(v),
+            FSBVec::Size2(v) => extend_from_slice!(v),
+            FSBVec::Size4(v) => extend_from_slice!(v),
+            FSBVec::Size8(v) => extend_from_slice!(v),
+            FSBVec::Size12(v) => extend_from_slice!(v),
+            FSBVec::Size16(v) => extend_from_slice!(v),
+            FSBVec::Size32(v) => extend_from_slice!(v),
+            FSBVec::Other(v, _) => v.extend_from_slice(slice),
+        }
     }
 }
 
@@ -461,6 +517,32 @@ impl Decoder for BinaryDecoder {
             target.into_bytes_buffer(),
             None,
         ))
+    }
+
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        // @TODO: This can be enabled for the fast paths
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
+        decoded.0.extend_from_byte_slice(additional.values().as_slice());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
     }
 
     fn finalize(

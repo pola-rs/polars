@@ -29,18 +29,36 @@ pub enum ParquetScalar {
 }
 
 impl ParquetScalar {
+    pub(crate) fn is_null(&self) -> bool {
+        matches!(self, Self::Null)
+    }
+
     pub(crate) fn to_aligned_bytes<B: AlignedBytes>(&self) -> Option<B> {
         match self {
-            ParquetScalar::Int8(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::Int16(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::Int32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::Int64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::UInt8(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::UInt16(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::UInt32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::UInt64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::Float32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            ParquetScalar::Float64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::Int8(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::Int16(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::Int32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::Int64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::UInt8(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::UInt16(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::UInt32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::UInt64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::Float32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::Float64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_str(&self) -> Option<&str> {
+        match self {
+            Self::String(s) => Some(s.as_ref()),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn as_binary(&self) -> Option<&[u8]> {
+        match self {
+            Self::Binary(s) => Some(s.as_ref()),
             _ => None,
         }
     }

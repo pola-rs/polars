@@ -587,6 +587,31 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub fn values_iter(&self) -> MutableBinaryViewValueIter<T> {
         MutableBinaryViewValueIter::new(self)
     }
+
+    pub fn extend_from_array(&mut self, other: &BinaryViewArrayGeneric<T>) {
+        if other.total_buffer_len() == 0 {
+            self.views.extend(other.views().iter().copied());
+        } else {
+            self.finish_in_progress();
+
+            let buffer_offset = self.completed_buffers().len() as u32;
+            self.completed_buffers
+                .extend(other.data_buffers().iter().cloned());
+
+            self.views.extend(other.views().iter().map(|view| {
+                let mut view = *view;
+                if view.length > View::MAX_INLINE_SIZE {
+                    view.buffer_idx += buffer_offset;
+                }
+                view
+            }));
+
+            let new_total_buffer_len = self.total_buffer_len() + other.total_buffer_len();
+            self.total_buffer_len = new_total_buffer_len;
+        }
+
+        self.total_bytes_len = self.total_bytes_len() + other.total_bytes_len();
+    }
 }
 
 impl MutableBinaryViewArray<[u8]> {

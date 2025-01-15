@@ -7,9 +7,9 @@ use polars_compute::filter::filter_boolean_kernel;
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
-    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoder, ExactSize
+    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoder, ExactSize,
 };
-use super::Filter;
+use super::{Filter, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
@@ -65,6 +65,12 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
                 )))
             },
             _ => Err(utils::not_implemented(page)),
+        }
+    }
+    fn num_rows(&self) -> usize {
+        match self {
+            Self::Plain(m) => m.len(),
+            Self::Rle(m) => m.len(),
         }
     }
 }
@@ -309,6 +315,32 @@ impl Decoder for BooleanDecoder {
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
         Ok(BooleanArray::new(dtype, values.freeze(), validity))
+    }
+
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        // @TODO: This can be enabled for the fast paths
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional.as_any().downcast_ref::<BooleanArray>().unwrap();
+        decoded.0.extend_from_bitmap(additional.values());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
     }
 
     fn extend_filtered_with_state(

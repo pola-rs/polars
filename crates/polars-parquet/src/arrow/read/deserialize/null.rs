@@ -8,6 +8,7 @@ use arrow::datatypes::ArrowDataType;
 
 use super::utils::filter::Filter;
 use super::utils::{self};
+use super::PredicateFilter;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
@@ -40,6 +41,9 @@ impl<'a> utils::StateTranslation<'a, NullDecoder> for NullTranslation {
             num_rows: page.num_values(),
         })
     }
+    fn num_rows(&self) -> usize {
+        self.num_rows
+    }
 }
 
 impl utils::Decoder for NullDecoder {
@@ -56,6 +60,28 @@ impl utils::Decoder for NullDecoder {
     fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
         Ok(NullArray::new_empty(ArrowDataType::Null))
     }
+
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        // @TODO: This can be enabled for the fast paths
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        _is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional.as_any().downcast_ref::<NullArray>().unwrap();
+        decoded.length += additional.len();
+
+        Ok(())
+    }
+
 
     fn finalize(
         &self,

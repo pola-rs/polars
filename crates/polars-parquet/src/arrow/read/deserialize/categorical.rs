@@ -5,6 +5,7 @@ use arrow::types::{AlignedBytes, NativeType};
 
 use super::binview::BinViewDecoder;
 use super::utils::{self, dict_indices_decoder, freeze_validity, Decoder, StateTranslation};
+use super::PredicateFilter;
 use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
@@ -28,6 +29,9 @@ impl<'a> StateTranslation<'a, CategoricalDecoder> for HybridRleDecoder<'a> {
 
         dict_indices_decoder(page, page_validity.map_or(0, |bm| bm.unset_bits()))
     }
+    fn num_rows(&self) -> usize {
+        self.len()
+    }
 }
 
 /// Special decoder for Polars Enum and Categorical's.
@@ -44,7 +48,7 @@ impl CategoricalDecoder {
     pub fn new() -> Self {
         Self {
             dict_size: usize::MAX,
-            decoder: BinViewDecoder::new_check_utf8(),
+            decoder: BinViewDecoder::new_string(),
         }
     }
 }
@@ -62,10 +66,38 @@ impl utils::Decoder for CategoricalDecoder {
         )
     }
 
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        Ok(true)
+    }
+
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
         let dict = self.decoder.deserialize_dict(page)?;
         self.dict_size = dict.len();
         Ok(dict)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional
+            .as_any()
+            .downcast_ref::<DictionaryArray<u32>>()
+            .unwrap();
+        decoded.0.extend(additional.keys().values().iter().copied());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
     }
 
     fn finalize(

@@ -9,7 +9,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 
 use self::filter::Filter;
-use super::BasicDecompressor;
+use super::{BasicDecompressor, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -33,6 +33,7 @@ pub(crate) trait StateTranslation<'a, D: Decoder>: Sized {
         dict: Option<&'a D::Dict>,
         page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self>;
+    fn num_rows(&self) -> usize;
 }
 
 impl<'a, D: Decoder> State<'a, D> {
@@ -299,11 +300,75 @@ pub(super) trait Decoder: Sized {
 
     type Output: IntoBoxedArray;
 
+    fn evaluate_dict_predicate(
+        &self,
+        dict: &Self::Dict,
+        predicate: &PredicateFilter,
+    ) -> ParquetResult<Bitmap> {
+        Ok(predicate.predicate.evaluate(dict))
+    }
+
     /// Initializes a new [`Self::DecodedState`].
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState;
 
     /// Deserializes a [`DictPage`] into [`Self::Dict`].
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict>;
+
+    fn has_predicate_specialization(
+        &self,
+        state: &State<'_, Self>,
+        predicate: &PredicateFilter,
+    ) -> ParquetResult<bool>;
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn Array,
+        is_optional: bool,
+    ) -> ParquetResult<()>;
+
+    fn unspecialized_predicate_decode(
+        &mut self,
+        state: State<'_, Self>,
+        decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut MutableBitmap,
+        predicate: &PredicateFilter,
+        dtype: &ArrowDataType,
+    ) -> ParquetResult<()> {
+        let is_optional = state.is_optional;
+
+        let mut intermediate_array = self.with_capacity(state.translation.num_rows());
+        self.extend_filtered_with_state(
+            state,
+            &mut intermediate_array,
+            &mut MutableBitmap::new(),
+            None,
+        )?;
+        let intermediate_array = self
+            .finalize(dtype.clone(), None, intermediate_array)?
+            .into_boxed();
+
+        let mask = if let Some(validity) = intermediate_array.validity() {
+            let ignore_validity_array = intermediate_array.with_validity(None);
+            let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
+
+            if predicate.predicate.evaluate_null() {
+                &mask | validity
+            } else {
+                &mask & validity
+            }
+        } else {
+            predicate.predicate.evaluate(intermediate_array.as_ref())
+        };
+
+        let filtered =
+            polars_compute::filter::filter_with_bitmap(intermediate_array.as_ref(), &mask);
+
+        pred_true_mask.extend_from_bitmap(&mask);
+        self.extend_decoded(decoded, filtered.as_ref(), is_optional)?;
+
+        Ok(())
+    }
 
     fn extend_filtered_with_state(
         &mut self,
@@ -368,7 +433,7 @@ impl<D: Decoder> PageDecoder<D> {
             if let Some(Filter::Predicate(p)) = &filter {
                 pred_tracks_nulls = p.predicate.evaluate_null();
                 pred_true_mask.reserve(num_rows_remaining);
-                dict_mask = Some(p.predicate.evaluate(dict));
+                dict_mask = Some(self.decoder.evaluate_dict_predicate(dict, p)?);
             }
         }
 
@@ -408,12 +473,26 @@ impl<D: Decoder> PageDecoder<D> {
             let state = State::new(&self.decoder, &page, self.dict.as_ref(), dict_mask.as_ref())?;
 
             let start_length = target.len();
-            state.decode(
-                &mut self.decoder,
-                &mut target,
-                &mut pred_true_mask,
-                state_filter,
-            )?;
+            match &state_filter {
+                Some(Filter::Predicate(p))
+                    if !self.decoder.has_predicate_specialization(&state, p)? =>
+                {
+                    self.decoder.unspecialized_predicate_decode(
+                        state,
+                        &mut target,
+                        &mut pred_true_mask,
+                        p,
+                        &self.dtype,
+                    )?
+                },
+                _ => state.decode(
+                    &mut self.decoder,
+                    &mut target,
+                    &mut pred_true_mask,
+                    state_filter,
+                )?,
+            }
+
             let end_length = target.len();
 
             num_rows_remaining -= end_length - start_length;
