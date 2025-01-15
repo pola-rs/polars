@@ -379,9 +379,9 @@ pub(crate) enum PolarsSQLFunctions {
     LTrim,
     /// SQL 'normalize' function
     /// Convert string to Unicode normalization form
-    /// (one of "NFC", "NFKC", "NFD", or "NFKD").
+    /// (one of NFC, NFKC, NFD, or NFKD - unquoted).
     /// ```sql
-    /// SELECT NORMALIZE(column_1, 'NFC') FROM df;
+    /// SELECT NORMALIZE(column_1, NFC) FROM df;
     /// ```
     Normalize,
     /// SQL 'octet_length' function
