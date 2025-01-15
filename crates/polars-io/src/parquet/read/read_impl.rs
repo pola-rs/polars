@@ -297,7 +297,13 @@ fn rg_to_dfs_prefiltered(
         }
     }
 
-    let do_parquet_expr = std::env::var("POLARS_PARQUET_EXPR").as_deref() == Ok("1");
+    let do_parquet_expr = std::env::var("POLARS_NO_PARQUET_EXPR").as_deref() != Ok("1")
+        && live_columns.len() == 1
+        && !schema
+            .get(live_columns[0].as_str())
+            .unwrap()
+            .dtype()
+            .is_nested();
     let column_exprs = do_parquet_expr.then(|| {
         live_columns
             .iter()
@@ -402,51 +408,72 @@ fn rg_to_dfs_prefiltered(
 
                 // Apply the predicate to the live columns and save the dataframe and the bitmask
                 let md = &file_metadata.row_groups[rg_idx];
+                let filter_mask: Bitmap;
                 let mut df: DataFrame;
 
-                let filter_mask = match &filters[0] {
-                    None => {
-                        // Create without hive columns - the first merge phase does not handle hive partitions. This also saves
-                        // some unnecessary filtering.
-                        df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns) };
+                if let Some(Some(f)) = filters.first() {
+                    if f.set_bits() == 0 {
+                        if config::verbose() {
+                            eprintln!("parquet filter mask found that row group can be skipped");
+                        }
 
-                        materialize_hive_partitions(
-                            &mut df,
-                            schema.as_ref(),
-                            hive_partition_columns,
-                            md.num_rows(),
+                        return Ok(None);
+                    }
+
+                    if let Some(rc) = &row_index {
+                        df = unsafe { DataFrame::new_no_checks(md.num_rows(), vec![]) };
+                        df.with_row_index_mut(
+                            rc.name.clone(),
+                            Some(rg_offsets[rg_idx] + rc.offset),
                         );
+                        df = df.filter(&BooleanChunked::from_chunk_iter(
+                            PlSmallStr::EMPTY,
+                            [BooleanArray::new(ArrowDataType::Boolean, f.clone(), None)],
+                        ))?;
+                        unsafe { df.column_extend_unchecked(live_columns) };
+                    } else {
+                        df = DataFrame::new(live_columns).unwrap();
+                    }
+                    filter_mask = f.clone();
+                } else {
+                    df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns.clone()) };
 
-                        let s = predicate.evaluate_io(&df)?;
-                        let mask = s.bool().expect("filter predicates was not of type boolean");
+                    materialize_hive_partitions(
+                        &mut df,
+                        schema.as_ref(),
+                        hive_partition_columns,
+                        md.num_rows(),
+                    );
 
-                        if let Some(rc) = &row_index {
-                            df.with_row_index_mut(
-                                rc.name.clone(),
-                                Some(rg_offsets[rg_idx] + rc.offset),
-                            );
+                    let s = predicate.evaluate_io(&df)?;
+                    let mask = s.bool().expect("filter predicates was not of type boolean");
+
+                    // Create without hive columns - the first merge phase does not handle hive partitions. This also saves
+                    // some unnecessary filtering.
+                    df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns) };
+
+                    if let Some(rc) = &row_index {
+                        df.with_row_index_mut(
+                            rc.name.clone(),
+                            Some(rg_offsets[rg_idx] + rc.offset),
+                        );
+                    }
+                    df = df.filter(mask)?;
+
+                    let mut mut_filter_mask = BitmapBuilder::with_capacity(mask.len());
+
+                    // We need to account for the validity of the items
+                    for chunk in mask.downcast_iter() {
+                        match chunk.validity() {
+                            None => mut_filter_mask.extend_from_bitmap(chunk.values()),
+                            Some(validity) => {
+                                mut_filter_mask.extend_from_bitmap(&(validity & chunk.values()))
+                            },
                         }
-                        df = df.filter(mask)?;
+                    }
 
-                        let mut filter_mask = BitmapBuilder::with_capacity(mask.len());
-
-                        // We need to account for the validity of the items
-                        for chunk in mask.downcast_iter() {
-                            match chunk.validity() {
-                                None => filter_mask.extend_from_bitmap(chunk.values()),
-                                Some(validity) => {
-                                    filter_mask.extend_from_bitmap(&(validity & chunk.values()))
-                                },
-                            }
-                        }
-
-                        filter_mask.freeze()
-                    },
-                    Some(f) => {
-                        df = unsafe { DataFrame::new_no_checks(f.set_bits(), live_columns) };
-                        f.clone()
-                    },
-                };
+                    filter_mask = mut_filter_mask.freeze();
+                }
 
                 debug_assert_eq!(md.num_rows(), filter_mask.len());
                 debug_assert_eq!(df.height(), filter_mask.set_bits());

@@ -287,13 +287,8 @@ impl PhysicalExpr for BinaryExpr {
             _ => return None,
         };
 
-        let Some(value) = other.evaluate_inline() else {
-            return None;
-        };
-
-        let Some(value) = value.as_scalar_column() else {
-            return None;
-        };
+        let value = other.evaluate_inline()?;
+        let value = value.as_scalar_column()?;
 
         let scalar = value.scalar();
         use Operator as O;

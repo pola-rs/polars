@@ -601,7 +601,10 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
         })
     }
 
-    pub fn collect(mut self, filter: Option<Filter>) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
+    pub fn collect(
+        mut self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(NestedState, D::Output, Bitmap)> {
         // @TODO: We should probably count the filter so that we don't overallocate
         let mut target = self.decoder.with_capacity(self.iter.total_num_values());
         // @TODO: Self capacity
@@ -719,7 +722,10 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
         Ok((nested_state, array, Bitmap::new()))
     }
 
-    pub fn collect_boxed(self, filter: Option<Filter>) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
+    pub fn collect_boxed(
+        self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
         use arrow::array::IntoBoxedArray;
         let (nested, array, ptm) = self.collect(filter)?;
         Ok((nested, array.into_boxed(), ptm))

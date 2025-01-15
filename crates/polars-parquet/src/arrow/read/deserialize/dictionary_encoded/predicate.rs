@@ -38,12 +38,10 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
             .set_bits();
             target.resize(target.len() + num_values, dict.get(needle as u32).unwrap());
         }
+    } else if predicate.include_values {
+        decode_multiple_values(values, dict, dict_mask, target, pred_true_mask)?;
     } else {
-        if predicate.include_values {
-            decode_multiple_values(values, dict, dict_mask, target, pred_true_mask)?;
-        } else {
-            decode_multiple_no_values(values, dict_mask, pred_true_mask)?;
-        }
+        decode_multiple_no_values(values, dict_mask, pred_true_mask)?;
     }
 
     assert_eq!(expected_pred_true_mask_len, pred_true_mask.len());

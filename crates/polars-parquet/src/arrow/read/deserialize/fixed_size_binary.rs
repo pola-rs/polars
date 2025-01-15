@@ -174,7 +174,7 @@ impl utils::Decoded for (FSBVec, MutableBitmap) {
     fn len(&self) -> usize {
         self.0.len()
     }
-    
+
     fn extend_nulls(&mut self, n: usize) {
         match &mut self.0 {
             FSBVec::Size1(v) => v.resize(v.len() + n, Zeroable::zeroed()),
@@ -190,6 +190,7 @@ impl utils::Decoded for (FSBVec, MutableBitmap) {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn decode_fsb_plain(
     size: usize,
     values: &[u8],
@@ -547,8 +548,13 @@ impl Decoder for BinaryDecoder {
         additional: &dyn arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
-        let additional = additional.as_any().downcast_ref::<FixedSizeBinaryArray>().unwrap();
-        decoded.0.extend_from_byte_slice(additional.values().as_slice());
+        let additional = additional
+            .as_any()
+            .downcast_ref::<FixedSizeBinaryArray>()
+            .unwrap();
+        decoded
+            .0
+            .extend_from_byte_slice(additional.values().as_slice());
         match additional.validity() {
             Some(v) => decoded.1.extend_from_bitmap(v),
             None if is_optional => decoded.1.extend_constant(additional.len(), true),

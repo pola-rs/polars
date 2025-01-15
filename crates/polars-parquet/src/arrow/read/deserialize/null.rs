@@ -85,7 +85,6 @@ impl utils::Decoder for NullDecoder {
         Ok(())
     }
 
-
     fn finalize(
         &self,
         dtype: ArrowDataType,

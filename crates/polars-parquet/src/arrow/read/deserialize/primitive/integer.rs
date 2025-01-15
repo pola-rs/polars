@@ -222,7 +222,10 @@ where
         additional: &dyn arrow::array::Array,
         is_optional: bool,
     ) -> ParquetResult<()> {
-        let additional = additional.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+        let additional = additional
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap();
         decoded.0.extend(additional.values().iter().copied());
         match additional.validity() {
             Some(v) => decoded.1.extend_from_bitmap(v),

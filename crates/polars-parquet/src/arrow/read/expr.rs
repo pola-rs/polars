@@ -35,16 +35,36 @@ impl ParquetScalar {
 
     pub(crate) fn to_aligned_bytes<B: AlignedBytes>(&self) -> Option<B> {
         match self {
-            Self::Int8(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::Int16(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::Int32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::Int64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::UInt8(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::UInt16(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::UInt32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::UInt64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::Float32(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
-            Self::Float64(v) => <B::Unaligned>::try_from(&v.to_le_bytes()).ok().map(B::from_unaligned),
+            Self::Int8(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::Int16(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::Int32(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::Int64(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::UInt8(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::UInt16(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::UInt32(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::UInt64(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::Float32(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
+            Self::Float64(v) => <B::Unaligned>::try_from(&v.to_le_bytes())
+                .ok()
+                .map(B::from_unaligned),
             _ => None,
         }
     }

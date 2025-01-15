@@ -194,6 +194,7 @@ pub fn column_iter_to_arrays(
     field: Field,
     filter: Option<Filter>,
 ) -> PolarsResult<(Box<dyn Array>, Bitmap)> {
-    let (_, array, pred_true_mask) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
+    let (_, array, pred_true_mask) =
+        columns_to_iter_recursive(columns, types, field, vec![], filter)?;
     Ok((array, pred_true_mask))
 }

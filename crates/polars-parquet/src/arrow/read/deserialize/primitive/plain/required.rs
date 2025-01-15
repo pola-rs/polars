@@ -1,8 +1,7 @@
 use arrow::types::AlignedBytes;
 
-use crate::parquet::error::ParquetResult;
-
 use super::ArrayChunks;
+use crate::parquet::error::ParquetResult;
 
 #[inline(never)]
 pub fn decode<B: AlignedBytes>(
@@ -32,4 +31,3 @@ pub fn decode<B: AlignedBytes>(
 
     Ok(())
 }
-

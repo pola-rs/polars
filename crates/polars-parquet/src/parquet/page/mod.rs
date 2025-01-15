@@ -6,8 +6,8 @@ use crate::parquet::metadata::Descriptor;
 pub use crate::parquet::parquet_bridge::{DataPageHeaderExt, PageType};
 use crate::parquet::statistics::Statistics;
 pub use crate::parquet::thrift_format::{
-    DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, PageHeader as ParquetPageHeader,
-    Encoding as FormatEncoding,
+    DataPageHeader as DataPageHeaderV1, DataPageHeaderV2, Encoding as FormatEncoding,
+    PageHeader as ParquetPageHeader,
 };
 
 pub enum PageResult {

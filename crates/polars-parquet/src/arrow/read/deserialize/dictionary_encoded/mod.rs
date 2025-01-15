@@ -56,6 +56,7 @@ impl IndexMapping for usize {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn decode_dict<T: NativeType>(
     values: HybridRleDecoder<'_>,
     dict: &[T],
@@ -81,6 +82,7 @@ pub fn decode_dict<T: NativeType>(
 }
 
 #[inline(never)]
+#[allow(clippy::too_many_arguments)]
 pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
     dict: D,
