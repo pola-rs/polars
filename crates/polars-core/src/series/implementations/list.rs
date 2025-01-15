@@ -200,9 +200,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
-        if !self.inner_dtype().is_primitive_numeric() {
-            polars_bail!(opq = n_unique, self.dtype());
-        }
         // this can be called in aggregation, so this fast path can be worth a lot
         match self.len() {
             0 => Ok(0),
