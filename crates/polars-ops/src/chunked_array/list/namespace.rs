@@ -518,7 +518,7 @@ pub trait ListNameSpaceImpl: AsList {
         let ca = self.as_list();
         let inner_dtype = ca.inner_dtype();
         let fill_dtype = fill_value.dtype();
-        let super_type = try_get_supertype(&inner_dtype, fill_dtype)?;
+        let super_type = try_get_supertype(inner_dtype, fill_dtype)?;
 
         let dtype = &DataType::List(Box::new(super_type.clone()));
         let ca = ca.cast(dtype)?;
@@ -552,7 +552,7 @@ pub trait ListNameSpaceImpl: AsList {
                     let ca = s.i64().unwrap();
                     let mut fill_values = Int64Chunked::new_vec(
                         PlSmallStr::EMPTY,
-                        vec![fill_value.unwrap(); (max_len - ca.len()).try_into().unwrap()],
+                        vec![fill_value.unwrap(); max_len - ca.len()],
                     );
 
                     let _ = fill_values.append(ca);
@@ -568,7 +568,7 @@ pub trait ListNameSpaceImpl: AsList {
                     let ca = s.f64().unwrap();
                     let mut fill_values = Float64Chunked::new_vec(
                         PlSmallStr::EMPTY,
-                        vec![fill_value.unwrap(); (max_len - ca.len()).try_into().unwrap()],
+                        vec![fill_value.unwrap(); max_len - ca.len()],
                     );
 
                     let _ = fill_values.append(ca);
@@ -583,7 +583,7 @@ pub trait ListNameSpaceImpl: AsList {
                     let ca = s.str().unwrap();
                     let mut filled_values = StringChunked::new(
                         PlSmallStr::EMPTY,
-                        vec![fill_value.unwrap(); (max_len - ca.len()).try_into().unwrap()],
+                        vec![fill_value.unwrap(); max_len - ca.len()],
                     );
 
                     let _ = filled_values.append(ca);
