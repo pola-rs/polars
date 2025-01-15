@@ -17,7 +17,7 @@ impl MetaNameSpace {
         let node = to_aexpr(self.0, &mut arena)?;
         let ae = arena.get(node);
         let mut inputs = Vec::with_capacity(2);
-        ae.nodes(&mut inputs);
+        ae.inputs_rev(&mut inputs);
         Ok(inputs
             .iter()
             .map(|node| node_to_expr(*node, &arena))

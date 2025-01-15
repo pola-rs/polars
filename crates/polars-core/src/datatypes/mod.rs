@@ -78,6 +78,7 @@ pub unsafe trait PolarsDataType: Send + Sync + Sized + 'static {
     type HasViews;
     type IsStruct;
     type IsObject;
+    type IsLogical;
 
     fn get_dtype() -> DataType
     where
@@ -95,6 +96,7 @@ where
         HasViews = FalseT,
         IsStruct = FalseT,
         IsObject = FalseT,
+        IsLogical = FalseT,
     >,
 {
     type Native: NumericNative;
@@ -117,6 +119,7 @@ macro_rules! impl_polars_num_datatype {
             type HasViews = FalseT;
             type IsStruct = FalseT;
             type IsObject = FalseT;
+            type IsLogical = FalseT;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -133,7 +136,7 @@ macro_rules! impl_polars_num_datatype {
 }
 
 macro_rules! impl_polars_datatype_pass_dtype {
-    ($ca:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $has_views:ident) => {
+    ($ca:ident, $dtype:expr, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $has_views:ident, $is_logical:ident) => {
         #[derive(Clone, Copy)]
         pub struct $ca {}
 
@@ -146,6 +149,7 @@ macro_rules! impl_polars_datatype_pass_dtype {
             type HasViews = $has_views;
             type IsStruct = FalseT;
             type IsObject = FalseT;
+            type IsLogical = $is_logical;
 
             #[inline]
             fn get_dtype() -> DataType {
@@ -164,13 +168,14 @@ macro_rules! impl_polars_binview_datatype {
             $phys,
             $zerophys,
             $owned_phys,
-            TrueT
+            TrueT,
+            FalseT
         );
     };
 }
 
 macro_rules! impl_polars_datatype {
-    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty) => {
+    ($ca:ident, $variant:ident, $arr:ty, $lt:lifetime, $phys:ty, $zerophys:ty, $owned_phys:ty, $is_logical:ident) => {
         impl_polars_datatype_pass_dtype!(
             $ca,
             DataType::$variant,
@@ -179,7 +184,8 @@ macro_rules! impl_polars_datatype {
             $phys,
             $zerophys,
             $owned_phys,
-            FalseT
+            FalseT,
+            $is_logical
         );
     };
 }
@@ -197,18 +203,18 @@ impl_polars_num_datatype!(PolarsIntegerType, Int64Type, Int64, i64, i64);
 impl_polars_num_datatype!(PolarsIntegerType, Int128Type, Int128, i128, i128);
 impl_polars_num_datatype!(PolarsFloatType, Float32Type, Float32, f32, f32);
 impl_polars_num_datatype!(PolarsFloatType, Float64Type, Float64, f64, f64);
-impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32, i32, i32);
-impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64, i64);
+impl_polars_datatype!(DateType, Date, PrimitiveArray<i32>, 'a, i32, i32, i32, TrueT);
+impl_polars_datatype!(TimeType, Time, PrimitiveArray<i64>, 'a, i64, i64, i64, TrueT);
 impl_polars_binview_datatype!(StringType, String, Utf8ViewArray, 'a, &'a str, Option<&'a str>, String);
 impl_polars_binview_datatype!(BinaryType, Binary, BinaryViewArray, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>);
-impl_polars_datatype!(BinaryOffsetType, BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>);
-impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool, bool);
+impl_polars_datatype!(BinaryOffsetType, BinaryOffset, BinaryArray<i64>, 'a, &'a [u8], Option<&'a [u8]>, Box<[u8]>, FalseT);
+impl_polars_datatype!(BooleanType, Boolean, BooleanArray, 'a, bool, bool, bool, FalseT);
 
 #[cfg(feature = "dtype-decimal")]
-impl_polars_datatype_pass_dtype!(DecimalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT);
-impl_polars_datatype_pass_dtype!(DatetimeType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
-impl_polars_datatype_pass_dtype!(DurationType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT);
-impl_polars_datatype_pass_dtype!(CategoricalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT);
+impl_polars_datatype_pass_dtype!(DecimalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i128>, 'a, i128, i128, i128, FalseT, TrueT);
+impl_polars_datatype_pass_dtype!(DatetimeType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
+impl_polars_datatype_pass_dtype!(DurationType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<i64>, 'a, i64, i64, i64, FalseT, TrueT);
+impl_polars_datatype_pass_dtype!(CategoricalType, DataType::Unknown(UnknownKind::Any), PrimitiveArray<u32>, 'a, u32, u32, u32, FalseT, TrueT);
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ListType {}
@@ -221,6 +227,7 @@ unsafe impl PolarsDataType for ListType {
     type HasViews = FalseT;
     type IsStruct = FalseT;
     type IsObject = FalseT;
+    type IsLogical = FalseT;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -245,6 +252,7 @@ unsafe impl PolarsDataType for StructType {
     type HasViews = FalseT;
     type IsStruct = TrueT;
     type IsObject = FalseT;
+    type IsLogical = FalseT;
 
     fn get_dtype() -> DataType
     where
@@ -266,6 +274,7 @@ unsafe impl PolarsDataType for FixedSizeListType {
     type HasViews = FalseT;
     type IsStruct = FalseT;
     type IsObject = FalseT;
+    type IsLogical = FalseT;
 
     fn get_dtype() -> DataType {
         // Null as we cannot know anything without self.
@@ -285,6 +294,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type HasViews = FalseT;
     type IsStruct = FalseT;
     type IsObject = TrueT;
+    type IsLogical = FalseT;
 
     fn get_dtype() -> DataType {
         DataType::Object(T::type_name(), None)

@@ -3,7 +3,7 @@ use polars_core::{with_match_physical_integer_polars_type, POOL};
 
 fn mode_primitive<T: PolarsDataType>(ca: &ChunkedArray<T>) -> PolarsResult<ChunkedArray<T>>
 where
-    ChunkedArray<T>: IntoGroupsProxy + ChunkTake<[IdxSize]>,
+    ChunkedArray<T>: IntoGroupsType + ChunkTake<[IdxSize]>,
 {
     if ca.is_empty() {
         return Ok(ca.clone());
@@ -29,9 +29,9 @@ fn mode_64(ca: &Float64Chunked) -> PolarsResult<Float64Chunked> {
     Ok(ca)
 }
 
-fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
+fn mode_indices(groups: GroupsType) -> Vec<IdxSize> {
     match groups {
-        GroupsProxy::Idx(groups) => {
+        GroupsType::Idx(groups) => {
             let Some(max_len) = groups.iter().map(|g| g.1.len()).max() else {
                 return Vec::new();
             };
@@ -41,7 +41,7 @@ fn mode_indices(groups: GroupsProxy) -> Vec<IdxSize> {
                 .map(|g| g.0)
                 .collect()
         },
-        GroupsProxy::Slice { groups, .. } => {
+        GroupsType::Slice { groups, .. } => {
             let Some(max_len) = groups.iter().map(|g| g[1]).max() else {
                 return Vec::new();
             };

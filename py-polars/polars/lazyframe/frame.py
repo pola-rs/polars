@@ -4269,6 +4269,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         allow_parallel: bool = True,
         force_parallel: bool = False,
         coalesce: bool = True,
+        allow_exact_matches: bool = True,
     ) -> LazyFrame:
         """
         Perform an asof join.
@@ -4354,6 +4355,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             Note that joining on any other expressions than `col`
             will turn off coalescing.
+        allow_exact_matches
+            Whether exact matches are valid join predicates.
+
+            - If True, allow matching with the same ``on`` value
+                (i.e. less-than-or-equal-to / greater-than-or-equal-to)
+            - If False, don't match the same ``on`` value
+                (i.e., strictly less-than / strictly greater-than).
+
+
 
         Examples
         --------
@@ -4608,6 +4618,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 tolerance_num,
                 tolerance_str,
                 coalesce=coalesce,
+                allow_eq=allow_exact_matches,
             )
         )
 

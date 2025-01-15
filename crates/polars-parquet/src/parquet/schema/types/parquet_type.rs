@@ -160,8 +160,14 @@ impl ParquetType {
         logical_type: Option<PrimitiveLogicalType>,
         id: Option<i32>,
     ) -> ParquetResult<Self> {
-        spec::check_converted_invariants(&physical_type, &converted_type)?;
-        spec::check_logical_invariants(&physical_type, &logical_type)?;
+        // LogicalType has replaced the ConvertedType and there are certain LogicalType's that do
+        // not have a good counterpart in ConvertedType (e.g. Timestamp::Nanos). Therefore, we only
+        // check the ConvertedType if no LogicalType is given. This would signify a lot older
+        // Parquet file which could not have these new unsupported ConvertedTypes.
+        match logical_type {
+            None => spec::check_converted_invariants(&physical_type, &converted_type)?,
+            Some(logical_type) => spec::check_logical_invariants(&physical_type, logical_type)?,
+        }
 
         let field_info = FieldInfo {
             name,

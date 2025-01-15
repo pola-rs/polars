@@ -46,7 +46,7 @@ impl PhysicalExpr for CastExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
@@ -111,7 +111,7 @@ impl PartitionedAggregation for CastExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let e = self.input.as_partitioned_aggregator().unwrap();
@@ -121,7 +121,7 @@ impl PartitionedAggregation for CastExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let agg = self.input.as_partitioned_aggregator().unwrap();

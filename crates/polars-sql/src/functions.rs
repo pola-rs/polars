@@ -8,6 +8,7 @@ use polars_core::prelude::{
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
+use polars_ops::chunked_array::UnicodeForm;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
@@ -221,7 +222,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     TanD,
     /// SQL 'acos' function
-    /// Compute inverse cosinus of the input expression (in radians).
+    /// Compute inverse cosine of the input expression (in radians).
     /// ```sql
     /// SELECT ACOS(column_1) FROM df;
     /// ```
@@ -245,7 +246,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Atan2,
     /// SQL 'acosd' function
-    /// Compute inverse cosinus of the input expression (in degrees).
+    /// Compute inverse cosine of the input expression (in degrees).
     /// ```sql
     /// SELECT ACOSD(column_1) FROM df;
     /// ```
@@ -376,6 +377,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LTRIM(column_1) FROM df;
     /// ```
     LTrim,
+    /// SQL 'normalize' function
+    /// Convert string to Unicode normalization form
+    /// (one of NFC, NFKC, NFD, or NFKD - unquoted).
+    /// ```sql
+    /// SELECT NORMALIZE(column_1, NFC) FROM df;
+    /// ```
+    Normalize,
     /// SQL 'octet_length' function
     /// Returns the length of a given string in bytes.
     /// ```sql
@@ -391,7 +399,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'replace' function
     /// Replace a given substring with another string.
     /// ```sql
-    /// SELECT REPLACE(column_1,'old','new') FROM df;
+    /// SELECT REPLACE(column_1, 'old', 'new') FROM df;
     /// ```
     Replace,
     /// SQL 'reverse' function
@@ -859,6 +867,7 @@ impl PolarsSQLFunctions {
             "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
+            "normalize" => Self::Normalize,
             "octet_length" => Self::OctetLength,
             "strpos" => Self::StrPos,
             "regexp_like" => Self::RegexpLike,
@@ -1149,6 +1158,36 @@ impl SQLFunctionVisitor<'_> {
                     2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                     _ => {
                         polars_bail!(SQLSyntax: "LTRIM expects 1-2 arguments (found {})", args.len())
+                    },
+                }
+            },
+            Normalize => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| e.str().normalize(UnicodeForm::NFC)),
+                    2 => {
+                        let form = if let FunctionArgExpr::Expr(SQLExpr::Identifier(Ident {
+                            value: s,
+                            quote_style: None,
+                            span: _,
+                        })) = args[1]
+                        {
+                            match s.to_uppercase().as_str() {
+                                "NFC" => UnicodeForm::NFC,
+                                "NFD" => UnicodeForm::NFD,
+                                "NFKC" => UnicodeForm::NFKC,
+                                "NFKD" => UnicodeForm::NFKD,
+                                _ => {
+                                    polars_bail!(SQLSyntax: "invalid 'form' for NORMALIZE (found {})", s)
+                                },
+                            }
+                        } else {
+                            polars_bail!(SQLSyntax: "invalid 'form' for NORMALIZE (found {})", args[1])
+                        };
+                        self.try_visit_binary(|e, _form: Expr| Ok(e.str().normalize(form.clone())))
+                    },
+                    _ => {
+                        polars_bail!(SQLSyntax: "NORMALIZE expects 1-2 arguments (found {})", args.len())
                     },
                 }
             },

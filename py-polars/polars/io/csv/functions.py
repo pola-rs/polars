@@ -1275,6 +1275,12 @@ def scan_csv(
     │ 4   ┆ read │
     └─────┴──────┘
     """
+    if schema_overrides is not None and not isinstance(
+        schema_overrides, (dict, Sequence)
+    ):
+        msg = "`schema_overrides` should be of type list or dict"
+        raise TypeError(msg)
+
     if not new_columns and isinstance(schema_overrides, Sequence):
         msg = f"expected 'schema_overrides' dict, found {type(schema_overrides).__name__!r}"
         raise TypeError(msg)
@@ -1392,6 +1398,9 @@ def _scan_csv_impl(
 ) -> LazyFrame:
     dtype_list: list[tuple[str, PolarsDataType]] | None = None
     if schema_overrides is not None:
+        if not isinstance(schema_overrides, dict):
+            msg = "expected 'schema_overrides' dict, found 'list'"
+            raise TypeError(msg)
         dtype_list = []
         for k, v in schema_overrides.items():
             dtype_list.append((k, parse_into_dtype(v)))

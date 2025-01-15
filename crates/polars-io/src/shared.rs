@@ -122,7 +122,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     Ok(df)
 }
 
-pub(crate) fn schema_to_arrow_checked(
+pub fn schema_to_arrow_checked(
     schema: &Schema,
     compat_level: CompatLevel,
     _file_name: &str,

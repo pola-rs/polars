@@ -2078,14 +2078,9 @@ impl DataFrame {
             set_sorted(&mut out);
             return Ok(out);
         }
+
         if let Some((0, k)) = slice {
             if k < self.len() {
-                let desc = if sort_options.descending.len() == 1 {
-                    sort_options.descending[0]
-                } else {
-                    false
-                };
-                sort_options.limit = Some((k as IdxSize, desc));
                 return self.bottom_k_impl(k, by_column, sort_options);
             }
         }
@@ -3039,7 +3034,7 @@ impl DataFrame {
     #[cfg(feature = "algorithm_group_by")]
     pub fn is_unique(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names_owned())?;
-        let groups = gb.take_groups();
+        let groups = gb.get_groups();
         Ok(is_unique_helper(
             groups,
             self.height() as IdxSize,
@@ -3064,7 +3059,7 @@ impl DataFrame {
     #[cfg(feature = "algorithm_group_by")]
     pub fn is_duplicated(&self) -> PolarsResult<BooleanChunked> {
         let gb = self.group_by(self.get_column_names_owned())?;
-        let groups = gb.take_groups();
+        let groups = gb.get_groups();
         Ok(is_unique_helper(
             groups,
             self.height() as IdxSize,
@@ -3174,8 +3169,8 @@ impl DataFrame {
         // don't parallelize this
         // there is a lot of parallelization in take and this may easily SO
         POOL.install(|| {
-            match groups {
-                GroupsProxy::Idx(idx) => {
+            match groups.as_ref() {
+                GroupsType::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
                     let mut df = df.clone();
                     df.as_single_chunk_par();
@@ -3184,14 +3179,14 @@ impl DataFrame {
                         .map(|(_, group)| {
                             // groups are in bounds
                             unsafe {
-                                df._take_unchecked_slice_sorted(&group, false, IsSorted::Ascending)
+                                df._take_unchecked_slice_sorted(group, false, IsSorted::Ascending)
                             }
                         })
                         .collect())
                 },
-                GroupsProxy::Slice { groups, .. } => Ok(groups
+                GroupsType::Slice { groups, .. } => Ok(groups
                     .into_par_iter()
-                    .map(|[first, len]| df.slice(first as i64, len as usize))
+                    .map(|[first, len]| df.slice(*first as i64, *len as usize))
                     .collect()),
             }
         })

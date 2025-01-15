@@ -6,7 +6,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{default_join_ids, private_left_join_multiple_keys, ChunkJoinOptIds};
+use polars_ops::frame::join::{private_left_join_multiple_keys, ChunkJoinOptIds};
 use polars_ops::frame::SeriesJoin;
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
@@ -46,12 +46,10 @@ impl WindowExpr {
     fn map_list_agg_by_arg_sort(
         &self,
         out_column: Column,
-        flattened: Column,
+        flattened: &Column,
         mut ac: AggregationContext,
         gb: GroupBy,
-        state: &ExecutionState,
-        cache_key: &str,
-    ) -> PolarsResult<Column> {
+    ) -> PolarsResult<IdxCa> {
         // idx (new-idx, original-idx)
         let mut idx_mapping = Vec::with_capacity(out_column.len());
 
@@ -62,13 +60,13 @@ impl WindowExpr {
         // groups are not changed, we can map by doing a standard arg_sort.
         if std::ptr::eq(ac.groups().as_ref(), gb.get_groups()) {
             let mut iter = 0..flattened.len() as IdxSize;
-            match ac.groups().as_ref() {
-                GroupsProxy::Idx(groups) => {
+            match ac.groups().as_ref().as_ref() {
+                GroupsType::Idx(groups) => {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut iter));
                     }
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut iter));
                     }
@@ -79,13 +77,13 @@ impl WindowExpr {
         // and sort by the old indexes
         else {
             let mut original_idx = Vec::with_capacity(out_column.len());
-            match gb.get_groups() {
-                GroupsProxy::Idx(groups) => {
+            match gb.get_groups().as_ref() {
+                GroupsType::Idx(groups) => {
                     for g in groups.all() {
                         original_idx.extend_from_slice(g)
                     }
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         original_idx.extend(first..first + len)
                     }
@@ -94,13 +92,13 @@ impl WindowExpr {
 
             let mut original_idx_iter = original_idx.iter().copied();
 
-            match ac.groups().as_ref() {
-                GroupsProxy::Idx(groups) => {
+            match ac.groups().as_ref().as_ref() {
+                GroupsType::Idx(groups) => {
                     for g in groups.all() {
                         idx_mapping.extend(g.iter().copied().zip(&mut original_idx_iter));
                     }
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     for &[first, len] in groups {
                         idx_mapping.extend((first..first + len).zip(&mut original_idx_iter));
                     }
@@ -109,15 +107,10 @@ impl WindowExpr {
             original_idx.clear();
             take_idx = original_idx;
         }
-        cache_gb(gb, state, cache_key);
         // SAFETY:
         // we only have unique indices ranging from 0..len
         unsafe { perfect_sort(&POOL, &idx_mapping, &mut take_idx) };
-        let idx = IdxCa::from_vec(PlSmallStr::EMPTY, take_idx);
-
-        // SAFETY:
-        // groups should always be in bounds.
-        unsafe { Ok(flattened.take_unchecked(&idx)) }
+        Ok(IdxCa::from_vec(PlSmallStr::EMPTY, take_idx))
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -125,12 +118,12 @@ impl WindowExpr {
         &self,
         df: &DataFrame,
         out_column: Column,
-        flattened: Column,
+        flattened: &Column,
         mut ac: AggregationContext,
         group_by_columns: &[Column],
         gb: GroupBy,
+        cache_key: String,
         state: &ExecutionState,
-        cache_key: &str,
     ) -> PolarsResult<Column> {
         // we use an arg_sort to map the values back
 
@@ -189,7 +182,22 @@ impl WindowExpr {
                 );
             };
         }
-        self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb, state, cache_key)
+
+        let idx = if state.cache_window() {
+            if let Some(idx) = state.window_cache.get_map(&cache_key) {
+                idx
+            } else {
+                let idx = Arc::new(self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb)?);
+                state.window_cache.insert_map(cache_key, idx.clone());
+                idx
+            }
+        } else {
+            Arc::new(self.map_list_agg_by_arg_sort(out_column, flattened, ac, gb)?)
+        };
+
+        // SAFETY:
+        // groups should always be in bounds.
+        unsafe { Ok(flattened.take_unchecked(&idx)) }
     }
 
     fn run_aggregation<'a>(
@@ -333,7 +341,7 @@ impl WindowExpr {
             // no explicit aggregations, map over the groups
             //`(col("x").sum() * col("y")).over("groups")`
             (WindowMapping::GroupsToRows, AggState::AggregatedList(_)) => {
-                if let GroupsProxy::Slice { .. } = gb.get_groups() {
+                if let GroupsType::Slice { .. } = gb.get_groups().as_ref() {
                     // Result can be directly exploded if the input was sorted.
                     Ok(MapStrategy::Explode)
                 } else {
@@ -444,14 +452,15 @@ impl PhysicalExpr for WindowExpr {
                 let order_by = order_by.evaluate(df, state)?;
                 polars_ensure!(order_by.len() == df.height(), ShapeMismatch: "the order by expression evaluated to a length: {} that doesn't match the input DataFrame: {}", order_by.len(), df.height());
                 groups = update_groups_sort_by(&groups, order_by.as_materialized_series(), options)?
+                    .into_sliceable()
             }
 
-            let out: PolarsResult<GroupsProxy> = Ok(groups);
+            let out: PolarsResult<GroupPositions> = Ok(groups);
             out
         };
 
         // Try to get cached grouptuples
-        let (mut groups, _, cache_key) = if state.cache_window() {
+        let (mut groups, cache_key) = if state.cache_window() {
             let mut cache_key = String::with_capacity(32 * group_by_columns.len());
             write!(&mut cache_key, "{}", state.branch_idx).unwrap();
             for s in &group_by_columns {
@@ -467,26 +476,13 @@ impl PhysicalExpr for WindowExpr {
                 window_function_format_order_by(&mut cache_key, e, options)
             }
 
-            let mut gt_map_guard = state.group_tuples.write().unwrap();
-            // we run sequential and partitioned
-            // and every partition run the cache should be empty so we expect a max of 1.
-            debug_assert!(gt_map_guard.len() <= 1);
-            if let Some(gt) = gt_map_guard.get_mut(&cache_key) {
-                if df.height() > 0 {
-                    assert!(!gt.is_empty());
-                };
-
-                // We take now, but it is important that we set this before we return!
-                // a next windows function may get this cached key and get an empty if this
-                // does not happen
-                (std::mem::take(gt), true, cache_key)
-            } else {
-                // Drop guard as we go into rayon when creating groups.
-                drop(gt_map_guard);
-                (create_groups()?, false, cache_key)
-            }
+            let groups = match state.window_cache.get_groups(&cache_key) {
+                Some(groups) => groups,
+                None => create_groups()?,
+            };
+            (groups, cache_key)
         } else {
-            (create_groups()?, false, "".to_string())
+            (create_groups()?, "".to_string())
         };
 
         // 2. create GroupBy object and apply aggregation
@@ -497,7 +493,10 @@ impl PhysicalExpr for WindowExpr {
         // the groups, so that the cached groups and join keys
         // are consistent among all windows
         if sort_groups || state.cache_window() {
-            groups.sort()
+            groups.sort();
+            state
+                .window_cache
+                .insert_groups(cache_key.clone(), groups.clone());
         }
         let gb = GroupBy::new(df, group_by_columns.clone(), groups, Some(apply_columns));
 
@@ -517,7 +516,6 @@ impl PhysicalExpr for WindowExpr {
                 if ac.is_literal() {
                     out = out.new_from_index(0, df.height())
                 }
-                cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
                 }
@@ -525,7 +523,6 @@ impl PhysicalExpr for WindowExpr {
             },
             Explode => {
                 let mut out = ac.aggregated().explode()?;
-                cache_gb(gb, state, &cache_key);
                 if let Some(name) = &self.out_name {
                     out.rename(name.clone());
                 }
@@ -544,12 +541,12 @@ impl PhysicalExpr for WindowExpr {
                 self.map_by_arg_sort(
                     df,
                     out_column,
-                    flattened,
+                    &flattened,
                     ac,
                     &group_by_columns,
                     gb,
+                    cache_key,
                     state,
-                    &cache_key,
                 )
             },
             Join => {
@@ -564,19 +561,15 @@ impl PhysicalExpr for WindowExpr {
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
-                    (UpdateGroups::No, Some(out)) => {
-                        cache_gb(gb, state, &cache_key);
-                        Ok(out.into_column())
-                    },
+                    (UpdateGroups::No, Some(out)) => Ok(out.into_column()),
                     (_, _) => {
                         let keys = gb.keys();
-                        cache_gb(gb, state, &cache_key);
 
                         let get_join_tuples = || {
                             if group_by_columns.len() == 1 {
                                 // group key from right column
                                 let right = &keys[0];
-                                PolarsResult::Ok(
+                                PolarsResult::Ok(Arc::new(
                                     group_by_columns[0]
                                         .as_materialized_series()
                                         .hash_join_left(
@@ -586,29 +579,29 @@ impl PhysicalExpr for WindowExpr {
                                         )
                                         .unwrap()
                                         .1,
-                                )
+                                ))
                             } else {
                                 let df_right =
                                     unsafe { DataFrame::new_no_checks_height_from_first(keys) };
                                 let df_left = unsafe {
                                     DataFrame::new_no_checks_height_from_first(group_by_columns)
                                 };
-                                Ok(private_left_join_multiple_keys(&df_left, &df_right, true)?.1)
+                                Ok(Arc::new(
+                                    private_left_join_multiple_keys(&df_left, &df_right, true)?.1,
+                                ))
                             }
                         };
 
                         // try to get cached join_tuples
                         let join_opt_ids = if state.cache_window() {
-                            let mut jt_map_guard = state.join_tuples.lock().unwrap();
-                            // we run sequential and partitioned
-                            // and every partition run the cache should be empty so we expect a max of 1.
-                            debug_assert!(jt_map_guard.len() <= 1);
-                            if let Some(opt_join_tuples) = jt_map_guard.get_mut(&cache_key) {
-                                std::mem::replace(opt_join_tuples, default_join_ids())
+                            if let Some(jt) = state.window_cache.get_join(&cache_key) {
+                                jt
                             } else {
-                                // Drop guard as we go into rayon when computing join tuples.
-                                drop(jt_map_guard);
-                                get_join_tuples()?
+                                let jt = get_join_tuples()?;
+                                state
+                                    .window_cache
+                                    .insert_join(cache_key.clone(), jt.clone());
+                                jt
                             }
                         } else {
                             get_join_tuples()?
@@ -618,11 +611,6 @@ impl PhysicalExpr for WindowExpr {
 
                         if let Some(name) = &self.out_name {
                             out.rename(name.clone());
-                        }
-
-                        if state.cache_window() {
-                            let mut jt_map = state.join_tuples.lock().unwrap();
-                            jt_map.insert(cache_key, join_opt_ids);
                         }
 
                         Ok(out.into_column())
@@ -654,7 +642,7 @@ impl PhysicalExpr for WindowExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupsProxy,
+        _groups: &'a GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "window expression not allowed in aggregation");
@@ -679,18 +667,10 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
     }
 }
 
-fn cache_gb(gb: GroupBy, state: &ExecutionState, cache_key: &str) {
-    if state.cache_window() {
-        let groups = gb.take_groups();
-        let mut gt_map = state.group_tuples.write().unwrap();
-        gt_map.insert(cache_key.to_string(), groups);
-    }
-}
-
 /// Simple reducing aggregation can be set by the groups
 fn set_by_groups(
     s: &Column,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
@@ -714,7 +694,7 @@ fn set_by_groups(
     }
 }
 
-fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsProxy, len: usize) -> Series
+fn set_numeric<T>(ca: &ChunkedArray<T>, groups: &GroupsType, len: usize) -> Series
 where
     T: PolarsNumericType,
     ChunkedArray<T>: IntoSeries,
@@ -728,7 +708,7 @@ where
     if ca.null_count() == 0 {
         let ca = ca.rechunk();
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
                 POOL.install(|| {
                     agg_vals
@@ -743,7 +723,7 @@ where
                         })
                 })
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 let agg_vals = ca.cont_slice().expect("rechunked");
                 POOL.install(|| {
                     agg_vals
@@ -776,7 +756,7 @@ where
         let offsets = _split_offsets(ca.len(), n_threads);
 
         match groups {
-            GroupsProxy::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
+            GroupsType::Idx(groups) => offsets.par_iter().for_each(|(offset, offset_len)| {
                 let offset = *offset;
                 let offset_len = *offset_len;
                 let ca = ca.slice(offset as i64, offset_len);
@@ -803,7 +783,7 @@ where
                     }
                 })
             }),
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 offsets.par_iter().for_each(|(offset, offset_len)| {
                     let offset = *offset;
                     let offset_len = *offset_len;

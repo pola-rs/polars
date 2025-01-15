@@ -22,20 +22,20 @@ impl PhysicalExpr for RollingExpr {
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let groups_key = format!("{:?}", &self.options);
 
-        let groups_map = state.group_tuples.read().unwrap();
-        // Groups must be set by expression runner.
-        let groups = groups_map.get(&groups_key);
+        let groups = {
+            // Groups must be set by expression runner.
+            state.window_cache.get_groups(&groups_key).clone()
+        };
 
         // There can be multiple rolling expressions in a single expr.
         // E.g. `min().rolling() + max().rolling()`
         // So if we hit that we will compute them here.
         let groups = match groups {
-            Some(groups) => Cow::Borrowed(groups),
+            Some(groups) => groups,
             None => {
-                // We cannot cache those as mutexes under rayon can deadlock.
-                // TODO! precompute all groups up front.
                 let (_time_key, _keys, groups) = df.rolling(vec![], &self.options)?;
-                Cow::Owned(groups)
+                state.window_cache.insert_groups(groups_key, groups.clone());
+                groups
             },
         };
 
@@ -53,7 +53,7 @@ impl PhysicalExpr for RollingExpr {
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        _groups: &'a GroupsProxy,
+        _groups: &'a GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_bail!(InvalidOperation: "rolling expression not allowed in aggregation");

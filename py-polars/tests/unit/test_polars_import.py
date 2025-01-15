@@ -67,6 +67,7 @@ def _import_timings_as_frame(n_tries: int) -> tuple[pl.DataFrame, int]:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unreliable on Windows")
+@pytest.mark.debug
 @pytest.mark.slow
 def test_polars_import() -> None:
     # up-front compile '.py' -> '.pyc' before timing

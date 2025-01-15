@@ -21,7 +21,12 @@ impl GroupedReduction for LenReduce {
         self.groups.resize(num_groups as usize, 0);
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         self.groups[group_idx as usize] += values.len() as u64;
         Ok(())
     }
@@ -30,6 +35,7 @@ impl GroupedReduction for LenReduce {
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.len() == group_idxs.len());
         unsafe {

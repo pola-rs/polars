@@ -17,7 +17,11 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
-        _ => unimplemented!(),
+
+        // For compatibility with the current engine, should probably be an error.
+        String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
+
+        _ => unimplemented!("{dtype:?} is not supported by mean reduction"),
     }
 }
 
@@ -97,12 +101,12 @@ where
     }
 
     #[inline(always)]
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, _seq_id: u64) {
         a.0 += b.unwrap_or(T::Native::zero()).as_();
         a.1 += b.is_some() as usize;
     }
 
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         v.0 += ChunkAgg::_sum_as_f64(ca);
         v.1 += ca.len() - ca.null_count();
     }
@@ -137,12 +141,12 @@ impl Reducer for BoolMeanReducer {
     }
 
     #[inline(always)]
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<bool>, _seq_id: u64) {
         a.0 += b.unwrap_or(false) as usize;
         a.1 += b.is_some() as usize;
     }
 
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         v.0 += ca.sum().unwrap_or(0) as usize;
         v.1 += ca.len() - ca.null_count();
     }

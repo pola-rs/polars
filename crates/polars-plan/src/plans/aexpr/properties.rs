@@ -78,9 +78,9 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
                 }
             };
 
-            ae.nodes(stack);
+            ae.inputs_rev(stack);
         })(),
-        _ => ae.nodes(stack),
+        _ => ae.inputs_rev(stack),
     }
 
     true
@@ -277,7 +277,8 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                             && !has_aggregation(*falsy)
                             && !has_aggregation(*predicate)
                     },
-                    Column(_) | Len | Literal(_) | Cast { .. } => true,
+                    Literal(lv) => lv.is_scalar(),
+                    Column(_) | Len | Cast { .. } => true,
                     _ => false,
                 }
             });

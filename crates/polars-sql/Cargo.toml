@@ -9,20 +9,17 @@ repository = { workspace = true }
 description = "SQL transpiler for Polars. Converts SQL to Polars logical plans"
 
 [dependencies]
-arrow = { workspace = true }
 polars-core = { workspace = true, features = ["rows"] }
 polars-error = { workspace = true }
-polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cross_join", "cum_agg", "dtype-date", "dtype-decimal", "dtype-struct", "is_in", "list_eval", "log", "meta", "regex", "round_series", "sign", "string_reverse", "strings", "timezones", "trigonometry"] }
+polars-lazy = { workspace = true, features = ["abs", "binary_encoding", "concat_str", "cross_join", "cum_agg", "dtype-date", "dtype-decimal", "dtype-struct", "is_in", "list_eval", "log", "meta", "regex", "round_series", "sign", "string_normalize", "string_reverse", "strings", "timezones", "trigonometry"] }
 polars-ops = { workspace = true }
 polars-plan = { workspace = true }
 polars-time = { workspace = true }
 polars-utils = { workspace = true }
 
 hex = { workspace = true }
-once_cell = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 sqlparser = { workspace = true }
 
 [dev-dependencies]

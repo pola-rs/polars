@@ -34,10 +34,7 @@ fn rolling_evaluate(
                 // Set the groups so all expressions in partition can use it.
                 // Create a separate scope, so the lock is dropped, otherwise we deadlock when the
                 // rolling expression try to get read access.
-                {
-                    let mut groups_map = state.group_tuples.write().unwrap();
-                    groups_map.insert(groups_key, groups);
-                }
+                state.window_cache.insert_groups(groups_key, groups);
                 partition
                     .par_iter()
                     .map(|(idx, expr)| expr.evaluate(df, &state).map(|s| (*idx, s)))
@@ -61,35 +58,39 @@ fn window_evaluate(
                 // inform the expression it has window functions.
                 state.insert_has_window_function_flag();
 
-                // don't bother caching if we only have a single window function in this partition
-                if partition.len() == 1 {
-                    state.remove_cache_window_flag();
-                } else {
+                // caching more than one window expression is a complicated topic for another day
+                // see issue #2523
+                let cache = partition.len() > 1
+                    && partition.iter().all(|(_, e)| {
+                        e.as_expression()
+                            .unwrap()
+                            .into_iter()
+                            .filter(|e| matches!(e, Expr::Window { .. }))
+                            .count()
+                            == 1
+                    });
+                let mut first_result = None;
+                // First run 1 to fill the cache. Condvars and such don't work as
+                //  rayon threads should not be blocked.
+                if cache {
+                    let first = &partition[0];
+                    let c = first.1.evaluate(df, &state)?;
+                    first_result = Some((first.0, c));
                     state.insert_cache_window_flag();
+                } else {
+                    state.remove_cache_window_flag();
                 }
 
-                let mut out = Vec::with_capacity(partition.len());
-                // Don't parallelize here, as this will hold a mutex and Deadlock.
-                for (index, e) in partition {
-                    if e.as_expression()
-                        .unwrap()
-                        .into_iter()
-                        .filter(|e| matches!(e, Expr::Window { .. }))
-                        .count()
-                        == 1
-                    {
-                        state.insert_cache_window_flag();
-                    }
-                    // caching more than one window expression is a complicated topic for another day
-                    // see issue #2523
-                    else {
-                        state.remove_cache_window_flag();
-                    }
+                let mut results = partition[first_result.is_some() as usize..]
+                    .par_iter()
+                    .map(|(index, e)| e.evaluate(df, &state).map(|c| (*index, c)))
+                    .collect::<PolarsResult<Vec<_>>>()?;
 
-                    let s = e.evaluate(df, &state)?;
-                    out.push((*index, s));
+                if let Some(item) = first_result {
+                    results.push(item)
                 }
-                Ok(out)
+
+                Ok(results)
             })
             .collect()
     })

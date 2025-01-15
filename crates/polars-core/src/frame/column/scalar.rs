@@ -116,9 +116,12 @@ impl ScalarColumn {
     /// If the [`ScalarColumn`] has `length=0` the resulting `Series` will also have `length=0`.
     pub fn as_n_values_series(&self, n: usize) -> Series {
         let length = usize::min(n, self.length);
+
         match self.materialized.get() {
-            Some(s) => s.head(Some(length)),
-            None => Self::_to_series(self.name.clone(), self.scalar.clone(), length),
+            // Don't take a refcount if we only want length-1 (or empty) - the materialized series
+            // could be extremely large.
+            Some(s) if length == self.length || length > 1 => s.head(Some(length)),
+            _ => Self::_to_series(self.name.clone(), self.scalar.clone(), length),
         }
     }
 
@@ -171,7 +174,7 @@ impl ScalarColumn {
             materialized: OnceLock::new(),
         };
 
-        if self.length >= length {
+        if length == self.length || (length < self.length && length > 1) {
             if let Some(materialized) = self.materialized.get() {
                 resized.materialized = OnceLock::from(materialized.head(Some(length)));
                 debug_assert_eq!(resized.materialized.get().unwrap().len(), length);

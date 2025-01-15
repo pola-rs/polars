@@ -27,7 +27,7 @@ where
         num_groups: usize,
         mut multithreaded: bool,
         group_capacity: usize,
-    ) -> GroupsProxy {
+    ) -> GroupsType {
         multithreaded &= POOL.current_num_threads() > 1;
         // The latest index will be used for the null sentinel.
         let len = if self.null_count() > 0 {
@@ -152,7 +152,7 @@ where
 
         // NOTE! we set sorted here!
         // this happens to be true for `fast_unique` categoricals
-        GroupsProxy::Idx(GroupsIdx::new(first, groups, true))
+        GroupsType::Idx(GroupsIdx::new(first, groups, true))
     }
 }
 
@@ -160,10 +160,10 @@ where
 // Special implementation so that cats can be processed in a single pass
 impl CategoricalChunked {
     // Use the indexes as perfect groups
-    pub fn group_tuples_perfect(&self, multithreaded: bool, sorted: bool) -> GroupsProxy {
+    pub fn group_tuples_perfect(&self, multithreaded: bool, sorted: bool) -> GroupsType {
         let rev_map = self.get_rev_map();
         if self.is_empty() {
-            return GroupsProxy::Idx(GroupsIdx::new(vec![], vec![], true));
+            return GroupsType::Idx(GroupsIdx::new(vec![], vec![], true));
         }
         let cats = self.physical();
 

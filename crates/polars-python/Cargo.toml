@@ -30,6 +30,7 @@ arboard = { workspace = true, optional = true }
 bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
+chrono-tz = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true }
 itoa = { workspace = true }
@@ -38,7 +39,7 @@ ndarray = { workspace = true }
 num-traits = { workspace = true }
 numpy = { workspace = true }
 once_cell = { workspace = true }
-pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "multiple-pymethods"] }
+pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }
@@ -101,6 +102,7 @@ features = [
   "semi_anti_join",
   "serde-lazy",
   "string_encoding",
+  "string_normalize",
   "string_reverse",
   "string_to_integer",
   "string_pad",
@@ -169,6 +171,7 @@ find_many = ["polars/find_many"]
 new_streaming = ["polars-lazy/new_streaming"]
 bitwise = ["polars/bitwise"]
 approx_unique = ["polars/approx_unique"]
+string_normalize = ["polars/string_normalize"]
 
 dtype-i8 = []
 dtype-i16 = []
@@ -221,6 +224,7 @@ operations = [
   "peaks",
   "hist",
   "find_many",
+  "string_normalize",
 ]
 
 io = [

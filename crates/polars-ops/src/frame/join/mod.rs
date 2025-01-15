@@ -307,6 +307,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         args.suffix.clone(),
                         args.slice,
                         should_coalesce,
+                        options.allow_eq,
                     ),
                     (None, None) => left_df._join_asof(
                         other,
@@ -317,6 +318,7 @@ pub trait DataFrameJoinOps: IntoDf {
                         args.suffix,
                         args.slice,
                         should_coalesce,
+                        options.allow_eq,
                     ),
                     _ => {
                         panic!("expected by arguments on both sides")

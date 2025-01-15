@@ -74,7 +74,7 @@ impl StackOptimizer {
 
                     let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
                     // traverse subexpressions and add to the stack
-                    expr.nodes(&mut exprs)
+                    expr.inputs_rev(&mut exprs)
                 }
             }
         }

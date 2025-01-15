@@ -41,13 +41,13 @@ impl private::PrivateSeries for SeriesWrap<ArrayChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
     fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
@@ -207,12 +207,11 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
     }

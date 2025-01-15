@@ -520,7 +520,7 @@ where
     }
     // Dedup the buffers up front
     else {
-        let (buffers, buffer_offsets) = dedup_buffers(ca);
+        let (buffers, buffer_offsets) = dedup_buffers_by_arc(ca);
 
         validity = if ca.has_nulls() {
             let mut validity = BitmapBuilder::with_capacity(by.len());
@@ -601,7 +601,7 @@ unsafe fn update_view_and_dedup(
     view
 }
 
-fn dedup_buffers<T, V>(ca: &ChunkedArray<T>) -> (Vec<Buffer<u8>>, Vec<u32>)
+fn dedup_buffers_by_arc<T, V>(ca: &ChunkedArray<T>) -> (Vec<Buffer<u8>>, Vec<u32>)
 where
     T: PolarsDataType<Array = BinaryViewArrayGeneric<V>>,
     V: ViewType + ?Sized,
@@ -610,16 +610,22 @@ where
     // more costly.
     let mut buffers = Vec::with_capacity(ca.chunks().len());
     // Dont need to include the length, as we look at the arc pointers, which are immutable.
-    let mut buffers_dedup = PlHashSet::with_capacity(ca.chunks().len());
+    let mut buffers_dedup = PlHashMap::with_capacity(ca.chunks().len());
     let mut buffer_offsets = Vec::with_capacity(ca.chunks().len() + 1);
 
     for arr in ca.downcast_iter() {
         let data_buffers = arr.data_buffers();
         let arc_ptr = data_buffers.as_ptr();
-        buffer_offsets.push(buffers.len() as u32);
-        if buffers_dedup.insert(arc_ptr) {
-            buffers.extend(data_buffers.iter().cloned())
-        }
+        let offset = match buffers_dedup.entry(arc_ptr) {
+            Entry::Occupied(o) => *o.get(),
+            Entry::Vacant(v) => {
+                let offset = buffers.len() as u32;
+                buffers.extend(data_buffers.iter().cloned());
+                v.insert(offset);
+                offset
+            },
+        };
+        buffer_offsets.push(offset);
     }
     (buffers, buffer_offsets)
 }
@@ -723,7 +729,7 @@ where
     }
     // Dedup the buffers up front
     else {
-        let (buffers, buffer_offsets) = dedup_buffers(ca);
+        let (buffers, buffer_offsets) = dedup_buffers_by_arc(ca);
 
         if ca.has_nulls() {
             for id in by.iter() {

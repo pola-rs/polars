@@ -3,10 +3,10 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{InitHashMaps, PlHashMap, PlIndexMap};
 use polars_core::schema::Schema;
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FileScan, FunctionIR, IRAggExpr, IR};
+use polars_plan::plans::{AExpr, FileScan, FunctionIR, IR};
 use polars_plan::prelude::{FileType, SinkType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -16,6 +16,7 @@ use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
     build_select_stream, is_elementwise_rec_cached, lower_exprs, ExprCache,
 };
+use crate::physical_plan::lower_group_by::build_group_by_stream;
 
 /// Creates a new PhysStream which outputs a slice of the input stream.
 fn build_slice_stream(
@@ -219,6 +220,15 @@ pub fn lower_ir(
                 match file_type {
                     #[cfg(feature = "ipc")]
                     FileType::Ipc(_) => {
+                        let phys_input = lower_ir!(*input)?;
+                        PhysNodeKind::FileSink {
+                            path,
+                            file_type,
+                            input: phys_input,
+                        }
+                    },
+                    #[cfg(feature = "parquet")]
+                    FileType::Parquet(_) => {
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
@@ -451,76 +461,32 @@ pub fn lower_ir(
             input,
             keys,
             aggs,
-            schema: _,
+            schema: output_schema,
             apply,
             maintain_order,
             options,
         } => {
-            if apply.is_some() || *maintain_order {
-                todo!()
-            }
-
-            #[cfg(feature = "dynamic_group_by")]
-            if options.dynamic.is_some() || options.rolling.is_some() {
-                todo!()
-            }
-
-            let key = keys.clone();
-            let mut aggs = aggs.clone();
+            let input = *input;
+            let keys = keys.clone();
+            let aggs = aggs.clone();
+            let output_schema = output_schema.clone();
+            let apply = apply.clone();
+            let maintain_order = *maintain_order;
             let options = options.clone();
 
-            polars_ensure!(!keys.is_empty(), ComputeError: "at least one key is required in a group_by operation");
-
-            // TODO: allow all aggregates.
-            let mut input_exprs = key.clone();
-            for agg in &aggs {
-                match expr_arena.get(agg.node()) {
-                    AExpr::Agg(expr) => match expr {
-                        IRAggExpr::Min { input, .. }
-                        | IRAggExpr::Max { input, .. }
-                        | IRAggExpr::Mean(input)
-                        | IRAggExpr::Sum(input)
-                        | IRAggExpr::Var(input, ..)
-                        | IRAggExpr::Std(input, ..) => {
-                            if is_elementwise_rec_cached(*input, expr_arena, expr_cache) {
-                                input_exprs.push(ExprIR::from_node(*input, expr_arena));
-                            } else {
-                                todo!()
-                            }
-                        },
-                        _ => todo!(),
-                    },
-                    AExpr::Len => input_exprs.push(key[0].clone()), // Hack, use the first key column for the length.
-                    _ => todo!(),
-                }
-            }
-
-            let phys_input = lower_ir!(*input)?;
-            let (trans_input, trans_exprs) =
-                lower_exprs(phys_input, &input_exprs, expr_arena, phys_sm, expr_cache)?;
-            let trans_key = trans_exprs[..key.len()].to_vec();
-            let trans_aggs = aggs
-                .iter_mut()
-                .zip(trans_exprs.iter().skip(key.len()))
-                .map(|(agg, trans_expr)| {
-                    let old_expr = expr_arena.get(agg.node()).clone();
-                    let new_expr = old_expr.replace_inputs(&[trans_expr.node()]);
-                    ExprIR::new(expr_arena.add(new_expr), agg.output_name_inner().clone())
-                })
-                .collect();
-
-            let node = phys_sm.insert(PhysNode::new(
+            let phys_input = lower_ir!(input)?;
+            let mut stream = build_group_by_stream(
+                phys_input,
+                &keys,
+                &aggs,
                 output_schema,
-                PhysNodeKind::GroupBy {
-                    input: trans_input,
-                    key: trans_key,
-                    aggs: trans_aggs,
-                },
-            ));
-
-            // TODO: actually limit number of groups instead of computing full
-            // result and then slicing.
-            let mut stream = PhysStream::first(node);
+                maintain_order,
+                options.clone(),
+                apply,
+                expr_arena,
+                phys_sm,
+                expr_cache,
+            )?;
             if let Some((offset, len)) = options.slice {
                 stream = build_slice_stream(stream, offset, len, phys_sm);
             }
