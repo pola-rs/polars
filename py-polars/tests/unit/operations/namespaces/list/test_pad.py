@@ -13,6 +13,7 @@ from polars.exceptions import (
 from polars.testing import assert_frame_equal
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_pad_start_with_expr() -> None:
     df = pl.DataFrame(
         {"a": [[1], [], [1, 2, 3]], "int": [0, 999, 2], "float": [0.0, 999, 2]}
@@ -30,6 +31,7 @@ def test_list_pad_start_with_expr() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_pad_start_with_lit() -> None:
     df = pl.DataFrame({"a": [[1], [], [1, 2, 3]]})
     result = df.select(pl.col("a").list.pad_start(fill_value=0))
@@ -44,6 +46,7 @@ def test_list_pad_start_zero_length() -> None:
     assert_frame_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_pad_start_casts_to_supertype() -> None:
     df = pl.DataFrame({"a": [["a"], ["a", "b"]]})
     result = df.select(pl.col("a").list.pad_start(1))
