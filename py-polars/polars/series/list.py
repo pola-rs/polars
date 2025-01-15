@@ -1054,3 +1054,26 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+
+    def pad_start(self, fill_value: IntoExpr) -> Expr:
+        """
+        Fill each sub-list until it matches the length of the longest sub-list.
+
+        Parameters
+        ----------
+        fill_value
+            Add this value at the left of the sub-list until the length of the
+            sub-list is equal to the length of the longest sub-list.
+
+        Examples
+        --------
+        >>> pl.Series([[1], [], [1, 2, 3]]).list.pad_start(0)
+        shape: (3,)
+        Series: '' [list[i64]]
+        [
+                [0, 0, 1]
+                [0, 0, 0]
+                [1, 2, 3]
+        ]
+        """
