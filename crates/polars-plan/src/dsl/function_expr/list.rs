@@ -560,8 +560,7 @@ pub(super) fn index_of_in(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let needles = &args[1];
     let ca = s.list()?;
-    todo!("Implement me");
-    //list_count_matches(ca, needles).map(Column::from)
+    list_index_of_in(ca, needles.as_materialized_series()).map(Column::from)
 }
 
 pub(super) fn sum(s: &Column) -> PolarsResult<Column> {

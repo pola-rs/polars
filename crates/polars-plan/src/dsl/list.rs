@@ -325,7 +325,14 @@ impl ListNameSpace {
     #[cfg(feature = "list_index_of_in")]
     /// Find the index of needle in the list.
     pub fn index_of_in<N: Into<Expr>>(self, needle: N) -> Expr {
-        todo!("Implement me");
+        let other = needle.into();
+
+        self.0.map_many_private(
+            FunctionExpr::ListExpr(ListFunction::IndexOfIn),
+            &[other],
+            false,
+            None,
+        )
     }
 
     #[cfg(feature = "list_sets")]
