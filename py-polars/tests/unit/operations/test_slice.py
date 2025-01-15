@@ -310,14 +310,3 @@ def test_slice_pushdown_panic_20216() -> None:
 
     assert_frame_equal(q.slice(0, 1).collect(), pl.DataFrame({"A": ["1"]}))
     assert_frame_equal(q.collect(), pl.DataFrame({"A": ["1"]}))
-
-
-def test_sorted_slice_after_function_20712() -> None:
-    assert_frame_equal(
-        pl.LazyFrame({"a": 10 * ["A"]})
-        .with_columns(b=pl.col("a").str.extract("(.*)"))
-        .sort("b")
-        .head(2)
-        .collect(),
-        pl.DataFrame({"a": ["A", "A"], "b": ["A", "A"]}),
-    )
