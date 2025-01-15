@@ -67,10 +67,8 @@ impl ColumnPredicateExpr {
     }
     pub fn to_eq_scalar(&self) -> Option<&Scalar> {
         match &self.specialized {
-            Some(
-                SpecializedColumnPredicateExpr::Eq(sc)
-                | SpecializedColumnPredicateExpr::EqMissing(sc),
-            ) => Some(sc),
+            Some(SpecializedColumnPredicateExpr::Eq(sc)) if !sc.is_null() => Some(sc),
+            Some(SpecializedColumnPredicateExpr::EqMissing(sc)) => Some(sc),
             _ => None,
         }
     }
@@ -95,7 +93,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         let column = series.into_column();
         let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
 
-        // @TODO: Probably thes unwraps should be removed.
+        // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
         let true_mask = true_mask.bool().unwrap();
 
@@ -111,7 +109,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
         let column = Column::full_null(self.column_name.clone(), 1, &self.dtype);
         let df = unsafe { DataFrame::new_no_checks(1, vec![column]) };
 
-        // @TODO: Probably thes unwraps should be removed.
+        // @TODO: Probably these unwraps should be removed.
         let true_mask = self.expr.evaluate_io(&df).unwrap();
         let true_mask = true_mask.bool().unwrap();
 
