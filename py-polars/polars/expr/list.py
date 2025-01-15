@@ -1059,6 +1059,22 @@ class ExprListNameSpace:
         element = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_count_matches(element))
 
+    def index_of_in(self, element: IntoExpr) -> Expr:
+        """
+        TODO
+
+        Parameters
+        ----------
+        needles
+            TODO
+
+        Examples
+        --------
+        TODO
+        """
+        element = parse_into_expression(element, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_index_of_in(element))
+
     def to_array(self, width: int) -> Expr:
         """
         Convert a List column into an Array column with the same inner data type.

@@ -13,6 +13,8 @@ mod sets;
 mod sum_mean;
 #[cfg(feature = "list_to_struct")]
 mod to_struct;
+#[cfg(feature = "list_index_of_in")]
+mod index_of_in;
 
 #[cfg(feature = "list_count")]
 pub use count::*;
@@ -23,6 +25,8 @@ pub use namespace::*;
 pub use sets::*;
 #[cfg(feature = "list_to_struct")]
 pub use to_struct::*;
+#[cfg(feature = "list_index_of_in")]
+pub use index_of_in::*;
 
 pub trait AsList {
     fn as_list(&self) -> &ListChunked;

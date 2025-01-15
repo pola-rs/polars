@@ -98,6 +98,7 @@ dtype-struct = ["polars-core/dtype-struct"]
 object = ["polars-core/object"]
 list_gather = ["polars-ops/list_gather"]
 list_count = ["polars-ops/list_count"]
+list_index_of_in = ["polars-ops/list_index_of_in"]
 array_count = ["polars-ops/array_count", "dtype-array"]
 trigonometry = []
 sign = []
@@ -295,6 +296,7 @@ features = [
   "streaming",
   "true_div",
   "sign",
+  "list_index_of_in",
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]

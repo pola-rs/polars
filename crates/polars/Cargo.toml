@@ -235,6 +235,7 @@ trigonometry = ["polars-lazy?/trigonometry"]
 true_div = ["polars-lazy?/true_div"]
 unique_counts = ["polars-ops/unique_counts", "polars-lazy?/unique_counts"]
 zip_with = ["polars-core/zip_with"]
+list_index_of_in = ["polars-ops/list_index_of_in", "polars-lazy?/list_index_of_in"]
 
 bigidx = ["polars-core/bigidx", "polars-lazy?/bigidx", "polars-ops/big_idx", "polars-utils/bigidx"]
 polars_cloud = ["polars-lazy?/polars_cloud"]

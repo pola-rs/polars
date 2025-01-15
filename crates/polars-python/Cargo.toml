@@ -172,6 +172,7 @@ new_streaming = ["polars-lazy/new_streaming"]
 bitwise = ["polars/bitwise"]
 approx_unique = ["polars/approx_unique"]
 string_normalize = ["polars/string_normalize"]
+list_index_of_in = ["polars/list_index_of_in"]
 
 dtype-i8 = []
 dtype-i16 = []
@@ -207,6 +208,7 @@ operations = [
   "list_any_all",
   "list_drop_nulls",
   "list_sample",
+  "list_index_of_in",
   "cutqcut",
   "rle",
   "extract_groups",

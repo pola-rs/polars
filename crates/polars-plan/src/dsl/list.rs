@@ -322,6 +322,12 @@ impl ListNameSpace {
         )
     }
 
+    #[cfg(feature = "list_index_of_in")]
+    /// Find the index of needle in the list.
+    pub fn index_of_in<N: Into<Expr>>(self, needle: N) -> Expr {
+        todo!("Implement me");
+    }
+
     #[cfg(feature = "list_sets")]
     fn set_operation(self, other: Expr, set_operation: SetOperation) -> Expr {
         Expr::Function {

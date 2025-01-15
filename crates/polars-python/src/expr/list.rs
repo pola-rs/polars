@@ -55,6 +55,11 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "list_index_of_in")]
+    fn list_index_of_in(&self, value: PyExpr) -> Self {
+        self.inner.clone().list().index_of_in(value.inner).into()
+    }
+
     fn list_join(&self, separator: PyExpr, ignore_nulls: bool) -> Self {
         self.inner
             .clone()

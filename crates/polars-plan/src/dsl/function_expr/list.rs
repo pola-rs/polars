@@ -58,6 +58,8 @@ pub enum ListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    #[cfg(feature = "list_index_of_in")]
+    IndexOfIn,
 }
 
 impl ListFunction {
@@ -107,6 +109,8 @@ impl ListFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
+            #[cfg(feature = "list_index_of_in")]
+            IndexOfIn => mapper.with_dtype(IDX_DTYPE),
         }
     }
 }
@@ -180,6 +184,8 @@ impl Display for ListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "list_index_of_in")]
+            IndexOfIn => "index_of_in",
         };
         write!(f, "list.{name}")
     }
@@ -243,6 +249,8 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
+            #[cfg(feature = "list_index_of_in")]
+            IndexOfIn => map_as_slice!(index_of_in),
         }
     }
 }
@@ -545,6 +553,15 @@ pub(super) fn count_matches(args: &[Column]) -> PolarsResult<Column> {
     );
     let ca = s.list()?;
     list_count_matches(ca, element.get(0).unwrap()).map(Column::from)
+}
+
+#[cfg(feature = "list_index_of_in")]
+pub(super) fn index_of_in(args: &[Column]) -> PolarsResult<Column> {
+    let s = &args[0];
+    let needles = &args[1];
+    let ca = s.list()?;
+    todo!("Implement me");
+    //list_count_matches(ca, needles).map(Column::from)
 }
 
 pub(super) fn sum(s: &Column) -> PolarsResult<Column> {
