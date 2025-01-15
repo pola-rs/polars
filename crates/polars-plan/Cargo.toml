@@ -294,7 +294,7 @@ features = [
   "streaming",
   "true_div",
   "sign",
-  "list_pad"
+  "list_pad",
 ]
 # defines the configuration attribute `docsrs`
 rustdoc-args = ["--cfg", "docsrs"]
