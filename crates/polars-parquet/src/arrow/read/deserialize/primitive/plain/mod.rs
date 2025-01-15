@@ -70,6 +70,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 polars_compute::filter::filter_with_bitmap(&array, &intermediate_pred_true_mask);
             let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
 
+            pred_true_mask.extend_from_bitmap(&intermediate_pred_true_mask);
             target.extend(array.values().iter().copied());
             if is_optional {
                 match array.validity() {

@@ -105,7 +105,12 @@ impl utils::Decoder for NullDecoder {
             todo!()
         }
 
-        decoded.length += Filter::opt_num_rows(&filter, state.translation.num_rows);
+        let num_rows = match filter {
+            Some(f) => f.num_rows(0),
+            None => state.translation.num_rows,
+        };
+        decoded.length += num_rows;
+
         Ok(())
     }
 }

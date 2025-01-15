@@ -598,7 +598,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
                 bm.extend_constant(slf_len, true);
                 bm.extend_from_bitmap(other);
                 *v = Some(bm);
-            }
+            },
             (Some(slf), Some(other)) => slf.extend_from_bitmap(other),
         }
 
