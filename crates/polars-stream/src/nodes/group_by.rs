@@ -70,6 +70,7 @@ impl GroupBySinkState {
                 let mut group_idxs = Vec::new();
                 while let Ok(morsel) = recv.recv().await {
                     // Compute group indices from key.
+                    let seq = morsel.seq().to_u64();
                     let df = morsel.into_df();
                     let mut key_columns = Vec::new();
                     for selector in key_selectors {
@@ -94,6 +95,7 @@ impl GroupBySinkState {
                                     .await?
                                     .as_materialized_series(),
                                 &group_idxs,
+                                seq,
                             )?;
                         }
                     }

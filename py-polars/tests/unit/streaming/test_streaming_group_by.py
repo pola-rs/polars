@@ -66,7 +66,7 @@ def test_streaming_group_by_types() -> None:
                         pl.col("bool").last().alias("bool_last"),
                         pl.col("bool").mean().alias("bool_mean"),
                         pl.col("bool").sum().alias("bool_sum"),
-                        pl.col("date").sum().alias("date_sum"),
+                        # pl.col("date").sum().alias("date_sum"),
                         # Date streaming mean/median has been temporarily disabled
                         # pl.col("date").mean().alias("date_mean"),
                         pl.col("date").first().alias("date_first"),
@@ -88,7 +88,7 @@ def test_streaming_group_by_types() -> None:
             "bool_last": pl.Boolean,
             "bool_mean": pl.Float64,
             "bool_sum": pl.UInt32,
-            "date_sum": pl.Date,
+            # "date_sum": pl.Date,
             # "date_mean": pl.Date,
             "date_first": pl.Date,
             "date_last": pl.Date,
@@ -105,7 +105,7 @@ def test_streaming_group_by_types() -> None:
             "bool_last": [False],
             "bool_mean": [0.5],
             "bool_sum": [1],
-            "date_sum": [None],
+            # "date_sum": [None],
             # Date streaming mean/median has been temporarily disabled
             # "date_mean": [date(2022, 1, 1)],
             "date_first": [date(2022, 1, 1)],

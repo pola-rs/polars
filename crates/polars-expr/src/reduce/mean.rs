@@ -17,7 +17,11 @@ pub fn new_mean_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         },
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(VGR::new(dtype, NumMeanReducer::<Int128Type>(PhantomData))),
-        _ => unimplemented!(),
+
+        // For compatibility with the current engine, should probably be an error.
+        String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
+
+        _ => unimplemented!("{dtype:?} is not supported by mean reduction"),
     }
 }
 

@@ -294,7 +294,12 @@ impl GroupedReduction for BoolMinGroupedReduction {
         self.mask.resize(num_groups as usize, false);
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -312,6 +317,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
@@ -430,7 +436,12 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         self.mask.resize(num_groups as usize, false);
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -448,6 +459,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.

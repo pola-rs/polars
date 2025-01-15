@@ -33,7 +33,9 @@ pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         #[cfg(feature = "dtype-decimal")]
         Decimal(_, _) => Box::new(SumReduce::<Int128Type>::new(dtype)),
         Duration(_) => Box::new(SumReduce::<Int64Type>::new(dtype)),
-        _ => unimplemented!(),
+        // For compatibility with the current engine, should probably be an error.
+        String | Binary => Box::new(super::NullGroupedReduction::new(dtype)),
+        _ => unimplemented!("{dtype:?} is not supported by sum reduction"),
     }
 }
 
@@ -83,7 +85,12 @@ where
         self.sums.resize(num_groups as usize, T::Native::zero());
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
@@ -97,6 +104,7 @@ where
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
