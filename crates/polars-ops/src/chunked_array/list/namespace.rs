@@ -529,6 +529,7 @@ pub trait ListNameSpaceImpl: AsList {
         } else {
             fill_value
         };
+        let fill_value = fill_value.cast(&super_type)?;
 
         // Length of largest sublist.
         let max_len = ca
