@@ -60,7 +60,7 @@ def test_list_pad_start_errors() -> None:
     df = pl.DataFrame({"a": [["a"], ["a", "b"]]})
 
     with pytest.raises(TypeError, match="fill_value"):
-        df.select(pl.col("a").list.pad_start())
+        df.select(pl.col("a").list.pad_start()) # type: ignore[call-arg]
     with pytest.raises(InvalidOperationError, match="to String not supported"):
         df.select(pl.col("a").list.pad_start(timedelta(days=1)))
 
