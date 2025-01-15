@@ -1055,7 +1055,6 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-
     def pad_start(self, fill_value: IntoExpr) -> Expr:
         """
         Fill each sub-list until it matches the length of the longest sub-list.
