@@ -190,10 +190,9 @@ def test_linear_space_incompatible_temporals(
 
 def test_linear_space_expr_wrong_length() -> None:
     df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    with pytest.raises(
-        ShapeError,
-        match="unable to add a column of length 6 to a DataFrame of height 5",
-    ):
+    msg = "unable to add a column of length 6 to a DataFrame of height 5"
+    streaming_msg = "zip node received non-equal length inputs"
+    with pytest.raises(ShapeError, match=rf"({msg})|({streaming_msg})"):
         df.with_columns(pl.linear_space(0, 1, 6))
 
 
