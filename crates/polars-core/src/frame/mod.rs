@@ -29,7 +29,6 @@ pub mod group_by;
 pub(crate) mod horizontal;
 #[cfg(any(feature = "rows", feature = "object"))]
 pub mod row;
-mod top_k;
 mod upstream_traits;
 
 use arrow::record_batch::{RecordBatch, RecordBatchT};
@@ -2077,12 +2076,6 @@ impl DataFrame {
             let mut out = self.clone();
             set_sorted(&mut out);
             return Ok(out);
-        }
-        if let Some((0, k)) = slice {
-            if k < self.len() {
-                sort_options.limit = Some(k.try_into().unwrap());
-                return self.bottom_k_impl(k, by_column, sort_options);
-            }
         }
         // Check if the required column is already sorted; if so we can exit early
         // We can do so when there is only one column to sort by, for multiple columns

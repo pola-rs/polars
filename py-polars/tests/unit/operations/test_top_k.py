@@ -458,3 +458,70 @@ def test_top_k_df(
     assert df.sort("a", descending=True, nulls_last=False).limit(4).collect()[
         "a"
     ].to_list() == [None, None, 5, 4]
+
+
+@pytest.mark.parametrize("descending", [True, False])
+def test_sorted_top_k_20719(descending: bool) -> None:
+    df = pl.DataFrame(
+        [
+            {"a": 1, "b": 1},
+            {"a": 5, "b": 5},
+            {"a": 9, "b": 9},
+            {"a": 10, "b": 20},
+        ]
+    ).sort(by="a", descending=descending)
+
+    # Note: Output stability is guaranteed by the input sortedness as an
+    # implementation detail.
+
+    for func, reverse in [
+        [pl.DataFrame.top_k, False],
+        [pl.DataFrame.bottom_k, True],
+    ]:
+        assert_frame_equal(
+            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            pl.DataFrame(
+                [
+                    {"a": 10, "b": 20},
+                    {"a": 9, "b": 9},
+                ]
+            ),
+        )
+
+    for func, reverse in [
+        [pl.DataFrame.top_k, True],
+        [pl.DataFrame.bottom_k, False],
+    ]:
+        assert_frame_equal(
+            df.pipe(func, 2, by="a", reverse=reverse),  # type: ignore[arg-type]
+            pl.DataFrame(
+                [
+                    {"a": 1, "b": 1},
+                    {"a": 5, "b": 5},
+                ]
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    ("func", "reverse", "expect"),
+    [
+        (pl.DataFrame.top_k, False, pl.DataFrame({"a": [2, 2]})),
+        (pl.DataFrame.bottom_k, True, pl.DataFrame({"a": [2, 2]})),
+        (pl.DataFrame.top_k, True, pl.DataFrame({"a": [1, 2]})),
+        (pl.DataFrame.bottom_k, False, pl.DataFrame({"a": [1, 2]})),
+    ],
+)
+@pytest.mark.parametrize("descending", [True, False])
+def test_sorted_top_k_duplicates(
+    func: Callable[[pl.DataFrame], pl.DataFrame],
+    reverse: bool,
+    expect: pl.DataFrame,
+    descending: bool,
+) -> None:
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 2, 2]})  # type: ignore[call-arg]
+        .sort("a", descending=descending)
+        .pipe(func, 2, by="a", reverse=reverse),
+        expect,
+    )
