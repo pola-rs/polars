@@ -16,9 +16,10 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
         );
         ca.amortized_iter().for_each(|opt_series| {
             if let Some(subseries) = opt_series {
-                // TODO justify why unwrap()s are ok
                 builder.append_option(
-                    // TODO clone() sucks, maybe need to change the API for index_of?
+                    // TODO clone() sucks, maybe need to change the API for
+                    // index_of so it takes AnyValue<'_> instead of a Scalar
+                    // which implies AnyValue<'static>?
                     index_of(subseries.as_ref(), needle.clone())
                         .unwrap()
                         .map(|v| v.try_into().unwrap()),
@@ -29,13 +30,17 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
         });
     } else {
         ca.amortized_iter()
+            // TODO iter() assumes a single chunk. could continue to use this
+            // and just rechunk(), or have needles also be a ChunkedArray, in
+            // which case we'd need to have to use one of the
+            // dispatch-on-dtype-and-cast-to-relevant-chunkedarray-type macros
+            // to duplicate the implementation code per dtype.
             .zip(needles.iter())
             .for_each(|(opt_series, needle)| {
                 match (opt_series, needle) {
                     (None, _) => builder.append_null(),
                     (Some(subseries), needle) => {
                         let needle = Scalar::new(needles.dtype().clone(), needle.into_static());
-                        // TODO justify why unwrap()s are ok
                         builder.append_option(
                             index_of(subseries.as_ref(), needle)
                                 .unwrap()
