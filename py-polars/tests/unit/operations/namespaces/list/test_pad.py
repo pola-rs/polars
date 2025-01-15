@@ -69,7 +69,7 @@ def test_list_pad_start_errors() -> None:
     ("fill_value", "type"),
     [
         (True, pl.Boolean),
-        (timedelta(days=1), pl.Duration,),
+        (timedelta(days=1), pl.Duration),
         (date(2022, 1, 1), pl.Date),
         (datetime(2022, 1, 1, 23), pl.Datetime),
     ],
