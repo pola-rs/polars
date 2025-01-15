@@ -32,10 +32,31 @@ def test_list_pad_start_with_expr() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming
-def test_list_pad_start_with_lit() -> None:
-    df = pl.DataFrame({"a": [[1], [], [1, 2, 3]]})
-    result = df.select(pl.col("a").list.pad_start(fill_value=0))
-    expected = pl.DataFrame({"a": [[0, 0, 1], [0, 0, 0], [1, 2, 3]]})
+@pytest.mark.parametrize(
+    ("data", "fill_value", "expect"),
+    [
+        ([[1], [], [1, 2, 3]], 0, [[0, 0, 1], [0, 0, 0], [1, 2, 3]]),
+        (
+            [[1.0], [], [1.0, 2.0, 3.0]],
+            0.0,
+            [[0.0, 0.0, 1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 3.0]],
+        ),
+        (
+            [["a"], [], ["a", "b", "b"]],
+            "foo",
+            [["foo", "foo", "a"], ["foo", "foo", "foo"], ["a", "b", "b"]],
+        ),
+        (
+            [[True], [], [False, False, True]],
+            True,
+            [[True, True, True], [True, True, True], [False, False, True]],
+        ),
+    ],
+)
+def test_list_pad_start_with_lit(data: Any, fill_value: Any, expect: Any) -> None:
+    df = pl.DataFrame({"a": data})
+    result = df.select(pl.col("a").list.pad_start(fill_value))
+    expected = pl.DataFrame({"a": expect})
     assert_frame_equal(result, expected)
 
 
@@ -71,7 +92,6 @@ def test_list_pad_start_errors() -> None:
 @pytest.mark.parametrize(
     ("fill_value", "type"),
     [
-        (True, pl.Boolean),
         (timedelta(days=1), pl.Duration),
         (date(2022, 1, 1), pl.Date),
         (datetime(2022, 1, 1, 23), pl.Datetime),

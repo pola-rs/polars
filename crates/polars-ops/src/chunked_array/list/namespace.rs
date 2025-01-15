@@ -590,6 +590,21 @@ pub trait ListNameSpaceImpl: AsList {
                     Some(filled_values.into())
                 })
             },
+            DataType::Boolean => {
+                let fill_value = fill_value.bool()?;
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.bool().unwrap();
+                    let mut filled_values = BooleanChunked::new(
+                        PlSmallStr::EMPTY,
+                        vec![fill_value.unwrap(); max_len - ca.len()],
+                    );
+
+                    let _ = filled_values.append(ca);
+                    Some(filled_values.into())
+                })
+            },
             dt => {
                 polars_bail!(InvalidOperation: "list.pad_start() doesn't work on data type {}", dt)
             },
