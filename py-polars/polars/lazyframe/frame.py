@@ -2004,8 +2004,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not (is_config_obj or engine in ("cpu", "gpu")):
             msg = f"Invalid engine argument {engine=}"
             raise ValueError(msg)
-        if get_default_engine() == "gpu":
-            is_gpu = True
+        if get_default_engine() == "gpu":  # pragma: no cover
+            is_gpu = True  # pragma: no cover
         if (streaming or background or new_streaming) and is_gpu:
             issue_warning(
                 "GPU engine does not support streaming or background collection, "
