@@ -1389,8 +1389,8 @@ class ExprListNameSpace:
         ...     {"a": [[1], [], [1, 2, 3]], "int": [0, 999, 2], "float": [0.0, 999, 2]}
         ... )
         >>> df.select(
-        ...     filled_int=pl.col("a").list.pad_start(fill_value=pl.col("int")),
-        ...     filled_float=pl.col("a").list.pad_start(fill_value=pl.col("float")),
+        ...     filled_int=pl.col("a").list.pad_start(pl.col("int")),
+        ...     filled_float=pl.col("a").list.pad_start(pl.col("float")),
         ... )
         shape: (3, 2)
         ┌─────────────────┬───────────────────────┐
@@ -1403,7 +1403,7 @@ class ExprListNameSpace:
         │ [1, 2, 3]       ┆ [1.0, 2.0, 3.0]       │
         └─────────────────┴───────────────────────┘
         >>> df = pl.DataFrame({"a": [["a"], [], ["b", "c", "d"]]})
-        >>> df.select(pl.col("a").list.pad_start(fill_value="foo"))
+        >>> df.select(pl.col("a").list.pad_start("foo"))
         shape: (3, 1)
         ┌───────────────────────┐
         │ a                     │
