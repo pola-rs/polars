@@ -105,8 +105,7 @@ where
     {
         len = options
             .limit
-            .map(|(limit, _)| std::cmp::min(limit as usize, len))
-            .unwrap_or(len);
+            .map_or(len, |limit| std::cmp::min(limit.try_into().unwrap(), len));
         return ChunkedArray::with_chunk(
             name,
             IdxArr::from_data_default(
@@ -136,17 +135,12 @@ where
         vals.extend(iter);
     }
 
-    let vals = if let Some((limit, desc)) = options.limit {
+    let vals = if let Some(limit) = options.limit {
         let limit = limit as usize;
         // Overwrite output len.
         len = limit;
         let out = if limit >= vals.len() {
             vals.as_mut_slice()
-        } else if desc {
-            let (lower, _el, _upper) = vals
-                .as_mut_slice()
-                .select_nth_unstable_by(limit, |a, b| b.1.tot_cmp(&a.1));
-            lower
         } else {
             let (lower, _el, _upper) = vals
                 .as_mut_slice()
@@ -205,8 +199,7 @@ where
     if is_sorted_flag != IsSorted::Not {
         let len_final = options
             .limit
-            .map(|(limit, _)| std::cmp::min(limit as usize, len))
-            .unwrap_or(len);
+            .map_or(len, |limit| std::cmp::min(limit.try_into().unwrap(), len));
         if (options.descending && is_sorted_flag == IsSorted::Descending)
             || (!options.descending && is_sorted_flag == IsSorted::Ascending)
         {
@@ -237,15 +230,10 @@ where
         }));
     }
 
-    let vals = if let Some((limit, desc)) = options.limit {
+    let vals = if let Some(limit) = options.limit {
         let limit = limit as usize;
         let out = if limit >= vals.len() {
             vals.as_mut_slice()
-        } else if desc {
-            let (lower, _el, _upper) = vals
-                .as_mut_slice()
-                .select_nth_unstable_by(limit, |a, b| b.1.tot_cmp(&a.1));
-            lower
         } else {
             let (lower, _el, _upper) = vals
                 .as_mut_slice()
