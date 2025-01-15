@@ -1182,6 +1182,31 @@ def test_from_dicts_schema_columns_do_not_match() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_from_dicts_infer_integer_types() -> None:
+    data = [
+        {
+            "a": 2**7 - 1,
+            "b": 2**15 - 1,
+            "c": 2**31 - 1,
+            "d": 2**63 - 1,
+            "e": 2**127 - 1,
+        }
+    ]
+    result = pl.from_dicts(data).schema
+    # all values inferred as i64 except for values too large for i64
+    expected = {
+        "a": pl.Int64,
+        "b": pl.Int64,
+        "c": pl.Int64,
+        "d": pl.Int64,
+        "e": pl.Int128,
+    }
+    assert result == expected
+
+    with pytest.raises(OverflowError):
+        pl.from_dicts([{"too_big": 2**127}])
+
+
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
     # 5182
