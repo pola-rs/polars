@@ -606,3 +606,18 @@ def test_decimal_horizontal_20482() -> None:
         "max": [D("123.000000"), D("234.000000")],
         "sum": [D("246.000000"), D("468.000000")],
     }
+
+
+def test_shift_over_12957() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 1, 2, 2],
+            "b": [D("1.1"), D("1.1"), D("2.2"), D("2.2")],
+        }
+    )
+    result = df.select(
+        x=pl.col("b").shift(1).over("a"),
+        y=pl.col("a").shift(1).over("b"),
+    )
+    assert result["x"].to_list() == [None, D("1.1"), None, D("2.2")]
+    assert result["y"].to_list() == [None, 1, None, 2]
