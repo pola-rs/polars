@@ -1,6 +1,7 @@
 use arrow::array::Array;
 use arrow::bitmap::MutableBitmap;
 use polars_core::prelude::*;
+#[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -74,6 +75,7 @@ impl ColumnPredicateExpr {
     }
 }
 
+#[cfg(feature = "parquet")]
 impl ParquetColumnExpr for ColumnPredicateExpr {
     fn evaluate_mut(&self, values: &dyn Array, bm: &mut MutableBitmap) {
         // We should never evaluate nulls with this.
@@ -126,6 +128,7 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     }
 }
 
+#[cfg(feature = "parquet")]
 fn cast_to_parquet_scalar(scalar: Scalar) -> Option<ParquetScalar> {
     use {AnyValue as A, ParquetScalar as P};
 
