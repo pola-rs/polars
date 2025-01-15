@@ -33,11 +33,8 @@ pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
 
-pub fn use_gpu_engine() -> bool {
-    std::env::var("POLARS_DEFAULT_ENGINE")
-        .as_deref()
-        .unwrap_or("")
-        == "gpu"
+pub fn get_default_engine() -> String {
+    std::env::var("POLARS_DEFAULT_ENGINE").unwrap_or_else(|_| "cpu".to_string())
 }
 
 pub fn get_file_prefetch_size() -> usize {

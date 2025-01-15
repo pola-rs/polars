@@ -141,7 +141,7 @@ class ConfigParameters(TypedDict, total=False):
     set_trim_decimal_zeros: bool | None
     set_verbose: bool | None
     set_expr_depth_warning: int
-    set_gpu_engine: bool | None
+    set_default_engine: Literal["cpu", "gpu"] | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -1454,18 +1454,18 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_gpu_engine(cls, active: bool | None = None) -> type[Config]:
+    def set_default_engine(cls, engine: Literal["cpu", "gpu"] | None) -> type[Config]:
         """
         Set the default engine to use the GPU.
 
         Parameters
         ----------
-        engine : bool
-            Whether or not to default to GPU polars on .collect() calls
+        engine : Literal["cpu", "gpu"]
+            The default engine to use on all .collect() calls
 
         Examples
         --------
-        >>> pl.Config.set_gpu_engine(True)  # doctest: +SKIP
+        >>> pl.Config.set_default_engine("gpu")  # doctest: +SKIP
         >>> pl.Config.set_verbose(True)  # doctest: +SKIP
         >>> lf = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})  # doctest: +SKIP
         >>> lf.max().collect()  # doctest: +SKIP
@@ -1483,9 +1483,8 @@ class Config(contextlib.ContextDecorator):
         │ 3   ┆ 6   │
         └─────┴─────┘
         """
-        if active is None:
+        if engine is None:
             os.environ.pop("POLARS_DEFAULT_ENGINE", None)
         else:
-            engine = "gpu" if active else "cpu"
             os.environ["POLARS_DEFAULT_ENGINE"] = engine
         return cls

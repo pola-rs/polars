@@ -1,5 +1,5 @@
 use polars::prelude::_set_check_length;
-use polars_core::config::use_gpu_engine as _use_gpu_engine;
+use polars_core::config::get_default_engine as _get_default_engine;
 use pyo3::prelude::*;
 
 #[pyfunction]
@@ -8,6 +8,6 @@ pub fn check_length(check: bool) {
 }
 
 #[pyfunction]
-pub fn use_gpu_engine() -> PyResult<Option<bool>> {
-    Ok(Some(_use_gpu_engine()))
+pub fn get_default_engine() -> PyResult<Option<String>> {
+    Ok(Some(_get_default_engine()))
 }

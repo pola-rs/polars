@@ -220,7 +220,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Functions: other
     m.add_wrapped(wrap_pyfunction!(functions::check_length))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::use_gpu_engine))
+    m.add_wrapped(wrap_pyfunction!(functions::get_default_engine))
         .unwrap();
 
     #[cfg(feature = "sql")]

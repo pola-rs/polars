@@ -81,7 +81,7 @@ from polars.exceptions import PerformanceWarning
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
-from polars.polars import use_gpu_engine
+from polars.polars import get_default_engine
 from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
@@ -2004,7 +2004,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if not (is_config_obj or engine in ("cpu", "gpu")):
             msg = f"Invalid engine argument {engine=}"
             raise ValueError(msg)
-        if use_gpu_engine():
+        if get_default_engine() == "gpu":
             is_gpu = True
         if (streaming or background or new_streaming) and is_gpu:
             issue_warning(
