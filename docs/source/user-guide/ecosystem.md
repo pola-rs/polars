@@ -35,7 +35,8 @@ See the [dedicated visualization section](misc/visualization.md).
 The [Delta Lake](https://github.com/delta-io/delta-rs) project aims to unlock the power of the
 Deltalake for as many users and projects as possible by providing native low-level APIs aimed at
 developers and integrators, as well as a high-level operations API that lets you query, inspect, and
-operate your Delta Lake with ease.
+operate your Delta Lake with ease. Delta Lake builds on the native Polars Parquet reader allowing
+you to write standard Polars queries against a DeltaTable.
 
 Read how to use Delta Lake with Polars
 [at Delta Lake](https://delta-io.github.io/delta-rs/integrations/delta-lake-polars/#reading-a-delta-lake-table-with-polars).
@@ -44,9 +45,33 @@ Read how to use Delta Lake with Polars
 
 #### Scikit Learn
 
-Since [Scikit Learn](https://scikit-learn.org/stable/) 1.4, all transformers support Polars output.
-See the change log for
-[more details](https://scikit-learn.org/dev/whats_new/v1.4.html#changes-impacting-all-modules).
+The [Scikit Learn](https://scikit-learn.org/stable/) machine learning package accepts a Polars
+`DataFrame` as input/output to all transformers and as input to models.
+
+#### XGBoost & LightGBM
+
+XGBoost and LightGBM are gradient boosting packages for doing regression or classification on
+tabular data.
+[XGBoost accepts Polars `DataFrame` and `LazyFrame` as input](https://xgboost.readthedocs.io/en/latest/python/python_intro.html)
+while LightGBM accepts Polars `DataFrame` as input.
+
+#### Time series forecasting
+
+The
+[Nixtla time series forecasting packages](https://nixtlaverse.nixtla.io/statsforecast/docs/getting-started/getting_started_complete_polars.html)
+accept a Polars `DataFrame` as input.
+
+#### Hugging Face
+
+Hugging Face is a platform for working with machine learning datasets and models.
+[Polars can be used to work with datasets downloaded from Hugging Face](io/hugging-face.md).
+
+#### Deep learning frameworks
+
+A `DataFrame` can be transformed
+[into a PyTorch format using `to_torch`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_torch.html)
+or
+[into a JAX format using `to_jax`](https://docs.pola.rs/api/python/stable/reference/dataframe/api/polars.DataFrame.to_jax.html).
 
 ### Other
 
