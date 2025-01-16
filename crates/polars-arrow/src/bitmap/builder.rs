@@ -65,9 +65,10 @@ impl BitmapBuilder {
     /// self.bytes.len() + 8 <= self.bytes.capacity() must hold.
     #[inline(always)]
     unsafe fn flush_word_unchecked(&mut self, w: u64) {
-        let p = self.bytes.as_mut_ptr().add(self.bytes.len()).cast::<u64>();
+        let cur_len = self.bytes.len();
+        let p = self.bytes.as_mut_ptr().add(cur_len).cast::<u64>();
         p.write_unaligned(w.to_le());
-        self.bytes.set_len(self.bytes.len() + 8);
+        self.bytes.set_len(cur_len + 8);
     }
 
     /// # Safety
@@ -156,7 +157,7 @@ impl BitmapBuilder {
         let slice_bit_offset = offset % 8;
         if slice_bit_offset > 0 {
             let bits_in_first_byte = (8 - slice_bit_offset).min(length);
-            let first_byte = *slice.get_unchecked(0) >> slice_bit_offset;
+            let first_byte = *slice.get_unchecked(offset / 8) >> slice_bit_offset;
             self.push_word_with_len_unchecked(
                 first_byte as u64 & ((1 << bits_in_first_byte) - 1),
                 bits_in_first_byte,
