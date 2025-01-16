@@ -8,7 +8,7 @@ use std::sync::Arc;
 use polars_core::schema::*;
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::{IEJoinOptions, InequalityOperator};
-use polars_ops::frame::{JoinCoalesce, JoinType};
+use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
@@ -473,13 +473,17 @@ fn insert_fitting_join(
                     Some(acc.map_or(e, |acc| and_expr(acc, e, expr_arena)))
                 },
             );
-            if let Some(pred) = remaining_predicates {
+
+            let mut remaining_predicates = remaining_predicates;
+            if let Some(pred) = remaining_predicates
+                .take_if(|_| matches!(options.args.maintain_order, MaintainOrderJoin::None))
+            {
                 options.options = Some(JoinTypeOptionsIR::Cross {
                     predicate: ExprIR::from_node(pred, expr_arena),
                 })
             }
 
-            (Vec::new(), Vec::new(), None)
+            (Vec::new(), Vec::new(), remaining_predicates)
         },
     };
 
