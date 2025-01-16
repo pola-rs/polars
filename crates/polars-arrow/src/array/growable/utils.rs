@@ -1,5 +1,5 @@
 use crate::array::Array;
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::offset::Offset;
 
 #[inline]
@@ -16,16 +16,16 @@ pub(super) unsafe fn extend_offset_values<O: Offset>(
     buffer.extend_from_slice(new_values);
 }
 
-pub(super) fn prepare_validity(use_validity: bool, capacity: usize) -> Option<MutableBitmap> {
+pub(super) fn prepare_validity(use_validity: bool, capacity: usize) -> Option<BitmapBuilder> {
     if use_validity {
-        Some(MutableBitmap::with_capacity(capacity))
+        Some(BitmapBuilder::with_capacity(capacity))
     } else {
         None
     }
 }
 
 pub(super) fn extend_validity(
-    mutable_validity: &mut Option<MutableBitmap>,
+    mutable_validity: &mut Option<BitmapBuilder>,
     array: &dyn Array,
     start: usize,
     len: usize,
@@ -36,17 +36,14 @@ pub(super) fn extend_validity(
             Some(validity) => {
                 debug_assert!(start + len <= validity.len());
                 let (slice, offset, _) = validity.as_slice();
-                // SAFETY: invariant offset + length <= slice.len()
-                unsafe {
-                    mutable_validity.extend_from_slice_unchecked(slice, start + offset, len);
-                }
+                mutable_validity.extend_from_slice(slice, start + offset, len);
             },
         }
     }
 }
 
 pub(super) fn extend_validity_copies(
-    mutable_validity: &mut Option<MutableBitmap>,
+    mutable_validity: &mut Option<BitmapBuilder>,
     array: &dyn Array,
     start: usize,
     len: usize,
@@ -58,11 +55,8 @@ pub(super) fn extend_validity_copies(
             Some(validity) => {
                 debug_assert!(start + len <= validity.len());
                 let (slice, offset, _) = validity.as_slice();
-                // SAFETY: invariant offset + length <= slice.len()
                 for _ in 0..copies {
-                    unsafe {
-                        mutable_validity.extend_from_slice_unchecked(slice, start + offset, len);
-                    }
+                    mutable_validity.extend_from_slice(slice, start + offset, len);
                 }
             },
         }

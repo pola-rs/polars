@@ -4,13 +4,13 @@ use super::utils::extend_offset_values;
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, Utf8Array};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::offset::{Offset, Offsets};
 
 /// Concrete [`Growable`] for the [`Utf8Array`].
 pub struct GrowableUtf8<'a, O: Offset> {
     arrays: Vec<&'a Utf8Array<O>>,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     values: Vec<u8>,
     offsets: Offsets<O>,
 }
@@ -49,7 +49,7 @@ impl<'a, O: Offset> GrowableUtf8<'a, O> {
                 self.arrays[0].dtype().clone(),
                 offsets.into(),
                 values.into(),
-                validity.map(|v| v.into()),
+                validity.map(|v| v.freeze()),
             )
         }
     }

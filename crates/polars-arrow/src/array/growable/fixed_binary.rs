@@ -3,12 +3,12 @@ use std::sync::Arc;
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, FixedSizeBinaryArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 
 /// Concrete [`Growable`] for the [`FixedSizeBinaryArray`].
 pub struct GrowableFixedSizeBinary<'a> {
     arrays: Vec<&'a FixedSizeBinaryArray>,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     values: Vec<u8>,
     size: usize, // just a cache
 }
@@ -44,7 +44,7 @@ impl<'a> GrowableFixedSizeBinary<'a> {
         FixedSizeBinaryArray::new(
             self.arrays[0].dtype().clone(),
             values.into(),
-            validity.map(|v| v.into()),
+            validity.map(|v| v.freeze()),
         )
     }
 }
@@ -88,7 +88,7 @@ impl<'a> From<GrowableFixedSizeBinary<'a>> for FixedSizeBinaryArray {
         FixedSizeBinaryArray::new(
             val.arrays[0].dtype().clone(),
             val.values.into(),
-            val.validity.map(|v| v.into()),
+            val.validity.map(|v| v.freeze()),
         )
     }
 }

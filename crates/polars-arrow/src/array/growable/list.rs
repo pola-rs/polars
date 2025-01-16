@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, ListArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::offset::{Offset, Offsets};
 
 unsafe fn extend_offset_values<O: Offset>(
@@ -29,7 +29,7 @@ unsafe fn extend_offset_values<O: Offset>(
 /// Concrete [`Growable`] for the [`ListArray`].
 pub struct GrowableList<'a, O: Offset> {
     arrays: Vec<&'a ListArray<O>>,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     values: Box<dyn Growable<'a> + 'a>,
     offsets: Offsets<O>,
 }
@@ -68,7 +68,7 @@ impl<'a, O: Offset> GrowableList<'a, O> {
             self.arrays[0].dtype().clone(),
             offsets.into(),
             values,
-            validity.map(|v| v.into()),
+            validity.map(|v| v.freeze()),
         )
     }
 }
