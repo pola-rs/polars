@@ -66,7 +66,7 @@ def linear_space(
     start
         Lower bound of the range.
     end
-        Upper bound of the time range.
+        Upper bound of the range.
     num_samples
         Number of samples in the output sequence.
     closed : {'both', 'left', 'right', 'none'}
