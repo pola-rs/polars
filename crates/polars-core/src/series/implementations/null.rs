@@ -223,6 +223,12 @@ impl SeriesTrait for NullChunked {
         Ok(n)
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        let idxs: Vec<IdxSize> = (0..self.n_unique().unwrap() as IdxSize).collect();
+        Ok(IdxCa::new(self.name().clone(), idxs))
+    }
+
     fn new_from_index(&self, _index: usize, length: usize) -> Series {
         NullChunked::new(self.name.clone(), length).into_series()
     }
