@@ -1223,12 +1223,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             figsize=figsize,
         )
 
-    def inspect(self, fmt: str = "{}") -> LazyFrame:
+    @deprecate_renamed_parameter("fmt", "f_string", version="1.20.0")
+    def inspect(self, f_string: str = "{}") -> LazyFrame:
         """
         Inspect a node in the computation graph.
 
         Print the value that this node in the computation graph evaluates to and pass on
         the value.
+
+        Parameters
+        ----------
+        f_string
+            A string with a single placeholder, for example: "hello_{}" or "{}_world".
 
         Examples
         --------
@@ -1242,7 +1248,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
 
         def inspect(s: DataFrame) -> DataFrame:
-            print(fmt.format(s))
+            print(f_string.format(s))
             return s
 
         return self.map_batches(
