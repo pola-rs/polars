@@ -29,6 +29,8 @@ use regex::Regex;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
+use serde::Deserializer;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use url::Url;
@@ -78,8 +80,16 @@ pub struct CloudOptions {
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
     #[cfg(feature = "cloud")]
-    #[cfg_attr(feature = "serde", serde(skip))] // skipped for polars-cloud
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_or_default"))]
     pub(crate) credential_provider: Option<PlCredentialProvider>,
+}
+
+fn deserialize_or_default<'de, D>(deserializer: D) -> Result<Option<PlCredentialProvider>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    type T = Option<PlCredentialProvider>;
+    T::deserialize(deserializer).or_else(|_| Ok(Default::default()))
 }
 
 impl Default for CloudOptions {
