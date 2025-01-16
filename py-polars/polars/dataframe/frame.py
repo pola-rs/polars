@@ -4420,6 +4420,21 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+        Write DataFrame as a Delta Lake table with zstd compression.
+        For all `delta_write_options` keyword arguments, check the deltalake docs
+        `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
+        and for Writer Properties in particular `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+
+        >>> import deltalake
+        >>> df.write_delta(
+        ...     table_path,
+        ...     delta_write_options={
+        ...         "writer_properties": deltalake.WriterProperties(compression="zstd"),
+        ...     },
+        ... )  # doctest: +SKIP
+
         Merge the DataFrame with an existing Delta Lake table.
         For all `TableMerger` methods, check the deltalake docs
         `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
