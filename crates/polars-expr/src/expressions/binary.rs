@@ -272,26 +272,6 @@ impl PhysicalExpr for BinaryExpr {
         self.left.collect_live_columns(lv);
         self.right.collect_live_columns(lv);
     }
-    fn replace_elementwise_const_columns(
-        &self,
-        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
-    ) -> Option<Arc<dyn PhysicalExpr>> {
-        let rcc_left = self.left.replace_elementwise_const_columns(const_columns);
-        let rcc_right = self.right.replace_elementwise_const_columns(const_columns);
-
-        if rcc_left.is_some() || rcc_right.is_some() {
-            let mut slf = self.clone();
-            if let Some(left) = rcc_left {
-                slf.left = left;
-            }
-            if let Some(right) = rcc_right {
-                slf.right = right;
-            }
-            return Some(Arc::new(slf));
-        }
-
-        None
-    }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)

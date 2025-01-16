@@ -20,6 +20,55 @@ use crate::executors::JsonExec;
 use crate::executors::ParquetExec;
 use crate::prelude::*;
 
+pub struct PhysicalExprWithConstCols {
+    constants: Vec<(PlSmallStr, Scalar)>,
+    child: Arc<dyn PhysicalExpr>,
+}
+
+impl PhysicalExpr for PhysicalExprWithConstCols {
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
+        let mut df = df.clone();
+        for (name, scalar) in &self.constants {
+            df.with_column(Column::new_scalar(
+                name.clone(),
+                scalar.clone(),
+                df.height(),
+            ))?;
+        }
+
+        self.child.evaluate(&df, state)
+    }
+
+    fn evaluate_on_groups<'a>(
+        &self,
+        df: &DataFrame,
+        groups: &'a GroupPositions,
+        state: &ExecutionState,
+    ) -> PolarsResult<AggregationContext<'a>> {
+        let mut df = df.clone();
+        for (name, scalar) in &self.constants {
+            df.with_column(Column::new_scalar(
+                name.clone(),
+                scalar.clone(),
+                df.height(),
+            ))?;
+        }
+
+        self.child.evaluate_on_groups(&df, groups, state)
+    }
+
+    fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
+        self.child.to_field(input_schema)
+    }
+
+    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
+        self.child.collect_live_columns(lv)
+    }
+    fn is_scalar(&self) -> bool {
+        self.child.is_scalar()
+    }
+}
+
 /// An [`Executor`] that scans over some IO.
 pub trait ScanExec {
     /// Read the source.
@@ -287,8 +336,6 @@ impl MultiScanExec {
         let verbose = config::verbose();
         let mut dfs = Vec::with_capacity(self.sources.len());
 
-        let mut const_columns = PlHashMap::new();
-
         // @TODO: This should be moved outside of the FileScan::Parquet
         let use_statistics = match &self.scan_type {
             #[cfg(feature = "parquet")]
@@ -334,51 +381,34 @@ impl MultiScanExec {
                 do_skip_file |= allow_slice_skip;
             }
 
+            let mut file_predicate = predicate.clone();
+
             // Insert the hive partition values into the predicate. This allows the predicate
             // to function even when there is a combination of hive and non-hive columns being
             // used.
-            let mut file_predicate = predicate.clone();
             if has_live_hive_columns {
                 let hive_part = hive_part.unwrap();
-                let predicate = predicate.as_ref().unwrap();
-                const_columns.clear();
-                for (idx, column) in hive_column_set.iter().enumerate() {
-                    let value = hive_part.get_statistics().column_stats()[idx]
-                        .to_min()
-                        .unwrap()
-                        .get(0)
-                        .unwrap()
-                        .into_static();
-                    const_columns.insert(column.clone(), value);
-                }
-                // @TODO: It would be nice to get this somehow.
-                // for (_, (missing_column, _)) in &missing_columns {
-                //     const_columns.insert((*missing_column).clone(), AnyValue::Null);
-                // }
+                let child = file_predicate.unwrap();
 
-                file_predicate = predicate.replace_elementwise_const_columns(&const_columns);
-
-                // @TODO: Set predicate to `None` if it's constant evaluated to true.
-
-                // At this point the file_predicate should not contain any references to the
-                // hive columns anymore.
-                //
-                // Note that, replace_elementwise_const_columns does not actually guarantee the
-                // replacement of all reference to the const columns. But any expression which
-                // does not guarantee this should not be pushed down as an IO predicate.
-                if cfg!(debug_assertions) {
-                    let mut live_columns = PlIndexSet::new();
-                    file_predicate
-                        .as_ref()
-                        .unwrap()
-                        .collect_live_columns(&mut live_columns);
-                    for hive_column in hive_part.get_statistics().column_stats() {
-                        assert!(
-                            !live_columns.contains(hive_column.field_name()),
-                            "Predicate still contains hive column"
-                        );
-                    }
-                }
+                file_predicate = Some(Arc::new(PhysicalExprWithConstCols {
+                    constants: hive_column_set
+                        .iter()
+                        .enumerate()
+                        .map(|(idx, column)| {
+                            let series = hive_part.get_statistics().column_stats()[idx]
+                                .to_min()
+                                .unwrap();
+                            (
+                                column.clone(),
+                                Scalar::new(
+                                    series.dtype().clone(),
+                                    series.get(0).unwrap().into_static(),
+                                ),
+                            )
+                        })
+                        .collect(),
+                    child,
+                }));
             }
 
             let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
