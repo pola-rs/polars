@@ -88,7 +88,7 @@ def linear_space(
 
     Examples
     --------
-    >>> pl.linear_space(start=0, end=1, num_samples=3, eager=True)
+    >>> pl.linear_space(start=0, end=1, num_samples=3, closed="both", eager=True)
     shape: (3,)
     Series: 'literal' [f64]
     [
@@ -111,6 +111,14 @@ def linear_space(
             0.333333
             0.666667
             1.0
+    ]
+    >>> pl.linear_space(start=0, end=1, num_samples=3, closed="none", eager=True)
+    shape: (3,)
+    Series: 'literal' [f64]
+    [
+            0.25
+            0.5
+            0.75
     ]
     >>> from datetime import time
     >>> pl.linear_space(

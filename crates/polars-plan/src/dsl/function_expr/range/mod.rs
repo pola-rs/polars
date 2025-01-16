@@ -75,7 +75,29 @@ impl RangeFunction {
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
             IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
-            LinearSpace { closed: _ } => mapper.with_dtype(DataType::Float64),
+            LinearSpace { closed: _ } => {
+                let fields = mapper.args();
+                let start_dtype = fields[0].dtype();
+                let end_dtype = fields[1].dtype();
+                mapper.with_dtype(match (start_dtype, end_dtype) {
+                    (&DataType::Float32, &DataType::Float32) => DataType::Float32,
+                    // A linear space of a Date produces a sequence of Datetimes
+                    (dt1, dt2) if dt1.is_temporal() && dt1 == dt2 => {
+                        if dt1 == &DataType::Date {
+                            DataType::Datetime(TimeUnit::Milliseconds, None)
+                        } else {
+                            dt1.clone()
+                        }
+                    },
+                    (dt1, dt2) if !dt1.is_primitive_numeric() || !dt2.is_primitive_numeric() => {
+                        polars_bail!(ComputeError:
+                            "'start' and 'end' have incompatible dtypes, got {:?} and {:?}",
+                            dt1, dt2
+                        )
+                    },
+                    _ => DataType::Float64,
+                })
+            },
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => mapper.with_dtype(DataType::Date),
             #[cfg(feature = "dtype-date")]

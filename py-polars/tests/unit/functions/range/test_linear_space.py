@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 @pytest.mark.parametrize("num_samples", [0, 1, 2, 5, 1_000])
 @pytest.mark.parametrize("interval", ["both", "left", "right", "none"])
 @pytest.mark.parametrize("eager", [True, False])
-def test_linear_space(
+def test_linear_space_values(
     start: int | float,
     end: int | float,
     num_samples: int,
@@ -35,13 +35,13 @@ def test_linear_space(
     eager: bool,
 ) -> None:
     if eager:
-        result = pl.select(
-            pl.linear_space(start, end, num_samples, closed=interval).alias("ls")
-        ).to_series()
-    else:
         result = pl.linear_space(
             start, end, num_samples, closed=interval, eager=True
         ).rename("ls")
+    else:
+        result = pl.select(
+            ls=pl.linear_space(start, end, num_samples, closed=interval)
+        ).to_series()
 
     if interval == "both":
         expected = pl.Series("ls", np.linspace(start, end, num_samples))
@@ -56,14 +56,14 @@ def test_linear_space(
 
 
 def test_linear_space_expr() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
 
-    result = df.select(pl.linear_space(0, pl.col("a").len(), 3))
-    expected = pl.DataFrame({"literal": pl.Series([0.0, 2.5, 5.0], dtype=pl.Float64)})
+    result = lf.select(pl.linear_space(0, pl.col("a").len(), 3))
+    expected = lf.select(literal=pl.Series([0.0, 2.5, 5.0], dtype=pl.Float64))
     assert_frame_equal(result, expected)
 
-    result = df.select(pl.linear_space(pl.col("a").len(), 0, 3))
-    expected = pl.DataFrame({"a": pl.Series([5.0, 2.5, 0.0], dtype=pl.Float64)})
+    result = lf.select(pl.linear_space(pl.col("a").len(), 0, 3))
+    expected = lf.select(a=pl.Series([5.0, 2.5, 0.0], dtype=pl.Float64))
     assert_frame_equal(result, expected)
 
 
@@ -84,44 +84,42 @@ def test_linear_space_numeric_dtype(
     dtype_end: PolarsDataType,
     dtype_expected: PolarsDataType,
 ) -> None:
-    result = pl.linear_space(
-        pl.lit(0, dtype=dtype_start),
-        pl.lit(1, dtype=dtype_end),
-        6,
-        eager=True,
+    lf = pl.LazyFrame()
+    result = lf.select(
+        ls=pl.linear_space(pl.lit(0, dtype=dtype_start), pl.lit(1, dtype=dtype_end), 6)
     )
-    expected = pl.Series(
-        "literal", [0.0, 0.2, 0.4, 0.6, 0.8, 1.0], dtype=dtype_expected
+    expected = lf.select(
+        ls=pl.Series([0.0, 0.2, 0.4, 0.6, 0.8, 1.0], dtype=dtype_expected)
     )
-    assert_series_equal(result, expected)
+    assert_frame_equal(result, expected)
 
 
 def test_linear_space_date() -> None:
     d1 = date(2025, 1, 1)
     d2 = date(2025, 2, 1)
-    result = pl.linear_space(d1, d2, 4, eager=True)
     out_values = [
         datetime(2025, 1, 1),
         datetime(2025, 1, 11, 8),
         datetime(2025, 1, 21, 16),
         datetime(2025, 2, 1),
     ]
+    lf = pl.LazyFrame()
 
-    result = pl.linear_space(d1, d2, 4, eager=True, closed="both")
-    expected = pl.Series("literal", out_values, dtype=pl.Datetime("ms"))
-    assert_series_equal(result, expected)
+    result = lf.select(ls=pl.linear_space(d1, d2, 4, closed="both"))
+    expected = lf.select(ls=pl.Series(out_values, dtype=pl.Datetime("ms")))
+    assert_frame_equal(result, expected)
 
-    result = pl.linear_space(d1, d2, 3, eager=True, closed="left")
-    expected = pl.Series("literal", out_values[:-1], dtype=pl.Datetime("ms"))
-    assert_series_equal(result, expected)
+    result = lf.select(ls=pl.linear_space(d1, d2, 3, closed="left"))
+    expected = lf.select(ls=pl.Series(out_values[:-1], dtype=pl.Datetime("ms")))
+    assert_frame_equal(result, expected)
 
-    result = pl.linear_space(d1, d2, 3, eager=True, closed="right")
-    expected = pl.Series("literal", out_values[1:], dtype=pl.Datetime("ms"))
-    assert_series_equal(result, expected)
+    result = lf.select(ls=pl.linear_space(d1, d2, 3, closed="right"))
+    expected = lf.select(ls=pl.Series(out_values[1:], dtype=pl.Datetime("ms")))
+    assert_frame_equal(result, expected)
 
-    result = pl.linear_space(d1, d2, 2, eager=True, closed="none")
-    expected = pl.Series("literal", out_values[1:-1], dtype=pl.Datetime("ms"))
-    assert_series_equal(result, expected)
+    result = lf.select(ls=pl.linear_space(d1, d2, 2, closed="none"))
+    expected = lf.select(ls=pl.Series(out_values[1:-1], dtype=pl.Datetime("ms")))
+    assert_frame_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -143,12 +141,16 @@ def test_linear_space_temporal(dtype: PolarsDataType) -> None:
     start = 0
     end = 1_000_000_000
 
-    result_int = pl.linear_space(start, end, 11, eager=True).cast(pl.Int64)
-    result_dt = pl.linear_space(
-        pl.lit(start, dtype=dtype), pl.lit(end, dtype=dtype), 11, eager=True
-    ).cast(pl.Int64)
+    lf = pl.LazyFrame()
 
-    assert_series_equal(result_int, result_dt)
+    result_int = lf.select(
+        ls=pl.linear_space(start, end, 11).cast(pl.Int64).cast(dtype)
+    )
+    result_dt = lf.select(
+        ls=pl.linear_space(pl.lit(start, dtype=dtype), pl.lit(end, dtype=dtype), 11)
+    )
+
+    assert_frame_equal(result_int, result_dt)
 
 
 @pytest.mark.parametrize(
@@ -171,7 +173,7 @@ def test_linear_space_temporal(dtype: PolarsDataType) -> None:
         (pl.Int32, pl.String, "Int32", "String"),
     ],
 )
-def test_linear_space_incompatible_temporals(
+def test_linear_space_incompatible_dtypes(
     dtype1: PolarsDataType,
     dtype2: PolarsDataType,
     str1: str,
@@ -197,17 +199,15 @@ def test_linear_space_expr_wrong_length() -> None:
 
 
 def test_linear_space_num_samples_expr() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3, 4, 5]})
-    result = df.with_columns(pl.linear_space(0, 1, pl.len(), closed="left").alias("ls"))
-    expected = df.with_columns(
-        pl.Series([0, 0.2, 0.4, 0.6, 0.8], dtype=pl.Float64).alias("ls")
-    )
+    lf = pl.LazyFrame({"a": [1, 2, 3, 4, 5]})
+    result = lf.with_columns(ls=pl.linear_space(0, 1, pl.len(), closed="left"))
+    expected = lf.with_columns(ls=pl.Series([0, 0.2, 0.4, 0.6, 0.8], dtype=pl.Float64))
     assert_frame_equal(result, expected)
 
 
 def test_linear_space_invalid_num_samples_expr() -> None:
-    df = pl.DataFrame({"x": [1, 2, 3]})
+    lf = pl.LazyFrame({"x": [1, 2, 3]})
     with pytest.raises(
         ComputeError, match="`num_samples` must contain exactly one value, got 3 values"
     ):
-        df.select(pl.linear_space(0, 1, pl.col("x")))
+        lf.select(pl.linear_space(0, 1, pl.col("x"))).collect()
