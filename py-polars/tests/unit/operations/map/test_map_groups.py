@@ -155,7 +155,7 @@ def test_map_groups_numpy_output_3057() -> None:
 
 
 def test_map_groups_return_all_null_15260() -> None:
-    def foo(x: pl.Series) -> None:
+    def foo(x: pl.Series) -> pl.Series:
         return pl.Series([x[0][0]], dtype=x[0].dtype)
 
     assert_frame_equal(
