@@ -162,6 +162,6 @@ def test_map_groups_return_all_null_15260() -> None:
         pl.DataFrame({"key": [0, 0, 1], "a": [None, None, None]})
         .group_by("key")
         .agg(pl.map_groups(exprs=["a"], function=foo))  # type: ignore[arg-type]
-        .sort("a"),
+        .sort("key"),
         pl.DataFrame({"key": [0, 1], "a": [None, None]}),
     )
