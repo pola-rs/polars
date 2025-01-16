@@ -223,7 +223,7 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
-    ClientOptions::default()
+    ClientOptions::new()
         // We set request timeout super high as the timeout isn't reset at ACK,
         // but starts from the moment we start downloading a body.
         // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
@@ -299,15 +299,9 @@ impl CloudOptions {
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = AmazonS3Builder::from_env().with_url(url);
-        if let Some(options) = &self.config {
-            let CloudConfig::Aws(options) = options else {
-                panic!("impl error: cloud type mismatch")
-            };
-            for (key, value) in options.iter() {
-                builder = builder.with_config(*key, value);
-            }
-        }
+        let mut builder = AmazonS3Builder::from_env()
+            .with_client_options(get_client_options())
+            .with_url(url);
 
         read_config(
             &mut builder,
@@ -316,6 +310,7 @@ impl CloudOptions {
                 &[("region\\s*=\\s*(.*)\n", AmazonS3ConfigKey::Region)],
             )],
         );
+
         read_config(
             &mut builder,
             &[(
@@ -332,6 +327,15 @@ impl CloudOptions {
                 ],
             )],
         );
+
+        if let Some(options) = &self.config {
+            let CloudConfig::Aws(options) = options else {
+                panic!("impl error: cloud type mismatch")
+            };
+            for (key, value) in options.iter() {
+                builder = builder.with_config(*key, value);
+            }
+        }
 
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
@@ -382,9 +386,7 @@ impl CloudOptions {
             };
         };
 
-        let builder = builder
-            .with_client_options(get_client_options())
-            .with_retry(get_retry_config(self.max_retries));
+        let builder = builder.with_retry(get_retry_config(self.max_retries));
 
         let builder = if let Some(v) = self.credential_provider.clone() {
             builder.with_credentials(v.into_aws_provider())
@@ -416,7 +418,8 @@ impl CloudOptions {
 
         // The credential provider `self.credentials` is prioritized if it is set. We also need
         // `from_env()` as it may source environment configured storage account name.
-        let mut builder = MicrosoftAzureBuilder::from_env();
+        let mut builder =
+            MicrosoftAzureBuilder::from_env().with_client_options(get_client_options());
 
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
@@ -428,7 +431,6 @@ impl CloudOptions {
         }
 
         let builder = builder
-            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
@@ -464,11 +466,14 @@ impl CloudOptions {
     pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = if self.credential_provider.is_none() {
+        let builder = if self.credential_provider.is_none() {
             GoogleCloudStorageBuilder::from_env()
         } else {
             GoogleCloudStorageBuilder::new()
         };
+
+        let mut builder = builder.with_client_options(get_client_options());
+
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -479,7 +484,6 @@ impl CloudOptions {
         }
 
         let builder = builder
-            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
