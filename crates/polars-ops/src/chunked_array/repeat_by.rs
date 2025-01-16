@@ -14,12 +14,13 @@ fn check_lengths(length_srs: usize, length_by: usize) -> PolarsResult<()> {
 }
 
 fn new_by(by: &IdxCa, len: usize) -> IdxCa {
-    IdxCa::new(
-        PlSmallStr::EMPTY,
-        std::iter::repeat(by.get(0).unwrap())
-            .take(len)
-            .collect::<Vec<IdxSize>>(),
-    )
+    let values = if let Some(x) = by.get(0) {
+        std::iter::repeat(x).take(len).collect::<Vec<IdxSize>>()
+    } else {
+        println!("HEREE");
+        vec![0u32; len]
+    };
+    IdxCa::new(PlSmallStr::EMPTY, values)
 }
 
 fn repeat_by_primitive<T>(ca: &ChunkedArray<T>, by: &IdxCa) -> PolarsResult<ListChunked>
