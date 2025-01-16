@@ -3,12 +3,12 @@ use std::sync::Arc;
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::{Array, FixedSizeListArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 
 /// Concrete [`Growable`] for the [`FixedSizeListArray`].
 pub struct GrowableFixedSizeList<'a> {
     arrays: Vec<&'a FixedSizeListArray>,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     values: Box<dyn Growable<'a> + 'a>,
     size: usize,
     length: usize,
@@ -61,7 +61,7 @@ impl<'a> GrowableFixedSizeList<'a> {
             self.arrays[0].dtype().clone(),
             self.length,
             values,
-            validity.map(|v| v.into()),
+            validity.map(|v| v.freeze()),
         )
     }
 }
@@ -122,7 +122,7 @@ impl<'a> From<GrowableFixedSizeList<'a>> for FixedSizeListArray {
             val.arrays[0].dtype().clone(),
             val.length,
             values,
-            val.validity.map(|v| v.into()),
+            val.validity.map(|v| v.freeze()),
         )
     }
 }
