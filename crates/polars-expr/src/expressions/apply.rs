@@ -300,6 +300,12 @@ impl ApplyExpr {
 
 fn all_unit_length(ca: &ListChunked) -> bool {
     assert_eq!(ca.chunks().len(), 1);
+
+    // Handles the Null dtype - in that case the offsets can be (e.g. [0,0,0 ...])
+    if ca.null_count() == ca.len() {
+        return true;
+    }
+
     let list_arr = ca.downcast_iter().next().unwrap();
     let offset = list_arr.offsets().as_slice();
     (offset[offset.len() - 1] as usize) == list_arr.len()
