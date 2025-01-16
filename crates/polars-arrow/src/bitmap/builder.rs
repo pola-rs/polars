@@ -109,7 +109,7 @@ impl BitmapBuilder {
             for _ in 0..remaining_words {
                 self.flush_word_unchecked(value_spread);
             }
-            self.set_bits += remaining_words * 64 & value_spread as usize;
+            self.set_bits += (remaining_words * 64) & value_spread as usize;
 
             // Put remainder in buf and update length.
             self.buf = ((value as u64) << (remaining_bits % 64)) - (value as u64);
@@ -117,10 +117,10 @@ impl BitmapBuilder {
         }
     }
 
-    // Pushes the first length bits from the given word, assuming the rest of
-    // the bits are zero.
-    // # Safety
-    // self.len + length <= self.cap and length <= 64 must hold.
+    /// Pushes the first length bits from the given word, assuming the rest of
+    /// the bits are zero.
+    /// # Safety
+    /// self.len + length <= self.cap and length <= 64 must hold.
     pub unsafe fn push_word_with_len_unchecked(&mut self, word: u64, length: usize) {
         debug_assert!(self.len + length <= self.cap);
         debug_assert!(length <= 64);

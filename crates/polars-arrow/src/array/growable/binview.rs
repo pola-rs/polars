@@ -8,7 +8,7 @@ use super::Growable;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::{Array, MutableBinaryViewArray, View};
-use crate::bitmap::{Bitmap, BitmapBuilder};
+use crate::bitmap::BitmapBuilder;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
