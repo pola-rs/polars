@@ -81,6 +81,10 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
 
 impl<'a> From<GrowableBoolean<'a>> for BooleanArray {
     fn from(val: GrowableBoolean<'a>) -> Self {
-        BooleanArray::new(val.dtype, val.values.freeze(), val.validity.map(|v| v.freeze()))
+        BooleanArray::new(
+            val.dtype,
+            val.values.freeze(),
+            val.validity.map(|v| v.freeze()),
+        )
     }
 }

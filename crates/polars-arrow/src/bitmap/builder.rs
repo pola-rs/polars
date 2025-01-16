@@ -59,7 +59,7 @@ impl BitmapBuilder {
         self.reserve(1);
         unsafe { self.push_unchecked(x) }
     }
-    
+
     /// Does not update len/set_bits, simply writes to the output buffer.
     /// # Safety
     /// self.bytes.len() + 8 <= self.bytes.capacity() must hold.
@@ -83,7 +83,7 @@ impl BitmapBuilder {
             self.buf = 0;
         }
     }
-    
+
     pub fn extend_constant(&mut self, length: usize, value: bool) {
         // Fast path if the extension still fits in buf with room left to spare.
         let bits_in_buf = self.len % 64;
@@ -102,7 +102,7 @@ impl BitmapBuilder {
             let ext_buf = self.buf | (value_spread << bits_in_buf);
             self.flush_word_unchecked(ext_buf);
             self.set_bits += ext_buf.count_ones() as usize;
-            
+
             // Write complete words.
             let remaining_bits = length - (64 - bits_in_buf);
             let remaining_words = remaining_bits / 64;
@@ -110,7 +110,7 @@ impl BitmapBuilder {
                 self.flush_word_unchecked(value_spread);
             }
             self.set_bits += remaining_words * 64 & value_spread as usize;
-            
+
             // Put remainder in buf and update length.
             self.buf = ((value as u64) << (remaining_bits % 64)) - (value as u64);
             self.len += length;
@@ -130,30 +130,42 @@ impl BitmapBuilder {
         if bits_in_buf + length >= 64 {
             self.flush_word_unchecked(self.buf);
             self.set_bits += self.buf.count_ones() as usize;
-            self.buf = if bits_in_buf > 0 { word >> (64 - bits_in_buf) } else { 0 };
+            self.buf = if bits_in_buf > 0 {
+                word >> (64 - bits_in_buf)
+            } else {
+                0
+            };
         }
         self.len += length;
     }
-    
+
     /// # Safety
     /// self.len() + length <= self.capacity() must hold, as well as
     /// offset + length <= 8 * slice.len().
-    unsafe fn extend_from_slice_unchecked(&mut self, mut slice: &[u8], mut offset: usize, mut length: usize) {
+    unsafe fn extend_from_slice_unchecked(
+        &mut self,
+        mut slice: &[u8],
+        mut offset: usize,
+        mut length: usize,
+    ) {
         if length == 0 {
             return;
         }
-        
+
         // Deal with slice offset so it's aligned to bytes.
         let slice_bit_offset = offset % 8;
         if slice_bit_offset > 0 {
             let bits_in_first_byte = (8 - slice_bit_offset).min(length);
             let first_byte = *slice.get_unchecked(0) >> slice_bit_offset;
-            self.push_word_with_len_unchecked(first_byte as u64 & ((1 << bits_in_first_byte) - 1), bits_in_first_byte);
+            self.push_word_with_len_unchecked(
+                first_byte as u64 & ((1 << bits_in_first_byte) - 1),
+                bits_in_first_byte,
+            );
             length -= bits_in_first_byte;
             offset += bits_in_first_byte;
         }
         slice = slice.get_unchecked(offset / 8..);
-        
+
         // Write word-by-word.
         let bits_in_buf = self.len % 64;
         if bits_in_buf > 0 {
@@ -177,18 +189,20 @@ impl BitmapBuilder {
                 slice = slice.get_unchecked(8..);
             }
         }
-        
+
         // Just the last word left.
         if length > 0 {
             let word = load_padded_le_u64(slice);
             self.push_word_with_len_unchecked(word & ((1 << length) - 1), length);
         }
     }
-    
+
     pub fn extend_from_slice(&mut self, slice: &[u8], offset: usize, length: usize) {
         assert!(8 * slice.len() >= offset + length);
         self.reserve(length);
-        unsafe { self.extend_from_slice_unchecked(slice, offset, length); }
+        unsafe {
+            self.extend_from_slice_unchecked(slice, offset, length);
+        }
     }
 
     /// # Safety
