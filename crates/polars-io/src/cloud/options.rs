@@ -84,6 +84,7 @@ pub struct CloudOptions {
     pub(crate) credential_provider: Option<PlCredentialProvider>,
 }
 
+#[cfg(feature = "serde")]
 fn deserialize_or_default<'de, D>(deserializer: D) -> Result<Option<PlCredentialProvider>, D::Error>
 where
     D: Deserializer<'de>,
