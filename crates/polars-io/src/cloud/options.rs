@@ -78,6 +78,7 @@ pub struct CloudOptions {
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
     #[cfg(feature = "cloud")]
+    #[cfg_attr(feature = "serde", serde(skip))] // skipped for polars-cloud
     pub(crate) credential_provider: Option<PlCredentialProvider>,
 }
 
