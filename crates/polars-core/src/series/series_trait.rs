@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -310,7 +310,7 @@ pub trait SeriesTrait:
             return None;
         }
 
-        let mut bm = MutableBitmap::with_capacity(self.len());
+        let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
             if let Some(v) = arr.validity() {
                 bm.extend_from_bitmap(v);
@@ -318,7 +318,7 @@ pub trait SeriesTrait:
                 bm.extend_constant(arr.len(), true);
             }
         }
-        Some(bm.into())
+        bm.into_opt_validity()
     }
 
     /// Drop all null values and return a new Series.

@@ -2,14 +2,15 @@ use polars_utils::slice::load_padded_le_u64;
 
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::storage::SharedStorage;
+use crate::trusted_len::TrustedLen;
 
 /// Used to build bitmaps bool-by-bool in sequential order.
 #[derive(Default, Clone)]
 pub struct BitmapBuilder {
-    buf: u64,
-    len: usize, // Length in bits.
-    cap: usize, // Capacity in bits.
-    set_bits: usize,
+    buf: u64,                 // A buffer containing the last self.bit_len % 64 bits.
+    bit_len: usize,           // Length in bits.
+    bit_cap: usize,           // Capacity in bits (always multiple of 64).
+    set_bits_in_bytes: usize, // The number of bits set in self.bytes, not including self.buf.
     bytes: Vec<u8>,
 }
 
@@ -18,12 +19,24 @@ impl BitmapBuilder {
         Self::default()
     }
 
+    #[inline(always)]
     pub fn len(&self) -> usize {
-        self.len
+        self.bit_len
     }
 
+    #[inline(always)]
     pub fn capacity(&self) -> usize {
-        self.cap
+        self.bit_cap
+    }
+
+    #[inline(always)]
+    pub fn set_bits(&self) -> usize {
+        self.set_bits_in_bytes + self.buf.count_ones() as usize
+    }
+
+    #[inline(always)]
+    pub fn unset_bits(&self) -> usize {
+        self.bit_len - self.set_bits()
     }
 
     pub fn with_capacity(bits: usize) -> Self {
@@ -31,16 +44,16 @@ impl BitmapBuilder {
         let words_available = bytes.capacity() / 8;
         Self {
             buf: 0,
-            len: 0,
-            cap: words_available * 64,
-            set_bits: 0,
+            bit_len: 0,
+            bit_cap: words_available * 64,
+            set_bits_in_bytes: 0,
             bytes,
         }
     }
 
     #[inline(always)]
     pub fn reserve(&mut self, additional: usize) {
-        if self.len + additional > self.cap {
+        if self.bit_len + additional > self.bit_cap {
             self.reserve_slow(additional)
         }
     }
@@ -48,10 +61,10 @@ impl BitmapBuilder {
     #[cold]
     #[inline(never)]
     fn reserve_slow(&mut self, additional: usize) {
-        let bytes_needed = (self.len + additional).div_ceil(64) * 8;
+        let bytes_needed = (self.bit_len + additional).div_ceil(64) * 8;
         self.bytes.reserve(bytes_needed - self.bytes.len());
         let words_available = self.bytes.capacity() / 8;
-        self.cap = words_available * 64;
+        self.bit_cap = words_available * 64;
     }
 
     #[inline(always)]
@@ -75,34 +88,40 @@ impl BitmapBuilder {
     /// self.len() < self.capacity() must hold.
     #[inline(always)]
     pub unsafe fn push_unchecked(&mut self, x: bool) {
-        debug_assert!(self.len < self.cap);
-        self.buf |= (x as u64) << (self.len % 64);
-        self.len += 1;
-        if self.len % 64 == 0 {
+        debug_assert!(self.bit_len < self.bit_cap);
+        self.buf |= (x as u64) << (self.bit_len % 64);
+        self.bit_len += 1;
+        if self.bit_len % 64 == 0 {
             self.flush_word_unchecked(self.buf);
-            self.set_bits += self.buf.count_ones() as usize;
+            self.set_bits_in_bytes += self.buf.count_ones() as usize;
             self.buf = 0;
         }
     }
 
+    #[inline(always)]
     pub fn extend_constant(&mut self, length: usize, value: bool) {
         // Fast path if the extension still fits in buf with room left to spare.
-        let bits_in_buf = self.len % 64;
+        let bits_in_buf = self.bit_len % 64;
         if bits_in_buf + length < 64 {
             let bit_block = ((value as u64) << length) - (value as u64);
             self.buf |= bit_block << bits_in_buf;
-            self.len += length;
-            return;
+            self.bit_len += length;
+        } else {
+            self.extend_constant_slow(length, value);
         }
+    }
 
+    #[cold]
+    fn extend_constant_slow(&mut self, length: usize, value: bool) {
         unsafe {
             let value_spread = if value { u64::MAX } else { 0 }; // Branchless neg.
 
             // Extend and flush current buf.
             self.reserve(length);
+            let bits_in_buf = self.bit_len % 64;
             let ext_buf = self.buf | (value_spread << bits_in_buf);
             self.flush_word_unchecked(ext_buf);
-            self.set_bits += ext_buf.count_ones() as usize;
+            self.set_bits_in_bytes += ext_buf.count_ones() as usize;
 
             // Write complete words.
             let remaining_bits = length - (64 - bits_in_buf);
@@ -110,11 +129,11 @@ impl BitmapBuilder {
             for _ in 0..remaining_words {
                 self.flush_word_unchecked(value_spread);
             }
-            self.set_bits += (remaining_words * 64) & value_spread as usize;
+            self.set_bits_in_bytes += (remaining_words * 64) & value_spread as usize;
 
             // Put remainder in buf and update length.
             self.buf = ((value as u64) << (remaining_bits % 64)) - (value as u64);
-            self.len += length;
+            self.bit_len += length;
         }
     }
 
@@ -123,21 +142,21 @@ impl BitmapBuilder {
     /// # Safety
     /// self.len + length <= self.cap and length <= 64 must hold.
     pub unsafe fn push_word_with_len_unchecked(&mut self, word: u64, length: usize) {
-        debug_assert!(self.len + length <= self.cap);
+        debug_assert!(self.bit_len + length <= self.bit_cap);
         debug_assert!(length <= 64);
         debug_assert!(length == 64 || (word >> length) == 0);
-        let bits_in_buf = self.len % 64;
+        let bits_in_buf = self.bit_len % 64;
         self.buf |= word << bits_in_buf;
         if bits_in_buf + length >= 64 {
             self.flush_word_unchecked(self.buf);
-            self.set_bits += self.buf.count_ones() as usize;
+            self.set_bits_in_bytes += self.buf.count_ones() as usize;
             self.buf = if bits_in_buf > 0 {
                 word >> (64 - bits_in_buf)
             } else {
                 0
             };
         }
-        self.len += length;
+        self.bit_len += length;
     }
 
     /// # Safety
@@ -168,15 +187,15 @@ impl BitmapBuilder {
         slice = slice.get_unchecked(offset / 8..);
 
         // Write word-by-word.
-        let bits_in_buf = self.len % 64;
+        let bits_in_buf = self.bit_len % 64;
         if bits_in_buf > 0 {
             while length >= 64 {
                 let word = u64::from_le_bytes(slice.get_unchecked(0..8).try_into().unwrap());
                 self.buf |= word << bits_in_buf;
                 self.flush_word_unchecked(self.buf);
-                self.set_bits += self.buf.count_ones() as usize;
+                self.set_bits_in_bytes += self.buf.count_ones() as usize;
                 self.buf = word >> (64 - bits_in_buf);
-                self.len += 64;
+                self.bit_len += 64;
                 length -= 64;
                 slice = slice.get_unchecked(8..);
             }
@@ -184,8 +203,8 @@ impl BitmapBuilder {
             while length >= 64 {
                 let word = u64::from_le_bytes(slice.get_unchecked(0..8).try_into().unwrap());
                 self.flush_word_unchecked(word);
-                self.set_bits += word.count_ones() as usize;
-                self.len += 64;
+                self.set_bits_in_bytes += word.count_ones() as usize;
+                self.bit_len += 64;
                 length -= 64;
                 slice = slice.get_unchecked(8..);
             }
@@ -205,28 +224,93 @@ impl BitmapBuilder {
             self.extend_from_slice_unchecked(slice, offset, length);
         }
     }
+    
+    pub fn extend_from_bitmap(&mut self, bitmap: &Bitmap) {
+        // TODO: we can perhaps use the bitmaps bitcount here instead of
+        // recomputing it if it has a known bitcount.
+        let (slice, offset, length) = bitmap.as_slice();
+        self.extend_from_slice(slice, offset, length);
+    }
 
     /// # Safety
     /// May only be called once at the end.
     unsafe fn finish(&mut self) {
-        if self.len % 64 != 0 {
+        if self.bit_len % 64 != 0 {
             self.bytes.extend_from_slice(&self.buf.to_le_bytes());
-            self.set_bits += self.buf.count_ones() as usize;
+            self.set_bits_in_bytes += self.buf.count_ones() as usize;
+            self.buf = 0;
         }
     }
 
+    /// Converts this BitmapBuilder into a mutable bitmap.
     pub fn into_mut(mut self) -> MutableBitmap {
         unsafe {
             self.finish();
-            MutableBitmap::from_vec(self.bytes, self.len)
+            MutableBitmap::from_vec(self.bytes, self.bit_len)
         }
     }
 
+    /// The same as into_mut, but returns None if the bitmap is all-ones.
+    pub fn into_opt_mut_validity(mut self) -> Option<MutableBitmap> {
+        unsafe {
+            self.finish();
+            if self.set_bits_in_bytes == self.bit_len {
+                return None;
+            }
+            Some(MutableBitmap::from_vec(self.bytes, self.bit_len))
+        }
+    }
+
+    /// Freezes this BitmapBuilder into an immutable Bitmap.
     pub fn freeze(mut self) -> Bitmap {
         unsafe {
             self.finish();
             let storage = SharedStorage::from_vec(self.bytes);
-            Bitmap::from_inner_unchecked(storage, 0, self.len, Some(self.len - self.set_bits))
+            Bitmap::from_inner_unchecked(
+                storage,
+                0,
+                self.bit_len,
+                Some(self.bit_len - self.set_bits_in_bytes),
+            )
         }
+    }
+
+    /// The same as freeze, but returns None if the bitmap is all-ones.
+    pub fn into_opt_validity(mut self) -> Option<Bitmap> {
+        unsafe {
+            self.finish();
+            if self.set_bits_in_bytes == self.bit_len {
+                return None;
+            }
+            let storage = SharedStorage::from_vec(self.bytes);
+            let bitmap = Bitmap::from_inner_unchecked(
+                storage,
+                0,
+                self.bit_len,
+                Some(self.bit_len - self.set_bits_in_bytes),
+            );
+            Some(bitmap)
+        }
+    }
+    
+    pub fn extend_trusted_len_iter<I>(&mut self, iterator: I)
+    where
+        I: Iterator<Item = bool> + TrustedLen
+    {
+        self.reserve(iterator.size_hint().1.unwrap());
+        for b in iterator {
+            // SAFETY: we reserved and the iterator's length is trusted.
+            unsafe { self.push_unchecked(b); }
+        }
+    }
+
+    #[inline]
+    pub fn from_trusted_len_iter<I>(iterator: I) -> Self
+    where
+        I: Iterator<Item = bool> + TrustedLen
+    {
+        let mut builder = Self::new();
+        builder.extend_trusted_len_iter(iterator);
+        builder
     }
 }

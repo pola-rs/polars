@@ -1,5 +1,5 @@
 use arrow::array::{GenericBinaryArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::offset::{Offset, Offsets, OffsetsBuffer};
 use polars_utils::vec::{CapacityByFactor, PushUnchecked};
@@ -134,7 +134,7 @@ pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: Generi
     indices: &PrimitiveArray<I>,
 ) -> (OffsetsBuffer<O>, Buffer<u8>, Option<Bitmap>) {
     let mut total_length = O::default();
-    let mut validity = MutableBitmap::with_capacity(indices.len());
+    let mut validity = BitmapBuilder::with_capacity(indices.len());
 
     let values_validity = values.validity().unwrap();
     let offsets = values.offsets();
@@ -169,5 +169,5 @@ pub(super) unsafe fn take_values_indices_validity<O: Offset, I: Index, A: Generi
 
     let buffer = take_values(total_length, &starts, &offsets, values_values);
 
-    (offsets, buffer, validity.into())
+    (offsets, buffer, validity.into_opt_validity())
 }

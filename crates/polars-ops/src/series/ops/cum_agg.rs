@@ -2,7 +2,7 @@ use std::ops::{Add, AddAssign, Mul};
 
 use arity::unary_elementwise_values;
 use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -103,7 +103,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(first_true_idx) = ca.iter().position(|x| x == Some(true)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(first_true_idx, false);
         out.extend_constant(ca.len() - first_true_idx, true);
     } else {
@@ -111,7 +111,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(last_true_idx) = ca.iter().rposition(|x| x == Some(true)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(last_true_idx + 1, true);
         out.extend_constant(ca.len() - 1 - last_true_idx, false);
     }
@@ -131,7 +131,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(first_false_idx) = ca.iter().position(|x| x == Some(false)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(first_false_idx, true);
         out.extend_constant(ca.len() - first_false_idx, false);
     } else {
@@ -139,7 +139,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(last_false_idx) = ca.iter().rposition(|x| x == Some(false)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(last_false_idx + 1, false);
         out.extend_constant(ca.len() - 1 - last_false_idx, true);
     }
