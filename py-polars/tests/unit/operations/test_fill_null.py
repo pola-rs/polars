@@ -61,3 +61,10 @@ def test_fill_null_lit_() -> None:
         df.fill_null(pl.lit(0)).select(pl.all().null_count()).transpose().sum().item()
         == 0
     )
+
+
+def test_fill_null_decimal_with_int_14331() -> None:
+    s = pl.Series("a", ["1.1", None], dtype=pl.Decimal(precision=None, scale=5))
+    result = s.fill_null(0)
+    expected = pl.Series("a", ["1.1", "0.0"], dtype=pl.Decimal(precision=None, scale=5))
+    assert_series_equal(result, expected)
