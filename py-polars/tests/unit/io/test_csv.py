@@ -2501,3 +2501,10 @@ def test_trailing_separator_8240() -> None:
 
     result = pl.scan_csv(io.StringIO(csv), separator="|", has_header=False).collect()
     assert_frame_equal(result, expected)
+
+
+def test_header_only_column_selection_17173() -> None:
+    csv = "A,B"
+    result = pl.read_csv(io.StringIO(csv), columns=["B"])
+    expected = pl.Series("B", [], pl.String()).to_frame()
+    assert_frame_equal(result, expected)
