@@ -719,7 +719,7 @@ def test_list_arithmetic_div_ops_zero_denominator(
 
     assert_series_equal(
         s / pl.Series([1]).new_from_index(0, n),
-        pl.Series([[float("inf")], [1.0], [None], None], dtype=pl.List(pl.Float64)),
+        pl.Series([[0.0], [1.0], [None], None], dtype=pl.List(pl.Float64)),
     )
 
     # floordiv
