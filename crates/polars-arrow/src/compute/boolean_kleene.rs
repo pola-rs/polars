@@ -184,9 +184,11 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// ```
 pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
     match scalar.value() {
-        Some(true) => {
-            BooleanArray::new(ArrowDataType::Boolean, Bitmap::new_with_value(true, array.len()), None)
-        },
+        Some(true) => BooleanArray::new(
+            ArrowDataType::Boolean,
+            Bitmap::new_with_value(true, array.len()),
+            None,
+        ),
         Some(false) => array.clone(),
         None => {
             let values = array.values();

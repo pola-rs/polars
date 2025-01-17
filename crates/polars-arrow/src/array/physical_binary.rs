@@ -44,7 +44,11 @@ where
     );
     offsets.set_len(len + 1);
 
-    Ok((null.into_opt_mut_validity(), Offsets::new_unchecked(offsets), values))
+    Ok((
+        null.into_opt_mut_validity(),
+        Offsets::new_unchecked(offsets),
+        values,
+    ))
 }
 
 /// Creates [`MutableBitmap`] and two [`Vec`]s from an iterator of `Option`.

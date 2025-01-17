@@ -224,7 +224,7 @@ impl BitmapBuilder {
             self.extend_from_slice_unchecked(slice, offset, length);
         }
     }
-    
+
     pub fn extend_from_bitmap(&mut self, bitmap: &Bitmap) {
         // TODO: we can perhaps use the bitmaps bitcount here instead of
         // recomputing it if it has a known bitcount.
@@ -292,22 +292,24 @@ impl BitmapBuilder {
             Some(bitmap)
         }
     }
-    
+
     pub fn extend_trusted_len_iter<I>(&mut self, iterator: I)
     where
-        I: Iterator<Item = bool> + TrustedLen
+        I: Iterator<Item = bool> + TrustedLen,
     {
         self.reserve(iterator.size_hint().1.unwrap());
         for b in iterator {
             // SAFETY: we reserved and the iterator's length is trusted.
-            unsafe { self.push_unchecked(b); }
+            unsafe {
+                self.push_unchecked(b);
+            }
         }
     }
 
     #[inline]
     pub fn from_trusted_len_iter<I>(iterator: I) -> Self
     where
-        I: Iterator<Item = bool> + TrustedLen
+        I: Iterator<Item = bool> + TrustedLen,
     {
         let mut builder = Self::new();
         builder.extend_trusted_len_iter(iterator);

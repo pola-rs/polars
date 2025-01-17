@@ -92,7 +92,8 @@ impl AnonymousBuilder {
             dtype,
             self.length,
             values,
-            self.validity.and_then(|validity| validity.into_opt_validity()),
+            self.validity
+                .and_then(|validity| validity.into_opt_validity()),
         ))
     }
 }
