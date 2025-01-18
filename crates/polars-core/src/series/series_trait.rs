@@ -360,7 +360,7 @@ pub trait SeriesTrait:
     }
 
     /// Returns the quantile value in the array
-    /// Returns a result<option> because the array is nullable and quantile can OOB.
+    /// Returns a result of option because the array is nullable and quantile can OOB.
     fn quantile(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Option<f64>> {
         Ok(None)
     }

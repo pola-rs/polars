@@ -19,8 +19,8 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         ListToStructWidthStrategy,
-        QuantileMethod,
         NullBehavior,
+        QuantileMethod,
     )
 
 
