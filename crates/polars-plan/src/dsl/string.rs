@@ -42,7 +42,7 @@ impl StringNameSpace {
     #[cfg(feature = "find_many")]
     pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::ContainsMany {
+            FunctionExpr::StringExpr(StringFunction::ContainsAny {
                 ascii_case_insensitive,
             }),
             &[patterns],
