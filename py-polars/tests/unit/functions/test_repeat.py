@@ -216,5 +216,5 @@ def test_repeat_by_literal_none_20268() -> None:
     res = df.select(repeat=pl.col("x").repeat_by(pl.lit(None)))
     assert_series_equal(res.to_series(), expected)
 
-    res = df.select(repeat=pl.col("x").repeat_by(None))
+    res = df.select(repeat=pl.col("x").repeat_by(None))  # type: ignore[arg-type]
     assert_series_equal(res.to_series(), expected)
