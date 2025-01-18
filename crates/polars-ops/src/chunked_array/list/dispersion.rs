@@ -24,27 +24,48 @@ pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
     }
 }
 
-pub(super) fn quantile_with_nulls(ca: &ListChunked, quantile: f64, method: QuantileMethod) -> Series {
+pub(super) fn quantile_with_nulls(
+    ca: &ListChunked,
+    quantile: f64,
+    method: QuantileMethod,
+) -> Series {
     match ca.inner_dtype() {
         DataType::Float32 => {
             let out: Float32Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref()
-                .quantile(quantile, method).unwrap_or(Some(f64::NAN)).map(|v| v as f32)))
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| {
+                        s.as_ref()
+                            .quantile(quantile, method)
+                            .unwrap_or(Some(f64::NAN))
+                            .map(|v| v as f32)
+                    })
+                })
                 .with_name(ca.name().clone());
             out.into_series()
         },
         #[cfg(feature = "dtype-duration")]
         DataType::Duration(tu) => {
             let out: Int64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref()
-                .quantile(quantile, method).unwrap_or(Some(f64::NAN)).map(|v| v as i64)))
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| {
+                        s.as_ref()
+                            .quantile(quantile, method)
+                            .unwrap_or(Some(f64::NAN))
+                            .map(|v| v as i64)
+                    })
+                })
                 .with_name(ca.name().clone());
             out.into_duration(*tu).into_series()
         },
         _ => {
             let out: Float64Chunked = ca
-                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref()
-                .quantile(quantile, method).unwrap_or(Some(f64::NAN))))
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| {
+                        s.as_ref()
+                            .quantile(quantile, method)
+                            .unwrap_or(Some(f64::NAN))
+                    })
+                })
                 .with_name(ca.name().clone());
             out.into_series()
         },

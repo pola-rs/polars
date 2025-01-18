@@ -84,12 +84,11 @@ pub enum QuantileMethod {
     Equiprobable,
 }
 
-
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct QuantileOptions {
     pub prob: f64,
-    pub method: QuantileMethod
+    pub method: QuantileMethod,
 }
 
 impl Eq for QuantileOptions {}

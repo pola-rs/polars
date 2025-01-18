@@ -114,7 +114,9 @@ impl ListNameSpace {
 
     pub fn quantile(self, prob: f64, method: QuantileMethod) -> Expr {
         self.0
-            .map_private(FunctionExpr::ListExpr(ListFunction::Quantile(QuantileOptions{prob, method})))
+            .map_private(FunctionExpr::ListExpr(ListFunction::Quantile(
+                QuantileOptions { prob, method },
+            )))
     }
 
     pub fn std(self, ddof: u8) -> Expr {
