@@ -3,7 +3,7 @@ use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
 use arrow::bitmap::utils::{BitmapIter, ZipValidity};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::Bitmap;
 use arrow::buffer::Buffer;
 use polars_utils::total_ord::TotalHash;
 

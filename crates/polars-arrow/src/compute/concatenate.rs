@@ -3,7 +3,7 @@ use polars_error::{polars_bail, PolarsResult};
 
 use crate::array::growable::make_growable;
 use crate::array::Array;
-use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::bitmap::{Bitmap, BitmapBuilder};
 
 /// Concatenate multiple [`Array`] of the same type into a single [`Array`].
 pub fn concatenate(arrays: &[&dyn Array]) -> PolarsResult<Box<dyn Array>> {
@@ -39,7 +39,7 @@ pub fn concatenate_validities(arrays: &[&dyn Array]) -> Option<Bitmap> {
     }
 
     let total_size: usize = arrays.iter().map(|a| a.len()).sum();
-    let mut bitmap = MutableBitmap::with_capacity(total_size);
+    let mut bitmap = BitmapBuilder::with_capacity(total_size);
     for arr in arrays {
         if arr.null_count() == arr.len() {
             bitmap.extend_constant(arr.len(), false);
@@ -49,5 +49,5 @@ pub fn concatenate_validities(arrays: &[&dyn Array]) -> Option<Bitmap> {
             bitmap.extend_from_bitmap(arr.validity().unwrap());
         }
     }
-    Some(bitmap.into())
+    bitmap.into_opt_validity()
 }
