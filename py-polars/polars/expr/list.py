@@ -19,6 +19,7 @@ if TYPE_CHECKING:
         IntoExpr,
         IntoExprColumn,
         ListToStructWidthStrategy,
+        QuantileMethod,
         NullBehavior,
     )
 
@@ -293,6 +294,10 @@ class ExprListNameSpace:
         └────────────┴────────┘
         """
         return wrap_expr(self._pyexpr.list_median())
+
+    def quantile(self, quantile: float, method: QuantileMethod) -> Expr:
+        """Compute the specified quantile value of the lists in the array."""
+        return wrap_expr(self._pyexpr.list_quantile(quantile, method))
 
     def std(self, ddof: int = 1) -> Expr:
         """

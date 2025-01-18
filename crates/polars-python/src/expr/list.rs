@@ -89,6 +89,15 @@ impl PyExpr {
             .into()
     }
 
+    fn list_quantile(&self, quantile: PyExpr, method: Wrap<QuantileMethod>) -> Self {
+        self.inner
+            .clone()
+            .list()
+            .quantile(quantile.inner, method.0)
+            .with_fmt("list.quantile")
+            .into()
+    }
+
     fn list_std(&self, ddof: u8) -> Self {
         self.inner
             .clone()

@@ -165,6 +165,9 @@ JoinStrategy: TypeAlias = Literal[
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
+QuantileMethod: TypeAlias = Literal[
+    "lower", "higher", "nearest", "linear", "midpoint", "equiprobable",
+]
 ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
