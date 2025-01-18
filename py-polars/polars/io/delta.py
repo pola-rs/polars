@@ -338,8 +338,15 @@ def scan_delta(
     # Required because main_schema cannot contain hive columns currently
     main_schema, hive_schema = _split_schema(polars_schema, partition_columns)
 
+    file_uris = dl_tbl.file_uris()
+
+    # LakeFS has an S3 compatible API, for reading therefore it's safe to do this.
+    # Deltalake internally has an integration for writing commits
+    if dl_tbl.table_uri.startswith("lakefs://"):
+        file_uris = [file_uri.replace("lakefs://", "s3://") for file_uri in file_uris]
+
     return scan_parquet(
-        dl_tbl.file_uris(),
+        file_uris,
         schema=main_schema,
         hive_schema=hive_schema if len(partition_columns) > 0 else None,
         allow_missing_columns=True,
