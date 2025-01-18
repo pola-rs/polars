@@ -485,7 +485,6 @@ fn find_many(
     ascii_case_insensitive: bool,
     overlapping: bool,
 ) -> PolarsResult<Column> {
-    _check_same_length(s, "find_many")?;
     let ca = s[0].str()?;
     let patterns = &s[1];
 
