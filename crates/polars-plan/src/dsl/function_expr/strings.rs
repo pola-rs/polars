@@ -122,7 +122,7 @@ pub enum StringFunction {
     #[cfg(feature = "string_pad")]
     ZFill,
     #[cfg(feature = "find_many")]
-    ContainsMany {
+    ContainsAny {
         ascii_case_insensitive: bool,
     },
     #[cfg(feature = "find_many")]
@@ -205,7 +205,7 @@ impl StringFunction {
                     .collect(),
             )),
             #[cfg(feature = "find_many")]
-            ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
+            ContainsAny { .. } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "find_many")]
             ReplaceMany { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "find_many")]
@@ -299,7 +299,7 @@ impl Display for StringFunction {
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",
             #[cfg(feature = "find_many")]
-            ContainsMany { .. } => "contains_many",
+            ContainsAny { .. } => "contains_any",
             #[cfg(feature = "find_many")]
             ReplaceMany { .. } => "replace_many",
             #[cfg(feature = "find_many")]
@@ -407,10 +407,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
-            ContainsMany {
+            ContainsAny {
                 ascii_case_insensitive,
             } => {
-                map_as_slice!(contains_many, ascii_case_insensitive)
+                map_as_slice!(contains_any, ascii_case_insensitive)
             },
             #[cfg(feature = "find_many")]
             ReplaceMany {
@@ -439,7 +439,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 }
 
 #[cfg(feature = "find_many")]
-fn contains_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
+fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let patterns = s[1].str()?;
     polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
