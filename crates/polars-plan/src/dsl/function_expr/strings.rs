@@ -440,7 +440,6 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 
 #[cfg(feature = "find_many")]
 fn contains_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
-    _check_same_length(s, "contains_many")?;
     let ca = s[0].str()?;
     let patterns = s[1].str()?;
     polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
