@@ -16,9 +16,9 @@ fn check_lengths(length_srs: usize, length_by: usize) -> PolarsResult<()> {
 fn new_by(by: &IdxCa, len: usize) -> IdxCa {
     if let Some(x) = by.get(0) {
         let values = std::iter::repeat(x).take(len).collect::<Vec<IdxSize>>();
-        return IdxCa::new(PlSmallStr::EMPTY, values);
+        IdxCa::new(PlSmallStr::EMPTY, values)
     } else {
-        return IdxCa::full_null(PlSmallStr::EMPTY, len);
+        IdxCa::full_null(PlSmallStr::EMPTY, len)
     }
 }
 
