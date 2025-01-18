@@ -233,7 +233,7 @@ def test_str_contains() -> None:
 def test_str_contains_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises(ComputeError, match="should have equal or unit length"):
-        df.select(pl.col("num").str.contains(pl.Series(["a", "b"])))
+        df.select(pl.col("num").str.contains(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
 def test_count_match_literal() -> None:
@@ -365,7 +365,7 @@ def test_str_find_escaped_chars() -> None:
 def test_str_find_wrong_length() -> None:
     df = pl.DataFrame({"num": ["-10", "-1", "0"]})
     with pytest.raises(ComputeError, match="should have equal or unit length"):
-        df.select(pl.col("num").str.find(pl.Series(["a", "b"])))
+        df.select(pl.col("num").str.find(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
 def test_hex_decode_return_dtype() -> None:
