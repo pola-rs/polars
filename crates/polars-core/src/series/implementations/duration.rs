@@ -307,6 +307,13 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
         self.0.median()
     }
 
+    fn quantile(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Option<f64>> {
+        polars_ensure!((0.0..=1.0).contains(&quantile),
+            ComputeError: "quantile should be between 0.0 and 1.0",
+        );
+        Ok(self.0.quantile(quantile, method).unwrap().map(|v| v as f64))
+    }
+
     fn std(&self, ddof: u8) -> Option<f64> {
         self.0.std(ddof)
     }

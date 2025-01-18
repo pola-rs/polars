@@ -34,6 +34,7 @@ pub enum ListFunction {
     Min,
     Mean,
     Median,
+    Quantile(QuantileOptions),
     Std(u8),
     Var(u8),
     ArgMin,
@@ -85,6 +86,7 @@ impl ListFunction {
             Max => mapper.map_to_list_and_array_inner_dtype(),
             Mean => mapper.with_dtype(DataType::Float64),
             Median => mapper.map_to_float_dtype(),
+            Quantile(_) => mapper.map_to_float_dtype(),
             Std(_) => mapper.map_to_float_dtype(), // Need to also have this sometimes marked as float32 or duration..
             Var(_) => mapper.map_to_float_dtype(),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
@@ -152,6 +154,7 @@ impl Display for ListFunction {
             Max => "max",
             Mean => "mean",
             Median => "median",
+            Quantile(_) => "quantile",
             Std(_) => "std",
             Var(_) => "var",
             ArgMin => "arg_min",
@@ -222,6 +225,7 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Min => map!(min),
             Mean => map!(mean),
             Median => map!(median),
+            Quantile(options) => map!(quantile, options.prob, options.method),
             Std(ddof) => map!(std, ddof),
             Var(ddof) => map!(var, ddof),
             ArgMin => map!(arg_min),
@@ -569,6 +573,10 @@ pub(super) fn mean(s: &Column) -> PolarsResult<Column> {
 
 pub(super) fn median(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_median().into())
+}
+
+pub(super) fn quantile(s: &Column, quantile: f64, method: QuantileMethod) -> PolarsResult<Column> {
+    Ok(s.list()?.lst_quantile(quantile, method).into())
 }
 
 pub(super) fn std(s: &Column, ddof: u8) -> PolarsResult<Column> {
