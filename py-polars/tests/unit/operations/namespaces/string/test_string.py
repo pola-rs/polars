@@ -1865,6 +1865,18 @@ def test_extract_many() -> None:
     assert f2.to_list() == [[0], [0, 5]]
 
 
+def test_str_find_many_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.find_many(pl.Series(["a", "b"])))
+
+
+def test_str_extract_many_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.extract_many(pl.Series(["a", "b"])))
+
+
 def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
     assert_series_equal(
         pl.Series(["null", "null"]).str.json_decode(infer_schema_length=1),
