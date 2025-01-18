@@ -296,7 +296,24 @@ class ExprListNameSpace:
         return wrap_expr(self._pyexpr.list_median())
 
     def quantile(self, quantile: float, method: QuantileMethod) -> Expr:
-        """Compute the specified quantile value of the lists in the array."""
+        """
+        Compute the specified quantile value of the lists in the array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"values": [[-1, 0, 1], [1, 10]]})
+        >>> expr = pl.col("values").list.quantile(0.1, "linear").alias("10percent")
+        >>> df.with_columns(expr)
+        shape: (2, 2)
+        ┌────────────┬───────────┐
+        │ values     ┆ 10percent │
+        │ ---        ┆ ---       │
+        │ list[i64]  ┆ f64       │
+        ╞════════════╪═══════════╡
+        │ [-1, 0, 1] ┆ -0.8      │
+        │ [1, 10]    ┆ 1.9       │
+        └────────────┴───────────┘
+        """
         return wrap_expr(self._pyexpr.list_quantile(quantile, method))
 
     def std(self, ddof: int = 1) -> Expr:
