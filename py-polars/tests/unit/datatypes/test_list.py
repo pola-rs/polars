@@ -775,34 +775,32 @@ def test_list_quantile(data_dispersion: pl.DataFrame) -> None:
 
     assert_frame_equal(result, expected)
 
+
 def test_list_quantile_extremities(data_dispersion: pl.DataFrame) -> None:
     df = data_dispersion
     assert_frame_equal(
         df.select(
-            pl.col(col).list.quantile(0.0, "linear") for col in ["int", "float", "duration"]
+            pl.col(col).list.quantile(0.0, "linear")
+            for col in ["int", "float", "duration"]
         ),
-        df.select(
-            pl.col(col).list.min() for col in ["int", "float", "duration"]
-        ),
-        check_dtypes=False
+        df.select(pl.col(col).list.min() for col in ["int", "float", "duration"]),
+        check_dtypes=False,
     )
     assert_frame_equal(
         df.select(
-            pl.col(col).list.quantile(1.0, "linear") for col in ["int", "float", "duration"]
+            pl.col(col).list.quantile(1.0, "linear")
+            for col in ["int", "float", "duration"]
         ),
-        df.select(
-            pl.col(col).list.max() for col in ["int", "float", "duration"]
-        ),
-        check_dtypes=False
+        df.select(pl.col(col).list.max() for col in ["int", "float", "duration"]),
+        check_dtypes=False,
     )
     assert_frame_equal(
         df.select(
-            pl.col(col).list.quantile(0.5, "linear") for col in ["int", "float", "duration"]
+            pl.col(col).list.quantile(0.5, "linear")
+            for col in ["int", "float", "duration"]
         ),
-        df.select(
-            pl.col(col).list.median() for col in ["int", "float", "duration"]
-        ),
-        check_dtypes=False
+        df.select(pl.col(col).list.median() for col in ["int", "float", "duration"]),
+        check_dtypes=False,
     )
 
 
