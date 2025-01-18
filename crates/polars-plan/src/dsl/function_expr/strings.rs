@@ -449,7 +449,6 @@ fn contains_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Col
 
 #[cfg(feature = "find_many")]
 fn replace_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
-    _check_same_length(s, "replace_many")?;
     let ca = s[0].str()?;
     let patterns = s[1].str()?;
     let replace_with = s[2].str()?;
