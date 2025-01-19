@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::ops::Range;
 
 use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
@@ -365,7 +365,7 @@ fn rg_to_dfs_prefiltered(
                 }
                 df = df.filter(mask)?;
 
-                let mut filter_mask = MutableBitmap::with_capacity(mask.len());
+                let mut filter_mask = BitmapBuilder::with_capacity(mask.len());
 
                 // We need to account for the validity of the items
                 for chunk in mask.downcast_iter() {

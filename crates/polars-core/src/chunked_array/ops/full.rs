@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::Bitmap;
 
 use crate::chunked_array::builder::get_list_builder;
 use crate::prelude::*;
@@ -27,9 +27,8 @@ where
 }
 impl ChunkFull<bool> for BooleanChunked {
     fn full(name: PlSmallStr, value: bool, length: usize) -> Self {
-        let mut bits = MutableBitmap::with_capacity(length);
-        bits.extend_constant(length, value);
-        let arr = BooleanArray::from_data_default(bits.into(), None);
+        let bits = Bitmap::new_with_value(value, length);
+        let arr = BooleanArray::from_data_default(bits, None);
         let mut out = BooleanChunked::with_chunk(name, arr);
         out.set_sorted_flag(IsSorted::Ascending);
         out

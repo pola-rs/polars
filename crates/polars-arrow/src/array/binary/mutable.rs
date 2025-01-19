@@ -299,12 +299,7 @@ impl<O: Offset> MutableBinaryArray<O> {
         let iterator = iterator.into_iter();
 
         // soundness: assumed trusted len
-        let (mut validity, offsets, values) = try_trusted_len_unzip(iterator)?;
-
-        if validity.as_mut().unwrap().unset_bits() == 0 {
-            validity = None;
-        }
-
+        let (validity, offsets, values) = try_trusted_len_unzip(iterator)?;
         Ok(Self::try_new(Self::default_dtype(), offsets, values, validity).unwrap())
     }
 

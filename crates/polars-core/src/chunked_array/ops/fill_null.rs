@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::legacy::kernels::set::set_at_nulls;
 use bytemuck::Zeroable;
 use num_traits::{Bounded, NumCast, One, Zero};
@@ -142,14 +142,14 @@ where
 
     // Compute bitmask.
     let num_start_nulls = ca.first_non_null().unwrap_or(ca.len());
-    let mut bm = MutableBitmap::with_capacity(ca.len());
+    let mut bm = BitmapBuilder::with_capacity(ca.len());
     bm.extend_constant(num_start_nulls, false);
     bm.extend_constant(ca.len() - num_start_nulls, true);
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
             T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(Some(bm.into())),
+                .with_validity_typed(bm.into_opt_validity()),
         ],
     )
 }
@@ -176,14 +176,14 @@ where
         .last_non_null()
         .map(|i| ca.len() - 1 - i)
         .unwrap_or(ca.len());
-    let mut bm = MutableBitmap::with_capacity(ca.len());
+    let mut bm = BitmapBuilder::with_capacity(ca.len());
     bm.extend_constant(ca.len() - num_end_nulls, true);
     bm.extend_constant(num_end_nulls, false);
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
             T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(Some(bm.into())),
+                .with_validity_typed(bm.into_opt_validity()),
         ],
     )
 }
