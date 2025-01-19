@@ -49,9 +49,12 @@ fn window_evaluate(
     state: &ExecutionState,
     window: PlHashMap<String, Vec<IdAndExpression>>,
 ) -> PolarsResult<Vec<Vec<(u32, Column)>>> {
+    if window.is_empty() {
+        return Ok(vec![]);
+    }
     let n_threads = POOL.current_num_threads();
 
-    let max_hor = window.values().map(|v| v.len()).max().expect("length > 0");
+    let max_hor = window.values().map(|v| v.len()).max().unwrap_or(0);
     let vert = window.len();
 
     // We don't want to cache and parallel horizontally and vertically as that keeps many cache
