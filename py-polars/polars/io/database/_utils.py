@@ -4,7 +4,7 @@ import asyncio
 import re
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any
 
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
@@ -16,10 +16,9 @@ if TYPE_CHECKING:
     from polars._typing import SchemaDict
 
 
-T = TypeVar("T")
-
-
-def _run_async(coroutine: Coroutine[Any, Any, T], *, timeout: float | None = None) -> T:
+def _run_async(
+    coroutine: Coroutine[Any, Any, Any], *, timeout: float | None = None
+) -> Any:
     """Run asynchronous code as if it were synchronous.
 
     This is required for execution in Jupyter notebook environments.
@@ -33,7 +32,7 @@ def _run_async(coroutine: Coroutine[Any, Any, T], *, timeout: float | None = Non
         # If there is no running loop, use `asyncio.run` normally
         return asyncio.run(coroutine)
 
-    def run_in_new_loop() -> T:
+    def run_in_new_loop() -> Any:
         new_loop = asyncio.new_event_loop()
         asyncio.set_event_loop(new_loop)
         try:
