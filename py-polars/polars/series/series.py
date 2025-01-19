@@ -1421,7 +1421,7 @@ class Series:
 
             # Get minimum dtype needed to be able to cast all input arguments to the
             # same dtype.
-            dtype_char_minimum = np.result_type(*args).char
+            dtype_char_minimum: str = np.result_type(*args).char
 
             # Get all possible output dtypes for ufunc.
             # Input dtypes and output dtypes seem to always match for ufunc.types,
