@@ -124,10 +124,7 @@ async def _nested_async_test(tmp_sqlite_db: Path) -> pl.DataFrame:
     reason="SQLAlchemy 2.0+ required for async tests",
 )
 def test_read_async_nested(tmp_sqlite_db: Path) -> None:
-    # this tests validates that we can handle nested async calls. without
-    # the nested asyncio handling provided by `nest_asyncio` this test
-    # would raise a RuntimeError
-
+    # This tests validates that we can handle nested async calls
     expected_frame = pl.DataFrame({"id": [1, 2], "name": ["misc", "other"]})
     df = asyncio.run(_nested_async_test(tmp_sqlite_db))
     assert_frame_equal(expected_frame, df)
