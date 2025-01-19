@@ -4756,7 +4756,8 @@ class Series:
         └─────────┘
         """
         if not isinstance(indices, Iterable):
-            indices = [indices]  # type: ignore[list-item]
+            index: Any = indices  # Workaround for older NumPy versions
+            indices = [index]
         indices = Series(values=indices)
         if indices.is_empty():
             return self
