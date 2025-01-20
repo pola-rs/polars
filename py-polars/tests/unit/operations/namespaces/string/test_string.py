@@ -54,6 +54,12 @@ def test_str_slice_expr() -> None:
         df.select(pl.col("a").str.slice(0, -1))
 
 
+def test_str_slice_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.slice(pl.Series([1, 2])))
+
+
 @pytest.mark.parametrize(
     ("input", "n", "output"),
     [
@@ -113,6 +119,12 @@ def test_str_head_expr() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_str_head_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.head(pl.Series([1, 2])))
 
 
 @pytest.mark.parametrize(
@@ -176,6 +188,12 @@ def test_str_tail_expr() -> None:
     assert_frame_equal(out, expected)
 
 
+def test_str_tail_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.tail(pl.Series([1, 2])))
+
+
 def test_str_slice_multibyte() -> None:
     ref = "你好世界"
     s = pl.Series([ref])
@@ -210,6 +228,12 @@ def test_str_contains() -> None:
     s = pl.Series(["messi", "ronaldo", "ibrahimovic"])
     expected = pl.Series([True, False, False])
     assert_series_equal(s.str.contains("mes"), expected)
+
+
+def test_str_contains_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.contains(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
 def test_count_match_literal() -> None:
@@ -336,6 +360,12 @@ def test_str_find_escaped_chars() -> None:
         ).cast({cs.signed_integer(): pl.UInt32}),
         res,
     )
+
+
+def test_str_find_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.find(pl.Series(["a", "b"])))  # type: ignore [arg-type]
 
 
 def test_hex_decode_return_dtype() -> None:
@@ -515,6 +545,12 @@ def test_str_strip_chars() -> None:
     assert_series_equal(s.str.strip_chars(" hwo"), expected)
 
 
+def test_str_strip_chars_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.strip_chars(pl.Series(["a", "b"])))
+
+
 def test_str_strip_chars_start() -> None:
     s = pl.Series([" hello ", "\t world"])
     expected = pl.Series(["hello ", "world"])
@@ -527,6 +563,12 @@ def test_str_strip_chars_start() -> None:
     assert_series_equal(s.str.strip_chars_start("hw "), expected)
 
 
+def test_str_strip_chars_start_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.strip_chars_start(pl.Series(["a", "b"])))
+
+
 def test_str_strip_chars_end() -> None:
     s = pl.Series([" hello ", "world\t "])
     expected = pl.Series([" hello", "world"])
@@ -537,6 +579,12 @@ def test_str_strip_chars_end() -> None:
 
     expected = pl.Series([" he", "wor"])
     assert_series_equal(s.str.strip_chars_end("odl \t"), expected)
+
+
+def test_str_strip_chars_end_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.strip_chars_end(pl.Series(["a", "b"])))
 
 
 def test_str_strip_whitespace() -> None:
@@ -579,6 +627,12 @@ def test_str_strip_prefix_suffix_expr() -> None:
     }
 
 
+def test_str_strip_prefix_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.strip_prefix(pl.Series(["a", "b"])))
+
+
 def test_str_strip_suffix() -> None:
     s = pl.Series(["foo:bar", "foo:barbar", "foo:foo", "bar", "", None])
     expected = pl.Series(["foo:", "foo:bar", "foo:foo", "", "", None])
@@ -586,6 +640,12 @@ def test_str_strip_suffix() -> None:
     # test null literal
     expected = pl.Series([None, None, None, None, None, None], dtype=pl.String)
     assert_series_equal(s.str.strip_suffix(pl.lit(None, dtype=pl.String)), expected)
+
+
+def test_str_strip_suffix_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.strip_suffix(pl.Series(["a", "b"])))
 
 
 def test_str_split() -> None:
@@ -728,6 +788,12 @@ def test_json_path_match() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_str_json_path_match_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.json_path_match(pl.Series(["a", "b"])))
 
 
 def test_extract_regex() -> None:
@@ -1797,6 +1863,12 @@ def test_extract_many() -> None:
 
     assert_series_equal(f1["values"], f2)
     assert f2.to_list() == [[0], [0, 5]]
+
+
+def test_str_extract_many_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.extract_many(pl.Series(["a", "b"])))
 
 
 def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
