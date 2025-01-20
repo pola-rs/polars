@@ -236,6 +236,15 @@ pub fn lower_ir(
                             input: phys_input,
                         }
                     },
+                    #[cfg(feature = "csv")]
+                    FileType::Csv(_) => {
+                        let phys_input = lower_ir!(*input)?;
+                        PhysNodeKind::FileSink {
+                            path,
+                            file_type,
+                            input: phys_input,
+                        }
+                    },
                     _ => todo!(),
                 }
             },
