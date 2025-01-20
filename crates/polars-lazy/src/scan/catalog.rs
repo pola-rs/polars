@@ -35,15 +35,7 @@ impl LazyFrame {
                     ..Default::default()
                 };
 
-                let opt_suffix = if storage_location.ends_with('/') {
-                    ""
-                } else {
-                    "/"
-                };
-
-                let path = format!("{}{}", storage_location, opt_suffix);
-
-                Self::scan_parquet(path, args)
+                Self::scan_parquet(storage_location, args)
             }),
             DataSourceFormat::Csv => feature_gated!("csv", {
                 use crate::frame::{LazyCsvReader, LazyFileListReader};
