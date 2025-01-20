@@ -64,7 +64,7 @@ class MockSurrealConnection:
         pass
 
     async def query(
-        self, sql: str, vars: dict[str, Any] | None = None
+        self, query: str, variables: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
         return [{"result": self._mock_data, "status": "OK", "time": "32.083µs"}]
 
