@@ -362,6 +362,23 @@ def test_decimal_aggregations() -> None:
     assert_frame_equal(df.describe(), description)
 
 
+def test_decimal_cumulative_aggregations() -> None:
+    df = pl.Series("a", [D("2.2"), D("1.1"), D("3.3")]).to_frame()
+    result = df.select(
+        pl.col("a").cum_sum().alias("cum_sum"),
+        pl.col("a").cum_min().alias("cum_min"),
+        pl.col("a").cum_max().alias("cum_max"),
+    )
+    expected = pl.DataFrame(
+        {
+            "cum_sum": [D("2.2"), D("3.3"), D("6.6")],
+            "cum_min": [D("2.2"), D("1.1"), D("1.1")],
+            "cum_max": [D("2.2"), D("2.2"), D("3.3")],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_decimal_df_vertical_sum() -> None:
     df = pl.DataFrame({"a": [D("1.1"), D("2.2")]})
     expected = pl.DataFrame({"a": [D("3.3")]})
