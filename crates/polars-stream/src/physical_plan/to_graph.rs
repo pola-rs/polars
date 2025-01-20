@@ -221,6 +221,11 @@ fn to_graph_rec<'a>(
                     nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
                     [(input_key, input.port)],
                 ),
+                #[cfg(feature = "json")]
+                FileType::Json(_) => ctx.graph.add_node(
+                    nodes::io_sinks::json::NDJsonSinkNode::new(path)?,
+                    [(input_key, input.port)],
+                ),
                 #[cfg(feature = "parquet")]
                 FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
                     nodes::io_sinks::parquet::ParquetSinkNode::new(
@@ -235,7 +240,6 @@ fn to_graph_rec<'a>(
                     nodes::io_sinks::csv::CsvSinkNode::new(input_schema, path, csv_writer_options)?,
                     [(input_key, input.port)],
                 ),
-                _ => todo!(),
             }
         },
 
