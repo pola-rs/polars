@@ -33,6 +33,14 @@ pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
 
+/// Configuration for logging information that may contain sensitive information.
+pub fn verbose_sensitive() -> bool {
+    std::env::var("POLARS_VERBOSE_SENSITIVE")
+        .as_deref()
+        .unwrap_or("")
+        == "1"
+}
+
 pub fn get_file_prefetch_size() -> usize {
     std::env::var("POLARS_PREFETCH_SIZE")
         .map(|s| s.parse::<usize>().expect("integer"))

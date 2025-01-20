@@ -31,24 +31,6 @@ fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn Obje
 
 /// Get the key of a url for object store registration.
 fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
-    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-    struct C {
-        max_retries: usize,
-        #[cfg(feature = "file_cache")]
-        file_cache_ttl: u64,
-        config: Option<CloudConfig>,
-        #[cfg(feature = "cloud")]
-        credential_provider: usize,
-    }
-
-    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
-    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
-    struct S {
-        url_base: PlSmallStr,
-        cloud_options: Option<C>,
-    }
-
     // We include credentials as they can expire, so users will send new credentials for the same url.
     let cloud_options = options.map(
         |CloudOptions {
@@ -60,7 +42,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
              #[cfg(feature = "cloud")]
              credential_provider,
          }| {
-            C {
+            CloudOptions2 {
                 max_retries: *max_retries,
                 #[cfg(feature = "file_cache")]
                 file_cache_ttl: *file_cache_ttl,
@@ -71,7 +53,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
         },
     );
 
-    let cache_key = S {
+    let cache_key = CacheKey {
         url_base: format_pl_smallstr!(
             "{}",
             &url[url::Position::BeforeScheme..url::Position::AfterPort]
@@ -79,11 +61,31 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
         cloud_options,
     };
 
-    if config::verbose() {
+    if config::verbose_sensitive() {
         eprintln!("object store cache key: {} {:?}", url, &cache_key);
     }
 
-    pl_serialize::serialize_to_bytes(&cache_key).unwrap()
+    return pl_serialize::serialize_to_bytes(&cache_key).unwrap();
+
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct CacheKey {
+        url_base: PlSmallStr,
+        cloud_options: Option<CloudOptions2>,
+    }
+
+    /// Variant of CloudOptions for serializing to a cache key. The credential
+    /// provider is replaced by the function address.
+    #[derive(Clone, Debug, PartialEq, Hash, Eq)]
+    #[cfg_attr(feature = "serde", derive(serde::Serialize))]
+    struct CloudOptions2 {
+        max_retries: usize,
+        #[cfg(feature = "file_cache")]
+        file_cache_ttl: u64,
+        config: Option<CloudConfig>,
+        #[cfg(feature = "cloud")]
+        credential_provider: usize,
+    }
 }
 
 /// Construct an object_store `Path` from a string without any encoding/decoding.
