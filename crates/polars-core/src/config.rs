@@ -33,7 +33,7 @@ pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
 
-/// Configuration for logging information that may contain sensitive information.
+/// Prints a log message if sensitive verbose logging has been enabled.
 pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
     fn do_log(create_log_message: &dyn Fn() -> String) {
         if std::env::var("POLARS_VERBOSE_SENSITIVE")
