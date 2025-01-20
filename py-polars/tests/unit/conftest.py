@@ -7,6 +7,7 @@ import string
 import sys
 import time
 import tracemalloc
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -17,6 +18,7 @@ from polars.testing.parametric import load_profile
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from types import ModuleType
     from typing import Any
 
     FixtureRequest = Any
@@ -260,3 +262,33 @@ def test_global_and_local(
             yield
     else:
         yield
+
+
+@contextmanager
+def mock_module_import(
+    name: str, module: ModuleType, *, replace_if_exists: bool = False
+) -> Generator[None, None, None]:
+    """
+    Mock an optional module import for the duration of a context.
+
+    Parameters
+    ----------
+    name
+        The name of the module to mock.
+    module
+        A ModuleType instance representing the mocked module.
+    replace_if_exists
+        Whether to replace the module if it already exists in `sys.modules` (defaults to
+        False, meaning that if the module is already imported, it will not be replaced).
+    """
+    if (original := sys.modules.get(name, None)) is not None and not replace_if_exists:
+        yield
+    else:
+        sys.modules[name] = module
+        try:
+            yield
+        finally:
+            if original is not None:
+                sys.modules[name] = original
+            else:
+                del sys.modules[name]
