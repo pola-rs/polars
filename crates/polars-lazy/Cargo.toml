@@ -38,6 +38,7 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
+catalog = ["polars-io/catalog"]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids", "polars-expr/streaming"]
 new_streaming = ["polars-stream"]

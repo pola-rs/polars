@@ -121,6 +121,7 @@ version_check = { workspace = true }
 [features]
 # Features below are only there to enable building a slim binary during development.
 avro = ["polars/avro"]
+catalog = ["polars-lazy/catalog"]
 parquet = ["polars/parquet", "polars-parquet"]
 ipc = ["polars/ipc"]
 ipc_streaming = ["polars/ipc_streaming"]

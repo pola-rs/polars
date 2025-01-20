@@ -46,6 +46,7 @@ serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
+strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
@@ -59,6 +60,7 @@ home = "0.5.4"
 tempfile = "3"
 
 [features]
+catalog = ["cloud", "serde", "reqwest", "futures", "strum_macros"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [
