@@ -33,6 +33,23 @@ pub fn verbose() -> bool {
     std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
 }
 
+/// Prints a log message if sensitive verbose logging has been enabled.
+pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
+    fn do_log(create_log_message: &dyn Fn() -> String) {
+        if std::env::var("POLARS_VERBOSE_SENSITIVE")
+            .as_deref()
+            .unwrap_or("")
+            == "1"
+        {
+            // Force the message to be a single line.
+            let msg = create_log_message().replace('\n', "");
+            eprintln!("[SENSITIVE]: {}", msg)
+        }
+    }
+
+    do_log(&create_log_message)
+}
+
 pub fn get_file_prefetch_size() -> usize {
     std::env::var("POLARS_PREFETCH_SIZE")
         .map(|s| s.parse::<usize>().expect("integer"))
