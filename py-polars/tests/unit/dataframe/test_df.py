@@ -3006,10 +3006,11 @@ def test_select_oob_row_20775() -> None:
         df[99]
 
 
-def test_select_oob_element_20775() -> None:
+@pytest.mark.parametrize("idx", [3, 99, -4, -99])
+def test_select_oob_element_20775_too_large(idx: int) -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
     with pytest.raises(
         IndexError,
-        match="index 99 is out of bounds for sequence of length 3",
+        match=f"index {idx} is out of bounds for sequence of length 3",
     ):
-        df[99, "a"]
+        df[idx, "a"]
