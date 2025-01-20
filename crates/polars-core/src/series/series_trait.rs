@@ -255,8 +255,8 @@ pub trait SeriesTrait:
     /// end of the array
     fn split_at(&self, _offset: i64) -> (Series, Series);
 
-    #[doc(hidden)]
-    fn append(&mut self, _other: &Series) -> PolarsResult<()>;
+    fn append(&mut self, other: &Series) -> PolarsResult<()>;
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()>;
 
     #[doc(hidden)]
     fn extend(&mut self, _other: &Series) -> PolarsResult<()>;
@@ -570,6 +570,8 @@ pub trait SeriesTrait:
     /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait mutable
     /// reference.
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {

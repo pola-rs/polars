@@ -905,6 +905,11 @@ impl Column {
             .append(other.as_materialized_series())?;
         Ok(self)
     }
+    pub fn append_owned(&mut self, other: Column) -> PolarsResult<&mut Self> {
+        self.into_materialized_series()
+            .append_owned(other.take_materialized_series())?;
+        Ok(self)
+    }
 
     pub fn arg_sort(&self, options: SortOptions) -> IdxCa {
         if self.is_empty() {

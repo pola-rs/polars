@@ -1182,6 +1182,22 @@ impl DataFrame {
         self.height += other.height;
     }
 
+    /// Concatenate a [`DataFrame`] to this [`DataFrame`]
+    ///
+    /// If many `vstack` operations are done, it is recommended to call [`DataFrame::align_chunks_par`].
+    ///
+    /// # Panics
+    /// Panics if the schema's don't match.
+    pub fn vstack_mut_owned_unchecked(&mut self, other: DataFrame) {
+        self.columns
+            .iter_mut()
+            .zip(other.columns)
+            .for_each(|(left, right)| {
+                left.append_owned(right).expect("should not fail");
+            });
+        self.height += other.height;
+    }
+
     /// Extend the memory backed by this [`DataFrame`] with the values from `other`.
     ///
     /// Different from [`vstack`](Self::vstack) which adds the chunks from `other` to the chunks of this [`DataFrame`]

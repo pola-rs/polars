@@ -873,12 +873,12 @@ impl DataType {
         }
     }
 
-    // Answers if this type matches the given type of a schema.
-    //
-    // Allows (nested) Null types in this type to match any type in the schema,
-    // but not vice versa. In such a case Ok(true) is returned, because a cast
-    // is necessary. If no cast is necessary Ok(false) is returned, and an
-    // error is returned if the types are incompatible.
+    /// Answers if this type matches the given type of a schema.
+    ///
+    /// Allows (nested) Null types in this type to match any type in the schema,
+    /// but not vice versa. In such a case Ok(true) is returned, because a cast
+    /// is necessary. If no cast is necessary Ok(false) is returned, and an
+    /// error is returned if the types are incompatible.
     pub fn matches_schema_type(&self, schema_type: &DataType) -> PolarsResult<bool> {
         match (self, schema_type) {
             (DataType::List(l), DataType::List(r)) => l.matches_schema_type(r),

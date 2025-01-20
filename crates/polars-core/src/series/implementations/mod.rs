@@ -253,6 +253,10 @@ macro_rules! impl_dyn_series {
                 self.0.append(other.as_ref().as_ref())?;
                 Ok(())
             }
+            fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+                polars_ensure!(self.0.dtype() == other.dtype(), append);
+                self.0.append_owned(other.take_inner())
+            }
 
             fn extend(&mut self, other: &Series) -> PolarsResult<()> {
                 polars_ensure!(self.0.dtype() == other.dtype(), extend);
@@ -442,6 +446,10 @@ macro_rules! impl_dyn_series {
 
             fn as_any_mut(&mut self) -> &mut dyn Any {
                 &mut self.0
+            }
+
+            fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+                self as _
             }
         }
     };
