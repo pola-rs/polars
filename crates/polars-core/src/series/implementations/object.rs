@@ -123,7 +123,7 @@ where
         polars_ensure!(self.dtype() == other.dtype(), append);
         ObjectChunked::append(&mut self.0, other.as_ref().as_ref())
     }
-    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
         polars_ensure!(self.dtype() == other.dtype(), append);
         ObjectChunked::append_owned(&mut self.0, other.take_inner())
     }
