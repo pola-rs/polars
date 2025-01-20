@@ -125,7 +125,7 @@ where
     }
     fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
         polars_ensure!(self.dtype() == other.dtype(), append);
-        ObjectChunked::append_owned(&mut self.0, std::mem::take(other._get_inner_mut().as_mut()))
+        ObjectChunked::append_owned(&mut self.0, other.take_inner())
     }
 
     fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
