@@ -27,7 +27,6 @@ impl LazyFrame {
 
                 let args = ScanArgsParquet {
                     schema,
-                    allow_missing_columns: matches!(data_source_format, DataSourceFormat::Delta),
                     cloud_options,
                     hive_options: HiveOptions {
                         schema: hive_schema,
