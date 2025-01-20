@@ -70,6 +70,13 @@ methods. All classes and functions exposed in the ``polars.*`` namespace are pub
         .. toctree::
            :maxdepth: 2
 
+           catalog
+
+    .. grid-item-card::
+
+        .. toctree::
+           :maxdepth: 2
+
            config
 
     .. grid-item-card::

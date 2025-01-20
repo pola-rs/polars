@@ -44,7 +44,7 @@ class Catalog:
             Bearer token to authenticate with. This can also be set to:
             * "auto": Automatically retrieve bearer tokens from the environment.
             * "databricks-sdk": Use the Databricks SDK to retrieve and use the
-              bearer token from the environment.
+            bearer token from the environment.
         """
         from polars.polars import PyCatalogClient
 
@@ -160,7 +160,7 @@ class Catalog:
         table_name
             Name of the table.
         delta_table_version
-            Version of the table to scan.
+            Version of the table to scan (Deltalake only).
         delta_table_options
             Additional keyword arguments while reading a Deltalake table.
         storage_options
@@ -187,7 +187,6 @@ class Catalog:
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
-        version
 
         """
         table_info = self.get_table_info(catalog_name, schema_name, table_name)
