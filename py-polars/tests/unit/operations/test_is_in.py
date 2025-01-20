@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import date
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
@@ -12,6 +13,8 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from polars._typing import PolarsDataType
 
 
@@ -426,3 +429,34 @@ def test_is_in_decimal() -> None:
     assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
         pl.col("a").is_in([1, 0, 2])
     )["a"].to_list() == [True, False, False]
+
+
+def test_is_in_collection() -> None:
+    df = pl.DataFrame(
+        {
+            "lbl": ["aa", "bb", "cc", "dd", "ee"],
+            "val": [0, 1, 2, 3, 4],
+        }
+    )
+
+    class CustomCollection(Collection[int]):
+        def __init__(self, vals: Collection[int]) -> None:
+            super().__init__()
+            self.vals = vals
+
+        def __contains__(self, x: object) -> bool:
+            return x in self.vals
+
+        def __iter__(self) -> Iterator[int]:
+            yield from self.vals
+
+        def __len__(self) -> int:
+            return len(self.vals)
+
+    for constraint_values in (
+        {3, 2, 1},
+        frozenset({3, 2, 1}),
+        CustomCollection([3, 2, 1]),
+    ):
+        res = df.filter(pl.col("val").is_in(constraint_values))
+        assert set(res["lbl"]) == {"bb", "cc", "dd"}
