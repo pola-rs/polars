@@ -3,7 +3,7 @@ use std::sync::Arc;
 use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
 use once_cell::sync::Lazy;
-use polars_core::config;
+use polars_core::config::{self, verbose_print_sensitive};
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
@@ -61,9 +61,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
         cloud_options,
     };
 
-    if config::verbose_sensitive() {
-        eprintln!("object store cache key: {} {:?}", url, &cache_key);
-    }
+    verbose_print_sensitive(|| format!("object store cache key: {} {:?}", url, &cache_key));
 
     return pl_serialize::serialize_to_bytes(&cache_key).unwrap();
 

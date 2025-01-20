@@ -34,11 +34,20 @@ pub fn verbose() -> bool {
 }
 
 /// Configuration for logging information that may contain sensitive information.
-pub fn verbose_sensitive() -> bool {
-    std::env::var("POLARS_VERBOSE_SENSITIVE")
-        .as_deref()
-        .unwrap_or("")
-        == "1"
+pub fn verbose_print_sensitive<F: Fn() -> String>(create_log_message: F) {
+    fn do_log(create_log_message: &dyn Fn() -> String) {
+        if std::env::var("POLARS_VERBOSE_SENSITIVE")
+            .as_deref()
+            .unwrap_or("")
+            == "1"
+        {
+            // Force the message to be a single line.
+            let msg = create_log_message().replace('\n', "");
+            eprintln!("[SENSITIVE]: {}", msg)
+        }
+    }
+
+    do_log(&create_log_message)
 }
 
 pub fn get_file_prefetch_size() -> usize {
