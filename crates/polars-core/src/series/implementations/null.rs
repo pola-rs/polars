@@ -309,8 +309,16 @@ impl SeriesTrait for NullChunked {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
         // we don't create a new null array to keep probability of aligned chunks higher
-        self.chunks.extend(other.chunks().iter().cloned());
         self.length += other.len() as IdxSize;
+        self.chunks.extend(other.chunks().iter().cloned());
+        Ok(())
+    }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(other.dtype() == &DataType::Null, ComputeError: "expected null dtype");
+        // we don't create a new null array to keep probability of aligned chunks higher
+        let other: &mut NullChunked = other._get_inner_mut().as_any_mut().downcast_mut().unwrap();
+        self.length += other.len() as IdxSize;
+        self.chunks.extend(std::mem::take(&mut other.chunks));
         Ok(())
     }
 
@@ -329,6 +337,10 @@ impl SeriesTrait for NullChunked {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

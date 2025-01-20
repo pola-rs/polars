@@ -173,13 +173,20 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        let other = other.to_physical_repr();
-        // 3 refs
-        // ref Cow
-        // ref SeriesTrait
-        // ref ChunkedArray
-        self.0.append(other.as_ref().as_ref().as_ref())?;
-        Ok(())
+        let mut other = other.to_physical_repr().into_owned();
+        self.0
+            .append_owned(std::mem::take(other._get_inner_mut().as_mut()))
+    }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(std::mem::take(
+            &mut other
+                ._get_inner_mut()
+                .as_any_mut()
+                .downcast_mut::<TimeChunked>()
+                .unwrap()
+                .0,
+        ))
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -327,6 +334,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

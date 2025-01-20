@@ -129,6 +129,10 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
         let other = other.array()?;
         self.0.append(other)
     }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
+    }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
@@ -214,5 +218,9 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

@@ -120,11 +120,12 @@ where
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.dtype() != other.dtype() {
-            polars_bail!(append);
-        }
-        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())?;
-        Ok(())
+        polars_ensure!(self.dtype() == other.dtype(), append);
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.dtype() == other.dtype(), append);
+        ObjectChunked::append_owned(&mut self.0, other.take_inner())
     }
 
     fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
@@ -240,6 +241,10 @@ where
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 
