@@ -153,20 +153,27 @@ impl Inner {
                 .open(data_file_path)
                 .map_err(PolarsError::from)?;
 
-            static IGNORE_ERR: Lazy<bool> = Lazy::new(|| {
-                let v =
-                    std::env::var("POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR").as_deref() == Ok("1");
-                if config::verbose() {
-                    eprintln!(
-                        "[file_cache]: POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR: {}",
+            // * Some(true)   => always raise
+            // * Some(false)  => never raise
+            // * None         => do not raise if fallocate() is not permitted, otherwise raise.
+            static RAISE_ALLOC_ERROR: Lazy<Option<bool>> = Lazy::new(|| {
+                let v = match std::env::var("POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR").as_deref() {
+                    Ok("1") => Some(false),
+                    Ok("0") => Some(true),
+                    Err(_) => None,
+                    Ok(v) => panic!(
+                        "invalid value {} for POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR",
                         v
-                    );
+                    ),
+                };
+                if config::verbose() {
+                    eprintln!("[file_cache]: RAISE_ALLOC_ERROR: {:?}", v);
                 }
                 v
             });
 
             // Initialize it to get the verbose print
-            let _ = *IGNORE_ERR;
+            let raise_alloc_err = *RAISE_ALLOC_ERROR;
 
             file.lock_exclusive().unwrap();
             if let Err(e) = file.allocate(remote_metadata.size) {
@@ -177,12 +184,12 @@ impl Inner {
                     e
                 );
 
-                if *IGNORE_ERR {
-                    if config::verbose() {
-                        eprintln!("[file_cache]: warning: {}", msg)
-                    }
-                } else {
-                    polars_bail!(ComputeError: msg);
+                if raise_alloc_err == Some(true)
+                    || (raise_alloc_err.is_none() && file.allocate(1).is_ok())
+                {
+                    polars_bail!(ComputeError: msg)
+                } else if config::verbose() {
+                    eprintln!("[file_cache]: warning: {}", msg)
                 }
             }
         }
