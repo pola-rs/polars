@@ -170,7 +170,7 @@ pub enum PyStringFunction {
     Titlecase,
     Uppercase,
     ZFill,
-    ContainsMany,
+    ContainsAny,
     ReplaceMany,
     EscapeRegex,
     Normalize,
@@ -933,9 +933,9 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                     StringFunction::Uppercase => (PyStringFunction::Uppercase,).into_py_any(py),
                     StringFunction::ZFill => (PyStringFunction::ZFill,).into_py_any(py),
                     #[cfg(feature = "find_many")]
-                    StringFunction::ContainsMany {
+                    StringFunction::ContainsAny {
                         ascii_case_insensitive,
-                    } => (PyStringFunction::ContainsMany, ascii_case_insensitive).into_py_any(py),
+                    } => (PyStringFunction::ContainsAny, ascii_case_insensitive).into_py_any(py),
                     #[cfg(feature = "find_many")]
                     StringFunction::ReplaceMany {
                         ascii_case_insensitive,
