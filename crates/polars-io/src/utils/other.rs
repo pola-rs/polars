@@ -202,6 +202,41 @@ pub fn materialize_projection(
     }
 }
 
+/// Utility for decoding JSON that adds the response value to the error message if decoding fails.
+/// This makes it much easier to debug errors from parsing network responses.
+#[cfg(feature = "cloud")]
+pub fn decode_json_response<T>(bytes: &[u8]) -> PolarsResult<T>
+where
+    T: for<'de> serde::de::Deserialize<'de>,
+{
+    use polars_core::config;
+    use polars_error::to_compute_err;
+
+    serde_json::from_slice(bytes)
+        .map_err(to_compute_err)
+        .map_err(|e| {
+            e.wrap_msg(|e| {
+                let maybe_truncated = if config::verbose() {
+                    bytes
+                } else {
+                    // Clamp the output on non-verbose
+                    &bytes[..bytes.len().min(4096)]
+                };
+
+                format!(
+                    "error decoding response: {}, response value: {}{}",
+                    e,
+                    String::from_utf8_lossy(maybe_truncated),
+                    if maybe_truncated.len() != bytes.len() {
+                        " ...(set POLARS_VERBOSE=1 to see full response)"
+                    } else {
+                        ""
+                    }
+                )
+            })
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::FLOAT_RE;

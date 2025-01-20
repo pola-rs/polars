@@ -1,3 +1,7 @@
+use pyo3::PyErr;
+
+use crate::error::PyPolarsErr;
+
 // was redefined because I could not get feature flags activated?
 #[macro_export]
 macro_rules! apply_method_all_arrow_series2 {
@@ -23,4 +27,10 @@ macro_rules! apply_method_all_arrow_series2 {
             dt => panic!("dtype {:?} not supported", dt)
         }
     }
+}
+
+/// Boilerplate for `|e| PyPolarsErr::from(e).into()`
+#[allow(unused)]
+pub(crate) fn to_py_err<E: Into<PyPolarsErr>>(e: E) -> PyErr {
+    e.into().into()
 }
