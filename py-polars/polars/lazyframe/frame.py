@@ -1223,7 +1223,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             figsize=figsize,
         )
 
-    @deprecate_renamed_parameter("fmt", "f_string", version="1.20.0")
+    @deprecate_renamed_parameter("fmt", "f_string", version="1.21.0")
     def inspect(self, f_string: str = "{}") -> LazyFrame:
         """
         Inspect a node in the computation graph.
