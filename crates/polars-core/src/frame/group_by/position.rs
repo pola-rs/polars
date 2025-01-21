@@ -620,7 +620,12 @@ impl Default for GroupPositions {
 impl GroupPositions {
     pub fn slice(&self, offset: i64, len: usize) -> Self {
         let offset = self.offset + offset;
-        slice_groups(self.original.clone(), offset, len)
+        slice_groups(
+            self.original.clone(),
+            offset,
+            // invariant that len should be in bounds, so truncate if not
+            if len > self.len { self.len } else { len },
+        )
     }
 
     pub fn sort(&mut self) {

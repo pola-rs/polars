@@ -196,6 +196,7 @@ def test_group_by_followed_by_limit() -> None:
         ("zz", 50, 131),
     ]
 
+
 def test_dtype_concat_3735() -> None:
     for dt in NUMERIC_DTYPES:
         d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])
