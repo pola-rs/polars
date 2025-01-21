@@ -337,7 +337,7 @@ impl MultiScanExec {
         };
 
         if slice.is_some_and(|x| x.1 == 0) {
-            return Ok(DataFrame::empty_with_schema(&final_per_source_schema));
+            return Ok(DataFrame::empty_with_schema(final_per_source_schema));
         }
 
         let mut missing_columns = Vec::new();
