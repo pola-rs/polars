@@ -3,9 +3,7 @@ use std::borrow::Cow;
 use hive::HivePartitions;
 use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
-use polars_core::utils::{
-    accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
-};
+use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_io::predicates::BatchStats;
 use polars_io::RowIndex;
 
@@ -327,10 +325,21 @@ impl MultiScanExec {
 
         let final_per_source_schema = &self.file_info.schema;
         let file_output_schema = if let Some(file_with_columns) = file_with_columns.as_ref() {
-            Arc::new(final_per_source_schema.try_project(file_with_columns.as_ref())?)
+            let mut schema = final_per_source_schema.try_project(file_with_columns.as_ref())?;
+
+            if let Some(v) = include_file_paths.clone() {
+                schema.extend([(v, DataType::String)]);
+            }
+
+            Arc::new(schema)
         } else {
             final_per_source_schema.clone()
         };
+
+        if slice.is_some_and(|x| x.1 == 0) {
+            return Ok(DataFrame::empty_with_schema(final_per_source_schema));
+        }
+
         let mut missing_columns = Vec::new();
 
         let verbose = config::verbose();
@@ -548,13 +557,11 @@ impl MultiScanExec {
             dfs.push(df);
         }
 
-        let out = if cfg!(debug_assertions) {
-            accumulate_dataframes_vertical(dfs)?
+        if dfs.is_empty() {
+            Ok(DataFrame::empty_with_schema(final_per_source_schema))
         } else {
-            accumulate_dataframes_vertical_unchecked(dfs)
-        };
-
-        Ok(out)
+            Ok(accumulate_dataframes_vertical_unchecked(dfs))
+        }
     }
 }
 
