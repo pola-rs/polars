@@ -2749,3 +2749,26 @@ def test_struct_list_statistics_20510() -> None:
     result = pl.scan_parquet(f).filter(pl.col("name") == "b").collect()
 
     assert_frame_equal(result, df.filter(pl.col("name") == "b"))
+
+
+def test_required_masked_skip_values_20809(monkeypatch: Any) -> None:
+    df = pl.DataFrame(
+        [pl.Series("a", list(range(20)) + [42] * 15), pl.Series("b", range(35))]
+    )
+    needle = [16, 33]
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    monkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
+    df1 = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(pl.col.b.is_in(needle))
+        .collect()
+    )
+
+    f.seek(0)
+    df2 = pl.read_parquet(f, parallel="columns").filter(pl.col.b.is_in(needle))
+
+    assert_frame_equal(df1, df2)
