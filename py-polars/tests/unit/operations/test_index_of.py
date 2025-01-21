@@ -22,7 +22,7 @@ def isnan(value: object) -> bool:
         return False
     if not isinstance(value, (np.number, float)):
         return False
-    return np.isnan(value)
+    return np.isnan(value)  # type: ignore[no-any-return]
 
 
 def assert_index_of(
@@ -119,9 +119,9 @@ def test_integer(dtype: pl.DataType) -> None:
         3,
         None,
         4,
-        pl.select(dtype.max()).item(),
-        pl.select(dtype.min()).item(),
-    ]  # type: ignore[attr-defined]
+        pl.select(dtype.max()).item(),  # type: ignore[attr-defined]
+        pl.select(dtype.min()).item(),  # type: ignore[attr-defined]
+    ]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
     sorted_series_desc = series.sort(descending=True)
