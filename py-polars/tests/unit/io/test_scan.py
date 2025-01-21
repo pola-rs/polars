@@ -654,7 +654,7 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
-def test_scan_include_file_name(
+def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
@@ -684,13 +684,20 @@ def test_scan_include_file_name(
     lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
     assert_frame_equal(lf.collect(streaming=streaming), df)
 
-    # TODO: Support this with CSV
-    if scan_func not in [pl.scan_csv, pl.scan_ndjson]:
-        # Test projecting only the path column
-        assert_frame_equal(
-            lf.select("path").collect(streaming=streaming),
-            df.select("path"),
-        )
+    # Test projecting only the path column
+    q = lf.select("path")
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(streaming=streaming),
+        df.select("path"),
+    )
+
+    q = q.select("path").head(3)
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(streaming=streaming),
+        df.select("path").head(3),
+    )
 
     # Test predicates
     for predicate in [pl.col("path") != pl.col("x"), pl.col("path") != ""]:
