@@ -542,5 +542,5 @@ def test_order_by_sorted_keys_18943() -> None:
 def test_over_on_struct_20688() -> None:
     df = pl.DataFrame({"x": 1, "y": "two"})
 
-    with pytest.raises(ComputeError, match="not yet implemented"):
+    with pytest.raises(ComputeError, match="not yet implemented: Hash Left Join"):
         df.select(pl.col("y").first().over(pl.struct("x")))
