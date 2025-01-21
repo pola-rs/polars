@@ -112,8 +112,8 @@ async fn select_keys(
         // We use key columns entirely by position, and allow duplicate names,
         // so just assign arbitrary unique names.
         let unique_name = format_pl_smallstr!("__POLARS_KEYCOL_{i}");
-        let s = selector.evaluate(df, state).await?;
-        key_columns.push(s.into_column().with_name(unique_name));
+        let c = selector.evaluate(df, state).await?;
+        key_columns.push(c.with_name(unique_name));
     }
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
     Ok(HashKeys::from_df(

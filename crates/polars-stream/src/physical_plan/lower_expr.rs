@@ -1,20 +1,22 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use polars_core::chunked_array::cast::CastOptions;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Field, InitHashMaps, PlHashMap, PlHashSet};
+use polars_core::prelude::{Field, InitHashMaps, PlHashMap, PlHashSet, IDX_DTYPE};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_error::PolarsResult;
 use polars_expr::planner::get_expr_depth_limit;
 use polars_expr::state::ExecutionState;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_ops::frame::{JoinArgs, JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::AExpr;
 use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{format_pl_smallstr, unitvec};
+use polars_utils::{format_pl_smallstr, unitvec, IdxSize};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
@@ -530,7 +532,66 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(post_sort_select_stream);
                 transformed_exprs.push(sorted_col_expr);
             },
-            AExpr::Gather { .. } => todo!(),
+            AExpr::Gather {
+                expr: inner,
+                idx: idxs,
+                returns_scalar: _,
+            } => {
+                // @TODO: There should be a special case for literals here.
+
+                let out_name = unique_column_name();
+                let idxs_name = unique_column_name();
+                let row_index_name = unique_column_name();
+                let inner_expr_ir = ExprIR::new(inner, OutputName::Alias(out_name.clone()));
+                let idxs_expr_ir = ExprIR::new(idxs, OutputName::Alias(idxs_name.clone()));
+
+                let left_stream =
+                    build_select_stream_with_ctx(input, &[inner_expr_ir.clone()], ctx)?;
+                let right_stream =
+                    build_select_stream_with_ctx(input, &[idxs_expr_ir.clone()], ctx)?;
+
+                // Add a row index to left stream so we can join the indices on it.
+                let row_index_stream = build_with_row_index_stream_with_ctx(
+                    left_stream,
+                    row_index_name.clone(),
+                    None,
+                    ctx,
+                )?;
+
+                // The indices need to be coerced to the same type as the row index.
+                let casted_idxs = ctx.expr_arena.add(AExpr::Column(idxs_name.clone()));
+                let casted_idxs = ctx.expr_arena.add(AExpr::Cast {
+                    expr: casted_idxs,
+                    dtype: IDX_DTYPE,
+                    options: CastOptions::NonStrict,
+                });
+
+                // Join between the indices and the row index.
+                let kind = PhysNodeKind::EquiJoin {
+                    input_left: row_index_stream,
+                    input_right: right_stream,
+                    left_on: vec![ExprIR::new(
+                        ctx.expr_arena.add(AExpr::Column(row_index_name.clone())),
+                        OutputName::Alias(row_index_name.clone()),
+                    )],
+                    right_on: vec![ExprIR::new(
+                        casted_idxs,
+                        OutputName::Alias(idxs_name.clone()),
+                    )],
+                    args: JoinArgs {
+                        how: JoinType::Inner,
+                        maintain_order: MaintainOrderJoin::Right,
+                        coalesce: JoinCoalesce::CoalesceColumns,
+                        ..Default::default()
+                    },
+                };
+                let join_node_key = ctx.phys_sm.insert(PhysNode::new(
+                    ctx.phys_sm[row_index_stream.node].output_schema.clone(),
+                    kind,
+                ));
+                input_streams.insert(PhysStream::first(join_node_key));
+                transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name.clone())));
+            },
             AExpr::Filter { input: inner, by } => {
                 // Select our inputs (if we don't do this we'll waste time filtering irrelevant columns).
                 let out_name = unique_column_name();
@@ -734,6 +795,28 @@ fn build_select_stream_with_ctx(
         extend_original: false,
     };
     let node_key = ctx.phys_sm.insert(PhysNode::new(output_schema, node_kind));
+    Ok(PhysStream::first(node_key))
+}
+
+fn build_with_row_index_stream_with_ctx(
+    input: PhysStream,
+    name: PlSmallStr,
+    offset: Option<IdxSize>,
+    ctx: &mut LowerExprContext,
+) -> PolarsResult<PhysStream> {
+    let schema = ctx.phys_sm[input.node]
+        .output_schema
+        .as_ref()
+        .new_inserting_at_index(0, name.clone(), IDX_DTYPE)
+        .unwrap();
+    let node_key = ctx.phys_sm.insert(PhysNode::new(
+        Arc::new(schema),
+        PhysNodeKind::WithRowIndex {
+            input,
+            name,
+            offset,
+        },
+    ));
     Ok(PhysStream::first(node_key))
 }
 
