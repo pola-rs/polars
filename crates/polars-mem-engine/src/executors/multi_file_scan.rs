@@ -558,7 +558,7 @@ impl MultiScanExec {
         }
 
         if dfs.is_empty() {
-            Ok(DataFrame::empty_with_schema(&final_per_source_schema))
+            Ok(DataFrame::empty_with_schema(final_per_source_schema))
         } else {
             Ok(accumulate_dataframes_vertical_unchecked(dfs))
         }
