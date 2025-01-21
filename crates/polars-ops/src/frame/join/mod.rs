@@ -45,6 +45,7 @@ use polars_core::utils::slice_offsets;
 #[allow(unused_imports)]
 use polars_core::utils::slice_slice;
 use polars_core::POOL;
+use polars_error::check_signals;
 use polars_utils::hashing::BytesHash;
 use rayon::prelude::*;
 
@@ -562,6 +563,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
                 args.maintain_order,
                 MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight
             );
+        check_signals()?;
         let (df_left, df_right) =
             if args.maintain_order != MaintainOrderJoin::None && !already_left_sorted {
                 let mut df =

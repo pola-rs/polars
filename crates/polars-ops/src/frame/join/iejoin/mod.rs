@@ -12,7 +12,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, split};
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{check_signals, polars_err, PolarsResult};
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
@@ -362,6 +362,7 @@ unsafe fn materialize_join(
     right_row_idx: &IdxCa,
     suffix: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
+    check_signals()?;
     let (join_left, join_right) = {
         POOL.join(
             || left.take_unchecked(left_row_idx),
