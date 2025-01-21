@@ -307,7 +307,7 @@ impl CloudOptions {
             &mut builder,
             &[(
                 Path::new("~/.aws/config"),
-                &[("region\\s*=\\s*(.*)\n", AmazonS3ConfigKey::Region)],
+                &[("region\\s*=\\s*([^\r\n]*)", AmazonS3ConfigKey::Region)],
             )],
         );
 
@@ -317,12 +317,16 @@ impl CloudOptions {
                 Path::new("~/.aws/credentials"),
                 &[
                     (
-                        "aws_access_key_id\\s*=\\s*(.*)\n",
+                        "aws_access_key_id\\s*=\\s*([^\\r\\n]*)",
                         AmazonS3ConfigKey::AccessKeyId,
                     ),
                     (
-                        "aws_secret_access_key\\s*=\\s*(.*)\n",
+                        "aws_secret_access_key\\s*=\\s*([^\\r\\n]*)",
                         AmazonS3ConfigKey::SecretAccessKey,
+                    ),
+                    (
+                        "aws_session_token\\s*=\\s*([^\\r\\n]*)",
+                        AmazonS3ConfigKey::Token,
                     ),
                 ],
             )],
