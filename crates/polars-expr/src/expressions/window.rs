@@ -576,8 +576,7 @@ impl PhysicalExpr for WindowExpr {
                                             right.as_materialized_series(),
                                             JoinValidation::ManyToMany,
                                             true,
-                                        )
-                                        .unwrap()
+                                        )?
                                         .1,
                                 ))
                             } else {

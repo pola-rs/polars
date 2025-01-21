@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -536,3 +537,10 @@ def test_order_by_sorted_keys_18943() -> None:
 
     out = df.set_sorted("g").select(pl.col("x").cum_sum().over("g", order_by="t"))
     assert_frame_equal(out, expect)
+
+
+def test_over_on_struct_20688() -> None:
+    df = pl.DataFrame({"x": 1, "y": "two"})
+
+    with pytest.raises(ComputeError, match="not yet implemented"):
+        df.select(pl.col("y").first().over(pl.struct("x")))
