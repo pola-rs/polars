@@ -443,7 +443,8 @@ impl ProjectionPushDown {
                                     .cloned()
                                     .collect();
 
-                                    // TODO: Don't know why this works without removing it later.
+                                    // TODO: Don't know why this works without needing to remove it
+                                    // later.
                                     acc_projections.push(ColumnNode(
                                         expr_arena.add(AExpr::Column(projection[0].clone())),
                                     ));
