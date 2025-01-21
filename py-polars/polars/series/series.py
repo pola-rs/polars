@@ -168,7 +168,7 @@ ArrayLike = Union[
 @expr_dispatch
 class Series:
     """
-    A Series represents a single column in a polars DataFrame.
+    A Series represents a single column in a Polars DataFrame.
 
     Parameters
     ----------
