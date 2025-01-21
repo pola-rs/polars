@@ -430,7 +430,10 @@ impl ProjectionPushDown {
                     if let Some(projection) = file_options.with_columns.as_mut() {
                         if projection.is_empty() {
                             match &scan_type {
-                                FileScan::Parquet { .. } | FileScan::Ipc { .. } => {},
+                                #[cfg(feature = "parquet")]
+                                FileScan::Parquet { .. } => {},
+                                #[cfg(feature = "ipc")]
+                                FileScan::Ipc { .. } => {},
                                 // Other scan types do not yet support projection of e.g. only the row index or file path
                                 // column - ensure at least 1 column is projected from the file.
                                 _ => {
