@@ -20,6 +20,7 @@ mod predicate_pushdown;
 mod projection_pushdown;
 mod set_order;
 mod simplify_expr;
+mod skip_batches;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
 mod stack_opt;
@@ -219,6 +220,10 @@ pub fn optimize(
             let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
             Ok(rewritten.node())
         })?;
+    }
+
+    if opt_state.predicate_pushdown() {
+        skip_batches::optimize(lp_top, lp_arena, expr_arena);
     }
 
     // During debug we check if the optimizations have not modified the final schema.
