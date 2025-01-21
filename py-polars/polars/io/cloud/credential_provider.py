@@ -390,17 +390,19 @@ class CredentialProviderGCP(CredentialProvider):
 
 def _maybe_init_credential_provider(
     credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-    source: str
-    | Path
-    | IO[str]
-    | IO[bytes]
-    | bytes
-    | list[str]
-    | list[Path]
-    | list[IO[str]]
-    | list[IO[bytes]]
-    | list[bytes]
-    | None,
+    source: (
+        str
+        | Path
+        | IO[str]
+        | IO[bytes]
+        | bytes
+        | list[str]
+        | list[Path]
+        | list[IO[str]]
+        | list[IO[bytes]]
+        | list[bytes]
+        | None
+    ),
     storage_options: dict[str, Any] | None,
     caller_name: str,
 ) -> CredentialProviderFunction | CredentialProvider | None:
