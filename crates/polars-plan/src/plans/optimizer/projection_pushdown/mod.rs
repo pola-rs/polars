@@ -431,7 +431,7 @@ impl ProjectionPushDown {
                         if projection.is_empty() {
                             match &scan_type {
                                 FileScan::Parquet { .. } | FileScan::Ipc { .. } => {},
-                                // Other scan types do not yet support projection e.g. only the row index or file path
+                                // Other scan types do not yet support projection of e.g. only the row index or file path
                                 // column - ensure at least 1 column is projected from the file.
                                 _ => {
                                     *projection = match &file_info.reader_schema {
