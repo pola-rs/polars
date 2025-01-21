@@ -26,3 +26,5 @@ def test_literal_integer_20807() -> None:
         value = 2**i
         assert pl.select(pl.lit(value)).item() == value
         assert pl.select(pl.lit(-value)).item() == -value
+        assert pl.select(pl.lit(value, dtype=pl.Int128)).item() == value
+        assert pl.select(pl.lit(-value, dtype=pl.Int128)).item() == -value
