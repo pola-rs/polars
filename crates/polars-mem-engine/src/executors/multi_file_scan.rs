@@ -336,7 +336,7 @@ impl MultiScanExec {
             final_per_source_schema.clone()
         };
 
-        if slice.is_some_and(|x| x.1 - x.0 == 0) {
+        if slice.is_some_and(|x| x.1 == 0) {
             return Ok(DataFrame::empty_with_schema(&final_per_source_schema));
         }
 
