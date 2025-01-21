@@ -155,6 +155,7 @@ pub trait JoinDispatch: IntoDf {
         let (mut join_idx_l, mut join_idx_r) =
             s_left.hash_join_outer(s_right, args.validation, args.join_nulls)?;
 
+        check_signals()?;
         if let Some((offset, len)) = args.slice {
             let (offset, len) = slice_offsets(offset, len, join_idx_l.len());
             join_idx_l.slice(offset, len);

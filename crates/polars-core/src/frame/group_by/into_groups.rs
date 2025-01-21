@@ -1,4 +1,5 @@
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
+use polars_error::check_signals;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
@@ -234,6 +235,7 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             },
         };
+        check_signals()?;
         Ok(out)
     }
 }
@@ -285,6 +287,7 @@ impl IntoGroupsType for BinaryChunked {
         } else {
             group_by(bh[0].iter(), sorted)
         };
+        check_signals()?;
         Ok(out)
     }
 }

@@ -9,7 +9,9 @@ use std::fmt::{self, Display, Formatter, Write};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use std::{env, io};
+mod signals;
 
+pub use signals::{check_signals, set_signals_function};
 pub use warning::*;
 
 enum ErrorStrategy {

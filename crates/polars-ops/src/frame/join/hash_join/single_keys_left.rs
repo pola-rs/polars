@@ -136,6 +136,7 @@ where
     } else {
         build_tables(build, join_nulls)
     };
+    check_signals()?;
     let n_tables = hash_tbls.len();
 
     // we determine the offset so that we later know which index to store in the join tuples
