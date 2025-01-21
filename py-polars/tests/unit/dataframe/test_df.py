@@ -2995,3 +2995,22 @@ def test_get_column_after_drop_20119() -> None:
     df.drop_in_place("a")
     c = df.get_column("c")
     assert_series_equal(c, pl.Series("c", ["C"]))
+
+
+def test_select_oob_row_20775() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    with pytest.raises(
+        IndexError,
+        match="index 99 is out of bounds for DataFrame of height 3",
+    ):
+        df[99]
+
+
+@pytest.mark.parametrize("idx", [3, 99, -4, -99])
+def test_select_oob_element_20775_too_large(idx: int) -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+    with pytest.raises(
+        IndexError,
+        match=f"index {idx} is out of bounds for sequence of length 3",
+    ):
+        df[idx, "a"]
