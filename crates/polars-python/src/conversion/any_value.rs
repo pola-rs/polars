@@ -281,9 +281,8 @@ pub(crate) fn py_object_to_any_value<'py>(
             }
         } else {
             let datetime = ob.extract::<DateTime<FixedOffset>>()?;
-            let tz = datetime.timezone().to_string().into();
             let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-            (delta.num_microseconds().unwrap(), tz)
+            (delta.num_microseconds().unwrap(), "UTC".into())
         };
 
         Ok(AnyValue::DatetimeOwned(
