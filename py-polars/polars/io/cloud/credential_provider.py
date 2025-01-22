@@ -29,25 +29,27 @@ CredentialProviderFunction: TypeAlias = Union[
 ]
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
-OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = {
-    "allow_http",
-    "allow_invalid_certificates",
-    "connect_timeout",
-    "default_content_type",
-    "http1_only",
-    "http2_only",
-    "http2_keep_alive_interval",
-    "http2_keep_alive_timeout",
-    "http2_keep_alive_while_idle",
-    "http2_max_frame_size",
-    "pool_idle_timeout",
-    "pool_max_idle_per_host",
-    "proxy_url",
-    "proxy_ca_certificate",
-    "proxy_excludes",
-    "timeout",
-    "user_agent",
-}
+OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
+    [
+        "allow_http",
+        "allow_invalid_certificates",
+        "connect_timeout",
+        "default_content_type",
+        "http1_only",
+        "http2_only",
+        "http2_keep_alive_interval",
+        "http2_keep_alive_timeout",
+        "http2_keep_alive_while_idle",
+        "http2_max_frame_size",
+        "pool_idle_timeout",
+        "pool_max_idle_per_host",
+        "proxy_url",
+        "proxy_ca_certificate",
+        "proxy_excludes",
+        "timeout",
+        "user_agent",
+    ]
+)
 
 
 class AWSAssumeRoleKWArgs(TypedDict):
@@ -454,7 +456,9 @@ def _maybe_init_credential_provider(
     if (scheme := _get_path_scheme(path)) is None:
         return None
 
-    provider = None
+    provider: (
+        CredentialProviderAWS | CredentialProviderAzure | CredentialProviderGCP | None
+    ) = None
 
     try:
         # For Azure we dispatch to `azure.identity` as much as possible
