@@ -20,46 +20,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .append_series(&Series::new("".into(), ["Dennis", "Doyle"]))
         .unwrap();
     let names_s = names.finish().into_series();
-
+    let empty_i64 = Series::new_empty("".into(), &DataType::Int64);
     let mut children_ages = get_list_builder(&DataType::Int64, 4, 4, "children_ages".into());
     children_ages
         .append_series(&Series::new("".into(), [5i64, 7i64]))
         .unwrap();
-    children_ages
-        .append_series(&Series::new_empty("".into(), &DataType::Int64))
-        .unwrap();
-    children_ages
-        .append_series(&Series::new_empty("".into(), &DataType::Int64))
-        .unwrap();
+    children_ages.append_series(&empty_i64).unwrap();
+    children_ages.append_series(&empty_i64).unwrap();
     children_ages
         .append_series(&Series::new("".into(), [8i64, 11i64, 18i64]))
         .unwrap();
     let children_ages_s = children_ages.finish().into_series();
 
+    let empty_dt = Series::new_empty("".into(), &DataType::Datetime(TimeUnit::Microseconds, None));
     let mut medical_appointments = get_list_builder(
         &DataType::Datetime(TimeUnit::Microseconds, None),
         4,
         4,
         "medical_appointments".into(),
     );
-    medical_appointments
-        .append_series(&Series::new_empty(
-            "".into(),
-            &DataType::Datetime(TimeUnit::Microseconds, None),
-        ))
-        .unwrap();
-    medical_appointments
-        .append_series(&Series::new_empty(
-            "".into(),
-            &DataType::Datetime(TimeUnit::Microseconds, None),
-        ))
-        .unwrap();
-    medical_appointments
-        .append_series(&Series::new_empty(
-            "".into(),
-            &DataType::Datetime(TimeUnit::Microseconds, None),
-        ))
-        .unwrap();
+    medical_appointments.append_series(&empty_dt).unwrap();
+    medical_appointments.append_series(&empty_dt).unwrap();
+    medical_appointments.append_series(&empty_dt).unwrap();
     medical_appointments
         .append_series(&Series::new(
             "".into(),
