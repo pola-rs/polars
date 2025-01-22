@@ -96,7 +96,7 @@ class CatNameSpace:
     @unstable()
     def uses_lexical_ordering(self) -> bool:
         """
-        Return whether or not the series uses lexical ordering.
+        Indicate whether the Series uses lexical ordering.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed

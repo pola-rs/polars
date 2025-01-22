@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
+
 
 # pytestmark = pytest.mark.slow()
 
@@ -93,9 +95,9 @@ def path_empty_rows_excel(io_files_path: Path) -> Path:
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -130,9 +132,9 @@ def test_read_spreadsheet(
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -174,9 +176,9 @@ def test_read_excel_multiple_worksheets(
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -241,9 +243,9 @@ def test_read_excel_multiple_workbooks(
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -262,7 +264,7 @@ def test_read_excel_all_sheets(
         sheet_id=0,
         **params,
     )
-    assert len(frames) == (4 if str(spreadsheet_path).endswith("ods") else 5)
+    assert len(frames) == (4 if str(spreadsheet_path).endswith("ods") else 6)
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
@@ -381,14 +383,84 @@ def test_read_dropped_cols(
 
 
 @pytest.mark.parametrize(
+    ("source", "params"),
+    [
+        ("path_xls", {"engine": "calamine", "sheet_name": "temporal"}),
+        ("path_xlsx", {"engine": "calamine", "table_name": "TemporalData"}),
+        ("path_xlsx", {"engine": "openpyxl", "sheet_name": "temporal"}),
+        ("path_xlsb", {"engine": "calamine", "sheet_name": "temporal"}),
+    ],
+)
+def test_read_excel_temporal_data(
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    source_path = request.getfixturevalue(source)
+
+    temporal_schema = {
+        "id": pl.UInt16(),
+        "dtm": pl.Datetime("ms"),
+        "dt": pl.Date(),
+        "dtm_str": pl.Datetime(time_zone="Asia/Tokyo"),
+        "dt_str": pl.Date(),
+        "tm_str": pl.Time(),
+    }
+    parsed_df = pl.read_excel(  # type: ignore[call-overload]
+        source_path,
+        **params,
+        schema_overrides=temporal_schema,
+    )
+    TK = ZoneInfo("Asia/Tokyo")
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 200, 300, 400],
+            "dtm": [
+                datetime(1999, 12, 31, 1, 2, 3),
+                None,
+                datetime(1969, 7, 5, 10, 30, 45),
+                datetime(2077, 10, 10, 5, 59, 44),
+            ],
+            "dt": [
+                date(2000, 1, 18),
+                date(1965, 8, 8),
+                date(2027, 4, 22),
+                None,
+            ],
+            "dtm_str": [
+                None,
+                datetime(1900, 1, 30, 14, 50, 20, tzinfo=TK),
+                datetime(2026, 5, 7, 23, 59, 59, tzinfo=TK),
+                datetime(2007, 6, 1, 0, 0, tzinfo=TK),
+            ],
+            "dt_str": [
+                date(2000, 6, 14),
+                date(1978, 2, 28),
+                None,
+                date(2040, 12, 4),
+            ],
+            "tm_str": [
+                time(23, 50, 22),
+                time(0, 0, 1),
+                time(10, 10, 33),
+                time(18, 30, 15),
+            ],
+        },
+        schema=temporal_schema,
+    )
+    assert_frame_equal(expected, parsed_df)
+
+
+@pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
