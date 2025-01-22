@@ -1815,6 +1815,27 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
     assert df.schema == {"dt": pl.Datetime("us", time_zone=tz)}
 
 
+@pytest.mark.parametrize(
+    "tz",
+    [
+        None,
+        ZoneInfo("Asia/Tokyo"),
+        ZoneInfo("Europe/Amsterdam"),
+        ZoneInfo("UTC"),
+        timezone.utc,
+    ],
+)
+def test_init_list_of_nested_dicts_with_timezone(tz: Any) -> None:
+    dt = datetime(2021, 1, 1, 0, 0, 0, 0, tzinfo=tz)
+    data = [{"timestamp": {"content": datetime(2021, 1, 1, 0, 0, tzinfo=tz)}}]
+
+    df = pl.DataFrame(data).unnest("timestamp")
+    expected = pl.DataFrame({"content": [dt]})
+    assert_frame_equal(df, expected)
+
+    assert df.schema == {"content": pl.Datetime("us", time_zone=tz)}
+
+
 def test_init_from_subclassed_types() -> None:
     # more detailed test of one custom subclass...
     import codecs
