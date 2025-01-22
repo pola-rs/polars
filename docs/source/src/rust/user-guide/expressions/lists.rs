@@ -4,34 +4,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use polars::chunked_array::builder::get_list_builder;
     use polars::prelude::*;
     let mut names = get_list_builder(&DataType::String, 4, 4, "names".into());
-    let _ = names
+    names
         .append_series(&Series::new("".into(), ["Anne", "Averill", "Adams"]))
         .unwrap();
-    let _ = names
+    names
         .append_series(&Series::new(
             "".into(),
             ["Brandon", "Brooke", "Borden", "Branson"],
         ))
         .unwrap();
-    let _ = names
+    names
         .append_series(&Series::new("".into(), ["Camila", "Campbell"]))
         .unwrap();
-    let _ = names
+    names
         .append_series(&Series::new("".into(), ["Dennis", "Doyle"]))
         .unwrap();
     let names_s = names.finish().into_series();
 
     let mut children_ages = get_list_builder(&DataType::Int64, 4, 4, "children_ages".into());
-    let _ = children_ages
+    children_ages
         .append_series(&Series::new("".into(), [5i64, 7i64]))
         .unwrap();
-    let _ = children_ages
+    children_ages
         .append_series(&Series::new_empty("".into(), &DataType::Int64))
         .unwrap();
-    let _ = children_ages
+    children_ages
         .append_series(&Series::new_empty("".into(), &DataType::Int64))
         .unwrap();
-    let _ = children_ages
+    children_ages
         .append_series(&Series::new("".into(), [8i64, 11i64, 18i64]))
         .unwrap();
     let children_ages_s = children_ages.finish().into_series();
@@ -42,25 +42,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         4,
         "medical_appointments".into(),
     );
-    let _ = medical_appointments
+    medical_appointments
         .append_series(&Series::new_empty(
             "".into(),
             &DataType::Datetime(TimeUnit::Microseconds, None),
         ))
         .unwrap();
-    let _ = medical_appointments
+    medical_appointments
         .append_series(&Series::new_empty(
             "".into(),
             &DataType::Datetime(TimeUnit::Microseconds, None),
         ))
         .unwrap();
-    let _ = medical_appointments
+    medical_appointments
         .append_series(&Series::new_empty(
             "".into(),
             &DataType::Datetime(TimeUnit::Microseconds, None),
         ))
         .unwrap();
-    let _ = medical_appointments
+    medical_appointments
         .append_series(&Series::new(
             "".into(),
             [NaiveDate::from_ymd_opt(2022, 5, 22)
