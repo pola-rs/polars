@@ -25,7 +25,7 @@ use crate::hive::{self, materialize_hive_partitions};
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::parquet::metadata::FileMetadataRef;
 use crate::parquet::read::ROW_COUNT_OVERFLOW_ERR;
-use crate::predicates::{apply_predicate, ColumnPredicateExpr, PhysicalIoExpr};
+use crate::predicates::{apply_predicate, ColumnPredicateExpr, IOPredicate};
 use crate::utils::get_reader_bytes;
 use crate::utils::slice::split_slice_at_file;
 use crate::RowIndex;
@@ -141,7 +141,7 @@ fn rg_to_dfs(
     slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
-    predicate: Option<&dyn PhysicalIoExpr>,
+    predicate: Option<&IOPredicate>,
     row_index: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
@@ -172,9 +172,7 @@ fn rg_to_dfs(
 
     if parallel == S::Prefiltered {
         if let Some(predicate) = predicate {
-            let mut live_columns = PlIndexSet::new();
-            predicate.collect_live_columns(&mut live_columns);
-            if !live_columns.is_empty() {
+            if !predicate.live_columns.is_empty() {
                 return rg_to_dfs_prefiltered(
                     store,
                     previous_row_count,
@@ -182,7 +180,6 @@ fn rg_to_dfs(
                     row_group_end,
                     file_metadata,
                     schema,
-                    live_columns,
                     predicate,
                     row_index,
                     projection,
@@ -246,8 +243,7 @@ fn rg_to_dfs_prefiltered(
     row_group_end: usize,
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
-    live_columns: PlIndexSet<PlSmallStr>,
-    predicate: &dyn PhysicalIoExpr,
+    predicate: &IOPredicate,
     row_index: Option<RowIndex>,
     projection: &[usize],
     use_statistics: bool,
@@ -274,7 +270,7 @@ fn rg_to_dfs_prefiltered(
     };
 
     // Get the number of live columns
-    let num_live_columns = live_columns.len();
+    let num_live_columns = predicate.live_columns.len();
     let num_dead_columns =
         projection.len() + hive_partition_columns.map_or(0, |x| x.len()) - num_live_columns;
 
@@ -290,7 +286,7 @@ fn rg_to_dfs_prefiltered(
     for &i in projection.iter() {
         let name = schema.get_at_index(i).unwrap().0.as_str();
 
-        if live_columns.contains(name) {
+        if predicate.live_columns.contains(name) {
             live_idx_to_col_idx.push(i);
         } else {
             dead_idx_to_col_idx.push(i);
@@ -449,8 +445,7 @@ fn rg_to_dfs_prefiltered(
                         hive_partition_columns,
                         md.num_rows(),
                     );
-
-                    let s = predicate.evaluate_io(&df)?;
+                    let s = predicate.expr.evaluate_io(&df)?;
                     let mask = s.bool().expect("filter predicates was not of type boolean");
 
                     // Create without hive columns - the first merge phase does not handle hive partitions. This also saves
@@ -643,7 +638,7 @@ fn rg_to_dfs_optionally_par_over_columns(
     slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
-    predicate: Option<&dyn PhysicalIoExpr>,
+    predicate: Option<&IOPredicate>,
     row_index: Option<RowIndex>,
     parallel: ParallelStrategy,
     projection: &[usize],
@@ -723,7 +718,7 @@ fn rg_to_dfs_optionally_par_over_columns(
         }
 
         materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
-        apply_predicate(&mut df, predicate, true)?;
+        apply_predicate(&mut df, predicate.as_ref().map(|p| p.expr.as_ref()), true)?;
 
         *previous_row_count = previous_row_count.checked_add(current_row_count).ok_or_else(||
             polars_err!(
@@ -752,7 +747,7 @@ fn rg_to_dfs_par_over_rg(
     slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
-    predicate: Option<&dyn PhysicalIoExpr>,
+    predicate: Option<&IOPredicate>,
     row_index: Option<RowIndex>,
     projection: &[usize],
     use_statistics: bool,
@@ -861,7 +856,7 @@ fn rg_to_dfs_par_over_rg(
                     hive_partition_columns,
                     slice.1,
                 );
-                apply_predicate(&mut df, predicate, false)?;
+                apply_predicate(&mut df, predicate.as_ref().map(|p| p.expr.as_ref()), false)?;
 
                 Ok(Some(df))
             })
@@ -877,7 +872,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchemaRef,
     metadata: Option<FileMetadataRef>,
-    predicate: Option<&dyn PhysicalIoExpr>,
+    predicate: Option<&IOPredicate>,
     mut parallel: ParallelStrategy,
     row_index: Option<RowIndex>,
     use_statistics: bool,
@@ -922,9 +917,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         let prefilter_env = std::env::var("POLARS_PARQUET_PREFILTER");
         let prefilter_env = prefilter_env.as_deref();
 
-        let mut live_columns = PlIndexSet::new();
-        predicate.collect_live_columns(&mut live_columns);
-        let num_live_variables = live_columns.len();
+        let num_live_variables = predicate.live_columns.len();
         let mut do_prefilter = false;
 
         do_prefilter |= prefilter_env == Ok("1"); // Force enable
@@ -1088,7 +1081,7 @@ pub struct BatchedParquetReader {
     projection: Arc<[usize]>,
     schema: ArrowSchemaRef,
     metadata: FileMetadataRef,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<IOPredicate>,
     row_index: Option<RowIndex>,
     rows_read: IdxSize,
     row_group_offset: usize,
@@ -1111,7 +1104,7 @@ impl BatchedParquetReader {
         schema: ArrowSchemaRef,
         slice: (usize, usize),
         projection: Option<Vec<usize>>,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        predicate: Option<IOPredicate>,
         row_index: Option<RowIndex>,
         chunk_size: usize,
         use_statistics: bool,
@@ -1239,7 +1232,7 @@ impl BatchedParquetReader {
                         slice,
                         &metadata,
                         &schema,
-                        predicate.as_deref(),
+                        predicate.as_ref(),
                         row_index,
                         parallel,
                         &projection,

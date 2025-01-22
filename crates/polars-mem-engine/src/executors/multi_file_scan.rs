@@ -4,7 +4,7 @@ use hive::HivePartitions;
 use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_io::predicates::BatchStats;
+use polars_io::predicates::SkipBatchPredicate;
 use polars_io::RowIndex;
 
 use super::Executor;
@@ -17,6 +17,7 @@ use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
+use crate::FilePredicate;
 
 pub struct PhysicalExprWithConstCols {
     constants: Vec<(PlSmallStr, Scalar)>,
@@ -84,7 +85,8 @@ pub trait ScanExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<FilePredicate>,
+        skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame>;
 
@@ -214,7 +216,7 @@ pub struct MultiScanExec {
     sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<FilePredicate>,
     file_options: FileScanOptions,
     scan_type: FileScan,
 }
@@ -224,7 +226,7 @@ impl MultiScanExec {
         sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<FilePredicate>,
         file_options: FileScanOptions,
         scan_type: FileScan,
     ) -> Self {
@@ -292,11 +294,8 @@ impl MultiScanExec {
         // Look through the predicate and assess whether hive columns are being used in it.
         let mut has_live_hive_columns = false;
         if let Some(predicate) = &predicate {
-            let mut live_columns = PlIndexSet::new();
-            predicate.collect_live_columns(&mut live_columns);
-
             for hive_column in &hive_column_set {
-                has_live_hive_columns |= live_columns.contains(hive_column);
+                has_live_hive_columns |= predicate.live_columns.contains(hive_column);
             }
         }
 
@@ -407,43 +406,36 @@ impl MultiScanExec {
             // used.
             if has_live_hive_columns {
                 let hive_part = hive_part.unwrap();
-                let child = file_predicate.unwrap();
-
-                file_predicate = Some(Arc::new(PhysicalExprWithConstCols {
-                    constants: hive_column_set
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, column)| {
-                            let series = hive_part.get_statistics().column_stats()[idx]
-                                .to_min()
-                                .unwrap();
-                            (
-                                column.clone(),
-                                Scalar::new(
-                                    series.dtype().clone(),
-                                    series.get(0).unwrap().into_static(),
-                                ),
-                            )
-                        })
-                        .collect(),
-                    child,
-                }));
+                file_predicate = Some(file_predicate.unwrap().with_constant_columns(
+                    hive_column_set.iter().enumerate().map(|(idx, column)| {
+                        let series = hive_part.get_statistics().column_stats()[idx]
+                            .to_min()
+                            .unwrap();
+                        (
+                            column.clone(),
+                            Scalar::new(
+                                series.dtype().clone(),
+                                series.get(0).unwrap().into_static(),
+                            ),
+                        )
+                    }),
+                ));
             }
 
-            let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
-            let stats_evaluator = stats_evaluator.filter(|_| use_statistics);
-
-            if let Some(stats_evaluator) = stats_evaluator {
-                let allow_predicate_skip = !stats_evaluator
-                    .should_read(&BatchStats::default())
-                    .unwrap_or(true);
-                if allow_predicate_skip && verbose {
+            let skip_batch_predicate = file_predicate
+                .as_ref()
+                .take_if(|_| use_statistics)
+                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone()));
+            if let Some(skip_batch_predicate) = &skip_batch_predicate {
+                let can_skip_batch = skip_batch_predicate
+                    .can_skip_batch(exec_source.num_unfiltered_rows()?, PlIndexMap::default())?;
+                if can_skip_batch && verbose {
                     eprintln!(
                         "File statistics allows skipping of '{}'",
                         source.to_include_path_name()
                     );
                 }
-                do_skip_file |= allow_predicate_skip;
+                do_skip_file |= can_skip_batch;
             }
 
             if do_skip_file {
@@ -513,6 +505,7 @@ impl MultiScanExec {
                 current_source_with_columns.into_owned(),
                 slice,
                 file_predicate,
+                skip_batch_predicate,
                 row_index.clone(),
             )?;
 

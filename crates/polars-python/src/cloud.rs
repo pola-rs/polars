@@ -40,9 +40,12 @@ pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<P
     .map_err(PyPolarsErr::from)?;
 
     // Convert to physical plan.
-    let mut physical_plan =
-        create_physical_plan(ir_plan.lp_top, &mut ir_plan.lp_arena, &ir_plan.expr_arena)
-            .map_err(PyPolarsErr::from)?;
+    let mut physical_plan = create_physical_plan(
+        ir_plan.lp_top,
+        &mut ir_plan.lp_arena,
+        &mut ir_plan.expr_arena,
+    )
+    .map_err(PyPolarsErr::from)?;
 
     // Execute the plan.
     let mut state = ExecutionState::new();

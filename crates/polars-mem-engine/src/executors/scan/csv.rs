@@ -4,16 +4,18 @@ use polars_core::config;
 use polars_core::utils::{
     accumulate_dataframes_vertical, accumulate_dataframes_vertical_unchecked,
 };
+use polars_io::predicates::SkipBatchPredicate;
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
+use crate::FilePredicate;
 
 pub struct CsvExec {
     pub sources: ScanSources,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
     pub file_options: FileScanOptions,
-    pub predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub predicate: Option<FilePredicate>,
 }
 
 impl CsvExec {
@@ -29,7 +31,10 @@ impl CsvExec {
             assert_eq!(x.0, 0);
             x.1
         }));
-        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+        let predicate = self
+            .predicate
+            .as_ref()
+            .map(|p| phys_expr_to_io_expr(p.predicate.clone()));
         let options_base = self
             .options
             .clone()
@@ -214,7 +219,8 @@ impl ScanExec for CsvExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<FilePredicate>,
+        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;

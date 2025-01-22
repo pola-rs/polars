@@ -140,7 +140,7 @@ impl ParquetSource {
                     ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
                     ri
                 }))
-                .with_predicate(predicate.clone())
+                .with_predicate(None) // @TODO!!! Fix!!!
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
                 .with_include_file_path(
@@ -209,7 +209,7 @@ impl ParquetSource {
                         self.file_options.allow_missing_columns,
                     )
                     .await?
-                    .with_predicate(predicate.clone())
+                    .with_predicate(None) // @TODO!!! Fix!!!
                     .use_statistics(options.use_statistics)
                     .with_hive_partition_columns(hive_partitions)
                     .with_include_file_path(

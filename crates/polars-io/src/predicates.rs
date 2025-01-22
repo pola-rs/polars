@@ -358,6 +358,28 @@ fn use_min_max(dtype: &DataType) -> bool {
         )
 }
 
+pub struct ColumnStatistics {
+    pub dtype: DataType,
+    pub min: AnyValue<'static>,
+    pub max: AnyValue<'static>,
+    pub null_count: Option<IdxSize>,
+}
+
+pub trait SkipBatchPredicate: Send + Sync {
+    fn can_skip_batch(
+        &self,
+        batch_size: IdxSize,
+        statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
+    ) -> PolarsResult<bool>;
+}
+
+#[derive(Clone)]
+pub struct IOPredicate {
+    pub expr: Arc<dyn PhysicalIoExpr>,
+    pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
+    pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
+}
+
 /// A collection of column stats with a known schema.
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]

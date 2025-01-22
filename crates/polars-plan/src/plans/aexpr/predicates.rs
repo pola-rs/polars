@@ -12,24 +12,24 @@ use crate::dsl::FunctionExpr;
 use crate::plans::{ExprIR, LiteralValue};
 use crate::prelude::FunctionOptions;
 
-/// Return a new boolean expression determines whether a batch can be skipped based on min and max
-/// statistics.
+/// Return a new boolean expression determines whether a batch can be skipped based on min, max and
+/// null count statistics.
 ///
 /// This is conversative and may return `None` or `false` when an expression is not yet supported.
 ///
 /// To evaluate, the expression it is given all the original column appended with `_min` and
 /// `_max`. The `min` or `max` cannot be null and when they are null it is assumed they are not
 /// known.
-pub fn aexpr_to_skip_batch_expr(
+pub fn aexpr_to_skip_batch_predicate(
     e: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
 ) -> Option<Node> {
-    aexpr_to_skip_batch_expr_rec(e, expr_arena, schema, 0)
+    aexpr_to_skip_batch_predicate_rec(e, expr_arena, schema, 0)
 }
 
 #[recursive::recursive]
-fn aexpr_to_skip_batch_expr_rec(
+fn aexpr_to_skip_batch_predicate_rec(
     e: Node,
     expr_arena: &mut Arena<AExpr>,
     schema: &Schema,
@@ -39,7 +39,7 @@ fn aexpr_to_skip_batch_expr_rec(
 
     macro_rules! rec {
         ($node:expr) => {{
-            aexpr_to_skip_batch_expr_rec($node, expr_arena, schema, depth + 1)
+            aexpr_to_skip_batch_predicate_rec($node, expr_arena, schema, depth + 1)
         }};
     }
     macro_rules! and {
@@ -102,11 +102,6 @@ fn aexpr_to_skip_batch_expr_rec(
             binexpr!(EqValidity, $l, $r)
         }};
     }
-    macro_rules! ne_missing {
-        ($l:expr, $r:expr) => {{
-            binexpr!(NeValidity, $l, $r)
-        }};
-    }
     macro_rules! all {
         ($i:expr) => {{
             expr_arena.add(AExpr::Function {
@@ -117,14 +112,23 @@ fn aexpr_to_skip_batch_expr_rec(
         }};
     }
     macro_rules! is_stat_defined {
-        ($i:expr) => {{
-            let nc = expr_arena.add(AExpr::Function {
+        ($i:expr, $dtype:expr) => {{
+            let mut expr = expr_arena.add(AExpr::Function {
                 input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                function: FunctionExpr::NullCount,
+                function: FunctionExpr::Boolean(BooleanFunction::IsNotNull),
                 options: FunctionOptions::default(),
             });
-            let idx_zero = lv!(idx: 0);
-            ne_missing!(nc, idx_zero)
+
+            if $dtype.is_float() {
+                let is_not_nan = expr_arena.add(AExpr::Function {
+                    input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
+                    function: FunctionExpr::Boolean(BooleanFunction::IsNotNan),
+                    options: FunctionOptions::default(),
+                });
+                expr = and!(is_not_nan, expr);
+            }
+
+            expr
         }};
     }
     macro_rules! col {
@@ -195,8 +199,9 @@ fn aexpr_to_skip_batch_expr_rec(
                         let col_min = col!(min: col);
                         let col_max = col!(max: col);
 
-                        let min_is_defined = is_stat_defined!(col_min);
-                        let max_is_defined = is_stat_defined!(col_max);
+                        let dtype = schema.get(&col)?;
+                        let min_is_defined = is_stat_defined!(col_min, dtype);
+                        let max_is_defined = is_stat_defined!(col_max, dtype);
 
                         let min_gt = gt!(col_min, lv_node);
                         let min_gt = and!(min_is_defined, min_gt);
@@ -242,16 +247,17 @@ fn aexpr_to_skip_batch_expr_rec(
                     let is_col_less_than_lv = matches!(op, O::Lt) == (col_node == left);
 
                     let col = col.clone();
+                    let dtype = schema.get(&col)?;
                     if is_col_less_than_lv {
                         // col(A) < B --> min(A) >= B
                         let col_min = col!(min: col);
-                        let min_is_defined = is_stat_defined!(col_min);
+                        let min_is_defined = is_stat_defined!(col_min, dtype);
                         let min_ge = ge!(col_min, lv_node);
                         Some(and!(min_is_defined, min_ge))
                     } else {
                         // col(A) >= B --> max(A) < B
                         let col_max = col!(max: col);
-                        let max_is_defined = is_stat_defined!(col_max);
+                        let max_is_defined = is_stat_defined!(col_max, dtype);
                         let max_lt = lt!(col_max, lv_node);
                         Some(and!(max_is_defined, max_lt))
                     }
@@ -267,16 +273,17 @@ fn aexpr_to_skip_batch_expr_rec(
                     let is_col_greater_than_lv = matches!(op, O::Gt) == (col_node == left);
 
                     let col = col.clone();
+                    let dtype = schema.get(&col)?;
                     if is_col_greater_than_lv {
                         // col(A) > B --> max(A) <= B
                         let col_max = col!(max: col);
-                        let max_is_defined = is_stat_defined!(col_max);
+                        let max_is_defined = is_stat_defined!(col_max, dtype);
                         let max_le = le!(col_max, lv_node);
                         Some(and!(max_is_defined, max_le))
                     } else {
                         // col(A) <= B --> min(A) > B
                         let col_min = col!(min: col);
-                        let min_is_defined = is_stat_defined!(col_min);
+                        let min_is_defined = is_stat_defined!(col_min, dtype);
                         let min_gt = gt!(col_min, lv_node);
                         Some(and!(min_is_defined, min_gt))
                     }
@@ -303,11 +310,11 @@ fn aexpr_to_skip_batch_expr_rec(
                 | O::Xor => None,
             }
         },
-        AExpr::Cast { .. } => todo!(),
-        AExpr::Sort { .. } => todo!(),
-        AExpr::Gather { .. } => todo!(),
-        AExpr::SortBy { .. } => todo!(),
-        AExpr::Filter { .. } => todo!(),
+        AExpr::Cast { .. } => None,
+        AExpr::Sort { .. } => None,
+        AExpr::Gather { .. } => None,
+        AExpr::SortBy { .. } => None,
+        AExpr::Filter { .. } => None,
         AExpr::Agg(..) => None,
         AExpr::Ternary { .. } => None,
         AExpr::AnonymousFunction { .. } => None,
@@ -323,13 +330,14 @@ fn aexpr_to_skip_batch_expr_rec(
                     (Some(col), Some(lv)) => match lv.as_ref() {
                         LiteralValue::Series(s) => {
                             let col = col.clone();
+                            let dtype = schema.get(&col)?;
                             let has_nulls = s.has_nulls();
 
                             let col_min = col!(min: col);
                             let col_max = col!(max: col);
 
-                            let min_is_defined = is_stat_defined!(col_min);
-                            let max_is_defined = is_stat_defined!(col_max);
+                            let min_is_defined = is_stat_defined!(col_min, dtype);
+                            let max_is_defined = is_stat_defined!(col_max, dtype);
 
                             let min_gt = gt!(col_min, lv_node);
                             let min_gt = all!(min_gt);
@@ -364,6 +372,7 @@ fn aexpr_to_skip_batch_expr_rec(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn get_binary_expr_col_and_lv<'a>(
     left: Node,
     right: Node,
