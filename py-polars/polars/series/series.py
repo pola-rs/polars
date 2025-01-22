@@ -5524,7 +5524,6 @@ class Series:
         """
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
-    @unstable()
     def rolling_min(
         self,
         window_size: int,
@@ -5535,10 +5534,6 @@ class Series:
     ) -> Series:
         """
         Apply a rolling min (moving min) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5575,7 +5570,6 @@ class Series:
         ]
         """
 
-    @unstable()
     def rolling_max(
         self,
         window_size: int,
@@ -5586,10 +5580,6 @@ class Series:
     ) -> Series:
         """
         Apply a rolling max (moving max) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5626,7 +5616,6 @@ class Series:
         ]
         """
 
-    @unstable()
     def rolling_mean(
         self,
         window_size: int,
@@ -5637,10 +5626,6 @@ class Series:
     ) -> Series:
         """
         Apply a rolling mean (moving mean) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5677,7 +5662,6 @@ class Series:
         ]
         """
 
-    @unstable()
     def rolling_sum(
         self,
         window_size: int,
@@ -5688,10 +5672,6 @@ class Series:
     ) -> Series:
         """
         Apply a rolling sum (moving sum) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5728,7 +5708,6 @@ class Series:
         ]
         """
 
-    @unstable()
     def rolling_std(
         self,
         window_size: int,
@@ -5740,10 +5719,6 @@ class Series:
     ) -> Series:
         """
         Compute a rolling std dev.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -5783,7 +5758,6 @@ class Series:
         ]
         """
 
-    @unstable()
     def rolling_var(
         self,
         window_size: int,
@@ -5795,10 +5769,6 @@ class Series:
     ) -> Series:
         """
         Compute a rolling variance.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
