@@ -93,6 +93,14 @@ impl Series {
                 fill_backward_gather(self)
             },
             FillNullStrategy::Backward(Some(limit)) => fill_backward_gather_limit(self, limit),
+            FillNullStrategy::One if self.dtype().is_decimal() => {
+                let ca = self.decimal().unwrap();
+                let precision = ca.precision();
+                let scale = ca.scale();
+                let fill_value = 10i128.pow(scale as u32);
+                let phys = ca.as_ref().fill_null_with_values(fill_value)?;
+                Ok(phys.into_decimal_unchecked(precision, scale).into_series())
+            },
             _ => {
                 let logical_type = self.dtype();
                 let s = self.to_physical_repr();

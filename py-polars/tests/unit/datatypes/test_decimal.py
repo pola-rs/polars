@@ -638,3 +638,16 @@ def test_shift_over_12957() -> None:
     )
     assert result["x"].to_list() == [None, D("1.1"), None, D("2.2")]
     assert result["y"].to_list() == [None, 1, None, 2]
+
+
+def test_fill_null() -> None:
+    s = pl.Series("a", [D("1.2"), None, D("1.4")])
+
+    assert s.fill_null(D("0.0")).to_list() == [D("1.2"), D("0.0"), D("1.4")]
+    assert s.fill_null(strategy="zero").to_list() == [D("1.2"), D("0.0"), D("1.4")]
+    assert s.fill_null(strategy="max").to_list() == [D("1.2"), D("1.4"), D("1.4")]
+    assert s.fill_null(strategy="min").to_list() == [D("1.2"), D("1.2"), D("1.4")]
+    assert s.fill_null(strategy="one").to_list() == [D("1.2"), D("1.0"), D("1.4")]
+    assert s.fill_null(strategy="forward").to_list() == [D("1.2"), D("1.2"), D("1.4")]
+    assert s.fill_null(strategy="backward").to_list() == [D("1.2"), D("1.4"), D("1.4")]
+    assert s.fill_null(strategy="mean").to_list() == [D("1.2"), D("1.3"), D("1.4")]
