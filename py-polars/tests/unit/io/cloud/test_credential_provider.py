@@ -37,7 +37,11 @@ def test_scan_credential_provider(
         io_func("s3://bucket/path", credential_provider=None)
         # Passing `storage_options` should disable the automatic instantiation of
         # `CredentialProviderAWS`
-        io_func("s3://bucket/path", credential_provider="auto", storage_options={})
+        io_func(
+            "s3://bucket/path",
+            credential_provider="auto",
+            storage_options={"aws_access_key_id": "polars"},
+        )
 
     err_magic = "err_magic_7"
 
