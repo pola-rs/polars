@@ -536,3 +536,9 @@ def test_order_by_sorted_keys_18943() -> None:
 
     out = df.set_sorted("g").select(pl.col("x").cum_sum().over("g", order_by="t"))
     assert_frame_equal(out, expect)
+
+
+def test_nested_window_keys() -> None:
+    df = pl.DataFrame({"x": 1, "y": "two"})
+    assert df.select(pl.col("y").first().over(pl.struct("x").implode())).item() == "two"
+    assert df.select(pl.col("y").first().over(pl.struct("x"))).item() == "two"
