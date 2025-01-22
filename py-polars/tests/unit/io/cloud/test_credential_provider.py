@@ -28,6 +28,8 @@ def test_scan_credential_provider(
 
     with pytest.raises(AssertionError, match=err_magic):
         io_func("s3://bucket/path", credential_provider="auto")
+
+    with pytest.raises(AssertionError, match=err_magic):
         io_func(
             "s3://bucket/path",
             credential_provider="auto",
