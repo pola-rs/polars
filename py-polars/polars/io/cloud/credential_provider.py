@@ -468,6 +468,8 @@ def _maybe_init_credential_provider(
 
             if storage_options is not None:
                 for k, v in storage_options.items():
+                    k = k.lower()
+
                     # https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html
                     if k in {
                         "azure_storage_tenant_id",
@@ -506,6 +508,8 @@ def _maybe_init_credential_provider(
 
             if storage_options is not None:
                 for k, v in storage_options.items():
+                    k = k.lower()
+
                     # https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html
                     if k in {"aws_region", "region"}:
                         region = v
@@ -520,7 +524,7 @@ def _maybe_init_credential_provider(
 
             provider = CredentialProviderAWS(region_name=region or default_region)
         elif storage_options is not None and any(
-            key not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
+            key.lower() not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
         ):
             return None
         elif _is_gcp_cloud(scheme):
