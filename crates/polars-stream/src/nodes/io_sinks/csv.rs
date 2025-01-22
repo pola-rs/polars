@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use polars_core::frame::DataFrame;
@@ -11,6 +10,7 @@ use polars_io::SerWriter;
 use polars_utils::priority::Priority;
 
 use crate::async_primitives::linearizer::Linearizer;
+use crate::nodes::io_sinks::write_buffers_from_linearizer_to_file;
 use crate::nodes::{ComputeNode, JoinHandle, MorselSeq, PortState, TaskPriority, TaskScope};
 use crate::pipe::{RecvPort, SendPort};
 use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
@@ -69,7 +69,7 @@ impl ComputeNode for CsvSinkNode {
         // .. -> Encode task
         let receivers = recv_ports[0].take().unwrap().parallel();
         // Encode tasks -> IO task
-        let (mut linearizer, senders) = Linearizer::<Priority<Reverse<MorselSeq>, Vec<u8>>>::new(
+        let (linearizer, senders) = Linearizer::<Priority<Reverse<MorselSeq>, Vec<u8>>>::new(
             receivers.len(),
             DEFAULT_LINEARIZER_BUFFER_SIZE,
         );
@@ -152,11 +152,7 @@ impl ComputeNode for CsvSinkNode {
                 writer.write_batch(&DataFrame::empty_with_schema(&schema))?;
             }
 
-            while let Some(Priority(_, buffer)) = linearizer.get().await {
-                file.write_all(&buffer)?;
-            }
-
-            PolarsResult::Ok(())
+            write_buffers_from_linearizer_to_file(file, linearizer).await
         });
         join_handles
             .push(scope.spawn_task(TaskPriority::Low, async move { io_task.await.unwrap() }));
