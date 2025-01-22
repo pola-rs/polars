@@ -347,10 +347,6 @@ impl SQLContext {
                 }
             },
             op => {
-                let op = match op {
-                    SetExpr::SetOperation { op, .. } => op,
-                    _ => polars_bail!(SQLInterface: "'{}' is currently unsupported", op),
-                };
                 polars_bail!(SQLInterface: "'{}' operation is currently unsupported", op)
             },
         }
