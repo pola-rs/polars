@@ -936,7 +936,7 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
         schema={"ts": pl.Datetime("ms")},
     )
-    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:
@@ -1812,7 +1812,7 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
     expected = pl.DataFrame({"dt": [dt, dt]})
     assert_frame_equal(df, expected)
 
-    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz and "UTC")}
+    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz)}
 
 
 def test_init_from_subclassed_types() -> None:
