@@ -28,6 +28,27 @@ CredentialProviderFunction: TypeAlias = Union[
     Callable[[], CredentialProviderFunctionReturn], "CredentialProvider"
 ]
 
+# https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
+OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = {
+    "allow_http",
+    "allow_invalid_certificates",
+    "connect_timeout",
+    "default_content_type",
+    "http1_only",
+    "http2_only",
+    "http2_keep_alive_interval",
+    "http2_keep_alive_timeout",
+    "http2_keep_alive_while_idle",
+    "http2_max_frame_size",
+    "pool_idle_timeout",
+    "pool_max_idle_per_host",
+    "proxy_url",
+    "proxy_ca_certificate",
+    "proxy_excludes",
+    "timeout",
+    "user_agent",
+}
+
 
 class AWSAssumeRoleKWArgs(TypedDict):
     """Parameters for [STS.Client.assume_role()](https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/sts/client/assume_role.html#STS.Client.assume_role)."""
@@ -75,6 +96,7 @@ class CredentialProviderAWS(CredentialProvider):
         self,
         *,
         profile_name: str | None = None,
+        region_name: str | None = None,
         assume_role: AWSAssumeRoleKWArgs | None = None,
     ) -> None:
         """
@@ -93,13 +115,16 @@ class CredentialProviderAWS(CredentialProvider):
 
         self._check_module_availability()
         self.profile_name = profile_name
+        self.region_name = region_name
         self.assume_role = assume_role
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials for the configured profile name."""
         import boto3
 
-        session = boto3.Session(profile_name=self.profile_name)
+        session = boto3.Session(
+            profile_name=self.profile_name, region_name=self.region_name
+        )
 
         if self.assume_role is not None:
             return self._finish_assume_role(session)
@@ -453,6 +478,8 @@ def _maybe_init_credential_provider(
                         storage_account = v
                     elif k in {"azure_use_azure_cli", "use_azure_cli"}:
                         continue
+                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                        pass
                     else:
                         # We assume some sort of access key was given, so we
                         # just dispatch to the rust side.
@@ -469,16 +496,31 @@ def _maybe_init_credential_provider(
                 _verbose=verbose,
                 _storage_account=storage_account,
             )
-        elif storage_options is not None:
+        elif _is_aws_cloud(scheme):
+            region = None
+            default_region = None
+
+            if storage_options is not None:
+                for k, v in storage_options.items():
+                    # https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html
+                    if k in {"aws_region", "region"}:
+                        region = v
+                    elif k in {"aws_default_region", "default_region"}:
+                        default_region = v
+                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                        continue
+                    else:
+                        # We assume some sort of access key was given, so we
+                        # just dispatch to the rust side.
+                        return None
+
+            provider = CredentialProviderAWS(region_name=region or default_region)
+        elif storage_options is not None and any(
+            key not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
+        ):
             return None
-        else:
-            provider = (
-                CredentialProviderAWS()  # type: ignore[assignment]
-                if _is_aws_cloud(scheme)
-                else CredentialProviderGCP()
-                if _is_gcp_cloud(scheme)
-                else None
-            )
+        elif _is_gcp_cloud(scheme):
+            provider = CredentialProviderGCP()
 
     except ImportError as e:
         if verbose:
