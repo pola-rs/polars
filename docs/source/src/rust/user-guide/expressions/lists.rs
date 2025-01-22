@@ -65,7 +65,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:list-example]
 
     // --8<-- [start:array-example]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    use polars::prelude::*;
+    let df = DataFrame::new(vec![
+        Series::new("bit_flags".into(), [
+            true, true, true, true, false, false, true, true, true, true,
+        ])
+        .reshape_array(&[
+            ReshapeDimension::Infer,
+            ReshapeDimension::Specified(Dimension::new(5)),
+        ])
+        .unwrap()
+        .into(),
+        Series::new("tic_tac_toe".into(), [
+            " ", "x", "o", " ", "x", " ", "o", "x", " ", "o", "x", "x", " ", "o", "x", " ", " ",
+            "o",
+        ])
+        .reshape_array(&[
+            ReshapeDimension::Infer,
+            ReshapeDimension::Specified(Dimension::new(3)),
+            ReshapeDimension::Specified(Dimension::new(3)),
+        ])
+        .unwrap()
+        .into(),
+    ])
+    .unwrap();
+    eprintln!("{}", df);
     // --8<-- [end:array-example]
 
     // --8<-- [start:numpy-array-inference]
