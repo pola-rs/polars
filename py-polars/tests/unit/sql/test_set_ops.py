@@ -91,7 +91,7 @@ def test_except_intersect_all_unsupported(op: str, op_subtype: str) -> None:
 
 def test_update_statement_error() -> None:
     df_large = pl.DataFrame(
-        {  # noqa: F841
+        {
             "FQDN": ["c.ORG.na", "a.COM.na"],
             "NS1": ["ns1.c.org.na", "ns1.d.net.na"],
             "NS2": ["ns2.c.org.na", "ns2.d.net.na"],
@@ -99,7 +99,7 @@ def test_update_statement_error() -> None:
         }
     )
     df_small = pl.DataFrame(
-        {  # noqa: F841
+        {
             "FQDN": ["c.org.na"],
             "NS1": ["ns1.c.org.na|127.0.0.1"],
             "NS2": ["ns2.c.org.na|127.0.0.1"],
@@ -118,7 +118,7 @@ def test_update_statement_error() -> None:
     ):
         ctx.execute("""
             WITH u AS (
-                SELECT 
+                SELECT
                     small.FQDN,
                     small.NS1,
                     small.NS2,
@@ -126,8 +126,8 @@ def test_update_statement_error() -> None:
                 FROM small
                 INNER JOIN large ON small.FQDN = large.FQDN
             )
-            UPDATE large 
-            SET 
+            UPDATE large
+            SET
                 FQDN = u.FQDN,
                 NS1 = u.NS1,
                 NS2 = u.NS2,
