@@ -15,6 +15,7 @@ from packaging.version import parse as parse_version
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+import polars.selectors as cs
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
@@ -1397,24 +1398,23 @@ def test_from_records_nullable_structs() -> None:
     assert series.to_list() == []
 
 
-def test_from_categorical_in_struct_defined_by_schema() -> None:
+@pytest.mark.parametrize("unnest_column", ["a", pl.col("a"), cs.by_name("a")])
+def test_from_categorical_in_struct_defined_by_schema(unnest_column: Any) -> None:
     df = pl.DataFrame(
-        {
-            "a": [
-                {"value": "foo", "counts": 1},
-                {"value": "bar", "counts": 2},
-            ]
-        },
+        {"a": [{"value": "foo", "counts": 1}, {"value": "bar", "counts": 2}]},
         schema={"a": pl.Struct({"value": pl.Categorical, "counts": pl.UInt32})},
     )
-
-    result = df.unnest("a")
 
     expected = pl.DataFrame(
         {"value": ["foo", "bar"], "counts": [1, 2]},
         schema={"value": pl.Categorical, "counts": pl.UInt32},
     )
-    assert_frame_equal(result, expected, categorical_as_str=True)
+
+    res_eager = df.unnest(unnest_column)
+    assert_frame_equal(res_eager, expected, categorical_as_str=True)
+
+    res_lazy = df.lazy().unnest(unnest_column)
+    assert_frame_equal(res_lazy.collect(), expected, categorical_as_str=True)
 
 
 def test_nested_schema_construction() -> None:
