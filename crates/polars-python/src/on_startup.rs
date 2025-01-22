@@ -68,6 +68,8 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
     });
 }
 
+/// # Safety
+/// Caller must ensure that no other threads read the objects set by this registration.
 pub unsafe fn register_startup_deps(check_python_signals: bool) {
     set_polars_allow_extension(true);
     if !registry::is_object_builder_registered() {
