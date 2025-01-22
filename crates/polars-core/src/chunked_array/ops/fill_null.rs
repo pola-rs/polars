@@ -93,6 +93,7 @@ impl Series {
                 fill_backward_gather(self)
             },
             FillNullStrategy::Backward(Some(limit)) => fill_backward_gather_limit(self, limit),
+            #[cfg(feature = "dtype-decimal")]
             FillNullStrategy::One if self.dtype().is_decimal() => {
                 let ca = self.decimal().unwrap();
                 let precision = ca.precision();
