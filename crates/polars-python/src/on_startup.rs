@@ -68,7 +68,9 @@ fn warning_function(msg: &str, warning: PolarsWarning) {
     });
 }
 
-pub fn register_startup_deps(check_python_signals: bool) {
+/// # Safety
+/// Caller must ensure that no other threads read the objects set by this registration.
+pub unsafe fn register_startup_deps(check_python_signals: bool) {
     set_polars_allow_extension(true);
     if !registry::is_object_builder_registered() {
         // Stack frames can get really large in debug mode.
@@ -95,11 +97,11 @@ pub fn register_startup_deps(check_python_signals: bool) {
         let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
         registry::register_object_builder(object_builder, object_converter, physical_dtype);
         // register SERIES UDF
-        unsafe { python_udf::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series) }
+        python_udf::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
         // register DATAFRAME UDF
-        unsafe { python_udf::CALL_DF_UDF_PYTHON = Some(python_function_caller_df) }
+        python_udf::CALL_DF_UDF_PYTHON = Some(python_function_caller_df);
         // register warning function for `polars_warn!`
-        unsafe { polars_error::set_warning_function(warning_function) };
+        polars_error::set_warning_function(warning_function);
 
         if check_python_signals {
             fn signals_function() -> PolarsResult<()> {
@@ -109,7 +111,7 @@ pub fn register_startup_deps(check_python_signals: bool) {
                 })
             }
 
-            unsafe { set_signals_function(signals_function) };
+            set_signals_function(signals_function);
         }
 
         Python::with_gil(|py| {
