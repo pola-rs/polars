@@ -28,6 +28,11 @@ def test_scan_credential_provider(
 
     with pytest.raises(AssertionError, match=err_magic):
         io_func("s3://bucket/path", credential_provider="auto")
+        io_func(
+            "s3://bucket/path",
+            credential_provider="auto",
+            storage_options={"aws_region": "eu-west-1"},
+        )
 
     # We can't test these with the `read_` functions as they end up executing
     # the query
