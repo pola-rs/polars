@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, overload
 
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
@@ -50,6 +51,7 @@ def linear_space(
 ) -> Expr | Series: ...
 
 
+@unstable()
 def linear_space(
     start: NumericLiteral | TemporalLiteral | IntoExpr,
     end: NumericLiteral | TemporalLiteral | IntoExpr,
