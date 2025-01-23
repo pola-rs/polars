@@ -77,7 +77,11 @@ fn remove_suffix(
     for expr in exprs {
         if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
             if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
-                expr.set_columnlhs(PlSmallStr::from(&colname[..colname.len() - suffix.len()]));
+                let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+                *expr = ExprIR::new(
+                    expr_arena.add(AExpr::Column(name.clone())),
+                    OutputName::ColumnLhs(name),
+                );
             }
         }
 
