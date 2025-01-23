@@ -44,6 +44,7 @@ wrapping_impl!(WrappingAdd, wrapping_add, i128);
 wrapping_impl!(WrappingAdd, add, f32);
 wrapping_impl!(WrappingAdd, add, f64);
 
+#[cfg(feature = "simd")]
 const STRIPE: usize = 16;
 
 fn wrapping_sum_with_mask_scalar<T: Zero + WrappingAdd + Copy>(vals: &[T], mask: &BitMask) -> T {
