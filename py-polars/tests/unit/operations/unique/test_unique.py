@@ -271,3 +271,9 @@ def test_unique_enum_19338() -> None:
             {"enum": ["A"]}, schema={"enum": pl.Enum(["A", "B", "C"])}
         )
         assert_frame_equal(result, expected)
+
+
+def test_unique_nan_12950() -> None:
+    df = pl.DataFrame({"x": float("nan")})
+    result = df.unique()
+    assert_frame_equal(result, df)
