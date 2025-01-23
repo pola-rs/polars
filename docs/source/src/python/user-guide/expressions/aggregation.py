@@ -11,8 +11,10 @@ schema_overrides = {
     "party": pl.Categorical,
 }
 
-dataset = pl.read_csv(url, schema_overrides=schema_overrides).with_columns(
-    pl.col("birthday").str.to_date(strict=False)
+dataset = (
+    pl.read_csv(url, schema_overrides=schema_overrides)
+    .with_columns(pl.col("first", "middle", "last").name.suffix("_name"))
+    .with_columns(pl.col("birthday").str.to_date(strict=False))
 )
 # --8<-- [end:dataframe]
 
