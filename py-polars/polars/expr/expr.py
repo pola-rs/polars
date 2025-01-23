@@ -7376,7 +7376,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
@@ -7488,7 +7487,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_max(
         self,
@@ -7600,7 +7598,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_mean(
         self,
@@ -7712,7 +7709,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_sum(
         self,
@@ -7824,7 +7820,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_std(
         self,
@@ -7940,7 +7935,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_var(
         self,
@@ -8056,7 +8050,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_median(
         self,
@@ -8168,7 +8161,6 @@ class Expr:
             )
         )
 
-    @unstable()
     @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_quantile(
         self,
