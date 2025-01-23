@@ -20,6 +20,7 @@ use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
     build_select_stream, compute_output_schema, is_input_independent, unique_column_name,
 };
+use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[allow(clippy::too_many_arguments)]
@@ -340,7 +341,12 @@ fn try_build_streaming_group_by(
         phys_sm,
         expr_cache,
     );
-    Some(post_select)
+    let out = if let Some((offset, len)) = options.slice {
+        post_select.map(|s| build_slice_stream(s, offset, len, phys_sm))
+    } else {
+        post_select
+    };
+    Some(out)
 }
 
 #[allow(clippy::too_many_arguments)]
