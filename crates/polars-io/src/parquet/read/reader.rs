@@ -249,7 +249,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let schema = self.schema()?;
         let metadata = self.get_metadata()?.clone();
-        let n_rows = metadata.num_rows;
+        let n_rows = metadata.num_rows.min(self.slice.0 + self.slice.1);
 
         if let Some(cols) = &self.columns {
             self.projection = Some(columns_to_projection(cols, schema.as_ref())?);

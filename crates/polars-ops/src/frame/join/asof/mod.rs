@@ -6,6 +6,7 @@ use std::cmp::Ordering;
 use default::*;
 pub use groups::AsofJoinBy;
 use polars_core::prelude::*;
+use polars_error::check_signals;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -312,6 +313,7 @@ pub trait AsofJoin: IntoDf {
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
         }?;
+        check_signals()?;
 
         // Drop right join column.
         let other = if coalesce && left_key.name() == right_key.name() {

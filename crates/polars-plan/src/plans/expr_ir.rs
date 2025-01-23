@@ -197,10 +197,6 @@ impl ExprIR {
         self.output_name = OutputName::Alias(name)
     }
 
-    pub(crate) fn set_columnlhs(&mut self, name: PlSmallStr) {
-        self.output_name = OutputName::ColumnLhs(name)
-    }
-
     pub fn output_name_inner(&self) -> &OutputName {
         &self.output_name
     }

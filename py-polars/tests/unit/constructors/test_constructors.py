@@ -15,6 +15,7 @@ from packaging.version import parse as parse_version
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+import polars.selectors as cs
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
@@ -1207,6 +1208,18 @@ def test_from_dicts_infer_integer_types() -> None:
         pl.from_dicts([{"too_big": 2**127}])
 
 
+def test_from_dicts_list_large_int_17006() -> None:
+    data = [{"x": [2**64 - 1]}]
+
+    result = pl.from_dicts(data, schema={"x": pl.List(pl.UInt64)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.List(pl.UInt64)})
+    assert_frame_equal(result, expected)
+
+    result = pl.from_dicts(data, schema={"x": pl.Array(pl.UInt64, 1)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.Array(pl.UInt64, 1)})
+    assert_frame_equal(result, expected)
+
+
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
     # 5182
@@ -1397,24 +1410,23 @@ def test_from_records_nullable_structs() -> None:
     assert series.to_list() == []
 
 
-def test_from_categorical_in_struct_defined_by_schema() -> None:
+@pytest.mark.parametrize("unnest_column", ["a", pl.col("a"), cs.by_name("a")])
+def test_from_categorical_in_struct_defined_by_schema(unnest_column: Any) -> None:
     df = pl.DataFrame(
-        {
-            "a": [
-                {"value": "foo", "counts": 1},
-                {"value": "bar", "counts": 2},
-            ]
-        },
+        {"a": [{"value": "foo", "counts": 1}, {"value": "bar", "counts": 2}]},
         schema={"a": pl.Struct({"value": pl.Categorical, "counts": pl.UInt32})},
     )
-
-    result = df.unnest("a")
 
     expected = pl.DataFrame(
         {"value": ["foo", "bar"], "counts": [1, 2]},
         schema={"value": pl.Categorical, "counts": pl.UInt32},
     )
-    assert_frame_equal(result, expected, categorical_as_str=True)
+
+    res_eager = df.unnest(unnest_column)
+    assert_frame_equal(res_eager, expected, categorical_as_str=True)
+
+    res_lazy = df.lazy().unnest(unnest_column)
+    assert_frame_equal(res_lazy.collect(), expected, categorical_as_str=True)
 
 
 def test_nested_schema_construction() -> None:
@@ -1831,3 +1843,23 @@ def test_init_from_subclassed_types() -> None:
         assert (
             pl.Series([value]).to_list() == pl.Series([SubclassedType(value)]).to_list()
         )
+
+
+def test_series_init_with_python_type_7737() -> None:
+    assert pl.Series([], dtype=int).dtype == pl.Int64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=float).dtype == pl.Float64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=bool).dtype == pl.Boolean  # type: ignore[arg-type]
+    assert pl.Series([], dtype=str).dtype == pl.Utf8  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        pl.Series(["a"], dtype=int)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        pl.Series([True], dtype=str)  # type: ignore[arg-type]
+
+
+def test_init_from_list_shape_6968() -> None:
+    df1 = pl.DataFrame([[1, None], [2, None], [3, None]])
+    df2 = pl.DataFrame([[None, None], [2, None], [3, None]])
+    assert df1.shape == (2, 3)
+    assert df2.shape == (2, 3)

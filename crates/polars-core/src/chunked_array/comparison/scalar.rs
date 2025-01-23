@@ -46,14 +46,14 @@ where
         } else {
             values.len()
         };
-        let mut mask = MutableBitmap::with_capacity(arr.len());
+        let mut mask = BitmapBuilder::with_capacity(arr.len());
         mask.extend_constant(true_range_start, invert);
         mask.extend_constant(true_range_end - true_range_start, !invert);
         mask.extend_constant(arr.len() - true_range_end, invert);
         logical_extend(true_range_start, invert);
         logical_extend(true_range_end - true_range_start, !invert);
         logical_extend(arr.len() - true_range_end, invert);
-        BooleanArray::from_data_default(mask.into(), None)
+        BooleanArray::from_data_default(mask.freeze(), None)
     });
 
     let mut ca = BooleanChunked::from_chunk_iter(ca.name().clone(), chunks);

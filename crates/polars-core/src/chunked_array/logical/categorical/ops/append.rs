@@ -41,4 +41,9 @@ impl CategoricalChunked {
         std::mem::swap(self, &mut new_self);
         Ok(())
     }
+
+    pub fn append_owned(&mut self, other: Self) -> PolarsResult<()> {
+        // @TODO: Move the implementation to append_owned and make append dispatch here.
+        self.append(&other)
+    }
 }

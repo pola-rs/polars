@@ -837,3 +837,29 @@ def test_series_data_type_fail():
     assert "AssertionError: Series are different (nan value mismatch)" in stdout
     assert "AssertionError: Series are different (dtype mismatch)" in stdout
     assert "AssertionError: inputs are different (unexpected input types)" in stdout
+
+
+def test_assert_series_equal_inf() -> None:
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, float("inf")])
+    assert_series_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("-inf")])
+    s2 = pl.Series([1.0, float("-inf")])
+    assert_series_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([float("inf"), 1.0])
+    assert_series_not_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, float("-inf")])
+    assert_series_not_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, 2.0])
+    assert_series_not_equal(s1, s2)
+
+    s1 = pl.Series([1.0, float("inf")])
+    s2 = pl.Series([1.0, float("nan")])
+    assert_series_not_equal(s1, s2)

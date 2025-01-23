@@ -29,6 +29,8 @@ use regex::Regex;
 #[cfg(feature = "http")]
 use reqwest::header::HeaderMap;
 #[cfg(feature = "serde")]
+use serde::Deserializer;
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use url::Url;
@@ -78,7 +80,17 @@ pub struct CloudOptions {
     pub file_cache_ttl: u64,
     pub(crate) config: Option<CloudConfig>,
     #[cfg(feature = "cloud")]
+    #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_or_default"))]
     pub(crate) credential_provider: Option<PlCredentialProvider>,
+}
+
+#[cfg(all(feature = "serde", feature = "cloud"))]
+fn deserialize_or_default<'de, D>(deserializer: D) -> Result<Option<PlCredentialProvider>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    type T = Option<PlCredentialProvider>;
+    T::deserialize(deserializer).or_else(|_| Ok(Default::default()))
 }
 
 impl Default for CloudOptions {
@@ -211,7 +223,7 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
 
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
 pub(super) fn get_client_options() -> ClientOptions {
-    ClientOptions::default()
+    ClientOptions::new()
         // We set request timeout super high as the timeout isn't reset at ACK,
         // but starts from the moment we start downloading a body.
         // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
@@ -287,7 +299,39 @@ impl CloudOptions {
     pub async fn build_aws(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = AmazonS3Builder::from_env().with_url(url);
+        let mut builder = AmazonS3Builder::from_env()
+            .with_client_options(get_client_options())
+            .with_url(url);
+
+        read_config(
+            &mut builder,
+            &[(
+                Path::new("~/.aws/config"),
+                &[("region\\s*=\\s*([^\r\n]*)", AmazonS3ConfigKey::Region)],
+            )],
+        );
+
+        read_config(
+            &mut builder,
+            &[(
+                Path::new("~/.aws/credentials"),
+                &[
+                    (
+                        "aws_access_key_id\\s*=\\s*([^\\r\\n]*)",
+                        AmazonS3ConfigKey::AccessKeyId,
+                    ),
+                    (
+                        "aws_secret_access_key\\s*=\\s*([^\\r\\n]*)",
+                        AmazonS3ConfigKey::SecretAccessKey,
+                    ),
+                    (
+                        "aws_session_token\\s*=\\s*([^\\r\\n]*)",
+                        AmazonS3ConfigKey::Token,
+                    ),
+                ],
+            )],
+        );
+
         if let Some(options) = &self.config {
             let CloudConfig::Aws(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -296,30 +340,6 @@ impl CloudOptions {
                 builder = builder.with_config(*key, value);
             }
         }
-
-        read_config(
-            &mut builder,
-            &[(
-                Path::new("~/.aws/config"),
-                &[("region\\s*=\\s*(.*)\n", AmazonS3ConfigKey::Region)],
-            )],
-        );
-        read_config(
-            &mut builder,
-            &[(
-                Path::new("~/.aws/credentials"),
-                &[
-                    (
-                        "aws_access_key_id\\s*=\\s*(.*)\n",
-                        AmazonS3ConfigKey::AccessKeyId,
-                    ),
-                    (
-                        "aws_secret_access_key\\s*=\\s*(.*)\n",
-                        AmazonS3ConfigKey::SecretAccessKey,
-                    ),
-                ],
-            )],
-        );
 
         if builder
             .get_config_value(&AmazonS3ConfigKey::DefaultRegion)
@@ -370,9 +390,7 @@ impl CloudOptions {
             };
         };
 
-        let builder = builder
-            .with_client_options(get_client_options())
-            .with_retry(get_retry_config(self.max_retries));
+        let builder = builder.with_retry(get_retry_config(self.max_retries));
 
         let builder = if let Some(v) = self.credential_provider.clone() {
             builder.with_credentials(v.into_aws_provider())
@@ -404,7 +422,8 @@ impl CloudOptions {
 
         // The credential provider `self.credentials` is prioritized if it is set. We also need
         // `from_env()` as it may source environment configured storage account name.
-        let mut builder = MicrosoftAzureBuilder::from_env();
+        let mut builder =
+            MicrosoftAzureBuilder::from_env().with_client_options(get_client_options());
 
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
@@ -416,7 +435,6 @@ impl CloudOptions {
         }
 
         let builder = builder
-            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 
@@ -452,11 +470,14 @@ impl CloudOptions {
     pub fn build_gcp(&self, url: &str) -> PolarsResult<impl object_store::ObjectStore> {
         use super::credential_provider::IntoCredentialProvider;
 
-        let mut builder = if self.credential_provider.is_none() {
+        let builder = if self.credential_provider.is_none() {
             GoogleCloudStorageBuilder::from_env()
         } else {
             GoogleCloudStorageBuilder::new()
         };
+
+        let mut builder = builder.with_client_options(get_client_options());
+
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
                 panic!("impl error: cloud type mismatch")
@@ -467,7 +488,6 @@ impl CloudOptions {
         }
 
         let builder = builder
-            .with_client_options(get_client_options())
             .with_url(url)
             .with_retry(get_retry_config(self.max_retries));
 

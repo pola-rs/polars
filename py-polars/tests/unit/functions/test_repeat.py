@@ -207,3 +207,14 @@ def test_repeat_by_none_13053(data: list[Any], expected_data: list[list[Any]]) -
     res = df.select(repeat=pl.col("x").repeat_by("by"))
     expected = pl.Series("repeat", expected_data)
     assert_series_equal(res.to_series(), expected)
+
+
+def test_repeat_by_literal_none_20268() -> None:
+    df = pl.DataFrame({"x": ["a", "b"]})
+    expected = pl.Series("repeat", [None, None], dtype=pl.List(pl.String))
+
+    res = df.select(repeat=pl.col("x").repeat_by(pl.lit(None)))
+    assert_series_equal(res.to_series(), expected)
+
+    res = df.select(repeat=pl.col("x").repeat_by(None))  # type: ignore[arg-type]
+    assert_series_equal(res.to_series(), expected)

@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use polars::prelude::*;
     use reqwest::blocking::Client;
 
-    let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
+    let url = "https://huggingface.co/datasets/nameexhaustion/polars-docs/resolve/main/legislators-historical.csv";
 
     let mut schema = Schema::default();
     schema.with_column(
@@ -30,14 +30,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     schema.with_column("birthday".into(), DataType::Date);
 
-    let data: Vec<u8> = Client::new().get(url).send()?.text()?.bytes().collect();
+    let data = Client::new().get(url).send()?.bytes()?;
 
     let dataset = CsvReadOptions::default()
         .with_has_header(true)
         .with_schema_overwrite(Some(Arc::new(schema)))
         .map_parse_options(|parse_options| parse_options.with_try_parse_dates(true))
         .into_reader_with_file_handle(Cursor::new(data))
-        .finish()?;
+        .finish()?
+        .lazy()
+        .with_columns([
+            col("first").name().suffix("_name"),
+            col("middle").name().suffix("_name"),
+            col("last").name().suffix("_name"),
+        ])
+        .collect()?;
 
     println!("{}", &dataset);
     // --8<-- [end:dataframe]

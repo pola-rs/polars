@@ -6,7 +6,7 @@ mod categorical;
 use std::ops::{BitAnd, Not};
 
 use arrow::array::BooleanArray;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute;
 use num_traits::{NumCast, ToPrimitive};
 use polars_compute::comparisons::{TotalEqKernel, TotalOrdKernel};

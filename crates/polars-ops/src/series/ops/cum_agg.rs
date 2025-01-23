@@ -2,7 +2,7 @@ use std::ops::{Add, AddAssign, Mul};
 
 use arity::unary_elementwise_values;
 use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use num_traits::{Bounded, One, Zero};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -103,7 +103,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(first_true_idx) = ca.iter().position(|x| x == Some(true)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(first_true_idx, false);
         out.extend_constant(ca.len() - first_true_idx, true);
     } else {
@@ -111,7 +111,7 @@ fn cum_max_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(last_true_idx) = ca.iter().rposition(|x| x == Some(true)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(last_true_idx + 1, true);
         out.extend_constant(ca.len() - 1 - last_true_idx, false);
     }
@@ -131,7 +131,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(first_false_idx) = ca.iter().position(|x| x == Some(false)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(first_false_idx, true);
         out.extend_constant(ca.len() - first_false_idx, false);
     } else {
@@ -139,7 +139,7 @@ fn cum_min_bool(ca: &BooleanChunked, reverse: bool) -> BooleanChunked {
         let Some(last_false_idx) = ca.iter().rposition(|x| x == Some(false)) else {
             return ca.clone();
         };
-        out = MutableBitmap::with_capacity(ca.len());
+        out = BitmapBuilder::with_capacity(ca.len());
         out.extend_constant(last_false_idx + 1, false);
         out.extend_constant(ca.len() - 1 - last_false_idx, true);
     }
@@ -219,6 +219,13 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
         Int128 => cum_sum_numeric(s.i128()?, reverse).into_series(),
         Float32 => cum_sum_numeric(s.f32()?, reverse).into_series(),
         Float64 => cum_sum_numeric(s.f64()?, reverse).into_series(),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(precision, scale) => {
+            let ca = s.decimal().unwrap().as_ref();
+            cum_sum_numeric(ca, reverse)
+                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_series()
+        },
         #[cfg(feature = "dtype-duration")]
         Duration(tu) => {
             let s = s.to_physical_repr();
@@ -232,16 +239,23 @@ pub fn cum_sum(s: &Series, reverse: bool) -> PolarsResult<Series> {
 
 /// Get an array with the cumulative min computed at every element.
 pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    let original_type = s.dtype();
-    let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_min_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_primitive_numeric() => {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            let ca = s.decimal().unwrap().as_ref();
+            let out = cum_min_numeric(ca, reverse)
+                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_series();
+            Ok(out)
+        },
+        dt if dt.to_physical().is_primitive_numeric() => {
+            let s = s.to_physical_repr();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_min_numeric(ca, reverse).into_series();
-                if original_type.is_logical() {
-                    out.cast(original_type)
+                if dt.is_logical() {
+                    out.cast(dt)
                 } else {
                     Ok(out)
                 }
@@ -253,16 +267,23 @@ pub fn cum_min(s: &Series, reverse: bool) -> PolarsResult<Series> {
 
 /// Get an array with the cumulative max computed at every element.
 pub fn cum_max(s: &Series, reverse: bool) -> PolarsResult<Series> {
-    let original_type = s.dtype();
-    let s = s.to_physical_repr();
     match s.dtype() {
         DataType::Boolean => Ok(cum_max_bool(s.bool()?, reverse).into_series()),
-        dt if dt.is_primitive_numeric() => {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(precision, scale) => {
+            let ca = s.decimal().unwrap().as_ref();
+            let out = cum_max_numeric(ca, reverse)
+                .into_decimal_unchecked(*precision, scale.unwrap())
+                .into_series();
+            Ok(out)
+        },
+        dt if dt.to_physical().is_primitive_numeric() => {
+            let s = s.to_physical_repr();
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 let out = cum_max_numeric(ca, reverse).into_series();
-                if original_type.is_logical() {
-                    out.cast(original_type)
+                if dt.is_logical() {
+                    out.cast(dt)
                 } else {
                     Ok(out)
                 }

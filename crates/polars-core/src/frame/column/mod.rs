@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
 use polars_error::PolarsResult;
@@ -654,7 +654,7 @@ impl Column {
                 };
 
                 // All empty groups produce a *missing* or `null` value.
-                let mut validity = MutableBitmap::with_capacity(groups.len());
+                let mut validity = BitmapBuilder::with_capacity(groups.len());
                 validity.extend_constant(first_empty_idx, true);
                 // SAFETY: We trust the length of this iterator.
                 let iter = unsafe {
@@ -663,14 +663,13 @@ impl Column {
                         groups.len() - first_empty_idx,
                     )
                 };
-                validity.extend_from_trusted_len_iter(iter);
-                let validity = validity.freeze();
+                validity.extend_trusted_len_iter(iter);
 
                 let mut s = scalar_col.take_materialized_series().rechunk();
                 // SAFETY: We perform a compute_len afterwards.
                 let chunks = unsafe { s.chunks_mut() };
                 let arr = &mut chunks[0];
-                *arr = arr.with_validity(Some(validity));
+                *arr = arr.with_validity(validity.into_opt_validity());
                 s.compute_len();
 
                 s.into_column()
@@ -903,6 +902,11 @@ impl Column {
         // @scalar-opt
         self.into_materialized_series()
             .append(other.as_materialized_series())?;
+        Ok(self)
+    }
+    pub fn append_owned(&mut self, other: Column) -> PolarsResult<&mut Self> {
+        self.into_materialized_series()
+            .append_owned(other.take_materialized_series())?;
         Ok(self)
     }
 

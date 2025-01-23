@@ -1,6 +1,6 @@
 //! Boolean operators of [Kleene logic](https://en.wikipedia.org/wiki/Three-valued_logic#Kleene_and_Priest_logics).
 use crate::array::{Array, BooleanArray};
-use crate::bitmap::{binary, quaternary, ternary, unary, Bitmap, MutableBitmap};
+use crate::bitmap::{binary, quaternary, ternary, unary, Bitmap};
 use crate::datatypes::ArrowDataType;
 use crate::scalar::BooleanScalar;
 
@@ -184,11 +184,11 @@ pub fn and(lhs: &BooleanArray, rhs: &BooleanArray) -> BooleanArray {
 /// ```
 pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
     match scalar.value() {
-        Some(true) => {
-            let mut values = MutableBitmap::new();
-            values.extend_constant(array.len(), true);
-            BooleanArray::new(ArrowDataType::Boolean, values.into(), None)
-        },
+        Some(true) => BooleanArray::new(
+            ArrowDataType::Boolean,
+            Bitmap::new_with_value(true, array.len()),
+            None,
+        ),
         Some(false) => array.clone(),
         None => {
             let values = array.values();

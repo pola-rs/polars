@@ -231,6 +231,7 @@ where
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
 
     let n_tables = hash_tbls.len();
+    check_signals()?;
 
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)

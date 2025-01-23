@@ -182,18 +182,6 @@ impl PhysicalExpr for ColumnExpr {
     fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
         lv.insert(self.name.clone());
     }
-    fn replace_elementwise_const_columns(
-        &self,
-        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
-    ) -> Option<Arc<dyn PhysicalExpr>> {
-        if let Some(av) = const_columns.get(&self.name) {
-            let lv = LiteralValue::from(av.clone());
-            let le = LiteralExpr::new(lv, self.expr.clone());
-            return Some(Arc::new(le));
-        }
-
-        None
-    }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         input_schema.get_field(&self.name).ok_or_else(|| {

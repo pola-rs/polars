@@ -3197,6 +3197,7 @@ dependencies = [
  "serde_json",
  "simd-json",
  "simdutf8",
+ "strum_macros",
  "tempfile",
  "tokio",
  "tokio-util",
@@ -3660,7 +3661,7 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.19.0"
+version = "1.20.0"
 dependencies = [
  "jemallocator",
  "libc",

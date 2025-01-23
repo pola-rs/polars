@@ -65,7 +65,7 @@ fn can_pushdown_slice_past_projections(
         //
         // TODO: Simply checking that a column node is present does not handle e.g.:
         // `select(c = Literal([1, 2, 3]).is_in(col(a)))`, for functions like `is_in`,
-        // `str.contains`, `str.contains_many` etc. - observe a column node is present
+        // `str.contains`, `str.contains_any` etc. - observe a column node is present
         // but the output height is not dependent on it.
         let mut has_column = false;
         let mut literals_all_scalar = true;

@@ -1,5 +1,5 @@
 use arrow::array::{Array, BooleanArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_utils::IdxSize;
 
 use super::bitmap::{take_bitmap_nulls_unchecked, take_bitmap_unchecked};
@@ -37,7 +37,7 @@ unsafe fn take_values_indices_validity(
     values: &BooleanArray,
     indices: &PrimitiveArray<IdxSize>,
 ) -> (Bitmap, Option<Bitmap>) {
-    let mut validity = MutableBitmap::with_capacity(indices.len());
+    let mut validity = BitmapBuilder::with_capacity(indices.len());
 
     let values_validity = values.validity().unwrap();
 
@@ -55,7 +55,7 @@ unsafe fn take_values_indices_validity(
         },
     });
     let values = Bitmap::from_trusted_len_iter(values);
-    (values, validity.into())
+    (values, validity.into_opt_validity())
 }
 
 /// `take` implementation for boolean arrays

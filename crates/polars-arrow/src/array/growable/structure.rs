@@ -3,13 +3,13 @@ use std::sync::Arc;
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, StructArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 
 /// Concrete [`Growable`] for the [`StructArray`].
 pub struct GrowableStruct<'a> {
     arrays: Vec<&'a StructArray>,
     length: usize,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     values: Vec<Box<dyn Growable<'a> + 'a>>,
 }
 
@@ -62,7 +62,7 @@ impl<'a> GrowableStruct<'a> {
             self.arrays[0].dtype().clone(),
             self.length,
             values,
-            validity.map(|v| v.into()),
+            validity.map(|v| v.freeze()),
         )
     }
 }
@@ -129,7 +129,7 @@ impl<'a> From<GrowableStruct<'a>> for StructArray {
             val.arrays[0].dtype().clone(),
             val.length,
             values,
-            val.validity.map(|v| v.into()),
+            val.validity.map(|v| v.freeze()),
         )
     }
 }

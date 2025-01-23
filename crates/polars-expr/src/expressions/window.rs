@@ -567,16 +567,38 @@ impl PhysicalExpr for WindowExpr {
 
                         let get_join_tuples = || {
                             if group_by_columns.len() == 1 {
+                                let mut left = group_by_columns[0].clone();
                                 // group key from right column
-                                let right = &keys[0];
-                                PolarsResult::Ok(Arc::new(
-                                    group_by_columns[0]
-                                        .as_materialized_series()
-                                        .hash_join_left(
-                                            right.as_materialized_series(),
-                                            JoinValidation::ManyToMany,
-                                            true,
+                                let mut right = keys[0].clone();
+
+                                let (left, right) = if left.dtype().is_nested() {
+                                    (
+                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                            "".into(),
+                                            row_encode::_get_rows_encoded_unordered(&[
+                                                left.clone()
+                                            ])?
+                                            .into_array(),
                                         )
+                                        .into_series(),
+                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                            "".into(),
+                                            row_encode::_get_rows_encoded_unordered(&[
+                                                right.clone()
+                                            ])?
+                                            .into_array(),
+                                        )
+                                        .into_series(),
+                                    )
+                                } else {
+                                    (
+                                        left.into_materialized_series().clone(),
+                                        right.into_materialized_series().clone(),
+                                    )
+                                };
+
+                                PolarsResult::Ok(Arc::new(
+                                    left.hash_join_left(&right, JoinValidation::ManyToMany, true)
                                         .unwrap()
                                         .1,
                                 ))

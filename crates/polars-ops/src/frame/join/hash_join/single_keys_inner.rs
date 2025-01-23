@@ -69,6 +69,7 @@ where
     } else {
         build_tables(build, join_nulls)
     };
+    check_signals()?;
 
     let n_tables = hash_tbls.len();
     let offsets = probe_to_offsets(&probe);

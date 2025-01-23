@@ -3,7 +3,7 @@ use std::sync::Arc;
 use super::{make_growable, Growable};
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, DictionaryArray, DictionaryKey, PrimitiveArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
 
 /// Concrete [`Growable`] for the [`DictionaryArray`].
@@ -14,7 +14,7 @@ pub struct GrowableDictionary<'a, K: DictionaryKey> {
     dtype: ArrowDataType,
     keys: Vec<&'a PrimitiveArray<K>>,
     key_values: Vec<K>,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     offsets: Vec<usize>,
     values: Box<dyn Array>,
 }
@@ -77,7 +77,7 @@ impl<'a, T: DictionaryKey> GrowableDictionary<'a, T> {
         let keys = PrimitiveArray::<T>::new(
             T::PRIMITIVE.into(),
             key_values.into(),
-            validity.map(|v| v.into()),
+            validity.map(|v| v.freeze()),
         );
 
         // SAFETY: the invariant of this struct ensures that this is up-held

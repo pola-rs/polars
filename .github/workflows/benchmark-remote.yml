@@ -73,5 +73,7 @@ jobs:
         if: ${{ github.ref == 'refs/heads/main' }}
         working-directory: py-polars
         run: |
-          "$HOME/py-polars-cache/save_benchmark_data.py" "$PWD/polars" < ./benchmark-results
+          "$HOME/py-polars-cache/add-data.py" "$PWD/polars" < ./benchmark-results
+          "$HOME/py-polars-cache/create-plots.py"
+          touch "$HOME/py-polars-cache/upload-probe"
           "$HOME/py-polars-cache/cache-build.sh" "$PWD/polars"

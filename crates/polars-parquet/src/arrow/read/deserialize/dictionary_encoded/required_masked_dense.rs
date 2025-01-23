@@ -72,7 +72,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                let size = decoder.len().min(filter.len());
+                let size = decoder.len();
                 let mut chunked = decoder.chunked();
 
                 let mut buffer_part_idx = 0;
@@ -82,7 +82,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
 
                 let current_filter;
 
-                (current_filter, filter) = filter.split_at(size);
+                (current_filter, filter) = filter.split_at(size - num_rows_to_skip);
 
                 let mut iter = |mut f: u64, len: usize| {
                     debug_assert!(len <= 64);
@@ -165,7 +165,6 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
                 }
 
                 let (f, fl) = f_iter.remainder();
-
                 iter(f, fl)?;
             },
         }

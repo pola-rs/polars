@@ -122,7 +122,7 @@ pub enum StringFunction {
     #[cfg(feature = "string_pad")]
     ZFill,
     #[cfg(feature = "find_many")]
-    ContainsMany {
+    ContainsAny {
         ascii_case_insensitive: bool,
     },
     #[cfg(feature = "find_many")]
@@ -205,7 +205,7 @@ impl StringFunction {
                     .collect(),
             )),
             #[cfg(feature = "find_many")]
-            ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
+            ContainsAny { .. } => mapper.with_dtype(DataType::Boolean),
             #[cfg(feature = "find_many")]
             ReplaceMany { .. } => mapper.with_same_dtype(),
             #[cfg(feature = "find_many")]
@@ -299,7 +299,7 @@ impl Display for StringFunction {
             #[cfg(feature = "string_pad")]
             ZFill => "zfill",
             #[cfg(feature = "find_many")]
-            ContainsMany { .. } => "contains_many",
+            ContainsAny { .. } => "contains_any",
             #[cfg(feature = "find_many")]
             ReplaceMany { .. } => "replace_many",
             #[cfg(feature = "find_many")]
@@ -407,10 +407,10 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "extract_jsonpath")]
             JsonPathMatch => map_as_slice!(strings::json_path_match),
             #[cfg(feature = "find_many")]
-            ContainsMany {
+            ContainsAny {
                 ascii_case_insensitive,
             } => {
-                map_as_slice!(contains_many, ascii_case_insensitive)
+                map_as_slice!(contains_any, ascii_case_insensitive)
             },
             #[cfg(feature = "find_many")]
             ReplaceMany {
@@ -439,7 +439,7 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 }
 
 #[cfg(feature = "find_many")]
-fn contains_many(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
+fn contains_any(s: &[Column], ascii_case_insensitive: bool) -> PolarsResult<Column> {
     let ca = s[0].str()?;
     let patterns = s[1].str()?;
     polars_ops::chunked_array::strings::contains_any(ca, patterns, ascii_case_insensitive)
@@ -466,6 +466,7 @@ fn extract_many(
     ascii_case_insensitive: bool,
     overlapping: bool,
 ) -> PolarsResult<Column> {
+    _check_same_length(s, "extract_many")?;
     let ca = s[0].str()?;
     let patterns = &s[1];
 
@@ -524,6 +525,7 @@ pub(super) fn len_bytes(s: &Column) -> PolarsResult<Column> {
 
 #[cfg(feature = "regex")]
 pub(super) fn contains(s: &[Column], literal: bool, strict: bool) -> PolarsResult<Column> {
+    _check_same_length(s, "contains")?;
     let ca = s[0].str()?;
     let pat = s[1].str()?;
     ca.contains_chunked(pat, literal, strict)
@@ -532,6 +534,7 @@ pub(super) fn contains(s: &[Column], literal: bool, strict: bool) -> PolarsResul
 
 #[cfg(feature = "regex")]
 pub(super) fn find(s: &[Column], literal: bool, strict: bool) -> PolarsResult<Column> {
+    _check_same_length(s, "find")?;
     let ca = s[0].str()?;
     let pat = s[1].str()?;
     ca.find_chunked(pat, literal, strict)
@@ -539,6 +542,7 @@ pub(super) fn find(s: &[Column], literal: bool, strict: bool) -> PolarsResult<Co
 }
 
 pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "ends_with")?;
     let ca = &s[0].str()?.as_binary();
     let suffix = &s[1].str()?.as_binary();
 
@@ -546,6 +550,7 @@ pub(super) fn ends_with(s: &[Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn starts_with(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "starts_with")?;
     let ca = s[0].str()?;
     let prefix = s[1].str()?;
     Ok(ca.starts_with_chunked(prefix).into_column())
@@ -579,6 +584,7 @@ pub(super) fn pad_end(s: &Column, length: usize, fill_char: char) -> PolarsResul
 
 #[cfg(feature = "string_pad")]
 pub(super) fn zfill(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "zfill")?;
     let ca = s[0].str()?;
     let length_s = s[1].strict_cast(&DataType::UInt64)?;
     let length = length_s.u64()?;
@@ -586,30 +592,35 @@ pub(super) fn zfill(s: &[Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn strip_chars(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "strip_chars")?;
     let ca = s[0].str()?;
     let pat_s = &s[1];
     ca.strip_chars(pat_s).map(|ok| ok.into_column())
 }
 
 pub(super) fn strip_chars_start(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "strip_chars_start")?;
     let ca = s[0].str()?;
     let pat_s = &s[1];
     ca.strip_chars_start(pat_s).map(|ok| ok.into_column())
 }
 
 pub(super) fn strip_chars_end(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "strip_chars_end")?;
     let ca = s[0].str()?;
     let pat_s = &s[1];
     ca.strip_chars_end(pat_s).map(|ok| ok.into_column())
 }
 
 pub(super) fn strip_prefix(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "strip_prefix")?;
     let ca = s[0].str()?;
     let prefix = s[1].str()?;
     Ok(ca.strip_prefix(prefix).into_column())
 }
 
 pub(super) fn strip_suffix(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "strip_suffix")?;
     let ca = s[0].str()?;
     let suffix = s[1].str()?;
     Ok(ca.strip_suffix(suffix).into_column())
@@ -1023,11 +1034,17 @@ fn _ensure_lengths(s: &[Column]) -> bool {
         .all(|series| series.len() == 1 || series.len() == len)
 }
 
-pub(super) fn str_slice(s: &[Column]) -> PolarsResult<Column> {
+fn _check_same_length(s: &[Column], fn_name: &str) -> Result<(), PolarsError> {
     polars_ensure!(
         _ensure_lengths(s),
-        ComputeError: "all series in `str_slice` should have equal or unit length",
+        ComputeError: "all series in `str.{}()` should have equal or unit length",
+        fn_name
     );
+    Ok(())
+}
+
+pub(super) fn str_slice(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "slice")?;
     let ca = s[0].str()?;
     let offset = &s[1];
     let length = &s[2];
@@ -1035,20 +1052,14 @@ pub(super) fn str_slice(s: &[Column]) -> PolarsResult<Column> {
 }
 
 pub(super) fn str_head(s: &[Column]) -> PolarsResult<Column> {
-    polars_ensure!(
-        _ensure_lengths(s),
-        ComputeError: "all series in `str_head` should have equal or unit length",
-    );
+    _check_same_length(s, "head")?;
     let ca = s[0].str()?;
     let n = &s[1];
     Ok(ca.str_head(n)?.into_column())
 }
 
 pub(super) fn str_tail(s: &[Column]) -> PolarsResult<Column> {
-    polars_ensure!(
-        _ensure_lengths(s),
-        ComputeError: "all series in `str_tail` should have equal or unit length",
-    );
+    _check_same_length(s, "tail")?;
     let ca = s[0].str()?;
     let n = &s[1];
     Ok(ca.str_tail(n)?.into_column())
@@ -1092,6 +1103,7 @@ pub(super) fn json_decode(
 
 #[cfg(feature = "extract_jsonpath")]
 pub(super) fn json_path_match(s: &[Column]) -> PolarsResult<Column> {
+    _check_same_length(s, "json_path_match")?;
     let ca = s[0].str()?;
     let pat = s[1].str()?;
     Ok(ca.json_path_match(pat)?.into_column())

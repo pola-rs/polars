@@ -1,7 +1,7 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -255,8 +255,8 @@ pub trait SeriesTrait:
     /// end of the array
     fn split_at(&self, _offset: i64) -> (Series, Series);
 
-    #[doc(hidden)]
-    fn append(&mut self, _other: &Series) -> PolarsResult<()>;
+    fn append(&mut self, other: &Series) -> PolarsResult<()>;
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()>;
 
     #[doc(hidden)]
     fn extend(&mut self, _other: &Series) -> PolarsResult<()>;
@@ -310,7 +310,7 @@ pub trait SeriesTrait:
             return None;
         }
 
-        let mut bm = MutableBitmap::with_capacity(self.len());
+        let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
             if let Some(v) = arr.validity() {
                 bm.extend_from_bitmap(v);
@@ -318,7 +318,7 @@ pub trait SeriesTrait:
                 bm.extend_constant(arr.len(), true);
             }
         }
-        Some(bm.into())
+        bm.into_opt_validity()
     }
 
     /// Drop all null values and return a new Series.
@@ -570,6 +570,8 @@ pub trait SeriesTrait:
     /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait mutable
     /// reference.
     fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {

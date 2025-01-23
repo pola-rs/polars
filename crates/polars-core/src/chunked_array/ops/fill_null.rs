@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::legacy::kernels::set::set_at_nulls;
 use bytemuck::Zeroable;
 use num_traits::{Bounded, NumCast, One, Zero};
@@ -93,6 +93,15 @@ impl Series {
                 fill_backward_gather(self)
             },
             FillNullStrategy::Backward(Some(limit)) => fill_backward_gather_limit(self, limit),
+            #[cfg(feature = "dtype-decimal")]
+            FillNullStrategy::One if self.dtype().is_decimal() => {
+                let ca = self.decimal().unwrap();
+                let precision = ca.precision();
+                let scale = ca.scale();
+                let fill_value = 10i128.pow(scale as u32);
+                let phys = ca.as_ref().fill_null_with_values(fill_value)?;
+                Ok(phys.into_decimal_unchecked(precision, scale).into_series())
+            },
             _ => {
                 let logical_type = self.dtype();
                 let s = self.to_physical_repr();
@@ -142,14 +151,14 @@ where
 
     // Compute bitmask.
     let num_start_nulls = ca.first_non_null().unwrap_or(ca.len());
-    let mut bm = MutableBitmap::with_capacity(ca.len());
+    let mut bm = BitmapBuilder::with_capacity(ca.len());
     bm.extend_constant(num_start_nulls, false);
     bm.extend_constant(ca.len() - num_start_nulls, true);
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
             T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(Some(bm.into())),
+                .with_validity_typed(bm.into_opt_validity()),
         ],
     )
 }
@@ -176,14 +185,14 @@ where
         .last_non_null()
         .map(|i| ca.len() - 1 - i)
         .unwrap_or(ca.len());
-    let mut bm = MutableBitmap::with_capacity(ca.len());
+    let mut bm = BitmapBuilder::with_capacity(ca.len());
     bm.extend_constant(ca.len() - num_end_nulls, true);
     bm.extend_constant(num_end_nulls, false);
     ChunkedArray::from_chunk_iter_like(
         ca,
         [
             T::Array::from_zeroable_vec(values, ca.dtype().to_arrow(CompatLevel::newest()))
-                .with_validity_typed(Some(bm.into())),
+                .with_validity_typed(bm.into_opt_validity()),
         ],
     )
 }

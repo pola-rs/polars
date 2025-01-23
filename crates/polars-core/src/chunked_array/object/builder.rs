@@ -1,10 +1,12 @@
+use arrow::bitmap::BitmapBuilder;
+
 use super::*;
 use crate::chunked_array::object::registry::{AnonymousObjectBuilder, ObjectRegistry};
 use crate::utils::get_iter_capacity;
 
 pub struct ObjectChunkedBuilder<T> {
     field: Field,
-    bitmask_builder: MutableBitmap,
+    bitmask_builder: BitmapBuilder,
     values: Vec<T>,
 }
 
@@ -16,7 +18,7 @@ where
         ObjectChunkedBuilder {
             field: Field::new(name, DataType::Object(T::type_name(), None)),
             values: Vec::with_capacity(capacity),
-            bitmask_builder: MutableBitmap::with_capacity(capacity),
+            bitmask_builder: BitmapBuilder::with_capacity(capacity),
         }
     }
 
@@ -52,7 +54,7 @@ where
     }
 
     pub fn finish(mut self) -> ObjectChunked<T> {
-        let null_bitmap: Option<Bitmap> = self.bitmask_builder.into();
+        let null_bitmap: Option<Bitmap> = self.bitmask_builder.into_opt_validity();
 
         let len = self.values.len();
         let null_count = null_bitmap
