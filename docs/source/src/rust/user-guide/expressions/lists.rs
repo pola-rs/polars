@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = DataFrame::new(vec![
         Series::from_any_values(
             "names".into(),
-            &vec![
+            &[
                 vec!["Anne", "Averill", "Adams"],
                 vec!["Brandon", "Brooke", "Borden", "Branson"],
                 vec!["Camila", "Campbell"],
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into(),
         Series::from_any_values(
             "children_ages".into(),
-            &vec![vec![5, 7], vec![], vec![], vec![8, 11, 18]]
+            &[vec![5, 7], vec![], vec![], vec![8, 11, 18]]
                 .iter()
                 .map(|item| AnyValue::List(Series::new("".into(), item)))
                 .collect::<Vec<AnyValue>>(),
@@ -28,7 +28,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into(),
         Series::from_any_values(
             "medical_appointments".into(),
-            &vec![
+            &[
                 vec![],
                 vec![],
                 vec![],
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = DataFrame::new(vec![
         Series::from_any_values_and_dtype(
             "bit_flags".into(),
-            &vec![
+            &[
                 vec![true, true, true, true, false],
                 vec![false, true, true, true, true],
             ]
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into(),
         Series::from_any_values_and_dtype(
             "tic_tac_toe".into(),
-            &vec![
+            &[
                 vec![
                     vec![" ", "x", "o"],
                     vec![" ", "x", " "],
@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // the tic_tac_toe Series could also be defined this way, using reshape_array, instead
     let s = Series::new(
         "tic_tac_toe".into(),
-        &vec![
+        &[
             vec![
                 vec![" ", "x", "o"],
                 vec![" ", "x", " "],
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
         ]
         .into_iter()
-        .flat_map(|inner| inner.into_iter().flat_map(|inner2| inner2))
+        .flat_map(|inner| inner.into_iter().flatten())
         .collect::<Vec<&str>>(),
     )
     .reshape_array(&[
@@ -137,7 +137,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Series::new(
             "station".into(),
             &(1..6)
-                .into_iter()
                 .map(|idx| format!("Station {}", idx))
                 .collect::<Vec<String>>(),
         )
@@ -221,7 +220,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Series::new(
             "station".into(),
             &(1..11)
-                .into_iter()
                 .map(|idx| format!("Station {}", idx))
                 .collect::<Vec<String>>(),
         )
@@ -250,10 +248,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .round(2);
     let result = weather_by_day
         .lazy()
-        .with_columns(vec![concat_list(vec![
-            col("*").exclude(vec!["station"])
-        ])?
-        .alias("all_temps")])
+        .with_columns(vec![
+            concat_list(vec![col("*").exclude(vec!["station"])])?.alias("all_temps")
+        ])
         .select(vec![
             col("*").exclude(vec!["all_temps"]),
             col("all_temps")
