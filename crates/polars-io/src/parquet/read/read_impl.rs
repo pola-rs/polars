@@ -297,7 +297,7 @@ fn rg_to_dfs_prefiltered(
         }
     }
 
-    let do_parquet_expr = std::env::var("POLARS_NO_PARQUET_EXPR").as_deref() != Ok("1")
+    let do_parquet_expr = std::env::var("POLARS_PARQUET_EXPR").as_deref() == Ok("1")
         && live_columns.len() == 1 // Only do it with one column for now
         && hive_partition_columns.is_none_or(|hc| {
             !hc.iter()

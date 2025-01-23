@@ -1,8 +1,11 @@
+//! Specialized kernels to do predicate evaluation directly on the `BinView` Parquet data.
+
 use arrow::array::View;
 use arrow::bitmap::MutableBitmap;
 
 use crate::parquet::error::ParquetResult;
 
+/// Create a mask for when a value is equal to the `needle`.
 pub fn decode_equals(
     num_expected_values: usize,
     values: &[u8],
@@ -16,6 +19,7 @@ pub fn decode_equals(
     }
 }
 
+/// Equality kernel for when the `needle` is inlineable into the `View`.
 fn decode_equals_inlinable(
     num_expected_values: usize,
     mut values: &[u8],
@@ -55,6 +59,7 @@ fn decode_equals_inlinable(
     Ok(())
 }
 
+/// Equality kernel for when the `needle` is not-inlineable into the `View`.
 fn decode_equals_non_inlineable(
     num_expected_values: usize,
     mut values: &[u8],
