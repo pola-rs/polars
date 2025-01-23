@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::ops::Range;
 
 use arrow::array::BooleanArray;
-use arrow::bitmap::BitmapBuilder;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
