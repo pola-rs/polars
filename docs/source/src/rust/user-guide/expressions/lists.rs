@@ -266,7 +266,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let df = DataFrame::new(vec![
         Series::from_any_values_and_dtype(
             "first_last".into(),
-            &vec![
+            &[
                 vec!["Anne", "Adams"],
                 vec!["Brandon", "Branson"],
                 vec!["Camila", "Campbell"],
@@ -281,7 +281,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into(),
         Series::from_any_values_and_dtype(
             "fav_numbers".into(),
-            &vec![
+            &[
                 vec![42, 0, 1],
                 vec![2, 3, 5],
                 vec![13, 21, 34],
