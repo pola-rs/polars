@@ -250,7 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .round(2);
     let result = weather_by_day
         .lazy()
-        .with_columns(vec![polars_plan::dsl::concat_list(vec![
+        .with_columns(vec![polars_lazy::dsl::concat_list(vec![
             col("*").exclude(vec!["station"])
         ])?
         .alias("all_temps")])
