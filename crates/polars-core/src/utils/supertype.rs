@@ -537,17 +537,24 @@ fn super_type_structs(fields_a: &[Field], fields_b: &[Field]) -> Option<DataType
 pub fn materialize_dyn_int(v: i128) -> AnyValue<'static> {
     // Try to get the "smallest" fitting value.
     // TODO! next breaking go to true smallest.
-    match i32::try_from(v).ok() {
-        Some(v) => AnyValue::Int32(v),
-        None => match i64::try_from(v).ok() {
-            Some(v) => AnyValue::Int64(v),
-            None => match u64::try_from(v).ok() {
-                Some(v) => AnyValue::UInt64(v),
-                None => AnyValue::Null,
-            },
-        },
+    if let Ok(v) = i32::try_from(v) {
+        return AnyValue::Int32(v);
     }
+    if let Ok(v) = i64::try_from(v) {
+        return AnyValue::Int64(v);
+    }
+    if let Ok(v) = u64::try_from(v) {
+        return AnyValue::UInt64(v);
+    }
+    #[cfg(feature = "dtype-i128")]
+    {
+        AnyValue::Int128(v)
+    }
+
+    #[cfg(not(feature = "dtype-i128"))]
+    AnyValue::Null
 }
+
 fn materialize_dyn_int_pos(v: i128) -> AnyValue<'static> {
     // Try to get the "smallest" fitting value.
     // TODO! next breaking go to true smallest.

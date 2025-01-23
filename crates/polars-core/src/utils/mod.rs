@@ -728,6 +728,37 @@ pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     }
 }
 
+#[cold]
+#[inline(never)]
+fn width_mismatch(df1: &DataFrame, df2: &DataFrame) -> PolarsError {
+    let mut df1_extra = Vec::new();
+    let mut df2_extra = Vec::new();
+
+    let s1 = df1.schema();
+    let s2 = df2.schema();
+
+    s1.field_compare(s2, &mut df1_extra, &mut df2_extra);
+
+    let df1_extra = df1_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let df2_extra = df2_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    polars_err!(
+        SchemaMismatch: r#"unable to vstack, dataframes have different widths ({} != {}).
+One dataframe has additional columns: [{df1_extra}].
+Other dataframe has additional columns: [{df2_extra}]."#,
+        df1.width(),
+        df2.width(),
+    )
+}
+
 pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
@@ -738,7 +769,11 @@ where
     acc_df.reserve_chunks(additional);
 
     for df in iter {
-        acc_df.vstack_mut_unchecked(&df);
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
     }
     Some(acc_df)
 }
@@ -755,7 +790,11 @@ where
     acc_df.reserve_chunks(additional);
 
     for df in iter {
-        acc_df.vstack_mut_unchecked(&df);
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
     }
     acc_df
 }
@@ -772,6 +811,10 @@ where
     let mut acc_df = iter.next().unwrap();
     acc_df.reserve_chunks(additional);
     for df in iter {
+        if acc_df.width() != df.width() {
+            return Err(width_mismatch(&acc_df, &df));
+        }
+
         acc_df.vstack_mut(&df)?;
     }
 

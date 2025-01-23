@@ -322,14 +322,20 @@ pub fn get_python_scan_source_input(
     write: bool,
 ) -> PyResult<PythonScanSourceInput> {
     Python::with_gil(|py| {
-        let py_f_0 = py_f;
-        let py_f = py_f_0.clone_ref(py).into_bound(py);
+        let py_f = py_f.into_bound(py);
+
+        // CPython has some internal tricks that means much of the time
+        // BytesIO.getvalue() involves no memory copying, unlike
+        // BytesIO.read(). So we want to handle BytesIO specially in order
+        // to save memory.
+        let py_f = read_if_bytesio(py_f);
 
         // If the pyobject is a `bytes` class
         if let Ok(b) = py_f.downcast::<PyBytes>() {
             return Ok(PythonScanSourceInput::Buffer(MemSlice::from_arc(
                 b.as_bytes(),
-                Arc::new(py_f_0),
+                // We want to specifically keep alive the PyBytes object.
+                Arc::new(b.clone().unbind()),
             )));
         }
 
@@ -373,15 +379,17 @@ pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>>
     Ok(get_either_file(f, truncate)?.into_dyn())
 }
 
-/// If the give file-like is a BytesIO, read its contents.
+/// If the give file-like is a BytesIO, read its contents in a memory-efficient
+/// way.
 fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
-    if py_f.getattr("read").is_ok() {
+    let bytes_io = py_f.py().import("io").unwrap().getattr("BytesIO").unwrap();
+    if py_f.is_instance(&bytes_io).unwrap() {
+        // Note that BytesIO has some memory optimizations ensuring that much of
+        // the time getvalue() doesn't need to copy the underlying data:
         let Ok(bytes) = py_f.call_method0("getvalue") else {
             return py_f;
         };
-        if bytes.downcast::<PyBytes>().is_ok() || bytes.downcast::<PyString>().is_ok() {
-            return bytes.clone();
-        }
+        return bytes;
     }
     py_f
 }

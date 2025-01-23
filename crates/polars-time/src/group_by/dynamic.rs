@@ -86,13 +86,13 @@ pub trait PolarsTemporalGroupby {
         &self,
         group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)>;
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)>;
 
     fn group_by_dynamic(
         &self,
         group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)>;
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)>;
 }
 
 impl PolarsTemporalGroupby for DataFrame {
@@ -100,7 +100,7 @@ impl PolarsTemporalGroupby for DataFrame {
         &self,
         group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         Wrap(self).rolling(group_by, options)
     }
 
@@ -108,7 +108,7 @@ impl PolarsTemporalGroupby for DataFrame {
         &self,
         group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         Wrap(self).group_by_dynamic(group_by, options)
     }
 }
@@ -118,7 +118,7 @@ impl Wrap<&DataFrame> {
         &self,
         group_by: Vec<Column>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         polars_ensure!(
                         !options.period.is_zero() && !options.period.negative,
                         ComputeError:
@@ -192,7 +192,7 @@ impl Wrap<&DataFrame> {
         &self,
         group_by: Vec<Column>,
         options: &DynamicGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         let time = self.0.column(&options.index_column)?.rechunk();
         if group_by.is_empty() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
@@ -266,10 +266,10 @@ impl Wrap<&DataFrame> {
         options: &DynamicGroupOptions,
         tu: TimeUnit,
         time_type: &DataType,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         polars_ensure!(!options.every.negative, ComputeError: "'every' argument must be positive");
         if dt.is_empty() {
-            return dt.cast(time_type).map(|s| (s, by, GroupsProxy::default()));
+            return dt.cast(time_type).map(|s| (s, by, Default::default()));
         }
 
         // A requirement for the index so we can set this such that downstream code has this info.
@@ -322,7 +322,7 @@ impl Wrap<&DataFrame> {
                 options.start_by,
             );
             update_bounds(lower, upper);
-            PolarsResult::Ok(GroupsProxy::Slice {
+            PolarsResult::Ok(GroupsType::Slice {
                 groups,
                 rolling: false,
             })
@@ -334,8 +334,8 @@ impl Wrap<&DataFrame> {
 
             // Include boundaries cannot be parallel (easily).
             if include_lower_bound | include_upper_bound {
-                POOL.install(|| match groups {
-                    GroupsProxy::Idx(groups) => {
+                POOL.install(|| match groups.as_ref() {
+                    GroupsType::Idx(groups) => {
                         let ir = groups
                             .par_iter()
                             .map(|base_g| {
@@ -370,9 +370,9 @@ impl Wrap<&DataFrame> {
                         });
 
                         // then parallelize the flatten in the `from` impl
-                        Ok(GroupsProxy::Idx(GroupsIdx::from(groups)))
+                        Ok(GroupsType::Idx(GroupsIdx::from(groups)))
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let mut ir = groups
                             .par_iter()
                             .map(|base_g| {
@@ -404,15 +404,15 @@ impl Wrap<&DataFrame> {
                         let mut groups = Vec::with_capacity(capacity);
                         ir.iter().for_each(|(_, _, g)| groups.extend_from_slice(g));
 
-                        Ok(GroupsProxy::Slice {
+                        Ok(GroupsType::Slice {
                             groups,
                             rolling: false,
                         })
                     },
                 })
             } else {
-                POOL.install(|| match groups {
-                    GroupsProxy::Idx(groups) => {
+                POOL.install(|| match groups.as_ref() {
+                    GroupsType::Idx(groups) => {
                         let groupsidx = groups
                             .par_iter()
                             .map(|base_g| {
@@ -435,9 +435,9 @@ impl Wrap<&DataFrame> {
                                 Ok(update_subgroups_idx(&sub_groups, base_g))
                             })
                             .collect::<PolarsResult<Vec<_>>>()?;
-                        Ok(GroupsProxy::Idx(GroupsIdx::from(groupsidx)))
+                        Ok(GroupsType::Idx(GroupsIdx::from(groupsidx)))
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         let groups = groups
                             .par_iter()
                             .map(|base_g| {
@@ -460,7 +460,7 @@ impl Wrap<&DataFrame> {
 
                         let groups = flatten_par(&groups);
 
-                        Ok(GroupsProxy::Slice {
+                        Ok(GroupsType::Slice {
                             groups,
                             rolling: false,
                         })
@@ -509,7 +509,7 @@ impl Wrap<&DataFrame> {
         dt.into_datetime(tu, None)
             .into_column()
             .cast(time_type)
-            .map(|s| (s, by, groups))
+            .map(|s| (s, by, groups.into_sliceable()))
     }
 
     /// Returns: time_keys, keys, groupsproxy
@@ -521,7 +521,7 @@ impl Wrap<&DataFrame> {
         tu: TimeUnit,
         tz: Option<Tz>,
         time_type: &DataType,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupsProxy)> {
+    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
         let mut dt = dt.rechunk();
 
         let groups = if group_by.is_empty() {
@@ -531,7 +531,7 @@ impl Wrap<&DataFrame> {
             let dt = dt.datetime().unwrap();
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            PolarsResult::Ok(GroupsProxy::Slice {
+            PolarsResult::Ok(GroupsType::Slice {
                 groups: group_by_values(
                     options.period,
                     options.offset,
@@ -556,8 +556,8 @@ impl Wrap<&DataFrame> {
 
             // continue determining the rolling indexes.
 
-            POOL.install(|| match groups {
-                GroupsProxy::Idx(groups) => {
+            POOL.install(|| match groups.as_ref() {
+                GroupsType::Idx(groups) => {
                     let idx = groups
                         .par_iter()
                         .map(|base_g| {
@@ -580,9 +580,9 @@ impl Wrap<&DataFrame> {
                         })
                         .collect::<PolarsResult<Vec<_>>>()?;
 
-                    Ok(GroupsProxy::Idx(GroupsIdx::from(idx)))
+                    Ok(GroupsType::Idx(GroupsIdx::from(idx)))
                 },
-                GroupsProxy::Slice { groups, .. } => {
+                GroupsType::Slice { groups, .. } => {
                     let slice_groups = groups
                         .par_iter()
                         .map(|base_g| {
@@ -602,7 +602,7 @@ impl Wrap<&DataFrame> {
                         .collect::<PolarsResult<Vec<_>>>()?;
 
                     let slice_groups = flatten_par(&slice_groups);
-                    Ok(GroupsProxy::Slice {
+                    Ok(GroupsType::Slice {
                         groups: slice_groups,
                         rolling: false,
                     })
@@ -612,7 +612,7 @@ impl Wrap<&DataFrame> {
 
         let dt = dt.cast(time_type).unwrap();
 
-        Ok((dt, group_by, groups))
+        Ok((dt, group_by, groups.into_sliceable()))
     }
 }
 
@@ -906,7 +906,7 @@ mod test {
         .into_column();
         assert_eq!(&upper, &range);
 
-        let expected = GroupsProxy::Idx(
+        let expected = GroupsType::Idx(
             vec![
                 (0 as IdxSize, unitvec![0 as IdxSize, 1, 2]),
                 (2, unitvec![2]),
@@ -916,7 +916,8 @@ mod test {
                 (4, unitvec![4]),
             ]
             .into(),
-        );
+        )
+        .into_sliceable();
         assert_eq!(expected, groups);
         Ok(())
     }

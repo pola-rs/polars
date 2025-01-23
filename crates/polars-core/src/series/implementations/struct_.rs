@@ -43,7 +43,7 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         let ca = self.0.get_row_encoded(Default::default())?;
         ca.group_tuples(multithreaded, sorted)
     }
@@ -63,7 +63,7 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
@@ -113,6 +113,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.as_ref().as_ref())
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -255,6 +259,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {

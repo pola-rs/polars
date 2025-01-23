@@ -50,12 +50,15 @@ impl<W: Write> FileWriter<W> {
     /// Returns a new [`FileWriter`].
     /// # Error
     /// If it is unable to derive a parquet schema from [`ArrowSchema`].
-    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
-        let parquet_schema = to_parquet_schema(&schema)?;
-
+    pub fn new_with_parquet_schema(
+        writer: W,
+        schema: ArrowSchema,
+        parquet_schema: SchemaDescriptor,
+        options: WriteOptions,
+    ) -> Self {
         let created_by = Some("Polars".to_string());
 
-        Ok(Self {
+        Self {
             writer: crate::parquet::write::FileWriter::new(
                 writer,
                 parquet_schema,
@@ -67,7 +70,20 @@ impl<W: Write> FileWriter<W> {
             ),
             schema,
             options,
-        })
+        }
+    }
+
+    /// Returns a new [`FileWriter`].
+    /// # Error
+    /// If it is unable to derive a parquet schema from [`ArrowSchema`].
+    pub fn try_new(writer: W, schema: ArrowSchema, options: WriteOptions) -> PolarsResult<Self> {
+        let parquet_schema = to_parquet_schema(&schema)?;
+        Ok(Self::new_with_parquet_schema(
+            writer,
+            schema,
+            parquet_schema,
+            options,
+        ))
     }
 
     /// Writes a row group to the file.

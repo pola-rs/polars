@@ -3,7 +3,7 @@ use std::collections::VecDeque;
 use std::ops::Range;
 
 use arrow::array::BooleanArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::ArrowSchemaRef;
 use polars_core::chunked_array::builder::NullChunkedBuilder;
 use polars_core::prelude::*;
@@ -365,7 +365,7 @@ fn rg_to_dfs_prefiltered(
                 }
                 df = df.filter(mask)?;
 
-                let mut filter_mask = MutableBitmap::with_capacity(mask.len());
+                let mut filter_mask = BitmapBuilder::with_capacity(mask.len());
 
                 // We need to account for the validity of the items
                 for chunk in mask.downcast_iter() {
@@ -1022,7 +1022,7 @@ pub struct BatchedParquetReader {
     chunk_size: usize,
     use_statistics: bool,
     hive_partition_columns: Option<Arc<[Series]>>,
-    include_file_path: Option<StringChunked>,
+    include_file_path: Option<Column>,
     /// Has returned at least one materialized frame.
     has_returned: bool,
 }
@@ -1079,8 +1079,16 @@ impl BatchedParquetReader {
             chunk_size,
             use_statistics,
             hive_partition_columns: hive_partition_columns.map(Arc::from),
-            include_file_path: include_file_path
-                .map(|(col, path)| StringChunked::full(col, &path, 1)),
+            include_file_path: include_file_path.map(|(col, path)| {
+                Column::new_scalar(
+                    col,
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(path.as_ref().into()),
+                    ),
+                    1,
+                )
+            }),
             has_returned: false,
         })
     }
@@ -1128,6 +1136,8 @@ impl BatchedParquetReader {
                 .fetch_row_groups(row_group_range.clone())
                 .await?;
 
+            let prev_rows_read = self.rows_read;
+
             let mut dfs = {
                 // Spawn the decoding and decompression of the bytes on a rayon task.
                 // This will ensure we don't block the async thread.
@@ -1170,36 +1180,26 @@ impl BatchedParquetReader {
                 dfs
             };
 
-            if let Some(ca) = self.include_file_path.as_mut() {
-                let mut max_len = 0;
-
-                if self.projection.is_empty() {
-                    max_len = self.metadata.num_rows;
-                } else {
-                    for df in &dfs {
-                        max_len = std::cmp::max(max_len, df.height());
+            if let Some(column) = self.include_file_path.as_ref() {
+                if dfs.first().is_some_and(|x| x.width() > 0) {
+                    for df in &mut dfs {
+                        unsafe { df.with_column_unchecked(column.new_from_index(0, df.height())) };
                     }
-                }
+                } else {
+                    let (offset, len) = self.slice;
+                    let end = offset + len;
 
-                // Re-use the same ChunkedArray
-                if ca.len() < max_len {
-                    *ca = ca.new_from_index(0, max_len);
-                }
-
-                for df in &mut dfs {
-                    unsafe {
-                        df.with_column_unchecked(
-                            ca.slice(
-                                0,
-                                if !self.projection.is_empty() {
-                                    df.height()
-                                } else {
-                                    self.metadata.num_rows
-                                },
-                            )
-                            .into_column(),
-                        )
-                    };
+                    debug_assert_eq!(dfs.len(), 1);
+                    dfs.get_mut(0).unwrap().insert_column(
+                        0,
+                        column.new_from_index(
+                            0,
+                            (self.rows_read.min(end.try_into().unwrap_or(IdxSize::MAX))
+                                - prev_rows_read)
+                                .try_into()
+                                .unwrap(),
+                        ),
+                    )?;
                 }
             }
 

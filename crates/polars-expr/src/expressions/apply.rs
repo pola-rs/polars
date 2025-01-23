@@ -75,7 +75,7 @@ impl ApplyExpr {
     fn prepare_multiple_inputs<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
@@ -300,9 +300,11 @@ impl ApplyExpr {
 
 fn all_unit_length(ca: &ListChunked) -> bool {
     assert_eq!(ca.chunks().len(), 1);
+
     let list_arr = ca.downcast_iter().next().unwrap();
     let offset = list_arr.offsets().as_slice();
-    (offset[offset.len() - 1] as usize) == list_arr.len()
+    // Note: Checking offset.last() == 0 handles the Null dtype - in that case the offsets can be (e.g. [0,0,0 ...])
+    (offset[offset.len() - 1] as usize) == list_arr.len() || offset[offset.len() - 1] == 0
 }
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
@@ -362,7 +364,7 @@ impl PhysicalExpr for ApplyExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_ensure!(
@@ -427,43 +429,6 @@ impl PhysicalExpr for ApplyExpr {
         for i in &self.inputs {
             i.collect_live_columns(lv);
         }
-    }
-    fn replace_elementwise_const_columns(
-        &self,
-        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
-    ) -> Option<Arc<dyn PhysicalExpr>> {
-        if self.collect_groups == ApplyOptions::ElementWise {
-            let mut new_inputs = Vec::new();
-            for i in 0..self.inputs.len() {
-                match self.inputs[i].replace_elementwise_const_columns(const_columns) {
-                    None => continue,
-                    Some(new) => {
-                        new_inputs.reserve(self.inputs.len());
-                        new_inputs.extend(self.inputs[..i].iter().cloned());
-                        new_inputs.push(new);
-                        break;
-                    },
-                }
-            }
-
-            // Only copy inputs if it is actually needed
-            if new_inputs.is_empty() {
-                return None;
-            }
-
-            new_inputs.extend(self.inputs[new_inputs.len()..].iter().map(|i| {
-                match i.replace_elementwise_const_columns(const_columns) {
-                    None => i.clone(),
-                    Some(new) => new,
-                }
-            }));
-
-            let mut slf = self.clone();
-            slf.inputs = new_inputs;
-            return Some(Arc::new(slf));
-        }
-
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -699,7 +664,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
@@ -716,7 +681,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

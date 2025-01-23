@@ -2,7 +2,7 @@ use std::borrow::Borrow;
 use std::fmt::Write;
 
 use arrow::array::*;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::{ArrowDataType, IntervalUnit};
 use arrow::offset::{Offset, Offsets};
 use arrow::temporal_conversions;
@@ -128,7 +128,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
     let mut err_idx = rows.len();
     let child = ListArray::<i64>::get_child_type(&dtype);
 
-    let mut validity = MutableBitmap::with_capacity(rows.len());
+    let mut validity = BitmapBuilder::with_capacity(rows.len());
     let mut offsets = Offsets::<i64>::with_capacity(rows.len());
     let mut inner = vec![];
     rows.iter()
@@ -163,7 +163,7 @@ fn deserialize_list<'a, A: Borrow<BorrowedValue<'a>>>(
         dtype,
         offsets.into(),
         values,
-        validity.into(),
+        validity.into_opt_validity(),
     ))
 }
 
@@ -180,7 +180,7 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         .map(|f| (f.name.as_str(), (f.dtype(), vec![])))
         .collect::<PlHashMap<_, _>>();
 
-    let mut validity = MutableBitmap::with_capacity(rows.len());
+    let mut validity = BitmapBuilder::with_capacity(rows.len());
     // Custom error tracker
     let mut extra_field = None;
 
@@ -245,7 +245,7 @@ fn deserialize_struct<'a, A: Borrow<BorrowedValue<'a>>>(
         dtype.clone(),
         rows.len(),
         values,
-        validity.into(),
+        validity.into_opt_validity(),
     ))
 }
 

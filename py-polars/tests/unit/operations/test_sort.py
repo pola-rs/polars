@@ -1087,3 +1087,47 @@ def test_sort_literals() -> None:
 
     with pytest.raises(pl.exceptions.ShapeError):
         df.sort(pl.Series(values=[1, 2]))
+
+
+def test_sorted_slice_after_function_20712() -> None:
+    assert_frame_equal(
+        pl.LazyFrame({"a": 10 * ["A"]})
+        .with_columns(b=pl.col("a").str.extract("(.*)"))
+        .sort("b")
+        .head(2)
+        .collect(),
+        pl.DataFrame({"a": ["A", "A"], "b": ["A", "A"]}),
+    )
+
+
+@pytest.mark.slow
+def test_sort_into_function_into_dynamic_groupby_20715() -> None:
+    assert (
+        pl.select(
+            time=pl.datetime_range(
+                pl.lit("2025-01-13 00:01:00.000000").str.to_datetime(
+                    "%Y-%m-%d %H:%M:%S%.f"
+                ),
+                pl.lit("2025-01-17 00:00:00.000000").str.to_datetime(
+                    "%Y-%m-%d %H:%M:%S%.f"
+                ),
+                interval="64m",
+            )
+            .cast(pl.String)
+            .reverse(),
+            val=pl.Series(range(90)),
+            cat=pl.Series(list(range(2)) * 45),
+        )
+        .lazy()
+        .with_columns(
+            pl.col("time")
+            .str.to_datetime("%Y-%m-%d %H:%M:%S%.f", strict=False)
+            .alias("time2")
+        )
+        .sort("time2")
+        .group_by_dynamic("time2", every="1m", group_by=["cat"])
+        .agg(pl.sum("val"))
+        .sort("time2")
+        .collect()
+        .shape
+    ) == (90, 3)

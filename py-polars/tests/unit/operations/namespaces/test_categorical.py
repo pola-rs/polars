@@ -6,8 +6,6 @@ import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
-# @TODO: Bug, see https://github.com/pola-rs/polars/issues/20440
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_lexical_sort() -> None:
     df = pl.DataFrame(

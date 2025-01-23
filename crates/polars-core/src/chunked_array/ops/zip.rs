@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use polars_compute::if_then_else::{if_then_else_validity, IfThenElseKernel};
 
@@ -305,7 +305,7 @@ impl ChunkZip<StructType> for StructChunked {
                     if validity.unset_bits() > 0 {
                         rechunked_validity
                             .get_or_insert_with(|| {
-                                let mut bm = MutableBitmap::with_capacity(total_length);
+                                let mut bm = BitmapBuilder::with_capacity(total_length);
                                 bm.extend_constant(rechunked_length, true);
                                 bm
                             })
@@ -320,7 +320,7 @@ impl ChunkZip<StructType> for StructChunked {
                 rechunked_validity.extend_constant(total_length - rechunked_validity.len(), true);
             }
 
-            rechunked_validity.map(MutableBitmap::freeze)
+            rechunked_validity.map(BitmapBuilder::freeze)
         }
 
         // Zip the validities.

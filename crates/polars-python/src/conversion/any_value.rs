@@ -1,12 +1,16 @@
 use std::borrow::{Borrow, Cow};
 
+use chrono_tz::Tz;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
-use polars::prelude::{AnyValue, PlSmallStr, Series, TimeZone};
-use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike};
+use polars::export::chrono::{DateTime, FixedOffset};
+use polars::prelude::{AnyValue, PlSmallStr, Series};
+use polars_core::export::chrono::{
+    Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike,
+};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};
@@ -17,7 +21,7 @@ use pyo3::types::{
 use pyo3::{intern, IntoPyObjectExt};
 
 use super::datetime::{
-    elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
+    datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
 use super::{decimal_to_digits, struct_dict, ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
@@ -92,15 +96,11 @@ pub(crate) fn any_value_into_py_object<'py>(
             date.into_bound_py_any(py)
         },
         AnyValue::Datetime(v, time_unit, time_zone) => {
-            datetime_to_py_object(py, utils, v, time_unit, time_zone)
+            datetime_to_py_object(py, v, time_unit, time_zone)
         },
-        AnyValue::DatetimeOwned(v, time_unit, time_zone) => datetime_to_py_object(
-            py,
-            utils,
-            v,
-            time_unit,
-            time_zone.as_ref().map(AsRef::as_ref),
-        ),
+        AnyValue::DatetimeOwned(v, time_unit, time_zone) => {
+            datetime_to_py_object(py, v, time_unit, time_zone.as_ref().map(AsRef::as_ref))
+        },
         AnyValue::Duration(v, time_unit) => {
             let time_delta = elapsed_offset_to_timedelta(v, time_unit);
             time_delta.into_bound_py_any(py)
@@ -139,28 +139,6 @@ pub(crate) fn any_value_into_py_object<'py>(
             let digits = PyTuple::new(py, buf.iter().take(n_digits))?;
             convert.call1((v.is_negative() as u8, digits, n_digits, -(scale as i32)))
         },
-    }
-}
-
-fn datetime_to_py_object<'py>(
-    py: Python<'py>,
-    utils: &Bound<'py, PyAny>,
-    v: i64,
-    tu: TimeUnit,
-    tz: Option<&TimeZone>,
-) -> PyResult<Bound<'py, PyAny>> {
-    if let Some(time_zone) = tz {
-        // When https://github.com/pola-rs/polars/issues/16199 is
-        // implemented, we'll switch to something like:
-        //
-        // let tz: chrono_tz::Tz = time_zone.parse().unwrap();
-        // let datetime = tz.from_local_datetime(&naive_datetime).earliest().unwrap();
-        // datetime.into_py(py)
-        let convert = utils.getattr(intern!(py, "to_py_datetime"))?;
-        let time_unit = tu.to_ascii();
-        convert.call1((v, time_unit, time_zone.as_str()))
-    } else {
-        timestamp_to_naive_datetime(v, tu).into_pyobject(py)
     }
 }
 
@@ -273,18 +251,34 @@ pub(crate) fn py_object_to_any_value<'py>(
     }
 
     fn get_datetime(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {
-        // Probably needs to wait for
-        // https://github.com/pola-rs/polars/issues/16199 to do it a faster way.
-        Python::with_gil(|py| {
-            let date = pl_utils(py)
-                .bind(py)
-                .getattr(intern!(py, "datetime_to_int"))
-                .unwrap()
-                .call1((ob, intern!(py, "us")))
-                .unwrap();
-            let v = date.extract::<i64>()?;
-            Ok(AnyValue::Datetime(v, TimeUnit::Microseconds, None))
-        })
+        let py = ob.py();
+        let tzinfo = ob.getattr(intern!(py, "tzinfo"))?;
+
+        let timestamp = if tzinfo.is_none() {
+            let datetime = ob.extract::<NaiveDateTime>()?;
+            let delta = datetime - NaiveDateTime::UNIX_EPOCH;
+            delta.num_microseconds().unwrap()
+        } else if tzinfo.hasattr(intern!(py, "key"))? {
+            let datetime = ob.extract::<DateTime<Tz>>()?;
+            if datetime.year() >= 2100 {
+                // chrono-tz does not support dates after 2100
+                // https://github.com/chronotope/chrono-tz/issues/135
+                pl_utils(py)
+                    .bind(py)
+                    .getattr(intern!(py, "datetime_to_int"))?
+                    .call1((ob, intern!(py, "us")))?
+                    .extract::<i64>()?
+            } else {
+                let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
+                delta.num_microseconds().unwrap()
+            }
+        } else {
+            let datetime = ob.extract::<DateTime<FixedOffset>>()?;
+            let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
+            delta.num_microseconds().unwrap()
+        };
+
+        Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None))
     }
 
     fn get_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {

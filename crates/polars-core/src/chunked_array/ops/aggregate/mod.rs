@@ -2,14 +2,11 @@
 mod quantile;
 mod var;
 
-use std::ops::Add;
-
-use arrow::compute;
-use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
+use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
 use polars_utils::min_max::MinMax;
 use polars_utils::sync::SyncPtr;
 pub use quantile::*;
@@ -45,8 +42,7 @@ pub trait ChunkAggSeries {
 
 fn sum<T>(array: &PrimitiveArray<T>) -> T
 where
-    T: NumericNative + NativeType,
-    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd> + compute::aggregate::Sum<T>,
+    T: NumericNative + NativeType + WrappingSum,
 {
     if array.null_count() == array.len() {
         return T::default();
@@ -69,16 +65,15 @@ where
             }
         }
     } else {
-        compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
+        wrapping_sum_arr(array)
     }
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: WrappingSum,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
@@ -270,9 +265,8 @@ impl BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: WrappingSum,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     fn sum_reduce(&self) -> Scalar {
@@ -345,9 +339,7 @@ impl VarAggSeries for Float64Chunked {
 impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Ord,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
+    T::Native: Ord + WrappingSum,
 {
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;

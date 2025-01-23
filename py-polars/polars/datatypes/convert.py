@@ -206,6 +206,7 @@ class _DataTypeMappings:
             # (np.dtype().kind, np.dtype().itemsize)
             ("M", 8): Datetime,
             ("b", 1): Boolean,
+            ("f", 2): Float32,
             ("f", 4): Float32,
             ("f", 8): Float64,
             ("i", 1): Int8,

@@ -42,7 +42,7 @@ impl StringNameSpace {
     #[cfg(feature = "find_many")]
     pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::StringExpr(StringFunction::ContainsMany {
+            FunctionExpr::StringExpr(StringFunction::ContainsAny {
                 ascii_case_insensitive,
             }),
             &[patterns],
@@ -449,6 +449,17 @@ impl StringNameSpace {
             &[pat, value],
             false,
             Some(Default::default()),
+        )
+    }
+
+    #[cfg(feature = "string_normalize")]
+    /// Normalize each string
+    pub fn normalize(self, form: UnicodeForm) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::StringExpr(StringFunction::Normalize { form }),
+            &[],
+            false,
+            None,
         )
     }
 

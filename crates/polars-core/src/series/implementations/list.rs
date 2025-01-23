@@ -32,13 +32,13 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
@@ -127,6 +127,10 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.as_ref().as_ref())
     }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
+    }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
@@ -200,9 +204,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
-        if !self.inner_dtype().is_primitive_numeric() {
-            polars_bail!(opq = n_unique, self.dtype());
-        }
         // this can be called in aggregation, so this fast path can be worth a lot
         match self.len() {
             0 => Ok(0),
@@ -254,13 +255,16 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

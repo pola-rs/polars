@@ -26,7 +26,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical

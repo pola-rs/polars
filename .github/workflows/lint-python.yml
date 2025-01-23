@@ -58,9 +58,7 @@ jobs:
 
       - name: Install Python dependencies
         working-directory: py-polars
-        # TODO: Fix typing issues for newer NumPy versions
-        # https://github.com/pola-rs/polars/issues/20561
-        run: uv pip install -r requirements-dev.txt -r requirements-lint.txt 'numpy<2.1'
+        run: uv pip install -r requirements-dev.txt -r requirements-lint.txt
 
       # Allow untyped calls for older Python versions
       - name: Run mypy

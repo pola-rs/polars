@@ -150,6 +150,7 @@ StartBy: TypeAlias = Literal[
     "sunday",
 ]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
+UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 MapElementsStrategy: TypeAlias = Literal["thread_local", "threading"]
@@ -235,7 +236,7 @@ FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
 BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
-ExcelSpreadsheetEngine: TypeAlias = Literal["xlsx2csv", "openpyxl", "calamine"]
+ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
 
 
 class SeriesBuffers(TypedDict):

@@ -319,9 +319,11 @@ def _assert_series_values_within_tolerance(
 
     difference = (left_unequal - right_unequal).abs()
     tolerance = atol + rtol * right_unequal.abs()
-    exceeds_tolerance = difference > tolerance
+    within_tolerance = (difference <= tolerance) & right_unequal.is_finite() | (
+        left_unequal == right_unequal
+    )
 
-    if exceeds_tolerance.any():
+    if not within_tolerance.all():
         raise_assertion_error(
             "Series",
             "value mismatch",

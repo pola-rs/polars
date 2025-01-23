@@ -57,6 +57,11 @@ impl SchemaDescriptor {
         &self.fields
     }
 
+    /// The schemas' leaves.
+    pub fn leaves(&self) -> &[ColumnDescriptor] {
+        &self.leaves
+    }
+
     pub(crate) fn into_thrift(self) -> Vec<SchemaElement> {
         ParquetType::GroupType {
             field_info: FieldInfo {

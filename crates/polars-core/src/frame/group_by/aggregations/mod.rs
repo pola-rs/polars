@@ -333,7 +333,7 @@ impl QuantileDispatcher<f64> for Float64Chunked {
 
 unsafe fn agg_quantile_generic<T, K>(
     ca: &ChunkedArray<T>,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     quantile: f64,
     method: QuantileMethod,
 ) -> Series
@@ -349,7 +349,7 @@ where
         return Series::full_null(ca.name().clone(), groups.len(), ca.dtype());
     }
     match groups {
-        GroupsProxy::Idx(groups) => {
+        GroupsType::Idx(groups) => {
             let ca = ca.rechunk();
             agg_helper_idx_on_all::<K, _>(groups, |idx| {
                 debug_assert!(idx.len() <= ca.len());
@@ -361,7 +361,7 @@ where
                 take._quantile(quantile, method).unwrap_unchecked()
             })
         },
-        GroupsProxy::Slice { groups, .. } => {
+        GroupsType::Slice { groups, .. } => {
             if _use_rolling_kernels(groups, ca.chunks()) {
                 // this cast is a no-op for floats
                 let s = ca
@@ -416,7 +416,7 @@ where
     }
 }
 
-unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsProxy) -> Series
+unsafe fn agg_median_generic<T, K>(ca: &ChunkedArray<T>, groups: &GroupsType) -> Series
 where
     T: PolarsNumericType,
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
@@ -425,7 +425,7 @@ where
     <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
 {
     match groups {
-        GroupsProxy::Idx(groups) => {
+        GroupsType::Idx(groups) => {
             let ca = ca.rechunk();
             agg_helper_idx_on_all::<K, _>(groups, |idx| {
                 debug_assert!(idx.len() <= ca.len());
@@ -436,7 +436,7 @@ where
                 take._median()
             })
         },
-        GroupsProxy::Slice { .. } => {
+        GroupsType::Slice { .. } => {
             agg_quantile_generic::<T, K>(ca, groups, 0.5, QuantileMethod::Linear)
         },
     }
@@ -448,7 +448,7 @@ where
 #[cfg(feature = "bitwise")]
 unsafe fn bitwise_agg<T: PolarsNumericType>(
     ca: &ChunkedArray<T>,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     f: fn(&ChunkedArray<T>) -> Option<T::Native>,
 ) -> Series
 where
@@ -463,7 +463,7 @@ where
     };
 
     match groups {
-        GroupsProxy::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
+        GroupsType::Idx(groups) => agg_helper_idx_on_all::<T, _>(groups, |idx| {
             debug_assert!(idx.len() <= s.len());
             if idx.is_empty() {
                 None
@@ -472,7 +472,7 @@ where
                 f(&take)
             }
         }),
-        GroupsProxy::Slice { groups, .. } => _agg_helper_slice::<T, _>(groups, |[first, len]| {
+        GroupsType::Slice { groups, .. } => _agg_helper_slice::<T, _>(groups, |[first, len]| {
             debug_assert!(len <= s.len() as IdxSize);
             if len == 0 {
                 None
@@ -494,21 +494,21 @@ where
     /// # Safety
     ///
     /// No bounds checks on `groups`.
-    pub(crate) unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
         unsafe { bitwise_agg(self, groups, ChunkBitwiseReduce::and_reduce) }
     }
 
     /// # Safety
     ///
     /// No bounds checks on `groups`.
-    pub(crate) unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
         unsafe { bitwise_agg(self, groups, ChunkBitwiseReduce::or_reduce) }
     }
 
     /// # Safety
     ///
     /// No bounds checks on `groups`.
-    pub(crate) unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
         unsafe { bitwise_agg(self, groups, ChunkBitwiseReduce::xor_reduce) }
     }
 }
@@ -526,7 +526,7 @@ where
         + TakeExtremum,
     ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native>,
 {
-    pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
@@ -538,7 +538,7 @@ where
             _ => {},
         }
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
@@ -559,7 +559,7 @@ where
                     }
                 })
             },
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => {
@@ -599,7 +599,7 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
@@ -612,7 +612,7 @@ where
         }
 
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
@@ -633,7 +633,7 @@ where
                     }
                 })
             },
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => {
@@ -673,9 +673,9 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
@@ -694,7 +694,7 @@ where
                     }
                 })
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
@@ -743,9 +743,9 @@ where
         + ChunkAgg<T::Native>,
     T::Native: Pow<T::Native, Output = T::Native>,
 {
-    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsType) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
@@ -786,7 +786,7 @@ where
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
@@ -823,13 +823,13 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series
     where
         <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
     {
         let ca = &self.0.rechunk();
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca = ca.rechunk();
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
@@ -846,7 +846,7 @@ where
                     out.map(|flt| NumCast::from(flt).unwrap())
                 })
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = self.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
@@ -889,13 +889,13 @@ where
             },
         }
     }
-    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series
     where
         <T as datatypes::PolarsNumericType>::Native: num_traits::Float,
     {
         let ca = &self.0.rechunk();
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let arr = ca.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
                 agg_helper_idx_on_all::<T, _>(groups, |idx| {
@@ -911,7 +911,7 @@ where
                     out.map(|flt| NumCast::from(flt.sqrt()).unwrap())
                 })
             },
-            GroupsProxy::Slice { groups, .. } => {
+            GroupsType::Slice { groups, .. } => {
                 if _use_rolling_kernels(groups, self.chunks()) {
                     let arr = ca.downcast_iter().next().unwrap();
                     let values = arr.values().as_slice();
@@ -962,26 +962,26 @@ where
 impl Float32Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
-        groups: &GroupsProxy,
+        groups: &GroupsType,
         quantile: f64,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float32Type>(self, groups, quantile, method)
     }
-    pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float32Type>(self, groups)
     }
 }
 impl Float64Chunked {
     pub(crate) unsafe fn agg_quantile(
         &self,
-        groups: &GroupsProxy,
+        groups: &GroupsType,
         quantile: f64,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
-    pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)
     }
 }
@@ -992,9 +992,9 @@ where
     ChunkedArray<T>: IntoSeries + ChunkAgg<T::Native> + ChunkVar,
     T::Native: NumericNative + Ord,
 {
-    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_mean(&self, groups: &GroupsType) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca = self.rechunk();
                 let arr = ca.downcast_get(0).unwrap();
                 _agg_helper_idx::<Float64Type, _>(groups, |(first, idx)| {
@@ -1041,7 +1041,7 @@ where
                     }
                 })
             },
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => {
@@ -1067,9 +1067,9 @@ where
         }
     }
 
-    pub(crate) unsafe fn agg_var(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+    pub(crate) unsafe fn agg_var(&self, groups: &GroupsType, ddof: u8) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
@@ -1085,7 +1085,7 @@ where
                     }
                 })
             },
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => {
@@ -1116,9 +1116,9 @@ where
             },
         }
     }
-    pub(crate) unsafe fn agg_std(&self, groups: &GroupsProxy, ddof: u8) -> Series {
+    pub(crate) unsafe fn agg_std(&self, groups: &GroupsType, ddof: u8) -> Series {
         match groups {
-            GroupsProxy::Idx(groups) => {
+            GroupsType::Idx(groups) => {
                 let ca_self = self.rechunk();
                 let arr = ca_self.downcast_iter().next().unwrap();
                 let no_nulls = arr.null_count() == 0;
@@ -1135,7 +1135,7 @@ where
                     out.map(|v| v.sqrt())
                 })
             },
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => {
@@ -1169,13 +1169,13 @@ where
 
     pub(crate) unsafe fn agg_quantile(
         &self,
-        groups: &GroupsProxy,
+        groups: &GroupsType,
         quantile: f64,
         method: QuantileMethod,
     ) -> Series {
         agg_quantile_generic::<_, Float64Type>(self, groups, quantile, method)
     }
-    pub(crate) unsafe fn agg_median(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_median(&self, groups: &GroupsType) -> Series {
         agg_median_generic::<_, Float64Type>(self, groups)
     }
 }

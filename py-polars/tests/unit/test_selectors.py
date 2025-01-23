@@ -710,6 +710,12 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     with pytest.raises(TypeError, match=r"unsupported .* \('Expr' - 'Selector'\)"):
         df.select(pl.col("colx") - cs.matches("[yz]$"))
 
+    with pytest.raises(TypeError, match=r"unsupported .* \('Expr' \+ 'Selector'\)"):
+        df.select(pl.col("colx") + cs.numeric())
+
+    with pytest.raises(TypeError, match=r"unsupported .* \('Selector' \+ 'Selector'\)"):
+        df.select(cs.string() + cs.numeric())
+
     # complement
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
         "abc": pl.UInt16,

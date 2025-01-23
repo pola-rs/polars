@@ -9,11 +9,7 @@ pub struct IRBuilder<'a> {
 }
 
 impl<'a> IRBuilder<'a> {
-    pub(crate) fn new(
-        root: Node,
-        expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<IR>,
-    ) -> Self {
+    pub fn new(root: Node, expr_arena: &'a mut Arena<AExpr>, lp_arena: &'a mut Arena<IR>) -> Self {
         IRBuilder {
             root,
             expr_arena,
@@ -21,11 +17,7 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
-    pub(crate) fn from_lp(
-        lp: IR,
-        expr_arena: &'a mut Arena<AExpr>,
-        lp_arena: &'a mut Arena<IR>,
-    ) -> Self {
+    pub fn from_lp(lp: IR, expr_arena: &'a mut Arena<AExpr>, lp_arena: &'a mut Arena<IR>) -> Self {
         let root = lp_arena.add(lp);
         IRBuilder {
             root,
@@ -34,7 +26,7 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
-    fn add_alp(self, lp: IR) -> Self {
+    pub fn add_alp(self, lp: IR) -> Self {
         let node = self.lp_arena.add(lp);
         IRBuilder::new(node, self.expr_arena, self.lp_arena)
     }
@@ -59,7 +51,7 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
-    pub(crate) fn project_simple_nodes<I, N>(self, nodes: I) -> PolarsResult<Self>
+    pub fn project_simple_nodes<I, N>(self, nodes: I) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = N>,
         N: Into<Node>,
@@ -96,7 +88,7 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
-    pub(crate) fn project_simple<I, S>(self, names: I) -> PolarsResult<Self>
+    pub fn project_simple<I, S>(self, names: I) -> PolarsResult<Self>
     where
         I: IntoIterator<Item = S>,
         I::IntoIter: ExactSizeIterator,
@@ -141,11 +133,11 @@ impl<'a> IRBuilder<'a> {
         }
     }
 
-    pub(crate) fn schema(&'a self) -> Cow<'a, SchemaRef> {
+    pub fn schema(&'a self) -> Cow<'a, SchemaRef> {
         self.lp_arena.get(self.root).schema(self.lp_arena)
     }
 
-    pub(crate) fn with_columns(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
+    pub fn with_columns(self, exprs: Vec<ExprIR>, options: ProjectionOptions) -> Self {
         let schema = self.schema();
         let mut new_schema = (**schema).clone();
 
@@ -161,11 +153,7 @@ impl<'a> IRBuilder<'a> {
         self.add_alp(lp)
     }
 
-    pub(crate) fn with_columns_simple<I, J: Into<Node>>(
-        self,
-        exprs: I,
-        options: ProjectionOptions,
-    ) -> Self
+    pub fn with_columns_simple<I, J: Into<Node>>(self, exprs: I, options: ProjectionOptions) -> Self
     where
         I: IntoIterator<Item = J>,
     {
@@ -199,7 +187,7 @@ impl<'a> IRBuilder<'a> {
     }
 
     // call this if the schema needs to be updated
-    pub(crate) fn explode(self, columns: Arc<[PlSmallStr]>) -> Self {
+    pub fn explode(self, columns: Arc<[PlSmallStr]>) -> Self {
         let lp = IR::MapFunction {
             input: self.root,
             function: FunctionIR::Explode {

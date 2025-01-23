@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import pytest
+
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 
 
@@ -86,6 +89,12 @@ def test_str_zfill_expr() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_str_zfill_wrong_length() -> None:
+    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
+    with pytest.raises(ComputeError, match="should have equal or unit length"):
+        df.select(pl.col("num").str.zfill(pl.Series([1, 2])))
 
 
 def test_pad_end_unicode() -> None:

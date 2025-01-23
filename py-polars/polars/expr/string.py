@@ -8,6 +8,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     issue_deprecation_warning,
 )
 from polars._utils.parse import parse_into_expression
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
+        UnicodeForm,
     )
     from polars._utils.various import NoDefault
 
@@ -313,6 +315,7 @@ class ExprStringNameSpace:
             msg = "`dtype` must be of type {Date, Datetime, Time}"
             raise ValueError(msg)
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
@@ -2929,6 +2932,47 @@ class ExprStringNameSpace:
         └──────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.str_escape_regex())
+
+    def normalize(self, form: UnicodeForm = "NFC") -> Expr:
+        """
+        Returns the Unicode normal form of the string values.
+
+        This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        Parameters
+        ----------
+        form : {'NFC', 'NFKC', 'NFD', 'NFKD'}
+            Unicode form to use.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["01²", "ＫＡＤＯＫＡＷＡ"]})
+        >>> new = df.with_columns(
+        ...     nfc=pl.col("text").str.normalize("NFC"),
+        ...     nfkc=pl.col("text").str.normalize("NFKC"),
+        ... )
+        >>> new
+        shape: (2, 3)
+        ┌──────────────────┬──────────────────┬──────────┐
+        │ text             ┆ nfc              ┆ nfkc     │
+        │ ---              ┆ ---              ┆ ---      │
+        │ str              ┆ str              ┆ str      │
+        ╞══════════════════╪══════════════════╪══════════╡
+        │ 01²              ┆ 01²              ┆ 012      │
+        │ ＫＡＤＯＫＡＷＡ    ┆ ＫＡＤＯＫＡＷＡ    ┆ KADOKAWA │
+        └──────────────────┴──────────────────┴──────────┘
+        >>> new.select(pl.all().str.len_bytes())
+        shape: (2, 3)
+        ┌──────┬─────┬──────┐
+        │ text ┆ nfc ┆ nfkc │
+        │ ---  ┆ --- ┆ ---  │
+        │ u32  ┆ u32 ┆ u32  │
+        ╞══════╪═════╪══════╡
+        │ 4    ┆ 4   ┆ 3    │
+        │ 24   ┆ 24  ┆ 8    │
+        └──────┴─────┴──────┘
+        """  # noqa: RUF002
+        return wrap_expr(self._pyexpr.str_normalize(form))
 
 
 def _validate_format_argument(format: str | None) -> None:

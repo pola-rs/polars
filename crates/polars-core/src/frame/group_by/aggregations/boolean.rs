@@ -20,7 +20,7 @@ where
 #[cfg(feature = "bitwise")]
 unsafe fn bitwise_agg(
     ca: &BooleanChunked,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     f: fn(&BooleanChunked) -> Option<bool>,
 ) -> Series {
     // Prevent a rechunk for every individual group.
@@ -31,7 +31,7 @@ unsafe fn bitwise_agg(
     };
 
     match groups {
-        GroupsProxy::Idx(groups) => _agg_helper_idx_bool::<_>(groups, |(_, idx)| {
+        GroupsType::Idx(groups) => _agg_helper_idx_bool::<_>(groups, |(_, idx)| {
             debug_assert!(idx.len() <= s.len());
             if idx.is_empty() {
                 None
@@ -40,7 +40,7 @@ unsafe fn bitwise_agg(
                 f(&take)
             }
         }),
-        GroupsProxy::Slice { groups, .. } => _agg_helper_slice_bool::<_>(groups, |[first, len]| {
+        GroupsType::Slice { groups, .. } => _agg_helper_slice_bool::<_>(groups, |[first, len]| {
             debug_assert!(len <= s.len() as IdxSize);
             if len == 0 {
                 None
@@ -54,21 +54,21 @@ unsafe fn bitwise_agg(
 
 #[cfg(feature = "bitwise")]
 impl BooleanChunked {
-    pub(crate) unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
         bitwise_agg(self, groups, ChunkBitwiseReduce::and_reduce)
     }
 
-    pub(crate) unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
         bitwise_agg(self, groups, ChunkBitwiseReduce::or_reduce)
     }
 
-    pub(crate) unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
         bitwise_agg(self, groups, ChunkBitwiseReduce::xor_reduce)
     }
 }
 
 impl BooleanChunked {
-    pub(crate) unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
@@ -83,7 +83,7 @@ impl BooleanChunked {
         let arr = ca_self.downcast_iter().next().unwrap();
         let no_nulls = arr.null_count() == 0;
         match groups {
-            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
+            GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
                 debug_assert!(idx.len() <= self.len());
                 if idx.is_empty() {
                     None
@@ -95,7 +95,7 @@ impl BooleanChunked {
                     take_min_bool_iter_unchecked_nulls(arr, idx2usize(idx), idx.len() as IdxSize)
                 }
             }),
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
@@ -111,7 +111,7 @@ impl BooleanChunked {
             }),
         }
     }
-    pub(crate) unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         // faster paths
         match (self.is_sorted_flag(), self.null_count()) {
             (IsSorted::Ascending, 0) => {
@@ -127,7 +127,7 @@ impl BooleanChunked {
         let arr = ca_self.downcast_iter().next().unwrap();
         let no_nulls = arr.null_count() == 0;
         match groups {
-            GroupsProxy::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
+            GroupsType::Idx(groups) => _agg_helper_idx_bool(groups, |(first, idx)| {
                 debug_assert!(idx.len() <= self.len());
                 if idx.is_empty() {
                     None
@@ -139,7 +139,7 @@ impl BooleanChunked {
                     take_max_bool_iter_unchecked_nulls(arr, idx2usize(idx), idx.len() as IdxSize)
                 }
             }),
-            GroupsProxy::Slice {
+            GroupsType::Slice {
                 groups: groups_slice,
                 ..
             } => _agg_helper_slice_bool(groups_slice, |[first, len]| {
@@ -155,7 +155,7 @@ impl BooleanChunked {
             }),
         }
     }
-    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    pub(crate) unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.cast_with_options(&IDX_DTYPE, CastOptions::Overflowing)
             .unwrap()
             .agg_sum(groups)

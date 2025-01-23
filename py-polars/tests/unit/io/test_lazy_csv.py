@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
@@ -438,3 +439,11 @@ def test_scan_csv_with_column_names_nonexistent_file() -> None:
     # Upon collection, it should fail
     with pytest.raises(FileNotFoundError):
         result.collect()
+
+
+def test_select_nonexistent_column() -> None:
+    csv = "a\n1"
+    f = io.StringIO(csv)
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        pl.scan_csv(f).select("b").collect()

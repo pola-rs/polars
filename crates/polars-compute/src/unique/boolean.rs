@@ -1,5 +1,5 @@
 use arrow::array::{Array, BooleanArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::ArrowDataType;
 
 use super::{GenericUniqueKernel, RangedUniqueKernel};
@@ -46,7 +46,7 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
     }
 
     fn finalize_unique(self) -> Self::Array {
-        let mut values = MutableBitmap::with_capacity(self.seen.count_ones() as usize);
+        let mut values = BitmapBuilder::with_capacity(self.seen.count_ones() as usize);
 
         if self.seen & 0b001 != 0 {
             values.push(false);
@@ -55,7 +55,7 @@ impl RangedUniqueKernel for BooleanUniqueKernelState {
             values.push(true);
         }
         let validity = if self.seen & 0b100 != 0 {
-            let mut validity = MutableBitmap::with_capacity(values.len() + 1);
+            let mut validity = BitmapBuilder::with_capacity(values.len() + 1);
             validity.extend_constant(values.len(), true);
             validity.push(false);
             values.push(false);

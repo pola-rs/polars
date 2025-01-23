@@ -1,4 +1,5 @@
 use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
+use polars_error::check_signals;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
 use super::*;
@@ -9,11 +10,11 @@ use crate::series::BitRepr;
 use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a group_by operation.
-pub trait IntoGroupsProxy {
+pub trait IntoGroupsType {
     /// Create the tuples need for a group_by operation.
     ///     * The first value in the tuple is the first index of the group.
     ///     * The second value in the tuple is the indexes of the groups including the first value.
-    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
         unimplemented!()
     }
 }
@@ -23,7 +24,7 @@ fn group_multithreaded<T: PolarsDataType>(ca: &ChunkedArray<T>) -> bool {
     ca.len() > 1000 && POOL.current_num_threads() > 1
 }
 
-fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsProxy
+fn num_groups_proxy<T>(ca: &ChunkedArray<T>, multithreaded: bool, sorted: bool) -> GroupsType
 where
     T: PolarsNumericType,
     T::Native: TotalHash + TotalEq + DirtyHash + ToTotalOrd,
@@ -127,22 +128,22 @@ where
 }
 
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
-impl IntoGroupsProxy for CategoricalChunked {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+impl IntoGroupsType for CategoricalChunked {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         Ok(self.group_tuples_perfect(multithreaded, sorted))
     }
 }
 
-impl<T> IntoGroupsProxy for ChunkedArray<T>
+impl<T> IntoGroupsType for ChunkedArray<T>
 where
     T: PolarsNumericType,
     T::Native: NumCast,
 {
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         // sorted path
         if self.is_sorted_ascending_flag() || self.is_sorted_descending_flag() {
             // don't have to pass `sorted` arg, GroupSlice is always sorted.
-            return Ok(GroupsProxy::Slice {
+            return Ok(GroupsType::Slice {
                 groups: self.rechunk().create_groups_from_sorted(multithreaded),
                 rolling: false,
             });
@@ -234,11 +235,12 @@ where
                 num_groups_proxy(ca, multithreaded, sorted)
             },
         };
+        check_signals()?;
         Ok(out)
     }
 }
-impl IntoGroupsProxy for BooleanChunked {
-    fn group_tuples(&self, mut multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+impl IntoGroupsType for BooleanChunked {
+    fn group_tuples(&self, mut multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         multithreaded &= POOL.current_num_threads() > 1;
 
         #[cfg(feature = "performant")]
@@ -260,20 +262,43 @@ impl IntoGroupsProxy for BooleanChunked {
     }
 }
 
-impl IntoGroupsProxy for StringChunked {
+impl IntoGroupsType for StringChunked {
     #[allow(clippy::needless_lifetimes)]
-    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples<'a>(&'a self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.as_binary().group_tuples(multithreaded, sorted)
     }
 }
 
-impl IntoGroupsProxy for BinaryChunked {
+impl IntoGroupsType for BinaryChunked {
     #[allow(clippy::needless_lifetimes)]
     fn group_tuples<'a>(
         &'a self,
         mut multithreaded: bool,
         sorted: bool,
-    ) -> PolarsResult<GroupsProxy> {
+    ) -> PolarsResult<GroupsType> {
+        multithreaded &= POOL.current_num_threads() > 1;
+        let bh = self.to_bytes_hashes(multithreaded, Default::default());
+
+        let out = if multithreaded {
+            let n_partitions = bh.len();
+            // Take slices so that the vecs are not cloned.
+            let bh = bh.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
+            group_by_threaded_slice(bh, n_partitions, sorted)
+        } else {
+            group_by(bh[0].iter(), sorted)
+        };
+        check_signals()?;
+        Ok(out)
+    }
+}
+
+impl IntoGroupsType for BinaryOffsetChunked {
+    #[allow(clippy::needless_lifetimes)]
+    fn group_tuples<'a>(
+        &'a self,
+        mut multithreaded: bool,
+        sorted: bool,
+    ) -> PolarsResult<GroupsType> {
         multithreaded &= POOL.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
@@ -289,36 +314,14 @@ impl IntoGroupsProxy for BinaryChunked {
     }
 }
 
-impl IntoGroupsProxy for BinaryOffsetChunked {
-    #[allow(clippy::needless_lifetimes)]
-    fn group_tuples<'a>(
-        &'a self,
-        mut multithreaded: bool,
-        sorted: bool,
-    ) -> PolarsResult<GroupsProxy> {
-        multithreaded &= POOL.current_num_threads() > 1;
-        let bh = self.to_bytes_hashes(multithreaded, Default::default());
-
-        let out = if multithreaded {
-            let n_partitions = bh.len();
-            // Take slices so that the vecs are not cloned.
-            let bh = bh.iter().map(|v| v.as_slice()).collect::<Vec<_>>();
-            group_by_threaded_slice(bh, n_partitions, sorted)
-        } else {
-            group_by(bh[0].iter(), sorted)
-        };
-        Ok(out)
-    }
-}
-
-impl IntoGroupsProxy for ListChunked {
+impl IntoGroupsType for ListChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]
     fn group_tuples<'a>(
         &'a self,
         mut multithreaded: bool,
         sorted: bool,
-    ) -> PolarsResult<GroupsProxy> {
+    ) -> PolarsResult<GroupsType> {
         multithreaded &= POOL.current_num_threads() > 1;
         let by = &[self.clone().into_column()];
         let ca = if multithreaded {
@@ -332,24 +335,20 @@ impl IntoGroupsProxy for ListChunked {
 }
 
 #[cfg(feature = "dtype-array")]
-impl IntoGroupsProxy for ArrayChunked {
+impl IntoGroupsType for ArrayChunked {
     #[allow(clippy::needless_lifetimes)]
     #[allow(unused_variables)]
-    fn group_tuples<'a>(
-        &'a self,
-        _multithreaded: bool,
-        _sorted: bool,
-    ) -> PolarsResult<GroupsProxy> {
+    fn group_tuples<'a>(&'a self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
         todo!("grouping FixedSizeList not yet supported")
     }
 }
 
 #[cfg(feature = "object")]
-impl<T> IntoGroupsProxy for ObjectChunked<T>
+impl<T> IntoGroupsType for ObjectChunked<T>
 where
     T: PolarsObject,
 {
-    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, _multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         Ok(group_by(self.into_iter(), sorted))
     }
 }

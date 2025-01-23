@@ -168,7 +168,7 @@ impl PhysicalExpr for ColumnExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let c = self.evaluate(df, state)?;
@@ -181,18 +181,6 @@ impl PhysicalExpr for ColumnExpr {
 
     fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
         lv.insert(self.name.clone());
-    }
-    fn replace_elementwise_const_columns(
-        &self,
-        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
-    ) -> Option<Arc<dyn PhysicalExpr>> {
-        if let Some(av) = const_columns.get(&self.name) {
-            let lv = LiteralValue::from(av.clone());
-            let le = LiteralExpr::new(lv, self.expr.clone());
-            return Some(Arc::new(le));
-        }
-
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -211,7 +199,7 @@ impl PartitionedAggregation for ColumnExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         self.evaluate(df, state)
@@ -220,7 +208,7 @@ impl PartitionedAggregation for ColumnExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

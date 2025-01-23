@@ -7,7 +7,7 @@ use super::*;
 ///
 /// Executors have other executors as input. By having a tree of executors we can execute the
 /// physical plan until the last executor is evaluated.
-pub trait Executor: Send {
+pub trait Executor: Send + Sync {
     fn execute(&mut self, cache: &mut ExecutionState) -> PolarsResult<DataFrame>;
 }
 

@@ -6,7 +6,7 @@ use polars_core::prelude::{
 };
 use polars_core::scalar::Scalar;
 use polars_core::series::{IsSorted, Series};
-use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
+use polars_core::utils::arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::hive;
 use polars_io::predicates::PhysicalIoExpr;
@@ -587,7 +587,7 @@ impl RowGroupDecoder {
         }
 
         let mask_bitmap = {
-            let mut mask_bitmap = MutableBitmap::with_capacity(mask.len());
+            let mut mask_bitmap = BitmapBuilder::with_capacity(mask.len());
 
             for chunk in mask.downcast_iter() {
                 match chunk.validity() {

@@ -6,7 +6,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{Array, PrimitiveArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::ArrowDataType;
 use polars_utils::slice::Slice2Uninit;
 
@@ -154,7 +154,7 @@ pub unsafe fn decode(
         return PrimitiveArray::new(ArrowDataType::UInt32, values.into(), None);
     }
 
-    let mut validity = MutableBitmap::with_capacity(rows.len());
+    let mut validity = BitmapBuilder::with_capacity(rows.len());
     validity.extend_constant(values.len(), true);
 
     let start_len = values.len();
@@ -175,6 +175,6 @@ pub unsafe fn decode(
     PrimitiveArray::new(
         ArrowDataType::UInt32,
         values.into(),
-        Some(validity.freeze()),
+        validity.into_opt_validity(),
     )
 }

@@ -5,7 +5,7 @@ use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};
 use pyo3::{intern, BoundObject};
 
 use super::datetime::{
-    elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime, timestamp_to_naive_datetime,
+    datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,
 };
 use super::{decimal_to_digits, struct_dict};
 use crate::prelude::*;
@@ -78,27 +78,12 @@ impl<'py> IntoPyObject<'py> for &Wrap<&DatetimeChunked> {
     type Error = PyErr;
 
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let time_zone = self.0.time_zone();
-        if time_zone.is_some() {
-            // Switch to more efficient code path in
-            // https://github.com/pola-rs/polars/issues/16199
-            let utils = pl_utils(py).bind(py);
-            let convert = utils.getattr(intern!(py, "to_py_datetime"))?;
-            let time_unit = self.0.time_unit().to_ascii();
-            let time_zone = time_zone.as_deref().into_pyobject(py)?;
-            let iter = self
-                .0
-                .iter()
-                .map(|opt_v| opt_v.map(|v| convert.call1((v, time_unit, &time_zone)).unwrap()));
-            PyList::new(py, iter)
-        } else {
-            let time_unit = self.0.time_unit();
-            let iter = self
-                .0
-                .iter()
-                .map(|opt_v| opt_v.map(|v| timestamp_to_naive_datetime(v, time_unit)));
-            PyList::new(py, iter)
-        }
+        let time_zone = self.0.time_zone().as_ref();
+        let time_unit = self.0.time_unit();
+        let iter = self.0.iter().map(|opt_v| {
+            opt_v.map(|v| datetime_to_py_object(py, v, time_unit, time_zone).unwrap())
+        });
+        PyList::new(py, iter)
     }
 }
 

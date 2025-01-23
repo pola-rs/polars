@@ -12,7 +12,7 @@ use std::cmp::Ordering;
 
 pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
@@ -113,7 +113,7 @@ where
 }
 
 fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
-    let mut validity = MutableBitmap::with_capacity(len);
+    let mut validity = BitmapBuilder::with_capacity(len);
     if nulls_last {
         validity.extend_constant(len - null_count, true);
         validity.extend_constant(null_count, false);
@@ -121,7 +121,7 @@ fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
         validity.extend_constant(null_count, false);
         validity.extend_constant(len - null_count, true);
     }
-    validity.into()
+    validity.freeze()
 }
 
 macro_rules! sort_with_fast_path {
@@ -688,7 +688,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         if self.null_count() == 0 {
             let len = self.len();
             let n_set = self.sum().unwrap() as usize;
-            let mut bitmap = MutableBitmap::with_capacity(len);
+            let mut bitmap = BitmapBuilder::with_capacity(len);
             let (first, second, n_set) = if options.descending {
                 (true, false, len - n_set)
             } else {
@@ -696,7 +696,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             };
             bitmap.extend_constant(len - n_set, first);
             bitmap.extend_constant(n_set, second);
-            let arr = BooleanArray::from_data_default(bitmap.into(), None);
+            let arr = BooleanArray::from_data_default(bitmap.freeze(), None);
 
             return unsafe { self.with_chunks(vec![Box::new(arr) as ArrayRef]) };
         }

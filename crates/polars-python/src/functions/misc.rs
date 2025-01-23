@@ -67,5 +67,7 @@ pub fn register_plugin_function(
 #[pyfunction]
 pub fn __register_startup_deps() {
     #[cfg(feature = "object")]
-    crate::on_startup::register_startup_deps()
+    unsafe {
+        crate::on_startup::register_startup_deps(true)
+    }
 }

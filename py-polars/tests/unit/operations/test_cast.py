@@ -681,3 +681,12 @@ def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
     s = pl.Series([1, 2]).set_sorted()
     assert s.flags["SORTED_ASC"]
     assert not s.cast(pl.String).flags["SORTED_ASC"]
+
+
+def test_cast_integer_to_decimal() -> None:
+    s = pl.Series([1, 2, 3])
+    result = s.cast(pl.Decimal(10, 2))
+    expected = pl.Series(
+        "", [Decimal("1.00"), Decimal("2.00"), Decimal("3.00")], pl.Decimal(10, 2)
+    )
+    assert_series_equal(result, expected)

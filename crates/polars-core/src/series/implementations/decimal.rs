@@ -140,22 +140,22 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.agg_helper(|ca| ca.agg_sum(groups))
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         self.agg_helper(|ca| ca.agg_min(groups))
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.agg_helper(|ca| ca.agg_max(groups))
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.agg_helper(|ca| ca.agg_list(groups))
     }
 
@@ -176,7 +176,7 @@ impl private::PrivateSeries for SeriesWrap<DecimalChunked> {
         ((&self.0) / rhs).map(|ca| ca.into_series())
     }
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.group_tuples(multithreaded, sorted)
     }
     fn arg_sort_multiple(
@@ -225,13 +225,20 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        // 3 refs
-        // ref Cow
-        // ref SeriesTrait
-        // ref ChunkedArray
-        let other = other.to_physical_repr();
-        self.0.append(other.as_ref().as_ref().as_ref())?;
-        Ok(())
+        let mut other = other.to_physical_repr().into_owned();
+        self.0
+            .append_owned(std::mem::take(other._get_inner_mut().as_mut()))
+    }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(std::mem::take(
+            &mut other
+                ._get_inner_mut()
+                .as_any_mut()
+                .downcast_mut::<DecimalChunked>()
+                .unwrap()
+                .0,
+        ))
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -329,6 +336,21 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.has_nulls()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        Ok(self.apply_physical_to_s(|ca| ca.unique().unwrap()))
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        self.0.n_unique()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        self.0.arg_unique()
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }
@@ -418,5 +440,13 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
 
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

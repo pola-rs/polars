@@ -23,6 +23,7 @@ from polars._utils.polars_version import get_polars_version as _get_polars_versi
 
 # TODO: remove need for importing wrap utils at top level
 from polars._utils.wrap import wrap_df, wrap_s  # noqa: F401
+from polars.catalog import Catalog
 from polars.config import Config
 from polars.convert import (
     from_arrow,
@@ -278,6 +279,7 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "Catalog",
     # polars.io.cloud
     "CredentialProvider",
     "CredentialProviderAWS",

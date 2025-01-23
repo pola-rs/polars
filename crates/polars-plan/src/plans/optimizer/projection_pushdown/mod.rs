@@ -427,6 +427,35 @@ impl ProjectionPushDown {
                         file_options.include_file_paths.as_deref(),
                     );
 
+                    if let Some(projection) = file_options.with_columns.as_mut() {
+                        if projection.is_empty() {
+                            match &scan_type {
+                                #[cfg(feature = "parquet")]
+                                FileScan::Parquet { .. } => {},
+                                #[cfg(feature = "ipc")]
+                                FileScan::Ipc { .. } => {},
+                                // Other scan types do not yet support projection of e.g. only the row index or file path
+                                // column - ensure at least 1 column is projected from the file.
+                                _ => {
+                                    *projection = match &file_info.reader_schema {
+                                        Some(Either::Left(s)) => s.iter_names().next(),
+                                        Some(Either::Right(s)) => s.iter_names().next(),
+                                        None => None,
+                                    }
+                                    .into_iter()
+                                    .cloned()
+                                    .collect();
+
+                                    // TODO: Don't know why this works without needing to remove it
+                                    // later.
+                                    acc_projections.push(ColumnNode(
+                                        expr_arena.add(AExpr::Column(projection[0].clone())),
+                                    ));
+                                },
+                            }
+                        }
+                    }
+
                     output_schema = if let Some(ref with_columns) = file_options.with_columns {
                         let mut schema = update_scan_schema(
                             &acc_projections,

@@ -5,7 +5,9 @@ import os
 import random
 import string
 import sys
+import time
 import tracemalloc
+from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
@@ -16,6 +18,7 @@ from polars.testing.parametric import load_profile
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from types import ModuleType
     from typing import Any
 
     FixtureRequest = Any
@@ -205,7 +208,11 @@ class MemoryUsage:
         return tracemalloc.get_traced_memory()[1]
 
 
-@pytest.fixture
+# The bizarre syntax is from
+# https://github.com/pytest-dev/pytest/issues/1368#issuecomment-2344450259 - we
+# need to mark any test using this fixture as slow because we have a sleep
+# added to work around a CPython bug, see the end of the function.
+@pytest.fixture(params=[pytest.param(0, marks=pytest.mark.slow)])
 def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     """
     Provide an API for measuring peak memory usage.
@@ -231,6 +238,10 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
     try:
         yield MemoryUsage()
     finally:
+        # Workaround for https://github.com/python/cpython/issues/128679
+        time.sleep(1)
+        gc.collect()
+
         tracemalloc.stop()
 
 
@@ -251,3 +262,33 @@ def test_global_and_local(
             yield
     else:
         yield
+
+
+@contextmanager
+def mock_module_import(
+    name: str, module: ModuleType, *, replace_if_exists: bool = False
+) -> Generator[None, None, None]:
+    """
+    Mock an optional module import for the duration of a context.
+
+    Parameters
+    ----------
+    name
+        The name of the module to mock.
+    module
+        A ModuleType instance representing the mocked module.
+    replace_if_exists
+        Whether to replace the module if it already exists in `sys.modules` (defaults to
+        False, meaning that if the module is already imported, it will not be replaced).
+    """
+    if (original := sys.modules.get(name, None)) is not None and not replace_if_exists:
+        yield
+    else:
+        sys.modules[name] = module
+        try:
+            yield
+        finally:
+            if original is not None:
+                sys.modules[name] = original
+            else:
+                del sys.modules[name]

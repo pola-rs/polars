@@ -180,6 +180,31 @@ def test_nested_enum_concat() -> None:
     assert_series_equal(s1.extend(s2), expected)
 
 
+def test_nested_enum_agg_sort_18026() -> None:
+    df = (
+        pl.DataFrame({"a": [1, 1, 2, 2], "b": ["Y", "Z", "Z", "Y"]})
+        .cast({"b": pl.Enum(["Z", "Y"])})
+        .with_columns(pl.struct("b", "a").alias("c"))
+    )
+    result = df.group_by("a").agg("c").sort("a")
+    expected = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "c": [
+                [{"b": "Y", "a": 1}, {"b": "Z", "a": 1}],
+                [{"b": "Z", "a": 2}, {"b": "Y", "a": 2}],
+            ],
+        },
+        schema={
+            "a": pl.Int64,
+            "c": pl.List(
+                pl.Struct([pl.Field("b", pl.Enum(["Z", "Y"])), pl.Field("a", pl.Int64)])
+            ),
+        },
+    )
+    assert_frame_equal(result, expected)
+
+
 def test_casting_to_an_enum_from_utf() -> None:
     dtype = pl.Enum(["a", "b", "c"])
     s = pl.Series([None, "a", "b", "c"])

@@ -275,6 +275,21 @@ def test_string_like_multiline() -> None:
         assert df.sql(f"SELECT txt FROM self WHERE txt LIKE '{s}'").item() == s
 
 
+@pytest.mark.parametrize("form", ["NFKC", "NFKD"])
+def test_string_normalize(form: str) -> None:
+    df = pl.DataFrame({"txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"]})  # noqa: RUF001
+    res = df.sql(
+        f"""
+        SELECT txt, NORMALIZE(txt,{form}) AS norm_txt
+        FROM self
+        """
+    )
+    assert res.to_dict(as_series=False) == {
+        "txt": ["Ｔｅｓｔ", "𝕋𝕖𝕤𝕥", "𝕿𝖊𝖘𝖙", "𝗧𝗲𝘀𝘁", "Ⓣⓔⓢⓣ"],  # noqa: RUF001
+        "norm_txt": ["Test", "Test", "Test", "Test", "Test"],
+    }
+
+
 def test_string_position() -> None:
     df = pl.Series(
         name="city",

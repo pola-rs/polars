@@ -27,7 +27,10 @@ pub struct LazyCsvReader {
 #[cfg(feature = "csv")]
 impl LazyCsvReader {
     /// Re-export to shorten code.
-    fn map_parse_options<F: Fn(CsvParseOptions) -> CsvParseOptions>(mut self, map_func: F) -> Self {
+    pub fn map_parse_options<F: Fn(CsvParseOptions) -> CsvParseOptions>(
+        mut self,
+        map_func: F,
+    ) -> Self {
         self.read_options = self.read_options.map_parse_options(map_func);
         self
     }

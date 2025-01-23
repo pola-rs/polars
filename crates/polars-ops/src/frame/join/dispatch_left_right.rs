@@ -87,6 +87,7 @@ pub fn materialize_left_join_from_series(
     } else {
         right.drop(s_right.name()).unwrap()
     };
+    check_signals()?;
 
     #[cfg(feature = "chunked_ids")]
     match (left_idx, right_idx) {

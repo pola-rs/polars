@@ -1,7 +1,7 @@
 use polars_error::PolarsResult;
 
 use crate::array::{new_null_array, ArrayRef, FixedSizeListArray, NullArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::{convert_inner_type, is_nested_null};
 use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
@@ -9,7 +9,7 @@ use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 #[derive(Default)]
 pub struct AnonymousBuilder {
     arrays: Vec<ArrayRef>,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     length: usize,
     pub width: usize,
 }
@@ -50,9 +50,11 @@ impl AnonymousBuilder {
     }
 
     fn init_validity(&mut self) {
-        let mut validity = MutableBitmap::with_capacity(self.arrays.capacity());
-        validity.extend_constant(self.arrays.len(), true);
-        validity.set(self.arrays.len() - 1, false);
+        let mut validity = BitmapBuilder::with_capacity(self.arrays.capacity());
+        if !self.arrays.is_empty() {
+            validity.extend_constant(self.arrays.len() - 1, true);
+            validity.push(false);
+        }
         self.validity = Some(validity)
     }
 
@@ -90,7 +92,8 @@ impl AnonymousBuilder {
             dtype,
             self.length,
             values,
-            self.validity.map(|validity| validity.into()),
+            self.validity
+                .and_then(|validity| validity.into_opt_validity()),
         ))
     }
 }

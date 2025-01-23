@@ -130,7 +130,7 @@ where
     }
 }
 
-fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
+pub fn get_encodings(schema: &ArrowSchema) -> Vec<Vec<Encoding>> {
     schema
         .iter_values()
         .map(|f| transverse(&f.dtype, encoding_map))

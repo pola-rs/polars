@@ -3,15 +3,15 @@ use std::sync::Arc;
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, BooleanArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
 
 /// Concrete [`Growable`] for the [`BooleanArray`].
 pub struct GrowableBoolean<'a> {
     arrays: Vec<&'a BooleanArray>,
     dtype: ArrowDataType,
-    validity: Option<MutableBitmap>,
-    values: MutableBitmap,
+    validity: Option<BitmapBuilder>,
+    values: BitmapBuilder,
 }
 
 impl<'a> GrowableBoolean<'a> {
@@ -30,7 +30,7 @@ impl<'a> GrowableBoolean<'a> {
         Self {
             arrays,
             dtype,
-            values: MutableBitmap::with_capacity(capacity),
+            values: BitmapBuilder::with_capacity(capacity),
             validity: prepare_validity(use_validity, capacity),
         }
     }
@@ -41,8 +41,8 @@ impl<'a> GrowableBoolean<'a> {
 
         BooleanArray::new(
             self.dtype.clone(),
-            values.into(),
-            validity.map(|v| v.into()),
+            values.freeze(),
+            validity.map(|v| v.freeze()),
         )
     }
 }
@@ -55,11 +55,7 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
         let values = array.values();
 
         let (slice, offset, _) = values.as_slice();
-        // SAFETY: invariant offset + length <= slice.len()
-        unsafe {
-            self.values
-                .extend_from_slice_unchecked(slice, start + offset, len);
-        }
+        self.values.extend_from_slice(slice, start + offset, len);
     }
 
     fn extend_validity(&mut self, additional: usize) {
@@ -85,6 +81,10 @@ impl<'a> Growable<'a> for GrowableBoolean<'a> {
 
 impl<'a> From<GrowableBoolean<'a>> for BooleanArray {
     fn from(val: GrowableBoolean<'a>) -> Self {
-        BooleanArray::new(val.dtype, val.values.into(), val.validity.map(|v| v.into()))
+        BooleanArray::new(
+            val.dtype,
+            val.values.freeze(),
+            val.validity.map(|v| v.freeze()),
+        )
     }
 }

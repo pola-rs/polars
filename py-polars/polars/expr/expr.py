@@ -5807,8 +5807,8 @@ class Expr:
         └───────────┴──────────────────┴──────────┘
         """
         if isinstance(other, Collection) and not isinstance(other, str):
-            if isinstance(other, (set, frozenset)):
-                other = list(other)
+            if not isinstance(other, (Sequence, pl.Series)):
+                other = list(other)  # eg: set, frozenset
             other = F.lit(pl.Series(other))._pyexpr
         else:
             other = parse_into_expression(other)

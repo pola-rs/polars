@@ -202,3 +202,10 @@ def test_df_serialize_invalid_type() -> None:
         ComputeError, match="serializing data of type Object is not supported"
     ):
         df.serialize()
+
+
+def test_df_serde_list_of_null_17230() -> None:
+    df = pl.Series([[]], dtype=pl.List(pl.Null)).to_frame()
+    ser = df.serialize(format="json")
+    result = pl.DataFrame.deserialize(io.StringIO(ser), format="json")
+    assert_frame_equal(result, df)

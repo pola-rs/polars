@@ -51,7 +51,7 @@ impl ConversionOptimizer {
         self.scratch.push(expr);
         // traverse all subexpressions and add to the stack
         let expr = unsafe { expr_arena.get_unchecked(expr) };
-        expr.nodes(&mut self.scratch);
+        expr.inputs_rev(&mut self.scratch);
     }
 
     pub(super) fn fill_scratch<N: Borrow<Node>>(&mut self, exprs: &[N], expr_arena: &Arena<AExpr>) {
@@ -100,7 +100,7 @@ impl ConversionOptimizer {
 
             let expr = unsafe { expr_arena.get_unchecked(current_expr_node) };
             // traverse subexpressions and add to the stack
-            expr.nodes(&mut self.scratch)
+            expr.inputs_rev(&mut self.scratch)
         }
 
         Ok(())

@@ -10,6 +10,8 @@ mod memory;
 use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
+#[cfg(feature = "catalog")]
+use polars_python::catalog::PyCatalogClient;
 #[cfg(feature = "polars_cloud")]
 use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;
@@ -238,6 +240,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "clipboard")]
     m.add_wrapped(wrap_pyfunction!(functions::write_clipboard_string))
         .unwrap();
+    #[cfg(feature = "catalog")]
+    m.add_class::<PyCatalogClient>().unwrap();
 
     // Functions - meta
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))

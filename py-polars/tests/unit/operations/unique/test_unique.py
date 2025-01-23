@@ -117,15 +117,16 @@ def test_sorted_unique_dates() -> None:
     ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
-def test_unique_null() -> None:
+@pytest.mark.parametrize("maintain_order", [True, False])
+def test_unique_null(maintain_order: bool) -> None:
     s0 = pl.Series([])
-    assert_series_equal(s0.unique(), s0)
+    assert_series_equal(s0.unique(maintain_order=maintain_order), s0)
 
     s1 = pl.Series([None])
-    assert_series_equal(s1.unique(), s1)
+    assert_series_equal(s1.unique(maintain_order=maintain_order), s1)
 
     s2 = pl.Series([None, None])
-    assert_series_equal(s2.unique(), s1)
+    assert_series_equal(s2.unique(maintain_order=maintain_order), s1)
 
 
 @pytest.mark.parametrize(
@@ -257,3 +258,22 @@ def test_predicate_pushdown_unique() -> None:
     print(q.filter(pl.col("id").is_in([1, 2, 3])).explain())
     assert not q.filter(pl.col("id").is_in([1, 2, 3])).explain().startswith("FILTER")
     assert q.filter(pl.col("id").sum() == pl.col("id")).explain().startswith("FILTER")
+
+
+def test_unique_enum_19338() -> None:
+    for data in [
+        {"enum": ["A"]},
+        [{"enum": "A"}],
+    ]:
+        df = pl.DataFrame(data, schema={"enum": pl.Enum(["A", "B", "C"])})
+        result = df.select(pl.col("enum").unique())
+        expected = pl.DataFrame(
+            {"enum": ["A"]}, schema={"enum": pl.Enum(["A", "B", "C"])}
+        )
+        assert_frame_equal(result, expected)
+
+
+def test_unique_nan_12950() -> None:
+    df = pl.DataFrame({"x": float("nan")})
+    result = df.unique()
+    assert_frame_equal(result, df)

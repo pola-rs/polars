@@ -1,4 +1,4 @@
-use polars_error::{polars_bail, PolarsError, PolarsResult};
+use polars_error::{polars_bail, PolarsError};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -71,61 +71,12 @@ impl<'a> serde::Deserialize<'a> for PythonFunction {
 #[cfg(feature = "serde")]
 impl TrySerializeToBytes for PythonFunction {
     fn try_serialize_to_bytes(&self) -> polars_error::PolarsResult<Vec<u8>> {
-        serialize_pyobject_with_cloudpickle_fallback(&self.0)
+        serde_wrap::serialize_pyobject_with_cloudpickle_fallback(&self.0)
     }
 
     fn try_deserialize_bytes(bytes: &[u8]) -> polars_error::PolarsResult<Self> {
-        deserialize_pyobject_bytes_maybe_cloudpickle(bytes)
+        serde_wrap::deserialize_pyobject_bytes_maybe_cloudpickle(bytes)
     }
-}
-
-pub fn serialize_pyobject_with_cloudpickle_fallback(py_object: &PyObject) -> PolarsResult<Vec<u8>> {
-    Python::with_gil(|py| {
-        let pickle = PyModule::import(py, "pickle")
-            .expect("unable to import 'pickle'")
-            .getattr("dumps")
-            .unwrap();
-
-        let dumped = pickle.call1((py_object.clone_ref(py),));
-
-        let (dumped, used_cloudpickle) = if let Ok(v) = dumped {
-            (v, false)
-        } else {
-            let cloudpickle = PyModule::import(py, "cloudpickle")
-                .map_err(from_pyerr)?
-                .getattr("dumps")
-                .unwrap();
-            let dumped = cloudpickle
-                .call1((py_object.clone_ref(py),))
-                .map_err(from_pyerr)?;
-            (dumped, true)
-        };
-
-        let py_bytes = dumped.extract::<PyBackedBytes>().map_err(from_pyerr)?;
-
-        Ok([&[used_cloudpickle as u8, b'C'][..], py_bytes.as_ref()].concat())
-    })
-}
-
-pub fn deserialize_pyobject_bytes_maybe_cloudpickle<T: for<'a> From<PyObject>>(
-    bytes: &[u8],
-) -> PolarsResult<T> {
-    // TODO: Actually deserialize with cloudpickle if it's set.
-    let [_used_cloudpickle @ 0 | _used_cloudpickle @ 1, b'C', rem @ ..] = bytes else {
-        polars_bail!(ComputeError: "deserialize_pyobject_bytes_maybe_cloudpickle: invalid start bytes")
-    };
-
-    let bytes = rem;
-
-    Python::with_gil(|py| {
-        let pickle = PyModule::import(py, "pickle")
-            .expect("unable to import 'pickle'")
-            .getattr("loads")
-            .unwrap();
-        let arg = (PyBytes::new(py, bytes),);
-        let pyany_bound = pickle.call1(arg).map_err(from_pyerr)?;
-        Ok(PyObject::from(pyany_bound).into())
-    })
 }
 
 #[cfg(feature = "serde")]
@@ -133,6 +84,7 @@ mod serde_wrap {
     use once_cell::sync::Lazy;
     use polars_error::PolarsResult;
 
+    use super::*;
     use crate::pl_serialize::deserialize_map_bytes;
 
     pub const SERDE_MAGIC_BYTE_MARK: &[u8] = "PLPYFN".as_bytes();
@@ -196,8 +148,12 @@ mod serde_wrap {
                 };
 
                 let py3_version = [*a, *b];
+                // The validity of cloudpickle is check later when called `try_deserialize`.
+                let used_cloud_pickle = rem.first();
 
-                if py3_version != *PYTHON3_VERSION {
+                // Cloudpickle uses bytecode to serialize, which is unstable between versions
+                // So we only allow strict python versions if cloudpickle is used.
+                if py3_version != *PYTHON3_VERSION && used_cloud_pickle == Some(&1) {
                     return Err(D::Error::custom(format!(
                         "python version that pyobject was serialized with {:?} \
                         differs from system python version {:?}",
@@ -213,6 +169,63 @@ mod serde_wrap {
                     .map_err(|e| D::Error::custom(e.to_string()))
             })?
         }
+    }
+
+    pub fn serialize_pyobject_with_cloudpickle_fallback(
+        py_object: &PyObject,
+    ) -> PolarsResult<Vec<u8>> {
+        Python::with_gil(|py| {
+            let pickle = PyModule::import(py, "pickle")
+                .expect("unable to import 'pickle'")
+                .getattr("dumps")
+                .unwrap();
+
+            let dumped = pickle.call1((py_object.clone_ref(py),));
+
+            let (dumped, used_cloudpickle) = if let Ok(v) = dumped {
+                (v, false)
+            } else {
+                let cloudpickle = PyModule::import(py, "cloudpickle")
+                    .map_err(from_pyerr)?
+                    .getattr("dumps")
+                    .unwrap();
+                let dumped = cloudpickle
+                    .call1((py_object.clone_ref(py),))
+                    .map_err(from_pyerr)?;
+                (dumped, true)
+            };
+
+            let py_bytes = dumped.extract::<PyBackedBytes>().map_err(from_pyerr)?;
+
+            Ok([&[used_cloudpickle as u8, b'C'][..], py_bytes.as_ref()].concat())
+        })
+    }
+
+    pub fn deserialize_pyobject_bytes_maybe_cloudpickle<T: for<'a> From<PyObject>>(
+        bytes: &[u8],
+    ) -> PolarsResult<T> {
+        // TODO: Actually deserialize with cloudpickle if it's set.
+        let [used_cloudpickle @ 0 | used_cloudpickle @ 1, b'C', rem @ ..] = bytes else {
+            polars_bail!(ComputeError: "deserialize_pyobject_bytes_maybe_cloudpickle: invalid start bytes")
+        };
+
+        let bytes = rem;
+
+        Python::with_gil(|py| {
+            let p = if *used_cloudpickle == 1 {
+                "cloudpickle"
+            } else {
+                "pickle"
+            };
+
+            let pickle = PyModule::import(py, p)
+                .expect("unable to import 'pickle'")
+                .getattr("loads")
+                .unwrap();
+            let arg = (PyBytes::new(py, bytes),);
+            let pyany_bound = pickle.call1(arg).map_err(from_pyerr)?;
+            Ok(PyObject::from(pyany_bound).into())
+        })
     }
 }
 

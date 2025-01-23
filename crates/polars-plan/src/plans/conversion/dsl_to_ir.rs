@@ -217,7 +217,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         let (file_info, md) =
                             scans::ipc_file_info(&sources, &file_options, cloud_options.as_ref())
                                 .map_err(|e| e.context(failed_here!(ipc scan)))?;
-                        *metadata = Some(md);
+                        *metadata = Some(Arc::new(md));
                         file_info
                     },
                     #[cfg(feature = "csv")]

@@ -36,7 +36,7 @@ pub enum FileScan {
         options: IpcScanOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
-        metadata: Option<arrow::io::ipc::read::FileMetadata>,
+        metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
     Anonymous {

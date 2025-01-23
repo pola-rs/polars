@@ -1,5 +1,4 @@
 import io
-import sys
 from typing import Any
 
 import pytest
@@ -30,6 +29,13 @@ def test_scan_credential_provider(
     with pytest.raises(AssertionError, match=err_magic):
         io_func("s3://bucket/path", credential_provider="auto")
 
+    with pytest.raises(AssertionError, match=err_magic):
+        io_func(
+            "s3://bucket/path",
+            credential_provider="auto",
+            storage_options={"aws_region": "eu-west-1"},
+        )
+
     # We can't test these with the `read_` functions as they end up executing
     # the query
     if io_func.__name__.startswith("scan_"):
@@ -38,7 +44,11 @@ def test_scan_credential_provider(
         io_func("s3://bucket/path", credential_provider=None)
         # Passing `storage_options` should disable the automatic instantiation of
         # `CredentialProviderAWS`
-        io_func("s3://bucket/path", credential_provider="auto", storage_options={})
+        io_func(
+            "s3://bucket/path",
+            credential_provider="auto",
+            storage_options={"aws_access_key_id": "polars"},
+        )
 
     err_magic = "err_magic_7"
 
@@ -68,30 +78,6 @@ def test_scan_credential_provider_serialization() -> None:
 
     with pytest.raises(ComputeError, match=err_magic):
         lf.collect()
-
-
-def test_scan_credential_provider_serialization_pyversion() -> None:
-    lf = pl.scan_parquet(
-        "s3://bucket/path", credential_provider=pl.CredentialProviderAWS()
-    )
-
-    serialized = lf.serialize()
-    serialized = bytearray(serialized)
-
-    # We can't monkeypatch sys.python_version so we just mutate the output
-    # instead.
-
-    v = b"PLPYFN"
-    i = serialized.index(v) + len(v)
-    a, b = serialized[i:][:2]
-    serialized_pyver = (a, b)
-    assert serialized_pyver == (sys.version_info.minor, sys.version_info.micro)
-    # Note: These are loaded as u8's
-    serialized[i] = 255
-    serialized[i + 1] = 254
-
-    with pytest.raises(ComputeError, match=r"python version.*(3, 255, 254).*differs.*"):
-        lf = pl.LazyFrame.deserialize(io.BytesIO(serialized))
 
 
 def test_credential_provider_skips_config_autoload(
