@@ -75,6 +75,10 @@ def linear_space(
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
 
+    .. warning::
+        This functionality is experimental. It may be changed at any point without it
+        being considered a breaking change.
+
     Notes
     -----
     `linear_space` works with numeric and temporal dtypes. When the `start` and `end`
