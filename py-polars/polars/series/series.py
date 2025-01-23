@@ -2641,8 +2641,9 @@ class Series:
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def cumulative_eval(
-        self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
     ) -> Series:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -2655,7 +2656,7 @@ class Series:
         ----------
         expr
             Expression to evaluate
-        min_periods
+        min_samples
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
@@ -5524,12 +5525,13 @@ class Series:
         """
         return self._from_pyseries(self._s.zip_with(mask._s, other._s))
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5549,7 +5551,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5570,12 +5572,13 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_max(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5595,7 +5598,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5616,12 +5619,13 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_mean(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5641,7 +5645,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5662,12 +5666,13 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_sum(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5687,7 +5692,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5708,12 +5713,13 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_std(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
@@ -5734,7 +5740,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5758,12 +5764,13 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_var(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Series:
@@ -5784,7 +5791,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5809,13 +5816,14 @@ class Series:
         """
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5834,7 +5842,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5862,12 +5870,13 @@ class Series:
         """
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_median(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5887,7 +5896,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -5910,6 +5919,7 @@ class Series:
         """
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_quantile(
         self,
         quantile: float,
@@ -5917,7 +5927,7 @@ class Series:
         window_size: int = 2,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Series:
         """
@@ -5941,7 +5951,7 @@ class Series:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -6922,6 +6932,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_mean(
         self,
         *,
@@ -6930,7 +6941,7 @@ class Series:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
@@ -6968,7 +6979,7 @@ class Series:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -7086,6 +7097,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_std(
         self,
         *,
@@ -7095,7 +7107,7 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
@@ -7136,7 +7148,7 @@ class Series:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -7170,6 +7182,7 @@ class Series:
         ]
         """
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_var(
         self,
         *,
@@ -7179,7 +7192,7 @@ class Series:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Series:
         r"""
@@ -7220,7 +7233,7 @@ class Series:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
