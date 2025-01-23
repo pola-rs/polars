@@ -1293,11 +1293,9 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::compute::decimal::format_decimal;
-
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let trim_zeros = get_trim_decimal_zeros();
-    let repr = format_decimal(v, scale, trim_zeros);
-    f.write_str(fmt_float_string(repr.as_str()).as_str())
+    f.write_str(fmt_float_string(fmt_buf.format(v, scale, trim_zeros)).as_str())
 }
 
 #[cfg(all(

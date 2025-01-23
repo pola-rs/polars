@@ -112,36 +112,69 @@ pub fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale: u8) -
     }
 }
 
-const BUF_LEN: usize = 48;
+const MAX_DECIMAL_LEN: usize = 48;
 
 #[derive(Clone, Copy)]
-pub struct FormatBuffer {
-    data: [u8; BUF_LEN],
+pub struct DecimalFmtBuffer {
+    data: [u8; MAX_DECIMAL_LEN],
     len: usize,
 }
 
-impl Default for FormatBuffer {
+impl Default for DecimalFmtBuffer {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FormatBuffer {
+impl DecimalFmtBuffer {
     #[inline]
     pub const fn new() -> Self {
         Self {
-            data: [0; BUF_LEN],
+            data: [0; MAX_DECIMAL_LEN],
             len: 0,
         }
     }
+    
+    pub fn format(&mut self, x: i128, scale: usize, trim_zeros: bool) -> &str {
+        let factor = POW10[scale];
+        let mut itoa_buf = itoa::Buffer::new();
 
-    #[inline]
-    pub fn as_str(&self) -> &str {
+        self.len = 0;
+        let (div, rem) = x.unsigned_abs().div_rem_euclid(&factor);
+        if x < 0 {
+            self.data[0] = b'-';
+            self.len += 1;
+        }
+        
+        let div_fmt = itoa_buf.format(div);
+        self.data[self.len..self.len + div_fmt.len()].copy_from_slice(div_fmt.as_bytes());
+        self.len += div_fmt.len();
+
+        if scale == 0 {
+            return unsafe { std::str::from_utf8_unchecked(&self.data[..self.len]) };
+        }
+        
+        self.data[self.len] = b'.';
+        self.len += 1;
+
+        let rem_fmt = itoa_buf.format(rem + factor); // + factor adds leading 1 where period would be.
+        self.data[self.len..self.len + rem_fmt.len() - 1].copy_from_slice(rem_fmt[1..].as_bytes());
+        self.len += rem_fmt.len() - 1;
+
+        if trim_zeros {
+            while self.data.get(self.len - 1) == Some(&b'0') {
+                self.len -= 1;
+            }
+            if self.data.get(self.len - 1) == Some(&b'.') {
+                self.len -= 1;
+            }
+        }
+
         unsafe { std::str::from_utf8_unchecked(&self.data[..self.len]) }
     }
 }
 
-const POW10: [i128; 39] = [
+const POW10: [u128; 39] = [
     1,
     10,
     100,
@@ -183,58 +216,6 @@ const POW10: [i128; 39] = [
     100000000000000000000000000000000000000,
 ];
 
-pub fn format_decimal(v: i128, scale: usize, trim_zeros: bool) -> FormatBuffer {
-    const ZEROS: [u8; BUF_LEN] = [b'0'; BUF_LEN];
-
-    let mut buf = FormatBuffer::new();
-    let factor = POW10[scale];
-    let (div, rem) = v.abs().div_rem_euclid(&factor);
-
-    unsafe {
-        let mut ptr = buf.data.as_mut_ptr();
-        if v < 0 {
-            *ptr = b'-';
-            buf.len = 1;
-            ptr = ptr.add(1);
-        }
-        let n_whole = itoap::write_to_ptr(ptr, div);
-        buf.len += n_whole;
-        ptr = ptr.add(n_whole);
-
-        if scale == 0 {
-            return buf;
-        }
-
-        *ptr = b'.';
-        ptr = ptr.add(1);
-
-        if rem != 0 {
-            let mut frac_buf = [0_u8; BUF_LEN];
-            let n_frac = itoap::write_to_ptr(frac_buf.as_mut_ptr(), rem);
-            std::ptr::copy_nonoverlapping(ZEROS.as_ptr(), ptr, scale - n_frac);
-            ptr = ptr.add(scale - n_frac);
-            std::ptr::copy_nonoverlapping(frac_buf.as_mut_ptr(), ptr, n_frac);
-            ptr = ptr.add(n_frac);
-        } else {
-            std::ptr::copy_nonoverlapping(ZEROS.as_ptr(), ptr, scale);
-            ptr = ptr.add(scale);
-        }
-        buf.len += 1 + scale;
-
-        if trim_zeros {
-            ptr = ptr.sub(1);
-            while *ptr == b'0' {
-                ptr = ptr.sub(1);
-                buf.len -= 1;
-            }
-            if *ptr == b'.' {
-                buf.len -= 1;
-            }
-        }
-    }
-
-    buf
-}
 
 #[cfg(test)]
 mod test {
