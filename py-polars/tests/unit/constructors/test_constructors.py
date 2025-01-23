@@ -1846,16 +1846,16 @@ def test_init_from_subclassed_types() -> None:
 
 
 def test_series_init_with_python_type_7737() -> None:
-    assert pl.Series([], dtype=int).dtype == pl.Int64
-    assert pl.Series([], dtype=float).dtype == pl.Float64
-    assert pl.Series([], dtype=bool).dtype == pl.Boolean
-    assert pl.Series([], dtype=str).dtype == pl.Utf8
+    assert pl.Series([], dtype=int).dtype == pl.Int64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=float).dtype == pl.Float64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=bool).dtype == pl.Boolean  # type: ignore[arg-type]
+    assert pl.Series([], dtype=str).dtype == pl.Utf8  # type: ignore[arg-type]
 
     with pytest.raises(TypeError):
-        pl.Series(["a"], dtype=int)
+        pl.Series(["a"], dtype=int)  # type: ignore[arg-type]
 
     with pytest.raises(TypeError):
-        pl.Series([True], dtype=pl.String)
+        pl.Series([True], dtype=str)  # type: ignore[arg-type]
 
 
 def test_init_from_list_shape_6968() -> None:
