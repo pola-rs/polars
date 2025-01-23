@@ -336,6 +336,21 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
         self.0.has_nulls()
     }
 
+    #[cfg(feature = "algorithm_group_by")]
+    fn unique(&self) -> PolarsResult<Series> {
+        Ok(self.apply_physical_to_s(|ca| ca.unique().unwrap()))
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn n_unique(&self) -> PolarsResult<usize> {
+        self.0.n_unique()
+    }
+
+    #[cfg(feature = "algorithm_group_by")]
+    fn arg_unique(&self) -> PolarsResult<IdxCa> {
+        self.0.arg_unique()
+    }
+
     fn is_null(&self) -> BooleanChunked {
         self.0.is_null()
     }

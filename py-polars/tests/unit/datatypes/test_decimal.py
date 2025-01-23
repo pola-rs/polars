@@ -651,3 +651,11 @@ def test_fill_null() -> None:
     assert s.fill_null(strategy="forward").to_list() == [D("1.2"), D("1.2"), D("1.4")]
     assert s.fill_null(strategy="backward").to_list() == [D("1.2"), D("1.4"), D("1.4")]
     assert s.fill_null(strategy="mean").to_list() == [D("1.2"), D("1.3"), D("1.4")]
+
+
+def test_unique() -> None:
+    ser = pl.Series([D("1.1"), D("1.1"), D("2.2")])
+
+    assert ser.unique().to_list() == [D("1.1"), D("2.2")]
+    assert ser.n_unique() == 2
+    assert ser.arg_unique().to_list() == [0, 2]
