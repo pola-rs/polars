@@ -248,10 +248,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // in rust use `col("*")` instead of pl.all()
         / col("*").count())
     .round(2);
-    use polars_lazy::dsl;
     let result = weather_by_day
         .lazy()
-        .with_columns(vec![dsl::concat_list(vec![
+        .with_columns(vec![concat_list(vec![
             col("*").exclude(vec!["station"])
         ])?
         .alias("all_temps")])
