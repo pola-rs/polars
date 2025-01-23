@@ -4,7 +4,6 @@ use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyNone};
 use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
-use std::time::Instant;
 use std::time::Duration;
 use polars_expr::state::node_timer::NodeTimer;
 
@@ -25,10 +24,10 @@ pub struct PyNodeTimer {
 impl PyNodeTimer {
     pub fn store(&self, name: &str, start_ns: u64, end_ns: u64) -> PyResult<()> {
         if let Some(timer) = &self.timer {
-            let now = Instant::now();
-            let start = now + Duration::from_nanos(start_ns);
-            let end = now + Duration::from_nanos(end_ns);
-            timer.store(start, end, name.to_string())
+            let query_start = timer.query_start;
+            let start = Duration::from_nanos(start_ns);
+            let end = Duration::from_nanos(end_ns);
+            timer.store(query_start+start, query_start+end, name.to_string())
         }
         Ok(())
     }

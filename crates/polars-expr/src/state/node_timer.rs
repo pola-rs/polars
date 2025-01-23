@@ -12,7 +12,7 @@ type Ticks = Vec<(StartInstant, EndInstant)>;
 
 #[derive(Clone)]
 pub struct NodeTimer {
-    query_start: Instant,
+    pub query_start: Instant,
     data: Arc<Mutex<(Nodes, Ticks)>>,
 }
 
