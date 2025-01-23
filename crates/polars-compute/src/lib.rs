@@ -26,6 +26,7 @@ pub mod if_then_else;
 pub mod min_max;
 pub mod propagate_dictionary;
 pub mod size;
+pub mod sum;
 pub mod unique;
 pub mod var_cov;
 
@@ -39,3 +40,25 @@ impl<T: NativeType> NotSimdPrimitive for T {}
 impl NotSimdPrimitive for u128 {}
 #[cfg(feature = "simd")]
 impl NotSimdPrimitive for i128 {}
+
+// Trait to allow blanket impl for all SIMD types when simd is enabled.
+#[cfg(feature = "simd")]
+mod _simd_primitive {
+    use std::simd::SimdElement;
+    pub trait SimdPrimitive: SimdElement {}
+    impl SimdPrimitive for u8 {}
+    impl SimdPrimitive for u16 {}
+    impl SimdPrimitive for u32 {}
+    impl SimdPrimitive for u64 {}
+    impl SimdPrimitive for usize {}
+    impl SimdPrimitive for i8 {}
+    impl SimdPrimitive for i16 {}
+    impl SimdPrimitive for i32 {}
+    impl SimdPrimitive for i64 {}
+    impl SimdPrimitive for isize {}
+    impl SimdPrimitive for f32 {}
+    impl SimdPrimitive for f64 {}
+}
+
+#[cfg(feature = "simd")]
+pub use _simd_primitive::SimdPrimitive;

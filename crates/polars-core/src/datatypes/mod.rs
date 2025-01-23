@@ -30,7 +30,6 @@ pub use arrow::datatypes::reshape::*;
 #[cfg(feature = "dtype-categorical")]
 use arrow::datatypes::IntegerType;
 pub use arrow::datatypes::{ArrowDataType, TimeUnit as ArrowTimeUnit};
-use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use bytemuck::Zeroable;
 pub use dtype::*;
@@ -331,7 +330,7 @@ pub trait NumericNative:
     + NumCast
     + Zero
     + One
-    + Simd
+    // + Simd
     // + Simd8
     + std::iter::Sum<Self>
     + Add<Output = Self>
