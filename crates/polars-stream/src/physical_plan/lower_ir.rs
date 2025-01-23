@@ -393,9 +393,7 @@ pub fn lower_ir(
                 #[cfg(feature = "ipc")]
                 if matches!(scan_type, FileScan::Ipc { .. }) {
                     // @TODO: All the things the IPC source does not support yet.
-                    if scan_sources.is_cloud_url()
-                        || file_options.slice.is_some_and(|(offset, _)| offset < 0)
-                    {
+                    if scan_sources.is_cloud_url() {
                         todo!();
                     }
                 }
