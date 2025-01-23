@@ -1,98 +1,131 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:list-example]
     use chrono::prelude::*;
-    use polars::chunked_array::builder::get_list_builder;
     use polars::prelude::*;
-    let mut names = get_list_builder(&DataType::String, 4, 4, "names".into());
-    names
-        .append_series(&Series::new("".into(), ["Anne", "Averill", "Adams"]))
-        .unwrap();
-    names
-        .append_series(&Series::new(
-            "".into(),
-            ["Brandon", "Brooke", "Borden", "Branson"],
-        ))
-        .unwrap();
-    names
-        .append_series(&Series::new("".into(), ["Camila", "Campbell"]))
-        .unwrap();
-    names
-        .append_series(&Series::new("".into(), ["Dennis", "Doyle"]))
-        .unwrap();
-    let names_s = names.finish().into_series();
-    let empty_i64 = Series::new_empty("".into(), &DataType::Int64);
-    let mut children_ages = get_list_builder(&DataType::Int64, 4, 4, "children_ages".into());
-    children_ages
-        .append_series(&Series::new("".into(), [5i64, 7i64]))
-        .unwrap();
-    children_ages.append_series(&empty_i64).unwrap();
-    children_ages.append_series(&empty_i64).unwrap();
-    children_ages
-        .append_series(&Series::new("".into(), [8i64, 11i64, 18i64]))
-        .unwrap();
-    let children_ages_s = children_ages.finish().into_series();
-
-    let empty_dt = Series::new_empty("".into(), &DataType::Datetime(TimeUnit::Microseconds, None));
-    let mut medical_appointments = get_list_builder(
-        &DataType::Datetime(TimeUnit::Microseconds, None),
-        4,
-        4,
-        "medical_appointments".into(),
-    );
-    medical_appointments.append_series(&empty_dt).unwrap();
-    medical_appointments.append_series(&empty_dt).unwrap();
-    medical_appointments.append_series(&empty_dt).unwrap();
-    medical_appointments
-        .append_series(&Series::new(
-            "".into(),
-            [NaiveDate::from_ymd_opt(2022, 5, 22)
-                .unwrap()
-                .and_hms_opt(16, 30, 0)
-                .unwrap()
-                .and_utc()
-                .timestamp_micros()],
-        ))
-        .unwrap();
-    let medical_appointments_s = medical_appointments.finish().into_series();
-
     let df = DataFrame::new(vec![
-        names_s.into(),
-        children_ages_s.into(),
-        medical_appointments_s.into(),
-    ])
-    .unwrap();
+        Series::from_any_values(
+            "names".into(),
+            &vec![
+                vec!["Anne", "Averill", "Adams"],
+                vec!["Brandon", "Brooke", "Borden", "Branson"],
+                vec!["Camila", "Campbell"],
+                vec!["Dennis", "Doyle"],
+            ]
+            .iter()
+            .map(|item| AnyValue::List(Series::new("".into(), item)))
+            .collect::<Vec<AnyValue>>(),
+            true,
+        )?
+        .into(),
+        Series::from_any_values(
+            "children_ages".into(),
+            &vec![vec![5, 7], vec![], vec![], vec![8, 11, 18]]
+                .iter()
+                .map(|item| AnyValue::List(Series::new("".into(), item)))
+                .collect::<Vec<AnyValue>>(),
+            true,
+        )?
+        .into(),
+        Series::from_any_values(
+            "medical_appointments".into(),
+            &vec![
+                vec![],
+                vec![],
+                vec![],
+                vec![NaiveDate::from_ymd_opt(2022, 5, 22)
+                    .unwrap()
+                    .and_hms_opt(16, 30, 0)
+                    .unwrap()],
+            ]
+            .iter()
+            .map(|item| AnyValue::List(Series::new("".into(), item)))
+            .collect::<Vec<AnyValue>>(),
+            true,
+        )?
+        .into(),
+    ])?;
     eprintln!("{}", df);
     // --8<-- [end:list-example]
 
     // --8<-- [start:array-example]
-    use polars::prelude::*;
+    // need feature "dtype-array"
     let df = DataFrame::new(vec![
-        Series::new(
+        Series::from_any_values_and_dtype(
             "bit_flags".into(),
-            [true, true, true, true, false, false, true, true, true, true],
-        )
-        .reshape_array(&[
-            ReshapeDimension::Infer,
-            ReshapeDimension::Specified(Dimension::new(5)),
-        ])
-        .unwrap()
+            &vec![
+                vec![true, true, true, true, false],
+                vec![false, true, true, true, true],
+            ]
+            .iter()
+            .map(|item| AnyValue::List(Series::new("".into(), item)))
+            .collect::<Vec<AnyValue>>(),
+            &DataType::Array(Box::new(DataType::Boolean), 5),
+            true,
+        )?
         .into(),
-        Series::new(
+        Series::from_any_values_and_dtype(
             "tic_tac_toe".into(),
-            [
-                " ", "x", "o", " ", "x", " ", "o", "x", " ", "o", "x", "x", " ", "o", "x", " ",
-                " ", "o",
-            ],
-        )
-        .reshape_array(&[
-            ReshapeDimension::Infer,
-            ReshapeDimension::Specified(Dimension::new(3)),
-            ReshapeDimension::Specified(Dimension::new(3)),
-        ])
-        .unwrap()
+            &vec![
+                vec![
+                    vec![" ", "x", "o"],
+                    vec![" ", "x", " "],
+                    vec!["o", "x", " "],
+                ],
+                vec![
+                    vec!["o", "x", "x"],
+                    vec![" ", "o", "x"],
+                    vec![" ", " ", "o"],
+                ],
+            ]
+            .iter()
+            .map(|item| {
+                AnyValue::List(
+                    Series::from_any_values_and_dtype(
+                        "".into(),
+                        &item
+                            .iter()
+                            .map(|ite| AnyValue::List(Series::new("".into(), ite)))
+                            .collect::<Vec<AnyValue>>(),
+                        &DataType::Array(Box::new(DataType::String), 3),
+                        true,
+                    )
+                    .unwrap(),
+                )
+            })
+            .collect::<Vec<AnyValue>>(),
+            &DataType::Array(Box::new(DataType::Array(Box::new(DataType::String), 3)), 3),
+            true,
+        )?
         .into(),
-    ])
-    .unwrap();
+    ])?;
+    // the tic_tac_toe Series could also be defined this way, using reshape_array, instead
+    let s = Series::new(
+        "tic_tac_toe".into(),
+        &vec![
+            vec![
+                vec![" ", "x", "o"],
+                vec![" ", "x", " "],
+                vec!["o", "x", " "],
+            ],
+            vec![
+                vec!["o", "x", "x"],
+                vec![" ", "o", "x"],
+                vec![" ", " ", "o"],
+            ],
+        ]
+        .into_iter()
+        .flat_map(|inner| inner.into_iter().flat_map(|inner2| inner2))
+        // .copied()
+        .collect::<Vec<&str>>(),
+    )
+    .reshape_array(&[
+        ReshapeDimension::Infer,
+        ReshapeDimension::Specified(Dimension::new(3)),
+        ReshapeDimension::Specified(Dimension::new(3)),
+    ])?;
+    let tic_tac_toe = df.get_columns()[1].as_series().unwrap().clone();
+
+    assert_eq!(s, tic_tac_toe);
     eprintln!("{}", df);
     // --8<-- [end:array-example]
 
@@ -101,13 +134,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:numpy-array-inference]
 
     // --8<-- [start:weather]
-    use polars::prelude::*;
-    let station: Vec<String> = (1..6)
-        .into_iter()
-        .map(|idx| format!("Station {}", idx))
-        .collect();
     let weather = DataFrame::new(vec![
-        Series::new("station".into(), station).into(),
+        Series::new(
+            "station".into(),
+            &(1..6)
+                .into_iter()
+                .map(|idx| format!("Station {}", idx))
+                .collect::<Vec<String>>(),
+        )
+        .into(),
         Series::new(
             "temperature".into(),
             [
@@ -119,23 +154,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ],
         )
         .into(),
-    ])
-    .unwrap();
-    eprintln!("{:?}", weather);
+    ])?;
+    eprintln!("{}", weather);
     // --8<-- [end:weather]
 
     // --8<-- [start:split]
     let weather = weather
         .lazy()
         .with_columns(vec![col("temperature").str().split(lit(" "))])
-        .collect()
-        .unwrap();
-    eprintln!("{:?}", weather);
+        .collect()?;
+    eprintln!("{}", weather);
     // --8<-- [end:split]
 
     // --8<-- [start:explode]
-    let result = weather.explode(vec!["temperature"]).unwrap();
-    eprintln!("{:?}", result);
+    let result = weather.explode(vec!["temperature"])?;
+    eprintln!("{}", result);
     // --8<-- [end:explode]
 
     // --8<-- [start:list-slicing]
@@ -150,9 +183,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .slice(lit(-3), lit(2))
                 .alias("two_next_to_last"),
         ])
-        .collect()
-        .unwrap();
-    eprintln!("{:?}", result);
+        .collect()?;
+    eprintln!("{}", result);
     // --8<-- [end:list-slicing]
 
     // --8<-- [start:element-wise-casting]
@@ -166,9 +198,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .list()
             .sum()
             .alias("errors")])
-        .collect()
-        .unwrap();
-    eprintln!("{:?}", result);
+        .collect()?;
+    eprintln!("{}", result);
     // --8<-- [end:element-wise-casting]
 
     // --8<-- [start:element-wise-regex]
@@ -177,29 +208,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns(vec![col("temperature")
             .list()
+            // in rust use `col("")` instead of pl.element()
             .eval(col("").str().contains(lit("(?i)[a-z]"), true), true)
             .list()
             .sum()
             .alias("errors")])
-        .collect()
-        .unwrap();
-
+        .collect()?;
     eprintln!("{}", result.equals(&result2));
     // --8<-- [end:element-wise-regex]
 
     // --8<-- [start:weather_by_day]
-    let station: Vec<String> = (1..11)
-        .into_iter()
-        .map(|idx| format!("Station {}", idx))
-        .collect();
     let weather_by_day = DataFrame::new(vec![
-        Series::new("station".into(), station).into(),
+        Series::new(
+            "station".into(),
+            &(1..11)
+                .into_iter()
+                .map(|idx| format!("Station {}", idx))
+                .collect::<Vec<String>>(),
+        )
+        .into(),
         Series::new("day_1".into(), [17, 11, 8, 22, 9, 21, 20, 8, 8, 17]).into(),
         Series::new("day_2".into(), [15, 11, 10, 8, 7, 14, 18, 21, 15, 13]).into(),
         Series::new("day_3".into(), [16, 15, 24, 24, 8, 23, 19, 23, 16, 10]).into(),
-    ])
-    .unwrap();
-
+    ])?;
     eprintln!("{}", weather_by_day);
     // --8<-- [end:weather_by_day]
 
@@ -215,6 +246,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         // explicit cast here is necessary or else result is u32
         .cast(DataType::Float64)
+        // in rust use `col("*")` instead of pl.all()
         / col("*").count())
     .round(2);
     use polars_plan::dsl;
@@ -222,8 +254,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .lazy()
         .with_columns(vec![dsl::concat_list(vec![
             col("*").exclude(vec!["station"])
-        ])
-        .unwrap()
+        ])?
         .alias("all_temps")])
         .select(vec![
             col("*").exclude(vec!["all_temps"]),
@@ -232,37 +263,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .eval(rank_pct, true)
                 .alias("temps_rank"),
         ])
-        .collect()
-        .unwrap();
+        .collect()?;
     eprintln!("{}", result);
     // --8<-- [end:rank_pct]
 
     // --8<-- [start:array-overview]
     let df = DataFrame::new(vec![
-        Series::new(
+        Series::from_any_values_and_dtype(
             "first_last".into(),
-            [
-                "Anne", "Adams", "Brandon", "Branson", "Camila", "Campbell", "Dennis", "Doyle",
-            ],
-        )
-        .reshape_array(&[
-            ReshapeDimension::Infer,
-            ReshapeDimension::Specified(Dimension::new(2)),
-        ])
-        .unwrap()
+            &vec![
+                vec!["Anne", "Adams"],
+                vec!["Brandon", "Branson"],
+                vec!["Camila", "Campbell"],
+                vec!["Dennis", "Doyle"],
+            ]
+            .iter()
+            .map(|item| AnyValue::List(Series::new("".into(), item)))
+            .collect::<Vec<AnyValue>>(),
+            &DataType::Array(Box::new(DataType::String), 2),
+            true,
+        )?
         .into(),
-        Series::new(
+        Series::from_any_values_and_dtype(
             "fav_numbers".into(),
-            [42, 0, 1, 2, 3, 5, 13, 21, 34, 73, 3, 7],
-        )
-        .reshape_array(&[
-            ReshapeDimension::Infer,
-            ReshapeDimension::Specified(Dimension::new(3)),
-        ])
-        .unwrap()
+            &vec![
+                vec![42, 0, 1],
+                vec![2, 3, 5],
+                vec![13, 21, 34],
+                vec![73, 3, 7],
+            ]
+            .iter()
+            .map(|item| AnyValue::List(Series::new("".into(), item)))
+            .collect::<Vec<AnyValue>>(),
+            &DataType::Array(Box::new(DataType::Int32), 3),
+            true,
+        )?
         .into(),
-    ])
-    .unwrap();
+    ])?;
 
     let result = df
         .lazy()
@@ -273,10 +310,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             col("fav_numbers").arr().sum().alias("summed"),
             col("fav_numbers").arr().contains(3).alias("likes_3"),
         ])
-        .collect()
-        .unwrap();
+        .collect()?;
     eprintln!("{}", result);
     // --8<-- [end:array-overview]
-
     Ok(())
 }
