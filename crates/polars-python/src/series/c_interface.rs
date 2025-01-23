@@ -1,4 +1,3 @@
-use polars::export::arrow;
 use polars::prelude::*;
 use pyo3::ffi::Py_uintptr_t;
 use pyo3::prelude::*;

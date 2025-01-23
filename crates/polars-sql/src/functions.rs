@@ -1,7 +1,6 @@
 use std::ops::Sub;
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
-use polars_core::export::regex;
 use polars_core::prelude::{
     polars_bail, polars_err, DataType, PolarsResult, QuantileMethod, Schema, TimeUnit,
 };

@@ -2,12 +2,10 @@
 
 use std::str::FromStr;
 
+use chrono::{DateTime, FixedOffset, NaiveDateTime, NaiveTime, TimeDelta, TimeZone as _};
 use chrono_tz::Tz;
 use polars::datatypes::TimeUnit;
 use polars_core::datatypes::TimeZone;
-use polars_core::export::chrono::{
-    DateTime, FixedOffset, NaiveDateTime, NaiveTime, TimeDelta, TimeZone as _,
-};
 use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python};
 
 use crate::error::PyPolarsErr;

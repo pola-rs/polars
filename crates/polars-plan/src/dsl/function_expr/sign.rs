@@ -1,5 +1,4 @@
-use num::{One, Zero};
-use polars_core::export::num;
+use num_traits::{One, Zero};
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;

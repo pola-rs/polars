@@ -12,12 +12,11 @@
 //! operations on String Series will convert from/to such buffers. This
 //! conversion requires data to be copied.
 
-use polars::export::arrow;
-use polars::export::arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
-use polars::export::arrow::bitmap::Bitmap;
-use polars::export::arrow::buffer::Buffer;
-use polars::export::arrow::offset::OffsetsBuffer;
-use polars::export::arrow::types::NativeType;
+use arrow::array::{Array, BooleanArray, PrimitiveArray, Utf8Array};
+use arrow::bitmap::Bitmap;
+use arrow::buffer::Buffer;
+use arrow::offset::OffsetsBuffer;
+use arrow::types::NativeType;
 use polars::prelude::*;
 use polars_core::{with_match_physical_numeric_polars_type, with_match_physical_numeric_type};
 use pyo3::exceptions::PyTypeError;
@@ -136,7 +135,7 @@ fn get_buffers_from_string(s: &Series) -> PyResult<(PySeries, Option<PySeries>, 
     let arr_binview = ca.downcast_iter().next().unwrap();
 
     // This is not zero-copy
-    let arr_utf8 = polars_core::export::cast::utf8view_to_utf8(arr_binview);
+    let arr_utf8 = polars_compute::cast::utf8view_to_utf8(arr_binview);
 
     let values = get_string_bytes(&arr_utf8)?;
     let validity = get_bitmap(&s);

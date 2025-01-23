@@ -2,9 +2,9 @@ use std::any::Any;
 use std::ops::Add;
 
 use arrow::array::{Array, PrimitiveArray};
+use arrow::datatypes::PrimitiveType;
+use num_traits::NumCast;
 use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
-use polars_core::export::arrow::datatypes::PrimitiveType;
-use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 
 use super::*;

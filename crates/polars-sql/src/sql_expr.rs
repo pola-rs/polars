@@ -9,7 +9,6 @@
 use std::fmt::Display;
 use std::ops::Div;
 
-use polars_core::export::regex;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
 use polars_plan::prelude::typed_lit;

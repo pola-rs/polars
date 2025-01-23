@@ -1,7 +1,7 @@
-use polars::export::arrow::record_batch::RecordBatch;
+use arrow::datatypes::IntegerType;
+use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
-use polars_core::export::arrow::datatypes::IntegerType;
-use polars_core::export::cast::CastOptionsImpl;
+use polars_compute::cast::CastOptionsImpl;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
 use pyo3::IntoPyObjectExt;
@@ -136,7 +136,7 @@ impl PyDataFrame {
 
                     for i in &cat_columns {
                         let arr = arrays.get_mut(*i).unwrap();
-                        let out = polars_core::export::cast::cast(
+                        let out = polars_compute::cast::cast(
                             &**arr,
                             &enum_and_categorical_dtype,
                             CastOptionsImpl::default(),

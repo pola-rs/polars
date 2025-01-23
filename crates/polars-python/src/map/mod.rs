@@ -4,16 +4,16 @@ pub mod series;
 
 use std::collections::BTreeMap;
 
+use arrow::bitmap::BitmapBuilder;
 use polars::chunked_array::builder::get_list_builder;
-use polars::export::arrow::bitmap::BitmapBuilder;
 use polars::prelude::*;
-use polars_core::export::rayon::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_core::POOL;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::PyDict;
+use rayon::prelude::*;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;

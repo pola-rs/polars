@@ -1,7 +1,5 @@
-use num::pow::Pow;
-use num_traits::{One, Zero};
-use polars_core::export::num;
-use polars_core::export::num::{Float, ToPrimitive};
+use num_traits::pow::Pow;
+use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_core::prelude::arity::{broadcast_binary_elementwise, unary_elementwise_values};
 use polars_core::with_match_physical_integer_type;
 
@@ -33,7 +31,7 @@ fn pow_on_chunked_arrays<T, F>(
 where
     T: PolarsNumericType,
     F: PolarsNumericType,
-    T::Native: num::pow::Pow<F::Native, Output = T::Native> + ToPrimitive,
+    T::Native: Pow<F::Native, Output = T::Native> + ToPrimitive,
 {
     if exponent.len() == 1 {
         if let Some(e) = exponent.get(0) {
@@ -58,7 +56,7 @@ fn pow_on_floats<T>(
 ) -> PolarsResult<Option<Column>>
 where
     T: PolarsFloatType,
-    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
+    T::Native: Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoColumn,
 {
     let dtype = T::get_dtype();
@@ -101,7 +99,7 @@ fn pow_to_uint_dtype<T, F>(
 where
     T: PolarsIntegerType,
     F: PolarsIntegerType,
-    T::Native: num::pow::Pow<F::Native, Output = T::Native> + ToPrimitive,
+    T::Native: Pow<F::Native, Output = T::Native> + ToPrimitive,
     ChunkedArray<T>: IntoColumn,
 {
     let dtype = T::get_dtype();
@@ -228,7 +226,7 @@ pub(super) fn sqrt(base: &Column) -> PolarsResult<Column> {
 fn sqrt_on_floats<T>(base: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
-    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
+    T::Native: Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoColumn,
 {
     Ok(base.apply_values(|v| v.sqrt()).into_column())
@@ -255,7 +253,7 @@ pub(super) fn cbrt(base: &Column) -> PolarsResult<Column> {
 fn cbrt_on_floats<T>(base: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
-    T::Native: num::pow::Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
+    T::Native: Pow<T::Native, Output = T::Native> + ToPrimitive + Float,
     ChunkedArray<T>: IntoColumn,
 {
     Ok(base.apply_values(|v| v.cbrt()).into_column())

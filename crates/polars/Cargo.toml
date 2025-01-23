@@ -28,6 +28,7 @@ ahash = { workspace = true }
 apache-avro = { version = "0.17", features = ["snappy"] }
 arrow = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
+chrono = { workspace = true }
 either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }

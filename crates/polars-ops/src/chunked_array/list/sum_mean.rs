@@ -4,7 +4,7 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;
-use polars_core::export::num::{NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 
 use super::*;
 use crate::chunked_array::sum::sum_slice;

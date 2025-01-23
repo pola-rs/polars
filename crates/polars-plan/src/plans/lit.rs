@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
-use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::hashing::hash_to_partition;

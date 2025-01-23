@@ -1,6 +1,5 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::legacy::utils::CustomIterTools;
-use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::flatten::flatten_par;
@@ -9,6 +8,7 @@ use polars_ops::series::SeriesMethods;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::SortedSlice;
+use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

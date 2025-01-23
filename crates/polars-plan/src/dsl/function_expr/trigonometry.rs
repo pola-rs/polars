@@ -1,6 +1,5 @@
-use num::Float;
+use num_traits::Float;
 use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
-use polars_core::export::num;
 
 use super::*;
 
