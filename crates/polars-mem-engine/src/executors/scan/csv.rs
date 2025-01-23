@@ -275,7 +275,7 @@ impl ScanExec for CsvExec {
 
     fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
         let (lb, ub) = self.file_info.row_estimation;
-        if lb.is_none_or(|lb| lb != ub) {
+        if lb.is_some_and(|lb| lb == ub) {
             return Ok(ub as IdxSize);
         }
 

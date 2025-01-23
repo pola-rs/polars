@@ -157,6 +157,9 @@ fn source_to_exec(
             if allow_missing_columns && !is_first_file {
                 options.schema.take();
             }
+            if !is_first_file {
+                file_info.row_estimation.0.take();
+            }
 
             Box::new(CsvExec {
                 sources: source,
@@ -299,23 +302,8 @@ impl MultiScanExec {
             }
         }
 
-        // Remove the hive columns for each file load.
-        let mut file_with_columns = self.file_options.with_columns.take();
-        if self.hive_parts.is_some() {
-            if let Some(with_columns) = &self.file_options.with_columns {
-                file_with_columns = Some(
-                    with_columns
-                        .iter()
-                        .filter(|&c| !hive_column_set.contains(c))
-                        .cloned()
-                        .collect(),
-                );
-            }
-        }
-
         let allow_missing_columns = self.file_options.allow_missing_columns;
         self.file_options.allow_missing_columns = false;
-        let mut row_index = self.file_options.row_index.take();
         let slice = self.file_options.slice.take();
 
         let mut first_slice_file = None;
@@ -332,21 +320,32 @@ impl MultiScanExec {
             }),
         };
 
-        let final_per_source_schema = &self.file_info.schema;
-        let file_output_schema = if let Some(file_with_columns) = file_with_columns.as_ref() {
-            let mut schema = final_per_source_schema.try_project(file_with_columns.as_ref())?;
+        let mut file_with_columns = self.file_options.with_columns.take();
+        let mut row_index = self.file_options.row_index.take();
 
-            if let Some(v) = include_file_paths.clone() {
-                schema.extend([(v, DataType::String)]);
+        let mut final_per_source_schema = Cow::Borrowed(self.file_info.schema.as_ref());
+        if let Some(with_columns) = file_with_columns.as_ref() {
+            final_per_source_schema
+                .to_mut()
+                .try_project(with_columns.as_ref())
+                .unwrap();
+        }
+
+        // Remove the hive columns for each file load.
+        if self.hive_parts.is_some() {
+            if let Some(with_columns) = &file_with_columns {
+                file_with_columns = Some(
+                    with_columns
+                        .iter()
+                        .filter(|&c| !hive_column_set.contains(c))
+                        .cloned()
+                        .collect(),
+                );
             }
-
-            Arc::new(schema)
-        } else {
-            final_per_source_schema.clone()
-        };
+        }
 
         if slice.is_some_and(|x| x.1 == 0) {
-            return Ok(DataFrame::empty_with_schema(final_per_source_schema));
+            return Ok(DataFrame::empty_with_schema(&final_per_source_schema));
         }
 
         let mut missing_columns = Vec::new();
@@ -556,12 +555,12 @@ impl MultiScanExec {
             }
 
             // Project to ensure that all DataFrames have the proper order.
-            df = df.select(file_output_schema.iter_names().cloned())?;
+            df = df.select(final_per_source_schema.iter_names().cloned())?;
             dfs.push(df);
         }
 
         if dfs.is_empty() {
-            Ok(DataFrame::empty_with_schema(final_per_source_schema))
+            Ok(DataFrame::empty_with_schema(&final_per_source_schema))
         } else {
             Ok(accumulate_dataframes_vertical_unchecked(dfs))
         }
