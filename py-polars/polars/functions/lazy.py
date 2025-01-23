@@ -7,7 +7,11 @@ from typing import TYPE_CHECKING, Any, Callable, overload
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -2149,12 +2153,13 @@ def from_epoch(
         raise ValueError(msg)
 
 
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
@@ -2171,30 +2176,31 @@ def rolling_cov(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
@@ -2211,21 +2217,21 @@ def rolling_corr(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 

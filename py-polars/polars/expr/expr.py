@@ -7388,10 +7388,6 @@ class Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weights` vector. The resulting values will be aggregated to their min.
@@ -7498,10 +7494,6 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7610,10 +7602,6 @@ class Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weights` vector. The resulting values will be aggregated to their mean.
@@ -7720,10 +7708,6 @@ class Expr:
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7832,10 +7816,6 @@ class Expr:
     ) -> Expr:
         """
         Compute a rolling standard deviation.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7948,10 +7928,6 @@ class Expr:
         """
         Compute a rolling variance.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weights` vector. The resulting values will be aggregated to their var.
@@ -8062,10 +8038,6 @@ class Expr:
         """
         Compute a rolling median.
 
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
         `weights` vector. The resulting values will be aggregated to their median.
@@ -8174,10 +8146,6 @@ class Expr:
     ) -> Expr:
         """
         Compute a rolling quantile.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
