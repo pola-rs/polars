@@ -134,7 +134,7 @@ impl DecimalFmtBuffer {
             len: 0,
         }
     }
-    
+
     pub fn format(&mut self, x: i128, scale: usize, trim_zeros: bool) -> &str {
         let factor = POW10[scale];
         let mut itoa_buf = itoa::Buffer::new();
@@ -145,7 +145,7 @@ impl DecimalFmtBuffer {
             self.data[0] = b'-';
             self.len += 1;
         }
-        
+
         let div_fmt = itoa_buf.format(div);
         self.data[self.len..self.len + div_fmt.len()].copy_from_slice(div_fmt.as_bytes());
         self.len += div_fmt.len();
@@ -153,7 +153,7 @@ impl DecimalFmtBuffer {
         if scale == 0 {
             return unsafe { std::str::from_utf8_unchecked(&self.data[..self.len]) };
         }
-        
+
         self.data[self.len] = b'.';
         self.len += 1;
 
@@ -215,7 +215,6 @@ const POW10: [u128; 39] = [
     10000000000000000000000000000000000000,
     100000000000000000000000000000000000000,
 ];
-
 
 #[cfg(test)]
 mod test {
