@@ -5,7 +5,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     use polars::prelude::*;
     use reqwest::blocking::Client;
 
-    let url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv";
+    let url = "hf://datasets/nameexhaustion/polars-docs/legislators-historical.csv";
 
     let mut schema = Schema::default();
     schema.with_column(

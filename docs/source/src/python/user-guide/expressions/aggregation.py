@@ -1,7 +1,7 @@
 # --8<-- [start:dataframe]
 import polars as pl
 
-url = "https://theunitedstates.io/congress-legislators/legislators-historical.csv"
+url = "hf://datasets/nameexhaustion/polars-docs/legislators-historical.csv"
 
 schema_overrides = {
     "first_name": pl.Categorical,
