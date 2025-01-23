@@ -1,7 +1,7 @@
 use std::borrow::Cow;
 
 use arrow::array::Array;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::types::NativeType;
 use numpy::{Element, PyArray1, PyArrayMethods};
 use polars_core::prelude::*;
