@@ -1,9 +1,9 @@
 use std::hash::Hash;
 
-use polars_core::export::_boost_hash_combine;
-use polars_core::export::rayon::prelude::*;
+use rayon::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
+use polars_utils::hashing::_boost_hash_combine;
 use polars_core::{with_match_physical_float_polars_type, POOL};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 

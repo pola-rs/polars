@@ -1,5 +1,5 @@
 use arrow::bitmap::utils::get_bit_unchecked;
-use polars_utils::hashing::folded_multiply;
+use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;

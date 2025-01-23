@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::ops::Deref;
 
-use polars_core::export::regex;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;

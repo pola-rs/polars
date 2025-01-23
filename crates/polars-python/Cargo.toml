@@ -9,6 +9,7 @@ repository = { workspace = true }
 description = "Enable running Polars workloads in Python"
 
 [dependencies]
+polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["python"] }
 polars-error = { workspace = true }
 polars-expr = { workspace = true }
@@ -27,9 +28,11 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
+arrow = { workspace = true}
 bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
+chrono = { workspace = true }
 chrono-tz = { workspace = true }
 either = { workspace = true }
 flate2 = { workspace = true }
@@ -40,6 +43,7 @@ num-traits = { workspace = true }
 numpy = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "multiple-pymethods"] }
+rayon = { workspace = true}
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
 thiserror = { workspace = true }

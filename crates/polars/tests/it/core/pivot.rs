@@ -1,4 +1,4 @@
-use polars::export::chrono::NaiveDate;
+use chrono::NaiveDate;
 use polars::prelude::*;
 use polars_ops::pivot::{pivot, pivot_stable, PivotAgg};
 

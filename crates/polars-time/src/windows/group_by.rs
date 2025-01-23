@@ -1,6 +1,6 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::trusted_len::TrustedLen;
-use polars_core::export::rayon::prelude::*;
+use rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;

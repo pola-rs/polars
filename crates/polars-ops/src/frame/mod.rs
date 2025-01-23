@@ -4,7 +4,7 @@ pub mod pivot;
 
 pub use join::*;
 #[cfg(feature = "to_dummies")]
-use polars_core::export::rayon::prelude::*;
+use rayon::prelude::*;
 use polars_core::prelude::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::utils::accumulate_dataframes_horizontal;

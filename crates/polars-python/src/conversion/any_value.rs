@@ -6,9 +6,9 @@ use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
-use polars::export::chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset};
 use polars::prelude::{AnyValue, PlSmallStr, Series};
-use polars_core::export::chrono::{
+use chrono::{
     Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike,
 };
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;

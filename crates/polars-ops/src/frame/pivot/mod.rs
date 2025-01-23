@@ -3,7 +3,7 @@ mod unpivot;
 
 use std::borrow::Cow;
 
-use polars_core::export::rayon::prelude::*;
+use rayon::prelude::*;
 use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;

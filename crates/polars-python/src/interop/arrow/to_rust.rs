@@ -1,4 +1,4 @@
-use polars_core::export::rayon::prelude::*;
+use rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::utils::arrow::ffi;

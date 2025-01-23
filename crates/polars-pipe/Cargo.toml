@@ -11,6 +11,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 [dependencies]
 arrow = { workspace = true }
 futures = { workspace = true, optional = true }
+once_cell = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows"] }
 polars-expr = { workspace = true }

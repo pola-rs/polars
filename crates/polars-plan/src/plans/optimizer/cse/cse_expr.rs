@@ -8,7 +8,7 @@ use crate::prelude::visitor::AexprNode;
 
 const SERIES_LIMIT: usize = 1000;
 
-use polars_core::hashing::_boost_hash_combine;
+use polars_utils::hashing::_boost_hash_combine;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {

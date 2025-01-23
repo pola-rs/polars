@@ -1,4 +1,4 @@
-use polars_core::export::rayon::prelude::*;
+use rayon::prelude::*;
 use polars_core::POOL;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;

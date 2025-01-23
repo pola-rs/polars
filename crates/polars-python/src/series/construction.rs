@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 
 use numpy::{Element, PyArray1, PyArrayMethods};
-use polars::export::arrow;
-use polars::export::arrow::array::Array;
-use polars::export::arrow::bitmap::BitmapBuilder;
-use polars::export::arrow::types::NativeType;
+use arrow::array::Array;
+use arrow::bitmap::MutableBitmap;
+use arrow::types::NativeType;
 use polars_core::prelude::*;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};

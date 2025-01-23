@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
-use polars_core::export::arrow::bitmap::Bitmap;
+use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;

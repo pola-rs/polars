@@ -5,9 +5,9 @@ pub mod series;
 use std::collections::BTreeMap;
 
 use polars::chunked_array::builder::get_list_builder;
-use polars::export::arrow::bitmap::BitmapBuilder;
+use arrow::bitmap::BitmapBuilder;
 use polars::prelude::*;
-use polars_core::export::rayon::prelude::*;
+use rayon::prelude::*;
 use polars_core::utils::CustomIterTools;
 use polars_core::POOL;
 use polars_utils::pl_str::PlSmallStr;

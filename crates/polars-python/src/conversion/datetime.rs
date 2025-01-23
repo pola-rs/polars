@@ -5,7 +5,7 @@ use std::str::FromStr;
 use chrono_tz::Tz;
 use polars::datatypes::TimeUnit;
 use polars_core::datatypes::TimeZone;
-use polars_core::export::chrono::{
+use chrono::{
     DateTime, FixedOffset, NaiveDateTime, NaiveTime, TimeDelta, TimeZone as _,
 };
 use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python};

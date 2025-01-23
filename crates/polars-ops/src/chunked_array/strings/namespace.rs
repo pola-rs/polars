@@ -5,8 +5,8 @@ use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "string_to_integer")]
-use polars_core::export::num::Num;
-use polars_core::export::regex::Regex;
+use num_traits::Num;
+use regex::Regex;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
 use regex::escape;

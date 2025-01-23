@@ -2,7 +2,7 @@
 //!
 //! It also provides utility functions for working with SQL datatypes.
 use polars_core::datatypes::{DataType, TimeUnit};
-use polars_core::export::regex::{Regex, RegexBuilder};
+use regex::{Regex, RegexBuilder};
 use polars_error::{polars_bail, PolarsResult};
 use polars_plan::dsl::{lit, Expr};
 use sqlparser::ast::{

@@ -22,8 +22,6 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
-#[cfg(feature = "dtype-duration")]
-use itoa;
 use num_traits::{Num, NumCast};
 use polars_error::feature_gated;
 

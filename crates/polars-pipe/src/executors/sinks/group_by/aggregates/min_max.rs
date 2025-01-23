@@ -2,7 +2,7 @@ use std::any::Any;
 
 use arrow::array::PrimitiveArray;
 use polars_compute::min_max::MinMaxKernel;
-use polars_core::export::num::NumCast;
+use num_traits::NumCast;
 use polars_core::prelude::*;
 use polars_utils::min_max::MinMax;
 

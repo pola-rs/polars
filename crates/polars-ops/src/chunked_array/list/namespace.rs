@@ -4,9 +4,9 @@ use arrow::array::ValueSize;
 use polars_compute::gather::sublist::list::{index_is_oob, sublist_get};
 use polars_core::chunked_array::builder::get_list_builder;
 #[cfg(feature = "list_gather")]
-use polars_core::export::num::ToPrimitive;
+use num_traits::ToPrimitive;
 #[cfg(feature = "list_gather")]
-use polars_core::export::num::{NumCast, Signed, Zero};
+use num_traits::{NumCast, Signed, Zero};
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
 use polars_core::utils::try_get_supertype;

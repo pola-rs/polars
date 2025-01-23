@@ -1,7 +1,6 @@
-use polars::export::arrow;
-use polars::export::arrow::array::Array;
-use polars::export::arrow::ffi;
-use polars::export::arrow::ffi::{
+use arrow::array::Array;
+use arrow::ffi;
+use arrow::ffi::{
     ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema,
 };
 use polars::prelude::*;
