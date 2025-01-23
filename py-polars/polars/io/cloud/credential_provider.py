@@ -7,22 +7,20 @@ import os
 import subprocess
 import sys
 import zoneinfo
-from typing import IO, TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
     else:
         from typing_extensions import TypeAlias
-    from pathlib import Path
 
 from polars._utils.unstable import issue_unstable_warning
 
 # These typedefs are here to avoid circular import issues, as
 # `CredentialProviderFunction` specifies "CredentialProvider"
-CredentialProviderFunctionReturn: TypeAlias = tuple[
-    dict[str, Optional[str]], Optional[int]
-]
+CredentialProviderFunctionReturn: TypeAlias = tuple[dict[str, str], Optional[int]]
 
 CredentialProviderFunction: TypeAlias = Union[
     Callable[[], CredentialProviderFunctionReturn], "CredentialProvider"
@@ -107,13 +105,13 @@ class CredentialProviderAWS(CredentialProvider):
         creds = session.get_credentials()
 
         if creds is None:
-            msg = "unexpected None value returned from boto3.Session.get_credentials()"
+            msg = "CredentialProviderAWS: unexpected None value returned from boto3.Session.get_credentials()"
             raise ValueError(msg)
 
         return {
             "aws_access_key_id": creds.access_key,
             "aws_secret_access_key": creds.secret_key,
-            "aws_session_token": creds.token,
+            **({"aws_session_token": creds.token} if creds.token is not None else {}),
         }, None
 
     def _finish_assume_role(self, session: Any) -> CredentialProviderFunctionReturn:
@@ -236,7 +234,7 @@ class CredentialProviderAzure(CredentialProvider):
                         file=sys.stderr,
                     )
             else:
-                return creds, None  # type: ignore[return-value]
+                return creds, None
 
         token = self.credential.get_token(*self.scopes, tenant_id=self.tenant_id)
 
@@ -390,19 +388,7 @@ class CredentialProviderGCP(CredentialProvider):
 
 def _maybe_init_credential_provider(
     credential_provider: CredentialProviderFunction | Literal["auto"] | None,
-    source: (
-        str
-        | Path
-        | IO[str]
-        | IO[bytes]
-        | bytes
-        | list[str]
-        | list[Path]
-        | list[IO[str]]
-        | list[IO[bytes]]
-        | list[bytes]
-        | None
-    ),
+    source: Any,
     storage_options: dict[str, Any] | None,
     caller_name: str,
 ) -> CredentialProviderFunction | CredentialProvider | None:
@@ -490,3 +476,28 @@ def _maybe_init_credential_provider(
         print(msg, file=sys.stderr)
 
     return provider
+
+
+def _get_credentials_from_provider_expiry_aware(
+    credential_provider: CredentialProviderFunction,
+) -> dict[str, str]:
+    creds, opt_expiry = credential_provider()
+
+    if (
+        opt_expiry is not None
+        and (expires_in := opt_expiry - int(datetime.now().timestamp())) < 7
+    ):
+        import os
+        import sys
+        from time import sleep
+
+        if os.getenv("POLARS_VERBOSE") == "1":
+            print(
+                f"waiting for {expires_in} seconds for refreshed credentials",
+                file=sys.stderr,
+            )
+
+        sleep(1 + expires_in)
+        creds, _ = credential_provider()
+
+    return creds
