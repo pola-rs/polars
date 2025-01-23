@@ -1015,9 +1015,12 @@ def test_join_lit_panic_11410() -> None:
     dates = df.select("date").unique(maintain_order=True)
     symbols = df.select("symbol").unique(maintain_order=True)
 
-    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).collect().to_dict(
-        as_series=False
-    ) == {"symbol": [4, 4, 4, 5, 5, 5, 6, 6, 6], "date": [1, 2, 3, 1, 2, 3, 1, 2, 3]}
+    assert symbols.join(
+        dates, left_on=pl.lit(1), right_on=pl.lit(1), maintain_order="left_right"
+    ).collect().to_dict(as_series=False) == {
+        "symbol": [4, 4, 4, 5, 5, 5, 6, 6, 6],
+        "date": [1, 2, 3, 1, 2, 3, 1, 2, 3],
+    }
 
 
 def test_join_empty_literal_17027() -> None:
