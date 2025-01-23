@@ -530,7 +530,6 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(post_sort_select_stream);
                 transformed_exprs.push(sorted_col_expr);
             },
-            AExpr::Gather { .. } => todo!(),
             AExpr::Filter { input: inner, by } => {
                 // Select our inputs (if we don't do this we'll waste time filtering irrelevant columns).
                 let out_name = unique_column_name();
@@ -611,7 +610,8 @@ fn lower_exprs_with_ctx(
             AExpr::AnonymousFunction { .. }
             | AExpr::Function { .. }
             | AExpr::Slice { .. }
-            | AExpr::Window { .. } => {
+            | AExpr::Window { .. }
+            | AExpr::Gather { .. } => {
                 let out_name = unique_column_name();
                 fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
