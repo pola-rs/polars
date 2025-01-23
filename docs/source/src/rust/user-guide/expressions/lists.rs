@@ -115,7 +115,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ]
         .into_iter()
         .flat_map(|inner| inner.into_iter().flat_map(|inner2| inner2))
-        // .copied()
         .collect::<Vec<&str>>(),
     )
     .reshape_array(&[
