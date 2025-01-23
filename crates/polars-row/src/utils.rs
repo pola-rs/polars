@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 
 #[macro_export]
 macro_rules! with_match_arrow_primitive_type {(
@@ -27,15 +27,15 @@ pub(crate) unsafe fn decode_opt_nulls(rows: &[&[u8]], null_sentinel: u8) -> Opti
         .iter()
         .position(|row| *row.get_unchecked(0) == null_sentinel)?;
 
-    let mut bm = MutableBitmap::with_capacity(rows.len());
+    let mut bm = BitmapBuilder::with_capacity(rows.len());
     bm.extend_constant(first_null, true);
     bm.push(false);
 
-    bm.extend_from_trusted_len_iter_unchecked(
+    bm.extend_trusted_len_iter(
         rows[first_null + 1..]
             .iter()
             .map(|row| *row.get_unchecked(0) != null_sentinel),
     );
 
-    Some(bm.freeze())
+    bm.into_opt_validity()
 }

@@ -10,7 +10,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{MutableBinaryViewArray, Utf8ViewArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 
 use crate::row::RowEncodingOptions;
 
@@ -98,7 +98,7 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
         return array.into();
     }
 
-    let mut validity = MutableBitmap::with_capacity(num_rows);
+    let mut validity = BitmapBuilder::with_capacity(num_rows);
     validity.extend_constant(array.len(), true);
     validity.push(false);
     array.push_value_ignore_validity("");
@@ -124,5 +124,5 @@ pub unsafe fn decode_str(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Utf8Vie
     }
 
     let out: Utf8ViewArray = array.into();
-    out.with_validity(Some(validity.freeze()))
+    out.with_validity(validity.into_opt_validity())
 }

@@ -25,6 +25,11 @@ impl BitmapBuilder {
     }
 
     #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.bit_len == 0
+    }
+
+    #[inline(always)]
     pub fn capacity(&self) -> usize {
         self.bit_cap
     }

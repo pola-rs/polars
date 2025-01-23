@@ -17,24 +17,24 @@ where
     feature = "dtype-categorical"
 ))]
 fn shift_and_fill_with_mask(s: &Column, n: i64, fill_value: &Column) -> PolarsResult<Column> {
-    use polars_core::export::arrow::array::BooleanArray;
-    use polars_core::export::arrow::bitmap::MutableBitmap;
+    use arrow::array::BooleanArray;
+    use arrow::bitmap::BitmapBuilder;
 
     let mask: BooleanChunked = if n > 0 {
         let len = s.len();
-        let mut bits = MutableBitmap::with_capacity(s.len());
+        let mut bits = BitmapBuilder::with_capacity(s.len());
         bits.extend_constant(n as usize, false);
         bits.extend_constant(len.saturating_sub(n as usize), true);
-        let mask = BooleanArray::from_data_default(bits.into(), None);
+        let mask = BooleanArray::from_data_default(bits.freeze(), None);
         mask.into()
     } else {
         let length = s.len() as i64;
         // n is negative, so subtraction.
         let tipping_point = std::cmp::max(length + n, 0);
-        let mut bits = MutableBitmap::with_capacity(s.len());
+        let mut bits = BitmapBuilder::with_capacity(s.len());
         bits.extend_constant(tipping_point as usize, true);
         bits.extend_constant(-n as usize, false);
-        let mask = BooleanArray::from_data_default(bits.into(), None);
+        let mask = BooleanArray::from_data_default(bits.freeze(), None);
         mask.into()
     };
     s.shift(n).zip_with_same_type(&mask, fill_value)
