@@ -325,10 +325,10 @@ impl MultiScanExec {
 
         let mut final_per_source_schema = Cow::Borrowed(self.file_info.schema.as_ref());
         if let Some(with_columns) = file_with_columns.as_ref() {
-            final_per_source_schema
-                .to_mut()
+            final_per_source_schema = Cow::Owned(final_per_source_schema
+                .as_ref()
                 .try_project(with_columns.as_ref())
-                .unwrap();
+                .unwrap());
         }
 
         // Remove the hive columns for each file load.
