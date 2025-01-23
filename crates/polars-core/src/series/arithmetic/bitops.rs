@@ -9,6 +9,7 @@ macro_rules! impl_bitop {
         $(
         impl std::ops::$trait for &Series {
             type Output = PolarsResult<Series>;
+            #[inline(never)]
             fn $f(self, rhs: Self) -> Self::Output {
                 use DataType as DT;
                 match self.dtype() {
@@ -17,18 +18,19 @@ macro_rules! impl_bitop {
                         let rhs = lhs.unpack_series_matching_type(rhs)?;
                         Ok(lhs.$f(rhs).into_series())
                     },
-                    dt if dt.is_integer() => with_match_physical_integer_polars_type!(dt, |$T| {
-                        let lhs: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
-
+                    dt if dt.is_integer() => {
                         let rhs = if rhs.len() == 1 {
                             Cow::Owned(rhs.cast(self.dtype())?)
                         } else {
                             Cow::Borrowed(rhs)
                         };
 
-                        let rhs = lhs.unpack_series_matching_type(&rhs)?;
-                        Ok(lhs.$f(&rhs).into_series())
-                    }),
+                        with_match_physical_integer_polars_type!(dt, |$T| {
+                            let lhs: &ChunkedArray<$T> = self.as_ref().as_ref().as_ref();
+                            let rhs = lhs.unpack_series_matching_type(&rhs)?;
+                            Ok(lhs.$f(&rhs).into_series())
+                        })
+                    },
                     _ => polars_bail!(opq = $f, self.dtype()),
                 }
             }
