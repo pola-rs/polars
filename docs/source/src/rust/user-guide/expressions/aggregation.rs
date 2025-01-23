@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     schema.with_column("birthday".into(), DataType::Date);
 
-    let data: Vec<u8> = Client::new().get(url).send()?.text()?.bytes().collect();
+    let data = Client::new().get(url).send()?.bytes()?;
 
     let dataset = CsvReadOptions::default()
         .with_has_header(true)
