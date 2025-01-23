@@ -11261,8 +11261,7 @@ class DataFrame:
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
         """
-        columns = _expand_selectors(self, columns, *more_columns)
-        return self._from_pydf(self._df.unnest(columns))
+        return self.lazy().unnest(columns, *more_columns).collect(_eager=True)
 
     def corr(self, **kwargs: Any) -> DataFrame:
         """

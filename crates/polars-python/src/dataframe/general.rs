@@ -651,13 +651,6 @@ impl PyDataFrame {
         })
     }
 
-    pub fn unnest(&self, py: Python, columns: Vec<String>) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| self.df.unnest(columns))
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
     pub fn clear(&self, py: Python) -> Self {
         py.allow_threads(|| self.df.clear()).into()
     }
