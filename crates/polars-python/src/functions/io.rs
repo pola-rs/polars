@@ -1,9 +1,9 @@
 use std::io::BufReader;
 
+use arrow::array::Utf8ViewArray;
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 use polars::prelude::ArrowSchema;
 use polars_core::datatypes::create_enum_dtype;
-use arrow::array::Utf8ViewArray;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 

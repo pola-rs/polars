@@ -1,6 +1,6 @@
+use arrow::datatypes::IntegerType;
 use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
-use arrow::datatypes::IntegerType;
 use polars_compute::cast::CastOptionsImpl;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};

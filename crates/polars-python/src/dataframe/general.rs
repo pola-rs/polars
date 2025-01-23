@@ -1,7 +1,7 @@
 use std::mem::ManuallyDrop;
 
-use either::Either;
 use arrow::bitmap::MutableBitmap;
+use either::Either;
 use polars::prelude::*;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};

@@ -1,16 +1,15 @@
 use std::borrow::{Borrow, Cow};
 
+use chrono::{
+    DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike,
+};
 use chrono_tz::Tz;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 #[cfg(feature = "object")]
 use polars::datatypes::OwnedObject;
 use polars::datatypes::{DataType, Field, PlHashMap, TimeUnit};
-use chrono::{DateTime, FixedOffset};
 use polars::prelude::{AnyValue, PlSmallStr, Series};
-use chrono::{
-    Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike,
-};
 use polars_core::utils::any_values_to_supertype_and_n_dtypes;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::exceptions::{PyOverflowError, PyTypeError, PyValueError};

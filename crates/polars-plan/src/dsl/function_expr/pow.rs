@@ -1,6 +1,5 @@
 use num_traits::pow::Pow;
-use num_traits::{One, Zero};
-use num_traits::{Float, ToPrimitive};
+use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_core::prelude::arity::{broadcast_binary_elementwise, unary_elementwise_values};
 use polars_core::with_match_physical_integer_type;
 

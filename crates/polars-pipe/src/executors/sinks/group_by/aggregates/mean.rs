@@ -4,8 +4,8 @@ use std::ops::Add;
 use arrow::array::{Array, PrimitiveArray};
 use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
 use arrow::compute::aggregate::Sum;
-use arrow::types::simd::Simd;
 use arrow::datatypes::PrimitiveType;
+use arrow::types::simd::Simd;
 use num_traits::NumCast;
 use polars_core::prelude::*;
 
