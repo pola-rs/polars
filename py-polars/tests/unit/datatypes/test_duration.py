@@ -202,3 +202,9 @@ def test_series_duration_units() -> None:
         ),
         pl.DataFrame({"x": [td(microseconds=i) for i in range(4)]}),
     )
+
+
+def test_comparison_with_string_raises_9461() -> None:
+    df = pl.DataFrame({"duration": [timedelta(hours=2)]})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.filter(pl.col("duration") > "1h")

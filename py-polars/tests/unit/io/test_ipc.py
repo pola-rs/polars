@@ -427,3 +427,17 @@ def test_memmap_ipc_chunked_structs(
     f = tmp_path / "f.ipc"
     c.write_ipc(f)
     assert_frame_equal(c, pl.read_ipc(f))
+
+
+def test_categorical_lexical_sort_2732() -> None:
+    df = pl.DataFrame(
+        {
+            "a": ["foo", "bar", "baz"],
+            "b": [1, 3, 2],
+        },
+        schema_overrides={"a": pl.Categorical("lexical")},
+    )
+    f = io.BytesIO()
+    df.write_ipc(f)
+    f.seek(0)
+    assert_frame_equal(df, pl.read_ipc(f))

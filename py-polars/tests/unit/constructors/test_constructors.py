@@ -1207,6 +1207,18 @@ def test_from_dicts_infer_integer_types() -> None:
         pl.from_dicts([{"too_big": 2**127}])
 
 
+def test_from_dicts_list_large_int_17006() -> None:
+    data = [{"x": [2**64 - 1]}]
+
+    result = pl.from_dicts(data, schema={"x": pl.List(pl.UInt64)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.List(pl.UInt64)})
+    assert_frame_equal(result, expected)
+
+    result = pl.from_dicts(data, schema={"x": pl.Array(pl.UInt64, 1)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.Array(pl.UInt64, 1)})
+    assert_frame_equal(result, expected)
+
+
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
     # 5182
@@ -1831,3 +1843,23 @@ def test_init_from_subclassed_types() -> None:
         assert (
             pl.Series([value]).to_list() == pl.Series([SubclassedType(value)]).to_list()
         )
+
+
+def test_series_init_with_python_type_7737() -> None:
+    assert pl.Series([], dtype=int).dtype == pl.Int64
+    assert pl.Series([], dtype=float).dtype == pl.Float64
+    assert pl.Series([], dtype=bool).dtype == pl.Boolean
+    assert pl.Series([], dtype=str).dtype == pl.Utf8
+
+    with pytest.raises(TypeError):
+        pl.Series(["a"], dtype=int)
+
+    with pytest.raises(TypeError):
+        pl.Series([True], dtype=pl.String)
+
+
+def test_init_from_list_shape_6968() -> None:
+    df1 = pl.DataFrame([[1, None], [2, None], [3, None]])
+    df2 = pl.DataFrame([[None, None], [2, None], [3, None]])
+    assert df1.shape == (2, 3)
+    assert df2.shape == (2, 3)
