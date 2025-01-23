@@ -1,4 +1,4 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::offset::OffsetsBuffer;
@@ -62,16 +62,16 @@ unsafe fn decode_validity(rows: &mut [&[u8]], opt: RowEncodingOptions) -> Option
     // No nulls just return None
     let first_null = first_null?;
 
-    let mut bm = MutableBitmap::new();
+    let mut bm = BitmapBuilder::new();
     bm.reserve(rows.len());
     bm.extend_constant(first_null, true);
     bm.push(false);
-    bm.extend_from_trusted_len_iter(rows[first_null + 1..].iter_mut().map(|row| {
+    bm.extend_trusted_len_iter(rows[first_null + 1..].iter_mut().map(|row| {
         let v;
         (v, *row) = row.split_at_unchecked(1);
         v[0] != null_sentinel
     }));
-    Some(bm.freeze())
+    bm.into_opt_validity()
 }
 
 // We inline this in an attempt to avoid the dispatch cost.
@@ -240,7 +240,7 @@ unsafe fn decode(
             FixedSizeListArray::new(dtype.clone(), rows.len(), values, validity).to_boxed()
         },
         D::List(list_field) | D::LargeList(list_field) => {
-            let mut validity = MutableBitmap::new();
+            let mut validity = BitmapBuilder::new();
 
             // @TODO: we could consider making this into a scratchpad
             let num_rows = rows.len();
@@ -281,7 +281,7 @@ unsafe fn decode(
                 None
             } else {
                 validity.extend_constant(num_rows - validity.len(), true);
-                Some(validity.freeze())
+                validity.into_opt_validity()
             };
             assert_eq!(offsets.len(), rows.len() + 1);
 

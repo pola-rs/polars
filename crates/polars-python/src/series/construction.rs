@@ -3,9 +3,9 @@ use std::borrow::Cow;
 use numpy::{Element, PyArray1, PyArrayMethods};
 use polars::export::arrow;
 use polars::export::arrow::array::Array;
-use polars::export::arrow::bitmap::MutableBitmap;
 use polars::export::arrow::types::NativeType;
 use polars_core::prelude::*;
+use polars::export::arrow::bitmap::BitmapBuilder;
 use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -294,7 +294,7 @@ impl PySeries {
     pub fn new_object(py: Python, name: &str, values: Vec<ObjectValue>, _strict: bool) -> Self {
         #[cfg(feature = "object")]
         {
-            let mut validity = MutableBitmap::with_capacity(values.len());
+            let mut validity = BitmapBuilder::with_capacity(values.len());
             values.iter().for_each(|v| {
                 let is_valid = !v.inner.is_none(py);
                 // SAFETY: we can ensure that validity has correct capacity.
@@ -304,7 +304,7 @@ impl PySeries {
             let ca = ObjectChunked::<ObjectValue>::new_from_vec_and_validity(
                 name.into(),
                 values,
-                validity.into(),
+                validity.into_opt_validity(),
             );
             let s = ca.into_series();
             s.into()

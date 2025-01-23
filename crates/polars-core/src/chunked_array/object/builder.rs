@@ -145,13 +145,13 @@ where
         unsafe { ObjectChunked::new_with_dims(field, vec![arr], len, 0) }
     }
 
-    pub fn new_from_vec_and_validity(name: PlSmallStr, v: Vec<T>, validity: Bitmap) -> Self {
+    pub fn new_from_vec_and_validity(name: PlSmallStr, v: Vec<T>, validity: Option<Bitmap>) -> Self {
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
         let len = v.len();
-        let null_count = validity.unset_bits();
+        let null_count = validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
         let arr = Box::new(ObjectArray {
             values: v.into(),
-            validity: Some(validity),
+            validity,
         });
 
         unsafe { ObjectChunked::new_with_dims(field, vec![arr], len, null_count) }

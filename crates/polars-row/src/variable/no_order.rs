@@ -11,7 +11,7 @@
 use std::mem::MaybeUninit;
 
 use arrow::array::{BinaryViewArray, MutableBinaryViewArray};
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use polars_utils::slice::Slice2Uninit;
 
 use crate::row::RowEncodingOptions;
@@ -90,7 +90,7 @@ pub unsafe fn decode_variable_no_order(
 
     let num_rows = rows.len();
     let mut array = MutableBinaryViewArray::<[u8]>::with_capacity(num_rows);
-    let mut validity = MutableBitmap::new();
+    let mut validity = BitmapBuilder::new();
 
     for row in rows.iter_mut() {
         let sentinel = *unsafe { row.get_unchecked(0) };
@@ -142,5 +142,5 @@ pub unsafe fn decode_variable_no_order(
     }
 
     let array = array.freeze();
-    array.with_validity(Some(validity.freeze()))
+    array.with_validity(validity.into_opt_validity())
 }
