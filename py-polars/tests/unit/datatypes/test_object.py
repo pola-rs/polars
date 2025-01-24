@@ -239,3 +239,16 @@ def test_object_estimated_size() -> None:
 
     # is a huge underestimation
     assert df.estimated_size() == 9
+
+
+def test_object_polars_dtypes_20572() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Date(),
+            "b": pl.Decimal(5, 1),
+            "c": pl.Int64(),
+            "d": pl.Object(),
+            "e": pl.String(),
+        }
+    )
+    assert all(dt == pl.Object() for dt in df.schema.dtypes())
