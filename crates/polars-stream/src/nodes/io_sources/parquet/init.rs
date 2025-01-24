@@ -2,7 +2,6 @@ use std::future::Future;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlIndexSet;
 use polars_error::PolarsResult;
 use polars_io::prelude::ParallelStrategy;
 use polars_io::prelude::_internal::PrefilterMaskSetting;

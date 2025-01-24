@@ -14,7 +14,6 @@ use polars_core::utils::arrow::io::ipc::read::{
 };
 use polars_core::utils::slice_offsets;
 use polars_error::{ErrString, PolarsError, PolarsResult};
-use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;

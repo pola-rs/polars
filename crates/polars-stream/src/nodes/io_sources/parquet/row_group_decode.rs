@@ -9,7 +9,7 @@ use polars_core::series::{IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::hive;
-use polars_io::predicates::{IOPredicate, PhysicalIoExpr};
+use polars_io::predicates::IOPredicate;
 use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
