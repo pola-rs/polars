@@ -1373,7 +1373,7 @@ class ExprListNameSpace:
         other = parse_into_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
-    def pad_start(self, fill_value: IntoExpr) -> Expr:
+    def pad_start(self, fill_value: IntoExpr, *, width: int) -> Expr:
         """
         Fill each sub-list until it matches the length of the longest sub-list.
 
@@ -1382,6 +1382,11 @@ class ExprListNameSpace:
         fill_value
             Add this value at the left of the sub-list until the length of the
             sub-list is equal to the length of the longest sub-list.
+        width
+            Width to which sub-lists will be padded to. If a sub-list has more
+            elements than this, then the exceeding right-most elements will be
+            removed. If it has less elements than that, `fill_value` will be
+            added on the left until `width` is reached.
 
         Examples
         --------
@@ -1389,21 +1394,21 @@ class ExprListNameSpace:
         ...     {"a": [[1], [], [1, 2, 3]], "int": [0, 999, 2], "float": [0.0, 999, 2]}
         ... )
         >>> df.select(
-        ...     filled_int=pl.col("a").list.pad_start(pl.col("int")),
-        ...     filled_float=pl.col("a").list.pad_start(pl.col("float")),
+        ...     filled_int=pl.col("a").list.pad_start(pl.col("int"), width=4),
+        ...     filled_float=pl.col("a").list.pad_start(pl.col("float"), width=1),
         ... )
         shape: (3, 2)
-        ┌─────────────────┬───────────────────────┐
-        │ filled_int      ┆ filled_float          │
-        │ ---             ┆ ---                   │
-        │ list[i64]       ┆ list[f64]             │
-        ╞═════════════════╪═══════════════════════╡
-        │ [0, 0, 1]       ┆ [0.0, 0.0, 1.0]       │
-        │ [999, 999, 999] ┆ [999.0, 999.0, 999.0] │
-        │ [1, 2, 3]       ┆ [1.0, 2.0, 3.0]       │
-        └─────────────────┴───────────────────────┘
+        ┌───────────────────┬──────────────┐
+        │ filled_int        ┆ filled_float │
+        │ ---               ┆ ---          │
+        │ list[i64]         ┆ list[f64]    │
+        ╞═══════════════════╪══════════════╡
+        │ [0, 0, … 1]       ┆ [1.0]        │
+        │ [999, 999, … 999] ┆ [999.0]      │
+        │ [2, 1, … 3]       ┆ [1.0]        │
+        └───────────────────┴──────────────┘
         >>> df = pl.DataFrame({"a": [["a"], [], ["b", "c", "d"]]})
-        >>> df.select(pl.col("a").list.pad_start("foo"))
+        >>> df.select(pl.col("a").list.pad_start("foo", width=3))
         shape: (3, 1)
         ┌───────────────────────┐
         │ a                     │
@@ -1416,4 +1421,4 @@ class ExprListNameSpace:
         └───────────────────────┘
         """
         fill_value = parse_into_expression(fill_value, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_pad_start(fill_value))
+        return wrap_expr(self._pyexpr.list_pad_start(fill_value, width))

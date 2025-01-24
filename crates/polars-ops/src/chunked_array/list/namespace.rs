@@ -514,7 +514,7 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     #[cfg(feature = "list_pad")]
-    fn lst_pad_start(&self, fill_value: &Column) -> PolarsResult<ListChunked> {
+    fn lst_pad_start(&self, fill_value: &Column, width: usize) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let inner_dtype = ca.inner_dtype();
         let fill_dtype = fill_value.dtype();
@@ -531,18 +531,6 @@ pub trait ListNameSpaceImpl: AsList {
         };
         let fill_value = fill_value.cast(&super_type)?;
 
-        // Length of largest sublist.
-        let max_len = ca
-            .iter()
-            .map(|opt_v| match opt_v {
-                Some(v) => v.len(),
-                None => 0,
-            })
-            .collect::<Vec<usize>>()
-            .into_iter()
-            .max()
-            .unwrap_or(0);
-
         let out: ListChunked = match super_type {
             DataType::Int64 => {
                 let fill_value = fill_value.i64()?;
@@ -550,12 +538,19 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.i64().unwrap();
-                    let mut fill_values = Int64Chunked::new_vec(
-                        PlSmallStr::EMPTY,
-                        vec![fill_value.unwrap(); max_len - ca.len()],
-                    );
+                    let mut fill_values;
+                    if width == ca.len() {
+                        fill_values = ca.clone();
+                    } else if width < ca.len() {
+                        fill_values = ca.slice(0, width);
+                    } else {
+                        fill_values = Int64Chunked::new_vec(
+                            PlSmallStr::EMPTY,
+                            vec![fill_value.unwrap(); width - ca.len()],
+                        );
+                        let _ = fill_values.append(ca);
+                    };
 
-                    let _ = fill_values.append(ca);
                     Some(fill_values.into())
                 })
             },
@@ -566,12 +561,19 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.f64().unwrap();
-                    let mut fill_values = Float64Chunked::new_vec(
-                        PlSmallStr::EMPTY,
-                        vec![fill_value.unwrap(); max_len - ca.len()],
-                    );
+                    let mut fill_values;
+                    if width == ca.len() {
+                        fill_values = ca.clone();
+                    } else if width < ca.len() {
+                        fill_values = ca.slice(0, width);
+                    } else {
+                        fill_values = Float64Chunked::new_vec(
+                            PlSmallStr::EMPTY,
+                            vec![fill_value.unwrap(); width - ca.len()],
+                        );
+                        let _ = fill_values.append(ca);
+                    };
 
-                    let _ = fill_values.append(ca);
                     Some(fill_values.into())
                 })
             },
@@ -581,13 +583,20 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.str().unwrap();
-                    let mut filled_values = StringChunked::new(
-                        PlSmallStr::EMPTY,
-                        vec![fill_value.unwrap(); max_len - ca.len()],
-                    );
+                    let mut fill_values;
+                    if width == ca.len() {
+                        fill_values = ca.clone();
+                    } else if width < ca.len() {
+                        fill_values = ca.slice(0, width);
+                    } else {
+                        fill_values = StringChunked::new(
+                            PlSmallStr::EMPTY,
+                            vec![fill_value.unwrap(); width - ca.len()],
+                        );
+                        let _ = fill_values.append(ca);
+                    };
 
-                    let _ = filled_values.append(ca);
-                    Some(filled_values.into())
+                    Some(fill_values.into())
                 })
             },
             DataType::Boolean => {
@@ -596,13 +605,20 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.bool().unwrap();
-                    let mut filled_values = BooleanChunked::new(
-                        PlSmallStr::EMPTY,
-                        vec![fill_value.unwrap(); max_len - ca.len()],
-                    );
+                    let mut fill_values;
+                    if width == ca.len() {
+                        fill_values = ca.clone();
+                    } else if width < ca.len() {
+                        fill_values = ca.slice(0, width);
+                    } else {
+                        fill_values = BooleanChunked::new(
+                            PlSmallStr::EMPTY,
+                            vec![fill_value.unwrap(); width - ca.len()],
+                        );
+                        let _ = fill_values.append(ca);
+                    };
 
-                    let _ = filled_values.append(ca);
-                    Some(filled_values.into())
+                    Some(fill_values.into())
                 })
             },
             dt => {
