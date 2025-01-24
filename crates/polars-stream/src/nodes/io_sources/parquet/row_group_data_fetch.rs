@@ -90,7 +90,7 @@ impl RowGroupDataFetcher {
 
                 if self.use_statistics
                     && !match read_this_row_group(
-                        None, // @TODO!!! Fix!!!
+                        self.predicate.as_ref(),
                         &row_group_metadata,
                         self.reader_schema.as_ref(),
                     ) {
