@@ -6951,12 +6951,13 @@ class Expr:
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_var_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
     ) -> Expr:
@@ -7002,7 +7003,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -7103,7 +7104,7 @@ class Expr:
             self._pyexpr.rolling_var_by(
                 by,
                 window_size,
-                min_periods,
+                min_samples,
                 closed,
                 ddof,
             )
