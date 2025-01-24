@@ -35,6 +35,7 @@ class DataFramePlot:
     """DataFrame.plot namespace."""
 
     def __init__(self, df: DataFrame, backend: str | None = None) -> None:
+        self._df = df
         # TODO: add config for backend
         if backend is None and "POLARS_PLOTTING_BACKEND" in os.environ:
             backend = os.environ["POLARS_PLOTTING_BACKEND"]
@@ -46,7 +47,6 @@ class DataFramePlot:
         if backend == "altair":
             self._backend = AltairPlot(df)
 
-    # We could have a bunch of overloads here for all the possibilities
     def bar(
         self,
         x: X | None = None,
@@ -56,6 +56,11 @@ class DataFramePlot:
         **kwargs: Any,
     ) -> Any:
         return self._backend.bar(x, y, color, **kwargs)
+
+    def alt(self) -> AltairPlot:
+        # going through the extra class makes it so users can get the right static
+        # typed outputs or
+        return AltairPlot(self._df)
 
 
 class AltairPlot:
