@@ -11,6 +11,13 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
     TRIM_DECIMAL_ZEROS.store(trim.unwrap_or(false), Ordering::Relaxed)
 }
 
+/// Assuming bytes are a well-formed decimal number (with or without a separator),
+/// infer the scale of the number.  If no separator is present, the scale is 0.
+pub fn infer_scale(bytes: &[u8]) -> u8 {
+    let Some(separator) = bytes.iter().position(|b| *b == b'.') else { return 0; };
+    (bytes.len() - (1 + separator)) as u8
+}
+
 /// Deserialize bytes to a single i128 representing a decimal, at a specified
 /// precision (optional) and scale (required). The number is checked to ensure
 /// it fits within the specified precision and scale.  Consistent with float
@@ -22,7 +29,7 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
 /// well-formed, or does not fit. Only b'.' is allowed as a decimal separator
 /// (issue #6698).
 #[inline]
-pub fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
+pub fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Option<i128> {
     let precision_digits = precision.unwrap_or(38).min(38) as usize;
     if scale as usize > precision_digits {
         return None;
