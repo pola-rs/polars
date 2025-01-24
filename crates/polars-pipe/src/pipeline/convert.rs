@@ -4,6 +4,7 @@ use std::rc::Rc;
 use hashbrown::hash_map::Entry;
 use polars_core::prelude::*;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_io::predicates::IOPredicate;
 #[cfg(feature = "parquet")]
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_ops::prelude::JoinType;
@@ -137,8 +138,16 @@ where
                                     self.p.as_stats_evaluator()
                                 }
                             }
+                            let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
+                                predicate.node(),
+                                expr_arena,
+                            )));
 
-                            PolarsResult::Ok(Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>)
+                            PolarsResult::Ok(IOPredicate {
+                                expr: Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>,
+                                live_columns,
+                                skip_batch_predicate: None,
+                            })
                         })
                         .transpose()?;
                     let src = sources::ParquetSource::new(

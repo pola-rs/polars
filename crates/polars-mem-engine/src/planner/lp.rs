@@ -646,7 +646,7 @@ pub fn create_scan_predicate(
     let mut skip_batch_predicate = None;
 
     if create_skip_batch_predicate {
-        if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, &schema) {
+        if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
             let expr = ExprIR::new(node, predicate.output_name_inner().clone());
 
             if std::env::var("POLARS_OUTPUT_SKIP_BATCH_PRED").as_deref() == Ok("1") {
