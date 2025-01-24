@@ -80,10 +80,6 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.child.to_field(input_schema)
     }
-
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.child.collect_live_columns(lv)
-    }
     fn is_scalar(&self) -> bool {
         self.child.is_scalar()
     }

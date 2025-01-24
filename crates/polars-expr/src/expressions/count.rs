@@ -36,6 +36,7 @@ impl PhysicalExpr for CountExpr {
         Ok(AggregationContext::new(c, Cow::Borrowed(groups), true))
     }
 
+<<<<<<< HEAD
     fn collect_live_columns(&self, _lv: &mut PlIndexSet<PlSmallStr>) {}
 
     fn isolate_column_expr(
@@ -48,6 +49,8 @@ impl PhysicalExpr for CountExpr {
         None
     }
 
+=======
+>>>>>>> f08719eb76 (xfail old streaming engine)
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
     }

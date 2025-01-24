@@ -42,7 +42,7 @@ where
 fn get_source<F>(
     source: IR,
     operator_objects: &mut Vec<Box<dyn Operator>>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     to_physical: &F,
     push_predicate: bool,
     verbose: bool,
@@ -127,13 +127,6 @@ where
                                     self.p.evaluate_io(df)
                                 }
 
-                                fn collect_live_columns(
-                                    &self,
-                                    live_columns: &mut PlIndexSet<PlSmallStr>,
-                                ) {
-                                    self.p.collect_live_columns(live_columns);
-                                }
-
                                 fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
                                     self.p.as_stats_evaluator()
                                 }
@@ -141,7 +134,6 @@ where
                             let live_columns = Arc::new(PlIndexSet::from_iter(
                                 aexpr_to_leaf_names_iter(predicate.node(), expr_arena),
                             ));
-
                             PolarsResult::Ok(ScanIOPredicate {
                                 predicate: Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>,
                                 live_columns,

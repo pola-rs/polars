@@ -147,10 +147,6 @@ impl PhysicalExpr for FilterExpr {
         }
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.input.collect_live_columns(lv);
-        self.by.collect_live_columns(lv);
-    }
 
     fn isolate_column_expr(
         &self,
