@@ -471,15 +471,15 @@ pub(crate) fn py_object_to_any_value<'py>(
             Ok(get_struct)
         } else {
             let ob_type = ob.get_type();
-            let type_name = ob_type.qualname()?.to_string();
+            let type_name = ob_type.fully_qualified_name()?.to_string();
             match type_name.as_str() {
                 // Can't use pyo3::types::PyDateTime with abi3-py37 feature,
                 // so need this workaround instead of `isinstance(ob, datetime)`.
-                "date" => Ok(get_date as InitFn),
-                "time" => Ok(get_time as InitFn),
-                "datetime" => Ok(get_datetime as InitFn),
-                "timedelta" => Ok(get_timedelta as InitFn),
-                "Decimal" => Ok(get_decimal as InitFn),
+                "datetime.date" => Ok(get_date as InitFn),
+                "datetime.time" => Ok(get_time as InitFn),
+                "datetime.datetime" => Ok(get_datetime as InitFn),
+                "datetime.timedelta" => Ok(get_timedelta as InitFn),
+                "decimal.Decimal" => Ok(get_decimal as InitFn),
                 "range" => Ok(get_list as InitFn),
                 _ => {
                     // Support NumPy scalars.
