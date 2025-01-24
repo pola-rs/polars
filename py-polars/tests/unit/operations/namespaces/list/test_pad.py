@@ -63,9 +63,7 @@ def test_list_pad_start_with_lit(data: Any, fill_value: Any, expect: Any) -> Non
 def test_list_pad_start_zero_width() -> None:
     df = pl.DataFrame({"a": [[1], [2, 3]]})
     result = df.select(pl.col("a").list.pad_start(1, width=0))
-    expected = pl.DataFrame(
-        {"a": [[], []]}, schema={"a": pl.List(pl.Int64)}
-    )
+    expected = pl.DataFrame({"a": [[], []]}, schema={"a": pl.List(pl.Int64)})
     assert_frame_equal(result, expected)
 
 
