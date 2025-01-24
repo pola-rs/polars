@@ -14,7 +14,9 @@ pub fn set_trim_decimal_zeros(trim: Option<bool>) {
 /// Assuming bytes are a well-formed decimal number (with or without a separator),
 /// infer the scale of the number.  If no separator is present, the scale is 0.
 pub fn infer_scale(bytes: &[u8]) -> u8 {
-    let Some(separator) = bytes.iter().position(|b| *b == b'.') else { return 0; };
+    let Some(separator) = bytes.iter().position(|b| *b == b'.') else {
+        return 0;
+    };
     (bytes.len() - (1 + separator)) as u8
 }
 
@@ -34,7 +36,7 @@ pub fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Op
     if scale as usize > precision_digits {
         return None;
     }
-    
+
     let separator = bytes.iter().position(|b| *b == b'.').unwrap_or(bytes.len());
     let (mut int, mut frac) = bytes.split_at(separator);
     if frac.len() <= 1 || scale == 0 {
@@ -48,7 +50,7 @@ pub fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Op
     }
 
     // Skip period.
-    frac = &frac[1..]; 
+    frac = &frac[1..];
 
     // Skip sign.
     let negative = match bytes.first() {
@@ -58,7 +60,7 @@ pub fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Op
         },
         _ => false,
     };
-    
+
     // Truncate trailing digits that extend beyond the scale.
     let frac_scale = if scale as usize <= frac.len() {
         frac = &frac[..scale as usize];
@@ -66,13 +68,18 @@ pub fn deserialize_decimal(bytes: &[u8], precision: Option<u8>, scale: u8) -> Op
     } else {
         scale as usize - frac.len()
     };
-    
+
     // Parse and combine parts.
-    let pint: u128 = if int.is_empty() { 0 } else { atoi_simd::parse_pos(int).ok()? };
+    let pint: u128 = if int.is_empty() {
+        0
+    } else {
+        atoi_simd::parse_pos(int).ok()?
+    };
     let pfrac: u128 = atoi_simd::parse_pos(frac).ok()?;
-    
-    let ret = pint.checked_mul(POW10[scale as usize])?.checked_add(
-        pfrac.checked_mul(POW10[frac_scale])?)?;
+
+    let ret = pint
+        .checked_mul(POW10[scale as usize])?
+        .checked_add(pfrac.checked_mul(POW10[frac_scale])?)?;
     if precision.is_some() && ret >= POW10[precision_digits] {
         return None;
     }
@@ -297,7 +304,10 @@ mod test {
         assert_eq!(deserialize_decimal(val, Some(5), 6), None); // insufficient precision, excess scale
         assert_eq!(deserialize_decimal(val, Some(5), 3), None); // insufficient precision, exact scale
         assert_eq!(deserialize_decimal(val, Some(12), 5), Some(120001000)); // excess precision, excess scale
-        assert_eq!(deserialize_decimal(val, None, 35), Some(120001000000000000000000000000000000000));
+        assert_eq!(
+            deserialize_decimal(val, None, 35),
+            Some(120001000000000000000000000000000000000)
+        );
         assert_eq!(deserialize_decimal(val, None, 36), None);
         assert_eq!(deserialize_decimal(val, Some(38), 35), None); // scale causes insufficient precision
     }
