@@ -290,11 +290,8 @@ string_encoding = ["polars-plan/string_encoding"]
 bigidx = ["polars-plan/bigidx", "polars-utils/bigidx"]
 polars_cloud = ["polars-plan/polars_cloud"]
 
-panic_on_schema = ["polars-plan/panic_on_schema", "polars-expr/panic_on_schema"]
-
 test = [
   "polars-plan/debugging",
-  "panic_on_schema",
   "rolling_window",
   "rank",
   "round_series",

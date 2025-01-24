@@ -665,11 +665,6 @@ fn rg_to_dfs_optionally_par_over_columns(
             *previous_row_count += rg_slice.1 as IdxSize;
             continue;
         }
-        // test we don't read the parquet file if this env var is set
-        #[cfg(debug_assertions)]
-        {
-            assert!(std::env::var("POLARS_PANIC_IF_PARQUET_PARSED").is_err())
-        }
 
         let sorting_map = create_sorting_map(md);
 
