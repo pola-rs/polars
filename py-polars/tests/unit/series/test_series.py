@@ -1627,18 +1627,26 @@ def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
         assert srs_nested.dtype == dtype
 
 
-def test_log_exp() -> None:
-    a = pl.Series("a", [1, 100, 1000])
-    b = pl.Series("a", [0.0, 2.0, 3.0])
-    assert_series_equal(a.log10(), b)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Int32,
+        pl.Decimal(21, 3),
+    ],
+)
+def test_log_exp(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 100, 1000], dtype=dtype)
+    b = pl.Series("a", [0, 2, 3], dtype=dtype)
+    assert_series_equal(a.log10(), b.cast(pl.Float64))
 
-    expected = pl.Series("a", np.log(a.to_numpy()))
+    expected = pl.Series("a", np.log(a.cast(pl.Float64).to_numpy()))
     assert_series_equal(a.log(), expected)
 
-    expected = pl.Series("a", np.exp(b.to_numpy()))
+    expected = pl.Series("a", np.exp(b.cast(pl.Float64).to_numpy()))
     assert_series_equal(b.exp(), expected)
 
-    expected = pl.Series("a", np.log1p(a.to_numpy()))
+    expected = pl.Series("a", np.log1p(a.cast(pl.Float64).to_numpy()))
     assert_series_equal(a.log1p(), expected)
 
 
