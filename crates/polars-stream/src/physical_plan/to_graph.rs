@@ -422,7 +422,6 @@ fn to_graph_rec<'a>(
                             nodes::io_sources::ipc::IpcSourceNode::new(
                                 scan_sources,
                                 file_info,
-                                hive_parts,
                                 options,
                                 cloud_options,
                                 file_options,
