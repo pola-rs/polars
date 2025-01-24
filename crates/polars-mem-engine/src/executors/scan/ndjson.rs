@@ -5,14 +5,14 @@ use polars_io::prelude::{JsonLineReader, SerReader};
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
-use crate::FilePredicate;
+use crate::ScanPredicate;
 
 pub struct JsonExec {
     sources: ScanSources,
     options: NDJsonReadOptions,
     file_options: FileScanOptions,
     file_info: FileInfo,
-    predicate: Option<FilePredicate>,
+    predicate: Option<ScanPredicate>,
 }
 
 impl JsonExec {
@@ -21,7 +21,7 @@ impl JsonExec {
         options: NDJsonReadOptions,
         file_options: FileScanOptions,
         file_info: FileInfo,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
     ) -> Self {
         Self {
             sources,
@@ -139,7 +139,7 @@ impl ScanExec for JsonExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
         _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {

@@ -11,7 +11,7 @@ use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
 
 use super::*;
-use crate::FilePredicate;
+use crate::ScanPredicate;
 
 pub struct ParquetExec {
     sources: ScanSources,
@@ -19,7 +19,7 @@ pub struct ParquetExec {
 
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
 
-    predicate: Option<FilePredicate>,
+    predicate: Option<ScanPredicate>,
     skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 
     pub(crate) options: ParquetOptions,
@@ -36,7 +36,7 @@ impl ParquetExec {
         sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
@@ -294,7 +294,7 @@ impl ParquetExec {
             skip_batch_predicate: self
                 .skip_batch_predicate
                 .clone()
-                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone())),
+                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref())),
         });
         let mut base_row_index = self.file_options.row_index.take();
 
@@ -576,7 +576,7 @@ impl ScanExec for ParquetExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
         skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame> {

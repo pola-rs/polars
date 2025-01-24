@@ -29,7 +29,7 @@ use polars_plan::global::_set_n_rows_for_scan;
 pub(crate) use self::python_scan::*;
 use super::*;
 use crate::prelude::*;
-use crate::FilePredicate;
+use crate::ScanPredicate;
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {
@@ -59,7 +59,7 @@ pub(crate) struct AnonymousScanExec {
     pub(crate) function: Arc<dyn AnonymousScan>,
     pub(crate) file_options: FileScanOptions,
     pub(crate) file_info: FileInfo,
-    pub(crate) predicate: Option<FilePredicate>,
+    pub(crate) predicate: Option<ScanPredicate>,
     pub(crate) output_schema: Option<SchemaRef>,
     pub(crate) predicate_has_windows: bool,
 }

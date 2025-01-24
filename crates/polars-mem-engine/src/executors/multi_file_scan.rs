@@ -17,7 +17,7 @@ use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
-use crate::FilePredicate;
+use crate::ScanPredicate;
 
 pub struct PhysicalExprWithConstCols {
     constants: Vec<(PlSmallStr, Scalar)>,
@@ -85,7 +85,7 @@ pub trait ScanExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
         skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame>;
@@ -219,7 +219,7 @@ pub struct MultiScanExec {
     sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
-    predicate: Option<FilePredicate>,
+    predicate: Option<ScanPredicate>,
     file_options: FileScanOptions,
     scan_type: FileScan,
 }
@@ -229,7 +229,7 @@ impl MultiScanExec {
         sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
         file_options: FileScanOptions,
         scan_type: FileScan,
     ) -> Self {
@@ -424,7 +424,7 @@ impl MultiScanExec {
             let skip_batch_predicate = file_predicate
                 .as_ref()
                 .take_if(|_| use_statistics)
-                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone()));
+                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref()));
             if let Some(skip_batch_predicate) = &skip_batch_predicate {
                 let can_skip_batch = skip_batch_predicate
                     .can_skip_batch(exec_source.num_unfiltered_rows()?, PlIndexMap::default())?;

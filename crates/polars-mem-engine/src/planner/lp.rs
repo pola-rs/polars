@@ -10,7 +10,7 @@ use self::predicates::aexpr_to_skip_batch_predicate;
 use super::super::executors::{self, Executor};
 use super::*;
 use crate::utils::*;
-use crate::FilePredicate;
+use crate::ScanPredicate;
 
 fn partitionable_gb(
     keys: &[ExprIR],
@@ -635,7 +635,7 @@ pub fn create_scan_predicate(
     schema: &Arc<Schema>,
     state: &mut ExpressionConversionState,
     create_skip_batch_predicate: bool,
-) -> PolarsResult<FilePredicate> {
+) -> PolarsResult<ScanPredicate> {
     let phys_predicate =
         create_physical_expr(predicate, Context::Default, expr_arena, schema, state)?;
     let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
@@ -677,7 +677,7 @@ pub fn create_scan_predicate(
         }
     }
 
-    PolarsResult::Ok(FilePredicate {
+    PolarsResult::Ok(ScanPredicate {
         predicate: phys_predicate,
         live_columns,
         skip_batch_predicate,

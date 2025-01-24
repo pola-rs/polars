@@ -10,12 +10,12 @@ use polars_utils::open_file;
 use rayon::prelude::*;
 
 use super::*;
-use crate::FilePredicate;
+use crate::ScanPredicate;
 
 pub struct IpcExec {
     pub(crate) sources: ScanSources,
     pub(crate) file_info: FileInfo,
-    pub(crate) predicate: Option<FilePredicate>,
+    pub(crate) predicate: Option<ScanPredicate>,
     #[allow(dead_code)]
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
@@ -199,7 +199,7 @@ impl ScanExec for IpcExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
         _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {

@@ -299,6 +299,11 @@ impl ScalarColumn {
         self.scalar = map_scalar(std::mem::take(&mut self.scalar));
         self.materialized.take();
     }
+    pub fn with_value(&mut self, value: AnyValue<'static>) -> &mut Self {
+        self.scalar.update(value);
+        self.materialized.take();
+        self
+    }
 }
 
 impl IntoColumn for ScalarColumn {

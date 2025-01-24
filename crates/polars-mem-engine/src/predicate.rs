@@ -6,13 +6,40 @@ use polars_core::prelude::{
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::PolarsResult;
+use polars_error::{polars_err, PolarsResult};
 use polars_expr::prelude::{phys_expr_to_io_expr, AggregationContext, PhysicalExpr};
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::{ColumnStatistics, IOPredicate, SkipBatchPredicate};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
+/// All the expressions and metadata used to filter out rows using predicates.
+#[derive(Clone)]
+pub struct ScanPredicate {
+    pub predicate: Arc<dyn PhysicalExpr>,
+
+    /// Column names that are used in the predicate.
+    pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
+
+    /// A predicate expression used to skip record batches based on its statistics.
+    ///
+    /// This expression will be given a `min`, `max` and `null count` for each live column (set to
+    /// `null` when it is not known) and the expression evaluates to `true` if the whole batch can for
+    /// sure be skipped. This may be conservative and evaluate to `false` even when the batch could
+    /// theorically be skipped.
+    pub skip_batch_predicate: Option<Arc<dyn PhysicalExpr>>,
+}
+
+/// Helper to implement [`SkipBatchPredicate`].
+struct SkipBatchPredicateHelper {
+    skip_batch_predicate: Arc<dyn PhysicalExpr>,
+    live_columns: Arc<PlIndexSet<PlSmallStr>>,
+
+    /// A cached dataframe that gets used to evaluate all the expressions.
+    df: DataFrame,
+}
+
+/// Helper for the [`PhysicalExpr`] trait to include constant columns.
 pub struct PhysicalExprWithConstCols {
     constants: Vec<(PlSmallStr, Scalar)>,
     child: Arc<dyn PhysicalExpr>,
@@ -62,30 +89,7 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
     }
 }
 
-/// All the expressions and metadata used to filter out rows using predicates.
-#[derive(Clone)]
-pub struct FilePredicate {
-    pub predicate: Arc<dyn PhysicalExpr>,
-
-    /// Column names that are used in the predicate.
-    pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
-
-    /// A predicate expression used to skip record batches based on its statistics.
-    ///
-    /// This expression will be given a `min`, `max` and `null count` for each live column (set to
-    /// `null` when it is not known) and the expression evaluates to `true` if the whole batch can for
-    /// sure be skipped. This may be conservative and evaluate to `false` even when the batch could
-    /// theorically be skipped.
-    pub skip_batch_predicate: Option<Arc<dyn PhysicalExpr>>,
-}
-
-struct SkipBatchPredicateHelper {
-    skip_batch_predicate: Arc<dyn PhysicalExpr>,
-    live_columns: Arc<PlIndexSet<PlSmallStr>>,
-    schema: SchemaRef,
-}
-
-impl FilePredicate {
+impl ScanPredicate {
     pub fn with_constant_columns(
         &self,
         constant_columns: impl IntoIterator<Item = (PlSmallStr, Scalar)>,
@@ -146,14 +150,43 @@ impl FilePredicate {
 
     pub(crate) fn to_dyn_skip_batch_predicate(
         &self,
-        schema: SchemaRef,
+        schema: &Schema,
     ) -> Option<Arc<dyn SkipBatchPredicate>> {
         let skip_batch_predicate = self.skip_batch_predicate.as_ref()?;
+
+        let mut columns = Vec::with_capacity(1 + self.live_columns.len() * 3);
+
+        columns.push(Column::new_scalar(
+            PlSmallStr::from_static("len"),
+            Scalar::null(IDX_DTYPE),
+            1,
+        ));
+        for col in self.live_columns.as_ref() {
+            let dtype = schema.get(col).unwrap();
+            columns.extend([
+                Column::new_scalar(
+                    format_pl_smallstr!("{col}_min"),
+                    Scalar::null(dtype.clone()),
+                    1,
+                ),
+                Column::new_scalar(
+                    format_pl_smallstr!("{col}_max"),
+                    Scalar::null(dtype.clone()),
+                    1,
+                ),
+                Column::new_scalar(format_pl_smallstr!("{col}_nc"), Scalar::null(IDX_DTYPE), 1),
+            ]);
+        }
+
+        // SAFETY:
+        // * Each column is length = 1
+        // * We have an IndexSet, so each column name is unique
+        let df = unsafe { DataFrame::new_no_checks(1, columns) };
 
         Some(Arc::new(SkipBatchPredicateHelper {
             skip_batch_predicate: skip_batch_predicate.clone(),
             live_columns: self.live_columns.clone(),
-            schema,
+            df,
         }))
     }
 
@@ -167,7 +200,7 @@ impl FilePredicate {
             live_columns: self.live_columns.clone(),
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
-                .or_else(|| self.to_dyn_skip_batch_predicate(schema.clone())),
+                .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
         }
     }
 }
@@ -178,62 +211,42 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
         batch_size: IdxSize,
         statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
     ) -> PolarsResult<bool> {
-        let mut columns = Vec::with_capacity(1 + self.live_columns.len() * 3);
-        columns.push(Column::new_scalar(
-            PlSmallStr::from_static("len"),
-            batch_size.into(),
-            1,
-        ));
+        // This is the DF with all nulls.
+        let mut df = self.df.clone();
 
-        for col in self.live_columns.as_ref() {
-            if statistics.contains_key(col) {
-                continue;
-            }
+        // SAFETY: We don't update the dtype, name or length of columns.
+        let columns = unsafe { df.get_columns_mut() };
 
-            let dtype = self.schema.get(col).unwrap();
-            columns.extend([
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_min"),
-                    Scalar::new(dtype.clone(), AnyValue::Null),
-                    1,
-                ),
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_max"),
-                    Scalar::new(dtype.clone(), AnyValue::Null),
-                    1,
-                ),
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_nc"),
-                    Scalar::new(IDX_DTYPE, AnyValue::Null),
-                    1,
-                ),
-            ]);
-        }
+        // Set `len` statistic.
+        columns[0]
+            .as_scalar_column_mut()
+            .unwrap()
+            .with_value(batch_size.into());
 
         for (col, stat) in statistics {
-            columns.extend([
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_min"),
-                    Scalar::new(stat.dtype.clone(), stat.min),
-                    1,
-                ),
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_max"),
-                    Scalar::new(stat.dtype, stat.max),
-                    1,
-                ),
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_nc"),
-                    Scalar::new(
-                        IDX_DTYPE,
-                        stat.null_count.map_or(AnyValue::Null, |nc| nc.into()),
-                    ),
-                    1,
-                ),
-            ]);
+            let idx = self
+                .live_columns
+                .get_index_of(col.as_str())
+                .ok_or_else(|| polars_err!(col_not_found = col))?;
+
+            let nc = stat.null_count.map_or(AnyValue::Null, |nc| nc.into());
+
+            // Set `min`, `max` and `null_count` statistics.
+            let col_idx = (idx * 3) + 1;
+            columns[col_idx + 0]
+                .as_scalar_column_mut()
+                .unwrap()
+                .with_value(stat.min);
+            columns[col_idx + 1]
+                .as_scalar_column_mut()
+                .unwrap()
+                .with_value(stat.max);
+            columns[col_idx + 2]
+                .as_scalar_column_mut()
+                .unwrap()
+                .with_value(nc);
         }
 
-        let df = DataFrame::new(columns).unwrap();
         Ok(self
             .skip_batch_predicate
             .evaluate(&df, &Default::default())?

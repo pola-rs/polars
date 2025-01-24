@@ -8,14 +8,14 @@ use polars_io::predicates::SkipBatchPredicate;
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
-use crate::FilePredicate;
+use crate::ScanPredicate;
 
 pub struct CsvExec {
     pub sources: ScanSources,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
     pub file_options: FileScanOptions,
-    pub predicate: Option<FilePredicate>,
+    pub predicate: Option<ScanPredicate>,
 }
 
 impl CsvExec {
@@ -219,7 +219,7 @@ impl ScanExec for CsvExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<FilePredicate>,
+        predicate: Option<ScanPredicate>,
         _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
