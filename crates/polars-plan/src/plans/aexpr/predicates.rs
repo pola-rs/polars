@@ -385,6 +385,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     let len = col!(len);
                     Some(eq_missing!(col_nc, len))
                 },
+                #[cfg(feature = "is_between")]
                 BooleanFunction::IsBetween { closed } => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
 
