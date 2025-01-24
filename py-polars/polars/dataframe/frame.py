@@ -408,7 +408,11 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
-        elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
+        elif (
+            not hasattr(data, "__arrow_c_stream__")
+            and not isinstance(data, Sized)
+            and isinstance(data, (Generator, Iterable))
+        ):
             self._df = iterable_to_pydf(
                 data,
                 schema=schema,
