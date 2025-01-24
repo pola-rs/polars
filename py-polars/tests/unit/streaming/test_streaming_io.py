@@ -255,11 +255,20 @@ def test_sink_ndjson_should_write_same_data(
 
 @pytest.mark.write_disk
 @pytest.mark.parametrize(
-    "streaming", [
-    False,
-    pytest.param(True, marks=pytest.mark.xfail(reason="Failing since old streaming engine cannot create skip_batch_predicate #20828"))
-]) 
-def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path, streaming: bool) -> None:
+    "streaming",
+    [
+        False,
+        pytest.param(
+            True,
+            marks=pytest.mark.xfail(
+                reason="Failing since old streaming engine cannot create skip_batch_predicate #20828"
+            ),
+        ),
+    ],
+)
+def test_parquet_eq_statistics(
+    monkeypatch: Any, capfd: Any, tmp_path: Path, streaming: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     monkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -278,9 +287,7 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path, str
         pl.col("idx") == 150,
         pl.col("idx") == 210,
     ]:
-        result = (
-            pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
-        )
+        result = pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
         assert_frame_equal(result, df.filter(pred))
 
     captured = capfd.readouterr().err
