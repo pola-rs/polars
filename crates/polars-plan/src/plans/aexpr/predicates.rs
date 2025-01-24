@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use polars_core::prelude::AnyValue;
 use polars_core::schema::Schema;
-use polars_ops::series::ClosedInterval;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -407,6 +406,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     let col_min = col!(min: col);
                     let col_max = col!(max: col);
 
+                    use polars_ops::series::ClosedInterval;
                     let (left, right) = match closed {
                         ClosedInterval::Both => (lt!(col_max, left_node), gt!(col_min, right_node)),
                         ClosedInterval::Left => (lt!(col_max, left_node), ge!(col_min, right_node)),
