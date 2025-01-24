@@ -7,7 +7,7 @@ use polars_core::prelude::ArrowSchema;
 use polars_error::PolarsResult;
 use polars_expr::prelude::{phys_expr_to_io_expr, PhysicalExpr};
 use polars_io::cloud::CloudOptions;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::{IOPredicate, PhysicalIoExpr};
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::plans::hive::HivePartitions;
@@ -39,7 +39,7 @@ pub struct ParquetSourceNode {
     scan_sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<IOPredicate>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
@@ -47,7 +47,6 @@ pub struct ParquetSourceNode {
     // Run-time vars
     config: Config,
     verbose: bool,
-    physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
     schema: Option<Arc<ArrowSchema>>,
     projected_arrow_schema: Option<Arc<ArrowSchema>>,
     byte_source_builder: DynByteSourceBuilder,
@@ -84,7 +83,7 @@ impl ParquetSourceNode {
         scan_sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<IOPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         mut file_options: FileScanOptions,
@@ -123,7 +122,6 @@ impl ParquetSourceNode {
                 min_values_per_thread: 0,
             },
             verbose,
-            physical_predicate: None,
             schema: None,
             projected_arrow_schema: None,
             byte_source_builder,
@@ -171,7 +169,6 @@ impl ComputeNode for ParquetSourceNode {
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
 
         self.init_projected_arrow_schema();
-        self.physical_predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
         let (raw_morsel_receivers, raw_morsel_distributor_task_handle) =
             self.init_raw_morsel_distributor();

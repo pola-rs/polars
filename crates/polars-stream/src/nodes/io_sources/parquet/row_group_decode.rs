@@ -9,7 +9,7 @@ use polars_core::series::{IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::hive;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::{IOPredicate, PhysicalIoExpr};
 use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
@@ -32,7 +32,7 @@ pub(super) struct RowGroupDecoder {
     pub(super) reader_schema: Arc<ArrowSchema>,
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
     pub(super) row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
-    pub(super) physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    pub(super) predicate: Option<IOPredicate>,
     pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
     /// Indices into `projected_arrow_schema. This must be sorted.
     pub(super) predicate_arrow_field_indices: Vec<usize>,
@@ -113,8 +113,8 @@ impl RowGroupDecoder {
 
         let df = unsafe { DataFrame::new_no_checks(projection_height, out_columns) };
 
-        let df = if let Some(predicate) = self.physical_predicate.as_deref() {
-            let mask = predicate.evaluate_io(&df)?;
+        let df = if let Some(predicate) = self.predicate.as_ref() {
+            let mask = predicate.expr.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
             let filtered =
@@ -531,9 +531,10 @@ impl RowGroupDecoder {
         };
 
         let mask = self
-            .physical_predicate
-            .as_deref()
+            .predicate
+            .as_ref()
             .unwrap()
+            .expr
             .evaluate_io(&live_df)?;
         let mask = mask.bool().unwrap();
 

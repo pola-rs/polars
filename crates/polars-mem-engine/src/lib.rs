@@ -5,5 +5,5 @@ mod prelude;
 mod utils;
 
 pub use executors::Executor;
-pub use planner::create_physical_plan;
+pub use planner::{create_physical_plan, create_scan_predicate};
 pub use predicate::FilePredicate;

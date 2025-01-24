@@ -8,7 +8,7 @@ use polars_expr::groups::new_hash_grouper;
 use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
-use polars_mem_engine::create_physical_plan;
+use polars_mem_engine::{create_physical_plan, create_scan_predicate};
 use polars_plan::dsl::JoinOptions;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
@@ -360,17 +360,33 @@ fn to_graph_rec<'a>(
                 _set_n_rows_for_scan(None).map(|x| (0, x))
             };
 
+            let mut create_skip_batch_predicate = false;
+            #[cfg(feature = "parquet")]
+            {
+                create_skip_batch_predicate |= matches!(
+                    scan_type,
+                    polars_plan::prelude::FileScan::Parquet {
+                        options: polars_io::prelude::ParquetOptions {
+                            use_statistics: true,
+                            ..
+                        },
+                        ..
+                    }
+                );
+            }
+
             let predicate = predicate
                 .map(|pred| {
-                    create_physical_expr(
+                    create_scan_predicate(
                         &pred,
-                        Context::Default,
                         ctx.expr_arena,
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut ctx.expr_conversion_state,
+                        create_skip_batch_predicate,
                     )
                 })
-                .map_or(Ok(None), |v| v.map(Some))?;
+                .transpose()?;
+            let predicate = predicate.as_ref().map(|p| p.to_io(None, &file_info.schema));
 
             {
                 use polars_plan::prelude::FileScan;
@@ -381,32 +397,8 @@ fn to_graph_rec<'a>(
                         options,
                         cloud_options,
                         metadata: first_metadata,
-                    } => {
-                        if std::env::var("POLARS_DISABLE_PARQUET_SOURCE").as_deref() != Ok("1") {
-                            ctx.graph.add_node(
-                                nodes::io_sources::parquet::ParquetSourceNode::new(
-                                    scan_sources,
-                                    file_info,
-                                    hive_parts,
-                                    predicate,
-                                    options,
-                                    cloud_options,
-                                    file_options,
-                                    first_metadata,
-                                ),
-                                [],
-                            )
-                        } else {
-                            todo!()
-                        }
-                    },
-                    #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
-                        options,
-                        cloud_options,
-                        metadata: first_metadata,
                     } => ctx.graph.add_node(
-                        nodes::io_sources::ipc::IpcSourceNode::new(
+                        nodes::io_sources::parquet::ParquetSourceNode::new(
                             scan_sources,
                             file_info,
                             predicate,
@@ -414,9 +406,31 @@ fn to_graph_rec<'a>(
                             cloud_options,
                             file_options,
                             first_metadata,
-                        )?,
+                        ),
                         [],
                     ),
+                    #[cfg(feature = "ipc")]
+                    FileScan::Ipc {
+                        options,
+                        cloud_options,
+                        metadata: first_metadata,
+                    } => {
+                        // Should have been rewritten in terms of separate streaming nodes.
+                        assert!(predicate.is_none());
+
+                        ctx.graph.add_node(
+                            nodes::io_sources::ipc::IpcSourceNode::new(
+                                scan_sources,
+                                file_info,
+                                hive_parts,
+                                options,
+                                cloud_options,
+                                file_options,
+                                first_metadata,
+                            )?,
+                            [],
+                        )
+                    },
                     #[cfg(feature = "csv")]
                     FileScan::Csv { options, .. } => {
                         assert!(predicate.is_none());

@@ -79,14 +79,11 @@ impl IpcSourceNode {
     pub fn new(
         sources: ScanSources,
         _file_info: FileInfo,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
         options: IpcScanOptions,
         _cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
         mut metadata: Option<Arc<FileMetadata>>,
     ) -> PolarsResult<Self> {
-        // These should have all been removed during lower_ir
-        assert!(predicate.is_none());
         assert!(!sources.is_empty());
         assert_eq!(sources.len(), 1);
 

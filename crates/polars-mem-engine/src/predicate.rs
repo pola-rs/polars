@@ -7,9 +7,9 @@ use polars_core::prelude::{
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
-use polars_expr::prelude::{AggregationContext, PhysicalExpr};
+use polars_expr::prelude::{phys_expr_to_io_expr, AggregationContext, PhysicalExpr};
 use polars_expr::state::ExecutionState;
-use polars_io::predicates::{ColumnStatistics, SkipBatchPredicate};
+use polars_io::predicates::{ColumnStatistics, IOPredicate, SkipBatchPredicate};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
@@ -155,6 +155,20 @@ impl FilePredicate {
             live_columns: self.live_columns.clone(),
             schema,
         }))
+    }
+
+    pub fn to_io(
+        &self,
+        skip_batch_predicate: Option<&Arc<dyn SkipBatchPredicate>>,
+        schema: &SchemaRef,
+    ) -> IOPredicate {
+        IOPredicate {
+            expr: phys_expr_to_io_expr(self.predicate.clone()),
+            live_columns: self.live_columns.clone(),
+            skip_batch_predicate: skip_batch_predicate
+                .cloned()
+                .or_else(|| self.to_dyn_skip_batch_predicate(schema.clone())),
+        }
     }
 }
 
