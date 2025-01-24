@@ -16,7 +16,7 @@ polars-error = { workspace = true }
 polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
-atoi = { workspace = true }
+atoi_simd = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }

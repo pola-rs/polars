@@ -1,6 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use atoi::FromRadix10SignedChecked;
 use num_traits::Euclid;
 
 static TRIM_DECIMAL_ZEROS: AtomicBool = AtomicBool::new(false);
@@ -26,8 +25,7 @@ fn split_decimal_bytes(bytes: &[u8]) -> (Option<&[u8]>, Option<&[u8]>) {
 
 /// Parse a single i128 from bytes, ensuring the entire slice is read.
 fn parse_integer_checked(bytes: &[u8]) -> Option<i128> {
-    let (n, len) = i128::from_radix_10_signed_checked(bytes);
-    n.filter(|_| len == bytes.len())
+    atoi_simd::parse_skipped(bytes).ok()
 }
 
 /// Assuming bytes are a well-formed decimal number (with or without a separator),
