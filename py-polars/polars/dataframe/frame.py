@@ -7307,7 +7307,7 @@ class DataFrame:
                 force_parallel=force_parallel,
                 coalesce=coalesce,
                 allow_exact_matches=allow_exact_matches,
-                check_sortedness=check_sortedness
+                check_sortedness=check_sortedness,
             )
             .collect(_eager=True)
         )
