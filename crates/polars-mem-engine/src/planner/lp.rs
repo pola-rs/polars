@@ -1,7 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
 use polars_expr::state::ExecutionState;
-use polars_io::prelude::ParquetOptions;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
@@ -213,16 +212,19 @@ fn create_physical_plan_impl(
 
             let mut create_skip_batch_predicate = false;
             create_skip_batch_predicate |= do_new_multifile;
-            create_skip_batch_predicate |= matches!(
-                scan_type,
-                FileScan::Parquet {
-                    options: ParquetOptions {
-                        use_statistics: true,
+            #[cfg(feature = "parquet")]
+            {
+                create_skip_batch_predicate |= matches!(
+                    scan_type,
+                    FileScan::Parquet {
+                        options: polars_io::prelude::ParquetOptions {
+                            use_statistics: true,
+                            ..
+                        },
                         ..
-                    },
-                    ..
-                }
-            );
+                    }
+                );
+            }
 
             let predicate = predicate
                 .map(|predicate| {
