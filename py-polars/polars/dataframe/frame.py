@@ -97,8 +97,8 @@ from polars.dependencies import numpy as np
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import (
-    InvalidOperationError,
     ColumnNotFoundError,
+    InvalidOperationError,
     ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
@@ -3506,9 +3506,9 @@ class DataFrame:
             + int(bool(column_totals)),
             table_start[1] + len(df.columns) - 1,
         )
-        
+
         excel_max_valid_rows = 1048575
-        if len(self.rows) > excel_max_valid_rows:
+        if self.height > excel_max_valid_rows:
             msg = "Dataframe too large to be compatible with Excel. Exceeded Excel limit of 1048575 rows of data."
             raise InvalidOperationError(msg)
 
