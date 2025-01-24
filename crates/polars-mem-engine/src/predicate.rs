@@ -6,7 +6,7 @@ use polars_core::prelude::{
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::{polars_err, PolarsResult};
+use polars_error::PolarsResult;
 use polars_expr::prelude::{phys_expr_to_io_expr, AggregationContext, PhysicalExpr};
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::{ColumnStatistics, ScanIOPredicate, SkipBatchPredicate};
@@ -225,10 +225,10 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
             .with_value(batch_size.into());
 
         for (col, stat) in statistics {
-            let idx = self
-                .live_columns
-                .get_index_of(col.as_str())
-                .ok_or_else(|| polars_err!(col_not_found = col))?;
+            // Skip all statistics of columns that are not used in the predicate.
+            let Some(idx) = self.live_columns.get_index_of(col.as_str()) else {
+                continue;
+            };
 
             let nc = stat.null_count.map_or(AnyValue::Null, |nc| nc.into());
 

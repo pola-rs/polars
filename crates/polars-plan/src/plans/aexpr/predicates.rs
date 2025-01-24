@@ -2,6 +2,7 @@ use std::borrow::Cow;
 
 use polars_core::prelude::AnyValue;
 use polars_core::schema::Schema;
+use polars_ops::series::ClosedInterval;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -321,48 +322,107 @@ fn aexpr_to_skip_batch_predicate_rec(
         AExpr::Function {
             input, function, ..
         } => match function {
-            FunctionExpr::Boolean(BooleanFunction::IsIn) => {
-                let lv_node = input[1].node();
-                match (
-                    into_column(input[0].node(), expr_arena, schema, 0),
-                    constant_evaluate(lv_node, expr_arena, schema, 0),
-                ) {
-                    (Some(col), Some(lv)) => match lv.as_ref() {
-                        LiteralValue::Series(s) => {
-                            let col = col.clone();
-                            let dtype = schema.get(&col)?;
-                            let has_nulls = s.has_nulls();
+            FunctionExpr::Boolean(f) => match f {
+                BooleanFunction::IsIn => {
+                    let lv_node = input[1].node();
+                    match (
+                        into_column(input[0].node(), expr_arena, schema, 0),
+                        constant_evaluate(lv_node, expr_arena, schema, 0),
+                    ) {
+                        (Some(col), Some(lv)) => match lv.as_ref() {
+                            // col(A).is_in([B1, ..., Bn]) ->
+                            //     all(min(A) > [B1, ..., Bn)])
+                            //  || all(max(A) < [B1, ..., Bn)])
+                            LiteralValue::Series(s) => {
+                                let col = col.clone();
+                                let dtype = schema.get(&col)?;
+                                let has_nulls = s.has_nulls();
 
-                            let col_min = col!(min: col);
-                            let col_max = col!(max: col);
+                                let col_min = col!(min: col);
+                                let col_max = col!(max: col);
 
-                            let min_is_defined = is_stat_defined!(col_min, dtype);
-                            let max_is_defined = is_stat_defined!(col_max, dtype);
+                                let min_is_defined = is_stat_defined!(col_min, dtype);
+                                let max_is_defined = is_stat_defined!(col_max, dtype);
 
-                            let min_gt = gt!(col_min, lv_node);
-                            let min_gt = all!(min_gt);
-                            let min_gt = and!(min_is_defined, min_gt);
+                                let min_gt = gt!(col_min, lv_node);
+                                let min_gt = all!(min_gt);
+                                let min_gt = and!(min_is_defined, min_gt);
 
-                            let max_lt = lt!(col_max, lv_node);
-                            let max_lt = all!(max_lt);
-                            let max_lt = and!(max_is_defined, max_lt);
+                                let max_lt = lt!(col_max, lv_node);
+                                let max_lt = all!(max_lt);
+                                let max_lt = and!(max_is_defined, max_lt);
 
-                            let mut expr = or!(min_gt, max_lt);
+                                let mut expr = or!(min_gt, max_lt);
 
-                            if has_nulls {
-                                let col_nc = col!(null_count: col);
-                                let idx_zero = lv!(idx: 0);
-                                let has_no_nulls = eq_missing!(col_nc, idx_zero);
+                                if has_nulls {
+                                    let col_nc = col!(null_count: col);
+                                    let idx_zero = lv!(idx: 0);
+                                    let has_no_nulls = eq_missing!(col_nc, idx_zero);
 
-                                expr = and!(has_no_nulls, expr);
-                            }
+                                    expr = and!(has_no_nulls, expr);
+                                }
 
-                            Some(expr)
+                                Some(expr)
+                            },
+                            _ => None,
                         },
                         _ => None,
-                    },
-                    _ => None,
-                }
+                    }
+                },
+                BooleanFunction::IsNull => {
+                    let col = into_column(input[0].node(), expr_arena, schema, 0)?;
+
+                    // col(A).is_null() --> NULL_COUNT(A) == 0
+                    let col_nc = col!(null_count: col);
+                    let idx_zero = lv!(idx: 0);
+                    Some(eq_missing!(col_nc, idx_zero))
+                },
+                BooleanFunction::IsNotNull => {
+                    let col = into_column(input[0].node(), expr_arena, schema, 0)?;
+
+                    // col(A).is_not_null() --> NULL_COUNT(A) == LEN
+                    let col_nc = col!(null_count: col);
+                    let len = col!(len);
+                    Some(eq_missing!(col_nc, len))
+                },
+                BooleanFunction::IsBetween { closed } => {
+                    let col = into_column(input[0].node(), expr_arena, schema, 0)?;
+
+                    let left_node = input[1].node();
+                    let right_node = input[2].node();
+
+                    let left = constant_evaluate(left_node, expr_arena, schema, 0)?;
+                    let right = constant_evaluate(right_node, expr_arena, schema, 0)?;
+
+                    if left.is_null() || right.is_null() {
+                        return None;
+                    }
+
+                    let col = col.clone();
+                    let closed = *closed;
+                    let dtype = schema.get(&col)?;
+
+                    let col_min = col!(min: col);
+                    let col_max = col!(max: col);
+
+                    let (left, right) = match closed {
+                        ClosedInterval::Both => (lt!(col_max, left_node), gt!(col_min, right_node)),
+                        ClosedInterval::Left => (lt!(col_max, left_node), ge!(col_min, right_node)),
+                        ClosedInterval::Right => {
+                            (le!(col_max, left_node), gt!(col_min, right_node))
+                        },
+                        ClosedInterval::None => (le!(col_max, left_node), ge!(col_min, right_node)),
+                    };
+
+                    let min_is_defined = is_stat_defined!(col_min, dtype);
+                    let max_is_defined = is_stat_defined!(col_max, dtype);
+
+                    let left = and!(max_is_defined, left);
+                    let right = and!(min_is_defined, right);
+
+                    Some(or!(left, right))
+                },
+                _ => None,
             },
             _ => None,
         },
