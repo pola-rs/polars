@@ -4267,6 +4267,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         force_parallel: bool = False,
         coalesce: bool = True,
         allow_exact_matches: bool = True,
+        check_sortedness: bool = True,
     ) -> LazyFrame:
         """
         Perform an asof join.
@@ -4359,7 +4360,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (i.e. less-than-or-equal-to / greater-than-or-equal-to)
             - If False, don't match the same ``on`` value
                 (i.e., strictly less-than / strictly greater-than).
-
+        check_sortedness
+            Check the sortedness of the asof keys. If the keys are not sorted Polars
+            will error, or in case of 'by' argument raise a warning. This might become
+            a hard error in the future.
 
 
         Examples
@@ -4616,6 +4620,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 tolerance_str,
                 coalesce=coalesce,
                 allow_eq=allow_exact_matches,
+                check_sortedness=check_sortedness,
             )
         )
 

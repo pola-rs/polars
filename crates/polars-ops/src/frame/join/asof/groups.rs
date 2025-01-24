@@ -485,6 +485,7 @@ pub trait AsofJoinBy: IntoDf {
         slice: Option<(i64, usize)>,
         coalesce: bool,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PolarsResult<DataFrame> {
         let (self_sliced_slot, other_sliced_slot, left_slice_s, right_slice_s); // Keeps temporaries alive.
         let (self_df, other_df, left_key, right_key);
@@ -513,6 +514,7 @@ pub trait AsofJoinBy: IntoDf {
             &right_asof,
             tolerance.is_some(),
             left_by.is_empty() && right_by.is_empty(),
+            check_sortedness,
         )?;
 
         let mut left_by = self_df.select(left_by)?;
@@ -579,6 +581,7 @@ pub trait AsofJoinBy: IntoDf {
         strategy: AsofStrategy,
         tolerance: Option<AnyValue<'static>>,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PolarsResult<DataFrame>
     where
         I: IntoIterator<Item = S>,
@@ -590,8 +593,18 @@ pub trait AsofJoinBy: IntoDf {
         let left_key = self_df.column(left_on)?.as_materialized_series();
         let right_key = other.column(right_on)?.as_materialized_series();
         self_df._join_asof_by(
-            other, left_key, right_key, left_by, right_by, strategy, tolerance, None, None, true,
+            other,
+            left_key,
+            right_key,
+            left_by,
+            right_by,
+            strategy,
+            tolerance,
+            None,
+            None,
+            true,
             allow_eq,
+            check_sortedness,
         )
     }
 }
@@ -623,6 +636,7 @@ mod test {
             ["b"],
             AsofStrategy::Backward,
             None,
+            true,
             true,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
@@ -668,6 +682,7 @@ mod test {
             AsofStrategy::Backward,
             None,
             true,
+            true,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -683,6 +698,7 @@ mod test {
             ["groups_numeric"],
             AsofStrategy::Backward,
             None,
+            true,
             true,
         )?;
         let a = out.column("bid_right").unwrap();
@@ -715,6 +731,7 @@ mod test {
             AsofStrategy::Forward,
             None,
             true,
+            true,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
         let out = out.column("right_vals").unwrap();
@@ -732,6 +749,7 @@ mod test {
             ["b"],
             AsofStrategy::Forward,
             Some(AnyValue::Int32(1)),
+            true,
             true,
         )?;
         assert_eq!(out.get_column_names(), &["a", "b", "right_vals"]);
@@ -802,6 +820,7 @@ mod test {
             AsofStrategy::Forward,
             None,
             true,
+            true,
         )?;
         let a = out.column("bid_right").unwrap();
         let a = a.f64().unwrap();
@@ -823,6 +842,7 @@ mod test {
             ["groups_numeric"],
             AsofStrategy::Forward,
             None,
+            true,
             true,
         )?;
         let a = out.column("bid_right").unwrap();

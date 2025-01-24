@@ -200,6 +200,7 @@ pub struct AsOfOptions {
     pub right_by: Option<Vec<PlSmallStr>>,
     /// Allow equal matches
     pub allow_eq: bool,
+    pub check_sortedness: bool,
 }
 
 fn check_asof_columns(
@@ -207,6 +208,7 @@ fn check_asof_columns(
     b: &Series,
     has_tolerance: bool,
     sorted_err: bool,
+    check_sortedness: bool,
 ) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
@@ -228,18 +230,20 @@ fn check_asof_columns(
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
         a.dtype(), b.dtype()
     );
-    if sorted_err {
-        a.ensure_sorted_arg("asof_join")?;
-        b.ensure_sorted_arg("asof_join")?;
-    } else {
-        let msg = |side| {
-            format!("{side} key of asof join is not sorted.\n\nThis can lead to invalid results. Ensure the asof key is sorted")
-        };
-        if a.ensure_sorted_arg("asof_join").is_err() {
-            polars_warn!(msg("left"))
-        }
-        if b.ensure_sorted_arg("asof_join").is_err() {
-            polars_warn!(msg("right"))
+    if check_sortedness {
+        if sorted_err {
+            a.ensure_sorted_arg("asof_join")?;
+            b.ensure_sorted_arg("asof_join")?;
+        } else {
+            let msg = |side| {
+                format!("{side} key of asof join is not sorted.\n\nThis can lead to invalid results. Ensure the asof key is sorted")
+            };
+            if a.ensure_sorted_arg("asof_join").is_err() {
+                polars_warn!(msg("left"))
+            }
+            if b.ensure_sorted_arg("asof_join").is_err() {
+                polars_warn!(msg("right"))
+            }
         }
     }
     Ok(())
@@ -271,10 +275,17 @@ pub trait AsofJoin: IntoDf {
         slice: Option<(i64, usize)>,
         coalesce: bool,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PolarsResult<DataFrame> {
         let self_df = self.to_df();
 
-        check_asof_columns(left_key, right_key, tolerance.is_some(), true)?;
+        check_asof_columns(
+            left_key,
+            right_key,
+            tolerance.is_some(),
+            true,
+            check_sortedness,
+        )?;
         let left_key = left_key.to_physical_repr();
         let right_key = right_key.to_physical_repr();
 

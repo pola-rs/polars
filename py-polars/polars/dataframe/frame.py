@@ -6977,6 +6977,7 @@ class DataFrame:
         force_parallel: bool = False,
         coalesce: bool = True,
         allow_exact_matches: bool = True,
+        check_sortedness: bool = True,
     ) -> DataFrame:
         """
         Perform an asof join.
@@ -7069,6 +7070,10 @@ class DataFrame:
                 (i.e. less-than-or-equal-to / greater-than-or-equal-to)
             - If False, don't match the same ``on`` value
                 (i.e., strictly less-than / strictly greater-than).
+        check_sortedness
+            Check the sortedness of the asof keys. If the keys are not sorted Polars
+            will error, or in case of 'by' argument raise a warning. This might become
+            a hard error in the future.
 
         Examples
         --------
@@ -7302,6 +7307,7 @@ class DataFrame:
                 force_parallel=force_parallel,
                 coalesce=coalesce,
                 allow_exact_matches=allow_exact_matches,
+                check_sortedness=check_sortedness
             )
             .collect(_eager=True)
         )
