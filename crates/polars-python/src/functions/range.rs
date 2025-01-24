@@ -1,5 +1,6 @@
 use polars::lazy::dsl;
 use polars_core::with_match_physical_integer_polars_type;
+use polars_ops::series::ClosedInterval;
 use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
@@ -158,4 +159,18 @@ pub fn time_ranges(
     let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
     let closed = closed.0;
     Ok(dsl::time_ranges(start, end, every, closed).into())
+}
+
+#[pyfunction]
+pub fn linear_space(
+    start: PyExpr,
+    end: PyExpr,
+    num_samples: PyExpr,
+    closed: Wrap<ClosedInterval>,
+) -> PyResult<PyExpr> {
+    let start = start.inner;
+    let end = end.inner;
+    let num_samples = num_samples.inner;
+    let closed = closed.0;
+    Ok(dsl::linear_space(start, end, num_samples, closed).into())
 }
