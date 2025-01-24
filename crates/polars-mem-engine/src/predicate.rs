@@ -26,7 +26,7 @@ pub struct ScanPredicate {
     /// This expression will be given a batch size along with a `min`, `max` and `null count` for
     /// each live column (set to `null` when it is not known) and the expression evaluates to
     /// `true` if the whole batch can for sure be skipped. This may be conservative and evaluate to
-    /// `false` even when the batch could theorically be skipped.
+    /// `false` even when the batch could theoretically be skipped.
     pub skip_batch_predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
