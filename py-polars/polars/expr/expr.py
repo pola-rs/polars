@@ -6206,12 +6206,13 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.interpolate_by(by))
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -6256,7 +6257,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -6326,16 +6327,17 @@ class Expr:
         window_size = _prepare_rolling_by_window_args(window_size)
         by = parse_into_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_min_by(by, window_size, min_periods, closed)
+            self._pyexpr.rolling_min_by(by, window_size, min_samples, closed)
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_max_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -6380,7 +6382,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -6476,16 +6478,17 @@ class Expr:
         window_size = _prepare_rolling_by_window_args(window_size)
         by = parse_into_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_max_by(by, window_size, min_periods, closed)
+            self._pyexpr.rolling_max_by(by, window_size, min_samples, closed)
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_mean_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -6530,7 +6533,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -6631,18 +6634,19 @@ class Expr:
             self._pyexpr.rolling_mean_by(
                 by,
                 window_size,
-                min_periods,
+                min_samples,
                 closed,
             )
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_sum_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -6683,7 +6687,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         by
@@ -6783,16 +6787,17 @@ class Expr:
         window_size = _prepare_rolling_by_window_args(window_size)
         by = parse_into_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_sum_by(by, window_size, min_periods, closed)
+            self._pyexpr.rolling_sum_by(by, window_size, min_samples, closed)
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_std_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
     ) -> Expr:
@@ -6838,7 +6843,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -6939,19 +6944,20 @@ class Expr:
             self._pyexpr.rolling_std_by(
                 by,
                 window_size,
-                min_periods,
+                min_samples,
                 closed,
                 ddof,
             )
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_var_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
         ddof: int = 1,
     ) -> Expr:
@@ -6997,7 +7003,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -7098,19 +7104,20 @@ class Expr:
             self._pyexpr.rolling_var_by(
                 by,
                 window_size,
-                min_periods,
+                min_samples,
                 closed,
                 ddof,
             )
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_median_by(
         self,
         by: IntoExpr,
         window_size: timedelta | str,
         *,
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -7155,7 +7162,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -7227,10 +7234,11 @@ class Expr:
         window_size = _prepare_rolling_by_window_args(window_size)
         by = parse_into_expression(by)
         return self._from_pyexpr(
-            self._pyexpr.rolling_median_by(by, window_size, min_periods, closed)
+            self._pyexpr.rolling_median_by(by, window_size, min_samples, closed)
         )
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_quantile_by(
         self,
         by: IntoExpr,
@@ -7238,7 +7246,7 @@ class Expr:
         *,
         quantile: float,
         interpolation: RollingInterpolationMethod = "nearest",
-        min_periods: int = 1,
+        min_samples: int = 1,
         closed: ClosedInterval = "right",
     ) -> Expr:
         """
@@ -7287,7 +7295,7 @@ class Expr:
             (which may not be 24 hours, due to daylight savings). Similarly for
             "calendar week", "calendar month", "calendar quarter", and
             "calendar year".
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result.
         closed : {'left', 'right', 'both', 'none'}
@@ -7364,26 +7372,22 @@ class Expr:
                 quantile,
                 interpolation,
                 window_size,
-                min_periods,
+                min_samples,
                 closed,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_min(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Expr:
         """
         Apply a rolling min (moving min) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7399,7 +7403,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -7475,26 +7479,22 @@ class Expr:
             self._pyexpr.rolling_min(
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center=center,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_max(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Expr:
         """
         Apply a rolling max (moving max) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7510,7 +7510,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -7586,26 +7586,22 @@ class Expr:
             self._pyexpr.rolling_max(
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_mean(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Expr:
         """
         Apply a rolling mean (moving mean) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7621,7 +7617,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -7697,26 +7693,22 @@ class Expr:
             self._pyexpr.rolling_mean(
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_sum(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Expr:
         """
         Apply a rolling sum (moving sum) over the values in this array.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7732,7 +7724,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -7808,27 +7800,23 @@ class Expr:
             self._pyexpr.rolling_sum(
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_std(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Expr:
         """
         Compute a rolling standard deviation.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7844,7 +7832,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -7922,28 +7910,24 @@ class Expr:
             self._pyexpr.rolling_std(
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center=center,
                 ddof=ddof,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_var(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
         ddof: int = 1,
     ) -> Expr:
         """
         Compute a rolling variance.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -7959,7 +7943,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -8037,27 +8021,23 @@ class Expr:
             self._pyexpr.rolling_var(
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center=center,
                 ddof=ddof,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_median(
         self,
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Expr:
         """
         Compute a rolling median.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -8073,7 +8053,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -8149,12 +8129,12 @@ class Expr:
             self._pyexpr.rolling_median(
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center=center,
             )
         )
 
-    @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_quantile(
         self,
         quantile: float,
@@ -8162,15 +8142,11 @@ class Expr:
         window_size: int = 2,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Expr:
         """
         Compute a rolling quantile.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         A window of length `window_size` will traverse the array. The values that fill
         this window will (optionally) be multiplied with the weights given by the
@@ -8190,7 +8166,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -8296,7 +8272,7 @@ class Expr:
                 interpolation,
                 window_size,
                 weights,
-                min_periods,
+                min_samples,
                 center=center,
             )
         )
@@ -8344,13 +8320,14 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.rolling_skew(window_size, bias))
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def rolling_map(
         self,
         function: Callable[[Series], Any],
         window_size: int,
         weights: list[float] | None = None,
         *,
-        min_periods: int | None = None,
+        min_samples: int | None = None,
         center: bool = False,
     ) -> Expr:
         """
@@ -8369,7 +8346,7 @@ class Expr:
         weights
             An optional slice with the same length as the window that will be multiplied
             elementwise with the values in the window.
-        min_periods
+        min_samples
             The number of values in the window that should be non-null before computing
             a result. If set to `None` (default), it will be set equal to `window_size`.
         center
@@ -8398,11 +8375,11 @@ class Expr:
         │ 17.0 │
         └──────┘
         """
-        if min_periods is None:
-            min_periods = window_size
+        if min_samples is None:
+            min_samples = window_size
         return self._from_pyexpr(
             self._pyexpr.rolling_map(
-                function, window_size, weights, min_periods, center
+                function, window_size, weights, min_samples, center
             )
         )
 
@@ -9388,6 +9365,7 @@ class Expr:
             self._pyexpr.sample_n(n, with_replacement, shuffle, seed)
         )
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_mean(
         self,
         *,
@@ -9396,7 +9374,7 @@ class Expr:
         half_life: float | None = None,
         alpha: float | None = None,
         adjust: bool = True,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
@@ -9434,7 +9412,7 @@ class Expr:
                   .. math::
                     y_0 &= x_0 \\
                     y_t &= (1 - \alpha)y_{t - 1} + \alpha x_t
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -9472,7 +9450,7 @@ class Expr:
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
-            self._pyexpr.ewm_mean(alpha, adjust, min_periods, ignore_nulls)
+            self._pyexpr.ewm_mean(alpha, adjust, min_samples, ignore_nulls)
         )
 
     def ewm_mean_by(
@@ -9567,6 +9545,7 @@ class Expr:
         half_life = parse_as_duration_string(half_life)
         return self._from_pyexpr(self._pyexpr.ewm_mean_by(by, half_life))
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_std(
         self,
         *,
@@ -9576,7 +9555,7 @@ class Expr:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
@@ -9617,7 +9596,7 @@ class Expr:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -9655,9 +9634,10 @@ class Expr:
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
-            self._pyexpr.ewm_std(alpha, adjust, bias, min_periods, ignore_nulls)
+            self._pyexpr.ewm_std(alpha, adjust, bias, min_samples, ignore_nulls)
         )
 
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def ewm_var(
         self,
         *,
@@ -9667,7 +9647,7 @@ class Expr:
         alpha: float | None = None,
         adjust: bool = True,
         bias: bool = False,
-        min_periods: int = 1,
+        min_samples: int = 1,
         ignore_nulls: bool = False,
     ) -> Expr:
         r"""
@@ -9708,7 +9688,7 @@ class Expr:
         bias
             When `bias=False`, apply a correction to make the estimate statistically
             unbiased.
-        min_periods
+        min_samples
             Minimum number of observations in window required to have a value
             (otherwise result is null).
         ignore_nulls
@@ -9746,7 +9726,7 @@ class Expr:
         """
         alpha = _prepare_alpha(com, span, half_life, alpha)
         return self._from_pyexpr(
-            self._pyexpr.ewm_var(alpha, adjust, bias, min_periods, ignore_nulls)
+            self._pyexpr.ewm_var(alpha, adjust, bias, min_samples, ignore_nulls)
         )
 
     def extend_constant(self, value: IntoExpr, n: int | IntoExprColumn) -> Expr:
@@ -9989,8 +9969,9 @@ class Expr:
         return self._from_pyexpr(self._pyexpr.entropy(base, normalize))
 
     @unstable()
+    @deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
     def cumulative_eval(
-        self, expr: Expr, *, min_periods: int = 1, parallel: bool = False
+        self, expr: Expr, *, min_samples: int = 1, parallel: bool = False
     ) -> Expr:
         """
         Run an expression over a sliding window that increases `1` slot every iteration.
@@ -10003,7 +9984,7 @@ class Expr:
         ----------
         expr
             Expression to evaluate
-        min_periods
+        min_samples
             Number of valid values there should be in the window before the expression
             is evaluated. valid values = `length - null_count`
         parallel
@@ -10039,7 +10020,7 @@ class Expr:
         └────────┘
         """
         return self._from_pyexpr(
-            self._pyexpr.cumulative_eval(expr._pyexpr, min_periods, parallel)
+            self._pyexpr.cumulative_eval(expr._pyexpr, min_samples, parallel)
         )
 
     def set_sorted(self, *, descending: bool = False) -> Expr:
