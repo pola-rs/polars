@@ -70,12 +70,10 @@ pub fn deserialize_decimal(mut bytes: &[u8], precision: Option<u8>, scale: u8) -
         return None;
     }
     if negative {
-        if ret == (1 << 127) {
-            // Has to be handled separately, 2^127 does not fit in i128, but
-            // does negated.
-            Some(i128::MIN)
+        if ret > (1 << 127) {
+            None
         } else {
-            ret.try_into().ok().map(|n: i128| -n)
+            Some(ret.wrapping_neg() as i128)
         }
     } else {
         ret.try_into().ok()
