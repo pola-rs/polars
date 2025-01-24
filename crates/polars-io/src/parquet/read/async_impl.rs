@@ -19,7 +19,7 @@ use crate::cloud::{
 };
 use crate::parquet::metadata::FileMetadataRef;
 use crate::pl_async::get_runtime;
-use crate::predicates::IOPredicate;
+use crate::predicates::ScanIOPredicate;
 
 type DownloadedRowGroup = PlHashMap<u64, Bytes>;
 type QueuePayload = (usize, DownloadedRowGroup);
@@ -231,7 +231,7 @@ impl FetchRowGroupsFromObjectStore {
         reader: ParquetObjectStore,
         schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
-        predicate: Option<IOPredicate>,
+        predicate: Option<ScanIOPredicate>,
         row_group_range: Range<usize>,
         row_groups: &[RowGroupMetadata],
     ) -> PolarsResult<Self> {

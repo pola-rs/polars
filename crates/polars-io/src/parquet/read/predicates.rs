@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetadata;
 
-use crate::predicates::{BatchStats, ColumnStats, IOPredicate};
+use crate::predicates::{BatchStats, ColumnStats, ScanIOPredicate};
 
 /// Collect the statistics in a row-group
 pub(crate) fn collect_statistics(
@@ -58,7 +58,7 @@ pub(crate) fn collect_statistics(
 }
 
 pub fn read_this_row_group(
-    predicate: Option<&IOPredicate>,
+    predicate: Option<&ScanIOPredicate>,
     md: &RowGroupMetadata,
     schema: &ArrowSchema,
 ) -> PolarsResult<bool> {

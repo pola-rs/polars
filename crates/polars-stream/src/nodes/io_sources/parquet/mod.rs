@@ -6,7 +6,7 @@ use polars_core::config;
 use polars_core::prelude::ArrowSchema;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
-use polars_io::predicates::IOPredicate;
+use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_plan::plans::hive::HivePartitions;
@@ -38,7 +38,7 @@ pub struct ParquetSourceNode {
     scan_sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
-    predicate: Option<IOPredicate>,
+    predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
@@ -82,7 +82,7 @@ impl ParquetSourceNode {
         scan_sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<IOPredicate>,
+        predicate: Option<ScanIOPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         mut file_options: FileScanOptions,

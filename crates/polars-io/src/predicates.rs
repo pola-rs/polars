@@ -374,9 +374,13 @@ pub trait SkipBatchPredicate: Send + Sync {
 }
 
 #[derive(Clone)]
-pub struct IOPredicate {
-    pub expr: Arc<dyn PhysicalIoExpr>,
+pub struct ScanIOPredicate {
+    pub predicate: Arc<dyn PhysicalIoExpr>,
+
+    /// Column names that are used in the predicate.
     pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
+
+    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 }
 

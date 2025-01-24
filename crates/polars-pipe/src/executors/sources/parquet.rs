@@ -15,7 +15,7 @@ use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_io::pl_async::get_runtime;
-use polars_io::predicates::IOPredicate;
+use polars_io::predicates::ScanIOPredicate;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
@@ -48,7 +48,7 @@ pub struct ParquetSource {
     prefetch_size: usize,
     first_schema: Arc<ArrowSchema>,
     projected_arrow_schema: Option<Arc<ArrowSchema>>,
-    predicate: Option<IOPredicate>,
+    predicate: Option<ScanIOPredicate>,
 }
 
 impl ParquetSource {
@@ -252,7 +252,7 @@ impl ParquetSource {
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,
-        predicate: Option<IOPredicate>,
+        predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<Self> {
         let paths = sources
             .as_paths()

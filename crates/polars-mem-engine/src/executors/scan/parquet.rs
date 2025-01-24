@@ -6,7 +6,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
-use polars_io::predicates::{IOPredicate, SkipBatchPredicate};
+use polars_io::predicates::{ScanIOPredicate, SkipBatchPredicate};
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
 
@@ -288,8 +288,8 @@ impl ParquetExec {
                 None
             }
         };
-        let predicate = self.predicate.as_ref().map(|p| IOPredicate {
-            expr: phys_expr_to_io_expr(p.predicate.clone()),
+        let predicate = self.predicate.as_ref().map(|p| ScanIOPredicate {
+            predicate: phys_expr_to_io_expr(p.predicate.clone()),
             live_columns: p.live_columns.clone(),
             skip_batch_predicate: self
                 .skip_batch_predicate

@@ -4,7 +4,7 @@ use polars_core::prelude::{ArrowSchema, PlHashMap};
 use polars_core::series::IsSorted;
 use polars_core::utils::operation_exceeded_idxsize_msg;
 use polars_error::{polars_err, PolarsResult};
-use polars_io::predicates::IOPredicate;
+use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::_internal::read_this_row_group;
 use polars_io::prelude::{create_sorting_map, FileMetadata};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
@@ -42,7 +42,7 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) reader_schema: Arc<ArrowSchema>,
     pub(super) projection: Option<Arc<[PlSmallStr]>>,
     #[allow(unused)] // TODO: Fix!
-    pub(super) predicate: Option<IOPredicate>,
+    pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) slice_range: Option<std::ops::Range<usize>>,
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
     pub(super) current_path_index: usize,

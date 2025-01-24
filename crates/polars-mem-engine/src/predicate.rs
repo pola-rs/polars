@@ -9,7 +9,7 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_error::{polars_err, PolarsResult};
 use polars_expr::prelude::{phys_expr_to_io_expr, AggregationContext, PhysicalExpr};
 use polars_expr::state::ExecutionState;
-use polars_io::predicates::{ColumnStatistics, IOPredicate, SkipBatchPredicate};
+use polars_io::predicates::{ColumnStatistics, ScanIOPredicate, SkipBatchPredicate};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
@@ -23,10 +23,10 @@ pub struct ScanPredicate {
 
     /// A predicate expression used to skip record batches based on its statistics.
     ///
-    /// This expression will be given a `min`, `max` and `null count` for each live column (set to
-    /// `null` when it is not known) and the expression evaluates to `true` if the whole batch can for
-    /// sure be skipped. This may be conservative and evaluate to `false` even when the batch could
-    /// theorically be skipped.
+    /// This expression will be given a batch size along with a `min`, `max` and `null count` for
+    /// each live column (set to `null` when it is not known) and the expression evaluates to
+    /// `true` if the whole batch can for sure be skipped. This may be conservative and evaluate to
+    /// `false` even when the batch could theorically be skipped.
     pub skip_batch_predicate: Option<Arc<dyn PhysicalExpr>>,
 }
 
@@ -148,6 +148,7 @@ impl ScanPredicate {
         }
     }
 
+    /// Create a predicate to skip batches using statistics.
     pub(crate) fn to_dyn_skip_batch_predicate(
         &self,
         schema: &Schema,
@@ -194,9 +195,9 @@ impl ScanPredicate {
         &self,
         skip_batch_predicate: Option<&Arc<dyn SkipBatchPredicate>>,
         schema: &SchemaRef,
-    ) -> IOPredicate {
-        IOPredicate {
-            expr: phys_expr_to_io_expr(self.predicate.clone()),
+    ) -> ScanIOPredicate {
+        ScanIOPredicate {
+            predicate: phys_expr_to_io_expr(self.predicate.clone()),
             live_columns: self.live_columns.clone(),
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
@@ -233,7 +234,7 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
 
             // Set `min`, `max` and `null_count` statistics.
             let col_idx = (idx * 3) + 1;
-            columns[col_idx + 0]
+            columns[col_idx]
                 .as_scalar_column_mut()
                 .unwrap()
                 .with_value(stat.min);
