@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -539,18 +540,21 @@ pub trait ListNameSpaceImpl: AsList {
                     let s: &Series = binding.as_ref();
                     let ca = s.i64().unwrap();
                     let mut fill_values;
-                    if width == ca.len() {
-                        fill_values = ca.clone();
-                    } else if width < ca.len() {
-                        fill_values = ca.slice(0, width);
-                    } else {
-                        fill_values = Int64Chunked::new_vec(
-                            PlSmallStr::EMPTY,
-                            vec![fill_value.unwrap(); width - ca.len()],
-                        );
-                        let _ = fill_values.append(ca);
+                    match width.cmp(&ca.len()) {
+                        Ordering::Equal => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Less => {
+                            fill_values = ca.slice(0, width);
+                        },
+                        Ordering::Greater => {
+                            fill_values = Int64Chunked::new_vec(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); width - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
                     };
-
                     Some(fill_values.into())
                 })
             },
@@ -562,18 +566,21 @@ pub trait ListNameSpaceImpl: AsList {
                     let s: &Series = binding.as_ref();
                     let ca = s.f64().unwrap();
                     let mut fill_values;
-                    if width == ca.len() {
-                        fill_values = ca.clone();
-                    } else if width < ca.len() {
-                        fill_values = ca.slice(0, width);
-                    } else {
-                        fill_values = Float64Chunked::new_vec(
-                            PlSmallStr::EMPTY,
-                            vec![fill_value.unwrap(); width - ca.len()],
-                        );
-                        let _ = fill_values.append(ca);
+                    match width.cmp(&ca.len()) {
+                        Ordering::Equal => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Less => {
+                            fill_values = ca.slice(0, width);
+                        },
+                        Ordering::Greater => {
+                            fill_values = Float64Chunked::new_vec(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); width - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
                     };
-
                     Some(fill_values.into())
                 })
             },
@@ -584,18 +591,21 @@ pub trait ListNameSpaceImpl: AsList {
                     let s: &Series = binding.as_ref();
                     let ca = s.str().unwrap();
                     let mut fill_values;
-                    if width == ca.len() {
-                        fill_values = ca.clone();
-                    } else if width < ca.len() {
-                        fill_values = ca.slice(0, width);
-                    } else {
-                        fill_values = StringChunked::new(
-                            PlSmallStr::EMPTY,
-                            vec![fill_value.unwrap(); width - ca.len()],
-                        );
-                        let _ = fill_values.append(ca);
+                    match width.cmp(&ca.len()) {
+                        Ordering::Equal => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Less => {
+                            fill_values = ca.slice(0, width);
+                        },
+                        Ordering::Greater => {
+                            fill_values = StringChunked::new(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); width - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
                     };
-
                     Some(fill_values.into())
                 })
             },
@@ -606,18 +616,21 @@ pub trait ListNameSpaceImpl: AsList {
                     let s: &Series = binding.as_ref();
                     let ca = s.bool().unwrap();
                     let mut fill_values;
-                    if width == ca.len() {
-                        fill_values = ca.clone();
-                    } else if width < ca.len() {
-                        fill_values = ca.slice(0, width);
-                    } else {
-                        fill_values = BooleanChunked::new(
-                            PlSmallStr::EMPTY,
-                            vec![fill_value.unwrap(); width - ca.len()],
-                        );
-                        let _ = fill_values.append(ca);
+                    match width.cmp(&ca.len()) {
+                        Ordering::Equal => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Less => {
+                            fill_values = ca.slice(0, width);
+                        },
+                        Ordering::Greater => {
+                            fill_values = BooleanChunked::new(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); width - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
                     };
-
                     Some(fill_values.into())
                 })
             },
