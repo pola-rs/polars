@@ -209,7 +209,9 @@ impl ComputeNode for IpcSourceNode {
         assert!(recv.is_empty());
         assert_eq!(send.len(), 1);
 
-        if self.state.slice.is_empty() {
+        if self.state.slice.is_empty()
+            || self.state.block_offset == self.source.metadata.blocks.len()
+        {
             send[0] = PortState::Done;
         }
 
