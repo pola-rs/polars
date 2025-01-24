@@ -206,7 +206,7 @@ fn check_asof_columns(
     a: &Series,
     b: &Series,
     has_tolerance: bool,
-    check_sorted: bool,
+    sorted_err: bool,
 ) -> PolarsResult<()> {
     let dtype_a = a.dtype();
     let dtype_b = b.dtype();
@@ -228,9 +228,19 @@ fn check_asof_columns(
         ComputeError: "mismatching key dtypes in asof-join: `{}` and `{}`",
         a.dtype(), b.dtype()
     );
-    if check_sorted {
+    if sorted_err {
         a.ensure_sorted_arg("asof_join")?;
         b.ensure_sorted_arg("asof_join")?;
+    } else {
+        let msg = |side| {
+            format!("{side} key of asof join is not sorted.\n\nThis can lead to invalid results. Ensure the asof key is sorted")
+        };
+        if a.ensure_sorted_arg("asof_join").is_err() {
+            polars_warn!(msg("left"))
+        }
+        if b.ensure_sorted_arg("asof_join").is_err() {
+            polars_warn!(msg("right"))
+        }
     }
     Ok(())
 }
