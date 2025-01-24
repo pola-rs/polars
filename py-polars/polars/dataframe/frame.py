@@ -3542,6 +3542,10 @@ class DataFrame:
         else:
             hidden = set(_expand_selectors(df, hidden_columns))
 
+        # Autofit section needs to be present above column_widths section
+        # to ensure that parameters provided in the column_widths section
+        # are not overwritten by autofit
+        #
         # table/rows all written; apply (optional) autofit
         if autofit and not is_empty:
             xlv = xlsxwriter.__version__
