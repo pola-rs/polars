@@ -279,7 +279,13 @@ def test_ewm_methods(
                 "ignore_nulls": ignore_nulls,
             }
             pl_params.update(decay_param)
-            pd_params = pl_params.copy()
+            pd_params: dict[str, Any] = {
+                "min_periods": mp,
+                "adjust": adjust,
+                "ignore_nulls": ignore_nulls,
+            }
+            pd_params.update(decay_param)
+
             if "half_life" in pl_params:
                 pd_params["halflife"] = pd_params.pop("half_life")
             if "ignore_nulls" in pl_params:
