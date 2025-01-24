@@ -28,6 +28,7 @@ from polars.datatypes import (
     Int64,
     Null,
     String,
+    Time,
     UInt8,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES, NUMERIC_DTYPES
@@ -661,7 +662,7 @@ def _read_spreadsheet(
         infer_schema_length=infer_schema_length,
     )
     engine_options = (engine_options or {}).copy()
-    schema_overrides = pl.Schema(schema_overrides or {})
+    schema_overrides = dict(schema_overrides or {})
 
     # establish the reading function, parser, and available worksheets
     reader_fn, parser, worksheets = _initialise_spreadsheet_parser(
@@ -985,6 +986,149 @@ def _reorder_columns(
     return df
 
 
+def _read_spreadsheet_calamine(
+    parser: Any,
+    *,
+    sheet_name: str | None,
+    read_options: dict[str, Any],
+    schema_overrides: SchemaDict | None,
+    columns: Sequence[int] | Sequence[str] | None,
+    table_name: str | None = None,
+    drop_empty_rows: bool,
+    drop_empty_cols: bool,
+    raise_if_empty: bool,
+) -> pl.DataFrame:
+    # if we have 'schema_overrides' and a more recent version of `fastexcel`
+    # we can pass translated dtypes to the engine to refine the initial parse
+    fastexcel = import_optional("fastexcel")
+    fastexcel_version = parse_version(original_version := fastexcel.__version__)
+
+    if fastexcel_version < (0, 9) and "schema_sample_rows" in read_options:
+        msg = f"a more recent version of `fastexcel` is required for 'schema_sample_rows' (>= 0.9; found {original_version})"
+        raise ModuleUpgradeRequiredError(msg)
+    if fastexcel_version < (0, 10, 2) and "use_columns" in read_options:
+        msg = f"a more recent version of `fastexcel` is required for 'use_columns' (>= 0.10.2; found {original_version})"
+        raise ModuleUpgradeRequiredError(msg)
+    if table_name and fastexcel_version < (0, 12):
+        msg = f"a more recent version of `fastexcel` is required for 'table_name' (>= 0.12.0; found {original_version})"
+        raise ValueError(msg)
+
+    if columns:
+        read_options["use_columns"] = columns
+
+    schema_overrides = schema_overrides or {}
+    if read_options.get("schema_sample_rows") == 0:
+        # ref: https://github.com/ToucanToco/fastexcel/issues/236
+        del read_options["schema_sample_rows"]
+        read_options["dtypes"] = (
+            "string"
+            if fastexcel_version >= (0, 12, 1)
+            else dict.fromkeys(range(16384), "string")
+        )
+    elif schema_overrides and fastexcel_version >= (0, 10):
+        parser_dtypes = read_options.get("dtypes", {})
+        for name, dtype in schema_overrides.items():
+            if name not in parser_dtypes:
+                if (base_dtype := dtype.base_type()) in INTEGER_DTYPES:
+                    parser_dtypes[name] = "int"
+                elif base_dtype in FLOAT_DTYPES:
+                    parser_dtypes[name] = "float"
+                elif base_dtype == String:
+                    parser_dtypes[name] = "string"
+                elif base_dtype == Duration:
+                    parser_dtypes[name] = "duration"
+                elif base_dtype == Boolean:
+                    parser_dtypes[name] = "boolean"
+
+        read_options["dtypes"] = parser_dtypes
+
+    if fastexcel_version < (0, 11, 2):
+        ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
+        df = ws.to_polars()
+    else:
+        if table_name:
+            xl_table = parser.load_table(table_name, **read_options)
+            if sheet_name and sheet_name != xl_table.sheet_name:
+                msg = f"table named {table_name!r} not found in sheet {sheet_name!r}"
+                raise RuntimeError(msg)
+            df = xl_table.to_polars()
+        else:
+            ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
+            df = from_arrow(ws_arrow)
+
+        if read_options.get("header_row", False) is None and not read_options.get(
+            "column_names"
+        ):
+            df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
+
+    df = _drop_null_data(
+        df,
+        raise_if_empty=raise_if_empty,
+        drop_empty_rows=drop_empty_rows,
+        drop_empty_cols=drop_empty_cols,
+    )
+
+    # note: even if we applied parser dtypes we still re-apply schema_overrides
+    # natively as we can refine integer/float types, temporal precision, etc.
+    if schema_overrides:
+        lf, schema = df.lazy(), df.schema
+        str_to_temporal, updated_overrides = [], {}
+        for nm, tp in schema_overrides.items():
+            if schema[nm] != String:
+                updated_overrides[nm] = tp
+            elif tp == Datetime:
+                str_to_temporal.append(
+                    F.col(nm).str.to_datetime(
+                        time_unit=getattr(tp, "time_unit", None),
+                        time_zone=getattr(tp, "time_zone", None),
+                    )
+                )
+            elif tp == Date:
+                str_to_temporal.append(F.col(nm).str.to_date())
+            elif tp == Time:
+                str_to_temporal.append(F.col(nm).str.to_time())
+            else:
+                updated_overrides[nm] = tp
+
+        if str_to_temporal:
+            lf = lf.with_columns(*str_to_temporal)
+        if updated_overrides:
+            lf = lf.cast(dtypes=updated_overrides)
+        df = lf.collect()
+
+    # standardise on string dtype for null columns in empty frame
+    if df.is_empty():
+        df = df.cast({Null: String})
+
+    # further refine dtypes
+    type_checks = []
+    for c, dtype in df.schema.items():
+        if c not in schema_overrides:
+            # may read integer data as float; cast back to int where possible.
+            if dtype in FLOAT_DTYPES:
+                check_cast = [
+                    F.col(c).floor().eq_missing(F.col(c)) & F.col(c).is_not_nan(),
+                    F.col(c).cast(Int64),
+                ]
+                type_checks.append(check_cast)
+            # do a similar check for datetime columns that have only 00:00:00 times.
+            elif dtype == Datetime:
+                check_cast = [
+                    F.col(c).dt.time().eq(time(0, 0, 0)),
+                    F.col(c).cast(Date),
+                ]
+                type_checks.append(check_cast)
+
+    if type_checks:
+        apply_cast = df.select(d[0].all(ignore_nulls=True) for d in type_checks).row(0)
+        if downcast := [
+            cast for apply, (_, cast) in zip(apply_cast, type_checks) if apply
+        ]:
+            df = df.with_columns(*downcast)
+
+    return df
+
+
 def _read_spreadsheet_openpyxl(
     parser: Any,
     *,
@@ -1000,6 +1144,7 @@ def _read_spreadsheet_openpyxl(
     """Use the 'openpyxl' library to read data from the given worksheet."""
     infer_schema_length = read_options.pop("infer_schema_length", None)
     has_header = read_options.pop("has_header", True)
+    schema_overrides = schema_overrides or {}
     no_inference = infer_schema_length == 0
     header: list[str | None] = []
 
@@ -1056,12 +1201,25 @@ def _read_spreadsheet_openpyxl(
     for name, column_data in zip(header, zip(*rows_iter)):
         if name or not drop_empty_cols:
             values = [cell.value for cell in column_data]
-            if no_inference or (dtype := (schema_overrides or {}).get(name)) == String:  # type: ignore[assignment,arg-type]
+            if no_inference or (dtype := schema_overrides.get(name)) == String:  # type: ignore[assignment,arg-type]
                 # note: if we initialise the series with mixed-type data (eg: str/int)
                 # then the non-strings will become null, so we handle the cast here
                 values = [str(v) if (v is not None) else v for v in values]
 
-            s = pl.Series(name, values, dtype=dtype, strict=False)
+            if (tp := schema_overrides.get(name)) in (Date, Datetime, Time):  # type: ignore[operator,arg-type]
+                s = pl.Series(name, values, strict=False)
+                if s.dtype == String:
+                    if tp == Datetime:
+                        s = s.str.to_datetime(
+                            time_unit=getattr(tp, "time_unit", None),
+                            time_zone=getattr(tp, "time_zone", None),
+                        )
+                    elif tp == Date:
+                        s = s.str.strip_suffix(" 00:00:00").str.to_date()
+                    elif tp == Time:
+                        s = s.str.to_time()
+            else:
+                s = pl.Series(name, values, dtype=dtype, strict=False)
             series_data.append(s)
 
     names = deduplicate_names(s.name for s in series_data)
@@ -1078,130 +1236,6 @@ def _read_spreadsheet_openpyxl(
         drop_empty_cols=drop_empty_cols,
     )
     df = _reorder_columns(df, columns)
-    return df
-
-
-def _read_spreadsheet_calamine(
-    parser: Any,
-    *,
-    sheet_name: str | None,
-    read_options: dict[str, Any],
-    schema_overrides: SchemaDict | None,
-    columns: Sequence[int] | Sequence[str] | None,
-    table_name: str | None = None,
-    drop_empty_rows: bool,
-    drop_empty_cols: bool,
-    raise_if_empty: bool,
-) -> pl.DataFrame:
-    # if we have 'schema_overrides' and a more recent version of `fastexcel`
-    # we can pass translated dtypes to the engine to refine the initial parse
-    fastexcel = import_optional("fastexcel")
-    fastexcel_version = parse_version(original_version := fastexcel.__version__)
-
-    if fastexcel_version < (0, 9) and "schema_sample_rows" in read_options:
-        msg = f"a more recent version of `fastexcel` is required for 'schema_sample_rows' (>= 0.9; found {original_version})"
-        raise ModuleUpgradeRequiredError(msg)
-    if fastexcel_version < (0, 10, 2) and "use_columns" in read_options:
-        msg = f"a more recent version of `fastexcel` is required for 'use_columns' (>= 0.10.2; found {original_version})"
-        raise ModuleUpgradeRequiredError(msg)
-    if table_name and fastexcel_version < (0, 12):
-        msg = f"a more recent version of `fastexcel` is required for 'table_name' (>= 0.12.0; found {original_version})"
-        raise ValueError(msg)
-
-    if columns:
-        read_options["use_columns"] = columns
-
-    schema_overrides = schema_overrides or {}
-    if read_options.get("schema_sample_rows") == 0:
-        # ref: https://github.com/ToucanToco/fastexcel/issues/236
-        del read_options["schema_sample_rows"]
-        read_options["dtypes"] = (
-            "string"
-            if fastexcel_version >= (0, 12, 1)
-            else dict.fromkeys(range(16384), "string")
-        )
-    elif schema_overrides and fastexcel_version >= (0, 10):
-        parser_dtypes = read_options.get("dtypes", {})
-        for name, dtype in schema_overrides.items():
-            if name not in parser_dtypes:
-                if (base_dtype := dtype.base_type()) in INTEGER_DTYPES:
-                    parser_dtypes[name] = "int"
-                elif base_dtype in FLOAT_DTYPES:
-                    parser_dtypes[name] = "float"
-                elif base_dtype == String:
-                    parser_dtypes[name] = "string"
-                elif base_dtype == Datetime:
-                    parser_dtypes[name] = "datetime"
-                elif base_dtype == Date:
-                    parser_dtypes[name] = "date"
-                elif base_dtype == Duration:
-                    parser_dtypes[name] = "duration"
-                elif base_dtype == Boolean:
-                    parser_dtypes[name] = "boolean"
-
-        read_options["dtypes"] = parser_dtypes
-
-    if fastexcel_version < (0, 11, 2):
-        ws = parser.load_sheet_by_name(name=sheet_name, **read_options)
-        df = ws.to_polars()
-    else:
-        if table_name:
-            xl_table = parser.load_table(table_name, **read_options)
-            if sheet_name and sheet_name != xl_table.sheet_name:
-                msg = f"table named {table_name!r} not found in sheet {sheet_name!r}"
-                raise RuntimeError(msg)
-            df = xl_table.to_polars()
-        else:
-            ws_arrow = parser.load_sheet_eager(sheet_name, **read_options)
-            df = from_arrow(ws_arrow)
-
-        if read_options.get("header_row", False) is None and not read_options.get(
-            "column_names"
-        ):
-            df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
-
-    df = _drop_null_data(
-        df,
-        raise_if_empty=raise_if_empty,
-        drop_empty_rows=drop_empty_rows,
-        drop_empty_cols=drop_empty_cols,
-    )
-
-    # note: even if we applied parser dtypes we still re-apply schema_overrides
-    # natively as we can refine integer/float types, temporal precision, etc.
-    if schema_overrides:
-        df = df.cast(dtypes=schema_overrides)
-
-    # standardise on string dtype for null columns in empty frame
-    if df.is_empty():
-        df = df.cast({Null: String})
-
-    # further refine dtypes
-    type_checks = []
-    for c, dtype in df.schema.items():
-        if c not in schema_overrides:
-            # may read integer data as float; cast back to int where possible.
-            if dtype in FLOAT_DTYPES:
-                check_cast = [
-                    F.col(c).floor().eq_missing(F.col(c)) & F.col(c).is_not_nan(),
-                    F.col(c).cast(Int64),
-                ]
-                type_checks.append(check_cast)
-            # do a similar check for datetime columns that have only 00:00:00 times.
-            elif dtype == Datetime:
-                check_cast = [
-                    F.col(c).dt.time().eq(time(0, 0, 0)),
-                    F.col(c).cast(Date),
-                ]
-                type_checks.append(check_cast)
-
-    if type_checks:
-        apply_cast = df.select(d[0].all(ignore_nulls=True) for d in type_checks).row(0)
-        if downcast := [
-            cast for apply, (_, cast) in zip(apply_cast, type_checks) if apply
-        ]:
-            df = df.with_columns(*downcast)
-
     return df
 
 
