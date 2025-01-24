@@ -4,7 +4,7 @@ pub(crate) mod filter;
 use std::ops::Range;
 
 use arrow::array::{Array, IntoBoxedArray, Splitable};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 
@@ -96,7 +96,7 @@ impl<'a, D: Decoder> State<'a, D> {
         self,
         decoder: &mut D,
         decoded: &mut D::DecodedState,
-        pred_true_mask: &mut MutableBitmap,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         decoder.extend_filtered_with_state(self, decoded, pred_true_mask, filter)
@@ -130,7 +130,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
     is_optional: bool,
 
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     target: &mut impl Pushable<T>,
 ) -> ParquetResult<()> {
     match &mut filter {
@@ -335,7 +335,7 @@ pub(super) trait Decoder: Sized {
         &mut self,
         state: State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut MutableBitmap,
+        pred_true_mask: &mut BitmapBuilder,
         predicate: &PredicateFilter,
         dtype: &ArrowDataType,
     ) -> ParquetResult<()> {
@@ -345,7 +345,7 @@ pub(super) trait Decoder: Sized {
         self.extend_filtered_with_state(
             state,
             &mut intermediate_array,
-            &mut MutableBitmap::new(),
+            &mut BitmapBuilder::new(),
             None,
         )?;
         let intermediate_array = self
@@ -378,7 +378,7 @@ pub(super) trait Decoder: Sized {
         &mut self,
         state: State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut MutableBitmap,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()>;
 
@@ -427,7 +427,7 @@ impl<D: Decoder> PageDecoder<D> {
 
         // @TODO: Don't allocate if include_values == false
         let mut target = self.decoder.with_capacity(num_rows_remaining);
-        let mut pred_true_mask = MutableBitmap::new();
+        let mut pred_true_mask = BitmapBuilder::new();
 
         let mut pred_tracks_nulls = true;
         let mut dict_mask = None;
@@ -562,22 +562,17 @@ pub(super) fn dict_indices_decoder(
 /// Freeze a [`MutableBitmap`] into a `Option<Bitmap>`.
 ///
 /// This will turn the several instances where `None` (representing "all valid") suffices.
-pub fn freeze_validity(validity: MutableBitmap) -> Option<Bitmap> {
-    if validity.is_empty() {
+pub fn freeze_validity(validity: BitmapBuilder) -> Option<Bitmap> {
+    if validity.is_empty() || validity.unset_bits() == 0 {
         return None;
     }
 
     let validity = validity.freeze();
-
-    if validity.unset_bits() == 0 {
-        return None;
-    }
-
     Some(validity)
 }
 
 pub(crate) fn filter_from_range(rng: Range<usize>) -> Bitmap {
-    let mut bm = MutableBitmap::with_capacity(rng.end);
+    let mut bm = BitmapBuilder::with_capacity(rng.end);
 
     bm.extend_constant(rng.start, false);
     bm.extend_constant(rng.len(), true);
@@ -588,7 +583,7 @@ pub(crate) fn filter_from_range(rng: Range<usize>) -> Bitmap {
 pub(crate) fn decode_hybrid_rle_into_bitmap(
     mut page_validity: HybridRleDecoder<'_>,
     limit: Option<usize>,
-    bitmap: &mut MutableBitmap,
+    bitmap: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     assert!(page_validity.num_bits() <= 1);
 
@@ -625,7 +620,7 @@ pub(crate) fn decode_page_validity(
 
     let mut num_ones = 0;
 
-    let mut bm = MutableBitmap::new();
+    let mut bm = BitmapBuilder::new();
     let limit = limit.unwrap_or(page_validity.len());
     page_validity.limit_to(limit);
     let num_values = page_validity.len();

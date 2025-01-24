@@ -1,6 +1,5 @@
 use arrow::array::{PrimitiveArray, Splitable};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::{AlignedBytes, NativeType, PrimitiveType};
 
 use super::DecoderFunction;
@@ -20,10 +19,10 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
     dfn: D,
 ) -> ParquetResult<()> {
     let can_filter_on_raw_data =
@@ -42,7 +41,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
             let mut unfiltered_target = Vec::with_capacity(num_values);
             let mut unfiltered_validity = page_validity
                 .is_some()
-                .then(|| MutableBitmap::with_capacity(num_values))
+                .then(|| BitmapBuilder::with_capacity(num_values))
                 .unwrap_or_default();
 
             decode_no_incompact_predicates(
@@ -53,7 +52,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
                 &mut unfiltered_validity,
                 intermediate,
                 &mut unfiltered_target,
-                &mut MutableBitmap::new(),
+                &mut BitmapBuilder::new(),
                 dfn,
             )?;
 
@@ -107,10 +106,10 @@ pub fn decode_no_incompact_predicates<
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
     dfn: D,
 ) -> ParquetResult<()> {
     if cfg!(debug_assertions) && is_optional {
@@ -172,9 +171,9 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     target: &mut Vec<B>,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
@@ -209,13 +208,13 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         (Some(Filter::Predicate(p)), None) => {
             if let Some(needle) = p.predicate.to_equals_scalar() {
                 let needle = needle.to_aligned_bytes::<B>().unwrap();
+
+                let start_num_pred_true = pred_true_mask.set_bits();
                 predicate::decode_equals_no_values(values, needle, pred_true_mask);
 
                 if p.include_values {
-                    let mask = BitMask::new(pred_true_mask.as_slice(), 0, pred_true_mask.len());
-                    let mask = mask.sliced(pred_true_mask.len() - values.len(), values.len());
-
-                    target.resize(target.len() + mask.set_bits(), needle);
+                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
+                    target.resize(target.len() + num_pred_true, needle);
                 }
             } else {
                 unreachable!()

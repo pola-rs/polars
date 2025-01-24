@@ -1,5 +1,5 @@
 use arrow::array::{DictionaryArray, MutableBinaryViewArray, PrimitiveArray};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::{AlignedBytes, NativeType};
 
@@ -56,13 +56,13 @@ impl CategoricalDecoder {
 impl utils::Decoder for CategoricalDecoder {
     type Translation<'a> = HybridRleDecoder<'a>;
     type Dict = <BinViewDecoder as utils::Decoder>::Dict;
-    type DecodedState = (Vec<u32>, MutableBitmap);
+    type DecodedState = (Vec<u32>, BitmapBuilder);
     type Output = DictionaryArray<u32>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<u32>::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
     }
 
@@ -131,7 +131,7 @@ impl utils::Decoder for CategoricalDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut MutableBitmap,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
         super::dictionary_encoded::decode_dict_dispatch(

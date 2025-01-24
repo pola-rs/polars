@@ -1,5 +1,5 @@
 use arrow::array::{FixedSizeBinaryArray, Splitable};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::datatypes::ArrowDataType;
 use arrow::storage::SharedStorage;
@@ -170,7 +170,7 @@ impl FSBVec {
     }
 }
 
-impl utils::Decoded for (FSBVec, MutableBitmap) {
+impl utils::Decoded for (FSBVec, BitmapBuilder) {
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -195,8 +195,8 @@ fn decode_fsb_plain(
     size: usize,
     values: &[u8],
     target: &mut FSBVec,
-    pred_true_mask: &mut MutableBitmap,
-    validity: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
+    validity: &mut BitmapBuilder,
     is_optional: bool,
     filter: Option<Filter>,
     page_validity: Option<&Bitmap>,
@@ -329,8 +329,8 @@ fn decode_fsb_dict(
     dict: &FixedSizeBinaryArray,
     dict_mask: Option<&Bitmap>,
     target: &mut FSBVec,
-    pred_true_mask: &mut MutableBitmap,
-    validity: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
+    validity: &mut BitmapBuilder,
     is_optional: bool,
     filter: Option<Filter>,
     page_validity: Option<&Bitmap>,
@@ -493,7 +493,7 @@ fn decode_fsb_dict(
 impl Decoder for BinaryDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = FixedSizeBinaryArray;
-    type DecodedState = (FSBVec, MutableBitmap);
+    type DecodedState = (FSBVec, BitmapBuilder);
     type Output = FixedSizeBinaryArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
@@ -510,7 +510,7 @@ impl Decoder for BinaryDecoder {
             _ => FSBVec::Other(Vec::with_capacity(capacity * size), size),
         };
 
-        (values, MutableBitmap::with_capacity(capacity))
+        (values, BitmapBuilder::with_capacity(capacity))
     }
 
     fn deserialize_dict(&mut self, page: DictPage) -> ParquetResult<Self::Dict> {
@@ -519,8 +519,8 @@ impl Decoder for BinaryDecoder {
             self.size,
             page.buffer.as_ref(),
             &mut target,
-            &mut MutableBitmap::new(),
-            &mut MutableBitmap::new(),
+            &mut BitmapBuilder::new(),
+            &mut BitmapBuilder::new(),
             false,
             None,
             None,
@@ -583,7 +583,7 @@ impl Decoder for BinaryDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut MutableBitmap,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match state.translation {

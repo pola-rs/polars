@@ -1,6 +1,5 @@
 use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
@@ -19,7 +18,7 @@ mod predicate;
 mod required;
 mod required_masked;
 
-type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
+type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, BitmapBuilder);
 
 impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
     type PlainDecoder = BinaryIter<'a>;
@@ -106,12 +105,12 @@ pub fn decode_plain(
     target: &mut MutableBinaryViewArray<[u8]>,
 
     is_optional: bool,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
 
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
 
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 
     verify_utf8: bool,
 ) -> ParquetResult<()> {
@@ -180,15 +179,11 @@ pub fn decode_plain(
                 needle.as_binary().unwrap()
             };
 
+            let start_pred_true_num = pred_true_mask.set_bits();
             predicate::decode_equals(max_num_values, values, needle, pred_true_mask)?;
 
             if p.include_values {
-                let pred_true_num = BitMask::new(
-                    pred_true_mask.as_slice(),
-                    pred_true_mask.len() - max_num_values,
-                    max_num_values,
-                )
-                .set_bits();
+                let pred_true_num = pred_true_mask.set_bits() - start_pred_true_num;
 
                 if pred_true_num > 0 {
                     let new_target_len = target.len() + pred_true_num;
@@ -388,7 +383,7 @@ impl utils::Decoder for BinViewDecoder {
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             MutableBinaryViewArray::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
     }
 
@@ -497,7 +492,7 @@ impl utils::Decoder for BinViewDecoder {
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut MutableBitmap,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
