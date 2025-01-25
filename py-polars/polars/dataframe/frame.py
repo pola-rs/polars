@@ -3507,23 +3507,25 @@ class DataFrame:
             table_start[1] + len(df.columns) - 1,
         )
 
-        # verify that the number of rows and columns, after accounting for an offset and a header row, is within the maximum for Excel
+        # verify the number of rows and columns,
+        # after accounting for an offset and a header row
+        # is within the maximum for Excel
         excel_max_valid_rows = 1048575
         excel_max_valid_cols = 16384
-        
+
         initial_row_offset = 0
         initial_col_offset = 0
-        
+
         # it is just a numerical offset given in the form of a tuple
         if isinstance(position, tuple):
             initial_row_offset, initial_col_offset = position
-        
+
         total_rows = self.height + initial_row_offset
         if include_header:
             total_rows += 1
-            
+
         total_cols = self.width + initial_col_offset
-        
+
         if total_rows > excel_max_valid_rows or total_cols > excel_max_valid_cols:
             msg = "Dataframe too large to be compatible with Excel. Exceeded Excel limit of 1048575 rows and/or 16384 columns of data."
             raise InvalidOperationError(msg)
