@@ -334,7 +334,6 @@ def test_array_invalid_shape_type() -> None:
         pl.Array(pl.Int8, shape=("x",))  # type: ignore[arg-type]
 
 
-
 def test_array_invalid_physical_type_18920() -> None:
     s1 = pl.Series("x", [[1000, 2000]], pl.List(pl.Datetime))
     s2 = pl.Series("x", [None], pl.List(pl.Datetime))
