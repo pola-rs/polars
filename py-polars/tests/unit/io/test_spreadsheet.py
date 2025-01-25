@@ -1351,11 +1351,7 @@ def test_drop_empty_rows(
     )
     assert df3.shape == (10, 4)
 
-def test_write_excel_select_col_dtype():
-    from io import BytesIO
-
-    import polars as pl
-    import polars.selectors as cs
+def test_write_excel_select_col_dtype() -> None:
     from openpyxl import load_workbook
     from xlsxwriter import Workbook
 
