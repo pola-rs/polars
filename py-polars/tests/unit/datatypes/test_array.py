@@ -331,7 +331,8 @@ def test_array_missing_shape() -> None:
 
 def test_array_invalid_shape_type() -> None:
     with pytest.raises(TypeError, match="invalid input for shape"):
-        pl.Array(pl.Int8, shape=("x",))
+        pl.Array(pl.Int8, shape=("x",))  # type: ignore[arg-type]
+
 
 
 def test_array_invalid_physical_type_18920() -> None:
