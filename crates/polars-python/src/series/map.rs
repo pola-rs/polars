@@ -73,6 +73,7 @@ impl PySeries {
                     | DataType::Binary
                     | DataType::Array(_, _)
                     | DataType::Time
+                    | DataType::Decimal(_, _)
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
