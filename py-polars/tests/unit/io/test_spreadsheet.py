@@ -1351,17 +1351,19 @@ def test_drop_empty_rows(
     )
     assert df3.shape == (10, 4)
 
-def test_write_excel_select_col_dtype() -> None:
+def test_write_excel_select_col_dtype():
     from io import BytesIO
+
     import polars as pl
     import polars.selectors as cs
-    from xlsxwriter import Workbook
     from openpyxl import load_workbook
-
+    from xlsxwriter import Workbook
 
     def get_col_widths(wb_bytes: BytesIO) -> dict[str, int]:
-        return {k: round(v.width) for k, v in load_workbook(wb_bytes).active.column_dimensions.items()}
-
+        return {
+            k: round(v.width)
+            for k, v in load_workbook(wb_bytes).active.column_dimensions.items()
+        }
 
     df = pl.DataFrame(
         {
@@ -1374,19 +1376,17 @@ def test_write_excel_select_col_dtype() -> None:
     # pl.List(pl.String)) datatype should not match column with no list
     check = BytesIO()
     with Workbook(check) as wb:
-        df.write_excel(wb, column_widths={cs.by_dtype(
-            pl.List(pl.String)): 300})
+        df.write_excel(wb, column_widths={cs.by_dtype(pl.List(pl.String)): 300})
 
-    assert get_col_widths(check) == {'A': 43}
+    assert get_col_widths(check) == {"A": 43}
 
     # column_widths test:
     # pl.String datatype should not match column with list
     check = BytesIO()
     with Workbook(check) as wb:
-        df.write_excel(wb, column_widths={cs.by_dtype(
-            pl.String): 300})
+        df.write_excel(wb, column_widths={cs.by_dtype(pl.String): 300})
 
-    assert get_col_widths(check) == {'B': 43}
+    assert get_col_widths(check) == {"B": 43}
 
     # hidden_columns test:
     # pl.List(pl.String)) datatype should not match column with no list
@@ -1394,7 +1394,7 @@ def test_write_excel_select_col_dtype() -> None:
     with Workbook(check) as wb:
         df.write_excel(wb, hidden_columns=cs.by_dtype(pl.List(pl.String)))
 
-    assert get_col_widths(check) == {'A': 0}
+    assert get_col_widths(check) == {"A": 0}
 
     # hidden_columns test:
     # pl.String datatype should not match column with list
@@ -1402,5 +1402,4 @@ def test_write_excel_select_col_dtype() -> None:
     with Workbook(check) as wb:
         df.write_excel(wb, hidden_columns=cs.by_dtype(pl.String))
 
-    assert get_col_widths(check) == {'B': 0}
-
+    assert get_col_widths(check) == {"B": 0}
