@@ -371,6 +371,9 @@ def test_set_tbl_width_chars() -> None:
     with pl.Config(tbl_width_chars=87):
         assert max(len(line) for line in str(df).split("\n")) == 87
 
+    with pytest.raises(ValueError, match="width should be positive"):
+        pl.Config.set_tbl_width_chars(-1)
+
 
 def test_shape_below_table_and_inlined_dtype() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
