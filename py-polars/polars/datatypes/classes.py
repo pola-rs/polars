@@ -813,7 +813,7 @@ class Array(NestedType):
             self.size = shape
             self.shape = (shape,) + inner_shape
 
-        elif isinstance(shape, tuple):
+        elif isinstance(shape, tuple) and isinstance(shape[0], int):
             if len(shape) > 1:
                 inner_parsed = Array(inner_parsed, shape[1:])
 
