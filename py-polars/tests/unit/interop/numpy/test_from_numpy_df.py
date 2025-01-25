@@ -10,7 +10,9 @@ import polars as pl
 from polars.testing import assert_frame_equal
 
 if TYPE_CHECKING:
-    from polars._typing import PolarsTemporalType
+    import numpy.typing as npt
+
+    from polars._typing import PolarsDataType, PolarsTemporalType
 
 
 def test_from_numpy() -> None:
@@ -156,7 +158,7 @@ def test_from_numpy_supported_units(
         (np.int32, pl.Int32),
     ],
 )
-def test_from_numpy_empty(np_dtype: np.dtype, dtype: pl.DataType) -> None:
+def test_from_numpy_empty(np_dtype: npt.DTypeLike, dtype: PolarsDataType) -> None:
     data = np.array([], dtype=np_dtype)
     result = pl.from_numpy(data, schema=["a"])
     expected = pl.Series("a", [], dtype=dtype).to_frame()
