@@ -3477,7 +3477,7 @@ class DataFrame:
         # converts all collection types (e.g. List, Struct, Object) to strings
         # Hence, we need to store the original schema so that it can be used
         # when selecting columns using column selectors based on datatypes
-        df_ori_dtypes = df.head(0)
+        df_original = df.head(0)
 
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
@@ -3546,7 +3546,7 @@ class DataFrame:
         elif isinstance(hidden_columns, str):
             hidden = {hidden_columns}
         else:
-            hidden = set(_expand_selectors(df_ori_dtypes, hidden_columns))
+            hidden = set(_expand_selectors(df_original, hidden_columns))
 
         # Autofit section needs to be present above column_widths section
         # to ensure that parameters provided in the column_widths section
@@ -3564,7 +3564,7 @@ class DataFrame:
             column_widths = dict.fromkeys(df.columns, column_widths)
         else:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
-                df_ori_dtypes, column_widths, expand_keys=True, expand_values=False
+                df_original, column_widths, expand_keys=True, expand_values=False
             )
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
