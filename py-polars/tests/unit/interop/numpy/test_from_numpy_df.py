@@ -147,3 +147,17 @@ def test_from_numpy_supported_units(
         pl.Series("column_0", expected_values).str.strptime(expected_dtype).to_frame()
     )
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize(
+    ("np_dtype", "dtype"),
+    [
+        (np.float64, pl.Float64),
+        (np.int32, pl.Int32),
+    ],
+)
+def test_from_numpy_empty(np_dtype: np.dtype, dtype: pl.DataType) -> None:
+    data = np.array([], dtype=np_dtype)
+    result = pl.from_numpy(data, schema=["a"])
+    expected = pl.Series("a", [], dtype=dtype).to_frame()
+    assert_frame_equal(result, expected)
