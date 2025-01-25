@@ -3477,7 +3477,7 @@ class DataFrame:
         # converts all collection types (e.g. List, Struct, Object) to strings
         # Hence, we need to store the original schema so that it can be used
         # when selecting columns using column selectors based on datatypes
-        df_original = df.head(0)
+        df_original = df.clear()
 
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
