@@ -240,6 +240,15 @@ fn to_graph_rec<'a>(
                     nodes::io_sinks::csv::CsvSinkNode::new(input_schema, path, csv_writer_options)?,
                     [(input_key, input.port)],
                 ),
+                #[cfg(not(any(
+                    feature = "csv",
+                    feature = "parquet",
+                    feature = "json",
+                    feature = "ipc"
+                )))]
+                _ => {
+                    panic!("activate source feature")
+                },
             }
         },
 
