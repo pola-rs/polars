@@ -3412,6 +3412,8 @@ class Expr:
         partition_by: IntoExpr | Iterable[IntoExpr],
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
+        order_by_descending: bool = False,
+        order_by_nulls_last: bool = False,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Expr:
         """
@@ -3431,9 +3433,15 @@ class Expr:
             column names.
         *more_exprs
             Additional columns to group by, specified as positional arguments.
-        order_by:
+        order_by
             Order the window functions/aggregations with the partitioned groups by the
             result of the expression passed to `order_by`.
+        order_by_descending
+            In case 'order_by' is given, indicate whether to order in
+            ascending or descending order.
+        order_by_nulls_last
+            In case 'order_by' is given, indicate whether to order
+            the nulls in last position.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
             - group_to_rows
                 If the aggregation results in multiple values, assign them back to their
@@ -3571,7 +3579,7 @@ class Expr:
             self._pyexpr.over(
                 partition_by,
                 order_by=order_by,
-                order_by_descending=False,  # does not work yet
+                order_by_descending=order_by_descending,
                 order_by_nulls_last=False,  # does not work yet
                 mapping_strategy=mapping_strategy,
             )
