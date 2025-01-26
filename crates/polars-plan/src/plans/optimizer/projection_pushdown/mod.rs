@@ -58,6 +58,34 @@ impl ProjectionContext {
             },
         }
     }
+
+    fn process_count_star_at_scan(&mut self, schema: &Schema, expr_arena: &mut Arena<AExpr>) {
+        if self.acc_projections.is_empty() {
+            let (name, _dt) = match schema.len() {
+                0 => return,
+                1 => schema.get_at_index(0).unwrap(),
+                _ => {
+                    // skip first as that can be the row index.
+                    // We look for a relative cheap type, such as a numeric or bool
+                    schema
+                        .iter()
+                        .skip(1)
+                        .find(|(_name, dt)| {
+                            let phys = dt;
+                            phys.is_null()
+                                || phys.is_primitive_numeric()
+                                || phys.is_bool()
+                                || phys.is_temporal()
+                        })
+                        .unwrap_or_else(|| schema.get_at_index(schema.len() - 1).unwrap())
+                },
+            };
+
+            let node = expr_arena.add(AExpr::Column(name.clone()));
+            self.acc_projections.push(ColumnNode(node));
+            self.projected_names.insert(name.clone());
+        }
+    }
 }
 
 /// utility function to get names of the columns needed in projection at scan level
@@ -353,6 +381,9 @@ impl ProjectionPushDown {
                 mut output_schema,
                 ..
             } => {
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&schema, expr_arena);
+                }
                 if !ctx.acc_projections.is_empty() {
                     output_schema = Some(Arc::new(update_scan_schema(
                         &ctx.acc_projections,
@@ -370,6 +401,10 @@ impl ProjectionPushDown {
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&options.schema, expr_arena);
+                }
+
                 options.with_columns =
                     get_scan_columns(&ctx.acc_projections, expr_arena, None, None);
 
@@ -394,6 +429,9 @@ impl ProjectionPushDown {
                 mut file_options,
                 mut output_schema,
             } => {
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
+                }
                 let do_optimization = match scan_type {
                     FileScan::Anonymous { ref function, .. } => {
                         function.allows_projection_pushdown()
