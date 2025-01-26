@@ -408,7 +408,11 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
-        elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
+        elif (
+            not hasattr(data, "__arrow_c_stream__")
+            and not isinstance(data, Sized)
+            and isinstance(data, (Generator, Iterable))
+        ):
             self._df = iterable_to_pydf(
                 data,
                 schema=schema,
@@ -3473,6 +3477,12 @@ class DataFrame:
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
         df, is_empty = self, not len(self)
 
+        # The _xl_setup_table_columns function in the below section
+        # converts all collection types (e.g. List, Struct, Object) to strings
+        # Hence, we need to store the original schema so that it can be used
+        # when selecting columns using column selectors based on datatypes
+        df_original = df.clear()
+
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
         column_formats = column_formats or {}
@@ -3540,7 +3550,7 @@ class DataFrame:
         elif isinstance(hidden_columns, str):
             hidden = {hidden_columns}
         else:
-            hidden = set(_expand_selectors(df, hidden_columns))
+            hidden = set(_expand_selectors(df_original, hidden_columns))
 
         # Autofit section needs to be present above column_widths section
         # to ensure that parameters provided in the column_widths section
@@ -3558,7 +3568,7 @@ class DataFrame:
             column_widths = dict.fromkeys(df.columns, column_widths)
         else:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
-                df, column_widths, expand_keys=True, expand_values=False
+                df_original, column_widths, expand_keys=True, expand_values=False
             )
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 

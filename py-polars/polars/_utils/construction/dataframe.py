@@ -1289,7 +1289,7 @@ def numpy_to_pydf(
             )._s
             for series_name, record_name in zip(column_names, record_names)
         ]
-    elif shape == (0,):
+    elif shape == (0,) and n_columns == 0:
         data_series = []
 
     elif len(shape) == 1:

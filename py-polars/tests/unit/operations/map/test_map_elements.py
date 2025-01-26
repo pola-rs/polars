@@ -10,7 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore::polars.exceptions.PolarsInefficientMapWarning"
@@ -140,7 +140,8 @@ def test_map_elements_list_any_value_fallback() -> None:
 
 def test_map_elements_all_types() -> None:
     # test we don't panic
-    for dtype in INTEGER_DTYPES:
+    dtypes = NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Decimal(None, 2)]
+    for dtype in dtypes:
         pl.Series([1, 2, 3, 4, 5], dtype=dtype).map_elements(lambda x: x)
 
 

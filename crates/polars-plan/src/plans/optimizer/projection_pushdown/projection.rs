@@ -10,9 +10,7 @@ pub(super) fn process_projection(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     mut exprs: Vec<ExprIR>,
-    mut acc_projections: Vec<ColumnNode>,
-    mut projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    mut ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     // Whether is SimpleProjection.
@@ -73,9 +71,14 @@ pub(super) fn process_projection(
         };
 
         // Clear all accumulated projections since we only project a single column from this level.
-        acc_projections.clear();
-        projected_names.clear();
-        add_expr_to_accumulated(expr, &mut acc_projections, &mut projected_names, expr_arena);
+        ctx.acc_projections.clear();
+        ctx.projected_names.clear();
+        add_expr_to_accumulated(
+            expr,
+            &mut ctx.acc_projections,
+            &mut ctx.projected_names,
+            expr_arena,
+        );
         local_projection.push(exprs.pop().unwrap());
         proj_pd.is_count_star = true;
     } else {
@@ -117,7 +120,7 @@ pub(super) fn process_projection(
                     },
                 };
 
-                let project = acc_projections.is_empty() || projected_names.contains(name);
+                let project = ctx.acc_projections.is_empty() || ctx.projected_names.contains(name);
                 projection_has_non_scalar |= project & is_non_scalar;
                 project
             })
@@ -125,20 +128,21 @@ pub(super) fn process_projection(
 
         // Remove aliased before adding new ones.
         if !remove_names.is_empty() {
-            if !projected_names.is_empty() {
+            if !ctx.projected_names.is_empty() {
                 for name in remove_names.iter() {
-                    projected_names.remove(name);
+                    ctx.projected_names.remove(name);
                 }
             }
 
-            acc_projections.retain(|c| !remove_names.contains(column_node_to_name(*c, expr_arena)));
+            ctx.acc_projections
+                .retain(|c| !remove_names.contains(column_node_to_name(*c, expr_arena)));
         }
 
         for e in projected_exprs {
             add_expr_to_accumulated(
                 e.node(),
-                &mut acc_projections,
-                &mut projected_names,
+                &mut ctx.acc_projections,
+                &mut ctx.projected_names,
                 expr_arena,
             );
 
@@ -152,8 +156,8 @@ pub(super) fn process_projection(
             if let Some(non_scalar) = opt_non_scalar {
                 add_expr_to_accumulated(
                     non_scalar.node(),
-                    &mut acc_projections,
-                    &mut projected_names,
+                    &mut ctx.acc_projections,
+                    &mut ctx.projected_names,
                     expr_arena,
                 );
 
@@ -162,14 +166,8 @@ pub(super) fn process_projection(
         }
     }
 
-    proj_pd.pushdown_and_assign(
-        input,
-        acc_projections,
-        projected_names,
-        projections_seen + 1,
-        lp_arena,
-        expr_arena,
-    )?;
+    ctx.projections_seen += 1;
+    proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 
     let builder = IRBuilder::new(input, expr_arena, lp_arena);
 

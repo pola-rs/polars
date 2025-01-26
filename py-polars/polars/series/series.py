@@ -329,7 +329,7 @@ class Series:
         ):
             self._s = pandas_to_pyseries(name, values, dtype=dtype, strict=strict)
 
-        elif _is_generator(values):
+        elif not hasattr(values, "__arrow_c_stream__") and _is_generator(values):
             self._s = iterable_to_pyseries(name, values, dtype=dtype, strict=strict)
 
         elif isinstance(values, Series):
