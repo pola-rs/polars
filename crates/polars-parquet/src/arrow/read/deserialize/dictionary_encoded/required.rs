@@ -1,9 +1,6 @@
 use arrow::types::AlignedBytes;
 
-use super::{
-    oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, verify_dict_indices_slice,
-    IndexMapping,
-};
+use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, IndexMapping};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
@@ -55,7 +52,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
 
                     if let Some((chunk, chunk_size)) = decoder.chunked().next_inexact() {
                         let chunk = &chunk[num_rows_to_skip..chunk_size];
-                        verify_dict_indices_slice(chunk, dict.len())?;
+                        verify_dict_indices(chunk, dict.len())?;
                         target.extend(chunk.iter().map(|&idx| {
                             // SAFETY: The dict indices were verified before.
                             unsafe { dict.get_unchecked(idx) }
@@ -73,7 +70,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
                 }
 
                 if let Some((chunk, chunk_size)) = chunked.remainder() {
-                    verify_dict_indices_slice(&chunk[..chunk_size], dict.len())?;
+                    verify_dict_indices(&chunk[..chunk_size], dict.len())?;
                     target.extend(chunk[..chunk_size].iter().map(|&idx| {
                         // SAFETY: The dict indices were verified before.
                         unsafe { dict.get_unchecked(idx) }
