@@ -659,3 +659,22 @@ def test_unique() -> None:
     assert ser.unique().to_list() == [D("1.1"), D("2.2")]
     assert ser.n_unique() == 2
     assert ser.arg_unique().to_list() == [0, 2]
+
+
+def test_groupby_agg_single_element_11232() -> None:
+    data = {"g": [-1], "decimal": [-1]}
+    schema = {"g": pl.Int64, "decimal": pl.Decimal(38, 0)}
+    result = (
+        pl.LazyFrame(data, schema=schema)
+        .group_by("g", maintain_order=True)
+        .agg(pl.col("decimal").min())
+        .collect()
+    )
+    expected = pl.DataFrame(data, schema=schema)
+    assert_frame_equal(result, expected)
+
+
+def test_decimal_from_large_ints_9084() -> None:
+    numbers = [2963091539321097135000000000, 25658709114149718824803874]
+    s = pl.Series(numbers, dtype=pl.Decimal)
+    assert s.to_list() == [D(n) for n in numbers]

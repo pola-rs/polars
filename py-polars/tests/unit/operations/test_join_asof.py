@@ -1278,3 +1278,9 @@ def test_join_asof_no_exact_matches() -> None:
         "bid": [None, 51.97, None, None, None],
         "ask": [None, 51.98, None, None, None],
     }
+
+
+def test_join_asof_not_sorted_warning() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
+    with pytest.warns(UserWarning, match="asof join is not sorted"):
+        df.join_asof(df, on="b", by="a")
