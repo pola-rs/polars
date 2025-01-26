@@ -30,7 +30,7 @@ use crate::utils::aexpr_to_leaf_names;
 #[derive(Default, Copy, Clone)]
 struct ProjectionCopyState {
     projections_seen: usize,
-    count_star: bool,
+    is_count_star: bool,
 }
 
 #[derive(Clone, Default)]
@@ -58,7 +58,7 @@ impl ProjectionContext {
     fn has_pushed_down(&self) -> bool {
         // count star also acts like a pushdown as we will select a single column at the source
         // when there were no other projections.
-        !self.acc_projections.is_empty() || self.inner.count_star
+        !self.acc_projections.is_empty() || self.inner.is_count_star
     }
 
     fn process_count_star_at_scan(&mut self, schema: &Schema, expr_arena: &mut Arena<AExpr>) {
