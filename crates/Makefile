@@ -102,22 +102,22 @@ doctest:  ## Check that documentation builds
 
 .PHONY: publish
 publish:  ## Publish Polars crates
-	# cargo publish --allow-dirty -p polars-error
-	# cargo publish --allow-dirty -p polars-utils
-	# cargo publish --allow-dirty -p polars-schema
-	# cargo publish --allow-dirty -p polars-arrow
-	# cargo publish --allow-dirty -p polars-compute
-	# cargo publish --allow-dirty -p polars-row
-	# cargo publish --allow-dirty -p polars-json
-	# cargo publish --allow-dirty -p polars-core
-	# cargo publish --allow-dirty -p polars-ffi
-	# cargo publish --allow-dirty -p polars-ops
-	# cargo publish --allow-dirty -p polars-time
-	# cargo publish --allow-dirty -p polars-parquet
-	# cargo publish --allow-dirty -p polars-io
-	# cargo publish --allow-dirty -p polars-plan
-	# cargo publish --allow-dirty -p polars-expr
-	# cargo publish --allow-dirty -p polars-mem-engine
+	cargo publish --allow-dirty -p polars-error
+	cargo publish --allow-dirty -p polars-utils
+	cargo publish --allow-dirty -p polars-schema
+	cargo publish --allow-dirty -p polars-arrow
+	cargo publish --allow-dirty -p polars-compute
+	cargo publish --allow-dirty -p polars-row
+	cargo publish --allow-dirty -p polars-json
+	cargo publish --allow-dirty -p polars-core
+	cargo publish --allow-dirty -p polars-ffi
+	cargo publish --allow-dirty -p polars-ops
+	cargo publish --allow-dirty -p polars-time
+	cargo publish --allow-dirty -p polars-parquet
+	cargo publish --allow-dirty -p polars-io
+	cargo publish --allow-dirty -p polars-plan
+	cargo publish --allow-dirty -p polars-expr
+	cargo publish --allow-dirty -p polars-mem-engine
 	cargo publish --allow-dirty -p polars-stream
 	cargo publish --allow-dirty -p polars-pipe
 	cargo publish --allow-dirty -p polars-lazy
