@@ -663,7 +663,7 @@ def test_unique() -> None:
 
 def test_groupby_agg_single_element_11232() -> None:
     data = {"g": [-1], "decimal": [-1]}
-    schema = {"g": pl.Int64, "decimal": pl.Decimal(38, 0)}
+    schema = {"g": pl.Int64(), "decimal": pl.Decimal(38, 0)}
     result = (
         pl.LazyFrame(data, schema=schema)
         .group_by("g", maintain_order=True)
