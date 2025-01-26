@@ -536,7 +536,7 @@ def test_projection_empty_frame_len_16904() -> None:
 
     q = df.select(pl.len())
 
-    assert "PROJECT */0" in q.explain()
+    assert "PROJECT 0/0" in q.explain()
 
     expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
     assert_frame_equal(q.collect(), expect)
@@ -630,3 +630,19 @@ def test_select_len_20337() -> None:
 
     q = q.with_row_index("foo")
     assert q.select(pl.len()).collect().item() == 3
+
+
+def test_filter_count_projection_20902() -> None:
+    lineitem_ldf = pl.LazyFrame(
+        {
+            "l_partkey": [1],
+            "l_quantity": [1],
+            "l_extendedprice": [1],
+        }
+    )
+    assert (
+        "PROJECT 1/3"
+        in lineitem_ldf.filter(pl.col("l_partkey").is_between(10, 20))
+        .select(pl.len())
+        .explain()
+    )

@@ -32,7 +32,7 @@ pub(super) fn process_group_by(
         let builder = IRBuilder::new(input, expr_arena, lp_arena);
         Ok(proj_pd.finish_node_simple_projection(&ctx.acc_projections, builder))
     } else {
-        let has_pushed_down = !ctx.acc_projections.is_empty();
+        let has_pushed_down = ctx.has_pushed_down();
 
         // TODO! remove unnecessary vec alloc.
         let (mut acc_projections, _local_projections, mut names) = split_acc_projections(
@@ -46,7 +46,7 @@ pub(super) fn process_group_by(
         let projected_aggs = aggs
             .into_iter()
             .filter(|agg| {
-                if has_pushed_down && ctx.projections_seen > 0 {
+                if has_pushed_down && ctx.inner.projections_seen > 0 {
                     ctx.projected_names.contains(agg.output_name())
                 } else {
                     true
@@ -75,7 +75,7 @@ pub(super) fn process_group_by(
             let node = expr_arena.add(AExpr::Column(options.index_column.clone()));
             add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
         }
-        let ctx = ProjectionContext::new(acc_projections, names, ctx.projections_seen);
+        let ctx = ProjectionContext::new(acc_projections, names, ctx.inner);
 
         proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 

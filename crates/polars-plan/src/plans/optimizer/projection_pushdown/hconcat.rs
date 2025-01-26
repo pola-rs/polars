@@ -36,7 +36,7 @@ pub(super) fn process_hconcat(
                     input_names.insert(name);
                 }
             }
-            let ctx = ProjectionContext::new(input_pushdown, input_names, ctx.projections_seen);
+            let ctx = ProjectionContext::new(input_pushdown, input_names, ctx.inner);
             proj_pd.pushdown_and_assign(*input, ctx, lp_arena, expr_arena)?;
         }
 

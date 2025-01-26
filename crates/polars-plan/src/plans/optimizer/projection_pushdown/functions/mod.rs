@@ -23,7 +23,7 @@ pub(super) fn process_functions(
             swapping,
             schema: _,
         } => {
-            let clear = !ctx.acc_projections.is_empty();
+            let clear = ctx.has_pushed_down();
             process_rename(
                 &mut ctx.acc_projections,
                 &mut ctx.projected_names,
@@ -65,7 +65,7 @@ pub(super) fn process_functions(
             process_unpivot(proj_pd, lp, args, input, ctx, lp_arena, expr_arena)
         },
         _ => {
-            if function.allow_projection_pd() && !ctx.acc_projections.is_empty() {
+            if function.allow_projection_pd() && ctx.has_pushed_down() {
                 let original_acc_projection_len = ctx.acc_projections.len();
 
                 // add columns needed for the function.

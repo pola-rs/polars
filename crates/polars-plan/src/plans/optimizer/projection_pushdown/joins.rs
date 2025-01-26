@@ -65,7 +65,7 @@ pub(super) fn process_asof_join(
     // left_on = "a", right_on = "b
     // will remove the name "b" (it is "a" now). That columns should therefore not
     // be added to a local projection.
-    if !ctx.acc_projections.is_empty() {
+    if ctx.has_pushed_down() {
         let schema_left = lp_arena.get(input_left).schema(lp_arena);
         let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
@@ -160,8 +160,8 @@ pub(super) fn process_asof_join(
         }
     }
 
-    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.projections_seen);
-    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.projections_seen);
+    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.inner);
+    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.inner);
 
     proj_pd.pushdown_and_assign(input_left, ctx_left, lp_arena, expr_arena)?;
     proj_pd.pushdown_and_assign(input_right, ctx_right, lp_arena, expr_arena)?;
@@ -223,7 +223,7 @@ pub(super) fn process_join(
     // left_on = "a", right_on = "b
     // will remove the name "b" (it is "a" now). That columns should therefore not
     // be added to a local projection.
-    if !ctx.acc_projections.is_empty() {
+    if ctx.has_pushed_down() {
         let schema_left = lp_arena.get(input_left).schema(lp_arena);
         let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
@@ -339,8 +339,8 @@ pub(super) fn process_join(
         }
     }
 
-    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.projections_seen);
-    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.projections_seen);
+    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.inner);
+    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.inner);
 
     proj_pd.pushdown_and_assign(input_left, ctx_left, lp_arena, expr_arena)?;
     proj_pd.pushdown_and_assign(input_right, ctx_right, lp_arena, expr_arena)?;

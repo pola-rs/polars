@@ -43,7 +43,7 @@ pub(super) fn process_unpivot(
                 expr_arena,
             )
         });
-        let ctx = ProjectionContext::new(acc_projections, projected_names, ctx.projections_seen);
+        let ctx = ProjectionContext::new(acc_projections, projected_names, ctx.inner);
 
         proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 
