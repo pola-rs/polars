@@ -680,6 +680,12 @@ def test_list_to_struct() -> None:
     ).collect_schema() == {"n": pl.Unknown}
 
 
+def test_list_to_struct_all_null_12119() -> None:
+    s = pl.Series([None], dtype=pl.List(pl.Int64))
+    result = s.list.to_struct(fields=["a", "b", "c"]).to_list()
+    assert result == [{"a": None, "b": None, "c": None}]
+
+
 def test_select_from_list_to_struct_11143() -> None:
     ldf = pl.LazyFrame({"some_col": [[1.0, 2.0], [1.5, 3.0]]})
     ldf = ldf.select(
