@@ -4,9 +4,7 @@ use super::*;
 pub(super) fn process_generic(
     proj_pd: &mut ProjectionPushDown,
     lp: IR,
-    acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
@@ -20,14 +18,7 @@ pub(super) fn process_generic(
         .iter()
         .map(|&node| {
             let alp = lp_arena.take(node);
-            let mut alp = proj_pd.push_down(
-                alp,
-                acc_projections.clone(),
-                projected_names.clone(),
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            )?;
+            let mut alp = proj_pd.push_down(alp, ctx.clone(), lp_arena, expr_arena)?;
 
             // double projection can mess up the schema ordering
             // here we ensure the ordering is maintained.
@@ -44,11 +35,11 @@ pub(super) fn process_generic(
             // df3 => a, b
             // df1 => a
             // so we ensure we do the 'a' projection again before we concatenate
-            if !acc_projections.is_empty() && inputs.len() > 1 {
+            if !ctx.acc_projections.is_empty() && inputs.len() > 1 {
                 alp = IRBuilder::from_lp(alp, expr_arena, lp_arena)
-                    .project_simple_nodes(acc_projections.iter().map(|e| e.0))
+                    .project_simple_nodes(ctx.acc_projections.iter().map(|e| e.0))
                     .unwrap()
-                    .build()
+                    .build();
             }
             lp_arena.replace(node, alp);
             Ok(node)
