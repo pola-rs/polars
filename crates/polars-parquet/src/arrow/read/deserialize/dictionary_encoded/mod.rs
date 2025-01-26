@@ -179,52 +179,20 @@ fn no_more_bitpacked_values() -> ParquetError {
 }
 
 #[inline(always)]
-#[cfg(feature = "simd")]
-fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<()> {
-    // You would think that the compiler can do this itself, but it does not always do this
-    // properly. So we help it a bit.
+fn verify_dict_indices(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
+    debug_assert!(dict_size <= u32::MAX as usize);
+    let dict_size = dict_size as u32;
 
-    use std::simd::cmp::SimdPartialOrd;
-    use std::simd::u32x32;
+    let mut is_valid = true;
+    for &idx in indices {
+        is_valid &= idx < dict_size;
+    }
 
-    let dict_size = u32x32::splat(dict_size as u32);
-    let indices = u32x32::from_slice(indices);
-
-    let is_invalid = indices.simd_ge(dict_size);
-    if is_invalid.any() {
-        Err(oob_dict_idx())
-    } else {
+    if is_valid {
         Ok(())
+    } else {
+        Err(oob_dict_idx())
     }
-}
-
-#[inline(always)]
-#[cfg(not(feature = "simd"))]
-fn verify_dict_indices(indices: &[u32; 32], dict_size: usize) -> ParquetResult<()> {
-    let mut is_valid = true;
-    for &idx in indices {
-        is_valid &= (idx as usize) < dict_size;
-    }
-
-    if is_valid {
-        return Ok(());
-    }
-
-    Err(oob_dict_idx())
-}
-
-#[inline(always)]
-fn verify_dict_indices_slice(indices: &[u32], dict_size: usize) -> ParquetResult<()> {
-    let mut is_valid = true;
-    for &idx in indices {
-        is_valid &= (idx as usize) < dict_size;
-    }
-
-    if is_valid {
-        return Ok(());
-    }
-
-    Err(oob_dict_idx())
 }
 
 /// Skip over entire chunks in a [`HybridRleDecoder`] as long as all skipped chunks do not include
