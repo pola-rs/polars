@@ -1353,9 +1353,6 @@ class Config(contextlib.ContextDecorator):
         """
         if width is None:
             os.environ.pop("POLARS_TABLE_WIDTH", None)
-        elif width < 0:
-            msg = "width should be positive"
-            raise ValueError(msg)
         else:
             os.environ["POLARS_TABLE_WIDTH"] = str(width)
         return cls
