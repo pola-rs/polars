@@ -56,8 +56,8 @@ pub(super) fn process_semi_anti_join(
         }
     }
 
-    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.projections_seen);
-    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.projections_seen);
+    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.inner);
+    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.inner);
 
     proj_pd.pushdown_and_assign(input_left, ctx_left, lp_arena, expr_arena)?;
     proj_pd.pushdown_and_assign(input_right, ctx_right, lp_arena, expr_arena)?;

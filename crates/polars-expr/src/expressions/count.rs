@@ -38,6 +38,16 @@ impl PhysicalExpr for CountExpr {
 
     fn collect_live_columns(&self, _lv: &mut PlIndexSet<PlSmallStr>) {}
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
     }

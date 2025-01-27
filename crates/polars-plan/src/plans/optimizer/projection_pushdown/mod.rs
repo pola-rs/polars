@@ -27,35 +27,65 @@ use crate::prelude::optimizer::projection_pushdown::rename::process_rename;
 use crate::prelude::*;
 use crate::utils::aexpr_to_leaf_names;
 
+#[derive(Default, Copy, Clone)]
+struct ProjectionCopyState {
+    projections_seen: usize,
+    is_count_star: bool,
+}
+
 #[derive(Clone, Default)]
 struct ProjectionContext {
     acc_projections: Vec<ColumnNode>,
     projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    inner: ProjectionCopyState,
 }
 
 impl ProjectionContext {
     fn new(
         acc_projections: Vec<ColumnNode>,
         projected_names: PlHashSet<PlSmallStr>,
-        projections_seen: usize,
+        inner: ProjectionCopyState,
     ) -> Self {
         Self {
             acc_projections,
             projected_names,
-            projections_seen,
+            inner,
         }
     }
 
-    fn reset(&self, reset_count: bool) -> ProjectionContext {
-        Self {
-            acc_projections: Default::default(),
-            projected_names: Default::default(),
-            projections_seen: if reset_count {
-                0
-            } else {
-                self.projections_seen
-            },
+    /// If this is `true`, other nodes should add the columns
+    /// they need to the push down state
+    fn has_pushed_down(&self) -> bool {
+        // count star also acts like a pushdown as we will select a single column at the source
+        // when there were no other projections.
+        !self.acc_projections.is_empty() || self.inner.is_count_star
+    }
+
+    fn process_count_star_at_scan(&mut self, schema: &Schema, expr_arena: &mut Arena<AExpr>) {
+        if self.acc_projections.is_empty() {
+            let (name, _dt) = match schema.len() {
+                0 => return,
+                1 => schema.get_at_index(0).unwrap(),
+                _ => {
+                    // skip first as that can be the row index.
+                    // We look for a relative cheap type, such as a numeric or bool
+                    schema
+                        .iter()
+                        .skip(1)
+                        .find(|(_name, dt)| {
+                            let phys = dt;
+                            phys.is_null()
+                                || phys.is_primitive_numeric()
+                                || phys.is_bool()
+                                || phys.is_temporal()
+                        })
+                        .unwrap_or_else(|| schema.get_at_index(schema.len() - 1).unwrap())
+                },
+            };
+
+            let node = expr_arena.add(AExpr::Column(name.clone()));
+            self.acc_projections.push(ColumnNode(node));
+            self.projected_names.insert(name.clone());
         }
     }
 }
@@ -202,7 +232,8 @@ impl ProjectionPushDown {
             .iter()
             .map(|&node| {
                 let alp = lp_arena.take(node);
-                let alp = self.push_down(alp, ctx.reset(false), lp_arena, expr_arena)?;
+                let ctx = ProjectionContext::new(Default::default(), Default::default(), ctx.inner);
+                let alp = self.push_down(alp, ctx, lp_arena, expr_arena)?;
                 lp_arena.replace(node, alp);
                 Ok(node)
             })
@@ -353,7 +384,10 @@ impl ProjectionPushDown {
                 mut output_schema,
                 ..
             } => {
-                if !ctx.acc_projections.is_empty() {
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&schema, expr_arena);
+                }
+                if ctx.has_pushed_down() {
                     output_schema = Some(Arc::new(update_scan_schema(
                         &ctx.acc_projections,
                         expr_arena,
@@ -370,6 +404,10 @@ impl ProjectionPushDown {
             },
             #[cfg(feature = "python")]
             PythonScan { mut options } => {
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&options.schema, expr_arena);
+                }
+
                 options.with_columns =
                     get_scan_columns(&ctx.acc_projections, expr_arena, None, None);
 
@@ -394,6 +432,9 @@ impl ProjectionPushDown {
                 mut file_options,
                 mut output_schema,
             } => {
+                if self.is_count_star {
+                    ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
+                }
                 let do_optimization = match scan_type {
                     FileScan::Anonymous { ref function, .. } => {
                         function.allows_projection_pushdown()
@@ -621,7 +662,7 @@ impl ProjectionPushDown {
                 slice,
                 sort_options,
             } => {
-                if !ctx.acc_projections.is_empty() {
+                if ctx.has_pushed_down() {
                     // Make sure that the column(s) used for the sort is projected
                     by_column.iter().for_each(|node| {
                         add_expr_to_accumulated(
@@ -643,7 +684,7 @@ impl ProjectionPushDown {
             },
             Distinct { input, options } => {
                 // make sure that the set of unique columns is projected
-                if !ctx.acc_projections.is_empty() {
+                if ctx.has_pushed_down() {
                     if let Some(subset) = options.subset.as_ref() {
                         subset.iter().for_each(|name| {
                             add_str_to_accumulated(
@@ -671,7 +712,7 @@ impl ProjectionPushDown {
                 Ok(Distinct { input, options })
             },
             Filter { predicate, input } => {
-                if !ctx.acc_projections.is_empty() {
+                if ctx.has_pushed_down() {
                     // make sure that the filter column is projected
                     add_expr_to_accumulated(
                         predicate.node(),

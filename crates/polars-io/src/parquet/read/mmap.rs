@@ -1,4 +1,5 @@
 use arrow::array::Array;
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::Field;
 #[cfg(feature = "async")]
 use bytes::Bytes;
@@ -68,7 +69,7 @@ pub fn to_deserializer(
     columns: Vec<(&ColumnChunkMetadata, MemSlice)>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<Box<dyn Array>> {
+) -> PolarsResult<(Box<dyn Array>, Bitmap)> {
     let (columns, types): (Vec<_>, Vec<_>) = columns
         .into_iter()
         .map(|(column_meta, chunk)| {

@@ -133,7 +133,7 @@ pub fn to_deserializer(
         })
         .unzip();
 
-    column_iter_to_arrays(columns, types, field, filter)
+    column_iter_to_arrays(columns, types, field, filter).map(|v| v.0)
 }
 
 /// Returns a vector of iterators of [`Array`] ([`ArrayIter`]) corresponding to the top

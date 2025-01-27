@@ -33,7 +33,7 @@ pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::{PhysicalIoExpr, SpecializedColumnPredicateExpr};
 use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
@@ -606,6 +606,29 @@ pub trait PhysicalExpr: Send + Sync {
     /// This can contain duplicates.
     fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>);
 
+    fn isolate_column_expr(
+        &self,
+        name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )>;
+    fn to_column(&self) -> Option<&PlSmallStr> {
+        None
+    }
+
+    /// Replace columns that are known to be a constant value with their const value.
+    ///
+    /// This should not replace values that are calculated non-elementwise e.g. col.max(),
+    /// col.std(), etc.
+    fn replace_elementwise_const_columns(
+        &self,
+        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
+    ) -> Option<Arc<dyn PhysicalExpr>> {
+        _ = const_columns;
+        None
+    }
+
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
@@ -653,6 +676,17 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         self.expr.as_stats_evaluator()
+    }
+
+    fn isolate_column_expr(
+        &self,
+        name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalIoExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        let (expr, specialized) = self.expr.isolate_column_expr(name)?;
+        Some((phys_expr_to_io_expr(expr), specialized))
     }
 }
 

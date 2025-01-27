@@ -13,15 +13,17 @@ mod simple;
 mod utils;
 
 use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
+use arrow::bitmap::Bitmap;
 use arrow::datatypes::{ArrowDataType, Field};
 use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedState};
-pub use self::utils::filter::Filter;
+pub use self::utils::filter::{Filter, PredicateFilter};
 use self::utils::freeze_validity;
 use super::*;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
 
@@ -132,12 +134,12 @@ fn columns_to_iter_recursive(
     field: Field,
     init: Vec<InitNested>,
     filter: Option<Filter>,
-) -> PolarsResult<(NestedState, Box<dyn Array>)> {
+) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
     if init.is_empty() && is_primitive(&field.dtype) {
-        let array =
+        let (array, pred_true_mask) =
             page_iter_to_array(columns.pop().unwrap(), types.pop().unwrap(), field, filter)?;
 
-        return Ok((NestedState::default(), array));
+        return Ok((NestedState::default(), array, pred_true_mask));
     }
 
     nested::columns_to_iter_recursive(columns, types, field, init, filter)
@@ -191,7 +193,8 @@ pub fn column_iter_to_arrays(
     types: Vec<&PrimitiveType>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<Box<dyn Array>> {
-    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
-    Ok(array)
+) -> PolarsResult<(Box<dyn Array>, Bitmap)> {
+    let (_, array, pred_true_mask) =
+        columns_to_iter_recursive(columns, types, field, vec![], filter)?;
+    Ok((array, pred_true_mask))
 }
