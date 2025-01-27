@@ -63,6 +63,16 @@ impl PhysicalExpr for RollingExpr {
         self.phys_function.collect_live_columns(lv);
     }
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.function.to_field(input_schema, Context::Default)
     }

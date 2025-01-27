@@ -587,6 +587,44 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     pub fn values_iter(&self) -> MutableBinaryViewValueIter<T> {
         MutableBinaryViewValueIter::new(self)
     }
+
+    pub fn extend_from_array(&mut self, other: &BinaryViewArrayGeneric<T>) {
+        let slf_len = self.len();
+        match (&mut self.validity, other.validity()) {
+            (None, None) => {},
+            (Some(v), None) => v.extend_constant(other.len(), true),
+            (v @ None, Some(other)) => {
+                let mut bm = MutableBitmap::with_capacity(slf_len + other.len());
+                bm.extend_constant(slf_len, true);
+                bm.extend_from_bitmap(other);
+                *v = Some(bm);
+            },
+            (Some(slf), Some(other)) => slf.extend_from_bitmap(other),
+        }
+
+        if other.total_buffer_len() == 0 {
+            self.views.extend(other.views().iter().copied());
+        } else {
+            self.finish_in_progress();
+
+            let buffer_offset = self.completed_buffers().len() as u32;
+            self.completed_buffers
+                .extend(other.data_buffers().iter().cloned());
+
+            self.views.extend(other.views().iter().map(|view| {
+                let mut view = *view;
+                if view.length > View::MAX_INLINE_SIZE {
+                    view.buffer_idx += buffer_offset;
+                }
+                view
+            }));
+
+            let new_total_buffer_len = self.total_buffer_len() + other.total_buffer_len();
+            self.total_buffer_len = new_total_buffer_len;
+        }
+
+        self.total_bytes_len = self.total_bytes_len() + other.total_bytes_len();
+    }
 }
 
 impl MutableBinaryViewArray<[u8]> {

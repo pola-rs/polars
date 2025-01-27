@@ -227,7 +227,7 @@ impl RowGroupDecoder {
         let expected_num_rows = filter
             .as_ref()
             .map_or(row_group_data.row_group_metadata.num_rows(), |x| {
-                x.num_rows()
+                x.num_rows(row_group_data.row_group_metadata.num_rows())
             });
 
         let Some((cols_per_thread, remainder)) = calc_cols_per_thread(
@@ -343,7 +343,7 @@ fn decode_column(
         })
         .collect::<Vec<_>>();
 
-    let array = polars_io::prelude::_internal::to_deserializer(
+    let (array, _) = polars_io::prelude::_internal::to_deserializer(
         columns_to_deserialize,
         arrow_field.clone(),
         filter,
@@ -720,7 +720,7 @@ fn decode_column_prefiltered(
     let deserialize_filter =
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));
 
-    let array = polars_io::prelude::_internal::to_deserializer(
+    let (array, _) = polars_io::prelude::_internal::to_deserializer(
         columns_to_deserialize,
         arrow_field.clone(),
         deserialize_filter,

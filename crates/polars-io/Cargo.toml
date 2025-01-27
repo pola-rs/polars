@@ -101,6 +101,7 @@ timezones = [
   "polars-json?/timezones",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
+dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration"]
 dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]

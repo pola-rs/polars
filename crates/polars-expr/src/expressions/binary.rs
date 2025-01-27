@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_io::predicates::SpecializedColumnPredicateExpr;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
 
@@ -271,6 +272,54 @@ impl PhysicalExpr for BinaryExpr {
     fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
         self.left.collect_live_columns(lv);
         self.right.collect_live_columns(lv);
+    }
+
+    fn isolate_column_expr(
+        &self,
+        name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        let other = match (self.left.to_column(), self.right.to_column()) {
+            (Some(col), None) if col.as_str() == name => &self.right,
+            (None, Some(col)) if col.as_str() == name => &self.left,
+            _ => return None,
+        };
+
+        let value = other.evaluate_inline()?;
+        let value = value.as_scalar_column()?;
+
+        let scalar = value.scalar();
+        use Operator as O;
+        let specialized = match self.op {
+            O::Eq => Some(SpecializedColumnPredicateExpr::Eq(scalar.clone())),
+            O::EqValidity => Some(SpecializedColumnPredicateExpr::EqMissing(scalar.clone())),
+            _ => None,
+        };
+
+        Some((Arc::new(self.clone()) as _, specialized))
+    }
+
+    fn replace_elementwise_const_columns(
+        &self,
+        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
+    ) -> Option<Arc<dyn PhysicalExpr>> {
+        let rcc_left = self.left.replace_elementwise_const_columns(const_columns);
+        let rcc_right = self.right.replace_elementwise_const_columns(const_columns);
+
+        if rcc_left.is_some() || rcc_right.is_some() {
+            let mut slf = self.clone();
+            if let Some(left) = rcc_left {
+                slf.left = left;
+            }
+            if let Some(right) = rcc_right {
+                slf.right = right;
+            }
+            return Some(Arc::new(slf));
+        }
+
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

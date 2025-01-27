@@ -431,6 +431,54 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
+    fn replace_elementwise_const_columns(
+        &self,
+        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
+    ) -> Option<Arc<dyn PhysicalExpr>> {
+        if self.collect_groups == ApplyOptions::ElementWise {
+            let mut new_inputs = Vec::new();
+            for i in 0..self.inputs.len() {
+                match self.inputs[i].replace_elementwise_const_columns(const_columns) {
+                    None => continue,
+                    Some(new) => {
+                        new_inputs.reserve(self.inputs.len());
+                        new_inputs.extend(self.inputs[..i].iter().cloned());
+                        new_inputs.push(new);
+                        break;
+                    },
+                }
+            }
+
+            // Only copy inputs if it is actually needed
+            if new_inputs.is_empty() {
+                return None;
+            }
+
+            new_inputs.extend(self.inputs[new_inputs.len()..].iter().map(|i| {
+                match i.replace_elementwise_const_columns(const_columns) {
+                    None => i.clone(),
+                    Some(new) => new,
+                }
+            }));
+
+            let mut slf = self.clone();
+            slf.inputs = new_inputs;
+            return Some(Arc::new(slf));
+        }
+
+        None
+    }
+
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }
