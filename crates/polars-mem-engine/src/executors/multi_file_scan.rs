@@ -139,7 +139,6 @@ fn source_to_exec(
                 source,
                 file_info,
                 None,
-                None,
                 options,
                 cloud_options.clone(),
                 file_options.clone(),
@@ -184,7 +183,6 @@ fn source_to_exec(
                 options,
                 file_options,
                 predicate: None,
-                hive_parts: None,
                 cloud_options,
                 metadata: metadata.cloned(),
             })
@@ -215,7 +213,7 @@ fn source_to_exec(
 pub struct MultiScanExec {
     sources: ScanSources,
     file_info: FileInfo,
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
+    hive_parts: Option<Arc<HivePartitions>>,
     predicate: Option<ScanPredicate>,
     file_options: FileScanOptions,
     scan_type: FileScan,
@@ -225,7 +223,7 @@ impl MultiScanExec {
     pub fn new(
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<Arc<HivePartitions>>,
         predicate: Option<ScanPredicate>,
         file_options: FileScanOptions,
         scan_type: FileScan,
@@ -276,25 +274,16 @@ impl MultiScanExec {
         let predicate = self.predicate.take();
 
         // Create a index set of the hive columns.
-        let mut hive_column_set = PlIndexSet::default();
+        let mut hive_schema = SchemaRef::default();
         if let Some(hive_parts) = &self.hive_parts {
-            assert_eq!(self.sources.len(), hive_parts.len());
-
-            if let Some(fst_hive_part) = hive_parts.first() {
-                hive_column_set.extend(
-                    fst_hive_part
-                        .get_statistics()
-                        .column_stats()
-                        .iter()
-                        .map(|c| c.field_name().clone()),
-                );
-            }
+            assert_eq!(self.sources.len(), hive_parts.0.height());
+            hive_schema = hive_parts.0.schema().clone();
         }
 
         // Look through the predicate and assess whether hive columns are being used in it.
         let mut has_live_hive_columns = false;
         if let Some(predicate) = &predicate {
-            for hive_column in &hive_column_set {
+            for hive_column in hive_schema.iter_names() {
                 has_live_hive_columns |= predicate.live_columns.contains(hive_column);
             }
         }
@@ -336,7 +325,7 @@ impl MultiScanExec {
                 file_with_columns = Some(
                     with_columns
                         .iter()
-                        .filter(|&c| !hive_column_set.contains(c))
+                        .filter(|&c| !hive_schema.contains(c))
                         .cloned()
                         .collect(),
                 );
@@ -360,7 +349,7 @@ impl MultiScanExec {
         };
 
         for (i, source) in self.sources.iter().enumerate() {
-            let hive_part = self.hive_parts.as_ref().and_then(|h| h.get(i));
+            let hive_part = self.hive_parts.as_ref().and_then(|h| h.0.get_row(i).ok());
             if slice.is_some_and(|s| s.1 == 0) {
                 break;
             }
@@ -403,21 +392,20 @@ impl MultiScanExec {
             // to function even when there is a combination of hive and non-hive columns being
             // used.
             if has_live_hive_columns {
-                let hive_part = hive_part.unwrap();
-                file_predicate = Some(file_predicate.unwrap().with_constant_columns(
-                    hive_column_set.iter().enumerate().map(|(idx, column)| {
-                        let series = hive_part.get_statistics().column_stats()[idx]
-                            .to_min()
-                            .unwrap();
-                        (
-                            column.clone(),
-                            Scalar::new(
-                                series.dtype().clone(),
-                                series.get(0).unwrap().into_static(),
-                            ),
-                        )
-                    }),
-                ));
+                let hive_part = hive_part.as_ref().unwrap();
+                file_predicate = Some(
+                    file_predicate.unwrap().with_constant_columns(
+                        hive_schema
+                            .iter()
+                            .zip(hive_part.0.iter())
+                            .map(|((column, dtype), value)| {
+                                (
+                                    column.clone(),
+                                    Scalar::new(dtype.clone(), value.clone().into_static()),
+                                )
+                            }),
+                    ),
+                );
             }
 
             let skip_batch_predicate = file_predicate
@@ -530,14 +518,14 @@ impl MultiScanExec {
             }
             // Materialize the hive columns and add them back in.
             if let Some(hive_part) = hive_part {
-                for hive_col in hive_part.get_statistics().column_stats() {
+                for ((column, dtype), value) in hive_schema.iter().zip(hive_part.0) {
                     df.with_column(
-                        ScalarColumn::from_single_value_series(
-                            hive_col
-                                .to_min()
-                                .unwrap()
-                                .clone()
-                                .with_name(hive_col.field_name().clone()),
+                        ScalarColumn::new(
+                            column.clone(),
+                            Scalar::new(
+                                dtype.clone(),
+                                value.into_static(),
+                            ),
                             df.height(),
                         )
                         .into_column(),

@@ -139,7 +139,6 @@ fn visualize_plan_rec(
         PhysNodeKind::FileScan {
             scan_sources,
             file_info,
-            hive_parts,
             output_schema: _,
             scan_type,
             predicate,
@@ -191,13 +190,6 @@ fn visualize_plan_rec(
 
             if let Some(predicate) = predicate.as_ref() {
                 write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
-            }
-
-            if let Some(v) = hive_parts
-                .as_deref()
-                .map(|x| x[0].get_statistics().column_stats().len())
-            {
-                write!(f, "\nhive: {} columns", v).unwrap();
             }
 
             (out, &[][..])

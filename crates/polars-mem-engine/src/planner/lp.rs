@@ -207,8 +207,7 @@ fn create_physical_plan_impl(
 
             let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let do_new_multifile = (sources.len() > 1 || hive_parts.is_some())
-                && !matches!(scan_type, FileScan::Anonymous { .. })
-                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1");
+                && !matches!(scan_type, FileScan::Anonymous { .. });
 
             let mut create_skip_batch_predicate = false;
             create_skip_batch_predicate |= do_new_multifile;
@@ -269,7 +268,6 @@ fn create_physical_plan_impl(
                     predicate,
                     options,
                     file_options,
-                    hive_parts,
                     cloud_options,
                     metadata,
                 })),
@@ -281,7 +279,6 @@ fn create_physical_plan_impl(
                 } => Ok(Box::new(executors::ParquetExec::new(
                     sources,
                     file_info,
-                    hive_parts,
                     predicate,
                     options,
                     cloud_options,

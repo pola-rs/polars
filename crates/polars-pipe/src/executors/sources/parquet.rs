@@ -42,7 +42,7 @@ pub struct ParquetSource {
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     first_metadata: Option<FileMetadataRef>,
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
+    hive_parts: Option<Arc<HivePartitions>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
@@ -84,10 +84,12 @@ impl ParquetSource {
         let options = self.options.clone();
         let file_options = self.file_options.clone();
 
-        let hive_partitions = self
-            .hive_parts
-            .as_ref()
-            .map(|x| x[index].materialize_partition_columns());
+        let hive_partitions = self.hive_parts.as_deref().map(|x| {
+            x.0.slice(index as i64, 1)
+                .materialized_column_iter()
+                .cloned()
+                .collect()
+        });
 
         let chunk_size = determine_chunk_size(
             self.projected_arrow_schema
@@ -250,7 +252,7 @@ impl ParquetSource {
         first_metadata: Option<FileMetadataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<Arc<HivePartitions>>,
         verbose: bool,
         predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<Self> {

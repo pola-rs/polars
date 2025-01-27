@@ -7,7 +7,6 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
-use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
@@ -164,7 +163,6 @@ pub enum PhysNodeKind {
     FileScan {
         scan_sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
         output_schema: Option<SchemaRef>,
         scan_type: FileScan,

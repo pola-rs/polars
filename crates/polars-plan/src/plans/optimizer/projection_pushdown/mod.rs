@@ -17,6 +17,7 @@ use recursive::recursive;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
 
+use self::optimizer::hive::HivePartitions;
 use crate::prelude::optimizer::projection_pushdown::generic::process_generic;
 use crate::prelude::optimizer::projection_pushdown::group_by::process_group_by;
 use crate::prelude::optimizer::projection_pushdown::hconcat::process_hconcat;
@@ -498,24 +499,17 @@ impl ProjectionPushDown {
                         )?;
 
                         hive_parts = if let Some(hive_parts) = hive_parts {
-                            let (new_schema, projected_indices) = hive_parts[0]
-                                .get_projection_schema_and_indices(
-                                    &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
-                                );
-
-                            Some(Arc::new(
-                                hive_parts
+                            let hive_schema = hive_parts.schema();
+                            Some(Arc::new(HivePartitions(
+                                with_columns
                                     .iter()
-                                    .cloned()
-                                    .map(|mut hp| {
-                                        hp.apply_projection(
-                                            new_schema.clone(),
-                                            projected_indices.as_ref(),
-                                        );
-                                        hp
+                                    .filter_map(|n| {
+                                        hive_schema
+                                            .index_of(n)
+                                            .map(|idx| hive_parts.0.get_columns()[idx].clone())
                                     })
-                                    .collect::<Vec<_>>(),
-                            ))
+                                    .collect::<DataFrame>(),
+                            )))
                         } else {
                             None
                         };
@@ -528,7 +522,7 @@ impl ProjectionPushDown {
                                 && std::env::var("POLARS_NEW_MULTIFILE").as_deref() != Ok("1")
                             {
                                 // Skip reading hive columns from the file.
-                                let partition_schema = hive_parts.first().unwrap().schema();
+                                let partition_schema = hive_parts.schema();
                                 file_options.with_columns = file_options.with_columns.map(|x| {
                                     x.iter()
                                         .filter(|x| !partition_schema.contains(x))
@@ -608,7 +602,7 @@ impl ProjectionPushDown {
                     } else {
                         file_options.with_columns = maybe_init_projection_excluding_hive(
                             file_info.reader_schema.as_ref().unwrap(),
-                            hive_parts.as_ref().map(|x| &x[0]),
+                            hive_parts.as_deref(),
                         );
                         None
                     };

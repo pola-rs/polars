@@ -435,7 +435,6 @@ pub fn lower_ir(
                 let node_kind = PhysNodeKind::FileScan {
                     scan_sources,
                     file_info,
-                    hive_parts,
                     output_schema: scan_output_schema,
                     scan_type,
                     predicate,

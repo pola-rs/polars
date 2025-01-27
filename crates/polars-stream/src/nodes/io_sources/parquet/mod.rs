@@ -9,7 +9,6 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
-use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
@@ -37,7 +36,6 @@ type AsyncTaskData = (
 pub struct ParquetSourceNode {
     scan_sources: ScanSources,
     file_info: FileInfo,
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
@@ -104,7 +102,6 @@ impl ParquetSourceNode {
         Self {
             scan_sources,
             file_info,
-            hive_parts: None,
             predicate,
             options,
             cloud_options,

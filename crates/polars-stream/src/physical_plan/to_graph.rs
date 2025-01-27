@@ -344,7 +344,6 @@ fn to_graph_rec<'a>(
             let FileScan {
                 scan_sources,
                 file_info,
-                hive_parts: _,
                 output_schema,
                 scan_type,
                 predicate,

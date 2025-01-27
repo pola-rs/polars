@@ -1,4 +1,3 @@
-use hive::HivePartitions;
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
@@ -19,7 +18,6 @@ pub struct IpcExec {
     #[allow(dead_code)]
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
-    pub(crate) hive_parts: Option<Arc<Vec<HivePartitions>>>,
     pub(crate) cloud_options: Option<CloudOptions>,
     pub(crate) metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
 }
@@ -94,11 +92,6 @@ impl IpcExec {
                 .with_n_rows(n_rows)
                 .with_row_index(self.file_options.row_index.clone())
                 .with_projection(projection.clone())
-                .with_hive_partition_columns(
-                    self.hive_parts
-                        .as_ref()
-                        .map(|x| x[index].materialize_partition_columns()),
-                )
                 .with_include_file_path(
                     self.file_options
                         .include_file_paths

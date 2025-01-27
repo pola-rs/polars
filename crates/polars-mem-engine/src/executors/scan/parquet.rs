@@ -1,4 +1,3 @@
-use hive::HivePartitions;
 use polars_core::config;
 #[cfg(feature = "cloud")]
 use polars_core::config::{get_file_prefetch_size, verbose};
@@ -17,8 +16,6 @@ pub struct ParquetExec {
     sources: ScanSources,
     file_info: FileInfo,
 
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
-
     predicate: Option<ScanPredicate>,
     skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 
@@ -35,7 +32,6 @@ impl ParquetExec {
     pub(crate) fn new(
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ScanPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
@@ -45,8 +41,6 @@ impl ParquetExec {
         ParquetExec {
             sources,
             file_info,
-
-            hive_parts,
 
             predicate,
             skip_batch_predicate: None,
@@ -177,10 +171,6 @@ impl ParquetExec {
             // files in parallel even if we add row index columns or slices.
             let iter = (i..end).into_par_iter().map(|i| {
                 let source = self.sources.at(i);
-                let hive_partitions = self
-                    .hive_parts
-                    .as_ref()
-                    .map(|x| x[i].materialize_partition_columns());
 
                 let memslice = source.to_memslice()?;
 
@@ -197,7 +187,6 @@ impl ParquetExec {
                     .set_low_memory(self.options.low_memory)
                     .use_statistics(self.options.use_statistics)
                     .set_rechunk(false)
-                    .with_hive_partition_columns(hive_partitions)
                     .with_include_file_path(
                         self.file_options
                             .include_file_paths
@@ -384,7 +373,6 @@ impl ParquetExec {
         for batch_start in (first_file_idx..paths.len()).step_by(batch_size) {
             let end = std::cmp::min(batch_start.saturating_add(batch_size), paths.len());
             let paths = &paths[batch_start..end];
-            let hive_parts = self.hive_parts.as_ref().map(|x| &x[batch_start..end]);
 
             if current_offset >= slice_end && !result.is_empty() {
                 return Ok(result);
@@ -452,9 +440,6 @@ impl ParquetExec {
                     let projected_arrow_schema = projected_arrow_schema.clone();
                     let predicate = predicate.clone();
                     let (cumulative_read, slice) = row_statistics[i];
-                    let hive_partitions = hive_parts
-                        .as_ref()
-                        .map(|x| x[i].materialize_partition_columns());
 
                     async move {
                         let row_index = base_row_index_ref.as_ref().map(|rc| RowIndex {
@@ -474,7 +459,6 @@ impl ParquetExec {
                             .use_statistics(use_statistics)
                             .with_predicate(predicate)
                             .set_rechunk(false)
-                            .with_hive_partition_columns(hive_partitions)
                             .with_include_file_path(
                                 include_file_paths
                                     .map(|x| (x.clone(), Arc::from(paths[i].to_str().unwrap()))),

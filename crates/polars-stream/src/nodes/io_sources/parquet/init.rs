@@ -193,11 +193,6 @@ impl ParquetSourceNode {
     /// * `self.physical_predicate`
     pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
         let scan_sources = self.scan_sources.clone();
-        let hive_partitions = self.hive_parts.clone();
-        let hive_partitions_width = hive_partitions
-            .as_deref()
-            .map(|x| x[0].get_statistics().column_stats().len())
-            .unwrap_or(0);
         let include_file_paths = self.file_options.include_file_paths.clone();
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
         let row_index = self.row_index.clone();
@@ -258,8 +253,6 @@ impl ParquetSourceNode {
 
         RowGroupDecoder {
             scan_sources,
-            hive_partitions,
-            hive_partitions_width,
             include_file_paths,
             reader_schema: self.schema.clone().unwrap(),
             projected_arrow_schema,

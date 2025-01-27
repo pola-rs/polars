@@ -147,20 +147,6 @@ impl Hash for FileScan {
 }
 
 impl FileScan {
-    pub(crate) fn remove_metadata(&mut self) {
-        match self {
-            #[cfg(feature = "parquet")]
-            Self::Parquet { metadata, .. } => {
-                *metadata = None;
-            },
-            #[cfg(feature = "ipc")]
-            Self::Ipc { metadata, .. } => {
-                *metadata = None;
-            },
-            _ => {},
-        }
-    }
-
     pub(crate) fn sort_projection(&self, _file_options: &FileScanOptions) -> bool {
         match self {
             #[cfg(feature = "csv")]
