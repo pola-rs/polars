@@ -400,7 +400,6 @@ impl PhysicalExpr for SortByExpr {
         Ok(ac_in)
     }
 
-
     fn isolate_column_expr(
         &self,
         _name: &str,

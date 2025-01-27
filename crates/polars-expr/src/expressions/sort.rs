@@ -105,7 +105,6 @@ impl PhysicalExpr for SortExpr {
         Ok(ac)
     }
 
-
     fn isolate_column_expr(
         &self,
         _name: &str,

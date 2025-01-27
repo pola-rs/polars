@@ -305,7 +305,8 @@ fn rg_to_dfs_prefiltered(
             .dtype()
             .is_nested(); // No nested columns
     let column_exprs = do_parquet_expr.then(|| {
-        predicate.live_columns
+        predicate
+            .live_columns
             .iter()
             .map(|name| {
                 let (p, specialized) = predicate.predicate.isolate_column_expr(name.as_str())?;

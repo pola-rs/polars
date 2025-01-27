@@ -147,7 +147,6 @@ impl PhysicalExpr for FilterExpr {
         }
     }
 
-
     fn isolate_column_expr(
         &self,
         _name: &str,
