@@ -182,10 +182,6 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
     match ae {
         AExpr::Window { .. } => true,
         #[cfg(feature = "dtype-struct")]
-        AExpr::Function {
-            function: FunctionExpr::AsStruct,
-            ..
-        } => is_groupby,
         AExpr::Ternary { .. } => is_groupby,
         _ => false,
     }
