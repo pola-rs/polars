@@ -6933,6 +6933,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ steve  ┆ 42  │
         │ elise  ┆ 44  │
         └────────┴─────┘
+
+        Notes
+        -----
+        No guarantee is given over the output row order when the key is equal
+        between the both dataframes.
         """
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 

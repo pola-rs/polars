@@ -360,6 +360,18 @@ impl<'a> TreeFmtNode<'a> {
                             vec![self.lp_node(None, *input)],
                         )
                     },
+                    #[cfg(feature = "merge_sorted")]
+                    MergeSorted {
+                        input_left,
+                        input_right,
+                        key,
+                    } => ND(
+                        wh(h, &format!("MERGE SORTED ON '{key}")),
+                        [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
+                            .into_iter()
+                            .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
+                            .collect(),
+                    ),
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },

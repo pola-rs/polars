@@ -584,6 +584,26 @@ fn to_graph_rec<'a>(
                 ],
             )
         },
+
+        #[cfg(feature = "merge_sorted")]
+        MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => {
+            let left_input_key = to_graph_rec(input_left.node, ctx)?;
+            let right_input_key = to_graph_rec(input_right.node, ctx)?;
+
+            let input_schema = ctx.phys_sm[input_left.node].output_schema.clone();
+
+            ctx.graph.add_node(
+                nodes::merge_sorted::MergeSortedNode::new(input_schema, key.clone()),
+                [
+                    (left_input_key, input_left.port),
+                    (right_input_key, input_right.port),
+                ],
+            )
+        },
     };
 
     ctx.phys_to_graph.insert(phys_node_key, graph_key);

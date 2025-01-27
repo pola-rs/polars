@@ -189,6 +189,17 @@ pub struct Join {
 }
 
 #[pyclass]
+/// Merge sorted operation
+pub struct MergeSorted {
+    #[pyo3(get)]
+    input_left: usize,
+    #[pyo3(get)]
+    input_right: usize,
+    #[pyo3(get)]
+    key: String,
+}
+
+#[pyclass]
 /// Adding columns to the table without a Join
 pub struct HStack {
     #[pyo3(get)]
@@ -560,10 +571,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                #[cfg(feature = "merge_sorted")]
-                FunctionIR::MergeSorted { column } => {
-                    ("merge_sorted", column.to_string()).into_py_any(py)?
-                },
                 FunctionIR::Rename {
                     existing,
                     new,
@@ -637,6 +644,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a Sink node",
         )),
+        #[cfg(feature = "merge_sorted")]
+        IR::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => MergeSorted {
+            input_left: input_left.0,
+            input_right: input_right.0,
+            key: key.to_string(),
+        }
+        .into_py_any(py),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

@@ -243,6 +243,15 @@ fn visualize_plan_rec(
             }
             (label, &[*input_left, *input_right][..])
         },
+        #[cfg(feature = "merge_sorted")]
+        PhysNodeKind::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => (
+            format!("merge sorted on '{key}'"),
+            &[*input_left, *input_right][..],
+        ),
     };
 
     out.push(format!(
