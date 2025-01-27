@@ -81,7 +81,6 @@ impl ParquetSourceNode {
     pub fn new(
         scan_sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ScanIOPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
@@ -105,7 +104,7 @@ impl ParquetSourceNode {
         Self {
             scan_sources,
             file_info,
-            hive_parts,
+            hive_parts: None,
             predicate,
             options,
             cloud_options,
