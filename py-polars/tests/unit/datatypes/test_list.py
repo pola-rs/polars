@@ -144,6 +144,15 @@ def test_list_fill_null() -> None:
     ).to_series().to_list() == [["a", "b", "c"], None, None, ["d", "e"]]
 
 
+def test_list_fill_select_null() -> None:
+    assert pl.DataFrame({"a": [None, []]}).select(
+        pl.when(pl.col("a").list.len() == 0)
+        .then(None)
+        .otherwise(pl.col("a"))
+        .alias("a")
+    ).to_series().to_list() == [None, None]
+
+
 def test_list_fill_list() -> None:
     assert pl.DataFrame({"a": [[1, 2, 3], []]}).select(
         pl.when(pl.col("a").list.len() == 0)
