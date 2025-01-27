@@ -2,7 +2,7 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::{Bitmap, MutableBitmap};
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, verify_dict_indices, verify_dict_indices_slice, IndexMapping};
+use super::{oob_dict_idx, verify_dict_indices, IndexMapping};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::read::PredicateFilter;
@@ -128,7 +128,7 @@ pub fn decode_multiple_no_values(
                     );
                 }
 
-                verify_dict_indices_slice(&unpacked[..n], dict_mask.len())?;
+                verify_dict_indices(&unpacked[..n], dict_mask.len())?;
                 pred_true_mask.extend(
                     unpacked[..n]
                         .iter()
@@ -214,7 +214,7 @@ pub fn decode_multiple_values<B: AlignedBytes, D: IndexMapping<Output = B>>(
                 if let Some(n) = chunked.next_into(&mut unpacked) {
                     debug_assert_eq!(n, size % 32);
 
-                    verify_dict_indices_slice(&unpacked[..n], dict_mask.len())?;
+                    verify_dict_indices(&unpacked[..n], dict_mask.len())?;
                     let mut count = 0;
                     pred_true_mask.extend(
                         unpacked[..n]
