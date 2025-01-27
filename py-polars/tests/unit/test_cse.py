@@ -807,6 +807,7 @@ def test_cse_as_struct_19253() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_cse_as_struct_value_counts_20927() -> None:
     assert pl.DataFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
         pl.struct("x").value_counts().struct.unnest()
