@@ -10,7 +10,7 @@ pub(super) fn process_hstack(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
-    if !ctx.acc_projections.is_empty() {
+    if ctx.has_pushed_down() {
         let mut pruned_with_cols = Vec::with_capacity(exprs.len());
 
         // Check if output names are used upstream
@@ -57,7 +57,7 @@ pub(super) fn process_hstack(
         true, // expands_schema
     );
 
-    let ctx = ProjectionContext::new(acc_projections, names, ctx.projections_seen);
+    let ctx = ProjectionContext::new(acc_projections, names, ctx.inner);
     proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 
     let lp = IRBuilder::new(input, expr_arena, lp_arena)

@@ -22,63 +22,10 @@ pub(super) fn process_projection(
     // as there would be no projections and we would read
     // the whole file while we only want the count
     if exprs.len() == 1 && is_count(exprs[0].node(), expr_arena) {
-        let input_schema = lp_arena.get(input).schema(lp_arena);
-        let expr = if input_schema.is_empty() {
-            // If the input schema is empty, we should just project
-            // ourselves
-            exprs[0].node()
-        } else {
-            // Select the last column projection.
-            let (last_name, _) = input_schema.try_get_at_index(input_schema.len() - 1)?;
-
-            let name = match lp_arena.get(input) {
-                IR::Select { expr: exprs, .. } | IR::HStack { exprs, .. } => (|| {
-                    for e in exprs {
-                        if !e.is_scalar(expr_arena) {
-                            return e.output_name();
-                        }
-                    }
-
-                    last_name
-                })(),
-
-                IR::Scan {
-                    file_info,
-                    output_schema,
-                    ..
-                } => {
-                    let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
-                    // NOTE: the first can be the inserted index column, so that might not work
-                    let (last_name, _) = schema.try_get_at_index(schema.len() - 1)?;
-                    last_name
-                },
-
-                IR::DataFrameScan {
-                    schema,
-                    output_schema,
-                    ..
-                } => {
-                    // NOTE: the first can be the inserted index column, so that might not work
-                    let schema = output_schema.as_ref().unwrap_or(schema);
-                    let (last_name, _) = schema.try_get_at_index(schema.len() - 1)?;
-                    last_name
-                },
-
-                _ => last_name,
-            };
-
-            expr_arena.add(AExpr::Column(name.clone()))
-        };
-
         // Clear all accumulated projections since we only project a single column from this level.
         ctx.acc_projections.clear();
         ctx.projected_names.clear();
-        add_expr_to_accumulated(
-            expr,
-            &mut ctx.acc_projections,
-            &mut ctx.projected_names,
-            expr_arena,
-        );
+        ctx.inner.is_count_star = true;
         local_projection.push(exprs.pop().unwrap());
         proj_pd.is_count_star = true;
     } else {
@@ -166,7 +113,7 @@ pub(super) fn process_projection(
         }
     }
 
-    ctx.projections_seen += 1;
+    ctx.inner.projections_seen += 1;
     proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 
     let builder = IRBuilder::new(input, expr_arena, lp_arena);
