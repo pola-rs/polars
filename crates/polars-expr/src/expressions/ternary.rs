@@ -328,13 +328,6 @@ impl PhysicalExpr for TernaryExpr {
         Some(self)
     }
 
-<<<<<<< HEAD
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.predicate.collect_live_columns(lv);
-        self.truthy.collect_live_columns(lv);
-        self.falsy.collect_live_columns(lv);
-    }
-
     fn isolate_column_expr(
         &self,
         _name: &str,
@@ -345,8 +338,6 @@ impl PhysicalExpr for TernaryExpr {
         None
     }
 
-=======
->>>>>>> f08719eb76 (xfail old streaming engine)
     fn is_scalar(&self) -> bool {
         self.returns_scalar
     }

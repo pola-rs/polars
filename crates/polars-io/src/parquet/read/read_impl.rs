@@ -294,21 +294,21 @@ fn rg_to_dfs_prefiltered(
     }
 
     let do_parquet_expr = std::env::var("POLARS_PARQUET_EXPR").as_deref() == Ok("1")
-        && live_columns.len() == 1 // Only do it with one column for now
+        && predicate.live_columns.len() == 1 // Only do it with one column for now
         && hive_partition_columns.is_none_or(|hc| {
             !hc.iter()
-                .any(|c| c.name().as_str() == live_columns[0].as_str())
+                .any(|c| c.name().as_str() == predicate.live_columns[0].as_str())
         }) // No hive columns
         && !schema
-            .get(live_columns[0].as_str())
+            .get(predicate.live_columns[0].as_str())
             .unwrap()
             .dtype()
             .is_nested(); // No nested columns
     let column_exprs = do_parquet_expr.then(|| {
-        live_columns
+        predicate.live_columns
             .iter()
             .map(|name| {
-                let (p, specialized) = predicate.isolate_column_expr(name.as_str())?;
+                let (p, specialized) = predicate.predicate.isolate_column_expr(name.as_str())?;
 
                 let p = ColumnPredicateExpr::new(
                     name.clone(),

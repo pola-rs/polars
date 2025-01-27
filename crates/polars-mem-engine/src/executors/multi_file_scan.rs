@@ -70,9 +70,6 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
         self.child.isolate_column_expr(name)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.child.collect_live_columns(lv)
-    }
     fn is_scalar(&self) -> bool {
         self.child.is_scalar()
     }

@@ -650,17 +650,6 @@ impl PhysicalExpr for WindowExpr {
         false
     }
 
-<<<<<<< HEAD
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        for i in &self.group_by {
-            i.collect_live_columns(lv);
-        }
-        if let Some((i, _)) = &self.order_by {
-            i.collect_live_columns(lv);
-        }
-        self.phys_function.collect_live_columns(lv);
-    }
-
     fn isolate_column_expr(
         &self,
         _name: &str,
@@ -671,8 +660,6 @@ impl PhysicalExpr for WindowExpr {
         None
     }
 
-=======
->>>>>>> f08719eb76 (xfail old streaming engine)
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,

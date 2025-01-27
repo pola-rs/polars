@@ -77,6 +77,16 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
         self.child.evaluate_on_groups(&df, groups, state)
     }
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<polars_io::predicates::SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.child.to_field(input_schema)
     }
