@@ -175,3 +175,18 @@ pub fn linear_space(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInt
         },
     }
 }
+
+/// Create a column of linearly-spaced sequences from 'start', 'end', and 'num_samples' expressions.
+pub fn linear_spaces(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInterval) -> Expr {
+    let input = vec![start, end, num_samples];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::Range(RangeFunction::LinearSpaces { closed }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
+            ..Default::default()
+        },
+    }
+}

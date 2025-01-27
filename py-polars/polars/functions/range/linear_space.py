@@ -15,7 +15,13 @@ from typing import Literal
 
 if TYPE_CHECKING:
     from polars import Expr, Series
-    from polars._typing import ClosedInterval, IntoExpr, NumericLiteral, TemporalLiteral
+    from polars._typing import (
+        ClosedInterval,
+        IntoExpr,
+        IntoExprColumn,
+        NumericLiteral,
+        TemporalLiteral,
+    )
 
 
 @overload
@@ -178,6 +184,102 @@ def linear_space(
     end = parse_into_expression(end)
     num_samples = parse_into_expression(num_samples)
     result = wrap_expr(plr.linear_space(start, end, num_samples, closed))
+
+    if eager:
+        return F.select(result).to_series()
+
+    return result
+
+
+@overload
+def linear_spaces(
+    start: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    end: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    num_samples: int | IntoExprColumn,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[False] = ...,
+) -> Expr: ...
+
+
+@overload
+def linear_spaces(
+    start: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    end: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    num_samples: int | IntoExprColumn,
+    *,
+    closed: ClosedInterval = ...,
+    eager: Literal[True],
+) -> Series: ...
+
+
+@overload
+def linear_spaces(
+    start: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    end: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    num_samples: int | IntoExprColumn,
+    *,
+    closed: ClosedInterval = ...,
+    eager: bool,
+) -> Expr | Series: ...
+
+
+def linear_spaces(
+    start: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    end: NumericLiteral | TemporalLiteral | IntoExprColumn,
+    num_samples: int | IntoExprColumn,
+    *,
+    closed: ClosedInterval = "both",
+    eager: bool = False,
+) -> Expr | Series:
+    """
+    Generate a sequence of evenly-spaced points for each row of the input columns.
+
+    Parameters
+    ----------
+    start
+        Lower bound of the range.
+    end
+        Upper bound of the range.
+    num_samples
+        Number of samples in the output sequence.
+    closed : {'both', 'left', 'right', 'none'}
+        Define which sides of the interval are closed (inclusive).
+    eager
+        Evaluate immediately and return a `Series`.
+        If set to `False` (default), return an expression instead.
+
+    .. warning::
+        This functionality is experimental. It may be changed at any point without it
+        being considered a breaking change.
+
+    Returns
+    -------
+    Expr or Series
+        Column of data type `List(dtype)`.
+
+    See Also
+    --------
+    linear_space : Generate a single sequence of linearly-spaced values.
+
+    Examples
+    --------
+    >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2], "step": [4, 5]})
+    >>> df.with_columns(linear_space=pl.linear_spaces("start", "end", "step"))
+    shape: (2, 4)
+    ┌───────┬─────┬──────┬────────────────────────┐
+    │ start ┆ end ┆ step ┆ linear_space           │
+    │ ---   ┆ --- ┆ ---  ┆ ---                    │
+    │ i64   ┆ i64 ┆ i64  ┆ list[f64]              │
+    ╞═══════╪═════╪══════╪════════════════════════╡
+    │ 1     ┆ 3   ┆ 4    ┆ [1.0, 1.666667, … 3.0] │
+    │ -1    ┆ 2   ┆ 5    ┆ [-1.0, -0.25, … 2.0]   │
+    └───────┴─────┴──────┴────────────────────────┘
+    """
+    start = parse_into_expression(start)
+    end = parse_into_expression(end)
+    num_samples = parse_into_expression(num_samples)
+    result = wrap_expr(plr.linear_spaces(start, end, num_samples, closed))
 
     if eager:
         return F.select(result).to_series()
