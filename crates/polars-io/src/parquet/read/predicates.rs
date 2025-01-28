@@ -97,6 +97,19 @@ pub fn read_this_row_group(
                     _ => {},
                 }
             }
+        } else if let Some(pred) = pred.predicate.as_stats_evaluator() {
+            if let Some(stats) = collect_statistics(md, schema)? {
+                let pred_result = pred.should_read(&stats);
+
+                // a parquet file may not have statistics of all columns
+                match pred_result {
+                    Err(PolarsError::ColumnNotFound(errstr)) => {
+                        return Err(PolarsError::ColumnNotFound(errstr))
+                    },
+                    Ok(false) => should_read = false,
+                    _ => {},
+                }
+            }
         }
 
         if config::verbose() {
