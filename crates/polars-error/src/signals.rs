@@ -63,11 +63,9 @@ pub fn catch_keyboard_interrupt<R, F: FnOnce() -> R + UnwindSafe>(
     try_register_catcher()?;
     let ret = catch_unwind(try_fn);
     unregister_catcher();
-    ret.map_err(|p| {
-        match p.downcast::<KeyboardInterrupt>() {
-            Ok(_) => KeyboardInterrupt,
-            Err(p) => std::panic::resume_unwind(p),
-        }
+    ret.map_err(|p| match p.downcast::<KeyboardInterrupt>() {
+        Ok(_) => KeyboardInterrupt,
+        Err(p) => std::panic::resume_unwind(p),
     })
 }
 

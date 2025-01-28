@@ -8,7 +8,6 @@ use std::task::{Context, Poll, Wake, Waker};
 
 use atomic_waker::AtomicWaker;
 use parking_lot::Mutex;
-
 use polars_error::signals::try_raise_keyboard_interrupt;
 
 /// The state of the task. Can't be part of the TaskData enum as it needs to be
