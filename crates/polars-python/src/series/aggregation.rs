@@ -4,7 +4,6 @@ use DataType::*;
 
 use super::PySeries;
 use crate::conversion::Wrap;
-use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 
 fn scalar_to_py<'py>(scalar: PyResult<Scalar>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

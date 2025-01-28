@@ -1,13 +1,12 @@
 use std::panic::AssertUnwindSafe;
 
 use polars::frame::DataFrame;
-use polars::prelude::Scalar;
-use polars::series::{IntoSeries, Series};
+use polars::series::IntoSeries;
 use polars_error::signals::{catch_keyboard_interrupt, KeyboardInterrupt};
 use polars_error::PolarsResult;
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
-use pyo3::{Bound, PyAny, PyErr, PyResult, Python};
+use pyo3::{PyErr, PyResult, Python};
 
 use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
