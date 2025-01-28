@@ -79,7 +79,7 @@ impl Display for Duration {
             write!(f, "-")?
         }
         if self.months > 0 {
-            write!(f, "{}m", self.months)?
+            write!(f, "{}mo", self.months)?
         }
         if self.weeks > 0 {
             write!(f, "{}w", self.weeks)?
@@ -289,10 +289,10 @@ impl Duration {
         }
 
         Ok(Duration {
-            nsecs: nsecs.abs(),
-            days: days.abs(),
-            weeks: weeks.abs(),
             months: months.abs(),
+            weeks: weeks.abs(),
+            days: days.abs(),
+            nsecs: nsecs.abs(),
             negative,
             parsed_int,
         })
@@ -1116,5 +1116,22 @@ mod test {
         let duration = Duration::parse("1h5000ns");
         let expected = "3600000005us";
         assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse("3mo");
+        let expected = "3mo";
+        assert_eq!(format!("{duration}"), expected);
+        let duration = Duration::parse_interval("4 weeks");
+        let expected = "4w";
+        assert_eq!(format!("{duration}"), expected);
+    }
+
+    #[test]
+    fn test_equality() {
+        let d1 = Duration::parse("1w");
+        let d2 = Duration::parse("7d");
+        assert_eq!(d1, d2);
+
+        let d3 = Duration::parse_interval("2 months");
+        let d4 = Duration::parse_interval("8 weeks");
+        assert_ne!(d3, d4);
     }
 }
