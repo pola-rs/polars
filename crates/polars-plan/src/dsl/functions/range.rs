@@ -1,4 +1,5 @@
 use polars_ops::series::ClosedInterval;
+#[cfg(feature = "temporal")]
 use polars_time::ClosedWindow;
 
 use super::*;
