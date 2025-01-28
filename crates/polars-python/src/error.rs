@@ -37,7 +37,6 @@ impl std::convert::From<std::io::Error> for PyPolarsErr {
 
 impl std::convert::From<PyPolarsErr> for PyErr {
     fn from(err: PyPolarsErr) -> PyErr {
-
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {

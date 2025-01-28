@@ -34,7 +34,8 @@ pub fn register_polars_keyboard_interrupt_hook() {
                     }
                 })
                 .ok();
-        }).unwrap();
+        })
+        .unwrap();
     }
 }
 

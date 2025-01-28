@@ -7,8 +7,8 @@ use super::PyDataFrame;
 use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
-use crate::utils::EnterPolarsExt;
 use crate::interop;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {

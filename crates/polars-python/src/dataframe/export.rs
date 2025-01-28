@@ -9,10 +9,10 @@ use pyo3::IntoPyObjectExt;
 use super::PyDataFrame;
 use crate::conversion::{ObjectValue, Wrap};
 use crate::error::PyPolarsErr;
-use crate::utils::EnterPolarsExt;
 use crate::interop;
 use crate::interop::arrow::to_py::dataframe_to_stream;
 use crate::prelude::PyCompatLevel;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {

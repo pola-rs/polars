@@ -1,16 +1,16 @@
 use std::any::Any;
+use std::sync::OnceLock;
 
 use polars::prelude::*;
 use polars_core::chunked_array::object::builder::ObjectChunkedBuilder;
 use polars_core::chunked_array::object::registry::AnonymousObjectBuilder;
 use polars_core::chunked_array::object::{registry, set_polars_allow_extension};
 use polars_core::error::PolarsError::ComputeError;
-use polars_error::PolarsWarning;
 use polars_error::signals::register_polars_keyboard_interrupt_hook;
+use polars_error::PolarsWarning;
 use pyo3::prelude::*;
 use pyo3::{intern, IntoPyObjectExt};
 
-use std::sync::OnceLock;
 use crate::dataframe::PyDataFrame;
 use crate::map::lazy::{call_lambda_with_series, ToSeries};
 use crate::prelude::ObjectValue;

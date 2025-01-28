@@ -28,7 +28,6 @@ use crate::prelude::parse_cloud_options;
 use crate::prelude::PyCompatLevel;
 use crate::utils::EnterPolarsExt;
 
-
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]

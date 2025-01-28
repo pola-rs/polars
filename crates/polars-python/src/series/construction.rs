@@ -51,19 +51,30 @@ fn mmap_numpy_array<T: Element + NativeType>(name: &str, array: &Bound<PyArray1<
 #[pymethods]
 impl PySeries {
     #[staticmethod]
-    fn new_bool(py: Python, name: &str, array: &Bound<PyArray1<bool>>, _strict: bool) -> PyResult<Self> {
+    fn new_bool(
+        py: Python,
+        name: &str,
+        array: &Bound<PyArray1<bool>>,
+        _strict: bool,
+    ) -> PyResult<Self> {
         let array = array.readonly();
         let vals = array.as_slice().unwrap();
         py.enter_polars_series(|| Ok(Series::new(name.into(), vals)))
     }
 
     #[staticmethod]
-    fn new_f32(py: Python, name: &str, array: &Bound<PyArray1<f32>>, nan_is_null: bool) -> PyResult<Self> {
+    fn new_f32(
+        py: Python,
+        name: &str,
+        array: &Bound<PyArray1<f32>>,
+        nan_is_null: bool,
+    ) -> PyResult<Self> {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
             py.enter_polars_series(|| {
-                let ca: Float32Chunked = vals.iter()
+                let ca: Float32Chunked = vals
+                    .iter()
                     .map(|&val| if f32::is_nan(val) { None } else { Some(val) })
                     .collect_trusted();
                 Ok(ca.with_name(name.into()))
@@ -74,12 +85,18 @@ impl PySeries {
     }
 
     #[staticmethod]
-    fn new_f64(py: Python, name: &str, array: &Bound<PyArray1<f64>>, nan_is_null: bool) -> PyResult<Self> {
+    fn new_f64(
+        py: Python,
+        name: &str,
+        array: &Bound<PyArray1<f64>>,
+        nan_is_null: bool,
+    ) -> PyResult<Self> {
         if nan_is_null {
             let array = array.readonly();
             let vals = array.as_slice().unwrap();
             py.enter_polars_series(|| {
-                let ca: Float64Chunked = vals.iter()
+                let ca: Float64Chunked = vals
+                    .iter()
                     .map(|&val| if f64::is_nan(val) { None } else { Some(val) })
                     .collect_trusted();
                 Ok(ca.with_name(name.into()))

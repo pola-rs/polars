@@ -26,9 +26,7 @@ impl PyDataFrame {
         let file = get_file_like(py_f, false)?;
         let mut file = BufReader::new(file);
 
-        py.enter_polars_df(|| {
-            DataFrame::deserialize_from_reader(&mut file)
-        })
+        py.enter_polars_df(|| DataFrame::deserialize_from_reader(&mut file))
     }
 
     /// Serialize into a JSON string.

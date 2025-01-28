@@ -5,8 +5,8 @@ use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
-use crate::{PyExpr, PySeries};
 use crate::utils::EnterPolarsExt;
+use crate::{PyExpr, PySeries};
 
 #[pyfunction]
 pub fn int_range(start: PyExpr, end: PyExpr, step: i64, dtype: Wrap<DataType>) -> PyExpr {

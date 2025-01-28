@@ -46,10 +46,9 @@ impl PyCatalogClient {
     }
 
     pub fn list_catalogs(&self, py: Python) -> PyResult<PyObject> {
-        let v = py
-            .enter_polars(|| {
-                pl_async::get_runtime().block_on_potential_spawn(self.client().list_catalogs())
-            })?;
+        let v = py.enter_polars(|| {
+            pl_async::get_runtime().block_on_potential_spawn(self.client().list_catalogs())
+        })?;
 
         PyList::new(
             py,
@@ -69,11 +68,10 @@ impl PyCatalogClient {
 
     #[pyo3(signature = (catalog_name))]
     pub fn list_schemas(&self, py: Python, catalog_name: &str) -> PyResult<PyObject> {
-        let v = py
-            .enter_polars(|| {
-                pl_async::get_runtime()
-                    .block_on_potential_spawn(self.client().list_schemas(catalog_name))
-            })?;
+        let v = py.enter_polars(|| {
+            pl_async::get_runtime()
+                .block_on_potential_spawn(self.client().list_schemas(catalog_name))
+        })?;
 
         PyList::new(
             py,
@@ -98,11 +96,10 @@ impl PyCatalogClient {
         catalog_name: &str,
         schema_name: &str,
     ) -> PyResult<PyObject> {
-        let v = py
-            .enter_polars(|| {
-                pl_async::get_runtime()
-                    .block_on_potential_spawn(self.client().list_tables(catalog_name, schema_name))
-            })?;
+        let v = py.enter_polars(|| {
+            pl_async::get_runtime()
+                .block_on_potential_spawn(self.client().list_tables(catalog_name, schema_name))
+        })?;
 
         PyList::new(
             py,
@@ -120,14 +117,13 @@ impl PyCatalogClient {
         schema_name: &str,
         table_name: &str,
     ) -> PyResult<PyObject> {
-        let table_entry = py
-            .enter_polars(|| {
-                pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
-                    catalog_name,
-                    schema_name,
-                    table_name,
-                ))
-            })?;
+        let table_entry = py.enter_polars(|| {
+            pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
+                catalog_name,
+                schema_name,
+                table_name,
+            ))
+        })?;
 
         Ok(table_entry_to_pydict(py, table_entry).into())
     }
@@ -143,14 +139,13 @@ impl PyCatalogClient {
         credential_provider: Option<PyObject>,
         retries: usize,
     ) -> PyResult<PyLazyFrame> {
-        let table_info = py
-            .enter_polars(|| {
-                pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
-                    catalog_name,
-                    schema_name,
-                    table_name,
-                ))
-            })?;
+        let table_info = py.enter_polars(|| {
+            pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
+                catalog_name,
+                schema_name,
+                table_name,
+            ))
+        })?;
 
         let Some(storage_location) = table_info.storage_location.as_deref() else {
             return Err(PyValueError::new_err(

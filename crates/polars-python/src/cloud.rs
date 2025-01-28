@@ -10,8 +10,8 @@ use pyo3::types::{IntoPyDict, PyBytes};
 
 use crate::error::PyPolarsErr;
 use crate::lazyframe::visit::NodeTraverser;
-use crate::{PyDataFrame, PyLazyFrame};
 use crate::utils::EnterPolarsExt;
+use crate::{PyDataFrame, PyLazyFrame};
 
 #[pyfunction]
 pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python<'_>) -> PyResult<Bound<'_, PyBytes>> {

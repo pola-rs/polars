@@ -449,8 +449,7 @@ impl PySeries {
     }
 
     pub fn not_(&self, py: Python) -> PyResult<Self> {
-        py
-            .enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series))
+        py.enter_polars_series(|| polars_ops::series::negate_bitwise(&self.series))
     }
 
     /// Internal utility function to allow direct access to the row encoding from python.

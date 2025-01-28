@@ -9,7 +9,6 @@ use crate::file::get_file_like;
 use crate::prelude::*;
 use crate::utils::EnterPolarsExt;
 
-
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
 impl PyLazyFrame {
@@ -40,8 +39,7 @@ impl PyLazyFrame {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let lp: DslPlan = py.enter_polars(|| {
-            pl_serialize::SerializeOptions::default()
-                .deserialize_from_reader(reader)
+            pl_serialize::SerializeOptions::default().deserialize_from_reader(reader)
         })?;
         Ok(LazyFrame::from(lp).into())
     }

@@ -746,9 +746,7 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        py.enter_polars(|| {
-            self.ldf.clone().sink_ipc(path, options, cloud_options)
-        })
+        py.enter_polars(|| self.ldf.clone().sink_ipc(path, options, cloud_options))
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
