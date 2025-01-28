@@ -568,7 +568,7 @@ class ColumnInfo:
             at any point without it being considered a breaking change.
         """
         issue_unstable_warning(
-            "`get_polars_schema` functionality is considered unstable."
+            "`get_polars_dtype` functionality is considered unstable."
         )
         return PyCatalogClient.type_json_to_polars_type(self.type_json)
 
