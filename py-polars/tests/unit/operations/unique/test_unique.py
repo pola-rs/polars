@@ -113,7 +113,7 @@ def test_sorted_unique_dates() -> None:
             [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
         )
         .sort("dt")
-        .unique()
+        .unique(maintain_order=False)
     ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
 
 
