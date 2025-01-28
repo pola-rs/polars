@@ -1,4 +1,5 @@
 use std::borrow::{Borrow, Cow};
+use std::sync::Arc;
 
 use chrono::{
     DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta, Timelike,
@@ -253,31 +254,42 @@ pub(crate) fn py_object_to_any_value<'py>(
         let py = ob.py();
         let tzinfo = ob.getattr(intern!(py, "tzinfo"))?;
 
-        let timestamp = if tzinfo.is_none() {
+        if tzinfo.is_none() {
             let datetime = ob.extract::<NaiveDateTime>()?;
             let delta = datetime - NaiveDateTime::UNIX_EPOCH;
-            delta.num_microseconds().unwrap()
-        } else if tzinfo.hasattr(intern!(py, "key"))? {
+            let timestamp = delta.num_microseconds().unwrap();
+            return Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None));
+        }
+
+        let (timestamp, tz) = if tzinfo.hasattr(intern!(py, "key"))? {
             let datetime = ob.extract::<DateTime<Tz>>()?;
+            let tz = datetime.timezone().name().into();
             if datetime.year() >= 2100 {
                 // chrono-tz does not support dates after 2100
                 // https://github.com/chronotope/chrono-tz/issues/135
-                pl_utils(py)
-                    .bind(py)
-                    .getattr(intern!(py, "datetime_to_int"))?
-                    .call1((ob, intern!(py, "us")))?
-                    .extract::<i64>()?
+                (
+                    pl_utils(py)
+                        .bind(py)
+                        .getattr(intern!(py, "datetime_to_int"))?
+                        .call1((ob, intern!(py, "us")))?
+                        .extract::<i64>()?,
+                    tz,
+                )
             } else {
                 let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-                delta.num_microseconds().unwrap()
+                (delta.num_microseconds().unwrap(), tz)
             }
         } else {
             let datetime = ob.extract::<DateTime<FixedOffset>>()?;
             let delta = datetime.to_utc() - DateTime::UNIX_EPOCH;
-            delta.num_microseconds().unwrap()
+            (delta.num_microseconds().unwrap(), "UTC".into())
         };
 
-        Ok(AnyValue::Datetime(timestamp, TimeUnit::Microseconds, None))
+        Ok(AnyValue::DatetimeOwned(
+            timestamp,
+            TimeUnit::Microseconds,
+            Some(Arc::new(tz)),
+        ))
     }
 
     fn get_timedelta(ob: &Bound<'_, PyAny>, _strict: bool) -> PyResult<AnyValue<'static>> {

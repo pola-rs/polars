@@ -2,13 +2,15 @@
 
 use std::str::FromStr;
 
-use chrono::{DateTime, FixedOffset, NaiveDateTime, NaiveTime, TimeDelta, TimeZone as _};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDateTime, NaiveTime, TimeDelta, TimeZone as _};
 use chrono_tz::Tz;
 use polars::datatypes::TimeUnit;
 use polars_core::datatypes::TimeZone;
-use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python};
+use pyo3::types::PyAnyMethods;
+use pyo3::{intern, Bound, IntoPyObject, PyAny, PyResult, Python};
 
 use crate::error::PyPolarsErr;
+use crate::py_modules::pl_utils;
 
 pub fn elapsed_offset_to_timedelta(elapsed: i64, time_unit: TimeUnit) -> TimeDelta {
     let (in_second, nano_multiplier) = match time_unit {
@@ -46,8 +48,17 @@ pub fn datetime_to_py_object<'py>(
     if let Some(time_zone) = tz {
         if let Ok(tz) = Tz::from_str(time_zone) {
             let utc_datetime = DateTime::UNIX_EPOCH + elapsed_offset_to_timedelta(v, tu);
-            let datetime = utc_datetime.with_timezone(&tz);
-            datetime.into_pyobject(py)
+            if utc_datetime.year() >= 2100 {
+                // chrono-tz does not support dates after 2100
+                // https://github.com/chronotope/chrono-tz/issues/135
+                pl_utils(py)
+                    .bind(py)
+                    .getattr(intern!(py, "to_py_datetime"))?
+                    .call1((v, tu.to_ascii(), time_zone.as_str()))
+            } else {
+                let datetime = utc_datetime.with_timezone(&tz);
+                datetime.into_pyobject(py)
+            }
         } else if let Ok(tz) = FixedOffset::from_str(time_zone) {
             let naive_datetime = timestamp_to_naive_datetime(v, tu);
             let datetime = tz.from_utc_datetime(&naive_datetime);
