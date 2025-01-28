@@ -7,7 +7,7 @@ use crate::conversion::Wrap;
 use crate::utils::EnterPolarsExt;
 
 fn scalar_to_py<'py>(scalar: PyResult<Scalar>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-    Ok(Wrap(scalar?.as_any_value()).into_pyobject(py)?)
+    Wrap(scalar?.as_any_value()).into_pyobject(py)
 }
 
 #[pymethods]

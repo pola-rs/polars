@@ -4,7 +4,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Python hooks SIGINT to instead generate a KeyboardInterrupt exception.
 /// So we do the same to try and abort long-running computations and return to
 /// Python so that the Python exception can be generated.
-
 pub struct KeyboardInterrupt;
 
 // Bottom bit: interrupt flag.
