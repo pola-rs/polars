@@ -1,4 +1,4 @@
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::types::AlignedBytes;
 
 use super::ArrayChunks;
@@ -7,7 +7,15 @@ use super::ArrayChunks;
 pub fn decode_equals_no_values<B: AlignedBytes>(
     values: ArrayChunks<'_, B>,
     needle: B,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) {
-    pred_true_mask.extend(values.into_iter().map(|&v| B::from_unaligned(v) == needle))
+    pred_true_mask.reserve(values.len());
+    for &v in values {
+        let is_pred_true = B::from_unaligned(v) == needle;
+
+        // SAFETY: We reserved enough before the loop.
+        unsafe {
+            pred_true_mask.push_unchecked(is_pred_true);
+        }
+    }
 }

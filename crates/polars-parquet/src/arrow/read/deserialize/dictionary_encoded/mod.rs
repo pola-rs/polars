@@ -1,5 +1,5 @@
 use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::{AlignedBytes, Bytes4Alignment4, NativeType};
 use polars_compute::filter::filter_boolean_kernel;
 
@@ -64,9 +64,9 @@ pub fn decode_dict<T: NativeType>(
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     target: &mut Vec<T>,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     decode_dict_dispatch(
         values,
@@ -90,9 +90,9 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     target: &mut Vec<B>,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
@@ -128,7 +128,7 @@ pub fn decode_dict_dispatch<B: AlignedBytes, D: IndexMapping<Output = B>>(
 pub(crate) fn append_validity(
     page_validity: Option<&Bitmap>,
     filter: Option<&Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     values_len: usize,
 ) {
     match (page_validity, filter) {

@@ -1,5 +1,4 @@
-use arrow::bitmap::bitmask::BitMask;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::AlignedBytes;
 
 use super::{oob_dict_idx, verify_dict_indices, IndexMapping};
@@ -14,7 +13,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     dict_mask: &Bitmap,
     predicate: &PredicateFilter,
     target: &mut Vec<B>,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     let num_filtered_dict_values = dict_mask.set_bits();
 
@@ -25,17 +24,12 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
         pred_true_mask.extend_constant(values.len(), false);
     } else if num_filtered_dict_values == 1 {
         let needle = dict_mask.leading_zeros();
-        let start_mask_length = pred_true_mask.len();
+        let start_num_values = pred_true_mask.set_bits();
 
         decode_single_no_values(values, needle as u32, pred_true_mask)?;
 
         if predicate.include_values {
-            let num_values = BitMask::new(
-                pred_true_mask.as_slice(),
-                start_mask_length,
-                pred_true_mask.len() - start_mask_length,
-            )
-            .set_bits();
+            let num_values = pred_true_mask.set_bits() - start_num_values;
             target.resize(target.len() + num_values, dict.get(needle as u32).unwrap());
         }
     } else if predicate.include_values {
@@ -53,7 +47,7 @@ pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
 pub fn decode_single_no_values(
     mut values: HybridRleDecoder<'_>,
     needle: u32,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     pred_true_mask.reserve(values.len());
 
@@ -71,21 +65,25 @@ pub fn decode_single_no_values(
                     let n = chunked.next_into(&mut unpacked).unwrap();
                     debug_assert_eq!(n, 32);
 
-                    unsafe {
-                        pred_true_mask.extend_from_trusted_len_iter_unchecked(
-                            unpacked.iter().map(|&v| v == needle),
-                        )
-                    };
+                    let mut is_equal_mask = 0u64;
+                    for (i, &v) in unpacked.iter().enumerate() {
+                        is_equal_mask |= u64::from(v == needle) << i;
+                    }
+
+                    // SAFETY: We reserved enough in the beginning of the function.
+                    unsafe { pred_true_mask.push_word_with_len_unchecked(is_equal_mask, 32) };
                 }
 
                 if let Some(n) = chunked.next_into(&mut unpacked) {
                     debug_assert_eq!(n, size % 32);
 
-                    unsafe {
-                        pred_true_mask.extend_from_trusted_len_iter_unchecked(
-                            unpacked.get_unchecked(..n).iter().map(|&v| v == needle),
-                        )
-                    };
+                    let mut is_equal_mask = 0u64;
+                    for (i, &v) in unpacked.iter().enumerate() {
+                        is_equal_mask |= u64::from(v == needle) << i;
+                    }
+
+                    // SAFETY: We reserved enough in the beginning of the function.
+                    unsafe { pred_true_mask.push_word_with_len_unchecked(is_equal_mask, n) };
                 }
             },
         }
@@ -98,7 +96,7 @@ pub fn decode_single_no_values(
 pub fn decode_multiple_no_values(
     mut values: HybridRleDecoder<'_>,
     dict_mask: &Bitmap,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     pred_true_mask.reserve(values.len());
 
@@ -110,31 +108,39 @@ pub fn decode_multiple_no_values(
                 pred_true_mask.extend_constant(size, is_pred_true);
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
+                let size = decoder.len();
                 let mut chunked = decoder.chunked();
 
-                let mut n = 0;
-                while let Some(num) = chunked.next_into(&mut unpacked) {
-                    n = num;
-                    if n < 32 {
-                        break;
-                    }
+                for _ in 0..size / 32 {
+                    let n = chunked.next_into(&mut unpacked).unwrap();
+                    debug_assert_eq!(n, 32);
 
                     verify_dict_indices(&unpacked, dict_mask.len())?;
-                    pred_true_mask.extend(
-                        unpacked
-                            .iter()
-                            // SAFETY: We just verified the dictionary indices
-                            .map(|&v| unsafe { dict_mask.get_bit_unchecked(v as usize) }),
-                    );
+                    let mut is_pred_true_mask = 0u64;
+                    for (i, &v) in unpacked.iter().enumerate() {
+                        // SAFETY: We just verified the dictionary indices
+                        let is_pred_true = unsafe { dict_mask.get_bit_unchecked(v as usize) };
+                        is_pred_true_mask |= u64::from(is_pred_true) << i;
+                    }
+
+                    // SAFETY: We reserved enough in the beginning of the function.
+                    unsafe { pred_true_mask.push_word_with_len_unchecked(is_pred_true_mask, 32) };
                 }
 
-                verify_dict_indices(&unpacked[..n], dict_mask.len())?;
-                pred_true_mask.extend(
-                    unpacked[..n]
-                        .iter()
+                if let Some(n) = chunked.next_into(&mut unpacked) {
+                    debug_assert_eq!(n, size % 32);
+
+                    verify_dict_indices(&unpacked[..n], dict_mask.len())?;
+                    let mut is_pred_true_mask = 0u64;
+                    for (i, &v) in unpacked[..n].iter().enumerate() {
                         // SAFETY: We just verified the dictionary indices
-                        .map(|&v| unsafe { dict_mask.get_bit_unchecked(v as usize) }),
-                );
+                        let is_pred_true = unsafe { dict_mask.get_bit_unchecked(v as usize) };
+                        is_pred_true_mask |= u64::from(is_pred_true) << i;
+                    }
+
+                    // SAFETY: We reserved enough in the beginning of the function.
+                    unsafe { pred_true_mask.push_word_with_len_unchecked(is_pred_true_mask, n) };
+                }
             },
         }
     }
@@ -148,7 +154,7 @@ pub fn decode_multiple_values<B: AlignedBytes, D: IndexMapping<Output = B>>(
     dict: D,
     dict_mask: &Bitmap,
     target: &mut Vec<B>,
-    pred_true_mask: &mut MutableBitmap,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     pred_true_mask.reserve(values.len());
     target.reserve(values.len());
@@ -177,26 +183,25 @@ pub fn decode_multiple_values<B: AlignedBytes, D: IndexMapping<Output = B>>(
                     debug_assert_eq!(n, 32);
 
                     verify_dict_indices(&unpacked, dict_mask.len())?;
-                    let mut count = 0;
-                    pred_true_mask.extend(
-                        unpacked
-                            .iter()
-                            // SAFETY: We just verified the dictionary indices
-                            .map(|&v| {
-                                let select = unsafe { dict_mask.get_bit_unchecked(v as usize) };
-                                count += usize::from(select);
-                                select
-                            }),
-                    );
+                    let mut is_pred_true_mask = 0u64;
+                    for (i, &v) in unpacked.iter().enumerate() {
+                        // SAFETY: We just verified the dictionary indices
+                        let is_pred_true = unsafe { dict_mask.get_bit_unchecked(v as usize) };
+                        is_pred_true_mask |= u64::from(is_pred_true) << i;
+                    }
+                    // SAFETY: We reserved enough in the beginning of the function.
+                    unsafe { pred_true_mask.push_word_with_len_unchecked(is_pred_true_mask, 32) };
 
-                    if count == 32 {
+                    let num_pred_true_values = is_pred_true_mask.count_ones() as usize;
+
+                    if num_pred_true_values == 32 {
                         target.extend(
                             unpacked
                                 .iter()
                                 // SAFETY: We just verified the dictionary indices
                                 .map(|&v| unsafe { dict.get_unchecked(v) }),
                         );
-                    } else if count > 0 {
+                    } else if num_pred_true_values > 0 {
                         let mut write_ptr = unsafe { target.as_mut_ptr().add(target.len()) };
                         for v in unpacked {
                             unsafe {
@@ -206,7 +211,7 @@ pub fn decode_multiple_values<B: AlignedBytes, D: IndexMapping<Output = B>>(
                             }
                         }
 
-                        let new_len = target.len() + count;
+                        let new_len = target.len() + num_pred_true_values;
                         unsafe { target.set_len(new_len) };
                     }
                 }
@@ -215,26 +220,25 @@ pub fn decode_multiple_values<B: AlignedBytes, D: IndexMapping<Output = B>>(
                     debug_assert_eq!(n, size % 32);
 
                     verify_dict_indices(&unpacked[..n], dict_mask.len())?;
-                    let mut count = 0;
-                    pred_true_mask.extend(
-                        unpacked[..n]
-                            .iter()
-                            // SAFETY: We just verified the dictionary indices
-                            .map(|&v| {
-                                let select = unsafe { dict_mask.get_bit_unchecked(v as usize) };
-                                count += usize::from(select);
-                                select
-                            }),
-                    );
+                    let mut is_pred_true_mask = 0u64;
+                    for (i, &v) in unpacked[..n].iter().enumerate() {
+                        // SAFETY: We just verified the dictionary indices
+                        let is_pred_true = unsafe { dict_mask.get_bit_unchecked(v as usize) };
+                        is_pred_true_mask |= u64::from(is_pred_true) << i;
+                    }
+                    // SAFETY: We reserved enough in the beginning of the function.
+                    unsafe { pred_true_mask.push_word_with_len_unchecked(is_pred_true_mask, n) };
 
-                    if count == n {
+                    let num_pred_true_values = is_pred_true_mask.count_ones() as usize;
+
+                    if num_pred_true_values == n {
                         target.extend(
                             unpacked[..n]
                                 .iter()
                                 // SAFETY: We just verified the dictionary indices
                                 .map(|&v| unsafe { dict.get_unchecked(v) }),
                         );
-                    } else if count > 0 {
+                    } else if num_pred_true_values > 0 {
                         let mut write_ptr = unsafe { target.as_mut_ptr().add(target.len()) };
                         for &v in &unpacked[..n] {
                             unsafe {
@@ -244,7 +248,7 @@ pub fn decode_multiple_values<B: AlignedBytes, D: IndexMapping<Output = B>>(
                             }
                         }
 
-                        let new_len = target.len() + count;
+                        let new_len = target.len() + num_pred_true_values;
                         unsafe { target.set_len(new_len) };
                     }
                 }
