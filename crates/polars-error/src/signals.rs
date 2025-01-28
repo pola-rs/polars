@@ -21,11 +21,20 @@ pub fn register_polars_keyboard_interrupt_hook() {
     }));
 
     unsafe {
-        // SAFETY: we only do an atomic store in the signal handler, which is allowed.
+        // SAFETY: we only do an atomic op in the signal handler, which is allowed.
         signal_hook::low_level::register(signal_hook::consts::signal::SIGINT, move || {
-            INTERRUPT_STATE.fetch_or(1, Ordering::Relaxed);
-        })
-        .unwrap();
+            // Set the interrupt flag, but only if there are active catchers.
+            INTERRUPT_STATE
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
+                    let num_catchers = state >> 1;
+                    if num_catchers > 0 {
+                        Some(state | 1)
+                    } else {
+                        None
+                    }
+                })
+                .ok();
+        }).unwrap();
     }
 }
 
@@ -33,7 +42,7 @@ pub fn register_polars_keyboard_interrupt_hook() {
 /// KeyboardInterrupt. This function is very cheap.
 #[inline(always)]
 pub fn try_raise_keyboard_interrupt() {
-    if INTERRUPT_STATE.load(Ordering::Relaxed) & 1 > 0 {
+    if INTERRUPT_STATE.load(Ordering::Relaxed) & 1 != 0 {
         try_raise_keyboard_interrupt_slow()
     }
 }
@@ -49,27 +58,37 @@ fn try_raise_keyboard_interrupt_slow() {
 pub fn catch_keyboard_interrupt<R, F: FnOnce() -> R + UnwindSafe>(
     try_fn: F,
 ) -> Result<R, KeyboardInterrupt> {
-    // Clear any stale interrupts from immediately cancelling the computation,
-    // but only if there aren't any other interrupt catchers.
-    INTERRUPT_STATE
-        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
-            let num_catchers = state >> 1;
-            let interrupt = state & 1;
-            if num_catchers > 0 && interrupt != 0 {
-                // Interrupt still in progress.
-                None
-            } else {
-                // Clear stale interrupt flag and increment number of catchers.
-                Some((state & !1) + 2)
-            }
-        })
-        .map_err(|_| KeyboardInterrupt)?;
-
+    // Try to register this catcher (or immediately return if there is an
+    // uncaught interrupt).
+    try_register_catcher()?;
     catch_unwind(try_fn).map_err(|p| {
-        INTERRUPT_STATE.fetch_sub(2, Ordering::Relaxed);
+        unregister_catcher();
         match p.downcast::<KeyboardInterrupt>() {
             Ok(_) => KeyboardInterrupt,
             Err(p) => std::panic::resume_unwind(p),
         }
     })
+}
+
+fn try_register_catcher() -> Result<(), KeyboardInterrupt> {
+    let old_state = INTERRUPT_STATE.fetch_add(2, Ordering::Relaxed);
+    if old_state & 1 != 0 {
+        unregister_catcher();
+        return Err(KeyboardInterrupt);
+    }
+    Ok(())
+}
+
+fn unregister_catcher() {
+    INTERRUPT_STATE
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
+            let num_catchers = state >> 1;
+            if num_catchers > 1 {
+                Some(num_catchers - 2)
+            } else {
+                // Last catcher, clear interrupt flag.
+                Some(0)
+            }
+        })
+        .ok();
 }
