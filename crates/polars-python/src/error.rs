@@ -4,8 +4,8 @@ use std::io::{Error, ErrorKind};
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
 use pyo3::exceptions::{
-    PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError, PyRuntimeError,
-    PyUserWarning,
+    PyDeprecationWarning, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
+    PyRuntimeError, PyUserWarning,
 };
 use pyo3::prelude::*;
 use pyo3::PyTypeInfo;
@@ -116,6 +116,7 @@ impl<'py> IntoPyObject<'py> for Wrap<PolarsWarning> {
                 Ok(MapWithoutReturnDtypeWarning::type_object(py).into_any())
             },
             PolarsWarning::UserWarning => Ok(PyUserWarning::type_object(py).into_any()),
+            PolarsWarning::Deprecation => Ok(PyDeprecationWarning::type_object(py).into_any()),
         }
     }
 }
