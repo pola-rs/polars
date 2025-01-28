@@ -1056,7 +1056,7 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
     }
     let s = match &*interval.value {
         SQLExpr::UnaryOp { .. } => {
-            polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found '{}'", interval.value)
+            polars_bail!(SQLSyntax: "unary ops are not valid on interval strings; found {}", interval.value)
         },
         SQLExpr::Value(SQLValue::SingleQuotedString(s)) => Some(s),
         _ => None,
@@ -1070,7 +1070,7 @@ pub(crate) fn interval_to_duration(interval: &Interval, fixed: bool) -> PolarsRe
             // interval parts can only be used with respect to a reference point
             let duration = Duration::parse_interval(s);
             if fixed && duration.months() != 0 {
-                polars_bail!(SQLSyntax: "fixed-duration interval cannot contain years, quarters, or months; found '{}'", s)
+                polars_bail!(SQLSyntax: "fixed-duration interval cannot contain years, quarters, or months; found {}", s)
             };
             Ok(duration)
         },

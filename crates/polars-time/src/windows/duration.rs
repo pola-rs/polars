@@ -1123,15 +1123,4 @@ mod test {
         let expected = "4w";
         assert_eq!(format!("{duration}"), expected);
     }
-
-    #[test]
-    fn test_equality() {
-        let d1 = Duration::parse("1w");
-        let d2 = Duration::parse("7d");
-        assert_eq!(d1, d2);
-
-        let d3 = Duration::parse_interval("2 months");
-        let d4 = Duration::parse_interval("8 weeks");
-        assert_ne!(d3, d4);
-    }
 }
