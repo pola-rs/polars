@@ -121,14 +121,13 @@ mod inner {
                 .await
                 .map_err(|e| e.wrap_msg(|e| format!("{}; original error: {}", e, orig_err)))?;
 
-            let mut out = func(&store).await;
-
-            if self.inner.builder.is_azure()
-                && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref() != Ok("1")
-            {
-                // Note: This error is intended for Python audiences. The logic for retrieving
-                // these keys exist only on the Python side.
-                out = out.map_err(|e| {
+            func(&store).await.map_err(|e| {
+                if self.inner.builder.is_azure()
+                    && std::env::var("POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY").as_deref()
+                        != Ok("1")
+                {
+                    // Note: This error is intended for Python audiences. The logic for retrieving
+                    // these keys exist only on the Python side.
                     e.wrap_msg(|e| {
                         format!(
                             "{}; note: if you are using Python, consider setting \
@@ -137,10 +136,10 @@ and use the storage account keys from Azure CLI to authenticate",
                             e
                         )
                     })
-                })
-            }
-
-            out
+                } else {
+                    e
+                }
+            })
         }
     }
 }
