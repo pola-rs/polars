@@ -61,8 +61,9 @@ pub fn catch_keyboard_interrupt<R, F: FnOnce() -> R + UnwindSafe>(
     // Try to register this catcher (or immediately return if there is an
     // uncaught interrupt).
     try_register_catcher()?;
-    catch_unwind(try_fn).map_err(|p| {
-        unregister_catcher();
+    let ret = catch_unwind(try_fn);
+    unregister_catcher();
+    ret.map_err(|p| {
         match p.downcast::<KeyboardInterrupt>() {
             Ok(_) => KeyboardInterrupt,
             Err(p) => std::panic::resume_unwind(p),
