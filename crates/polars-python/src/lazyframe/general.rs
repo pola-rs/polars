@@ -775,7 +775,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (
         path, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
-        quote_style, maintain_order, cloud_options, credential_provider, retries
+        quote_style, maintain_order, cloud_options, credential_provider, retries, lambda_post_opt=None
     ))]
     fn sink_csv(
         &self,
@@ -798,6 +798,7 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
+        lambda_post_opt: Option<PyObject>,
     ) -> PyResult<()> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
         let null_value = null_value.unwrap_or(SerializeOptions::default().null);
@@ -843,7 +844,7 @@ impl PyLazyFrame {
         // threads we deadlock.
         py.allow_threads(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_csv(path, options, cloud_options)
+            ldf.sink_csv(path, options, cloud_options, lambda_post_opt)
                 .map_err(PyPolarsErr::from)
         })?;
         Ok(())

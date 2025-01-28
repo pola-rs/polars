@@ -2605,6 +2605,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | Literal["auto"]
         | None = "auto",
         retries: int = 2,
+        engine: EngineType = "cpu",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
@@ -2711,6 +2712,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
+        engine
+            Select the engine used to write the query result, optional.
+            If set to `"cpu"` (default), the query result is written using the
+            polars CPU engine. If set to `"gpu"`, the GPU engine is
+            used. Fine-grained control over the GPU engine, for
+            example which device to use on a system with multiple
+            devices, is possible by providing a :class:`~.GPUEngine` object
+            with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, or running in the
+               background. If either are enabled, then GPU execution is switched off.
 
         Returns
         -------
@@ -2751,6 +2772,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
+        if not (is_config_obj or engine in ("cpu", "gpu")):
+            msg = f"Invalid engine argument {engine=}"
+            raise ValueError(msg)
+        if is_gpu:
+            cudf_polars = import_optional(
+                "cudf_polars",
+                err_prefix="GPU engine requested, but required package",
+                install_message=(
+                    "Please install using the command "
+                    "`pip install cudf-polars-cu12` "
+                    "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
+                    "if your system has a CUDA 11 driver)."
+                ),
+            )
+            if not is_config_obj:
+                engine = GPUEngine()
+            callback = partial(cudf_polars.execute_with_cudf, config=engine)
+        else:
+            callback = None
+
         return lf.sink_csv(
             path=normalize_filepath(path),
             include_bom=include_bom,
@@ -2770,6 +2812,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cloud_options=storage_options,
             credential_provider=credential_provider,
             retries=retries,
+            callback=callback,
         )
 
     @unstable()
