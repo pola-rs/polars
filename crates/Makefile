@@ -123,6 +123,8 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
+	# This is independent
+	cargo publish --allow-dirty -p polars-python
 
 .PHONY: help
 help:  ## Display this help screen
