@@ -1,11 +1,12 @@
 use std::panic::AssertUnwindSafe;
 
 use polars::frame::DataFrame;
-use polars::series::Series;
+use polars::prelude::Scalar;
+use polars::series::{IntoSeries, Series};
 use polars_error::PolarsResult;
 use pyo3::exceptions::PyKeyboardInterrupt;
 use pyo3::marker::Ungil;
-use pyo3::{Python, PyErr, PyResult};
+use pyo3::{Bound, PyErr, PyAny, PyResult, Python};
 use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
 
 use crate::dataframe::PyDataFrame;
@@ -81,15 +82,16 @@ pub trait EnterPolarsExt {
             self.enter_polars(f).map(PyDataFrame::new)
         }
 
-    /// Same as enter_polars, but expects a PolarsResult<Series> as return which
-    /// is converted to a PySeries.
+    /// Same as enter_polars, but expects a PolarsResult<S> as return which
+    /// is converted to a PySeries through S: IntoSeries.
     #[inline(always)]
-    fn enter_polars_series<F>(self, f: F) -> PyResult<PySeries>
+    fn enter_polars_series<T, F>(self, f: F) -> PyResult<PySeries>
     where
         Self: Sized,
-        F: Ungil + Send + FnOnce() -> PolarsResult<Series>,
+        T: Ungil + Send + IntoSeries,
+        F: Ungil + Send + FnOnce() -> PolarsResult<T>,
         {
-            self.enter_polars(f).map(PySeries::new)
+            self.enter_polars(f).map(|s| PySeries::new(s.into_series()))
         }
 }
 

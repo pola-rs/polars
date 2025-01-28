@@ -84,7 +84,7 @@ fn unregister_catcher() {
         .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |state| {
             let num_catchers = state >> 1;
             if num_catchers > 1 {
-                Some(num_catchers - 2)
+                Some(state - 2)
             } else {
                 // Last catcher, clear interrupt flag.
                 Some(0)

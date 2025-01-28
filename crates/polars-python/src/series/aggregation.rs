@@ -7,6 +7,10 @@ use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::utils::EnterPolarsExt;
 
+fn scalar_to_py<'py>(scalar: PyResult<Scalar>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+    Ok(Wrap(scalar?.as_any_value()).into_pyobject(py)?)
+}
+
 #[pymethods]
 impl PySeries {
     fn any(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
@@ -39,70 +43,44 @@ impl PySeries {
         py.enter_polars_ok(|| self.series.arg_min())
     }
 
+    fn min<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        scalar_to_py(py.enter_polars(|| self.series.min_reduce()), py)
+    }
+
     fn max<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.max_reduce().map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.max_reduce()), py)
     }
 
     fn mean<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         match self.series.dtype() {
-            Boolean => Wrap(
-                py.allow_threads(|| self.series.cast(&DataType::UInt8).unwrap().mean_reduce())
-                    .as_any_value(),
-            )
-            .into_pyobject(py),
+            Boolean => scalar_to_py(
+                py.enter_polars_ok(|| self.series.cast(&DataType::UInt8).unwrap().mean_reduce()),
+                py,
+            ),
             // For non-numeric output types we require mean_reduce.
-            dt if dt.is_temporal() => Wrap(
-                py.allow_threads(|| self.series.mean_reduce())
-                    .as_any_value(),
-            )
-            .into_pyobject(py),
-            _ => py
-                .allow_threads(|| self.series.mean())
-                .into_pyobject(py)
-                .map_err(Into::into),
+            dt if dt.is_temporal() => {
+                scalar_to_py(py.enter_polars_ok(|| self.series.mean_reduce()), py)
+            },
+            _ => Ok(self.series.mean().into_pyobject(py)?),
         }
     }
 
     fn median<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         match self.series.dtype() {
-            Boolean => Wrap(
-                py.allow_threads(|| self.series.cast(&DataType::UInt8).unwrap().median_reduce())
-                    .map_err(PyPolarsErr::from)?
-                    .as_any_value(),
-            )
-            .into_pyobject(py),
+            Boolean => scalar_to_py(
+                py.enter_polars(|| self.series.cast(&DataType::UInt8).unwrap().median_reduce()),
+                py,
+            ),
             // For non-numeric output types we require median_reduce.
-            dt if dt.is_temporal() => Wrap(
-                py.allow_threads(|| self.series.median_reduce())
-                    .map_err(PyPolarsErr::from)?
-                    .as_any_value(),
-            )
-            .into_pyobject(py),
-            _ => py
-                .allow_threads(|| self.series.median())
-                .into_pyobject(py)
-                .map_err(Into::into),
+            dt if dt.is_temporal() => {
+                scalar_to_py(py.enter_polars(|| self.series.median_reduce()), py)
+            },
+            _ => Ok(self.series.median().into_pyobject(py)?),
         }
     }
 
-    fn min<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.min_reduce().map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
-    }
-
     fn product<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.product().map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.product()), py)
     }
 
     fn quantile<'py>(
@@ -111,73 +89,49 @@ impl PySeries {
         quantile: f64,
         interpolation: Wrap<QuantileMethod>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let bind = py.allow_threads(|| self.series.quantile_reduce(quantile, interpolation.0));
-        let sc = bind.map_err(PyPolarsErr::from)?;
-
-        Wrap(sc.as_any_value()).into_pyobject(py)
+        scalar_to_py(
+            py.enter_polars(|| self.series.quantile_reduce(quantile, interpolation.0)),
+            py,
+        )
     }
 
     fn std<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.std_reduce(ddof).map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.std_reduce(ddof)), py)
     }
 
     fn var<'py>(&self, py: Python<'py>, ddof: u8) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.var_reduce(ddof).map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.var_reduce(ddof)), py)
     }
 
     fn sum<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.sum_reduce().map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.sum_reduce()), py)
     }
 
     fn first<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(py.allow_threads(|| self.series.first()).as_any_value()).into_pyobject(py)
+        scalar_to_py(py.enter_polars_ok(|| self.series.first()), py)
     }
 
     fn last<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(py.allow_threads(|| self.series.last()).as_any_value()).into_pyobject(py)
+        scalar_to_py(py.enter_polars_ok(|| self.series.last()), py)
     }
 
     #[cfg(feature = "approx_unique")]
-    fn approx_n_unique(&self, py: Python) -> Result<IdxSize, PyPolarsErr> {
-        py.allow_threads(|| self.series.approx_n_unique().map_err(PyPolarsErr::from))
+    fn approx_n_unique(&self, py: Python) -> PyResult<IdxSize> {
+        py.enter_polars(|| self.series.approx_n_unique())
     }
 
     #[cfg(feature = "bitwise")]
     fn bitwise_and<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.and_reduce().map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.and_reduce()), py)
     }
 
     #[cfg(feature = "bitwise")]
     fn bitwise_or<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.or_reduce().map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.or_reduce()), py)
     }
 
     #[cfg(feature = "bitwise")]
     fn bitwise_xor<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        Wrap(
-            py.allow_threads(|| self.series.xor_reduce().map_err(PyPolarsErr::from))?
-                .as_any_value(),
-        )
-        .into_pyobject(py)
+        scalar_to_py(py.enter_polars(|| self.series.xor_reduce()), py)
     }
 }

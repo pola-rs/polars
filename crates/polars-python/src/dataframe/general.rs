@@ -298,11 +298,11 @@ impl PyDataFrame {
     }
 
     pub fn is_unique(&self, py: Python) -> PyResult<PySeries> {
-        py.enter_polars_series(|| Ok(self.df.is_unique()?.into_series()))
+        py.enter_polars_series(|| self.df.is_unique())
     }
 
     pub fn is_duplicated(&self, py: Python) -> PyResult<PySeries> {
-        py.enter_polars_series(|| Ok(self.df.is_duplicated()?.into_series()))
+        py.enter_polars_series(|| self.df.is_duplicated())
     }
 
     pub fn equals(&self, py: Python, other: &PyDataFrame, null_equal: bool) -> PyResult<bool> {
@@ -515,7 +515,7 @@ impl PyDataFrame {
         k3: u64,
     ) -> PyResult<PySeries> {
         let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
-        py.enter_polars_series(|| Ok(self.df.hash_rows(Some(hb))?.into_series()))
+        py.enter_polars_series(|| self.df.hash_rows(Some(hb)))
     }
 
     #[pyo3(signature = (keep_names_as, column_names))]
@@ -569,11 +569,9 @@ impl PyDataFrame {
                     validity.set(i, false);
                 }
                 let ca = ca.rechunk();
-                Ok(ca
-                    .with_outer_validity(Some(validity.freeze()))
-                    .into_series())
+                Ok(ca.with_outer_validity(Some(validity.freeze())))
             } else {
-                Ok(ca.into_series())
+                Ok(ca)
             }
         })
     }
@@ -620,7 +618,7 @@ impl PyDataFrame {
                 )
             }?;
 
-            Ok(ca.into_series())
+            Ok(ca)
         })
     }
 }
