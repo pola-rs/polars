@@ -145,7 +145,7 @@ def test_is_in_series() -> None:
     # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
     a = pl.Series("a", [1, 2])
     b = pl.Series("b", [1, 3]).is_in(a)
-    c = pl.Series("c", [1, 3]).is_in(a.to_frame())
+    c = pl.Series("c", [1, 3]).is_in(a.to_frame())  # type: ignore[arg-type]
 
     assert a.name == "a"
     assert_series_equal(b, pl.Series("b", [True, False]))
