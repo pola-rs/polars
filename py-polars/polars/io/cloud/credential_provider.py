@@ -209,7 +209,7 @@ class CredentialProviderAzure(CredentialProvider):
 
         # We don't need the module if we are permitted and able to retrieve the
         # account key from the Azure CLI.
-        if self._try_get_azure_storage_account_key_if_permitted() is None:
+        if self._try_get_azure_storage_account_credentials_if_permitted() is None:
             self._ensure_module_availability()
 
         if self._verbose:
@@ -225,7 +225,9 @@ class CredentialProviderAzure(CredentialProvider):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
-        if (v := self._try_get_azure_storage_account_key_if_permitted()) is not None:
+        if (
+            v := self._try_get_azure_storage_account_credentials_if_permitted()
+        ) is not None:
             return v
 
         # Done like this to bypass mypy, we don't have stubs for azure.identity
@@ -238,7 +240,7 @@ class CredentialProviderAzure(CredentialProvider):
             "bearer_token": token.token,
         }, token.expires_on
 
-    def _try_get_azure_storage_account_key_if_permitted(
+    def _try_get_azure_storage_account_credentials_if_permitted(
         self,
     ) -> CredentialProviderFunctionReturn | None:
         POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(
