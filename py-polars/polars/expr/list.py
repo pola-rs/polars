@@ -6,6 +6,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
+import polars as pl_full
+
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import find_stacklevel
@@ -1074,6 +1076,18 @@ class ExprListNameSpace:
         """
         element = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_index_of_in(element))
+
+    def index_of_in_py(self, element: IntoExpr) -> Expr:
+        element = wrap_expr(parse_into_expression(element, str_as_lit=True))
+        return (
+            self.concat(element)
+            .list.eval(
+                pl_full.element()
+                .slice(0, pl_full.element().len() - 1)
+                .index_of(pl_full.element().last())
+            )
+            .list.first()
+        )
 
     def to_array(self, width: int) -> Expr:
         """
