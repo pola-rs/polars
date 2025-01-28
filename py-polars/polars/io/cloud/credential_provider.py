@@ -113,7 +113,7 @@ class CredentialProviderAWS(CredentialProvider):
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        self._check_module_availability()
+        self._ensure_module_availability()
         self.profile_name = profile_name
         self.region_name = region_name
         self.assume_role = assume_role
@@ -160,7 +160,7 @@ class CredentialProviderAWS(CredentialProvider):
         }, int(expiry.timestamp())
 
     @classmethod
-    def _check_module_availability(cls) -> None:
+    def _ensure_module_availability(cls) -> None:
         if importlib.util.find_spec("boto3") is None:
             msg = "boto3 must be installed to use `CredentialProviderAWS`"
             raise ImportError(msg)
@@ -200,18 +200,17 @@ class CredentialProviderAzure(CredentialProvider):
         msg = "`CredentialProviderAzure` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        self._check_module_availability()
-
         self.account_name = _storage_account
         self.tenant_id = tenant_id
-        # Done like this to bypass mypy, we don't have stubs for azure.identity
-        self.credential = importlib.import_module("azure.identity").__dict__[
-            "DefaultAzureCredential"
-        ]()
         self.scopes = (
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
         )
         self._verbose = _verbose
+
+        # We don't need the module if we are permitted and able to retrieve the
+        # account key from the Azure CLI.
+        if self._try_get_azure_storage_account_key_if_permitted() is None:
+            self._ensure_module_availability()
 
         if self._verbose:
             print(
@@ -226,6 +225,22 @@ class CredentialProviderAzure(CredentialProvider):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
+        if (v := self._try_get_azure_storage_account_key_if_permitted()) is not None:
+            return v
+
+        # Done like this to bypass mypy, we don't have stubs for azure.identity
+        credential = importlib.import_module("azure.identity").__dict__[
+            "DefaultAzureCredential"
+        ]()
+        token = credential.get_token(*self.scopes, tenant_id=self.tenant_id)
+
+        return {
+            "bearer_token": token.token,
+        }, token.expires_on
+
+    def _try_get_azure_storage_account_key_if_permitted(
+        self,
+    ) -> CredentialProviderFunctionReturn | None:
         POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(
             "POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY"
         )
@@ -263,14 +278,10 @@ class CredentialProviderAzure(CredentialProvider):
             else:
                 return creds, None
 
-        token = self.credential.get_token(*self.scopes, tenant_id=self.tenant_id)
-
-        return {
-            "bearer_token": token.token,
-        }, token.expires_on
+        return None
 
     @classmethod
-    def _check_module_availability(cls) -> None:
+    def _ensure_module_availability(cls) -> None:
         if importlib.util.find_spec("azure.identity") is None:
             msg = "azure-identity must be installed to use `CredentialProviderAzure`"
             raise ImportError(msg)
@@ -363,7 +374,7 @@ class CredentialProviderGCP(CredentialProvider):
         msg = "`CredentialProviderGCP` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        self._check_module_availability()
+        self._ensure_module_availability()
 
         import google.auth
         import google.auth.credentials
@@ -407,7 +418,7 @@ class CredentialProviderGCP(CredentialProvider):
         )
 
     @classmethod
-    def _check_module_availability(cls) -> None:
+    def _ensure_module_availability(cls) -> None:
         if importlib.util.find_spec("google.auth") is None:
             msg = "google-auth must be installed to use `CredentialProviderGCP`"
             raise ImportError(msg)
