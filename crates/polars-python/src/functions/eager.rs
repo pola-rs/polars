@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use crate::conversion::{get_df, get_series};
 use crate::error::PyPolarsErr;
 use crate::{PyDataFrame, PySeries};
+use crate::utils::EnterPolarsExt;
 
 #[pyfunction]
 pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
@@ -26,8 +27,8 @@ pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
 
     let identity = || Ok(identity_df.clone());
 
-    let df = py
-        .allow_threads(|| {
+    py
+        .enter_polars_df(|| {
             polars_core::POOL.install(|| {
                 rdfs.into_par_iter()
                     .fold(identity, |acc: PolarsResult<DataFrame>, df| {
@@ -42,9 +43,6 @@ pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
                     })
             })
         })
-        .map_err(PyPolarsErr::from)?;
-
-    Ok(df.into())
 }
 
 #[pyfunction]

@@ -1,6 +1,16 @@
-use pyo3::PyErr;
+use std::panic::AssertUnwindSafe;
 
+use polars::frame::DataFrame;
+use polars::series::Series;
+use polars_error::PolarsResult;
+use pyo3::exceptions::PyKeyboardInterrupt;
+use pyo3::marker::Ungil;
+use pyo3::{Python, PyErr, PyResult};
+use polars_error::signals::{KeyboardInterrupt, catch_keyboard_interrupt};
+
+use crate::dataframe::PyDataFrame;
 use crate::error::PyPolarsErr;
+use crate::series::PySeries;
 
 // was redefined because I could not get feature flags activated?
 #[macro_export]
@@ -33,4 +43,69 @@ macro_rules! apply_method_all_arrow_series2 {
 #[allow(unused)]
 pub(crate) fn to_py_err<E: Into<PyPolarsErr>>(e: E) -> PyErr {
     e.into().into()
+}
+
+pub trait EnterPolarsExt {
+    /// Whenever you have a block of code in the public Python API that
+    /// (potentially) takes a long time, wrap it in enter_polars. This will
+    /// ensure we release the GIL and catch KeyboardInterrupts.
+    /// 
+    /// This not only can increase performance and usability, it can avoid
+    /// deadlocks on the GIL for Python UDFs.
+    fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
+    where
+        F: Ungil + Send + FnOnce() -> Result<T, E>,
+        T: Ungil + Send,
+        E: Ungil + Send + Into<PyPolarsErr>;
+
+    /// Same as enter_polars, but wraps the result in PyResult::Ok, useful
+    /// shorthand for infallible functions.
+    #[inline(always)]
+    fn enter_polars_ok<T, F>(self, f: F) -> PyResult<T>
+    where
+        Self: Sized,
+        F: Ungil + Send + FnOnce() -> T,
+        T: Ungil + Send
+        {
+            self.enter_polars(move || PyResult::Ok(f()))
+        }
+
+    /// Same as enter_polars, but expects a PolarsResult<DataFrame> as return
+    /// which is converted to a PyDataFrame.
+    #[inline(always)]
+    fn enter_polars_df<F>(self, f: F) -> PyResult<PyDataFrame>
+    where
+        Self: Sized,
+        F: Ungil + Send + FnOnce() -> PolarsResult<DataFrame>,
+        {
+            self.enter_polars(f).map(PyDataFrame::new)
+        }
+
+    /// Same as enter_polars, but expects a PolarsResult<Series> as return which
+    /// is converted to a PySeries.
+    #[inline(always)]
+    fn enter_polars_series<F>(self, f: F) -> PyResult<PySeries>
+    where
+        Self: Sized,
+        F: Ungil + Send + FnOnce() -> PolarsResult<Series>,
+        {
+            self.enter_polars(f).map(PySeries::new)
+        }
+}
+
+impl<'a> EnterPolarsExt for Python<'a> {
+    fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
+    where
+        F: Ungil + Send + FnOnce() -> Result<T, E>,
+        T: Ungil + Send,
+        E: Ungil + Send + Into<PyPolarsErr>
+    {
+        self.allow_threads(|| {
+            match catch_keyboard_interrupt(AssertUnwindSafe(f))  {
+                Ok(Ok(ret)) => Ok(ret),
+                Ok(Err(err)) => Err(PyErr::from(err.into())),
+                Err(KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
+            }
+        })
+    }
 }

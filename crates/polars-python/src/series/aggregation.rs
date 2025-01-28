@@ -5,13 +5,14 @@ use DataType::*;
 use super::PySeries;
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
     fn any(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
-        py.allow_threads(|| {
-            let s = self.series.bool().map_err(PyPolarsErr::from)?;
-            Ok(if ignore_nulls {
+        py.enter_polars(|| {
+            let s = self.series.bool()?;
+            PolarsResult::Ok(if ignore_nulls {
                 Some(s.any())
             } else {
                 s.any_kleene()
@@ -20,9 +21,9 @@ impl PySeries {
     }
 
     fn all(&self, py: Python, ignore_nulls: bool) -> PyResult<Option<bool>> {
-        py.allow_threads(|| {
-            let s = self.series.bool().map_err(PyPolarsErr::from)?;
-            Ok(if ignore_nulls {
+        py.enter_polars(|| {
+            let s = self.series.bool()?;
+            PolarsResult::Ok(if ignore_nulls {
                 Some(s.all())
             } else {
                 s.all_kleene()
@@ -30,12 +31,12 @@ impl PySeries {
         })
     }
 
-    fn arg_max(&self, py: Python) -> Option<usize> {
-        py.allow_threads(|| self.series.arg_max())
+    fn arg_max(&self, py: Python) -> PyResult<Option<usize>> {
+        py.enter_polars_ok(|| self.series.arg_max())
     }
 
-    fn arg_min(&self, py: Python) -> Option<usize> {
-        py.allow_threads(|| self.series.arg_min())
+    fn arg_min(&self, py: Python) -> PyResult<Option<usize>> {
+        py.enter_polars_ok(|| self.series.arg_min())
     }
 
     fn max<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

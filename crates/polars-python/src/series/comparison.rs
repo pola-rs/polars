@@ -3,49 +3,32 @@ use pyo3::prelude::*;
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
 use crate::PySeries;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
     fn eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.equal(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+        py.enter_polars_series(|| Ok(self.series.equal(&rhs.series)?.into_series()))
     }
 
     fn neq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.not_equal(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+        py.enter_polars_series(|| Ok(self.series.not_equal(&rhs.series)?.into_series()))
     }
 
     fn gt(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.gt(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+        py.enter_polars_series(|| Ok(self.series.gt(&rhs.series)?.into_series()))
     }
 
     fn gt_eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.gt_eq(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+        py.enter_polars_series(|| Ok(self.series.gt_eq(&rhs.series)?.into_series()))
     }
 
     fn lt(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.lt(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+        py.enter_polars_series(|| Ok(self.series.lt(&rhs.series)?.into_series()))
     }
 
     fn lt_eq(&self, py: Python, rhs: &PySeries) -> PyResult<Self> {
-        let s = py
-            .allow_threads(|| self.series.lt_eq(&rhs.series))
-            .map_err(PyPolarsErr::from)?;
-        Ok(s.into_series().into())
+        py.enter_polars_series(|| Ok(self.series.lt_eq(&rhs.series)?.into_series()))
     }
 }
 
