@@ -82,16 +82,9 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                     // update the inner state
                     unsafe { *self.inner.as_mut() = array_ref };
 
-                    // As an optimization, we don't call APIs that use
-                    // _get_mut() because the additional checks are expensive,
-                    // and this is going to get called for every single value in
-                    // the list series we're iterating over.
-                    let series_mut_inner = Arc::get_mut(&mut series_mut.0);
-                    debug_assert!(series_mut_inner.is_some());
-                    // SAFETY: there should only be one reference, which we
-                    // checked above.
-                    let series_mut_inner = unsafe { series_mut_inner.unwrap_unchecked() };
-
+                    // As an optimization, we try to minimize how many calls to
+                    // _get_inner_mut() we do.
+                    let series_mut_inner = series_mut._get_inner_mut();
                     // last iteration could have set the sorted flag (e.g. in compute_len)
                     series_mut_inner._set_flags(StatisticsFlags::empty());
                     // make sure that the length is correct
