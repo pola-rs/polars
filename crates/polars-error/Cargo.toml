@@ -13,9 +13,9 @@ arrow-format = { workspace = true, optional = true }
 avro-schema = { workspace = true, optional = true }
 object_store = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
+signal-hook = { workspace = true }
 simdutf8 = { workspace = true }
 thiserror = { workspace = true }
-signal-hook = { workspace = true }
 
 [features]
 python = []
