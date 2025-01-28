@@ -39,6 +39,7 @@ jobs:
 
       - name: Disable incompatible features
         env:
+          # Note: If you change this line, you must also copy the change to `release-python.yml`.
           FEATURES: parquet|async|json|extract_jsonpath|catalog|cloud|polars_cloud|tokio|clipboard|decompress|new_streaming
         run: |
           sed -i 's/^  "json",$/  "serde_json",/' crates/polars-python/Cargo.toml
