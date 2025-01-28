@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
 
@@ -81,10 +82,20 @@ impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I>
                     // update the inner state
                     unsafe { *self.inner.as_mut() = array_ref };
 
+                    // As an optimization, we don't call APIs that use
+                    // _get_mut() because the additional checks are expensive,
+                    // and this is going to get called for every single value in
+                    // the list series we're iterating over.
+                    let series_mut_inner = Arc::get_mut(&mut series_mut.0);
+                    debug_assert!(series_mut_inner.is_some());
+                    // SAFETY: there should only be one reference, which we
+                    // checked above.
+                    let series_mut_inner = unsafe { series_mut_inner.unwrap_unchecked() };
+
                     // last iteration could have set the sorted flag (e.g. in compute_len)
-                    series_mut.clear_flags();
+                    series_mut_inner._set_flags(StatisticsFlags::empty());
                     // make sure that the length is correct
-                    series_mut._get_inner_mut().compute_len();
+                    series_mut_inner.compute_len();
                 }
 
                 // SAFETY:
