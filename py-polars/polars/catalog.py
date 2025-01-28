@@ -492,7 +492,7 @@ class SchemaInfo:
     Information for a schema within a catalog.
 
     Note: This does not refer to a table schema. It can instead be understood
-    as a subdirectory underneath a catalog.
+    as a subdirectory within a catalog.
     """
 
     name: str
@@ -523,7 +523,16 @@ class TableInfo:
     updated_by: str | None
 
     def get_polars_schema(self) -> Schema | None:
-        """Get the native polars schema of this table."""
+        """
+        Get the native polars schema of this table.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+        """
+        issue_unstable_warning(
+            "`get_polars_schema` functionality is considered unstable."
+        )
         if self.columns is None:
             return None
 
@@ -551,7 +560,16 @@ class ColumnInfo:
     partition_index: int | None
 
     def get_polars_dtype(self) -> DataType:
-        """Get the native polars datatype of this column."""
+        """
+        Get the native polars datatype of this column.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+        """
+        issue_unstable_warning(
+            "`get_polars_schema` functionality is considered unstable."
+        )
         return PyCatalogClient.type_json_to_polars_type(self.type_json)
 
 
