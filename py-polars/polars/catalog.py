@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+import contextlib
 import importlib
 import os
-from typing import TYPE_CHECKING, Any, Literal, TypedDict
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal
 
+from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
+from polars.exceptions import DuplicateError
+from polars.schema import Schema
 
 if TYPE_CHECKING:
     from datetime import datetime
 
+    from polars._typing import SchemaDict
+    from polars.datatypes.classes import DataType
     from polars.io.cloud import CredentialProviderFunction
     from polars.lazyframe import LazyFrame
 
@@ -46,7 +53,7 @@ class Catalog:
             * "databricks-sdk": Use the Databricks SDK to retrieve and use the
             bearer token from the environment.
         """
-        from polars.polars import PyCatalogClient
+        issue_unstable_warning("`Catalog` functionality is considered unstable.")
 
         if bearer_token == "databricks-sdk" or (
             bearer_token == "auto"
@@ -190,16 +197,11 @@ class Catalog:
 
         """
         table_info = self.get_table_info(catalog_name, schema_name, table_name)
+        storage_location, data_source_format = _extract_location_and_data_format(
+            table_info, "scan table"
+        )
 
-        if (source := table_info.get("storage_location")) is None:
-            msg = "cannot scan catalog table: no storage_location found"
-            raise ValueError(msg)
-
-        if (data_source_format := table_info.get("data_source_format")) is None:
-            msg = "cannot scan catalog table: no data_source_format found"
-            raise ValueError(msg)
-
-        if data_source_format in ["DELTA", "DELTA_SHARING"]:
+        if data_source_format in ["DELTA", "DELTASHARING"]:
             from polars.io.delta import scan_delta
 
             if credential_provider is not None and credential_provider != "auto":
@@ -207,7 +209,7 @@ class Catalog:
                 raise NotImplementedError(msg)
 
             return scan_delta(
-                source,
+                storage_location,
                 version=delta_table_version,
                 delta_table_options=delta_table_options,
                 storage_options=storage_options,
@@ -230,7 +232,10 @@ class Catalog:
         from polars.io.cloud.credential_provider import _maybe_init_credential_provider
 
         credential_provider = _maybe_init_credential_provider(
-            credential_provider, source, storage_options, "Catalog.scan_table"
+            credential_provider,
+            storage_location,
+            storage_options,
+            "Catalog.scan_table",
         )
 
         if storage_options:
@@ -250,37 +255,258 @@ class Catalog:
             )
         )
 
+    def create_catalog(
+        self,
+        catalog_name: str,
+        *,
+        comment: str | None = None,
+        storage_root: str | None = None,
+    ) -> CatalogInfo:
+        """
+        Create a catalog.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        catalog_name
+            Name of the catalog.
+        comment
+            Leaves a comment about the catalog.
+        storage_root
+            Base location at which to store the catalog.
+        """
+        return self._client.create_catalog(
+            catalog_name=catalog_name, comment=comment, storage_root=storage_root
+        )
+
+    def delete_catalog(
+        self,
+        catalog_name: str,
+        *,
+        force: bool = False,
+    ) -> None:
+        """
+        Delete a catalog.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        catalog_name
+            Name of the catalog.
+        force
+            Forcibly delete the catalog even if it is not empty.
+        """
+        self._client.delete_catalog(catalog_name=catalog_name, force=force)
+
+    def create_schema(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        *,
+        comment: str | None = None,
+        storage_root: str | None = None,
+    ) -> SchemaInfo:
+        """
+        Create a schema in the catalog.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        catalog_name
+            Name of the catalog.
+        schema_name
+            Name of the schema.
+        comment
+            Leaves a comment about the table.
+        storage_root
+            Base location at which to store the schema.
+        """
+        return self._client.create_schema(
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            comment=comment,
+            storage_root=storage_root,
+        )
+
+    def delete_schema(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        *,
+        force: bool = False,
+    ) -> None:
+        """
+        Delete a schema in the catalog.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        catalog_name
+            Name of the catalog.
+        schema_name
+            Name of the schema.
+        force
+            Forcibly delete the schema even if it is not empty.
+        """
+        self._client.delete_schema(
+            catalog_name=catalog_name, schema_name=schema_name, force=force
+        )
+
+    def create_table(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        table_name: str,
+        *,
+        schema: SchemaDict | None,
+        table_type: TableType,
+        data_source_format: DataSourceFormat | None = None,
+        comment: str | None = None,
+        storage_root: str | None = None,
+        properties: dict[str, str] | None = None,
+    ) -> TableInfo:
+        """
+        Create a table in the catalog.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        catalog_name
+            Name of the catalog.
+        schema_name
+            Name of the schema.
+        table_name
+            Name of the table.
+        schema
+            Schema of the table.
+        table_type
+            Type of the table
+        data_source_format
+            Storage format of the table.
+        comment
+            Leaves a comment about the table.
+        storage_root
+            Base location at which to store the table.
+        properties
+            Extra key-value metadata to store.
+        """
+        return self._client.create_table(
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            table_name=table_name,
+            schema=schema,
+            table_type=table_type,
+            data_source_format=data_source_format,
+            comment=comment,
+            storage_root=storage_root,
+            properties=list((properties or {}).items()),
+        )
+
+    def delete_table(
+        self,
+        catalog_name: str,
+        schema_name: str,
+        table_name: str,
+    ) -> None:
+        """
+        Delete the table stored at this location.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        catalog_name
+            Name of the catalog.
+        schema_name
+            Name of the schema.
+        table_name
+            Name of the table.
+        """
+        self._client.delete_table(
+            catalog_name=catalog_name,
+            schema_name=schema_name,
+            table_name=table_name,
+        )
+
     @classmethod
     def _get_databricks_token(cls) -> str:
-        cls._ensure_databricks_sdk_available()
+        if importlib.util.find_spec("databricks.sdk") is None:
+            msg = "could not get Databricks token: databricks-sdk is not installed"
+            raise ImportError(msg)
 
         # We code like this to bypass linting
         m = importlib.import_module("databricks.sdk.core").__dict__
 
         return m["DefaultCredentials"]()(m["Config"]())()["Authorization"][7:]
 
-    @staticmethod
-    def _ensure_databricks_sdk_available() -> None:
-        if importlib.util.find_spec("databricks.sdk") is None:
-            msg = "could not get Databricks token: databricks-sdk is not installed"
-            raise ImportError(msg)
+
+def _extract_location_and_data_format(
+    table_info: TableInfo, operation: str
+) -> tuple[str, DataSourceFormat]:
+    if table_info.storage_location is None:
+        msg = f"cannot {operation}: no storage_location found"
+        raise ValueError(msg)
+
+    if table_info.data_source_format is None:
+        msg = f"cannot {operation}: no data_source_format found"
+        raise ValueError(msg)
+
+    return table_info.storage_location, table_info.data_source_format
 
 
-class CatalogInfo(TypedDict):
+@dataclass
+class CatalogInfo:
     """Information for a catalog within a metastore."""
 
     name: str
     comment: str | None
+    properties: dict[str, str]
+    options: dict[str, str]
+    storage_location: str | None
+    created_at: datetime | None
+    created_by: str | None
+    updated_at: datetime | None
+    updated_by: str | None
 
 
-class SchemaInfo(TypedDict):
-    """Information for a schema within a catalog."""
+@dataclass
+class SchemaInfo:
+    """
+    Information for a schema within a catalog.
+
+    Note: This does not refer to a table schema. It can instead be understood
+    as a subdirectory underneath a catalog.
+    """
 
     name: str
     comment: str | None
+    properties: dict[str, str]
+    storage_location: str | None
+    created_at: datetime | None
+    created_by: str | None
+    updated_at: datetime | None
+    updated_by: str | None
 
 
-class TableInfo(TypedDict):
+@dataclass
+class TableInfo:
     """Information for a catalog table."""
 
     name: str
@@ -290,19 +516,46 @@ class TableInfo(TypedDict):
     storage_location: str | None
     data_source_format: DataSourceFormat | None
     columns: list[ColumnInfo] | None
+    properties: dict[str, str]
+    created_at: datetime | None
+    created_by: str | None
+    updated_at: datetime | None
+    updated_by: str | None
+
+    def get_polars_schema(self) -> Schema | None:
+        """Get the native polars schema of this table."""
+        if self.columns is None:
+            return None
+
+        schema = Schema()
+
+        for column_info in self.columns:
+            if column_info.name in schema:
+                msg = f"duplicate column name: {column_info.name}"
+                raise DuplicateError(msg)
+            schema[column_info.name] = column_info.get_polars_dtype()
+
+        return schema
 
 
-class ColumnInfo(TypedDict):
+@dataclass
+class ColumnInfo:
     """Information for a column within a catalog table."""
 
     name: str
+    type_name: str
     type_text: str
-    type_interval_type: str | None
+    type_json: str
     position: int | None
     comment: str | None
     partition_index: int | None
 
+    def get_polars_dtype(self) -> DataType:
+        """Get the native polars datatype of this column."""
+        return PyCatalogClient.type_json_to_polars_type(self.type_json)
 
+
+# TODO: Expose these type aliases to reference guide
 TableType = Literal[
     "MANAGED",
     "EXTERNAL",
@@ -323,7 +576,7 @@ DataSourceFormat = Literal[
     "ORC",
     "TEXT",
     "UNITY_CATALOG",
-    "DELTA_SHARING",
+    "DELTASHARING",
     "DATABRICKS_FORMAT",
     "REDSHIFT_FORMAT",
     "SNOWFLAKE_FORMAT",
@@ -336,3 +589,14 @@ DataSourceFormat = Literal[
     "HIVE_CUSTOM",
     "VECTOR_INDEX_FORMAT",
 ]
+
+# TODO: Move this back up after moving the data models to a separate file
+with contextlib.suppress(ImportError):
+    from polars.polars import PyCatalogClient
+
+    PyCatalogClient.init_classes(
+        catalog_info_cls=CatalogInfo,
+        schema_info_cls=SchemaInfo,
+        table_info_cls=TableInfo,
+        column_info_cls=ColumnInfo,
+    )
