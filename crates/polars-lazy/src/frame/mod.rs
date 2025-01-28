@@ -1848,25 +1848,14 @@ impl LazyFrame {
     where
         S: Into<PlSmallStr>,
     {
-        // The two DataFrames are temporary concatenated
-        // this indicates until which chunk the data is from the left df
-        // this trick allows us to reuse the `Union` architecture to get map over
-        // two DataFrames
         let key = key.into();
-        let left = self.map_private(DslFunction::FunctionIR(FunctionIR::Rechunk));
-        let q = concat(
-            &[left, other],
-            UnionArgs {
-                rechunk: false,
-                parallel: true,
-                ..Default::default()
-            },
-        )?;
-        Ok(
-            q.map_private(DslFunction::FunctionIR(FunctionIR::MergeSorted {
-                column: key,
-            })),
-        )
+
+        let lp = DslPlan::MergeSorted {
+            input_left: Arc::new(self.logical_plan),
+            input_right: Arc::new(other.logical_plan),
+            key,
+        };
+        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
 }
 

@@ -189,6 +189,14 @@ impl Hash for HashableEqLP<'_> {
                 id.hash(state);
                 cache_hits.hash(state);
             },
+            #[cfg(feature = "merge_sorted")]
+            IR::MergeSorted {
+                input_left: _,
+                input_right: _,
+                key,
+            } => {
+                key.hash(state);
+            },
             IR::Invalid => unreachable!(),
         }
     }
