@@ -15,6 +15,7 @@ object_store = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
 thiserror = { workspace = true }
+signal-hook = { workspace = true }
 
 [features]
 python = []
