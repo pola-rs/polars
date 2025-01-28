@@ -299,7 +299,9 @@ def test_join_on_cast() -> None:
         check_dtypes=False,
     )
     assert df_a.lazy().join(
-        df_b.lazy(), on=pl.col("a").cast(pl.Int64)
+        df_b.lazy(),
+        on=pl.col("a").cast(pl.Int64),
+        maintain_order="left",
     ).collect().to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
