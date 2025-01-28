@@ -32,7 +32,7 @@ macro_rules! pydict_insert_keys {
     };
 }
 
-// Result dataclasses
+// Result dataclasses. These are initialized from Python by calling [`PyCatalogClient::init_classes`].
 
 static CATALOG_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
 static SCHEMA_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
