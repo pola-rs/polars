@@ -6,7 +6,7 @@ use super::PySeries;
 use crate::conversion::Wrap;
 use crate::utils::EnterPolarsExt;
 
-fn scalar_to_py<'py>(scalar: PyResult<Scalar>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+fn scalar_to_py(scalar: PyResult<Scalar>, py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
     Wrap(scalar?.as_any_value()).into_pyobject(py)
 }
 

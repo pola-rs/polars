@@ -94,7 +94,7 @@ pub trait EnterPolarsExt {
     }
 }
 
-impl<'a> EnterPolarsExt for Python<'a> {
+impl EnterPolarsExt for Python<'_> {
     fn enter_polars<T, E, F>(self, f: F) -> PyResult<T>
     where
         F: Ungil + Send + FnOnce() -> Result<T, E>,
