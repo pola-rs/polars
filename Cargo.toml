@@ -71,7 +71,6 @@ reqwest = { version = "0.12", default-features = false }
 ryu = "1.0.13"
 serde = { version = "1.0.188", features = ["derive", "rc"] }
 serde_json = "1"
-signal-hook = "0.3"
 simd-json = { version = "0.14", features = ["known-key"] }
 simdutf8 = "0.1.4"
 slotmap = "1"

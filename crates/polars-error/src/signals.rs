@@ -19,6 +19,8 @@ pub fn register_polars_keyboard_interrupt_hook() {
         }
     }));
 
+    // WASM doesn't support signals, so we just skip installing the hook there.
+    #[cfg(not(target_family = "wasm"))]
     unsafe {
         // SAFETY: we only do an atomic op in the signal handler, which is allowed.
         signal_hook::low_level::register(signal_hook::consts::signal::SIGINT, move || {
