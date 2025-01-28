@@ -47,10 +47,6 @@ def test_df_sort_idempotent(df: pl.DataFrame) -> None:
     assert_frame_equal(result, result.sort(cols, maintain_order=True))
 
 
-def is_sorted_any(s: pl.Series) -> bool:
-    return s.flags["SORTED_ASC"] or s.flags["SORTED_DESC"]
-
-
 def test_sort_dates_multiples() -> None:
     df = pl.DataFrame(
         [
