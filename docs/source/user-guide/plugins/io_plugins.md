@@ -9,6 +9,12 @@ any contention.
 E.g. an IO source can read their dataframe's in rust and only at the rendez-vous move the data
 zero-copy having only a short time the GIL is needed.
 
+## Use case
+
+You want IO plugins if you have a source file not supported by Polars and you want to benefit from
+optimizations like projection pushdown, predicate pushdown, early stopping and support of our
+streaming engine.
+
 ## Example
 
 So let's write a simple, very bad, custom CSV source and register that as an IO plugin. I want to
