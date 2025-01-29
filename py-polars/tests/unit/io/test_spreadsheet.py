@@ -12,7 +12,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
-from polars.exceptions import NoDataError, ParameterCollisionError
+from polars.exceptions import NoDataError, ParameterCollisionError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 
@@ -1182,6 +1182,42 @@ def test_excel_write_worksheet_object() -> None:
     ):
         with Workbook(BytesIO()) as wb:
             df.write_excel(None, worksheet=ws)
+
+def test_excel_write_beyond_max_rows_cols() -> None:
+
+    with pytest.raises(InvalidOperationError):
+        path = "/tmp/test.xlsx"
+        sheet = "mysheet"
+        (
+            pl
+            .LazyFrame({
+            "x": "a"
+            })
+            .select(pl.repeat(pl.col("x"), 1048576))
+            .collect()
+            .write_excel(
+                workbook=path,
+                worksheet=sheet,
+            )
+        )
+
+        pl.read_excel(source=path, sheet_name=sheet)
+        
+
+    with pytest.raises(InvalidOperationError):
+        path = "/tmp/test.xlsx"
+        sheet = "mysheet"
+        (
+            pl
+            .DataFrame({
+            "col1": range(10),
+            "col2": range(10, 20)
+            })
+            .write_excel(workbook=path, worksheet=sheet,position="A1048570")
+        )
+
+        pl.read_excel(source=path, sheet_name=sheet)
+
 
 
 def test_excel_freeze_panes() -> None:
