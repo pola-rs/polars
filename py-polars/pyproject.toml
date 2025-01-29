@@ -29,6 +29,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
 ]
 dynamic = ["version"]
 

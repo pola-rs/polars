@@ -11421,6 +11421,11 @@ class DataFrame:
         │ steve  ┆ 42  │
         │ elise  ┆ 44  │
         └────────┴─────┘
+
+        Notes
+        -----
+        No guarantee is given over the output row order when the key is equal
+        between the both dataframes.
         """
         return self.lazy().merge_sorted(other.lazy(), key).collect(_eager=True)
 

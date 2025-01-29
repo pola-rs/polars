@@ -8,6 +8,7 @@ pub mod io_sinks;
 pub mod io_sources;
 pub mod joins;
 pub mod map;
+pub mod merge_sorted;
 pub mod multiplexer;
 pub mod ordered_union;
 pub mod reduce;

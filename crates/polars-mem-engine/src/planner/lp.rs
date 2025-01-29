@@ -607,6 +607,22 @@ fn create_physical_plan_impl(
             let exec = executors::ProjectionSimple { input, columns };
             Ok(Box::new(exec))
         },
+        #[cfg(feature = "merge_sorted")]
+        MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => {
+            let input_left = create_physical_plan_impl(input_left, lp_arena, expr_arena, state)?;
+            let input_right = create_physical_plan_impl(input_right, lp_arena, expr_arena, state)?;
+
+            let exec = executors::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            };
+            Ok(Box::new(exec))
+        },
         Invalid => unreachable!(),
     }
 }

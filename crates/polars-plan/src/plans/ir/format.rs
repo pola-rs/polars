@@ -394,6 +394,19 @@ impl<'a> IRDisplay<'a> {
 
                 self.with_root(*input)._format(f, sub_indent)
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                write!(f, "{:indent$}MERGE SORTED ON '{key}':", "")?;
+                write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                self.with_root(*input_left)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                self.with_root(*input_right)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}END MERGE_SORTED", "")
+            },
             Invalid => write!(f, "{:indent$}INVALID", ""),
         }
     }

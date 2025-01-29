@@ -120,8 +120,12 @@ def test_datetime_range_lazy_time_zones() -> None:
     )
     expected = pl.DataFrame(
         {
-            "start": [datetime(2019, 12, 31, 18, 15, tzinfo=ZoneInfo(key="UTC"))],
-            "stop": [datetime(2020, 1, 1, 18, 15, tzinfo=ZoneInfo(key="UTC"))],
+            "start": [
+                datetime(2020, 1, 1, 00, 00, tzinfo=ZoneInfo(key="Asia/Kathmandu"))
+            ],
+            "stop": [
+                datetime(2020, 1, 2, 00, 00, tzinfo=ZoneInfo(key="Asia/Kathmandu"))
+            ],
             "literal": [
                 datetime(2020, 1, 1, 6, 15, tzinfo=ZoneInfo(key="Pacific/Tarawa"))
             ],
@@ -598,7 +602,7 @@ def test_datetime_range_fast_slow_paths(
     unit: str,
     start: datetime,
 ) -> None:
-    end = pl.select(pl.lit(start).dt.offset_by(f"{n*size}{unit}")).item()
+    end = pl.select(pl.lit(start).dt.offset_by(f"{n * size}{unit}")).item()
     result_slow = pl.datetime_range(
         start,
         end,
