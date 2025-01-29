@@ -8,6 +8,7 @@ use pyo3::types::PyList;
 use rayon::prelude::*;
 
 use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 pub fn field_to_rust_arrow(obj: Bound<'_, PyAny>) -> PyResult<ArrowField> {
     let mut schema = Box::new(ffi::ArrowSchema::empty());
@@ -90,7 +91,7 @@ pub fn to_rust_df(py: Python, rb: &[Bound<PyAny>], schema: Bound<PyAny>) -> PyRe
             // for instance string -> large-utf8
             // dict encoded to categorical
             let columns = if run_parallel {
-                py.allow_threads(|| {
+                py.enter_polars(|| {
                     POOL.install(|| {
                         columns
                             .into_par_iter()

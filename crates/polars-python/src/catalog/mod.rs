@@ -9,7 +9,7 @@ use pyo3::{pyclass, pymethods, Bound, PyObject, PyResult, Python};
 
 use crate::lazyframe::PyLazyFrame;
 use crate::prelude::parse_cloud_options;
-use crate::utils::to_py_err;
+use crate::utils::{to_py_err, EnterPolarsExt};
 
 macro_rules! pydict_insert_keys {
     ($dict:expr, {$a:expr}) => {
@@ -46,11 +46,9 @@ impl PyCatalogClient {
     }
 
     pub fn list_catalogs(&self, py: Python) -> PyResult<PyObject> {
-        let v = py
-            .allow_threads(|| {
-                pl_async::get_runtime().block_on_potential_spawn(self.client().list_catalogs())
-            })
-            .map_err(to_py_err)?;
+        let v = py.enter_polars(|| {
+            pl_async::get_runtime().block_on_potential_spawn(self.client().list_catalogs())
+        })?;
 
         PyList::new(
             py,
@@ -70,12 +68,10 @@ impl PyCatalogClient {
 
     #[pyo3(signature = (catalog_name))]
     pub fn list_schemas(&self, py: Python, catalog_name: &str) -> PyResult<PyObject> {
-        let v = py
-            .allow_threads(|| {
-                pl_async::get_runtime()
-                    .block_on_potential_spawn(self.client().list_schemas(catalog_name))
-            })
-            .map_err(to_py_err)?;
+        let v = py.enter_polars(|| {
+            pl_async::get_runtime()
+                .block_on_potential_spawn(self.client().list_schemas(catalog_name))
+        })?;
 
         PyList::new(
             py,
@@ -100,12 +96,10 @@ impl PyCatalogClient {
         catalog_name: &str,
         schema_name: &str,
     ) -> PyResult<PyObject> {
-        let v = py
-            .allow_threads(|| {
-                pl_async::get_runtime()
-                    .block_on_potential_spawn(self.client().list_tables(catalog_name, schema_name))
-            })
-            .map_err(to_py_err)?;
+        let v = py.enter_polars(|| {
+            pl_async::get_runtime()
+                .block_on_potential_spawn(self.client().list_tables(catalog_name, schema_name))
+        })?;
 
         PyList::new(
             py,
@@ -123,15 +117,13 @@ impl PyCatalogClient {
         schema_name: &str,
         table_name: &str,
     ) -> PyResult<PyObject> {
-        let table_entry = py
-            .allow_threads(|| {
-                pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
-                    catalog_name,
-                    schema_name,
-                    table_name,
-                ))
-            })
-            .map_err(to_py_err)?;
+        let table_entry = py.enter_polars(|| {
+            pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
+                catalog_name,
+                schema_name,
+                table_name,
+            ))
+        })?;
 
         Ok(table_entry_to_pydict(py, table_entry).into())
     }
@@ -147,15 +139,13 @@ impl PyCatalogClient {
         credential_provider: Option<PyObject>,
         retries: usize,
     ) -> PyResult<PyLazyFrame> {
-        let table_info = py
-            .allow_threads(|| {
-                pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
-                    catalog_name,
-                    schema_name,
-                    table_name,
-                ))
-            })
-            .map_err(to_py_err)?;
+        let table_info = py.enter_polars(|| {
+            pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
+                catalog_name,
+                schema_name,
+                table_name,
+            ))
+        })?;
 
         let Some(storage_location) = table_info.storage_location.as_deref() else {
             return Err(PyValueError::new_err(

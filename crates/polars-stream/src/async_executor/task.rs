@@ -8,6 +8,7 @@ use std::task::{Context, Poll, Wake, Waker};
 
 use atomic_waker::AtomicWaker;
 use parking_lot::Mutex;
+use polars_error::signals::try_raise_keyboard_interrupt;
 
 /// The state of the task. Can't be part of the TaskData enum as it needs to be
 /// atomically updateable, even when we hold the lock on the data.
@@ -166,7 +167,10 @@ where
                 // SAFETY: we always store a Task in an Arc and never move it.
                 let fut = unsafe { Pin::new_unchecked(future) };
                 let mut ctx = Context::from_waker(waker);
-                catch_unwind(AssertUnwindSafe(|| fut.poll(&mut ctx)))
+                catch_unwind(AssertUnwindSafe(|| {
+                    try_raise_keyboard_interrupt();
+                    fut.poll(&mut ctx)
+                }))
             },
             TaskData::Cancelled => return true,
             _ => unreachable!("invalid TaskData when polling"),

@@ -10,6 +10,7 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, Wrap};
 
 #[pyclass]
@@ -136,13 +137,7 @@ impl PyBatchedCsv {
 
     fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let reader = &self.reader;
-        let batches = py.allow_threads(move || {
-            reader
-                .lock()
-                .map_err(|e| PyPolarsErr::Other(e.to_string()))?
-                .next_batches(n)
-                .map_err(PyPolarsErr::from)
-        })?;
+        let batches = py.enter_polars(move || reader.lock().unwrap().next_batches(n))?;
 
         // SAFETY: same memory layout
         let batches = unsafe {

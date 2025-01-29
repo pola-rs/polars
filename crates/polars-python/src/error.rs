@@ -23,6 +23,8 @@ use crate::Wrap;
 pub enum PyPolarsErr {
     #[error(transparent)]
     Polars(#[from] PolarsError),
+    #[error(transparent)]
+    Python(#[from] PyErr),
     #[error("{0}")]
     Other(String),
 }
@@ -35,8 +37,6 @@ impl std::convert::From<std::io::Error> for PyPolarsErr {
 
 impl std::convert::From<PyPolarsErr> for PyErr {
     fn from(err: PyPolarsErr) -> PyErr {
-        let default = || PyRuntimeError::new_err(format!("{:?}", &err));
-
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
@@ -79,7 +79,8 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                     PyErr::from(tmp)
                 },
             },
-            _ => default(),
+            Python(err) => err,
+            err => PyRuntimeError::new_err(format!("{:?}", &err)),
         }
     }
 }
@@ -89,6 +90,7 @@ impl Debug for PyPolarsErr {
         use PyPolarsErr::*;
         match self {
             Polars(err) => write!(f, "{err:?}"),
+            Python(err) => write!(f, "{err:?}"),
             Other(err) => write!(f, "BindingsError: {err:?}"),
         }
     }

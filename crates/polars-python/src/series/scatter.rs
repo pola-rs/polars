@@ -3,7 +3,7 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 
 use super::PySeries;
-use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
@@ -11,18 +11,20 @@ impl PySeries {
         // we take the value because we want a ref count of 1 so that we can
         // have mutable access cheaply via _get_inner_mut().
         let s = std::mem::take(&mut self.series);
-        let result = py.allow_threads(|| scatter(s, &idx.series, &values.series));
-        match result {
-            Ok(out) => {
-                self.series = out;
-                Ok(())
-            },
-            Err((s, e)) => {
-                // Restore original series:
-                self.series = s;
-                Err(PyErr::from(PyPolarsErr::from(e)))
-            },
-        }
+        py.enter_polars(|| {
+            let result = scatter(s, &idx.series, &values.series);
+            match result {
+                Ok(out) => {
+                    self.series = out;
+                    Ok(())
+                },
+                Err((s, e)) => {
+                    // Restore original series:
+                    self.series = s;
+                    Err(e)
+                },
+            }
+        })
     }
 }
 
