@@ -834,7 +834,7 @@ impl PyLazyFrame {
 
                         // Pass the node visitor which allows the python callback to replace parts of the query plan.
                         // Remove "cuda" or specify better once we have multiple post-opt callbacks.
-                        // lambda.call1(py, (nt, serialize_options, options, cloud_options)).map_err(
+                        // lambda.call1(py, (nt, options, cloud_options)).map_err(
                         //    |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
                         //)?;
                         lambda.call1(py, (nt,)).map_err(
