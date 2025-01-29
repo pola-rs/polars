@@ -312,16 +312,14 @@ pub fn is_length_preserving_rec(
             partition_by: _,
             order_by: _,
             options,
-        } => match options {
-            WindowType::Over(WindowMapping::Explode) => false,
-            _ => true,
-        },
+        } => !matches!(options, WindowType::Over(WindowMapping::Explode)),
     };
 
     cache.insert(expr_key, ret);
     ret
 }
 
+#[expect(dead_code)]
 pub fn is_length_preserving(
     expr_key: ExprNodeKey,
     expr_arena: &Arena<AExpr>,
@@ -902,7 +900,7 @@ pub fn build_length_preserving_select_stream(
     let already_length_preserving = exprs
         .iter()
         .any(|expr| is_length_preserving_ctx(expr.node(), &mut ctx));
-    if exprs.len() == 0 || already_length_preserving {
+    if exprs.is_empty() || already_length_preserving {
         return build_select_stream_with_ctx(input, exprs, &mut ctx);
     }
 
