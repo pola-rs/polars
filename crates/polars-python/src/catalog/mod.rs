@@ -14,7 +14,8 @@ use pyo3::types::{PyAnyMethods, PyDict, PyList};
 use pyo3::{pyclass, pymethods, Bound, IntoPyObject, Py, PyAny, PyObject, PyResult, Python};
 
 use crate::lazyframe::PyLazyFrame;
-use crate::prelude::{parse_cloud_options, EnterPolarsExt, Wrap};
+use crate::prelude::{parse_cloud_options, Wrap};
+use crate::utils::{to_py_err, EnterPolarsExt};
 
 macro_rules! pydict_insert_keys {
     ($dict:expr, {$a:expr}) => {
@@ -61,8 +62,6 @@ impl PyCatalogClient {
         let v = py.enter_polars(|| {
             pl_async::get_runtime().block_on_potential_spawn(self.client().list_catalogs())
         })?;
-
-        let mut opt_err = None;
 
         let mut opt_err = None;
 
