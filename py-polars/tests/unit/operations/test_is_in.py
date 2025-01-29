@@ -34,7 +34,6 @@ def test_struct_logical_is_in() -> None:
 
     s1 = df1.select(pl.struct(["x", "y"])).to_series()
     s2 = df2.select(pl.struct(["x", "y"])).to_series()
-
     assert s1.is_in(s2).to_list() == [False, False, True, True, True, True, True]
 
 
@@ -146,9 +145,11 @@ def test_is_in_series() -> None:
     # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
     a = pl.Series("a", [1, 2])
     b = pl.Series("b", [1, 3]).is_in(a)
+    c = pl.Series("c", [1, 3]).is_in(a.to_frame())  # type: ignore[arg-type]
 
     assert a.name == "a"
     assert_series_equal(b, pl.Series("b", [True, False]))
+    assert_series_equal(c, pl.Series("c", [True, False]))
 
 
 def test_is_in_null() -> None:

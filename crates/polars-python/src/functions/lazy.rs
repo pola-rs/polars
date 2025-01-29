@@ -11,6 +11,7 @@ use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::map::lazy::binary_lambda;
 use crate::prelude::vec_extract_wrapped;
+use crate::utils::EnterPolarsExt;
 use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
@@ -116,19 +117,16 @@ pub fn col(name: &str) -> PyExpr {
 pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
     use polars_core::utils::rayon::prelude::*;
 
-    let out = py.allow_threads(|| {
+    py.enter_polars(|| {
         polars_core::POOL.install(|| {
             lfs.par_iter()
                 .map(|lf| {
                     let df = lf.ldf.clone().collect()?;
                     Ok(PyDataFrame::new(df))
                 })
-                .collect::<polars_core::error::PolarsResult<Vec<_>>>()
-                .map_err(PyPolarsErr::from)
+                .collect::<PolarsResult<Vec<_>>>()
         })
-    });
-
-    Ok(out?)
+    })
 }
 
 #[pyfunction]

@@ -1366,7 +1366,7 @@ def test_tz_datetime_duration_arithm_5221() -> None:
 def test_auto_infer_time_zone() -> None:
     dt = datetime(2022, 10, 17, 10, tzinfo=ZoneInfo("Asia/Shanghai"))
     s = pl.Series([dt])
-    assert s.dtype == pl.Datetime("us", "UTC")
+    assert s.dtype == pl.Datetime("us", "Asia/Shanghai")
     assert s[0] == dt
 
 

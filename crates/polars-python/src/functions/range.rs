@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::*;
+use crate::utils::EnterPolarsExt;
 use crate::{PyExpr, PySeries};
 
 #[pyfunction]
@@ -32,15 +33,12 @@ pub fn eager_int_range(
         .into());
     }
 
-    let ret = with_match_physical_integer_polars_type!(dtype, |$T| {
+    with_match_physical_integer_polars_type!(dtype, |$T| {
         let start_v: <$T as PolarsNumericType>::Native = lower.extract()?;
         let end_v: <$T as PolarsNumericType>::Native = upper.extract()?;
         let step: i64 = step.extract()?;
-        py.allow_threads(|| new_int_range::<$T>(start_v, end_v, step, PlSmallStr::from_static("literal")))
-    });
-
-    let s = ret.map_err(PyPolarsErr::from)?;
-    Ok(s.into())
+        py.enter_polars_series(|| new_int_range::<$T>(start_v, end_v, step, PlSmallStr::from_static("literal")))
+    })
 }
 
 #[pyfunction]

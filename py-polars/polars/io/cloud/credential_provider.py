@@ -10,6 +10,8 @@ import zoneinfo
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
 
+from polars._utils.various import issue_warning
+
 if TYPE_CHECKING:
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -113,7 +115,7 @@ class CredentialProviderAWS(CredentialProvider):
         msg = "`CredentialProviderAWS` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        self._check_module_availability()
+        self._ensure_module_availability()
         self.profile_name = profile_name
         self.region_name = region_name
         self.assume_role = assume_role
@@ -160,7 +162,7 @@ class CredentialProviderAWS(CredentialProvider):
         }, int(expiry.timestamp())
 
     @classmethod
-    def _check_module_availability(cls) -> None:
+    def _ensure_module_availability(cls) -> None:
         if importlib.util.find_spec("boto3") is None:
             msg = "boto3 must be installed to use `CredentialProviderAWS`"
             raise ImportError(msg)
@@ -200,18 +202,17 @@ class CredentialProviderAzure(CredentialProvider):
         msg = "`CredentialProviderAzure` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        self._check_module_availability()
-
         self.account_name = _storage_account
         self.tenant_id = tenant_id
-        # Done like this to bypass mypy, we don't have stubs for azure.identity
-        self.credential = importlib.import_module("azure.identity").__dict__[
-            "DefaultAzureCredential"
-        ]()
         self.scopes = (
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
         )
         self._verbose = _verbose
+
+        # We don't need the module if we are permitted and able to retrieve the
+        # account key from the Azure CLI.
+        if self._try_get_azure_storage_account_credentials_if_permitted() is None:
+            self._ensure_module_availability()
 
         if self._verbose:
             print(
@@ -226,6 +227,24 @@ class CredentialProviderAzure(CredentialProvider):
 
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
+        if (
+            v := self._try_get_azure_storage_account_credentials_if_permitted()
+        ) is not None:
+            return v
+
+        # Done like this to bypass mypy, we don't have stubs for azure.identity
+        credential = importlib.import_module("azure.identity").__dict__[
+            "DefaultAzureCredential"
+        ]()
+        token = credential.get_token(*self.scopes, tenant_id=self.tenant_id)
+
+        return {
+            "bearer_token": token.token,
+        }, token.expires_on
+
+    def _try_get_azure_storage_account_credentials_if_permitted(
+        self,
+    ) -> CredentialProviderFunctionReturn | None:
         POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(
             "POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY"
         )
@@ -263,14 +282,10 @@ class CredentialProviderAzure(CredentialProvider):
             else:
                 return creds, None
 
-        token = self.credential.get_token(*self.scopes, tenant_id=self.tenant_id)
-
-        return {
-            "bearer_token": token.token,
-        }, token.expires_on
+        return None
 
     @classmethod
-    def _check_module_availability(cls) -> None:
+    def _ensure_module_availability(cls) -> None:
         if importlib.util.find_spec("azure.identity") is None:
             msg = "azure-identity must be installed to use `CredentialProviderAzure`"
             raise ImportError(msg)
@@ -363,7 +378,7 @@ class CredentialProviderGCP(CredentialProvider):
         msg = "`CredentialProviderGCP` functionality is considered unstable"
         issue_unstable_warning(msg)
 
-        self._check_module_availability()
+        self._ensure_module_availability()
 
         import google.auth
         import google.auth.credentials
@@ -407,7 +422,7 @@ class CredentialProviderGCP(CredentialProvider):
         )
 
     @classmethod
-    def _check_module_availability(cls) -> None:
+    def _ensure_module_availability(cls) -> None:
         if importlib.util.find_spec("google.auth") is None:
             msg = "google-auth must be installed to use `CredentialProviderGCP`"
             raise ImportError(msg)
@@ -471,7 +486,7 @@ def _maybe_init_credential_provider(
                     elif k in {"azure_use_azure_cli", "use_azure_cli"}:
                         continue
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
-                        pass
+                        continue
                     else:
                         # We assume some sort of access key was given, so we
                         # just dispatch to the rust side.
@@ -490,7 +505,9 @@ def _maybe_init_credential_provider(
             )
         elif _is_aws_cloud(scheme):
             region = None
+            profile = os.getenv("AWS_PROFILE")
             default_region = None
+            unhandled_key = None
 
             if storage_options is not None:
                 for k, v in storage_options.items():
@@ -501,14 +518,49 @@ def _maybe_init_credential_provider(
                         region = v
                     elif k in {"aws_default_region", "default_region"}:
                         default_region = v
+                    elif k in {"aws_profile", "profile"}:
+                        profile = v
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we
                         # just dispatch to the rust side.
-                        return None
+                        unhandled_key = k
 
-            provider = CredentialProviderAWS(region_name=region or default_region)
+            to_silence_this_warning = (
+                "To silence this warning, pass 'aws_profile': None in "
+                "storage_options, or unset the AWS_PROFILE environment flag."
+            )
+
+            if unhandled_key is not None:
+                if profile is not None:
+                    msg = (
+                        f"the configured AWS profile '{profile}' may be ignored "
+                        "as it is not compatible with the provided "
+                        f"storage_option key '{unhandled_key}'. "
+                        f"{to_silence_this_warning}"
+                    )
+                    issue_warning(msg, UserWarning)
+
+                return None
+
+            try:
+                provider = CredentialProviderAWS(
+                    profile_name=profile, region_name=region or default_region
+                )
+            except ImportError:
+                if profile is not None:
+                    msg = (
+                        f"the configured AWS profile '{profile}' may not "
+                        "be used as boto3 is not installed. "
+                        f"{to_silence_this_warning}"
+                    )
+                    # Conservatively warn instead of hard error. It could just be
+                    # set as a default environment flag.
+                    issue_warning(msg, UserWarning)
+                # Note: Enclosing scope is also within a try-except.
+                raise
+
         elif storage_options is not None and any(
             key.lower() not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
         ):

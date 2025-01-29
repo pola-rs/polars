@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 
@@ -109,7 +109,7 @@ def test_dollar_quoted_literals() -> None:
     assert df.item() == "x$z"
 
 
-def test_intervals() -> None:
+def test_fixed_intervals() -> None:
     with pl.SQLContext(df=None, eager=True) as ctx:
         out = ctx.execute(
             """
@@ -118,8 +118,7 @@ def test_intervals() -> None:
               INTERVAL '1w2h3m4s' AS i1,
               INTERVAL '100ms 100us' AS i2,
               -- long form with/without commas (case-insensitive)
-              INTERVAL '1 week, 2 hours, 3 minutes, 4 seconds' AS i3,
-              INTERVAL '1 QUARTER 2 Months 987 microseconds' AS i4,
+              INTERVAL '1 week, 2 hours, 3 minutes, 4 seconds' AS i3
             FROM df
             """
         )
@@ -128,7 +127,6 @@ def test_intervals() -> None:
                 "i1": [timedelta(weeks=1, hours=2, minutes=3, seconds=4)],
                 "i2": [timedelta(microseconds=100100)],
                 "i3": [timedelta(weeks=1, hours=2, minutes=3, seconds=4)],
-                "i4": [timedelta(days=140, microseconds=987)],
             },
         ).cast(pl.Duration("ns"))
 
@@ -146,6 +144,79 @@ def test_intervals() -> None:
             match="unary ops are not valid on interval strings; found -'7d'",
         ):
             ctx.execute("SELECT INTERVAL -'7d' AS one_week_ago FROM df")
+
+        with pytest.raises(
+            SQLSyntaxError,
+            match="fixed-duration interval cannot contain years, quarters, or months",
+        ):
+            ctx.execute("SELECT INTERVAL '1 quarter 1 month' AS q FROM df")
+
+
+def test_interval_offsets() -> None:
+    df = pl.DataFrame(
+        {
+            "dtm": [
+                datetime(1899, 12, 31, 8),
+                datetime(1999, 6, 8, 10, 30),
+                datetime(2010, 5, 7, 20, 20, 20),
+            ],
+            "dt": [
+                date(1950, 4, 10),
+                date(2048, 1, 20),
+                date(2026, 8, 5),
+            ],
+        }
+    )
+
+    out = df.sql(
+        """
+        SELECT
+            dtm + INTERVAL '2 months, 30 minutes' AS dtm_plus_2mo30m,
+            dt + INTERVAL '100 years' AS dt_plus_100y,
+            dt - INTERVAL '1 quarter' AS dt_minus_1q
+        FROM self
+        ORDER BY 1
+        """
+    )
+    assert out.to_dict(as_series=False) == {
+        "dtm_plus_2mo30m": [
+            datetime(1900, 2, 28, 8, 30),
+            datetime(1999, 8, 8, 11, 0),
+            datetime(2010, 7, 7, 20, 50, 20),
+        ],
+        "dt_plus_100y": [
+            date(2050, 4, 10),
+            date(2148, 1, 20),
+            date(2126, 8, 5),
+        ],
+        "dt_minus_1q": [
+            date(1950, 1, 10),
+            date(2047, 10, 20),
+            date(2026, 5, 5),
+        ],
+    }
+
+
+@pytest.mark.parametrize(
+    ("interval_comparison", "expected_result"),
+    [
+        ("INTERVAL '3 days' <= INTERVAL '3 days, 1 microsecond'", True),
+        ("INTERVAL '3 days, 1 microsecond' <= INTERVAL '3 days'", False),
+        ("INTERVAL '3 months' >= INTERVAL '3 months'", True),
+        ("INTERVAL '2 quarters' < INTERVAL '2 quarters'", False),
+        ("INTERVAL '2 quarters' > INTERVAL '2 quarters'", False),
+        ("INTERVAL '3 years' <=> INTERVAL '3 years'", True),
+        ("INTERVAL '3 years' == INTERVAL '1008 weeks'", False),
+        ("INTERVAL '8 weeks' != INTERVAL '2 months'", True),
+        ("INTERVAL '8 weeks' = INTERVAL '2 months'", False),
+        ("INTERVAL '1 year' != INTERVAL '365 days'", True),
+        ("INTERVAL '1 year' = INTERVAL '1 year'", True),
+    ],
+)
+def test_interval_comparisons(interval_comparison: str, expected_result: bool) -> None:
+    with pl.SQLContext() as ctx:
+        res = ctx.execute(f"SELECT {interval_comparison} AS res")
+        assert res.collect().to_dict(as_series=False) == {"res": [expected_result]}
 
 
 def test_select_literals_no_table() -> None:

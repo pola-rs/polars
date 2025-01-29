@@ -1,15 +1,15 @@
-use std::fmt::{Debug, Formatter};
-use std::io::{Error, ErrorKind};
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+use std::io::{Error as IoError, ErrorKind};
 
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
 use pyo3::exceptions::{
-    PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError, PyRuntimeError,
-    PyUserWarning,
+    PyDeprecationWarning, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
+    PyRuntimeError, PyUserWarning,
 };
 use pyo3::prelude::*;
 use pyo3::PyTypeInfo;
-use thiserror::Error;
 
 use crate::exceptions::{
     CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
@@ -19,24 +19,52 @@ use crate::exceptions::{
 };
 use crate::Wrap;
 
-#[derive(Error)]
 pub enum PyPolarsErr {
-    #[error(transparent)]
-    Polars(#[from] PolarsError),
-    #[error("{0}")]
+    Polars(PolarsError),
+    Python(PyErr),
     Other(String),
 }
 
-impl std::convert::From<std::io::Error> for PyPolarsErr {
-    fn from(value: Error) -> Self {
-        PyPolarsErr::Other(format!("{value:?}"))
+impl Error for PyPolarsErr {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Polars(err) => Some(err),
+            Self::Python(err) => Some(err),
+            Self::Other(_) => None,
+        }
     }
 }
 
-impl std::convert::From<PyPolarsErr> for PyErr {
-    fn from(err: PyPolarsErr) -> PyErr {
-        let default = || PyRuntimeError::new_err(format!("{:?}", &err));
+impl std::fmt::Display for PyPolarsErr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Polars(err) => Display::fmt(err, f),
+            Self::Python(err) => Display::fmt(err, f),
+            Self::Other(err) => write!(f, "{err}"),
+        }
+    }
+}
 
+impl From<PolarsError> for PyPolarsErr {
+    fn from(err: PolarsError) -> Self {
+        PyPolarsErr::Polars(err)
+    }
+}
+
+impl From<PyErr> for PyPolarsErr {
+    fn from(err: PyErr) -> Self {
+        PyPolarsErr::Python(err)
+    }
+}
+
+impl From<IoError> for PyPolarsErr {
+    fn from(err: IoError) -> Self {
+        PyPolarsErr::Other(format!("{err:?}"))
+    }
+}
+
+impl From<PyPolarsErr> for PyErr {
+    fn from(err: PyPolarsErr) -> PyErr {
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
@@ -79,7 +107,8 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                     PyErr::from(tmp)
                 },
             },
-            _ => default(),
+            Python(err) => err,
+            err => PyRuntimeError::new_err(format!("{:?}", &err)),
         }
     }
 }
@@ -89,6 +118,7 @@ impl Debug for PyPolarsErr {
         use PyPolarsErr::*;
         match self {
             Polars(err) => write!(f, "{err:?}"),
+            Python(err) => write!(f, "{err:?}"),
             Other(err) => write!(f, "BindingsError: {err:?}"),
         }
     }
@@ -116,6 +146,7 @@ impl<'py> IntoPyObject<'py> for Wrap<PolarsWarning> {
                 Ok(MapWithoutReturnDtypeWarning::type_object(py).into_any())
             },
             PolarsWarning::UserWarning => Ok(PyUserWarning::type_object(py).into_any()),
+            PolarsWarning::Deprecation => Ok(PyDeprecationWarning::type_object(py).into_any()),
         }
     }
 }

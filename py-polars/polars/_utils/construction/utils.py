@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Callable, get_type_hints
 
@@ -36,20 +35,15 @@ def _get_annotations(obj: type) -> dict[str, Any]:
     return getattr(obj, "__annotations__", {})
 
 
-if sys.version_info >= (3, 10):
-
-    def try_get_type_hints(obj: type) -> dict[str, Any]:
-        try:
-            # often the same as obj.__annotations__, but handles forward references
-            # encoded as string literals, adds Optional[t] if a default value equal
-            # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
-            return get_type_hints(obj)
-        except TypeError:
-            # fallback on edge-cases (eg: InitVar inference on python 3.10).
-            return _get_annotations(obj)
-
-else:
-    try_get_type_hints = _get_annotations
+def try_get_type_hints(obj: type) -> dict[str, Any]:
+    try:
+        # often the same as obj.__annotations__, but handles forward references
+        # encoded as string literals, adds Optional[t] if a default value equal
+        # to None is set and recursively replaces 'Annotated[T, ...]' with 'T'.
+        return get_type_hints(obj)
+    except TypeError:
+        # fallback on edge-cases (eg: InitVar inference on python 3.10).
+        return _get_annotations(obj)
 
 
 @lru_cache(64)

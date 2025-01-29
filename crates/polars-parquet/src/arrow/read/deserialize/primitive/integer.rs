@@ -1,5 +1,5 @@
 use arrow::array::PrimitiveArray;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
@@ -156,13 +156,13 @@ where
 {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = PrimitiveArray<T>;
-    type DecodedState = (Vec<T>, MutableBitmap);
+    type DecodedState = (Vec<T>, BitmapBuilder);
     type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<T>::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
     }
 
@@ -175,10 +175,10 @@ where
             false,
             None,
             None,
-            &mut MutableBitmap::new(),
+            &mut BitmapBuilder::new(),
             &mut self.0.intermediate,
             &mut target,
-            &mut MutableBitmap::new(),
+            &mut BitmapBuilder::new(),
             self.0.decoder,
         )?;
         Ok(PrimitiveArray::new(
@@ -240,7 +240,7 @@ where
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        pred_true_mask: &mut MutableBitmap,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match state.translation {

@@ -1,5 +1,6 @@
 use polars_utils::slice::load_padded_le_u64;
 
+use super::bitmask::BitMask;
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
@@ -234,6 +235,11 @@ impl BitmapBuilder {
         // TODO: we can perhaps use the bitmaps bitcount here instead of
         // recomputing it if it has a known bitcount.
         let (slice, offset, length) = bitmap.as_slice();
+        self.extend_from_slice(slice, offset, length);
+    }
+
+    pub fn extend_from_bitmask(&mut self, bitmap: BitMask<'_>) {
+        let (slice, offset, length) = bitmap.inner();
         self.extend_from_slice(slice, offset, length);
     }
 

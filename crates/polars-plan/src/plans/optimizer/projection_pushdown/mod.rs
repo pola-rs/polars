@@ -841,6 +841,31 @@ impl ProjectionPushDown {
                         .build())
                 }
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                if ctx.has_pushed_down() {
+                    // make sure that the filter column is projected
+                    add_str_to_accumulated(
+                        key.clone(),
+                        &mut ctx.acc_projections,
+                        &mut ctx.projected_names,
+                        expr_arena,
+                    );
+                };
+
+                self.pushdown_and_assign(input_left, ctx.clone(), lp_arena, expr_arena)?;
+                self.pushdown_and_assign(input_right, ctx, lp_arena, expr_arena)?;
+
+                Ok(MergeSorted {
+                    input_left,
+                    input_right,
+                    key,
+                })
+            },
             Invalid => unreachable!(),
         }
     }

@@ -27,6 +27,7 @@ use super::{PySeries, ToSeries};
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::raise_err;
+use crate::utils::EnterPolarsExt;
 
 struct BufferInfo {
     pointer: usize,
@@ -90,7 +91,7 @@ impl PySeries {
     /// Return the underlying values, validity, and offsets buffers as Series.
     fn _get_buffers(&self, py: Python) -> PyResult<(Self, Option<Self>, Option<Self>)> {
         let s = &self.series;
-        py.allow_threads(|| match s.dtype().to_physical() {
+        py.enter_polars(|| match s.dtype().to_physical() {
             dt if dt.is_primitive_numeric() => get_buffers_from_primitive(s),
             DataType::Boolean => get_buffers_from_primitive(s),
             DataType::String => get_buffers_from_string(s),
@@ -326,7 +327,7 @@ impl PySeries {
                     )),
                 };
                 let values = series_to_buffer::<UInt8Type>(values);
-                py.allow_threads(|| from_buffers_string_impl(values, validity, offsets))?
+                py.enter_polars(|| from_buffers_string_impl(values, validity, offsets))?
             },
             dt => {
                 let msg = format!("`_from_buffers` not implemented for `dtype` {dt}");

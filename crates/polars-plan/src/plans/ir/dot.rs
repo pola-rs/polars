@@ -324,6 +324,17 @@ impl<'a> IRDotDisplay<'a> {
                     write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]")
                 })?;
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                self.with_root(*input_left)._format(f, Some(id), last)?;
+                self.with_root(*input_right)._format(f, Some(id), last)?;
+
+                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
+            },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
 

@@ -69,6 +69,8 @@ nav:
       - user-guide/io/hugging-face.md
     - Plugins:
       - user-guide/plugins/index.md
+      - user-guide/plugins/expr_plugins.md
+      - user-guide/plugins/io_plugins.md
     - SQL:
       - user-guide/sql/intro.md
       - user-guide/sql/show.md

@@ -3412,8 +3412,8 @@ class Expr:
         partition_by: IntoExpr | Iterable[IntoExpr],
         *more_exprs: IntoExpr,
         order_by: IntoExpr | Iterable[IntoExpr] | None = None,
-        order_by_descending: bool = False,
-        order_by_nulls_last: bool = False,
+        descending: bool = False,
+        nulls_last: bool = False,
         mapping_strategy: WindowMappingStrategy = "group_to_rows",
     ) -> Expr:
         """
@@ -3436,10 +3436,10 @@ class Expr:
         order_by
             Order the window functions/aggregations with the partitioned groups by the
             result of the expression passed to `order_by`.
-        order_by_descending
+        descending
             In case 'order_by' is given, indicate whether to order in
             ascending or descending order.
-        order_by_nulls_last
+        nulls_last
             In case 'order_by' is given, indicate whether to order
             the nulls in last position.
         mapping_strategy: {'group_to_rows', 'join', 'explode'}
@@ -3579,7 +3579,7 @@ class Expr:
             self._pyexpr.over(
                 partition_by,
                 order_by=order_by,
-                order_by_descending=order_by_descending,
+                order_by_descending=descending,
                 order_by_nulls_last=False,  # does not work yet
                 mapping_strategy=mapping_strategy,
             )
@@ -5815,8 +5815,8 @@ class Expr:
         └───────────┴──────────────────┴──────────┘
         """
         if isinstance(other, Collection) and not isinstance(other, str):
-            if not isinstance(other, (Sequence, pl.Series)):
-                other = list(other)  # eg: set, frozenset
+            if not isinstance(other, (Sequence, pl.Series, pl.DataFrame)):
+                other = list(other)  # eg: set, frozenset, etc
             other = F.lit(pl.Series(other))._pyexpr
         else:
             other = parse_into_expression(other)

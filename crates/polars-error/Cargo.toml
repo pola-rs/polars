@@ -14,7 +14,9 @@ avro-schema = { workspace = true, optional = true }
 object_store = { workspace = true, optional = true }
 regex = { workspace = true, optional = true }
 simdutf8 = { workspace = true }
-thiserror = { workspace = true }
+
+[target.'cfg(not(target_family = "wasm"))'.dependencies]
+signal-hook = "0.3"
 
 [features]
 python = []

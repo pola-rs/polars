@@ -1,6 +1,6 @@
 use arrow::array::Array;
 use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 use arrow::datatypes::ArrowDataType;
 
 use super::{utils, BasicDecompressor, Filter};
@@ -9,9 +9,8 @@ use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage};
 use crate::parquet::read::levels::get_bit_width;
 
-#[derive(Debug)]
 pub struct Nested {
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     length: usize,
     content: NestedContent,
 
@@ -36,7 +35,7 @@ impl Nested {
         // This is because primitive does not keep track of the validity here. It keeps track in
         // the decoder. We do still want to put something so that we can check for nullability by
         // looking at the option.
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(0));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(0));
 
         Self {
             validity,
@@ -50,7 +49,7 @@ impl Nested {
 
     fn list_with_capacity(is_nullable: bool, capacity: usize) -> Self {
         let offsets = Vec::with_capacity(capacity);
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -62,7 +61,7 @@ impl Nested {
     }
 
     fn fixedlist_with_capacity(is_nullable: bool, width: usize, capacity: usize) -> Self {
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -74,7 +73,7 @@ impl Nested {
     }
 
     fn struct_with_capacity(is_nullable: bool, capacity: usize) -> Self {
-        let validity = is_nullable.then(|| MutableBitmap::with_capacity(capacity));
+        let validity = is_nullable.then(|| BitmapBuilder::with_capacity(capacity));
         Self {
             validity,
             length: 0,
@@ -85,7 +84,7 @@ impl Nested {
         }
     }
 
-    fn take(mut self) -> (usize, Vec<i64>, Option<MutableBitmap>) {
+    fn take(mut self) -> (usize, Vec<i64>, Option<BitmapBuilder>) {
         if !matches!(self.content, NestedContent::Primitive) {
             if let Some(validity) = self.validity.as_mut() {
                 validity.extend_constant(self.num_valids, true);
@@ -317,7 +316,7 @@ pub fn init_nested(init: &[InitNested], capacity: usize) -> NestedState {
 }
 
 /// The state of nested data types.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct NestedState {
     /// The nesteds composing `NestedState`.
     nested: Vec<Nested>,
@@ -329,7 +328,7 @@ impl NestedState {
         Self { nested }
     }
 
-    pub fn pop(&mut self) -> Option<(usize, Vec<i64>, Option<MutableBitmap>)> {
+    pub fn pop(&mut self) -> Option<(usize, Vec<i64>, Option<BitmapBuilder>)> {
         Some(self.nested.pop()?.take())
     }
 
@@ -703,7 +702,7 @@ impl<D: utils::Decoder> PageNestedDecoder<D> {
             state.decode(
                 &mut self.decoder,
                 &mut target,
-                &mut MutableBitmap::new(), // This will not get used or filled
+                &mut BitmapBuilder::new(), // This will not get used or filled
                 Some(Filter::Mask(leaf_filter)),
             )?;
 

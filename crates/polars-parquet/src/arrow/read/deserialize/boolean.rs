@@ -1,7 +1,7 @@
 use arrow::array::{BooleanArray, Splitable};
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use polars_compute::filter::filter_boolean_kernel;
 
@@ -78,7 +78,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
 fn decode_required_rle(
     values: HybridRleDecoder<'_>,
     limit: Option<usize>,
-    target: &mut MutableBitmap,
+    target: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     decode_hybrid_rle_into_bitmap(values, limit, target)?;
     Ok(())
@@ -86,7 +86,7 @@ fn decode_required_rle(
 
 fn decode_optional_rle(
     values: HybridRleDecoder<'_>,
-    target: &mut MutableBitmap,
+    target: &mut BitmapBuilder,
     page_validity: &Bitmap,
 ) -> ParquetResult<()> {
     debug_assert!(page_validity.set_bits() <= values.len());
@@ -146,7 +146,7 @@ fn decode_optional_rle(
 
 fn decode_masked_required_rle(
     values: HybridRleDecoder<'_>,
-    target: &mut MutableBitmap,
+    target: &mut BitmapBuilder,
     mask: &Bitmap,
 ) -> ParquetResult<()> {
     debug_assert!(mask.len() <= values.len());
@@ -155,7 +155,7 @@ fn decode_masked_required_rle(
         return decode_required_rle(values, Some(mask.len()), target);
     }
 
-    let mut im_target = MutableBitmap::new();
+    let mut im_target = BitmapBuilder::new();
     decode_required_rle(values, Some(mask.len()), &mut im_target)?;
 
     target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), mask));
@@ -165,7 +165,7 @@ fn decode_masked_required_rle(
 
 fn decode_masked_optional_rle(
     values: HybridRleDecoder<'_>,
-    target: &mut MutableBitmap,
+    target: &mut BitmapBuilder,
     page_validity: &Bitmap,
     mask: &Bitmap,
 ) -> ParquetResult<()> {
@@ -180,7 +180,7 @@ fn decode_masked_optional_rle(
         return decode_masked_required_rle(values, target, mask);
     }
 
-    let mut im_target = MutableBitmap::new();
+    let mut im_target = BitmapBuilder::new();
     decode_optional_rle(values, &mut im_target, page_validity)?;
 
     target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), mask));
@@ -188,14 +188,14 @@ fn decode_masked_optional_rle(
     Ok(())
 }
 
-fn decode_required_plain(values: BitMask<'_>, target: &mut MutableBitmap) -> ParquetResult<()> {
+fn decode_required_plain(values: BitMask<'_>, target: &mut BitmapBuilder) -> ParquetResult<()> {
     target.extend_from_bitmask(values);
     Ok(())
 }
 
 fn decode_optional_plain(
     mut values: BitMask<'_>,
-    target: &mut MutableBitmap,
+    target: &mut BitmapBuilder,
     mut page_validity: Bitmap,
 ) -> ParquetResult<()> {
     debug_assert!(page_validity.set_bits() <= values.len());
@@ -221,7 +221,7 @@ fn decode_optional_plain(
 
 fn decode_masked_required_plain(
     mut values: BitMask,
-    target: &mut MutableBitmap,
+    target: &mut BitmapBuilder,
     mut mask: Bitmap,
 ) -> ParquetResult<()> {
     debug_assert!(mask.len() <= values.len());
@@ -235,7 +235,7 @@ fn decode_masked_required_plain(
         return decode_required_plain(values, target);
     }
 
-    let mut im_target = MutableBitmap::new();
+    let mut im_target = BitmapBuilder::new();
     decode_required_plain(values, &mut im_target)?;
 
     target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), &mask));
@@ -245,7 +245,7 @@ fn decode_masked_required_plain(
 
 fn decode_masked_optional_plain(
     mut values: BitMask<'_>,
-    target: &mut MutableBitmap,
+    target: &mut BitmapBuilder,
     mut page_validity: Bitmap,
     mut mask: Bitmap,
 ) -> ParquetResult<()> {
@@ -274,7 +274,7 @@ fn decode_masked_optional_plain(
         return decode_masked_required_plain(values, target, mask);
     }
 
-    let mut im_target = MutableBitmap::new();
+    let mut im_target = BitmapBuilder::new();
     decode_optional_plain(values, &mut im_target, page_validity)?;
 
     target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), &mask));
@@ -282,7 +282,7 @@ fn decode_masked_optional_plain(
     Ok(())
 }
 
-impl Decoded for (MutableBitmap, MutableBitmap) {
+impl Decoded for (BitmapBuilder, BitmapBuilder) {
     fn len(&self) -> usize {
         self.0.len()
     }
@@ -297,13 +297,13 @@ pub(crate) struct BooleanDecoder;
 impl Decoder for BooleanDecoder {
     type Translation<'a> = StateTranslation<'a>;
     type Dict = BooleanArray;
-    type DecodedState = (MutableBitmap, MutableBitmap);
+    type DecodedState = (BitmapBuilder, BitmapBuilder);
     type Output = BooleanArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
-            MutableBitmap::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
     }
 
@@ -351,7 +351,7 @@ impl Decoder for BooleanDecoder {
         &mut self,
         state: utils::State<'_, Self>,
         (target, validity): &mut Self::DecodedState,
-        _pred_true_mask: &mut MutableBitmap,
+        _pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
         match state.translation {

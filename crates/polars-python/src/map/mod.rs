@@ -17,6 +17,7 @@ use rayon::prelude::*;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::ObjectValue;
+use crate::utils::EnterPolarsExt;
 use crate::{PySeries, Wrap};
 
 pub trait PyPolarsNumericType: PolarsNumericType {}
@@ -124,14 +125,14 @@ fn iterator_to_struct<'a>(
         }
     }
 
-    let fields = py.allow_threads(|| {
+    let fields = py.enter_polars_ok(|| {
         POOL.install(|| {
             field_names_ordered
                 .par_iter()
                 .map(|name| Series::new(name.clone(), struct_fields.get(name).unwrap()))
                 .collect::<Vec<_>>()
         })
-    });
+    })?;
 
     Ok(
         StructChunked::from_series(name, fields[0].len(), fields.iter())

@@ -310,6 +310,10 @@ impl From<AnyValue<'_>> for LiteralValue {
             AnyValue::Date(v) => LiteralValue::Date(v),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(value, tu, tz) => LiteralValue::DateTime(value, tu, tz.cloned()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(value, tu, tz) => {
+                LiteralValue::DateTime(value, tu, tz.as_ref().map(AsRef::as_ref).cloned())
+            },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(value, tu) => LiteralValue::Duration(value, tu),
             #[cfg(feature = "dtype-time")]
@@ -441,6 +445,11 @@ impl Literal for ChronoDuration {
 #[cfg(feature = "dtype-duration")]
 impl Literal for Duration {
     fn lit(self) -> Expr {
+        assert!(
+            self.months() == 0,
+            "Cannot create literal duration that is not of fixed length; found {}",
+            self
+        );
         let ns = self.duration_ns();
         Expr::Literal(LiteralValue::Duration(
             if self.negative() { -ns } else { ns },

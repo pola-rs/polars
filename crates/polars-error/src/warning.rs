@@ -12,6 +12,7 @@ pub unsafe fn set_warning_function(function: WarningFunction) {
 }
 #[derive(Debug)]
 pub enum PolarsWarning {
+    Deprecation,
     UserWarning,
     CategoricalRemappingWarning,
     MapWithoutReturnDtypeWarning,

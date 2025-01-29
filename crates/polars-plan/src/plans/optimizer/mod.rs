@@ -70,6 +70,19 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
 
+    if opt_state.streaming() {
+        polars_warn!(
+            Deprecation,
+            "\
+The old streaming engine is being deprecated and will soon be replaced by the new streaming \
+engine. Starting Polars version 1.23.0 and until the new streaming engine is released, the old \
+streaming engine may become less usable. For people who rely on the old streaming engine, it is \
+suggested to pin your version to before 1.23.0.
+
+More information on the new streaming engine: https://github.com/pola-rs/polars/issues/20947"
+        )
+    }
+
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
