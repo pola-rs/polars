@@ -3514,7 +3514,7 @@ class DataFrame:
             table_finish[0] > excel_max_valid_rows
             or table_finish[1] > excel_max_valid_cols
         ):
-            msg = "Dataframe too large to be compatible with Excel. Exceeds Excel limit of 1048575 rows and/or 16384 columns of data."
+            msg = f"writing {df.height}x{df.width} frame at {position!r} does not fit worksheet dimensions of {excel_max_valid_rows} rows and {excel_max_valid_cols} columns"
             raise InvalidOperationError(msg)
 
         # write table structure and formats into the target sheet
