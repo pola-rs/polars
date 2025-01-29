@@ -900,14 +900,14 @@ pub fn build_length_preserving_select_stream(
     let already_length_preserving = exprs
         .iter()
         .any(|expr| is_length_preserving_ctx(expr.node(), &mut ctx));
-    if exprs.is_empty() || already_length_preserving {
+    let input_schema = &ctx.phys_sm[input.node].output_schema;
+    if exprs.is_empty() || input_schema.is_empty() || already_length_preserving {
         return build_select_stream_with_ctx(input, exprs, &mut ctx);
     }
 
     // Hacky work-around: append an input column with a temporary name, but
     // remove it from the final selector. This should ensure scalars gets zipped
     // back to the input to broadcast them.
-    let input_schema = &ctx.phys_sm[input.node].output_schema;
     let tmp_name = unique_column_name();
     let first_col = ctx.expr_arena.add(AExpr::Column(
         input_schema.iter_names_cloned().next().unwrap(),
