@@ -2812,7 +2812,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cloud_options=storage_options,
             credential_provider=credential_provider,
             retries=retries,
-            callback=callback,
+            lambda_post_opt=callback,
         )
 
     @unstable()

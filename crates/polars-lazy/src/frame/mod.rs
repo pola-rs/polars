@@ -701,6 +701,17 @@ impl LazyFrame {
         physical_plan.execute(&mut state)
     }
 
+    // post_opt: A function that is called after optimization which also sinks the result.
+    // This can be used to modify the IR jit.
+    pub fn _sink_post_opt<P>(self, post_opt: P) -> Result<(), PolarsError>
+    where
+        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
+    {
+        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
+        let _ = physical_plan.execute(&mut state)?;
+        Ok(())
+    }
+
     #[allow(unused_mut)]
     fn prepare_collect(
         self,
@@ -811,7 +822,6 @@ impl LazyFrame {
         path: impl AsRef<Path>,
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
-        lambda_post_opt: Option<PyObject>,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
@@ -820,7 +830,6 @@ impl LazyFrame {
                 cloud_options,
             },
             "collect().write_csv()",
-            lambda_post_opt,
         )
     }
 
@@ -903,12 +912,7 @@ impl LazyFrame {
         feature = "csv",
         feature = "json",
     ))]
-    fn sink(
-        mut self,
-        payload: SinkType,
-        msg_alternative: &str,
-        lambda_post_opt: Option<PyObject>,
-    ) -> Result<(), PolarsError> {
+    fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
         #[cfg(feature = "new_streaming")]
         {
             if self
@@ -923,45 +927,14 @@ impl LazyFrame {
             input: Arc::new(self.logical_plan),
             payload,
         };
-        if let Some(lambda) = lambda_post_opt {
-            /// If we get a callback to run cuda here, short circuit like in collect
-            ldf._collect_post_opt(|root, lp_arena, expr_arena| {
-                Python::with_gil(|py| {
-                    let nt = NodeTraverser::new(
-                        root,
-                        std::mem::take(lp_arena),
-                        std::mem::take(expr_arena),
-                    );
-
-                    // Get a copy of the arena's.
-                    let arenas = nt.get_arenas();
-
-                    // Pass the node visitor which allows the python callback to replace parts of the query plan.
-                    // Remove "cuda" or specify better once we have multiple post-opt callbacks.
-                    // TODO: Make payload [pyclass]-able
-                    lambda.call1(py, (nt, payload)).map_err(
-                        |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
-                    )?;
-
-                    // Unpack the arena's.
-                    // At this point the `nt` is useless.
-
-                    std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
-                    std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
-
-                    Ok(())
-                })
-            })
-        } else {
-            self.opt_state |= OptFlags::STREAMING;
-            let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
-            polars_ensure!(
-                is_streaming,
-                ComputeError: format!("cannot run the whole query in a streaming order; \
-                use `{msg_alternative}` instead", msg_alternative=msg_alternative)
-            );
-            let _ = physical_plan.execute(&mut state)?;
-        };
+        self.opt_state |= OptFlags::STREAMING;
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        polars_ensure!(
+            is_streaming,
+            ComputeError: format!("cannot run the whole query in a streaming order; \
+            use `{msg_alternative}` instead", msg_alternative=msg_alternative)
+        );
+        let _ = physical_plan.execute(&mut state)?;
         Ok(())
     }
 

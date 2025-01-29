@@ -820,7 +820,38 @@ impl PyLazyFrame {
 
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_csv(path, options, cloud_options, lambda_post_opt)
+            if let Some(lambda) = lambda_post_opt {
+                ldf._sink_post_opt(|root, lp_arena, expr_arena| {
+                    Python::with_gil(|py| {
+                        let nt = NodeTraverser::new(
+                            root,
+                            std::mem::take(lp_arena),
+                            std::mem::take(expr_arena),
+                        );
+
+                        // Get a copy of the arena's.
+                        let arenas = nt.get_arenas();
+
+                        // Pass the node visitor which allows the python callback to replace parts of the query plan.
+                        // Remove "cuda" or specify better once we have multiple post-opt callbacks.
+                        // lambda.call1(py, (nt, serialize_options, options, cloud_options)).map_err(
+                        //    |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
+                        //)?;
+                        lambda.call1(py, (nt,)).map_err(
+                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
+                        )?;
+                        // Unpack the arena's.
+                        // At this point the `nt` is useless.
+
+                        std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
+                        std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
+
+                        Ok(())
+                    })
+                })
+            } else {
+                ldf.sink_csv(path, options, cloud_options)
+            }
         })
     }
 
