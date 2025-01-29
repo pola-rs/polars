@@ -1,6 +1,28 @@
 use bytes::Bytes;
 use polars_error::{to_compute_err, PolarsResult};
+use polars_utils::error::TruncateErrorDetail;
 use reqwest::RequestBuilder;
+
+/// Performs the request and attaches the response body to any error messages.
+pub(super) async fn do_request(request: reqwest::RequestBuilder) -> PolarsResult<bytes::Bytes> {
+    let resp = request.send().await.map_err(to_compute_err)?;
+    let opt_err = resp.error_for_status_ref().map(|_| ());
+    let resp_bytes = resp.bytes().await.map_err(to_compute_err)?;
+
+    opt_err.map_err(|e| {
+        to_compute_err(e).wrap_msg(|e| {
+            let body = String::from_utf8_lossy(&resp_bytes);
+
+            format!(
+                "error: {}, response body: {}",
+                e,
+                TruncateErrorDetail(&body)
+            )
+        })
+    })?;
+
+    Ok(resp_bytes)
+}
 
 /// Support for traversing paginated response values that look like:
 /// ```text
@@ -94,9 +116,6 @@ impl PageWalker {
             request
         };
 
-        async { request.send().await?.bytes().await }
-            .await
-            .map(Some)
-            .map_err(to_compute_err)
+        do_request(request).await.map(Some)
     }
 }

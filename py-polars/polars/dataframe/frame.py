@@ -4489,8 +4489,6 @@ class DataFrame:
 
         _check_if_delta_available()
 
-        credential_provider_creds = {}
-
         from deltalake import DeltaTable, write_deltalake
         from deltalake import __version__ as delta_version
         from packaging.version import Version
@@ -4519,6 +4517,8 @@ class DataFrame:
             raise ValueError(msg)
         else:
             credential_provider = None
+
+        credential_provider_creds = {}
 
         if credential_provider is not None:
             credential_provider_creds = _get_credentials_from_provider_expiry_aware(

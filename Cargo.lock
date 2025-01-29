@@ -3158,6 +3158,7 @@ dependencies = [
  "serde_json",
  "simd-json",
  "simdutf8",
+ "strum",
  "strum_macros",
  "tempfile",
  "tokio",
