@@ -78,15 +78,15 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()));
                 Ok(out.into_series())
             },
-            dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(dt, |$T| {
-
-                    let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
+            dt if dt.to_physical().is_primitive_numeric() => {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
+                    let out: ChunkedArray<$T> = ca.to_physical_repr().apply_amortized_generic(|opt_s| {
                             let s = opt_s?;
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.min()
                     });
-                    Ok(out.into_series())
+                    // restore logical type
+                    unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
             _ => Ok(ca
@@ -188,16 +188,15 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()));
                 Ok(out.into_series())
             },
-            dt if dt.is_primitive_numeric() => {
-                with_match_physical_numeric_polars_type!(dt, |$T| {
-
-                    let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
+            dt if dt.to_physical().is_primitive_numeric() => {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
+                    let out: ChunkedArray<$T> = ca.to_physical_repr().apply_amortized_generic(|opt_s| {
                             let s = opt_s?;
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.max()
                     });
-                    Ok(out.into_series())
-
+                    // restore logical type
+                    unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
             _ => Ok(ca
