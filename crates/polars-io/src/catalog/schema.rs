@@ -306,7 +306,7 @@ fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
         },
 
         List(inner) => {
-            if let Some((key_type, value_type)) = opt_get_list_map_type(inner) {
+            if let Some((key_type, value_type)) = get_list_map_type(inner) {
                 format_pl_smallstr!(
                     "map<{},{}>",
                     dtype_to_type_text(key_type)?,
@@ -380,7 +380,7 @@ fn dtype_to_type_name(dtype: &DataType) -> PolarsResult<PlSmallStr> {
         Decimal(..) => S!("DECIMAL"),
 
         List(inner) => {
-            if opt_get_list_map_type(inner).is_some() {
+            if get_list_map_type(inner).is_some() {
                 S!("MAP")
             } else {
                 S!("ARRAY")
@@ -444,7 +444,7 @@ fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
         Decimal(..) => ColumnTypeJsonType::TypeName(dtype_to_type_text(dtype)?),
 
         List(inner) => {
-            let out = if let Some((key_type, value_type)) = opt_get_list_map_type(inner) {
+            let out = if let Some((key_type, value_type)) = get_list_map_type(inner) {
                 ColumnTypeJson {
                     type_: ColumnTypeJsonType::from_static_type_name("map"),
                     key_type: Some(dtype_to_type_json(key_type)?),
@@ -496,7 +496,7 @@ fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
 /// List(Struct(("key", <dtype>), ("value", <dtyoe>))).
 ///
 /// Returns `Option<(key_type, value_type)>`
-fn opt_get_list_map_type(list_inner_dtype: &DataType) -> Option<(&DataType, &DataType)> {
+fn get_list_map_type(list_inner_dtype: &DataType) -> Option<(&DataType, &DataType)> {
     let DataType::Struct(fields) = list_inner_dtype else {
         return None;
     };
