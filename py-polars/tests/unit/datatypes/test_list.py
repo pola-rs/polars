@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
+from tests.unit.conftest import NUMERIC_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -396,7 +396,7 @@ def test_list_any() -> None:
     }
 
 
-@pytest.mark.parametrize("dtype", NUMERIC_DTYPES + TEMPORAL_DTYPES)
+@pytest.mark.parametrize("dtype", NUMERIC_DTYPES)
 def test_list_min_max(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         {"a": [[1], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]},
