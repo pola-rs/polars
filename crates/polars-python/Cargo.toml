@@ -46,7 +46,6 @@ pyo3 = { workspace = true, features = ["abi3-py39", "chrono", "chrono-tz", "mult
 rayon = { workspace = true }
 recursive = { workspace = true }
 serde_json = { workspace = true, optional = true }
-thiserror = { workspace = true }
 
 [dependencies.polars]
 workspace = true

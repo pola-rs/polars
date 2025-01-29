@@ -3039,7 +3039,6 @@ dependencies = [
  "serde",
  "serde_json",
  "strum_macros",
- "thiserror 2.0.9",
  "version_check",
  "xxhash-rust",
 ]
@@ -3082,7 +3081,6 @@ dependencies = [
  "regex",
  "signal-hook",
  "simdutf8",
- "thiserror 2.0.9",
 ]
 
 [[package]]
@@ -3420,7 +3418,6 @@ dependencies = [
  "rayon",
  "recursive",
  "serde_json",
- "thiserror 2.0.9",
  "version_check",
 ]
 
