@@ -254,18 +254,7 @@ def test_sink_ndjson_should_write_same_data(
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize(
-    "streaming",
-    [
-        False,
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="Failing since old streaming engine cannot create skip_batch_predicate #20828"
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("streaming", [False, True])
 def test_parquet_eq_statistics(
     monkeypatch: Any, capfd: Any, tmp_path: Path, streaming: bool
 ) -> None:
