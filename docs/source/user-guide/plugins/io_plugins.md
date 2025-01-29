@@ -2,7 +2,7 @@
 
 Besides [expression plugins](./index.md), we also support IO plugins. These allow you to register
 different file formats as sources to the Polars engines. Because sources can move data zero copy via
-Arrow FFI and sources can produce large chunks of data before returning we've decided to interface
+Arrow FFI and sources can produce large chunks of data before returning, we've decided to interface
 to IO plugins via Python for now, as we don't think the short time the GIL is needed should lead to
 any contention.
 
@@ -56,16 +56,16 @@ Schema([('a', String), ('b', String), ('c', String)])
 ### Writing the source
 
 Next up is the actual source. For this we create an outer and an inner function. The outer function
-`my_scan_csv` is the user facing function and will accept the file name and other potential
-arguments you would need for reading the source. For csv these arguments could be "delimiter",
-"quote_char" and such.
+`my_scan_csv` is the user facing function. This function will accept the file name and other
+potential arguments you would need for reading the source. For csv files, these arguments could be
+"delimiter", "quote_char" and such.
 
 This outer function calls `register_io_source` which accepts a `callable` and a `schema`. The schema
-is the schema of the complete source file (independent of projection pushdown).
+is the Polars schema of the complete source file (independent of projection pushdown).
 
 The callable is a function that will return a generator that produces `pl.DataFrame` objects.
 
-The arguments of this function are always set and it must accept:
+The arguments of this function are predefined and this function must accept:
 
 - `with_columns`
 
