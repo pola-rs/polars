@@ -160,6 +160,7 @@ impl DataType {
             #[cfg(feature = "dtype-i128")]
             ArrowDataType::Int128 => DataType::Int128,
             ArrowDataType::Boolean => DataType::Boolean,
+            ArrowDataType::Float16 => DataType::Float32,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]

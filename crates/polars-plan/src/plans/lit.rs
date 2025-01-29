@@ -445,6 +445,11 @@ impl Literal for ChronoDuration {
 #[cfg(feature = "dtype-duration")]
 impl Literal for Duration {
     fn lit(self) -> Expr {
+        assert!(
+            self.months() == 0,
+            "Cannot create literal duration that is not of fixed length; found {}",
+            self
+        );
         let ns = self.duration_ns();
         Expr::Literal(LiteralValue::Duration(
             if self.negative() { -ns } else { ns },

@@ -26,6 +26,7 @@ use crate::file::{
 #[cfg(feature = "cloud")]
 use crate::prelude::parse_cloud_options;
 use crate::prelude::PyCompatLevel;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {
@@ -97,7 +98,7 @@ impl PyDataFrame {
         });
 
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
-        let df = py.allow_threads(move || {
+        py.enter_polars_df(move || {
             CsvReadOptions::default()
                 .with_path(path)
                 .with_infer_schema_length(infer_schema_length)
@@ -133,9 +134,7 @@ impl PyDataFrame {
                 )
                 .into_reader_with_file_handle(mmap_bytes_r)
                 .finish()
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(df.into())
+        })
     }
 
     #[staticmethod]
@@ -160,10 +159,10 @@ impl PyDataFrame {
             offset,
         });
 
-        let result = match get_either_file(py_f, false)? {
+        match get_either_file(py_f, false)? {
             Py(f) => {
                 let buf = std::io::Cursor::new(f.to_memslice());
-                py.allow_threads(move || {
+                py.enter_polars_df(move || {
                     ParquetReader::new(buf)
                         .with_projection(projection)
                         .with_columns(columns)
@@ -176,7 +175,7 @@ impl PyDataFrame {
                         .finish()
                 })
             },
-            Rust(f) => py.allow_threads(move || {
+            Rust(f) => py.enter_polars_df(move || {
                 ParquetReader::new(f)
                     .with_projection(projection)
                     .with_columns(columns)
@@ -187,9 +186,7 @@ impl PyDataFrame {
                     .set_rechunk(rechunk)
                     .finish()
             }),
-        };
-        let df = result.map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
+        }
     }
 
     #[staticmethod]
@@ -205,7 +202,7 @@ impl PyDataFrame {
         assert!(infer_schema_length != Some(0));
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
-        py.allow_threads(move || {
+        py.enter_polars_df(move || {
             let mut builder = JsonReader::new(mmap_bytes_r)
                 .with_json_format(JsonFormat::Json)
                 .infer_schema_len(infer_schema_length.and_then(NonZeroUsize::new));
@@ -218,8 +215,7 @@ impl PyDataFrame {
                 builder = builder.with_schema_overwrite(&schema.0);
             }
 
-            let out = builder.finish().map_err(PyPolarsErr::from)?;
-            Ok(out.into())
+            builder.finish()
         })
     }
 
@@ -247,10 +243,7 @@ impl PyDataFrame {
             builder = builder.with_schema_overwrite(&schema.0);
         }
 
-        let out = py
-            .allow_threads(move || builder.finish())
-            .map_err(|e| PyPolarsErr::Other(format!("{e}")))?;
-        Ok(out.into())
+        py.enter_polars_df(move || builder.finish())
     }
 
     #[staticmethod]
@@ -272,7 +265,7 @@ impl PyDataFrame {
         let (mmap_bytes_r, mmap_path) = get_mmap_bytes_reader_and_path(&py_f)?;
 
         let mmap_path = if memory_map { mmap_path } else { None };
-        let df = py.allow_threads(move || {
+        py.enter_polars_df(move || {
             IpcReader::new(mmap_bytes_r)
                 .with_projection(projection)
                 .with_columns(columns)
@@ -280,9 +273,7 @@ impl PyDataFrame {
                 .with_row_index(row_index)
                 .memory_mapped(mmap_path)
                 .finish()
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(PyDataFrame::new(df))
+        })
     }
 
     #[staticmethod]
@@ -302,7 +293,7 @@ impl PyDataFrame {
             offset,
         });
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
-        let df = py.allow_threads(move || {
+        py.enter_polars_df(move || {
             IpcStreamReader::new(mmap_bytes_r)
                 .with_projection(projection)
                 .with_columns(columns)
@@ -310,9 +301,7 @@ impl PyDataFrame {
                 .with_row_index(row_index)
                 .set_rechunk(rechunk)
                 .finish()
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(PyDataFrame::new(df))
+        })
     }
 
     #[staticmethod]
@@ -328,15 +317,13 @@ impl PyDataFrame {
         use polars::io::avro::AvroReader;
 
         let file = get_file_like(py_f, false)?;
-        let df = py.allow_threads(move || {
+        py.enter_polars_df(move || {
             AvroReader::new(file)
                 .with_projection(projection)
                 .with_columns(columns)
                 .with_n_rows(n_rows)
                 .finish()
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(PyDataFrame::new(df))
+        })
     }
 
     #[cfg(feature = "csv")]
@@ -387,7 +374,7 @@ impl PyDataFrame {
 
         let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             CsvWriter::new(f)
                 .include_bom(include_bom)
                 .include_header(include_header)
@@ -403,9 +390,7 @@ impl PyDataFrame {
                 .with_null_value(null)
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 
     #[cfg(feature = "parquet")]
@@ -452,7 +437,7 @@ impl PyDataFrame {
         if let Some(partition_by) = partition_by {
             let path = py_f.extract::<String>(py)?;
 
-            py.allow_threads(|| {
+            return py.enter_polars(|| {
                 let write_options = ParquetWriteOptions {
                     compression,
                     statistics: statistics.0,
@@ -468,24 +453,20 @@ impl PyDataFrame {
                     cloud_options.as_ref(),
                     partition_chunk_size_bytes,
                 )
-                .map_err(PyPolarsErr::from)
-            })?;
-
-            return Ok(());
+            });
         };
 
         let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             ParquetWriter::new(BufWriter::new(f))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+                .map(|_| ())
+        })
     }
 
     #[cfg(feature = "json")]
@@ -548,14 +529,12 @@ impl PyDataFrame {
 
         let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             IpcWriter::new(f)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 
     #[cfg(feature = "ipc_streaming")]
@@ -567,14 +546,12 @@ impl PyDataFrame {
         compat_level: PyCompatLevel,
     ) -> PyResult<()> {
         let mut buf = get_file_like(py_f, true)?;
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             IpcStreamWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 
     #[cfg(feature = "avro")]
@@ -588,13 +565,11 @@ impl PyDataFrame {
     ) -> PyResult<()> {
         use polars::io::avro::AvroWriter;
         let mut buf = get_file_like(py_f, true)?;
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             AvroWriter::new(&mut buf)
                 .with_compression(compression.0)
                 .with_name(name)
                 .finish(&mut self.df)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 }

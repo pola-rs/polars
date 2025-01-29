@@ -10,6 +10,8 @@ import zoneinfo
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, Union
 
+from polars._utils.various import issue_warning
+
 if TYPE_CHECKING:
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -484,7 +486,7 @@ def _maybe_init_credential_provider(
                     elif k in {"azure_use_azure_cli", "use_azure_cli"}:
                         continue
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
-                        pass
+                        continue
                     else:
                         # We assume some sort of access key was given, so we
                         # just dispatch to the rust side.
@@ -503,7 +505,9 @@ def _maybe_init_credential_provider(
             )
         elif _is_aws_cloud(scheme):
             region = None
+            profile = os.getenv("AWS_PROFILE")
             default_region = None
+            unhandled_key = None
 
             if storage_options is not None:
                 for k, v in storage_options.items():
@@ -514,14 +518,49 @@ def _maybe_init_credential_provider(
                         region = v
                     elif k in {"aws_default_region", "default_region"}:
                         default_region = v
+                    elif k in {"aws_profile", "profile"}:
+                        profile = v
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
                         continue
                     else:
                         # We assume some sort of access key was given, so we
                         # just dispatch to the rust side.
-                        return None
+                        unhandled_key = k
 
-            provider = CredentialProviderAWS(region_name=region or default_region)
+            to_silence_this_warning = (
+                "To silence this warning, pass 'aws_profile': None in "
+                "storage_options, or unset the AWS_PROFILE environment flag."
+            )
+
+            if unhandled_key is not None:
+                if profile is not None:
+                    msg = (
+                        f"the configured AWS profile '{profile}' may be ignored "
+                        "as it is not compatible with the provided "
+                        f"storage_option key '{unhandled_key}'. "
+                        f"{to_silence_this_warning}"
+                    )
+                    issue_warning(msg, UserWarning)
+
+                return None
+
+            try:
+                provider = CredentialProviderAWS(
+                    profile_name=profile, region_name=region or default_region
+                )
+            except ImportError:
+                if profile is not None:
+                    msg = (
+                        f"the configured AWS profile '{profile}' may not "
+                        "be used as boto3 is not installed. "
+                        f"{to_silence_this_warning}"
+                    )
+                    # Conservatively warn instead of hard error. It could just be
+                    # set as a default environment flag.
+                    issue_warning(msg, UserWarning)
+                # Note: Enclosing scope is also within a try-except.
+                raise
+
         elif storage_options is not None and any(
             key.lower() not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
         ):

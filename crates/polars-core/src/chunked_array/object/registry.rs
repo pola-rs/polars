@@ -123,12 +123,6 @@ pub fn register_object_builder(
     })
 }
 
-pub fn is_object_builder_registered() -> bool {
-    let reg = GLOBAL_OBJECT_REGISTRY.deref();
-    let reg = reg.read().unwrap();
-    reg.is_some()
-}
-
 #[cold]
 pub fn get_object_physical_type() -> ArrowDataType {
     let reg = GLOBAL_OBJECT_REGISTRY.read().unwrap();

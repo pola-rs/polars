@@ -10,6 +10,7 @@ use pyo3::types::{IntoPyDict, PyBytes};
 
 use crate::error::PyPolarsErr;
 use crate::lazyframe::visit::NodeTraverser;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyLazyFrame};
 
 #[pyfunction]
@@ -46,9 +47,7 @@ pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<P
 
     // Execute the plan.
     let mut state = ExecutionState::new();
-    let df = py.allow_threads(|| physical_plan.execute(&mut state).map_err(PyPolarsErr::from))?;
-
-    Ok(df.into())
+    py.enter_polars_df(|| physical_plan.execute(&mut state))
 }
 
 /// Prepare the IR for execution by the Polars GPU engine.

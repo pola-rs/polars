@@ -22,6 +22,7 @@ use crate::map::dataframe::{
 use crate::prelude::strings_to_pl_smallstr;
 use crate::py_modules::polars;
 use crate::series::{PySeries, ToPySeries, ToSeries};
+use crate::utils::EnterPolarsExt;
 use crate::{PyExpr, PyLazyFrame};
 
 #[pymethods]
@@ -48,73 +49,43 @@ impl PyDataFrame {
     }
 
     pub fn add(&self, py: Python, s: &PySeries) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df + &s.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df + &s.series)
     }
 
     pub fn sub(&self, py: Python, s: &PySeries) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df - &s.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
-    pub fn div(&self, py: Python, s: &PySeries) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df / &s.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df - &s.series)
     }
 
     pub fn mul(&self, py: Python, s: &PySeries) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df * &s.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df * &s.series)
+    }
+
+    pub fn div(&self, py: Python, s: &PySeries) -> PyResult<Self> {
+        py.enter_polars_df(|| &self.df / &s.series)
     }
 
     pub fn rem(&self, py: Python, s: &PySeries) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df % &s.series)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df % &s.series)
     }
 
     pub fn add_df(&self, py: Python, s: &Self) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df + &s.df)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df + &s.df)
     }
 
     pub fn sub_df(&self, py: Python, s: &Self) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df - &s.df)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
-    }
-
-    pub fn div_df(&self, py: Python, s: &Self) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df / &s.df)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df - &s.df)
     }
 
     pub fn mul_df(&self, py: Python, s: &Self) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df * &s.df)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df * &s.df)
+    }
+
+    pub fn div_df(&self, py: Python, s: &Self) -> PyResult<Self> {
+        py.enter_polars_df(|| &self.df / &s.df)
     }
 
     pub fn rem_df(&self, py: Python, s: &Self) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| &self.df % &s.df)
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| &self.df % &s.df)
     }
 
     #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
@@ -126,10 +97,7 @@ impl PyDataFrame {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| self.df.sample_n(&n.series, with_replacement, shuffle, seed))
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| self.df.sample_n(&n.series, with_replacement, shuffle, seed))
     }
 
     #[pyo3(signature = (frac, with_replacement, shuffle, seed=None))]
@@ -141,19 +109,18 @@ impl PyDataFrame {
         shuffle: bool,
         seed: Option<u64>,
     ) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| {
-                self.df
-                    .sample_frac(&frac.series, with_replacement, shuffle, seed)
-            })
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| {
+            self.df
+                .sample_frac(&frac.series, with_replacement, shuffle, seed)
+        })
     }
 
-    pub fn rechunk(&self, py: Python) -> Self {
-        let mut df = self.df.clone();
-        py.allow_threads(|| df.as_single_chunk_par());
-        df.into()
+    pub fn rechunk(&self, py: Python) -> PyResult<Self> {
+        py.enter_polars_df(|| {
+            let mut df = self.df.clone();
+            df.as_single_chunk_par();
+            Ok(df)
+        })
     }
 
     /// Format `DataFrame` as String
@@ -212,37 +179,28 @@ impl PyDataFrame {
         let columns = columns.to_series();
         // @scalar-opt
         let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
-        let df = py
-            .allow_threads(|| self.df.hstack(&columns))
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| self.df.hstack(&columns))
     }
 
     pub fn hstack_mut(&mut self, py: Python, columns: Vec<PySeries>) -> PyResult<()> {
         let columns = columns.to_series();
         // @scalar-opt
         let columns = columns.into_iter().map(Into::into).collect::<Vec<_>>();
-        py.allow_threads(|| self.df.hstack_mut(&columns))
-            .map_err(PyPolarsErr::from)?;
+        py.enter_polars(|| self.df.hstack_mut(&columns))?;
         Ok(())
     }
 
     pub fn vstack(&self, py: Python, other: &PyDataFrame) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| self.df.vstack(&other.df))
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| self.df.vstack(&other.df))
     }
 
     pub fn vstack_mut(&mut self, py: Python, other: &PyDataFrame) -> PyResult<()> {
-        py.allow_threads(|| self.df.vstack_mut(&other.df))
-            .map_err(PyPolarsErr::from)?;
+        py.enter_polars(|| self.df.vstack_mut(&other.df))?;
         Ok(())
     }
 
     pub fn extend(&mut self, py: Python, other: &PyDataFrame) -> PyResult<()> {
-        py.allow_threads(|| self.df.extend(&other.df))
-            .map_err(PyPolarsErr::from)?;
+        py.enter_polars(|| self.df.extend(&other.df))?;
         Ok(())
     }
 
@@ -287,23 +245,18 @@ impl PyDataFrame {
     }
 
     pub fn select(&self, py: Python, columns: Vec<PyBackedStr>) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| self.df.select(columns.iter().map(|x| &**x)))
-            .map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
+        py.enter_polars_df(|| self.df.select(columns.iter().map(|x| &**x)))
     }
 
     pub fn gather(&self, py: Python, indices: Wrap<Vec<IdxSize>>) -> PyResult<Self> {
         let indices = indices.0;
         let indices = IdxCa::from_vec("".into(), indices);
-        let df = Python::allow_threads(py, || self.df.take(&indices).map_err(PyPolarsErr::from))?;
-        Ok(PyDataFrame::new(df))
+        py.enter_polars_df(|| self.df.take(&indices))
     }
 
     pub fn gather_with_series(&self, py: Python, indices: &PySeries) -> PyResult<Self> {
         let indices = indices.series.idx().map_err(PyPolarsErr::from)?;
-        let df = Python::allow_threads(py, || self.df.take(indices).map_err(PyPolarsErr::from))?;
-        Ok(PyDataFrame::new(df))
+        py.enter_polars_df(|| self.df.take(indices))
     }
 
     pub fn replace(&mut self, column: &str, new_col: PySeries) -> PyResult<()> {
@@ -328,43 +281,35 @@ impl PyDataFrame {
     }
 
     #[pyo3(signature = (offset, length=None))]
-    pub fn slice(&self, py: Python, offset: i64, length: Option<usize>) -> Self {
-        let df = py.allow_threads(|| {
-            self.df
-                .slice(offset, length.unwrap_or_else(|| self.df.height()))
-        });
-        df.into()
+    pub fn slice(&self, py: Python, offset: i64, length: Option<usize>) -> PyResult<Self> {
+        py.enter_polars_df(|| {
+            Ok(self
+                .df
+                .slice(offset, length.unwrap_or_else(|| self.df.height())))
+        })
     }
 
-    pub fn head(&self, py: Python, n: usize) -> Self {
-        let df = py.allow_threads(|| self.df.head(Some(n)));
-        PyDataFrame::new(df)
+    pub fn head(&self, py: Python, n: usize) -> PyResult<Self> {
+        py.enter_polars_df(|| Ok(self.df.head(Some(n))))
     }
 
-    pub fn tail(&self, py: Python, n: usize) -> Self {
-        let df = py.allow_threads(|| self.df.tail(Some(n)));
-        PyDataFrame::new(df)
+    pub fn tail(&self, py: Python, n: usize) -> PyResult<Self> {
+        py.enter_polars_df(|| Ok(self.df.tail(Some(n))))
     }
 
     pub fn is_unique(&self, py: Python) -> PyResult<PySeries> {
-        let mask = py
-            .allow_threads(|| self.df.is_unique())
-            .map_err(PyPolarsErr::from)?;
-        Ok(mask.into_series().into())
+        py.enter_polars_series(|| self.df.is_unique())
     }
 
     pub fn is_duplicated(&self, py: Python) -> PyResult<PySeries> {
-        let mask = py
-            .allow_threads(|| self.df.is_duplicated())
-            .map_err(PyPolarsErr::from)?;
-        Ok(mask.into_series().into())
+        py.enter_polars_series(|| self.df.is_duplicated())
     }
 
-    pub fn equals(&self, py: Python, other: &PyDataFrame, null_equal: bool) -> bool {
+    pub fn equals(&self, py: Python, other: &PyDataFrame, null_equal: bool) -> PyResult<bool> {
         if null_equal {
-            py.allow_threads(|| self.df.equals_missing(&other.df))
+            py.enter_polars_ok(|| self.df.equals_missing(&other.df))
         } else {
-            py.allow_threads(|| self.df.equals(&other.df))
+            py.enter_polars_ok(|| self.df.equals(&other.df))
         }
     }
 
@@ -375,10 +320,7 @@ impl PyDataFrame {
         name: &str,
         offset: Option<IdxSize>,
     ) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| self.df.with_row_index(name.into(), offset))
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| self.df.with_row_index(name.into(), offset))
     }
 
     pub fn _to_metadata(&self) -> Self {
@@ -452,10 +394,7 @@ impl PyDataFrame {
             variable_name: variable_name.map(|s| s.into()),
         };
 
-        let df = py
-            .allow_threads(|| self.df.unpivot2(args))
-            .map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
+        py.enter_polars_df(|| self.df.unpivot2(args))
     }
 
     #[cfg(feature = "pivot")]
@@ -473,20 +412,17 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let fun = if maintain_order { pivot_stable } else { pivot };
         let agg_expr = aggregate_expr.map(|expr| expr.inner);
-        let df = py
-            .allow_threads(|| {
-                fun(
-                    &self.df,
-                    on,
-                    index,
-                    values,
-                    sort_columns,
-                    agg_expr,
-                    separator,
-                )
-            })
-            .map_err(PyPolarsErr::from)?;
-        Ok(PyDataFrame::new(df))
+        py.enter_polars_df(|| {
+            fun(
+                &self.df,
+                on,
+                index,
+                values,
+                sort_columns,
+                agg_expr,
+                separator,
+            )
+        })
     }
 
     pub fn partition_by(
@@ -496,15 +432,13 @@ impl PyDataFrame {
         maintain_order: bool,
         include_key: bool,
     ) -> PyResult<Vec<Self>> {
-        let out = py
-            .allow_threads(|| {
-                if maintain_order {
-                    self.df.partition_by_stable(by, include_key)
-                } else {
-                    self.df.partition_by(by, include_key)
-                }
-            })
-            .map_err(PyPolarsErr::from)?;
+        let out = py.enter_polars(|| {
+            if maintain_order {
+                self.df.partition_by_stable(by, include_key)
+            } else {
+                self.df.partition_by(by, include_key)
+            }
+        })?;
 
         // SAFETY: PyDataFrame is a repr(transparent) DataFrame.
         Ok(unsafe { std::mem::transmute::<Vec<DataFrame>, Vec<PyDataFrame>>(out) })
@@ -522,22 +456,18 @@ impl PyDataFrame {
         separator: Option<&str>,
         drop_first: bool,
     ) -> PyResult<Self> {
-        let df = py
-            .allow_threads(|| match columns {
-                Some(cols) => self.df.columns_to_dummies(
-                    cols.iter().map(|x| x as &str).collect(),
-                    separator,
-                    drop_first,
-                ),
-                None => self.df.to_dummies(separator, drop_first),
-            })
-            .map_err(PyPolarsErr::from)?;
-        Ok(df.into())
+        py.enter_polars_df(|| match columns {
+            Some(cols) => self.df.columns_to_dummies(
+                cols.iter().map(|x| x as &str).collect(),
+                separator,
+                drop_first,
+            ),
+            None => self.df.to_dummies(separator, drop_first),
+        })
     }
 
-    pub fn null_count(&self, py: Python) -> Self {
-        let df = py.allow_threads(|| self.df.null_count());
-        df.into()
+    pub fn null_count(&self, py: Python) -> PyResult<Self> {
+        py.enter_polars_df(|| Ok(self.df.null_count()))
     }
 
     #[pyo3(signature = (lambda, output_type, inference_size))]
@@ -572,8 +502,8 @@ impl PyDataFrame {
         })
     }
 
-    pub fn shrink_to_fit(&mut self, py: Python) {
-        py.allow_threads(|| self.df.shrink_to_fit());
+    pub fn shrink_to_fit(&mut self, py: Python) -> PyResult<()> {
+        py.enter_polars_ok(|| self.df.shrink_to_fit())
     }
 
     pub fn hash_rows(
@@ -585,10 +515,7 @@ impl PyDataFrame {
         k3: u64,
     ) -> PyResult<PySeries> {
         let hb = PlRandomState::with_seeds(k0, k1, k2, k3);
-        let hash = py
-            .allow_threads(|| self.df.hash_rows(Some(hb)))
-            .map_err(PyPolarsErr::from)?;
-        Ok(hash.into_series().into())
+        py.enter_polars_series(|| self.df.hash_rows(Some(hb)))
     }
 
     #[pyo3(signature = (keep_names_as, column_names))]
@@ -605,10 +532,7 @@ impl PyDataFrame {
         } else {
             None
         };
-        Ok(py
-            .allow_threads(|| self.df.transpose(keep_names_as, new_col_names))
-            .map_err(PyPolarsErr::from)?
-            .into())
+        py.enter_polars_df(|| self.df.transpose(keep_names_as, new_col_names))
     }
 
     pub fn upsample(
@@ -620,19 +544,22 @@ impl PyDataFrame {
         stable: bool,
     ) -> PyResult<Self> {
         let every = Duration::try_parse(every).map_err(PyPolarsErr::from)?;
-        let out = py.allow_threads(|| {
+        py.enter_polars_df(|| {
             if stable {
                 self.df.upsample_stable(by, index_column, every)
             } else {
                 self.df.upsample(by, index_column, every)
             }
-        });
-        let out = out.map_err(PyPolarsErr::from)?;
-        Ok(out.into())
+        })
     }
 
-    pub fn to_struct(&self, py: Python, name: &str, invalid_indices: Vec<usize>) -> PySeries {
-        py.allow_threads(|| {
+    pub fn to_struct(
+        &self,
+        py: Python,
+        name: &str,
+        invalid_indices: Vec<usize>,
+    ) -> PyResult<PySeries> {
+        py.enter_polars_series(|| {
             let ca = self.df.clone().into_struct(name.into());
 
             if !invalid_indices.is_empty() {
@@ -642,17 +569,15 @@ impl PyDataFrame {
                     validity.set(i, false);
                 }
                 let ca = ca.rechunk();
-                ca.with_outer_validity(Some(validity.freeze()))
-                    .into_series()
-                    .into()
+                Ok(ca.with_outer_validity(Some(validity.freeze())))
             } else {
-                ca.into_series().into()
+                Ok(ca)
             }
         })
     }
 
-    pub fn clear(&self, py: Python) -> Self {
-        py.allow_threads(|| self.df.clear()).into()
+    pub fn clear(&self, py: Python) -> PyResult<Self> {
+        py.enter_polars_df(|| Ok(self.df.clear()))
     }
 
     #[allow(clippy::wrong_self_convention)]
@@ -675,7 +600,7 @@ impl PyDataFrame {
         py: Python<'py>,
         opts: Vec<(bool, bool, bool)>,
     ) -> PyResult<PySeries> {
-        py.allow_threads(|| {
+        py.enter_polars_series(|| {
             let name = PlSmallStr::from_static("row_enc");
             let is_unordered = opts.first().is_some_and(|(_, _, v)| *v);
 
@@ -691,10 +616,9 @@ impl PyDataFrame {
                     descending.as_slice(),
                     nulls_last.as_slice(),
                 )
-            }
-            .map_err(PyPolarsErr::from)?;
+            }?;
 
-            Ok(ca.into_series().into())
+            Ok(ca)
         })
     }
 }

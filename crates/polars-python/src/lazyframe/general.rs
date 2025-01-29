@@ -18,6 +18,7 @@ use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
 fn pyobject_to_first_path_and_scan_sources(
@@ -603,20 +604,13 @@ impl PyLazyFrame {
     }
 
     fn profile(&self, py: Python) -> PyResult<(PyDataFrame, PyDataFrame)> {
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        let (df, time_df) = py.allow_threads(|| {
-            let ldf = self.ldf.clone();
-            ldf.profile().map_err(PyPolarsErr::from)
-        })?;
+        let (df, time_df) = py.enter_polars(|| self.ldf.clone().profile())?;
         Ok((df.into(), time_df.into()))
     }
 
     #[pyo3(signature = (lambda_post_opt=None))]
     fn collect(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        let df = py.allow_threads(|| {
+        py.enter_polars_df(|| {
             let ldf = self.ldf.clone();
             if let Some(lambda) = lambda_post_opt {
                 ldf._collect_post_opt(|root, lp_arena, expr_arena| {
@@ -648,9 +642,7 @@ impl PyLazyFrame {
             } else {
                 ldf.collect()
             }
-            .map_err(PyPolarsErr::from)
-        })?;
-        Ok(df.into())
+        })
     }
 
     #[pyo3(signature = (lambda,))]
@@ -718,14 +710,7 @@ impl PyLazyFrame {
             )
         };
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
-            let ldf = self.ldf.clone();
-            ldf.sink_parquet(&path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        py.enter_polars(|| self.ldf.clone().sink_parquet(&path, options, cloud_options))
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
@@ -761,14 +746,7 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
-            let ldf = self.ldf.clone();
-            ldf.sink_ipc(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        py.enter_polars(|| self.ldf.clone().sink_ipc(path, options, cloud_options))
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
@@ -839,14 +817,10 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
             ldf.sink_csv(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -875,20 +849,15 @@ impl PyLazyFrame {
             )
         };
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
             ldf.sink_json(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;
-        Ok(df.into())
+        py.enter_polars_df(|| ldf.fetch(n_rows))
     }
 
     fn filter(&mut self, predicate: PyExpr) -> Self {
@@ -1316,9 +1285,7 @@ impl PyLazyFrame {
     }
 
     fn collect_schema<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let schema = py
-            .allow_threads(|| self.ldf.collect_schema())
-            .map_err(PyPolarsErr::from)?;
+        let schema = py.enter_polars(|| self.ldf.collect_schema())?;
 
         let schema_dict = PyDict::new(py);
         schema.iter_fields().for_each(|fld| {

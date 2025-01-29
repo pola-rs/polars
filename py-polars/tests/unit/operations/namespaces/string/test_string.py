@@ -1824,21 +1824,17 @@ def test_replace_lit_n_char_13385(
 
 
 def test_extract_many() -> None:
-    df = pl.DataFrame({"values": ["discontent"]})
+    df = pl.DataFrame({"values": ["discontent", "foobar"]})
     patterns = ["winter", "disco", "onte", "discontent"]
-    assert (
-        df.with_columns(
-            pl.col("values")
-            .str.extract_many(patterns, overlapping=False)
-            .alias("matches"),
-            pl.col("values")
-            .str.extract_many(patterns, overlapping=True)
-            .alias("matches_overlapping"),
-        )
+    assert df.with_columns(
+        pl.col("values").str.extract_many(patterns, overlapping=False).alias("matches"),
+        pl.col("values")
+        .str.extract_many(patterns, overlapping=True)
+        .alias("matches_overlapping"),
     ).to_dict(as_series=False) == {
-        "values": ["discontent"],
-        "matches": [["disco"]],
-        "matches_overlapping": [["disco", "onte", "discontent"]],
+        "values": ["discontent", "foobar"],
+        "matches": [["disco"], []],
+        "matches_overlapping": [["disco", "onte", "discontent"], []],
     }
 
     # many patterns
@@ -1863,12 +1859,6 @@ def test_extract_many() -> None:
 
     assert_series_equal(f1["values"], f2)
     assert f2.to_list() == [[0], [0, 5]]
-
-
-def test_str_extract_many_wrong_length() -> None:
-    df = pl.DataFrame({"num": ["-10", "-1", "0"]})
-    with pytest.raises(ComputeError, match="should have equal or unit length"):
-        df.select(pl.col("num").str.extract_many(pl.Series(["a", "b"])))
 
 
 def test_json_decode_raise_on_data_type_mismatch_13061() -> None:
