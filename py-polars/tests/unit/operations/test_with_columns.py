@@ -174,3 +174,10 @@ def test_with_columns_invalid_type() -> None:
         TypeError, match="cannot create expression literal for value of type LazyFrame"
     ):
         lf.with_columns(lf)  # type: ignore[arg-type]
+
+
+def test_with_columns_scalar_20981() -> None:
+    expected = pl.DataFrame({"a": [2.0, 2.0, 2.0]})
+    lf = pl.LazyFrame({"a": [1.0, 2.0, 3.0]})
+    assert_frame_equal(lf.with_columns(a=2.0).collect(), expected)
+    assert_frame_equal(lf.with_columns(pl.col.a.mean()).collect(), expected)
