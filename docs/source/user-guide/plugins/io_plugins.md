@@ -23,10 +23,10 @@ stress that this is a very bad example and is only given for learning purposes.
 First we define some imports we need:
 
 ```python
-# use python for csv parsing
+# Use python for csv parsing.
 import csv
 import polars as pl
-# Used to register a new generator on every instantiation
+# Used to register a new generator on every instantiation.
 from polars.io.plugins import register_io_source
 from typing import Iterator
 import io
@@ -128,12 +128,12 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
             n_rows -= df.height
 
             # If we would make a performant reader, we would not read these
-            # columns at all
+            # columns at all.
             if with_columns is not None:
                 df = df.select(with_columns)
 
             # If the source supports predicate pushdown, the expression can be parsed
-            # to skip rows/groups
+            # to skip rows/groups.
             if predicate is not None:
                 df = df.filter(predicate)
 
