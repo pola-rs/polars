@@ -28,7 +28,8 @@ pub struct MergeSortedNode {
     state: State,
 
     seq: MorselSeq,
-    max_seq_sent: MorselSeq,
+
+    starting_nulls: bool,
 
     // Not yet merged buffers.
     left_unmerged: VecDeque<DataFrame>,
@@ -46,15 +47,12 @@ impl MergeSortedNode {
             state: State::Merging,
 
             seq: MorselSeq::default(),
-            max_seq_sent: MorselSeq::default(),
+
+            starting_nulls: false,
 
             left_unmerged: VecDeque::new(),
             right_unmerged: VecDeque::new(),
         }
-    }
-
-    fn has_buffered_data(&self) -> bool {
-        !self.left_unmerged.is_empty() || !self.right_unmerged.is_empty()
     }
 }
 
@@ -84,7 +82,7 @@ impl ComputeNode for MergeSortedNode {
         }
 
         if recv[0] == PortState::Done || recv[1] == PortState::Done {
-            if self.has_buffered_data() {
+            if !self.left_unmerged.is_empty() || !self.right_unmerged.is_empty() {
                 self.state = State::Flushing;
             } else {
                 self.state = State::Piping;
@@ -98,13 +96,18 @@ impl ComputeNode for MergeSortedNode {
                 recv[0] = PortState::Blocked;
                 recv[1] = PortState::Blocked;
             },
-            State::Merging
-                if recv[0] == PortState::Blocked
-                    && recv[1] == PortState::Blocked
-                    && !self.has_buffered_data() =>
-            {
+
+            // If one input side is blocked and we haven't buffered anything for that side, we
+            // block the other ports as well.
+            State::Merging if recv[0] == PortState::Blocked && self.left_unmerged.is_empty() => {
                 send[0] = PortState::Blocked;
+                recv[1] = PortState::Blocked;
             },
+            State::Merging if recv[1] == PortState::Blocked && self.right_unmerged.is_empty() => {
+                send[0] = PortState::Blocked;
+                recv[0] = PortState::Blocked;
+            },
+
             State::Merging => {
                 if recv[0] != PortState::Blocked {
                     recv[0] = PortState::Ready;
@@ -149,9 +152,6 @@ impl ComputeNode for MergeSortedNode {
             },
         }
 
-        // Set the morsel offset one higher than any sent so far.
-        self.seq = self.max_seq_sent.successor();
-
         Ok(())
     }
 
@@ -167,7 +167,7 @@ impl ComputeNode for MergeSortedNode {
         assert_eq!(send_ports.len(), 1);
 
         let seq = &mut self.seq;
-        let max_seq_sent = &mut self.max_seq_sent;
+        let starting_nulls = &mut self.starting_nulls;
         let key_column_idx = self.key_column_idx;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
@@ -208,12 +208,12 @@ impl ComputeNode for MergeSortedNode {
 
                 let _source_token = source_token.clone();
                 join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                    let mut is_stopped = false;
+                    let mut trigger_phase_transition = false;
                     let source_token = _source_token;
 
                     loop {
                         if source_token.stop_requested() {
-                            is_stopped = true;
+                            trigger_phase_transition = true;
                         }
 
                         // If we have morsels from both input ports, find until where we can merge
@@ -236,6 +236,27 @@ impl ComputeNode for MergeSortedNode {
                             let left_key = &left[key_column_idx];
                             let right_key = &right[key_column_idx];
 
+                            let left_null_count = left_key.null_count();
+                            let right_null_count = right_key.null_count();
+
+                            let has_nulls = left_null_count > 0 || right_null_count > 0;
+
+                            // If we are on the first morsel we need to decide whether we have
+                            // nulls first or not.
+                            if seq.to_u64() == 0
+                                && has_nulls
+                                && (left_key.head(Some(1)).has_nulls()
+                                    || right_key.head(Some(1)).has_nulls())
+                            {
+                                *starting_nulls = true;
+                            }
+
+                            // For both left and right, find row index of the minimum of the maxima
+                            // of the left and right key columns. We can savely merge until this
+                            // point.
+                            let mut left_cutoff = left.height();
+                            let mut right_cutoff = right.height();
+
                             let left_key_last = left_key.tail(Some(1));
                             let right_key_last = right_key.tail(Some(1));
 
@@ -243,29 +264,49 @@ impl ComputeNode for MergeSortedNode {
                             assert!(!left_key_last.is_empty());
                             assert!(!right_key_last.is_empty());
 
-                            // For both left and right, find row index of the minimum of the maxima
-                            // of the left and right key columns. We can savely merge until this
-                            // point.
-                            let mut left_cutoff = left.height();
-                            let mut right_cutoff = right.height();
-                            if left_key_last.lt(&right_key_last)?.all() {
+                            if has_nulls {
+                                if *starting_nulls {
+                                    // If there are starting nulls do those first, then repeat
+                                    // without the nulls.
+                                    left_cutoff = left_null_count;
+                                    right_cutoff = right_null_count;
+                                } else {
+                                    // If there are ending nulls then first do things without the
+                                    // nulls and then repeat with only the nulls the nulls.
+                                    let left_is_all_nulls = left_null_count == left.height();
+                                    let right_is_all_nulls = right_null_count == right.height();
+
+                                    match (left_is_all_nulls, right_is_all_nulls) {
+                                        (false, false) => {
+                                            let left_nulls;
+                                            let right_nulls;
+                                            (left, left_nulls) = left
+                                                .split_at((left.height() - left_null_count) as i64);
+                                            (right, right_nulls) = right.split_at(
+                                                (right.height() - right_null_count) as i64,
+                                            );
+
+                                            left_unmerged.push_front(left_nulls);
+                                            left_unmerged.push_front(left);
+                                            right_unmerged.push_front(right_nulls);
+                                            right_unmerged.push_front(right);
+                                            continue;
+                                        },
+                                        (true, false) => left_cutoff = 0,
+                                        (false, true) => right_cutoff = 0,
+                                        (true, true) => {},
+                                    }
+                                }
+                            } else if left_key_last.lt(&right_key_last)?.all() {
                                 // @TODO: This is essentially search sorted, but that does not
                                 // support categoricals at moment.
-                                // @TODO: Does this work for nulls?
-                                right_cutoff = right_key
-                                    .gt(&left_key_last)?
-                                    .downcast_into_array()
-                                    .values()
-                                    .leading_zeros();
+                                let gt_mask = right_key.gt(&left_key_last)?.downcast_into_array();
+                                right_cutoff = gt_mask.values().leading_zeros();
                             } else if left_key_last.gt(&right_key_last)?.all() {
                                 // @TODO: This is essentially search sorted, but that does not
                                 // support categoricals at moment.
-                                // @TODO: Does this work for nulls?
-                                left_cutoff = left_key
-                                    .gt(&right_key_last)?
-                                    .downcast_into_array()
-                                    .values()
-                                    .leading_zeros();
+                                let gt_mask = left_key.gt(&right_key_last)?.downcast_into_array();
+                                left_cutoff = gt_mask.values().leading_zeros();
                             }
 
                             let left_mergeable: DataFrame;
@@ -291,7 +332,7 @@ impl ComputeNode for MergeSortedNode {
                             }
                         }
 
-                        if is_stopped {
+                        if trigger_phase_transition {
                             buffer_port(&mut left, left_unmerged).await;
                             buffer_port(&mut right, right_unmerged).await;
                             return Ok(());
@@ -305,7 +346,7 @@ impl ComputeNode for MergeSortedNode {
 
                         // Try to get a new morsel from the empty side.
                         let Ok(received_unmerged) = empty_port.recv().await else {
-                            is_stopped = true;
+                            trigger_phase_transition = true;
                             continue;
                         };
                         empty_unmerged.push_back(received_unmerged.into_df());
@@ -407,7 +448,7 @@ impl ComputeNode for MergeSortedNode {
                     .map(|(mut recv, mut send)| {
                         let morsel_offset = *seq;
                         scope.spawn_task(TaskPriority::High, async move {
-                            let mut max_seq = MorselSeq::new(0);
+                            let mut max_seq = morsel_offset;
                             while let Ok(mut morsel) = recv.recv().await {
                                 // Ensure the morsel sequence id stream is monotonic.
                                 let seq = morsel.seq().offset_by(morsel_offset);
@@ -426,7 +467,7 @@ impl ComputeNode for MergeSortedNode {
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     // Update our global maximum.
                     for handle in inner_handles {
-                        *max_seq_sent = (*max_seq_sent).max(handle.await);
+                        *seq = (*seq).max(handle.await);
                     }
                     Ok(())
                 }));
