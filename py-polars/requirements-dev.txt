@@ -53,6 +53,8 @@ gevent
 matplotlib
 # Testing
 hypothesis
+# Miscellaneous
+orjson
 
 # -------
 # TOOLING

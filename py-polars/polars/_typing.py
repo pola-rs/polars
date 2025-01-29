@@ -6,6 +6,7 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
+    Callable,
     Literal,
     Protocol,
     TypedDict,
@@ -314,3 +315,5 @@ FileSource: TypeAlias = Union[
     list[IO[bytes]],
     list[bytes],
 ]
+
+JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]
