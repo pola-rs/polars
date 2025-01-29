@@ -1,15 +1,10 @@
 import pytest
+from hypothesis import given
 
 import polars as pl
-<<<<<<< HEAD
 from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
-=======
-from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
-
-from hypothesis import given
->>>>>>> 3d05c390c2 (finalize)
 
 left = pl.DataFrame({"a": [42, 13, 37], "b": [3, 8, 9]})
 right = pl.DataFrame({"a": [5, 10, 1996], "b": [1, 5, 7]})
@@ -93,20 +88,20 @@ def test_merge_sorted_categorical() -> None:
     ],
 )
 def test_merge_sorted_unbalanced(size: int, ra: list[int]) -> None:
-    l = pl.DataFrame(
+    lhs = pl.DataFrame(
         [
             pl.Series("a", range(size), pl.Int32),
             pl.Series("b", range(size), pl.Int32),
         ]
     )
-    r = pl.DataFrame(
+    rhs = pl.DataFrame(
         [
             pl.Series("a", ra, pl.Int32),
             pl.Series("b", [x * 7 for x in range(len(ra))], pl.Int32),
         ]
     )
 
-    lf = l.lazy().merge_sorted(r.lazy(), "a")
+    lf = lhs.lazy().merge_sorted(rhs.lazy(), "a")
     df = lf.collect(new_streaming=True)  # type: ignore[call-overload]
 
     nulls_last = ra[0] is not None
@@ -114,24 +109,26 @@ def test_merge_sorted_unbalanced(size: int, ra: list[int]) -> None:
     assert df.height == size + len(ra)
     assert df.get_column("a").is_sorted(nulls_last=nulls_last)
 
-    reference = l.get_column("a").append(r.get_column("a")).sort(nulls_last=nulls_last)
+    reference = (
+        lhs.get_column("a").append(rhs.get_column("a")).sort(nulls_last=nulls_last)
+    )
     assert_series_equal(df.get_column("a"), reference)
 
 
 @given(
-    l=series(
+    lhs=series(
         name="a", allowed_dtypes=[pl.Int32], allow_null=False
     ),  # Nulls see: https://github.com/pola-rs/polars/issues/20991
-    r=series(
+    rhs=series(
         name="a", allowed_dtypes=[pl.Int32], allow_null=False
     ),  # Nulls see: https://github.com/pola-rs/polars/issues/20991
 )
-def test_merge_sorted_parametric(l: pl.Series, r: pl.Series) -> None:
-    l_df = pl.DataFrame([l.sort()])
-    r_df = pl.DataFrame([r.sort()])
+def test_merge_sorted_parametric(lhs: pl.Series, rhs: pl.Series) -> None:
+    l_df = pl.DataFrame([lhs.sort()])
+    r_df = pl.DataFrame([rhs.sort()])
 
     merge_sorted = l_df.lazy().merge_sorted(r_df.lazy(), "a").collect().get_column("a")
-    append_sorted = l.append(r).sort()
+    append_sorted = lhs.append(rhs).sort()
 
     assert_series_equal(merge_sorted, append_sorted)
 

@@ -252,7 +252,7 @@ impl ComputeNode for MergeSortedNode {
                             }
 
                             // For both left and right, find row index of the minimum of the maxima
-                            // of the left and right key columns. We can savely merge until this
+                            // of the left and right key columns. We can safely merge until this
                             // point.
                             let mut left_cutoff = left.height();
                             let mut right_cutoff = right.height();
