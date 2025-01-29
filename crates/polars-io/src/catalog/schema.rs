@@ -379,7 +379,13 @@ fn dtype_to_type_name(dtype: &DataType) -> PolarsResult<PlSmallStr> {
 
         Decimal(..) => S!("DECIMAL"),
 
-        List(..) => S!("ARRAY"),
+        List(inner) => {
+            if opt_get_list_map_type(inner).is_some() {
+                S!("MAP")
+            } else {
+                S!("ARRAY")
+            }
+        },
 
         Struct(..) => S!("STRUCT"),
 
