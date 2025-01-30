@@ -678,3 +678,10 @@ def test_decimal_from_large_ints_9084() -> None:
     numbers = [2963091539321097135000000000, 25658709114149718824803874]
     s = pl.Series(numbers, dtype=pl.Decimal)
     assert s.to_list() == [D(n) for n in numbers]
+
+
+def test_cast_float_to_decimal_12775() -> None:
+    s = pl.Series([1.5])
+    # default scale = 0
+    assert s.cast(pl.Decimal).to_list() == [D("1")]
+    assert s.cast(pl.Decimal(scale=1)).to_list() == [D("1.5")]
