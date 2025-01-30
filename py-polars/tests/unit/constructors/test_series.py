@@ -44,7 +44,7 @@ def test_series_mixed_dtypes_object() -> None:
         pl.Series(values)
 
     s = pl.Series(values, strict=False)
-    assert s.dtype == pl.Object
+    assert s.dtype.is_object()
     assert s.to_list() == values
     assert s[1] == b"foo"
 

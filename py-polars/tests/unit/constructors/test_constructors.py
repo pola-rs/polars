@@ -1616,7 +1616,7 @@ def test_df_init_dict_raise_on_expression_input() -> None:
 
     # Passing a list of expressions is allowed
     df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
-    assert df.get_column("a").dtype == pl.Object
+    assert df.get_column("a").dtype.is_object()
 
 
 def test_df_schema_sequences() -> None:

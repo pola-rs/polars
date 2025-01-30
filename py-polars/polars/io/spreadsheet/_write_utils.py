@@ -12,7 +12,6 @@ from polars.datatypes import (
     Datetime,
     Float64,
     Int64,
-    Object,
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
@@ -356,7 +355,7 @@ def _xl_setup_table_columns(
     cast_cols = [
         F.col(col).map_batches(_map_str).alias(col)
         for col, tp in df.schema.items()
-        if (tp.is_nested() or tp == Object)
+        if tp.is_nested() or tp.is_object()
     ]
     if cast_cols:
         df = df.with_columns(cast_cols)
