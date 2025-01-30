@@ -207,6 +207,13 @@ impl Column {
             _ => None,
         }
     }
+    #[inline]
+    pub fn as_scalar_column_mut(&mut self) -> Option<&mut ScalarColumn> {
+        match self {
+            Column::Scalar(s) => Some(s),
+            _ => None,
+        }
+    }
 
     // # Try to Chunked Arrays
     pub fn try_bool(&self) -> Option<&BooleanChunked> {

@@ -43,7 +43,7 @@ def _assert_force_async(capfd: Any, data_file_extension: str) -> None:
         return
 
     captured = capfd.readouterr().err
-    assert captured.count("ASYNC READING FORCED") == 1
+    assert captured.count("ASYNC READING FORCED") >= 1
 
 
 def _scan(

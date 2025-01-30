@@ -1,60 +1,41 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
-use polars_io::predicates::{BatchStats, ColumnStats};
 use polars_io::prelude::schema_inference::{finish_infer_field_schema, infer_field_schema};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Debug, Clone)]
-pub struct HivePartitions {
-    /// Single value Series that can be used to run the predicate against.
-    /// They are to be broadcasted if the predicates don't filter them out.
-    stats: BatchStats,
-}
+pub struct HivePartitions(pub DataFrame);
 
 impl HivePartitions {
-    pub fn get_projection_schema_and_indices(
-        &self,
-        names: &PlHashSet<PlSmallStr>,
-    ) -> (SchemaRef, Vec<usize>) {
-        let mut out_schema = Schema::with_capacity(self.stats.schema().len());
-        let mut out_indices = Vec::with_capacity(self.stats.column_stats().len());
+    pub fn apply_projection(&mut self, column_indices: &[usize]) -> PolarsResult<()> {
+        let new_schema = self.0.schema().try_project_indices(column_indices)?;
+        let columns = new_schema
+            .iter_names()
+            .map(|n| self.0.column(n).cloned())
+            .collect::<PolarsResult<Vec<_>>>()?;
 
-        for (i, cs) in self.stats.column_stats().iter().enumerate() {
-            let name = cs.field_name();
-            if names.contains(name.as_str()) {
-                out_indices.push(i);
-                out_schema
-                    .insert_at_index(out_schema.len(), name.clone(), cs.dtype().clone())
-                    .unwrap();
-            }
-        }
-
-        (out_schema.into(), out_indices)
+        self.0 = DataFrame::new(columns)?;
+        Ok(())
     }
 
-    pub fn apply_projection(&mut self, new_schema: SchemaRef, column_indices: &[usize]) {
-        self.stats.with_schema(new_schema);
-        self.stats.take_indices(column_indices);
-    }
-
-    pub fn get_statistics(&self) -> &BatchStats {
-        &self.stats
-    }
+    // pub fn get_statistics(&self) -> &BatchStats {
+    //     &self.stats
+    // }
 
     pub(crate) fn schema(&self) -> &SchemaRef {
-        self.get_statistics().schema()
+        self.0.schema()
     }
 
-    pub fn materialize_partition_columns(&self) -> Vec<Series> {
-        self.get_statistics()
-            .column_stats()
-            .iter()
-            .map(|cs| cs.get_min_state().unwrap().clone())
-            .collect()
-    }
+    // pub fn materialize_partition_columns(&self) -> Vec<Series> {
+    //     self.get_statistics()
+    //         .column_stats()
+    //         .iter()
+    //         .map(|cs| cs.get_min_state().unwrap().clone())
+    //         .collect()
+    // }
 }
 
 /// Note: Returned hive partitions are ordered by their position in the `reader_schema`
@@ -67,7 +48,7 @@ pub fn hive_partitions_from_paths(
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
     try_parse_dates: bool,
-) -> PolarsResult<Option<Arc<Vec<HivePartitions>>>> {
+) -> PolarsResult<Option<Arc<HivePartitions>>> {
     let Some(path) = paths.first() else {
         return Ok(None);
     };
@@ -199,36 +180,14 @@ pub fn hive_partitions_from_paths(
         }
     }
 
-    let mut hive_partitions = Vec::with_capacity(paths.len());
     let mut buffers = buffers
         .into_iter()
-        .map(|x| x.into_series())
+        .map(|x| x.into_series().map(|s| s.into_column()))
         .collect::<PolarsResult<Vec<_>>>()?;
-
     buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
 
-    #[allow(clippy::needless_range_loop)]
-    for i in 0..paths.len() {
-        let column_stats = buffers
-            .iter()
-            .map(|x| {
-                ColumnStats::from_column_literal(unsafe { x.take_slice_unchecked(&[i as IdxSize]) })
-            })
-            .collect::<Vec<_>>();
-
-        if column_stats.is_empty() {
-            polars_bail!(
-                ComputeError: "expected Hive partitioned path, got {}\n\n\
-                This error occurs if some paths are Hive partitioned and some paths are not.",
-                paths[i].to_str().unwrap(),
-            )
-        }
-
-        let stats = BatchStats::new(hive_schema.clone(), column_stats, None);
-        hive_partitions.push(HivePartitions { stats });
-    }
-
-    Ok(Some(Arc::from(hive_partitions)))
+    let hive_partitions = DataFrame::new(buffers)?;
+    Ok(Some(Arc::new(HivePartitions(hive_partitions))))
 }
 
 /// Determine the path separator for identifying Hive partitions.

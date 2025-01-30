@@ -15,7 +15,7 @@ use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_io::pl_async::get_runtime;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::ScanIOPredicate;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
@@ -42,13 +42,13 @@ pub struct ParquetSource {
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     first_metadata: Option<FileMetadataRef>,
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
+    hive_parts: Option<Arc<HivePartitions>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
     first_schema: Arc<ArrowSchema>,
     projected_arrow_schema: Option<Arc<ArrowSchema>>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
 }
 
 impl ParquetSource {
@@ -84,10 +84,12 @@ impl ParquetSource {
         let options = self.options.clone();
         let file_options = self.file_options.clone();
 
-        let hive_partitions = self
-            .hive_parts
-            .as_ref()
-            .map(|x| x[index].materialize_partition_columns());
+        let hive_partitions = self.hive_parts.as_deref().map(|x| {
+            x.0.slice(index as i64, 1)
+                .materialized_column_iter()
+                .cloned()
+                .collect()
+        });
 
         let chunk_size = determine_chunk_size(
             self.projected_arrow_schema
@@ -140,7 +142,7 @@ impl ParquetSource {
                     ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
                     ri
                 }))
-                .with_predicate(predicate.clone())
+                .with_predicate(predicate)
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
                 .with_include_file_path(
@@ -209,7 +211,7 @@ impl ParquetSource {
                         self.file_options.allow_missing_columns,
                     )
                     .await?
-                    .with_predicate(predicate.clone())
+                    .with_predicate(predicate)
                     .use_statistics(options.use_statistics)
                     .with_hive_partition_columns(hive_partitions)
                     .with_include_file_path(
@@ -250,9 +252,9 @@ impl ParquetSource {
         first_metadata: Option<FileMetadataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<Arc<HivePartitions>>,
         verbose: bool,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<Self> {
         let paths = sources
             .as_paths()

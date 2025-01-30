@@ -11,10 +11,6 @@ pub trait PhysicalIoExpr: Send + Sync {
     /// as a predicate mask
     fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series>;
 
-    /// Get the variables that are used in the expression i.e. live variables.
-    /// This can contain duplicates.
-    fn collect_live_columns(&self, live_columns: &mut PlIndexSet<PlSmallStr>);
-
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
@@ -356,6 +352,32 @@ fn use_min_max(dtype: &DataType) -> bool {
             dtype,
             DataType::String | DataType::Binary | DataType::Boolean
         )
+}
+
+pub struct ColumnStatistics {
+    pub dtype: DataType,
+    pub min: AnyValue<'static>,
+    pub max: AnyValue<'static>,
+    pub null_count: Option<IdxSize>,
+}
+
+pub trait SkipBatchPredicate: Send + Sync {
+    fn can_skip_batch(
+        &self,
+        batch_size: IdxSize,
+        statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
+    ) -> PolarsResult<bool>;
+}
+
+#[derive(Clone)]
+pub struct ScanIOPredicate {
+    pub predicate: Arc<dyn PhysicalIoExpr>,
+
+    /// Column names that are used in the predicate.
+    pub live_columns: Arc<PlIndexSet<PlSmallStr>>,
+
+    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
+    pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
 }
 
 /// A collection of column stats with a known schema.

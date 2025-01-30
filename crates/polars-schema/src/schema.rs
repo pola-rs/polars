@@ -100,6 +100,11 @@ impl<D> Schema<D> {
         self.fields.get(name)
     }
 
+    /// Get a mutable reference to the dtype of the field named `name`, or `None` if the field doesn't exist.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut D> {
+        self.fields.get_mut(name)
+    }
+
     /// Get a reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist.
     pub fn try_get(&self, name: &str) -> PolarsResult<&D> {
         self.get(name)

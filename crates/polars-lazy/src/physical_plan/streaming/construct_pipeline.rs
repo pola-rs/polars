@@ -26,9 +26,6 @@ impl PhysicalIoExpr for Wrap {
         };
         h.evaluate_io(df)
     }
-    fn collect_live_columns(&self, live_columns: &mut PlIndexSet<PlSmallStr>) {
-        self.0.collect_live_columns(live_columns);
-    }
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         self.0.as_stats_evaluator()
     }

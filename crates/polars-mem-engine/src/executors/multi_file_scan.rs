@@ -4,7 +4,7 @@ use hive::HivePartitions;
 use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_io::predicates::BatchStats;
+use polars_io::predicates::SkipBatchPredicate;
 use polars_io::RowIndex;
 
 use super::Executor;
@@ -17,6 +17,7 @@ use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
+use crate::ScanPredicate;
 
 pub struct PhysicalExprWithConstCols {
     constants: Vec<(PlSmallStr, Scalar)>,
@@ -69,9 +70,6 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
         self.child.isolate_column_expr(name)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.child.collect_live_columns(lv)
-    }
     fn is_scalar(&self) -> bool {
         self.child.is_scalar()
     }
@@ -84,7 +82,8 @@ pub trait ScanExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
+        skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame>;
 
@@ -140,7 +139,6 @@ fn source_to_exec(
                 source,
                 file_info,
                 None,
-                None,
                 options,
                 cloud_options.clone(),
                 file_options.clone(),
@@ -154,6 +152,9 @@ fn source_to_exec(
 
             if allow_missing_columns && !is_first_file {
                 options.schema.take();
+            }
+            if !is_first_file {
+                file_info.row_estimation.0.take();
             }
 
             Box::new(CsvExec {
@@ -182,7 +183,6 @@ fn source_to_exec(
                 options,
                 file_options,
                 predicate: None,
-                hive_parts: None,
                 cloud_options,
                 metadata: metadata.cloned(),
             })
@@ -213,8 +213,8 @@ fn source_to_exec(
 pub struct MultiScanExec {
     sources: ScanSources,
     file_info: FileInfo,
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    hive_parts: Option<Arc<HivePartitions>>,
+    predicate: Option<ScanPredicate>,
     file_options: FileScanOptions,
     scan_type: FileScan,
 }
@@ -223,8 +223,8 @@ impl MultiScanExec {
     pub fn new(
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        hive_parts: Option<Arc<HivePartitions>>,
+        predicate: Option<ScanPredicate>,
         file_options: FileScanOptions,
         scan_type: FileScan,
     ) -> Self {
@@ -274,49 +274,22 @@ impl MultiScanExec {
         let predicate = self.predicate.take();
 
         // Create a index set of the hive columns.
-        let mut hive_column_set = PlIndexSet::default();
+        let mut hive_schema = SchemaRef::default();
         if let Some(hive_parts) = &self.hive_parts {
-            assert_eq!(self.sources.len(), hive_parts.len());
-
-            if let Some(fst_hive_part) = hive_parts.first() {
-                hive_column_set.extend(
-                    fst_hive_part
-                        .get_statistics()
-                        .column_stats()
-                        .iter()
-                        .map(|c| c.field_name().clone()),
-                );
-            }
+            assert_eq!(self.sources.len(), hive_parts.0.height());
+            hive_schema = hive_parts.0.schema().clone();
         }
 
         // Look through the predicate and assess whether hive columns are being used in it.
         let mut has_live_hive_columns = false;
         if let Some(predicate) = &predicate {
-            let mut live_columns = PlIndexSet::new();
-            predicate.collect_live_columns(&mut live_columns);
-
-            for hive_column in &hive_column_set {
-                has_live_hive_columns |= live_columns.contains(hive_column);
-            }
-        }
-
-        // Remove the hive columns for each file load.
-        let mut file_with_columns = self.file_options.with_columns.take();
-        if self.hive_parts.is_some() {
-            if let Some(with_columns) = &self.file_options.with_columns {
-                file_with_columns = Some(
-                    with_columns
-                        .iter()
-                        .filter(|&c| !hive_column_set.contains(c))
-                        .cloned()
-                        .collect(),
-                );
+            for hive_column in hive_schema.iter_names() {
+                has_live_hive_columns |= predicate.live_columns.contains(hive_column);
             }
         }
 
         let allow_missing_columns = self.file_options.allow_missing_columns;
         self.file_options.allow_missing_columns = false;
-        let mut row_index = self.file_options.row_index.take();
         let slice = self.file_options.slice.take();
 
         let mut first_slice_file = None;
@@ -333,21 +306,34 @@ impl MultiScanExec {
             }),
         };
 
-        let final_per_source_schema = &self.file_info.schema;
-        let file_output_schema = if let Some(file_with_columns) = file_with_columns.as_ref() {
-            let mut schema = final_per_source_schema.try_project(file_with_columns.as_ref())?;
+        let mut file_with_columns = self.file_options.with_columns.take();
+        let mut row_index = self.file_options.row_index.take();
 
-            if let Some(v) = include_file_paths.clone() {
-                schema.extend([(v, DataType::String)]);
+        let mut final_per_source_schema = Cow::Borrowed(self.file_info.schema.as_ref());
+        if let Some(with_columns) = file_with_columns.as_ref() {
+            final_per_source_schema = Cow::Owned(
+                final_per_source_schema
+                    .as_ref()
+                    .try_project(with_columns.as_ref())
+                    .unwrap(),
+            );
+        }
+
+        // Remove the hive columns for each file load.
+        if self.hive_parts.is_some() {
+            if let Some(with_columns) = &file_with_columns {
+                file_with_columns = Some(
+                    with_columns
+                        .iter()
+                        .filter(|&c| !hive_schema.contains(c))
+                        .cloned()
+                        .collect(),
+                );
             }
-
-            Arc::new(schema)
-        } else {
-            final_per_source_schema.clone()
-        };
+        }
 
         if slice.is_some_and(|x| x.1 == 0) {
-            return Ok(DataFrame::empty_with_schema(final_per_source_schema));
+            return Ok(DataFrame::empty_with_schema(&final_per_source_schema));
         }
 
         let mut missing_columns = Vec::new();
@@ -363,7 +349,7 @@ impl MultiScanExec {
         };
 
         for (i, source) in self.sources.iter().enumerate() {
-            let hive_part = self.hive_parts.as_ref().and_then(|h| h.get(i));
+            let hive_part = self.hive_parts.as_ref().and_then(|h| h.0.get_row(i).ok());
             if slice.is_some_and(|s| s.1 == 0) {
                 break;
             }
@@ -406,44 +392,36 @@ impl MultiScanExec {
             // to function even when there is a combination of hive and non-hive columns being
             // used.
             if has_live_hive_columns {
-                let hive_part = hive_part.unwrap();
-                let child = file_predicate.unwrap();
-
-                file_predicate = Some(Arc::new(PhysicalExprWithConstCols {
-                    constants: hive_column_set
-                        .iter()
-                        .enumerate()
-                        .map(|(idx, column)| {
-                            let series = hive_part.get_statistics().column_stats()[idx]
-                                .to_min()
-                                .unwrap();
-                            (
-                                column.clone(),
-                                Scalar::new(
-                                    series.dtype().clone(),
-                                    series.get(0).unwrap().into_static(),
-                                ),
-                            )
-                        })
-                        .collect(),
-                    child,
-                }));
+                let hive_part = hive_part.as_ref().unwrap();
+                file_predicate = Some(
+                    file_predicate.unwrap().with_constant_columns(
+                        hive_schema
+                            .iter()
+                            .zip(hive_part.0.iter())
+                            .map(|((column, dtype), value)| {
+                                (
+                                    column.clone(),
+                                    Scalar::new(dtype.clone(), value.clone().into_static()),
+                                )
+                            }),
+                    ),
+                );
             }
 
-            let stats_evaluator = file_predicate.as_ref().and_then(|p| p.as_stats_evaluator());
-            let stats_evaluator = stats_evaluator.filter(|_| use_statistics);
-
-            if let Some(stats_evaluator) = stats_evaluator {
-                let allow_predicate_skip = !stats_evaluator
-                    .should_read(&BatchStats::default())
-                    .unwrap_or(true);
-                if allow_predicate_skip && verbose {
+            let skip_batch_predicate = file_predicate
+                .as_ref()
+                .take_if(|_| use_statistics)
+                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref()));
+            if let Some(skip_batch_predicate) = &skip_batch_predicate {
+                let can_skip_batch = skip_batch_predicate
+                    .can_skip_batch(exec_source.num_unfiltered_rows()?, PlIndexMap::default())?;
+                if can_skip_batch && verbose {
                     eprintln!(
                         "File statistics allows skipping of '{}'",
                         source.to_include_path_name()
                     );
                 }
-                do_skip_file |= allow_predicate_skip;
+                do_skip_file |= can_skip_batch;
             }
 
             if do_skip_file {
@@ -513,6 +491,7 @@ impl MultiScanExec {
                 current_source_with_columns.into_owned(),
                 slice,
                 file_predicate,
+                skip_batch_predicate,
                 row_index.clone(),
             )?;
 
@@ -539,14 +518,14 @@ impl MultiScanExec {
             }
             // Materialize the hive columns and add them back in.
             if let Some(hive_part) = hive_part {
-                for hive_col in hive_part.get_statistics().column_stats() {
+                for ((column, dtype), value) in hive_schema.iter().zip(hive_part.0) {
                     df.with_column(
-                        ScalarColumn::from_single_value_series(
-                            hive_col
-                                .to_min()
-                                .unwrap()
-                                .clone()
-                                .with_name(hive_col.field_name().clone()),
+                        ScalarColumn::new(
+                            column.clone(),
+                            Scalar::new(
+                                dtype.clone(),
+                                value.into_static(),
+                            ),
                             df.height(),
                         )
                         .into_column(),
@@ -563,12 +542,12 @@ impl MultiScanExec {
             }
 
             // Project to ensure that all DataFrames have the proper order.
-            df = df.select(file_output_schema.iter_names().cloned())?;
+            df = df.select(final_per_source_schema.iter_names().cloned())?;
             dfs.push(df);
         }
 
         if dfs.is_empty() {
-            Ok(DataFrame::empty_with_schema(final_per_source_schema))
+            Ok(DataFrame::empty_with_schema(&final_per_source_schema))
         } else {
             Ok(accumulate_dataframes_vertical_unchecked(dfs))
         }

@@ -9,11 +9,10 @@ use polars_core::series::{IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_error::{polars_bail, PolarsResult};
 use polars_io::hive;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
 use polars_io::prelude::try_set_sorted_flag;
-use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::ScanSources;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -26,13 +25,11 @@ use crate::nodes::TaskPriority;
 /// Turns row group data into DataFrames.
 pub(super) struct RowGroupDecoder {
     pub(super) scan_sources: ScanSources,
-    pub(super) hive_partitions: Option<Arc<Vec<HivePartitions>>>,
-    pub(super) hive_partitions_width: usize,
     pub(super) include_file_paths: Option<PlSmallStr>,
     pub(super) reader_schema: Arc<ArrowSchema>,
     pub(super) projected_arrow_schema: Arc<ArrowSchema>,
     pub(super) row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
-    pub(super) physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) use_prefiltered: Option<PrefilterMaskSetting>,
     /// Indices into `projected_arrow_schema. This must be sorted.
     pub(super) predicate_arrow_field_indices: Vec<usize>,
@@ -61,7 +58,6 @@ impl RowGroupDecoder {
 
         let out_width = self.row_index.is_some() as usize
             + self.projected_arrow_schema.len()
-            + self.hive_partitions_width
             + self.include_file_paths.is_some() as usize;
 
         let mut out_columns = Vec::with_capacity(out_width);
@@ -113,8 +109,8 @@ impl RowGroupDecoder {
 
         let df = unsafe { DataFrame::new_no_checks(projection_height, out_columns) };
 
-        let df = if let Some(predicate) = self.physical_predicate.as_deref() {
-            let mask = predicate.evaluate_io(&df)?;
+        let df = if let Some(predicate) = self.predicate.as_ref() {
+            let mask = predicate.predicate.evaluate_io(&df)?;
             let mask = mask.bool().unwrap();
 
             let filtered =
@@ -139,17 +135,7 @@ impl RowGroupDecoder {
     async fn shared_file_state_init_func(&self, row_group_data: &RowGroupData) -> SharedFileState {
         let path_index = row_group_data.path_index;
 
-        let hive_series = if let Some(hp) = self.hive_partitions.as_deref() {
-            let v = hp[path_index].materialize_partition_columns();
-            v.into_iter()
-                .map(|s| {
-                    s.into_column()
-                        .new_from_index(0, row_group_data.file_max_row_group_height)
-                })
-                .collect()
-        } else {
-            vec![]
-        };
+        let hive_series = vec![];
 
         // @scalar-opt
         let file_path_series = self.include_file_paths.clone().map(|file_path_col| {
@@ -479,7 +465,6 @@ impl RowGroupDecoder {
         let mut live_columns = Vec::with_capacity(
             self.row_index.is_some() as usize
                 + self.predicate_arrow_field_indices.len()
-                + self.hive_partitions_width
                 + self.include_file_paths.is_some() as usize,
         );
 
@@ -531,9 +516,10 @@ impl RowGroupDecoder {
         };
 
         let mask = self
-            .physical_predicate
-            .as_deref()
+            .predicate
+            .as_ref()
             .unwrap()
+            .predicate
             .evaluate_io(&live_df)?;
         let mask = mask.bool().unwrap();
 

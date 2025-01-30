@@ -360,11 +360,11 @@ impl PredicatePushDown<'_> {
                 Ok(lp)
             },
             Scan {
-                mut sources,
+                sources,
                 file_info,
-                hive_parts: mut scan_hive_parts,
+                hive_parts,
                 ref predicate,
-                mut scan_type,
+                scan_type,
                 file_options: options,
                 output_schema,
             } => {
@@ -398,54 +398,6 @@ impl PredicatePushDown<'_> {
                 };
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
 
-                if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
-                    if let Some(io_expr) =
-                        self.expr_eval.unwrap()(predicate, expr_arena, &file_info.schema)
-                    {
-                        if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
-                            let paths = sources.as_paths().ok_or_else(|| {
-                                polars_err!(nyi = "Hive partitioning of in-memory buffers")
-                            })?;
-                            let mut new_paths = Vec::with_capacity(paths.len());
-                            let mut new_hive_parts = Vec::with_capacity(paths.len());
-
-                            for i in 0..paths.len() {
-                                let path = &paths[i];
-                                let hive_parts = &hive_parts[i];
-
-                                if stats_evaluator.should_read(hive_parts.get_statistics())? {
-                                    new_paths.push(path.clone());
-                                    new_hive_parts.push(hive_parts.clone());
-                                }
-                            }
-
-                            if paths.len() != new_paths.len() {
-                                if self.verbose {
-                                    eprintln!(
-                                        "hive partitioning: skipped {} files, first file : {}",
-                                        paths.len() - new_paths.len(),
-                                        paths[0].display()
-                                    )
-                                }
-                                scan_type.remove_metadata();
-                            }
-                            if new_paths.is_empty() {
-                                let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
-                                let df = DataFrame::empty_with_schema(schema);
-
-                                return Ok(DataFrameScan {
-                                    df: Arc::new(df),
-                                    schema: schema.clone(),
-                                    output_schema: None,
-                                });
-                            } else {
-                                sources = ScanSources::Paths(new_paths.into());
-                                scan_hive_parts = Some(Arc::from(new_hive_parts));
-                            }
-                        }
-                    }
-                }
-
                 let mut do_optimization = match &scan_type {
                     #[cfg(feature = "csv")]
                     FileScan::Csv { .. } => options.slice.is_none(),
@@ -456,8 +408,6 @@ impl PredicatePushDown<'_> {
                     _ => true,
                 };
                 do_optimization &= predicate.is_some();
-
-                let hive_parts = scan_hive_parts;
 
                 let lp = if do_optimization {
                     Scan {

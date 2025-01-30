@@ -1,5 +1,7 @@
+mod evaluate;
 #[cfg(feature = "cse")]
 mod hash;
+pub mod predicates;
 mod scalar;
 mod schema;
 mod traverse;

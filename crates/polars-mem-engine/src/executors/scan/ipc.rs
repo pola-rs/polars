@@ -1,24 +1,23 @@
-use hive::HivePartitions;
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::path_utils::is_cloud_url;
-use polars_io::predicates::apply_predicate;
+use polars_io::predicates::{apply_predicate, SkipBatchPredicate};
 use polars_utils::mmap::MemSlice;
 use polars_utils::open_file;
 use rayon::prelude::*;
 
 use super::*;
+use crate::ScanPredicate;
 
 pub struct IpcExec {
     pub(crate) sources: ScanSources,
     pub(crate) file_info: FileInfo,
-    pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) predicate: Option<ScanPredicate>,
     #[allow(dead_code)]
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
-    pub(crate) hive_parts: Option<Arc<Vec<HivePartitions>>>,
     pub(crate) cloud_options: Option<CloudOptions>,
     pub(crate) metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
 }
@@ -93,11 +92,6 @@ impl IpcExec {
                 .with_n_rows(n_rows)
                 .with_row_index(self.file_options.row_index.clone())
                 .with_projection(projection.clone())
-                .with_hive_partition_columns(
-                    self.hive_parts
-                        .as_ref()
-                        .map(|x| x[index].materialize_partition_columns()),
-                )
                 .with_include_file_path(
                     self.file_options
                         .include_file_paths
@@ -148,7 +142,7 @@ impl IpcExec {
         };
 
         let dfs = if let Some(predicate) = self.predicate.clone() {
-            let predicate = phys_expr_to_io_expr(predicate);
+            let predicate = phys_expr_to_io_expr(predicate.predicate);
             let predicate = Some(predicate.as_ref());
 
             POOL.install(|| {
@@ -198,7 +192,8 @@ impl ScanExec for IpcExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
+        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
