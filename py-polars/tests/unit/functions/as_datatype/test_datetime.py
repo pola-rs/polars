@@ -72,7 +72,7 @@ def test_datetime_invalid_date_component(components: list[int]) -> None:
     ],
 )
 def test_datetime_invalid_time_component(components: list[int]) -> None:
-    y, m, d, h, mnt, s, us = components
+    h, mnt, s, us = components[3:]
     ns = us * 1_000
     msg = rf"Invalid time components \({h}, {mnt}, {s}, {ns}\) supplied"
     with pytest.raises(PanicException, match=msg):
