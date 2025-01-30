@@ -2,7 +2,6 @@ use std::future::Future;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlIndexSet;
 use polars_error::PolarsResult;
 use polars_io::prelude::ParallelStrategy;
 use polars_io::prelude::_internal::PrefilterMaskSetting;
@@ -84,8 +83,7 @@ impl ParquetSourceNode {
 
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
         let projection = self.file_options.with_columns.clone();
-        assert_eq!(self.physical_predicate.is_some(), self.predicate.is_some());
-        let predicate = self.physical_predicate.clone();
+        let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
         let mut row_group_data_fetcher = RowGroupDataFetcher {
@@ -194,8 +192,6 @@ impl ParquetSourceNode {
     /// * `self.projected_arrow_schema`
     /// * `self.physical_predicate`
     pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
-        assert_eq!(self.predicate.is_some(), self.physical_predicate.is_some());
-
         let scan_sources = self.scan_sources.clone();
         let hive_partitions = self.hive_parts.clone();
         let hive_partitions_width = hive_partitions
@@ -205,24 +201,20 @@ impl ParquetSourceNode {
         let include_file_paths = self.file_options.include_file_paths.clone();
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
         let row_index = self.row_index.clone();
-        let physical_predicate = self.physical_predicate.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 
-        let mut use_prefiltered = physical_predicate.is_some()
+        let mut use_prefiltered = self.predicate.is_some()
             && matches!(
                 self.options.parallel,
                 ParallelStrategy::Auto | ParallelStrategy::Prefiltered
             );
 
         let predicate_arrow_field_indices = if use_prefiltered {
-            let mut live_columns = PlIndexSet::default();
-            physical_predicate
-                .as_ref()
-                .unwrap()
-                .collect_live_columns(&mut live_columns);
-            let v = (!live_columns.is_empty())
+            let predicate = self.predicate.as_ref().unwrap();
+            let v = (!predicate.live_columns.is_empty())
                 .then(|| {
-                    let mut out = live_columns
+                    let mut out = predicate
+                        .live_columns
                         .iter()
                         // Can be `None` - if the column is e.g. a hive column, or the row index column.
                         .filter_map(|x| projected_arrow_schema.index_of(x))
@@ -272,7 +264,7 @@ impl ParquetSourceNode {
             reader_schema: self.schema.clone().unwrap(),
             projected_arrow_schema,
             row_index,
-            physical_predicate,
+            predicate: self.predicate.clone(),
             use_prefiltered,
             predicate_arrow_field_indices,
             non_predicate_arrow_field_indices,

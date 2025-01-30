@@ -686,7 +686,7 @@ impl LazyFrame {
         } else {
             true
         };
-        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &expr_arena)?;
+        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
@@ -738,7 +738,7 @@ impl LazyFrame {
             let mut physical_plan = create_physical_plan(
                 alp_plan.lp_top,
                 &mut alp_plan.lp_arena,
-                &alp_plan.expr_arena,
+                &mut alp_plan.expr_arena,
             )?;
             let mut state = ExecutionState::new();
             physical_plan.execute(&mut state)

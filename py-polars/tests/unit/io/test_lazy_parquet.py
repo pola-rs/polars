@@ -272,11 +272,11 @@ def test_parquet_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> Non
 
     captured = capfd.readouterr().err
     assert (
-        "parquet file must be read, statistics not sufficient for predicate."
+        "parquet row group must be read, statistics not sufficient for predicate."
         in captured
     )
     assert (
-        "parquet file can be skipped, the statistics were sufficient"
+        "parquet row group can be skipped, the statistics were sufficient"
         " to apply the predicate." in captured
     )
 

@@ -87,10 +87,6 @@ impl PhysicalExpr for CastExpr {
         Ok(ac)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.input.collect_live_columns(lv);
-    }
-
     fn isolate_column_expr(
         &self,
         _name: &str,

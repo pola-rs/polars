@@ -442,10 +442,6 @@ impl PhysicalExpr for AggregationExpr {
         }
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.input.collect_live_columns(lv);
-    }
-
     fn isolate_column_expr(
         &self,
         _name: &str,
@@ -743,11 +739,6 @@ impl PhysicalExpr for AggQuantileExpr {
             AggregatedScalar(agg),
             Cow::Borrowed(groups),
         ))
-    }
-
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.input.collect_live_columns(lv);
-        self.quantile.collect_live_columns(lv);
     }
 
     fn isolate_column_expr(

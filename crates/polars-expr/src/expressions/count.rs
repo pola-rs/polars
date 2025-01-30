@@ -36,8 +36,6 @@ impl PhysicalExpr for CountExpr {
         Ok(AggregationContext::new(c, Cow::Borrowed(groups), true))
     }
 
-    fn collect_live_columns(&self, _lv: &mut PlIndexSet<PlSmallStr>) {}
-
     fn isolate_column_expr(
         &self,
         _name: &str,
