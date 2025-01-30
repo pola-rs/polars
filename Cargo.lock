@@ -3077,6 +3077,7 @@ version = "0.46.0"
 dependencies = [
  "avro-schema",
  "object_store",
+ "parking_lot",
  "polars-arrow-format",
  "regex",
  "signal-hook",
