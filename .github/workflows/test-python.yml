@@ -26,6 +26,8 @@ env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
   PYTHONUTF8: 1
+  SCCACHE_GHA_ENABLED: "true"
+  RUSTC_WRAPPER: "sccache"
 
 defaults:
   run:
@@ -75,11 +77,8 @@ jobs:
       - name: Set up Rust
         run: rustup show
 
-      - name: Cache Rust
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: py-polars
-          save-if: ${{ github.ref_name == 'main' }}
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Install Polars
         run: maturin develop
