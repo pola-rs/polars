@@ -84,9 +84,9 @@ class Catalog:
         """
         return self._client.list_catalogs()
 
-    def list_schemas(self, catalog_name: str) -> list[SchemaInfo]:
+    def list_namespaces(self, catalog_name: str) -> list[NamespaceInfo]:
         """
-        List the available schemas under the specified catalog.
+        List the available namespaces (unity schema) under the specified catalog.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -97,9 +97,9 @@ class Catalog:
         catalog_name
             Name of the catalog.
         """
-        return self._client.list_schemas(catalog_name)
+        return self._client.list_namespaces(catalog_name)
 
-    def list_tables(self, catalog_name: str, schema_name: str) -> list[TableInfo]:
+    def list_tables(self, catalog_name: str, namespace: str) -> list[TableInfo]:
         """
         List the available tables under the specified schema.
 
@@ -111,13 +111,13 @@ class Catalog:
         ----------
         catalog_name
             Name of the catalog.
-        schema_name
-            Name of the schema.
+        namespace
+            Name of the namespace (unity schema).
         """
-        return self._client.list_tables(catalog_name, schema_name)
+        return self._client.list_tables(catalog_name, namespace)
 
     def get_table_info(
-        self, catalog_name: str, schema_name: str, table_name: str
+        self, catalog_name: str, namespace: str, table_name: str
     ) -> TableInfo:
         """
         Retrieve the metadata of the specified table.
@@ -130,17 +130,17 @@ class Catalog:
         ----------
         catalog_name
             Name of the catalog.
-        schema_name
-            Name of the schema.
+        namespace
+            Name of the namespace (unity schema).
         table_name
             Name of the table.
         """
-        return self._client.get_table_info(catalog_name, schema_name, table_name)
+        return self._client.get_table_info(catalog_name, namespace, table_name)
 
     def scan_table(
         self,
         catalog_name: str,
-        schema_name: str,
+        namespace: str,
         table_name: str,
         *,
         delta_table_version: int | str | datetime | None = None,
@@ -162,8 +162,8 @@ class Catalog:
         ----------
         catalog_name
             Name of the catalog.
-        schema_name
-            Name of the schema.
+        namespace
+            Name of the namespace (unity schema).
         table_name
             Name of the table.
         delta_table_version
@@ -196,7 +196,7 @@ class Catalog:
             Number of retries if accessing a cloud instance fails.
 
         """
-        table_info = self.get_table_info(catalog_name, schema_name, table_name)
+        table_info = self.get_table_info(catalog_name, namespace, table_name)
         storage_location, data_source_format = _extract_location_and_data_format(
             table_info, "scan table"
         )
@@ -247,7 +247,7 @@ class Catalog:
         return wrap_ldf(
             self._client.scan_table(
                 catalog_name,
-                schema_name,
+                namespace,
                 table_name,
                 credential_provider=credential_provider,
                 cloud_options=storage_options,
@@ -304,16 +304,16 @@ class Catalog:
         """
         self._client.delete_catalog(catalog_name=catalog_name, force=force)
 
-    def create_schema(
+    def create_namespace(
         self,
         catalog_name: str,
-        schema_name: str,
+        namespace: str,
         *,
         comment: str | None = None,
         storage_root: str | None = None,
-    ) -> SchemaInfo:
+    ) -> NamespaceInfo:
         """
-        Create a schema in the catalog.
+        Create a namespace (unity schema) in the catalog.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -323,29 +323,29 @@ class Catalog:
         ----------
         catalog_name
             Name of the catalog.
-        schema_name
-            Name of the schema.
+        namespace
+            Name of the namespace (unity schema).
         comment
             Leaves a comment about the table.
         storage_root
-            Base location at which to store the schema.
+            Base location at which to store the namespace.
         """
-        return self._client.create_schema(
+        return self._client.create_namespace(
             catalog_name=catalog_name,
-            schema_name=schema_name,
+            namespace=namespace,
             comment=comment,
             storage_root=storage_root,
         )
 
-    def delete_schema(
+    def delete_namespace(
         self,
         catalog_name: str,
-        schema_name: str,
+        namespace: str,
         *,
         force: bool = False,
     ) -> None:
         """
-        Delete a schema in the catalog.
+        Delete a namespace (unity schema) in the catalog.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -355,19 +355,19 @@ class Catalog:
         ----------
         catalog_name
             Name of the catalog.
-        schema_name
-            Name of the schema.
+        namespace
+            Name of the namespace (unity schema).
         force
-            Forcibly delete the schema even if it is not empty.
+            Forcibly delete the namespace even if it is not empty.
         """
-        self._client.delete_schema(
-            catalog_name=catalog_name, schema_name=schema_name, force=force
+        self._client.delete_namespace(
+            catalog_name=catalog_name, namespace=namespace, force=force
         )
 
     def create_table(
         self,
         catalog_name: str,
-        schema_name: str,
+        namespace: str,
         table_name: str,
         *,
         schema: SchemaDict | None,
@@ -388,8 +388,8 @@ class Catalog:
         ----------
         catalog_name
             Name of the catalog.
-        schema_name
-            Name of the schema.
+        namespace
+            Name of the namespace (unity schema).
         table_name
             Name of the table.
         schema
@@ -407,7 +407,7 @@ class Catalog:
         """
         return self._client.create_table(
             catalog_name=catalog_name,
-            schema_name=schema_name,
+            namespace=namespace,
             table_name=table_name,
             schema=schema,
             table_type=table_type,
@@ -420,7 +420,7 @@ class Catalog:
     def delete_table(
         self,
         catalog_name: str,
-        schema_name: str,
+        namespace: str,
         table_name: str,
     ) -> None:
         """
@@ -434,14 +434,14 @@ class Catalog:
         ----------
         catalog_name
             Name of the catalog.
-        schema_name
-            Name of the schema.
+        namespace
+            Name of the namespace (unity schema).
         table_name
             Name of the table.
         """
         self._client.delete_table(
             catalog_name=catalog_name,
-            schema_name=schema_name,
+            namespace=namespace,
             table_name=table_name,
         )
 
@@ -487,12 +487,11 @@ class CatalogInfo:
 
 
 @dataclass
-class SchemaInfo:
+class NamespaceInfo:
     """
-    Information for a schema within a catalog.
+    Information for a namespace within a catalog.
 
-    Note: This does not refer to a table schema. It can instead be understood
-    as a subdirectory within a catalog.
+    This is also known by the name "schema" in unity catalog terminology.
     """
 
     name: str
@@ -614,7 +613,7 @@ with contextlib.suppress(ImportError):
 
     PyCatalogClient.init_classes(
         catalog_info_cls=CatalogInfo,
-        schema_info_cls=SchemaInfo,
+        namespace_info_cls=NamespaceInfo,
         table_info_cls=TableInfo,
         column_info_cls=ColumnInfo,
     )

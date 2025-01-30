@@ -4,7 +4,7 @@ use polars::prelude::{LazyFrame, PlHashMap, PlSmallStr, Schema};
 use polars_io::catalog::schema::parse_type_json_str;
 use polars_io::catalog::unity::client::{CatalogClient, CatalogClientBuilder};
 use polars_io::catalog::unity::models::{
-    CatalogInfo, ColumnInfo, DataSourceFormat, SchemaInfo, TableInfo, TableType,
+    CatalogInfo, ColumnInfo, DataSourceFormat, NamespaceInfo, TableInfo, TableType,
 };
 use polars_io::cloud::credential_provider::PlCredentialProvider;
 use polars_io::pl_async;
@@ -35,7 +35,7 @@ macro_rules! pydict_insert_keys {
 // Result dataclasses. These are initialized from Python by calling [`PyCatalogClient::init_classes`].
 
 static CATALOG_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
-static SCHEMA_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
+static NAMESPACE_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
 static TABLE_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
 static COLUMN_INFO_CLS: GILOnceCell<Py<PyAny>> = GILOnceCell::new();
 
@@ -84,10 +84,10 @@ impl PyCatalogClient {
     }
 
     #[pyo3(signature = (catalog_name))]
-    pub fn list_schemas(&self, py: Python, catalog_name: &str) -> PyResult<PyObject> {
+    pub fn list_namespaces(&self, py: Python, catalog_name: &str) -> PyResult<PyObject> {
         let v = py.enter_polars(|| {
             pl_async::get_runtime()
-                .block_on_potential_spawn(self.client().list_schemas(catalog_name))
+                .block_on_potential_spawn(self.client().list_namespaces(catalog_name))
         })?;
 
         let mut opt_err = None;
@@ -95,7 +95,7 @@ impl PyCatalogClient {
         let out = PyList::new(
             py,
             v.into_iter().map(|x| {
-                let v = schema_info_to_pyobject(py, x);
+                let v = namespace_info_to_pyobject(py, x);
                 match v {
                     Ok(v) => Some(v),
                     Err(_) => {
@@ -111,16 +111,16 @@ impl PyCatalogClient {
         Ok(out.into())
     }
 
-    #[pyo3(signature = (catalog_name, schema_name))]
+    #[pyo3(signature = (catalog_name, namespace))]
     pub fn list_tables(
         &self,
         py: Python,
         catalog_name: &str,
-        schema_name: &str,
+        namespace: &str,
     ) -> PyResult<PyObject> {
         let v = py.enter_polars(|| {
             pl_async::get_runtime()
-                .block_on_potential_spawn(self.client().list_tables(catalog_name, schema_name))
+                .block_on_potential_spawn(self.client().list_tables(catalog_name, namespace))
         })?;
 
         let mut opt_err = None;
@@ -145,20 +145,20 @@ impl PyCatalogClient {
         Ok(out)
     }
 
-    #[pyo3(signature = (table_name, catalog_name, schema_name))]
+    #[pyo3(signature = (table_name, catalog_name, namespace))]
     pub fn get_table_info(
         &self,
         py: Python,
         table_name: &str,
         catalog_name: &str,
-        schema_name: &str,
+        namespace: &str,
     ) -> PyResult<PyObject> {
         let table_info = py
             .enter_polars(|| {
                 pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
                     table_name,
                     catalog_name,
-                    schema_name,
+                    namespace,
                 ))
             })
             .map_err(to_py_err)?;
@@ -166,12 +166,12 @@ impl PyCatalogClient {
         table_info_to_pyobject(py, table_info).map(|x| x.into())
     }
 
-    #[pyo3(signature = (catalog_name, schema_name, table_name, cloud_options, credential_provider, retries))]
+    #[pyo3(signature = (catalog_name, namespace, table_name, cloud_options, credential_provider, retries))]
     pub fn scan_table(
         &self,
         py: Python,
         catalog_name: &str,
-        schema_name: &str,
+        namespace: &str,
         table_name: &str,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
@@ -180,7 +180,7 @@ impl PyCatalogClient {
         let table_info = py.enter_polars(|| {
             pl_async::get_runtime().block_on_potential_spawn(self.client().get_table_info(
                 catalog_name,
-                schema_name,
+                namespace,
                 table_name,
             ))
         })?;
@@ -235,41 +235,41 @@ impl PyCatalogClient {
         .map_err(to_py_err)
     }
 
-    #[pyo3(signature = (catalog_name, schema_name, comment, storage_root))]
-    pub fn create_schema(
+    #[pyo3(signature = (catalog_name, namespace, comment, storage_root))]
+    pub fn create_namespace(
         &self,
         py: Python,
         catalog_name: &str,
-        schema_name: &str,
+        namespace: &str,
         comment: Option<&str>,
         storage_root: Option<&str>,
     ) -> PyResult<PyObject> {
-        let schema_info = py
+        let namespace_info = py
             .allow_threads(|| {
-                pl_async::get_runtime().block_on_potential_spawn(self.client().create_schema(
+                pl_async::get_runtime().block_on_potential_spawn(self.client().create_namespace(
                     catalog_name,
-                    schema_name,
+                    namespace,
                     comment,
                     storage_root,
                 ))
             })
             .map_err(to_py_err)?;
 
-        schema_info_to_pyobject(py, schema_info).map(|x| x.into())
+        namespace_info_to_pyobject(py, namespace_info).map(|x| x.into())
     }
 
-    #[pyo3(signature = (catalog_name, schema_name, force))]
-    pub fn delete_schema(
+    #[pyo3(signature = (catalog_name, namespace, force))]
+    pub fn delete_namespace(
         &self,
         py: Python,
         catalog_name: &str,
-        schema_name: &str,
+        namespace: &str,
         force: bool,
     ) -> PyResult<()> {
         py.allow_threads(|| {
-            pl_async::get_runtime().block_on_potential_spawn(self.client().delete_schema(
+            pl_async::get_runtime().block_on_potential_spawn(self.client().delete_namespace(
                 catalog_name,
-                schema_name,
+                namespace,
                 force,
             ))
         })
@@ -277,14 +277,14 @@ impl PyCatalogClient {
     }
 
     #[pyo3(signature = (
-        catalog_name, schema_name, table_name, schema, table_type, data_source_format, comment,
+        catalog_name, namespace, table_name, schema, table_type, data_source_format, comment,
         storage_root, properties
     ))]
     pub fn create_table(
         &self,
         py: Python,
         catalog_name: &str,
-        schema_name: &str,
+        namespace: &str,
         table_name: &str,
         schema: Option<Wrap<Schema>>,
         table_type: &str,
@@ -298,7 +298,7 @@ impl PyCatalogClient {
                 .block_on_potential_spawn(
                     self.client().create_table(
                         catalog_name,
-                        schema_name,
+                        namespace,
                         table_name,
                         schema.as_ref().map(|x| &x.0),
                         &TableType::from_str(table_type)
@@ -319,18 +319,18 @@ impl PyCatalogClient {
         table_info_to_pyobject(py, table_info).map(|x| x.into())
     }
 
-    #[pyo3(signature = (catalog_name, schema_name, table_name))]
+    #[pyo3(signature = (catalog_name, namespace, table_name))]
     pub fn delete_table(
         &self,
         py: Python,
         catalog_name: &str,
-        schema_name: &str,
+        namespace: &str,
         table_name: &str,
     ) -> PyResult<()> {
         py.allow_threads(|| {
             pl_async::get_runtime().block_on_potential_spawn(self.client().delete_table(
                 catalog_name,
-                schema_name,
+                namespace,
                 table_name,
             ))
         })
@@ -345,17 +345,17 @@ impl PyCatalogClient {
             .unbind())
     }
 
-    #[pyo3(signature = (catalog_info_cls, schema_info_cls, table_info_cls, column_info_cls))]
+    #[pyo3(signature = (catalog_info_cls, namespace_info_cls, table_info_cls, column_info_cls))]
     #[staticmethod]
     pub fn init_classes(
         py: Python,
         catalog_info_cls: Py<PyAny>,
-        schema_info_cls: Py<PyAny>,
+        namespace_info_cls: Py<PyAny>,
         table_info_cls: Py<PyAny>,
         column_info_cls: Py<PyAny>,
     ) {
         CATALOG_INFO_CLS.get_or_init(py, || catalog_info_cls);
-        SCHEMA_INFO_CLS.get_or_init(py, || schema_info_cls);
+        NAMESPACE_INFO_CLS.get_or_init(py, || namespace_info_cls);
         TABLE_INFO_CLS.get_or_init(py, || table_info_cls);
         COLUMN_INFO_CLS.get_or_init(py, || column_info_cls);
     }
@@ -405,9 +405,9 @@ fn catalog_info_to_pyobject(
         .call((), Some(&dict))
 }
 
-fn schema_info_to_pyobject(
+fn namespace_info_to_pyobject(
     py: Python,
-    SchemaInfo {
+    NamespaceInfo {
         name,
         comment,
         properties,
@@ -416,7 +416,7 @@ fn schema_info_to_pyobject(
         created_by,
         updated_at,
         updated_by,
-    }: SchemaInfo,
+    }: NamespaceInfo,
 ) -> PyResult<Bound<'_, PyAny>> {
     let dict = PyDict::new(py);
 
@@ -433,7 +433,7 @@ fn schema_info_to_pyobject(
         updated_by
     });
 
-    SCHEMA_INFO_CLS
+    NAMESPACE_INFO_CLS
         .get(py)
         .unwrap()
         .bind(py)

@@ -28,7 +28,7 @@ pub struct CatalogInfo {
 }
 
 #[derive(Debug, serde::Deserialize)]
-pub struct SchemaInfo {
+pub struct NamespaceInfo {
     pub name: String,
     pub comment: Option<String>,
 
