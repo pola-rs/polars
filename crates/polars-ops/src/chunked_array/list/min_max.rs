@@ -89,15 +89,22 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            _ => Ok(ca
-                .try_apply_amortized(|s| {
-                    let s = s.as_ref();
-                    let sc = s.min_reduce()?;
-                    Ok(sc.into_series(s.name().clone()))
-                })?
-                .explode()
-                .unwrap()
-                .into_series()),
+            dt => {
+                let out = ca
+                    .try_apply_amortized(|s| {
+                        let s = s.as_ref();
+                        let sc = s.min_reduce()?;
+                        Ok(sc.into_series(s.name().clone()))
+                    })?
+                    .explode()
+                    .unwrap()
+                    .into_series();
+
+                match out.dtype() {
+                    DataType::Null => out.cast(dt),
+                    _ => Ok(out),
+                }
+            },
         }
     }
 
@@ -199,15 +206,22 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            _ => Ok(ca
-                .try_apply_amortized(|s| {
-                    let s = s.as_ref();
-                    let sc = s.max_reduce()?;
-                    Ok(sc.into_series(s.name().clone()))
-                })?
-                .explode()
-                .unwrap()
-                .into_series()),
+            dt => {
+                let out = ca
+                    .try_apply_amortized(|s| {
+                        let s = s.as_ref();
+                        let sc = s.max_reduce()?;
+                        Ok(sc.into_series(s.name().clone()))
+                    })?
+                    .explode()
+                    .unwrap()
+                    .into_series();
+
+                match out.dtype() {
+                    DataType::Null => out.cast(dt),
+                    _ => Ok(out),
+                }
+            },
         }
     }
 

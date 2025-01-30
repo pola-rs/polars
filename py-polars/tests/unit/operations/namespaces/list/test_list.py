@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -13,6 +14,9 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_list_arr_get() -> None:
@@ -979,3 +983,13 @@ def test_list_eval_element_schema_19345() -> None:
         ),
         pl.DataFrame({"a": [[1]]}),
     )
+
+
+@pytest.mark.parametrize(
+    "inner_dtype",
+    [pl.Int8, pl.Float64, pl.String, pl.Duration],
+)
+def test_list_agg_all_null(inner_dtype: PolarsDataType) -> None:
+    s = pl.Series([None, None], dtype=pl.List(inner_dtype))
+    assert s.list.min().dtype == inner_dtype
+    assert s.list.max().dtype == inner_dtype
