@@ -157,6 +157,7 @@ def test_sink_csv_with_options() -> None:
             storage_options=None,
             credential_provider="auto",
             retries=2,
+            lambda_post_opt=None,
         )
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
@@ -178,6 +179,7 @@ def test_sink_csv_with_options() -> None:
             cloud_options=None,
             credential_provider=None,
             retries=2,
+            lambda_post_opt=None,
         )
 
 
