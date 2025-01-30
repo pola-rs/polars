@@ -41,7 +41,14 @@ pub fn build_slice_stream(
             },
         )))
     } else {
-        todo!()
+        PhysStream::first(phys_sm.insert(PhysNode::new(
+            phys_sm[input.node].output_schema.clone(),
+            PhysNodeKind::NegativeSlice {
+                input,
+                offset,
+                length,
+            },
+        )))
     }
 }
 

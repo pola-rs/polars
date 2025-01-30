@@ -109,6 +109,18 @@ fn to_graph_rec<'a>(
             )
         },
 
+        NegativeSlice {
+            input,
+            offset,
+            length,
+        } => {
+            let input_key = to_graph_rec(input.node, ctx)?;
+            ctx.graph.add_node(
+                nodes::negative_slice::NegativeSliceNode::new(*offset, *length),
+                [(input_key, input.port)],
+            )
+        },
+
         Filter { predicate, input } => {
             let input_schema = &ctx.phys_sm[input.node].output_schema;
             let phys_predicate_expr = create_stream_expr(predicate, ctx, input_schema)?;
