@@ -1,20 +1,31 @@
+use std::future::Future;
+use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
-use polars_core::prelude::ArrowSchema;
+use polars_core::prelude::{ArrowSchema, Column, DataType, IntoColumn, PlHashMap};
+use polars_core::schema::{Schema, SchemaExt, SchemaRef};
+use polars_core::series::Series;
+use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::{FileMetadata, ParquetOptions};
-use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_io::prelude::{try_set_sorted_flag, FileMetadata, ParallelStrategy, ParquetOptions};
+use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{FileInfo, ScanSources};
+use polars_plan::plans::{FileInfo, ScanSourceRef, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::IdxSize;
+use tokio::sync::OnceCell;
 
+use self::metadata_utils::read_parquet_metadata_bytes;
+use self::row_group_data_fetch::{FetchedBytes, RowGroupData};
+use self::row_group_decode::RowGroupDecoder;
+use super::multi_scan::{RowGroup, RowRestrication, ScanNode};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -280,5 +291,175 @@ impl ComputeNode for ParquetSourceNode {
 
             Ok(())
         }))
+    }
+}
+
+impl ScanNode for ParquetSourceNode {
+    fn name() -> &'static str {
+        "multi_scan[parquet]"
+    }
+
+    fn new(source: ScanSourceRef<'_>) -> impl Future<Output = PolarsResult<Self>> + Send {
+        async move {
+            let source = source.into_owned()?;
+
+            let options = ParquetOptions {
+                schema: None,
+                parallel: ParallelStrategy::Auto,
+                low_memory: false,
+                use_statistics: true,
+            };
+
+            let io_runtime = polars_io::pl_async::get_runtime();
+
+            let source_2 = source.clone();
+
+            let byte_source = io_runtime
+                .spawn(async move {
+                    source_2
+                        .at(0)
+                        .to_dyn_byte_source(&DynByteSourceBuilder::Mmap, None)
+                        .await
+                })
+                .await
+                .unwrap()?;
+            let (metadata_bytes, _maybe_full_bytes) =
+                read_parquet_metadata_bytes(&byte_source, false).await?;
+            let metadata = polars_parquet::parquet::read::deserialize_metadata(
+                metadata_bytes.as_ref(),
+                metadata_bytes.len() * 2 + 1024,
+            )?;
+
+            let arrow_schema = polars_parquet::arrow::read::infer_schema(&metadata)?;
+            let schema = Schema::from_arrow_schema(&arrow_schema);
+
+            let row_count = metadata.num_rows;
+
+            let file_options = FileScanOptions::default();
+            let file_info = FileInfo::new(
+                Arc::new(schema),
+                Some(rayon::iter::Either::Left(Arc::new(arrow_schema))),
+                (Some(row_count), row_count),
+            );
+
+            Ok(ParquetSourceNode::new(
+                source,
+                file_info,
+                None,
+                options,
+                None,
+                file_options,
+                Some(Arc::new(metadata)),
+            ))
+        }
+    }
+
+    fn num_row_groups(&mut self) -> impl Future<Output = PolarsResult<usize>> + Send {
+        async { Ok(self.first_metadata.as_ref().unwrap().row_groups.len()) }
+    }
+    fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
+        // @TODO: overflow
+        async { Ok(self.file_info.row_estimation.1 as IdxSize) }
+    }
+    fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send {
+        async { Ok(self.file_info.schema.clone()) }
+    }
+
+    fn read_row_group(
+        &self,
+        idx: usize,
+        projection: Option<&Bitmap>,
+        row_restriction: Option<RowRestrication>,
+        row_index: Option<PlSmallStr>,
+    ) -> impl Future<Output = PolarsResult<RowGroup>> + Send {
+        let rg = self
+            .first_metadata
+            .as_ref()
+            .unwrap()
+            .row_groups
+            .get(idx)
+            .cloned()
+            .unwrap();
+
+        let mem_slice = self.scan_sources.at(0).to_memslice();
+        async move {
+            let mem_slice = mem_slice?;
+            // @TODO: overflow
+            let row_count = rg.num_rows() as IdxSize;
+
+            let slice: Option<Range<usize>> = None;
+            let slice = slice.unwrap_or(0..rg.num_rows());
+
+            let arrow_schema = self
+                .file_info
+                .reader_schema
+                .as_ref()
+                .unwrap()
+                .as_ref()
+                .unwrap_left();
+
+            let decoded_cols = (0..rg.n_columns())
+                .map(|i| {
+                    let (_, arrow_field) = arrow_schema.get_at_index(i).unwrap();
+
+                    let Some(iter) = rg.columns_under_root_iter(&arrow_field.name) else {
+                        return Ok(Column::full_null(
+                            arrow_field.name.clone(),
+                            slice.len(),
+                            &DataType::from_arrow_field(arrow_field),
+                        ));
+                    };
+
+                    let columns_to_deserialize = iter
+                        .map(|col_md| {
+                            let byte_range = col_md.byte_range();
+                            (col_md, mem_slice.slice(byte_range.start as usize..byte_range.end as usize))
+                        })
+                        .collect::<Vec<_>>();
+
+                    let (array, _) = polars_io::prelude::_internal::to_deserializer(
+                        columns_to_deserialize,
+                        arrow_field.clone(),
+                        None,
+                    )?;
+
+                    assert_eq!(array.len(), slice.len());
+
+                    let mut series = Series::try_from((arrow_field, array))?;
+
+                    if let Some(col_idxs) = rg.columns_idxs_under_root_iter(&arrow_field.name) {
+                        if col_idxs.len() == 1 {
+                            try_set_sorted_flag(&mut series, col_idxs[0], &PlHashMap::default());
+                        }
+                    }
+
+                    // TODO: Also load in the metadata.
+
+                    Ok(series.into_column())
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let df = unsafe { DataFrame::new_no_checks(slice.len(), decoded_cols) };
+
+            // let df = if let Some(predicate) = self.predicate.as_ref() {
+            //     let mask = predicate.predicate.evaluate_io(&df)?;
+            //     let mask = mask.bool().unwrap();
+            //
+            //     let filtered =
+            //         unsafe { filter_cols(df.take_columns(), mask, self.min_values_per_thread) }.await?;
+            //
+            //     let height = if let Some(fst) = filtered.first() {
+            //         fst.len()
+            //     } else {
+            //         mask.num_trues()
+            //     };
+            //
+            //     unsafe { DataFrame::new_no_checks(height, filtered) }
+            // } else {
+            //     df
+            // };
+
+            Ok(RowGroup { df, row_count })
+        }
     }
 }

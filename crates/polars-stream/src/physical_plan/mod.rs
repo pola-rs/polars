@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
@@ -167,6 +168,11 @@ pub enum PhysNodeKind {
         input: PhysStream,
     },
 
+    MultiScan {
+        scan_sources: ScanSources,
+        projection: Option<Bitmap>,
+        scan_type: FileScan,
+    },
     FileScan {
         scan_sources: ScanSources,
         file_info: FileInfo,
@@ -231,6 +237,7 @@ fn visit_node_inputs_mut(
     while let Some(node) = to_visit.pop() {
         match &mut phys_sm[node].kind {
             PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::FileScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
             PhysNodeKind::Select { input, .. }

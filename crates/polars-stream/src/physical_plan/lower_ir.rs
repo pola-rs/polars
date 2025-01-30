@@ -4,6 +4,7 @@ use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
 use polars_core::schema::Schema;
+use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
@@ -390,27 +391,85 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
             } else if scan_sources.len() > 1 || hive_parts.is_some() {
-                // @TODO: At the moment, we materialize for Hive. I would also not like to do this,
-                // but at the moment it is this or panicking.
-                //
-                // This is very much a hack, forgive me please.
-                let phys_node = phys_sm.insert(PhysNode {
-                    output_schema: Arc::new(Schema::default()),
-                    kind: PhysNodeKind::InputIndependentSelect {
-                        selectors: Vec::new(),
-                    },
-                });
-                let input = PhysStream::first(phys_node);
-                let in_memory_physical_plan = create_physical_plan(node, ir_arena, expr_arena)?;
-                let in_memory_physical_plan =
-                    Arc::new(std::sync::Mutex::new(in_memory_physical_plan));
+                if std::env::var("POLARS_NEW_STREAMING_MULTISCAN").as_deref() == Ok("1") {
+                    let mut unprojected_schema = file_info.schema.as_ref().clone();
 
-                PhysNodeKind::InMemoryMap {
-                    input,
-                    map: Arc::new(move |_| {
-                        let mut in_memory_physical_plan = in_memory_physical_plan.lock().unwrap();
-                        in_memory_physical_plan.execute(&mut Default::default())
-                    }),
+                    // @TODO: add row index and include_file_path
+
+                    // @TODO: This should be moved to the projection pushdown query optimization
+                    // step.
+                    let proj_info = file_options.with_columns.as_deref().map(|cs| {
+                        let mut needs_separate_projection = false;
+                        let mut projection = MutableBitmap::from_len_zeroed(unprojected_schema.len());
+                        if let Some(fst) = cs.first() {
+                            let mut prev_idx = unprojected_schema.try_index_of(fst)?;
+                            projection.set(prev_idx, true);
+
+                            for c in &cs[1..] {
+                                let idx = unprojected_schema.try_index_of(c)?;
+                                projection.set(idx, true);
+
+                                needs_separate_projection |= idx <= prev_idx;
+                                prev_idx = idx;
+                            }
+                        }
+
+                        PolarsResult::Ok((projection.freeze(), needs_separate_projection))
+                    }).transpose()?;
+
+                    let needs_separate_projection = proj_info.as_ref().is_some_and(|(_, x)| *x);
+                    let projection = proj_info.map(|(x, _)| x);
+                    
+                    let multi_scan_output_schema = match &projection {
+                        None => output_schema.clone(),
+                        Some(_) if !needs_separate_projection => output_schema.clone(),
+                        Some(p) => {
+                            let indices = p.true_idx_iter().collect::<Vec<_>>();
+                            Arc::new(unprojected_schema.try_project_indices(&indices).unwrap())
+                        }
+                    };
+
+                    let mut node = PhysNodeKind::MultiScan {
+                        scan_sources,
+                        projection,
+                        scan_type,
+                    };
+
+                    if needs_separate_projection {
+                        let source_node = phys_sm.insert(PhysNode {
+                            output_schema: multi_scan_output_schema,
+                            kind: node,
+                        });
+                        let stream = PhysStream::first(source_node);
+                        node = PhysNodeKind::SimpleProjection { input: stream, columns: file_options.with_columns.unwrap().to_vec() };
+                    }
+
+                    node
+
+                } else {
+                    // @TODO: At the moment, we materialize for Hive. I would also not like to do this,
+                    // but at the moment it is this or panicking.
+                    //
+                    // This is very much a hack, forgive me please.
+                    let phys_node = phys_sm.insert(PhysNode {
+                        output_schema: Arc::new(Schema::default()),
+                        kind: PhysNodeKind::InputIndependentSelect {
+                            selectors: Vec::new(),
+                        },
+                    });
+                    let input = PhysStream::first(phys_node);
+                    let in_memory_physical_plan = create_physical_plan(node, ir_arena, expr_arena)?;
+                    let in_memory_physical_plan =
+                        Arc::new(std::sync::Mutex::new(in_memory_physical_plan));
+
+                    PhysNodeKind::InMemoryMap {
+                        input,
+                        map: Arc::new(move |_| {
+                            let mut in_memory_physical_plan =
+                                in_memory_physical_plan.lock().unwrap();
+                            in_memory_physical_plan.execute(&mut Default::default())
+                        }),
+                    }
                 }
             } else {
                 #[cfg(feature = "ipc")]

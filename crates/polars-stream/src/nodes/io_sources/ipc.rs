@@ -1,4 +1,5 @@
 use std::cmp::Reverse;
+use std::future::Future;
 use std::io::Cursor;
 use std::ops::Range;
 use std::sync::Arc;
@@ -7,7 +8,9 @@ use polars_core::config;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType};
 use polars_core::scalar::Scalar;
+use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::array::TryExtend;
+use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::io::ipc::read::{
     get_row_count_from_blocks, prepare_projection, read_file_metadata, FileMetadata, FileReader,
     ProjectionInfo,
@@ -16,16 +19,18 @@ use polars_core::utils::slice_offsets;
 use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
-use polars_io::ipc::IpcScanOptions;
+use polars_io::ipc::{IpcReadOptions, IpcScanOptions};
+use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_io::utils::columns_to_projection;
 use polars_io::RowIndex;
-use polars_plan::plans::{FileInfo, ScanSources};
+use polars_plan::plans::{FileInfo, ScanSourceRef, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
 
+use super::multi_scan::{RowGroup, RowRestrication, ScanNode};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
@@ -496,5 +501,97 @@ impl ComputeNode for IpcSourceNode {
 
             PolarsResult::Ok(())
         }));
+    }
+}
+
+impl ScanNode for IpcSourceNode {
+    fn name() -> &'static str {
+        "multi_scan[ipc]"
+    }
+
+    fn new(source: ScanSourceRef<'_>) -> impl Future<Output = PolarsResult<Self>> + Send {
+        async move {
+            let source = source.into_owned()?;
+            let options = IpcScanOptions;
+
+            let memslice = source.at(0).to_memslice()?;
+            let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
+                memslice.as_ref(),
+            ))?);
+
+            let arrow_schema = metadata.schema.clone();
+            let schema = Schema::from_arrow_schema(arrow_schema.as_ref());
+
+            let file_options = FileScanOptions::default();
+            let file_info = FileInfo::new(
+                Arc::new(schema),
+                Some(rayon::iter::Either::Left(arrow_schema)),
+                (None, usize::MAX),
+            );
+
+            IpcSourceNode::new(source, file_info, options, None, file_options, None)
+        }
+    }
+
+    fn num_row_groups(&mut self) -> impl Future<Output = PolarsResult<usize>> + Send {
+        async { Ok(self.source.metadata.blocks.len()) }
+    }
+    fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
+        async {
+            get_row_count_from_blocks(
+                &mut std::io::Cursor::new(self.source.memslice.as_ref()),
+                &self.source.metadata.blocks,
+            )
+            .map(|v| v as IdxSize)
+        }
+    }
+    fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send {
+        async {
+            Ok(Arc::new(Schema::from_arrow_schema(
+                &self.source.metadata.schema,
+            )))
+        }
+    }
+
+    fn read_row_group(
+        &self,
+        idx: usize,
+        projection: Option<&Bitmap>,
+        row_restriction: Option<RowRestrication>,
+        row_index: Option<PlSmallStr>,
+    ) -> impl Future<Output = PolarsResult<RowGroup>> + Send {
+
+        async move {
+            // @TODO: overflow
+            let row_count = get_row_count_from_blocks(
+                &mut std::io::Cursor::new(self.source.memslice.as_ref()),
+                &self.source.metadata.blocks[idx..idx + 1],
+            )? as IdxSize;
+
+            if projection.is_some_and(|p| p.set_bits() == 0) {
+                return Ok(
+                    RowGroup {
+                        df: unsafe { DataFrame::new_no_checks(row_count as usize, Vec::new()) },
+                        row_count,
+                    }
+                );
+            }
+
+            let projection_info = projection
+                .map(|p| prepare_projection(&self.source.metadata.schema, p.true_idx_iter().collect()));
+
+            let mut reader = FileReader::new_with_projection_info(
+                Cursor::new(self.source.memslice.as_ref()),
+                self.source.metadata.as_ref().clone(),
+                projection_info,
+                None,
+            );
+            reader.set_current_block(idx);
+            let rb = reader.next().unwrap()?;
+            let mut df = DataFrame::empty_with_arrow_schema(rb.schema());
+            df.append_record_batch(rb)?;
+
+            Ok(RowGroup { df, row_count })
+        }
     }
 }

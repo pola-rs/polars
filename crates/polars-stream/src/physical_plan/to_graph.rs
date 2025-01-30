@@ -24,6 +24,7 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
+use crate::nodes::io_sources::parquet::ParquetSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -350,6 +351,29 @@ fn to_graph_rec<'a>(
                 nodes::multiplexer::MultiplexerNode::new(),
                 [(input_key, input.port)],
             )
+        },
+
+        MultiScan {
+            scan_sources,
+            projection,
+            scan_type,
+        } => {
+            match scan_type {
+                polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
+                    nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
+                        scan_sources.clone(),
+                        projection.clone(),
+                    ),
+                    [],
+                ),
+                polars_plan::plans::FileScan::Ipc { .. } => ctx.graph.add_node(
+                    nodes::io_sources::multi_scan::MultiScanNode::<
+                        nodes::io_sources::ipc::IpcSourceNode,
+                    >::new(scan_sources.clone(), projection.clone()),
+                    [],
+                ),
+                _ => todo!(),
+            }
         },
 
         v @ FileScan { .. } => {

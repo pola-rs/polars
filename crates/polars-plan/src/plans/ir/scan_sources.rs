@@ -240,6 +240,14 @@ impl ScanSourceRef<'_> {
         }
     }
 
+    // @TODO: I would like to remove this function eventually.
+    pub fn into_owned(&self) -> PolarsResult<ScanSources> {
+        Ok(match self {
+            ScanSourceRef::Path(path) => ScanSources::Paths([path.to_path_buf()].into()),
+            _ => ScanSources::Buffers([self.to_memslice()?].into()),
+        })
+    }
+
     /// Turn the scan source into a memory slice
     pub fn to_memslice(&self) -> PolarsResult<MemSlice> {
         self.to_memslice_possibly_async(false, None, 0)
