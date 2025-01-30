@@ -407,6 +407,8 @@ impl ProbeState {
                         break;
                     }
                 } else {
+                    let mut out_frames = Vec::new();
+                    let mut out_len = 0;
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
@@ -417,8 +419,12 @@ impl ProbeState {
                                 &mut probe_match,
                                 mark_matches,
                                 emit_unmatched,
-                                probe_limit,
+                                probe_limit - out_len,
                             ) as usize;
+
+                            if table_match.is_empty() {
+                                continue;
+                            }
 
                             // Gather output and send.
                             let mut build_df = if emit_unmatched {
@@ -438,10 +444,28 @@ impl ProbeState {
                             };
                             let out_df = postprocess_join(out_df, params);
 
-                            let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                            if send.send(out_morsel).await.is_err() {
-                                break;
+                            out_len = out_len
+                                .checked_add(out_df.height().try_into().unwrap())
+                                .unwrap();
+                            out_frames.push(out_df);
+
+                            if out_len >= probe_limit {
+                                out_len = 0;
+                                let df =
+                                    accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
+                                let out_morsel = Morsel::new(df, seq, src_token.clone());
+                                if send.send(out_morsel).await.is_err() {
+                                    break;
+                                }
                             }
+                        }
+                    }
+
+                    if out_len > 0 {
+                        let df = accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
+                        let out_morsel = Morsel::new(df, seq, src_token.clone());
+                        if send.send(out_morsel).await.is_err() {
+                            break;
                         }
                     }
                 }
