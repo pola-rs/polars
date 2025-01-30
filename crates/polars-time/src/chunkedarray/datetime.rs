@@ -179,21 +179,31 @@ pub trait DatetimeMethods: AsDatetime {
                 if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(ns)) =
                     (y, m, d, h, mnt, s, ns)
                 {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32)
-                        .and_then(|nd| {
-                            nd.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
-                        })
-                        .map(|ndt| match time_unit {
-                            TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
-                            TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
-                            TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
-                        })
+                    let Some(t) = NaiveDate::from_ymd_opt(y, m as u32, d as u32) else {
+                        panic!(
+                            "Invalid datetime components ({}, {}, {}, {}, {}, {}, {}) supplied.",
+                            y, m, d, h, mnt, s, ns
+                        )
+                    };
+                    let Some(ndt) = t.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
+                    else {
+                        panic!(
+                            "Invalid datetime components ({}, {}, {}, {}, {}, {}, {}) supplied.",
+                            y, m, d, h, mnt, s, ns
+                        )
+                    };
+                    Some(match time_unit {
+                        TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
+                        TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
+                        TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
+                    })
                 } else {
                     None
                 }
             })
             .collect_trusted();
 
+        println!("here");
         let mut ca = match time_zone {
             #[cfg(feature = "timezones")]
             Some(_) => {
