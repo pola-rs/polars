@@ -15,6 +15,7 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
+use polars_io::csv::write::{CsvWriterOptions, SerializeOptions, QuoteStyle};
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
@@ -486,6 +487,35 @@ impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
         self.0.to_ascii().into_pyobject(py)
     }
 }
+
+impl<'py> IntoPyObject<'py> for Wrap<CsvWriterOptions> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let dict = PyDict::new(py);
+        self.0
+            .iter()
+            .try_for_each(|(k, v)| dict.set_item(k.as_str(), &Wrap(v.clone())))?;
+        Ok(dict)
+    }
+}
+
+impl<'py> IntoPyObject<'py> for Wrap<SerializeOptions> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let dict = PyDict::new(py);
+        self.0
+            .iter()
+            .try_for_each(|(k, v)| dict.set_item(k.as_str(), &Wrap(v.clone())))?;
+        Ok(dict)
+    }
+}
+
 
 #[cfg(feature = "parquet")]
 impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
