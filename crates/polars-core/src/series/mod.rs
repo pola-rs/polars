@@ -191,50 +191,8 @@ impl Series {
     pub fn _get_inner_mut(&mut self) -> &mut dyn SeriesTrait {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
-            debug_assert_eq!(Arc::weak_count(&self.0) + Arc::strong_count(&self.0), 1);
         }
-
-        // This is a lot slower than the alternative below, because of an
-        // unnecessary and much more expensive additional internal check for
-        // uniqueness:
-        #[cfg(not(feature = "nightly"))]
-        {
-            Arc::get_mut(&mut self.0).expect("implementation error")
-        }
-
-        // Safety: How do we know the weak count and strong count are accurate?
-        // Those methods are using Relaxed loads, shouldn't we worry about
-        // inconsistency with state in other threads? In general, yes. But we
-        // don't need them to be accurate in all cases, we just need to be sure
-        // that if we get 1, _that_ is accurate (if we get inaccurately high
-        // number that's wasted work due to extra clone_inner(), but not a
-        // correctness issue.)
-        //
-        // So we don't have to worry about other threads decrementing behind our
-        // back. But when could the refcount of an Arc be incremented in another
-        // thread behind our backs, leading to us thinking it's 1 when it's
-        // actually 2?
-        //
-        // 1. Another thread has a reference to the Arc. That's not possible here,
-        //    since we are accessing via a mut reference, so we have guaranteed
-        //    unique access.
-        // 2. This thread sent a clone to another thread... but then this thread
-        //    would have first incremented the refcount, and we'd see it.
-        // 3. Another thread sent us a clone of the Arc. But that's just like
-        //    any other object we have ownership of: we assume sending across
-        //    threads established a happens-before relationship. If thread 1
-        //    sets `mystruct.x = 17` and sends `mystruct` to thread 2, we assume
-        //    `mystruct.x == 17` when reading in thread 2. So we will see a
-        //    refcount of 2 (or more) initially in this scenario; it may be out
-        //    of date, but again, the worry is only an erroneous refcount of 1.
-        //
-        // In short, the fact we have a mut reference, combined with the
-        // increment-on-clone mechanism, means that if we see 1 we can be sure
-        // only we have access.
-        #[cfg(feature = "nightly")]
-        unsafe {
-            Arc::get_mut_unchecked(&mut self.0)
-        }
+        Arc::get_mut(&mut self.0).expect("implementation error")
     }
 
     /// Take or clone a owned copy of the inner [`ChunkedArray`].
