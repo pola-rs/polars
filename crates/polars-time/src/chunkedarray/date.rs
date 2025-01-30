@@ -90,8 +90,10 @@ pub trait DateMethods: AsDate {
             .zip(day)
             .map(|((y, m), d)| {
                 if let (Some(y), Some(m), Some(d)) = (y, m, d) {
-                    NaiveDate::from_ymd_opt(y, m as u32, d as u32)
-                        .map(|t| t.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+                    let Some(ns) = NaiveDate::from_ymd_opt(y, m as u32, d as u32) else {
+                        panic!("Invalid date components ({}, {}, {}) supplied.", y, m, d)
+                    };
+                    Some(ns.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
                 } else {
                     None
                 }
