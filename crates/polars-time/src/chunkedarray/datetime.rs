@@ -180,16 +180,13 @@ pub trait DatetimeMethods: AsDatetime {
                     (y, m, d, h, mnt, s, ns)
                 {
                     let Some(t) = NaiveDate::from_ymd_opt(y, m as u32, d as u32) else {
-                        panic!(
-                            "Invalid datetime components ({}, {}, {}, {}, {}, {}, {}) supplied.",
-                            y, m, d, h, mnt, s, ns
-                        )
+                        panic!("Invalid date components ({}, {}, {}) supplied", y, m, d)
                     };
                     let Some(ndt) = t.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
                     else {
                         panic!(
-                            "Invalid datetime components ({}, {}, {}, {}, {}, {}, {}) supplied.",
-                            y, m, d, h, mnt, s, ns
+                            "Invalid time components ({}, {}, {}, {}) supplied",
+                            h, mnt, s, ns
                         )
                     };
                     Some(match time_unit {
