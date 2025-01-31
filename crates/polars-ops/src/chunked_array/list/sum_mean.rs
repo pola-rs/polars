@@ -106,22 +106,16 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             out.into_series()
         },
         // slowest sum_as_series path
-        dt => {
-            let s = ca
-                .try_apply_amortized(|s| {
-                    s.as_ref()
-                        .sum_reduce()
-                        .map(|sc| sc.into_series(PlSmallStr::EMPTY))
-                })?
-                .explode()
-                .unwrap()
-                .into_series();
-
-            match s.dtype() {
-                DataType::Null => s.cast(dt)?,
-                _ => s,
-            }
-        },
+        dt => ca
+            .try_apply_amortized(|s| {
+                s.as_ref()
+                    .sum_reduce()
+                    .map(|sc| sc.into_series(PlSmallStr::EMPTY))
+            })?
+            .explode()
+            .unwrap()
+            .into_series()
+            .cast(dt)?,
     };
     out.rename(ca.name().clone());
     Ok(out)
