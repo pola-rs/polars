@@ -492,7 +492,8 @@ class Catalog:
             if storage_update_options:
                 storage_options = {**(storage_options or {}), **storage_update_options}
 
-            [_] = v
+            for _ in v:
+                pass
 
         except Exception as e:
             if verbose:
