@@ -880,3 +880,18 @@ def test_selector_list_of_lists_18499() -> None:
 
     with pytest.raises(InvalidOperationError, match="invalid selector expression"):
         lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
+
+
+def test_selector_python_dtypes() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "float": [1.0, 2.0, 3.0],
+            "bool": [True, False, True],
+            "str": ["x", "y", "z"],
+        }
+    )
+    assert df.select(cs.by_dtype(int)).columns == ["int"]
+    assert df.select(cs.by_dtype(float)).columns == ["float"]
+    assert df.select(cs.by_dtype(bool)).columns == ["bool"]
+    assert df.select(cs.by_dtype(str)).columns == ["str"]

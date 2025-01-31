@@ -105,10 +105,6 @@ impl PhysicalExpr for SortExpr {
         Ok(ac)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.physical_expr.collect_live_columns(lv);
-    }
-
     fn isolate_column_expr(
         &self,
         _name: &str,

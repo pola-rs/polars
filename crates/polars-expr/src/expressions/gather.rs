@@ -89,11 +89,6 @@ impl PhysicalExpr for GatherExpr {
         Ok(ac)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.phys_expr.collect_live_columns(lv);
-        self.idx.collect_live_columns(lv);
-    }
-
     fn isolate_column_expr(
         &self,
         _name: &str,

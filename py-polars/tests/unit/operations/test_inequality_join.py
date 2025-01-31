@@ -592,7 +592,8 @@ def test_join_on_strings() -> None:
     q = df.join_where(df, pl.col("a").ge(pl.col("a_right")))
 
     assert "NESTED LOOP JOIN" in q.explain()
-    assert q.collect().to_dict(as_series=False) == {
+    # Note: Output is flaky without sort when POLARS_MAX_THREADS=1
+    assert q.collect().sort(pl.all()).to_dict(as_series=False) == {
         "a": ["a", "b", "b", "c", "c", "c"],
         "b": ["b", "b", "b", "b", "b", "b"],
         "a_right": ["a", "a", "b", "a", "b", "c"],

@@ -4,6 +4,7 @@ use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::POOL;
 use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
 use polars_expr::hash_keys::HashKeys;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
@@ -214,51 +215,37 @@ impl BuildState {
             }
         }
 
-        let track_unmatchable = params.emit_unmatched_build();
-        let table_per_partition: Vec<_> = results_per_partition
-            .into_par_iter()
-            .with_max_len(1)
-            .map(|results| {
-                // Estimate sizes and cardinality.
-                let mut sketch = CardinalitySketch::new();
-                let mut num_frames = 0;
-                for result in &results {
-                    sketch.combine(result.sketch.as_ref().unwrap());
-                    num_frames += result.frames.len();
-                }
-
-                // Build table for this partition.
-                let mut combined_frames = Vec::with_capacity(num_frames);
-                let mut chunk_seq_ids = Vec::with_capacity(num_frames);
-                let mut table = table.new_empty();
-                table.reserve(sketch.estimate() * 5 / 4);
-                if params.preserve_order_build {
-                    let mut combined = Vec::with_capacity(num_frames);
-                    for result in results {
-                        for (hash_keys, (seq, frame)) in
-                            result.hash_keys.into_iter().zip(result.frames)
-                        {
-                            combined.push((seq, hash_keys, frame));
-                        }
+        POOL.install(|| {
+            let track_unmatchable = params.emit_unmatched_build();
+            let table_per_partition: Vec<_> = results_per_partition
+                .into_par_iter()
+                .with_max_len(1)
+                .map(|results| {
+                    // Estimate sizes and cardinality.
+                    let mut sketch = CardinalitySketch::new();
+                    let mut num_frames = 0;
+                    for result in &results {
+                        sketch.combine(result.sketch.as_ref().unwrap());
+                        num_frames += result.frames.len();
                     }
 
-                    combined.sort_unstable_by_key(|c| c.0);
-                    for (seq, hash_keys, frame) in combined {
-                        // Zero-sized chunks can get deleted, so skip entirely to avoid messing
-                        // up the chunk counter.
-                        if frame.height() == 0 {
-                            continue;
+                    // Build table for this partition.
+                    let mut combined_frames = Vec::with_capacity(num_frames);
+                    let mut chunk_seq_ids = Vec::with_capacity(num_frames);
+                    let mut table = table.new_empty();
+                    table.reserve(sketch.estimate() * 5 / 4);
+                    if params.preserve_order_build {
+                        let mut combined = Vec::with_capacity(num_frames);
+                        for result in results {
+                            for (hash_keys, (seq, frame)) in
+                                result.hash_keys.into_iter().zip(result.frames)
+                            {
+                                combined.push((seq, hash_keys, frame));
+                            }
                         }
 
-                        table.insert_key_chunk(hash_keys, track_unmatchable);
-                        combined_frames.push(frame);
-                        chunk_seq_ids.push(seq);
-                    }
-                } else {
-                    for result in results {
-                        for (hash_keys, (_, frame)) in
-                            result.hash_keys.into_iter().zip(result.frames)
-                        {
+                        combined.sort_unstable_by_key(|c| c.0);
+                        for (seq, hash_keys, frame) in combined {
                             // Zero-sized chunks can get deleted, so skip entirely to avoid messing
                             // up the chunk counter.
                             if frame.height() == 0 {
@@ -267,31 +254,47 @@ impl BuildState {
 
                             table.insert_key_chunk(hash_keys, track_unmatchable);
                             combined_frames.push(frame);
+                            chunk_seq_ids.push(seq);
+                        }
+                    } else {
+                        for result in results {
+                            for (hash_keys, (_, frame)) in
+                                result.hash_keys.into_iter().zip(result.frames)
+                            {
+                                // Zero-sized chunks can get deleted, so skip entirely to avoid messing
+                                // up the chunk counter.
+                                if frame.height() == 0 {
+                                    continue;
+                                }
+
+                                table.insert_key_chunk(hash_keys, track_unmatchable);
+                                combined_frames.push(frame);
+                            }
                         }
                     }
-                }
 
-                let df = if combined_frames.is_empty() {
-                    if params.left_is_build {
-                        DataFrame::empty_with_schema(&params.left_payload_schema)
+                    let df = if combined_frames.is_empty() {
+                        if params.left_is_build {
+                            DataFrame::empty_with_schema(&params.left_payload_schema)
+                        } else {
+                            DataFrame::empty_with_schema(&params.right_payload_schema)
+                        }
                     } else {
-                        DataFrame::empty_with_schema(&params.right_payload_schema)
+                        accumulate_dataframes_vertical_unchecked(combined_frames)
+                    };
+                    ProbeTable {
+                        table,
+                        df,
+                        chunk_seq_ids,
                     }
-                } else {
-                    accumulate_dataframes_vertical_unchecked(combined_frames)
-                };
-                ProbeTable {
-                    table,
-                    df,
-                    chunk_seq_ids,
-                }
-            })
-            .collect();
+                })
+                .collect();
 
-        ProbeState {
-            table_per_partition,
-            max_seq_sent: MorselSeq::default(),
-        }
+            ProbeState {
+                table_per_partition,
+                max_seq_sent: MorselSeq::default(),
+            }
+        })
     }
 }
 
@@ -407,6 +410,8 @@ impl ProbeState {
                         break;
                     }
                 } else {
+                    let mut out_frames = Vec::new();
+                    let mut out_len = 0;
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
@@ -417,8 +422,12 @@ impl ProbeState {
                                 &mut probe_match,
                                 mark_matches,
                                 emit_unmatched,
-                                probe_limit,
+                                probe_limit - out_len,
                             ) as usize;
+
+                            if table_match.is_empty() {
+                                continue;
+                            }
 
                             // Gather output and send.
                             let mut build_df = if emit_unmatched {
@@ -438,10 +447,28 @@ impl ProbeState {
                             };
                             let out_df = postprocess_join(out_df, params);
 
-                            let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                            if send.send(out_morsel).await.is_err() {
-                                break;
+                            out_len = out_len
+                                .checked_add(out_df.height().try_into().unwrap())
+                                .unwrap();
+                            out_frames.push(out_df);
+
+                            if out_len >= probe_limit {
+                                out_len = 0;
+                                let df =
+                                    accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
+                                let out_morsel = Morsel::new(df, seq, src_token.clone());
+                                if send.send(out_morsel).await.is_err() {
+                                    break;
+                                }
                             }
+                        }
+                    }
+
+                    if out_len > 0 {
+                        let df = accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
+                        let out_morsel = Morsel::new(df, seq, src_token.clone());
+                        if send.send(out_morsel).await.is_err() {
+                            break;
                         }
                     }
                 }
@@ -518,8 +545,10 @@ impl ProbeState {
 
 impl Drop for ProbeState {
     fn drop(&mut self) {
-        // Parallel drop as the state might be quite big.
-        self.table_per_partition.par_drain(..).for_each(drop);
+        POOL.install(|| {
+            // Parallel drop as the state might be quite big.
+            self.table_per_partition.par_drain(..).for_each(drop);
+        })
     }
 }
 

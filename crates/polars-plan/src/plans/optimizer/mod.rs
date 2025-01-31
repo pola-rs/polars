@@ -156,7 +156,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     // Should be run before predicate pushdown.
     if opt_state.projection_pushdown() {
-        let mut projection_pushdown_opt = ProjectionPushDown::new();
+        let mut projection_pushdown_opt = ProjectionPushDown::new(opt_state.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -219,7 +219,15 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
         // We only want to run this on cse inserted caches
-        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, expr_eval, verbose)?;
+        cache_states::set_cache_states(
+            lp_top,
+            lp_arena,
+            expr_arena,
+            scratch,
+            expr_eval,
+            verbose,
+            opt_state.new_streaming(),
+        )?;
     }
 
     // This one should run (nearly) last as this modifies the projections

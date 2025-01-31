@@ -104,6 +104,12 @@ pub enum PhysNodeKind {
         length: usize,
     },
 
+    NegativeSlice {
+        input: PhysStream,
+        offset: i64,
+        length: usize,
+    },
+
     Filter {
         input: PhysStream,
         predicate: ExprIR,
@@ -231,6 +237,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }
+            | PhysNodeKind::NegativeSlice { input, .. }
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }

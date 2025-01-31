@@ -233,6 +233,15 @@ impl LiteralValue {
             LiteralValue::UInt32(value)
         }
     }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::OtherScalar(sc) => sc.is_null(),
+            Self::Series(s) => s.len() == 1 && s.null_count() == 1,
+            _ => false,
+        }
+    }
 }
 
 pub trait Literal {

@@ -17,7 +17,8 @@ use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, is_elementwise_rec_cached, lower_exprs, unique_column_name, ExprCache,
+    build_length_preserving_select_stream, build_select_stream, is_elementwise_rec_cached,
+    lower_exprs, unique_column_name, ExprCache,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -40,7 +41,14 @@ pub fn build_slice_stream(
             },
         )))
     } else {
-        todo!()
+        PhysStream::first(phys_sm.insert(PhysNode::new(
+            phys_sm[input.node].output_schema.clone(),
+            PhysNodeKind::NegativeSlice {
+                input,
+                offset,
+                length,
+            },
+        )))
     }
 }
 
@@ -133,7 +141,6 @@ pub fn lower_ir(
                 .iter()
                 .all(|e| is_elementwise_rec_cached(e.node(), expr_arena, expr_cache)) =>
         {
-            // FIXME: constant literal columns should be broadcasted with hstack.
             let selectors = exprs.clone();
             let phys_input = lower_ir!(*input)?;
             PhysNodeKind::Select {
@@ -146,8 +153,6 @@ pub fn lower_ir(
         IR::HStack { input, exprs, .. } => {
             // We already handled the all-streamable case above, so things get more complicated.
             // For simplicity we just do a normal select with all the original columns prepended.
-            //
-            // FIXME: constant literal columns should be broadcasted with hstack.
             let exprs = exprs.clone();
             let phys_input = lower_ir!(*input)?;
             let input_schema = &phys_sm[phys_input.node].output_schema;
@@ -164,7 +169,9 @@ pub fn lower_ir(
                 selectors.insert(expr.output_name().clone(), expr);
             }
             let selectors = selectors.into_values().collect_vec();
-            return build_select_stream(phys_input, &selectors, expr_arena, phys_sm, expr_cache);
+            return build_length_preserving_select_stream(
+                phys_input, &selectors, expr_arena, phys_sm, expr_cache,
+            );
         },
 
         IR::Slice { input, offset, len } => {

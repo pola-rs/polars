@@ -142,6 +142,15 @@ def test_object_concat() -> None:
     assert catted.to_dict(as_series=False) == {"a": [1, 2, 3, 1, 4, 3]}
 
 
+def test_object_concat_diagonal_14651() -> None:
+    df1 = pl.DataFrame({"a": ["abc"]}, schema={"a": pl.Object})
+    df2 = pl.DataFrame({"b": ["def"]}, schema={"b": pl.Object})
+    result = pl.concat([df1, df2], how="diagonal")
+    assert result.schema == pl.Schema({"a": pl.Object, "b": pl.Object})
+    assert result["a"].to_list() == ["abc", None]
+    assert result["b"].to_list() == [None, "def"]
+
+
 def test_object_row_construction() -> None:
     data = [
         [uuid4()],

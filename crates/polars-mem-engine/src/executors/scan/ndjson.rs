@@ -1,16 +1,18 @@
 use polars_core::config;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_io::predicates::SkipBatchPredicate;
 use polars_io::prelude::{JsonLineReader, SerReader};
 use polars_io::utils::compression::maybe_decompress_bytes;
 
 use super::*;
+use crate::ScanPredicate;
 
 pub struct JsonExec {
     sources: ScanSources,
     options: NDJsonReadOptions,
     file_options: FileScanOptions,
     file_info: FileInfo,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<ScanPredicate>,
 }
 
 impl JsonExec {
@@ -19,7 +21,7 @@ impl JsonExec {
         options: NDJsonReadOptions,
         file_options: FileScanOptions,
         file_info: FileInfo,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
     ) -> Self {
         Self {
             sources,
@@ -93,7 +95,11 @@ impl JsonExec {
                     .with_rechunk(self.file_options.rechunk)
                     .with_chunk_size(Some(self.options.chunk_size))
                     .with_row_index(row_index)
-                    .with_predicate(self.predicate.clone().map(phys_expr_to_io_expr))
+                    .with_predicate(
+                        self.predicate
+                            .as_ref()
+                            .map(|p| phys_expr_to_io_expr(p.predicate.clone())),
+                    )
                     .with_projection(self.file_options.with_columns.clone())
                     .low_memory(self.options.low_memory)
                     .with_n_rows(n_rows)
@@ -133,7 +139,8 @@ impl ScanExec for JsonExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
+        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
