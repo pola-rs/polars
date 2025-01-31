@@ -1462,3 +1462,29 @@ def test_lf_unnest() -> None:
         ]
     )
     assert_frame_equal(lf.unnest("a", "b").collect(), expected)
+
+
+def test_type_coercion_cast_boolean_after_comparison() -> None:
+    import operator
+
+    lf = pl.LazyFrame({"a": 1, "b": 2})
+
+    for op in [
+        operator.eq,
+        operator.ne,
+        operator.lt,
+        operator.le,
+        operator.gt,
+        operator.ge,
+        pl.Expr.eq_missing,
+        pl.Expr.ne_missing,
+    ]:
+        e = op(pl.col("a"), pl.col("b")).cast(pl.Boolean).alias("o")
+        assert "cast" not in lf.with_columns(e).explain()
+
+        e = op(pl.col("a"), pl.col("b")).cast(pl.Boolean).cast(pl.Boolean).alias("o")
+        assert "cast" not in lf.with_columns(e).explain()
+
+    for op in [operator.and_, operator.or_, operator.xor]:
+        e = op(pl.col("a"), pl.col("b")).cast(pl.Boolean)
+        assert "cast" in lf.with_columns(e).explain()

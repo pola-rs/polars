@@ -447,11 +447,19 @@ fn resolve_join_where(
     for e in predicates {
         let predicate = to_expr_ir_ignore_alias(e, ctxt.expr_arena)?;
 
+        ctxt.conversion_optimizer
+            .fill_scratch(&[predicate.node()], ctxt.expr_arena);
+
         let ir = IR::Filter {
             input: last_node,
             predicate,
         };
+
         last_node = ctxt.lp_arena.add(ir);
+
+        ctxt.conversion_optimizer
+            .coerce_types(ctxt.expr_arena, ctxt.lp_arena, last_node)
+            .map_err(|e| e.context("'join_where' failed".into()))?;
     }
     Ok((last_node, join_node))
 }
