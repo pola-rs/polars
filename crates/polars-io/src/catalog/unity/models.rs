@@ -257,6 +257,54 @@ impl ColumnTypeJsonType {
     }
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct TableCredentials {
+    pub aws_temp_credentials: Option<TableCredentialsAws>,
+    pub azure_user_delegation_sas: Option<TableCredentialsAzure>,
+    pub gcp_oauth_token: Option<TableCredentialsGcp>,
+    pub expiration_time: i64,
+}
+
+impl TableCredentials {
+    pub fn into_enum(self) -> Option<TableCredentialsVariants> {
+        if let v @ Some(_) = self.aws_temp_credentials {
+            v.map(TableCredentialsVariants::Aws)
+        } else if let v @ Some(_) = self.azure_user_delegation_sas {
+            v.map(TableCredentialsVariants::Azure)
+        } else if let v @ Some(_) = self.gcp_oauth_token {
+            v.map(TableCredentialsVariants::Gcp)
+        } else {
+            None
+        }
+    }
+}
+
+pub enum TableCredentialsVariants {
+    Aws(TableCredentialsAws),
+    Azure(TableCredentialsAzure),
+    Gcp(TableCredentialsGcp),
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TableCredentialsAws {
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub session_token: Option<String>,
+
+    #[serde(default)]
+    pub access_point: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TableCredentialsAzure {
+    pub sas_token: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+pub struct TableCredentialsGcp {
+    pub oauth_token: String,
+}
+
 fn null_to_default<'de, T, D>(d: D) -> Result<T, D::Error>
 where
     T: Default + serde::de::Deserialize<'de>,

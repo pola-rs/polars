@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import os
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -12,11 +13,15 @@ from polars.exceptions import DuplicateError
 from polars.schema import Schema
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from datetime import datetime
 
     from polars._typing import SchemaDict
     from polars.datatypes.classes import DataType
-    from polars.io.cloud import CredentialProviderFunction
+    from polars.io.cloud import (
+        CredentialProviderFunction,
+        CredentialProviderFunctionReturn,
+    )
     from polars.lazyframe import LazyFrame
 
 
@@ -59,8 +64,9 @@ class Catalog:
             bearer_token == "auto"
             # For security, in "auto" mode, only retrieve/use the token if:
             # * We are running inside a Databricks environment
-            # * The `workspace_url` is pointing to Databricks
+            # * The `workspace_url` is pointing to Databricks and uses HTTPS
             and "DATABRICKS_RUNTIME_VERSION" in os.environ
+            and workspace_url.startswith("https://")
             and (
                 workspace_url.removeprefix("https://")
                 .split("/", 1)[0]
@@ -137,6 +143,11 @@ class Catalog:
         """
         return self._client.get_table_info(catalog_name, namespace, table_name)
 
+    def _get_table_credentials(
+        self, table_id: str, *, write: bool
+    ) -> tuple[dict[str, str] | None, dict[str, str], int]:
+        return self._client.get_table_credentials(table_id=table_id, write=write)
+
     def scan_table(
         self,
         catalog_name: str,
@@ -201,18 +212,23 @@ class Catalog:
             table_info, "scan table"
         )
 
+        credential_provider, storage_options = self._init_credentials(
+            credential_provider,
+            storage_options,
+            table_info,
+            write=False,
+            caller_name="Catalog.scan_table",
+        )
+
         if data_source_format in ["DELTA", "DELTASHARING"]:
             from polars.io.delta import scan_delta
-
-            if credential_provider is not None and credential_provider != "auto":
-                msg = "credential_provider when scanning DELTA"
-                raise NotImplementedError(msg)
 
             return scan_delta(
                 storage_location,
                 version=delta_table_version,
                 delta_table_options=delta_table_options,
                 storage_options=storage_options,
+                credential_provider=credential_provider,
             )
 
         if delta_table_version is not None:
@@ -228,15 +244,6 @@ class Catalog:
                 f"{data_source_format}"
             )
             raise ValueError(msg)
-
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
-
-        credential_provider = _maybe_init_credential_provider(
-            credential_provider,
-            storage_location,
-            storage_options,
-            "Catalog.scan_table",
-        )
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -290,6 +297,10 @@ class Catalog:
     ) -> None:
         """
         Delete a catalog.
+
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -346,6 +357,10 @@ class Catalog:
     ) -> None:
         """
         Delete a namespace (unity schema) in the catalog.
+
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -426,6 +441,13 @@ class Catalog:
         """
         Delete the table stored at this location.
 
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
+
+        If you would like to perform manual deletions, the storage location of
+        the files can be found using `get_table_info`.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -445,6 +467,65 @@ class Catalog:
             table_name=table_name,
         )
 
+    def _init_credentials(
+        self,
+        credential_provider: (CredentialProviderFunction | Literal["auto"] | None),
+        storage_options: dict[str, Any] | None,
+        table_info: TableInfo,
+        *,
+        write: bool,
+        caller_name: str,
+    ) -> tuple[CredentialProviderFunction | None, dict[str, Any] | None]:
+        if credential_provider != "auto":
+            return credential_provider, storage_options
+
+        verbose = os.getenv("POLARS_VERBOSE") == "1"
+
+        catalog_credential_provider = CatalogCredentialProvider(
+            self, table_info.table_id, write=write
+        )
+
+        try:
+            v = catalog_credential_provider._credentials_iter()
+            storage_update_options = next(v)
+
+            if storage_update_options:
+                storage_options = {**(storage_options or {}), **storage_update_options}
+
+            for _ in v:
+                pass
+
+        except Exception as e:
+            if verbose:
+                table_name = table_info.name
+                table_id = table_info.table_id
+                msg = (
+                    f"error auto-initializing CatalogCredentialProvider: {e!r} "
+                    f"{table_name = } ({table_id = })"
+                )
+                print(msg, file=sys.stderr)
+        else:
+            if verbose:
+                table_name = table_info.name
+                table_id = table_info.table_id
+                msg = (
+                    "auto-selected CatalogCredentialProvider for "
+                    f"{table_name = } ({table_id = })"
+                )
+                print(msg, file=sys.stderr)
+
+            return catalog_credential_provider, storage_options
+
+        # This should generally not happen, but if using the temporary
+        # credentials API fails for whatever reason, we fallback to our built-in
+        # credential provider resolution.
+
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        return _maybe_init_credential_provider(
+            "auto", table_info.storage_location, storage_options, caller_name
+        ), storage_options
+
     @classmethod
     def _get_databricks_token(cls) -> str:
         if importlib.util.find_spec("databricks.sdk") is None:
@@ -455,6 +536,38 @@ class Catalog:
         m = importlib.import_module("databricks.sdk.core").__dict__
 
         return m["DefaultCredentials"]()(m["Config"]())()["Authorization"][7:]
+
+
+class CatalogCredentialProvider:
+    """Retrieves credentials from the Unity catalog temporary credentials API."""
+
+    def __init__(self, catalog: Catalog, table_id: str, *, write: bool) -> None:
+        self.catalog = catalog
+        self.table_id = table_id
+        self.write = write
+
+    def __call__(self) -> CredentialProviderFunctionReturn:  # noqa: D102
+        _, (creds, expiry) = self._credentials_iter()
+        return creds, expiry
+
+    def _credentials_iter(
+        self,
+    ) -> Generator[Any]:
+        creds, storage_update_options, expiry = self.catalog._get_table_credentials(
+            self.table_id, write=self.write
+        )
+
+        yield storage_update_options
+
+        if not creds:
+            table_id = self.table_id
+            msg = (
+                "did not receive credentials from temporary credentials API for "
+                f"{table_id = }"
+            )
+            raise Exception(msg)  # noqa: TRY002
+
+        yield creds, expiry
 
 
 def _extract_location_and_data_format(
