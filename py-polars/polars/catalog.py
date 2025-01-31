@@ -5,7 +5,7 @@ import importlib
 import os
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Generator, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
@@ -13,6 +13,7 @@ from polars.exceptions import DuplicateError
 from polars.schema import Schema
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from datetime import datetime
 
     from polars._typing import SchemaDict
