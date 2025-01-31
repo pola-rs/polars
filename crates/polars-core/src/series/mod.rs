@@ -192,7 +192,7 @@ impl Series {
         if Arc::weak_count(&self.0) + Arc::strong_count(&self.0) != 1 {
             self.0 = self.0.clone_inner();
         }
-        
+
         Arc::get_mut(&mut self.0).expect("implementation error")
     }
 
