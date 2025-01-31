@@ -1440,3 +1440,43 @@ def test_no_collapse_join_when_maintain_order_20725() -> None:
     df_pl_eager = ldf.collect().filter(pl.col("Fraction_1") == 100)
 
     assert_frame_equal(df_pl_lazy, df_pl_eager)
+
+
+def test_join_where_predicate_type_coercion_21009() -> None:
+    left_frame = pl.LazyFrame(
+        {
+            "left_match": ["A", "B", "C", "D", "E", "F"],
+            "left_date_start": range(6),
+        }
+    )
+
+    right_frame = pl.LazyFrame(
+        {
+            "right_match": ["D", "E", "F", "G", "H", "I"],
+            "right_date": range(6),
+        }
+    )
+
+    # Note: Cannot eq the plans as the operand sides are non-deterministic
+
+    q1 = left_frame.join_where(
+        right_frame,
+        pl.col("left_match") == pl.col("right_match"),
+        pl.col("right_date") >= pl.col("left_date_start"),
+    )
+
+    plan = q1.explain().splitlines()
+    assert plan[0].strip().startswith("FILTER")
+    assert plan[1].strip().startswith("INNER JOIN")
+
+    q2 = left_frame.join_where(
+        right_frame,
+        pl.all_horizontal(pl.col("left_match") == pl.col("right_match")),
+        pl.col("right_date") >= pl.col("left_date_start"),
+    )
+
+    plan = q2.explain().splitlines()
+    assert plan[0].strip().startswith("FILTER")
+    assert plan[1].strip().startswith("INNER JOIN")
+
+    assert_frame_equal(q1.collect(), q2.collect())
