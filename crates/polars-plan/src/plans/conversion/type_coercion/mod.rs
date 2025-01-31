@@ -404,11 +404,7 @@ fn try_inline_literal_cast(
 ) -> PolarsResult<Option<LiteralValue>> {
     let lv = match lv {
         LiteralValue::Series(s) => {
-            let s = if cast_options.strict() {
-                s.strict_cast(dtype)
-            } else {
-                s.cast_with_options(dtype, cast_options)
-            }?;
+            let s = s.cast_with_options(dtype, cast_options)?;
             LiteralValue::Series(SpecialEq::new(s))
         },
         LiteralValue::StrCat(s) => {
