@@ -101,10 +101,11 @@ impl EnterPolarsExt for Python<'_> {
         T: Ungil + Send,
         E: Ungil + Send + Into<PyPolarsErr>,
     {
-        self.allow_threads(|| match catch_keyboard_interrupt(AssertUnwindSafe(f)) {
+        let ret = self.allow_threads(|| catch_keyboard_interrupt(AssertUnwindSafe(f)));
+        match ret {
             Ok(Ok(ret)) => Ok(ret),
             Ok(Err(err)) => Err(PyErr::from(err.into())),
             Err(KeyboardInterrupt) => Err(PyKeyboardInterrupt::new_err("")),
-        })
+        }
     }
 }
