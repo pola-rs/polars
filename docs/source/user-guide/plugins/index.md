@@ -1,6 +1,6 @@
 # Plugins
 
-Polars allows you to extend it's functionality with either Expression plugins or IO plugins.
+Polars allows you to extend its functionality with either Expression plugins or IO plugins.
 
 - [Expression plugins](./expr_plugins.md)
 - [IO plugins](./io_plugins.md)
