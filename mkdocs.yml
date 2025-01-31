@@ -10,104 +10,116 @@ docs_dir: docs/source
 
 # Documentation layout
 nav:
-  - User guide:
-    - index.md
-    - user-guide/getting-started.md
-    - user-guide/installation.md
-    - Concepts:
-      - user-guide/concepts/index.md
-      - user-guide/concepts/data-types-and-structures.md
-      - user-guide/concepts/expressions-and-contexts.md
-      - user-guide/concepts/lazy-api.md
-    - Expressions:
-      - user-guide/expressions/index.md
-      - user-guide/expressions/basic-operations.md
-      - user-guide/expressions/expression-expansion.md
-      - user-guide/expressions/casting.md
-      - user-guide/expressions/strings.md
-      - user-guide/expressions/lists-and-arrays.md
-      - user-guide/expressions/categorical-data-and-enums.md
-      - user-guide/expressions/structs.md
-      - user-guide/expressions/missing-data.md
-      - user-guide/expressions/aggregation.md
-      - user-guide/expressions/window-functions.md
-      - user-guide/expressions/folds.md
-      - user-guide/expressions/user-defined-python-functions.md
-      - user-guide/expressions/numpy-functions.md
-    - Transformations:
-      - user-guide/transformations/index.md
-      - user-guide/transformations/joins.md
-      - user-guide/transformations/concatenation.md
-      - user-guide/transformations/pivot.md
-      - user-guide/transformations/unpivot.md
-      - Time series:
-        - user-guide/transformations/time-series/parsing.md
-        - user-guide/transformations/time-series/filter.md
-        - user-guide/transformations/time-series/rolling.md
-        - user-guide/transformations/time-series/resampling.md
-        - user-guide/transformations/time-series/timezones.md
-    - Lazy API:
-      - user-guide/lazy/index.md
-      - user-guide/lazy/using.md
-      - user-guide/lazy/optimizations.md
-      - user-guide/lazy/schemas.md
-      - user-guide/lazy/query-plan.md
-      - user-guide/lazy/execution.md
-      - user-guide/lazy/streaming.md
-      - user-guide/lazy/gpu.md
-    - IO:
-      - user-guide/io/index.md
-      - user-guide/io/csv.md
-      - user-guide/io/excel.md
-      - user-guide/io/parquet.md
-      - user-guide/io/json.md
-      - user-guide/io/multiple.md
-      - user-guide/io/hive.md
-      - user-guide/io/database.md
-      - user-guide/io/cloud-storage.md
-      - user-guide/io/bigquery.md
-      - user-guide/io/hugging-face.md
-    - Plugins:
-      - user-guide/plugins/index.md
-      - user-guide/plugins/expr_plugins.md
-      - user-guide/plugins/io_plugins.md
-    - SQL:
-      - user-guide/sql/intro.md
-      - user-guide/sql/show.md
-      - user-guide/sql/select.md
-      - user-guide/sql/create.md
-      - user-guide/sql/cte.md
-    - Migrating:
-      - user-guide/migration/pandas.md
-      - user-guide/migration/spark.md
-    - user-guide/ecosystem.md
-    - Misc:
-      - user-guide/misc/multiprocessing.md
-      - user-guide/misc/visualization.md
-      - user-guide/misc/styling.md
-      - user-guide/misc/comparison.md
-      - user-guide/misc/arrow.md
-    - user-guide/gpu-support.md
-
-  - API reference: api/index.md
-
-  - Development:
-    - Contributing:
-      - development/contributing/index.md
-      - development/contributing/ide.md
-      - development/contributing/test.md
-      - development/contributing/ci.md
-      - development/contributing/code-style.md
-    - development/versioning.md
-
-  - Releases:
-    - releases/changelog.md
-    - Upgrade guides:
-      - releases/upgrade/index.md
-      - releases/upgrade/1.md
-      - releases/upgrade/0.20.md
-      - releases/upgrade/0.19.md
-
+  - Polars:
+    - User guide:
+      - index.md
+      - user-guide/getting-started.md
+      - user-guide/installation.md
+      - Concepts:
+        - user-guide/concepts/index.md
+        - user-guide/concepts/data-types-and-structures.md
+        - user-guide/concepts/expressions-and-contexts.md
+        - user-guide/concepts/lazy-api.md
+      - Expressions:
+        - user-guide/expressions/index.md
+        - user-guide/expressions/basic-operations.md
+        - user-guide/expressions/expression-expansion.md
+        - user-guide/expressions/casting.md
+        - user-guide/expressions/strings.md
+        - user-guide/expressions/lists-and-arrays.md
+        - user-guide/expressions/categorical-data-and-enums.md
+        - user-guide/expressions/structs.md
+        - user-guide/expressions/missing-data.md
+        - user-guide/expressions/aggregation.md
+        - user-guide/expressions/window-functions.md
+        - user-guide/expressions/folds.md
+        - user-guide/expressions/user-defined-python-functions.md
+        - user-guide/expressions/numpy-functions.md
+      - Transformations:
+        - user-guide/transformations/index.md
+        - user-guide/transformations/joins.md
+        - user-guide/transformations/concatenation.md
+        - user-guide/transformations/pivot.md
+        - user-guide/transformations/unpivot.md
+        - Time series:
+          - user-guide/transformations/time-series/parsing.md
+          - user-guide/transformations/time-series/filter.md
+          - user-guide/transformations/time-series/rolling.md
+          - user-guide/transformations/time-series/resampling.md
+          - user-guide/transformations/time-series/timezones.md
+      - Lazy API:
+        - user-guide/lazy/index.md
+        - user-guide/lazy/using.md
+        - user-guide/lazy/optimizations.md
+        - user-guide/lazy/schemas.md
+        - user-guide/lazy/query-plan.md
+        - user-guide/lazy/execution.md
+        - user-guide/lazy/streaming.md
+        - user-guide/lazy/gpu.md
+      - IO:
+        - user-guide/io/index.md
+        - user-guide/io/csv.md
+        - user-guide/io/excel.md
+        - user-guide/io/parquet.md
+        - user-guide/io/json.md
+        - user-guide/io/multiple.md
+        - user-guide/io/hive.md
+        - user-guide/io/database.md
+        - user-guide/io/cloud-storage.md
+        - user-guide/io/bigquery.md
+        - user-guide/io/hugging-face.md
+      - Plugins:
+        - user-guide/plugins/index.md
+        - user-guide/plugins/expr_plugins.md
+        - user-guide/plugins/io_plugins.md
+      - SQL:
+        - user-guide/sql/intro.md
+        - user-guide/sql/show.md
+        - user-guide/sql/select.md
+        - user-guide/sql/create.md
+        - user-guide/sql/cte.md
+      - Migrating:
+        - user-guide/migration/pandas.md
+        - user-guide/migration/spark.md
+      - user-guide/ecosystem.md
+      - Misc:
+        - user-guide/misc/multiprocessing.md
+        - user-guide/misc/visualization.md
+        - user-guide/misc/styling.md
+        - user-guide/misc/comparison.md
+        - user-guide/misc/arrow.md
+      - user-guide/gpu-support.md
+    - API: 
+      - api/reference.md
+    - Development:
+      - Contributing:
+        - development/contributing/index.md
+        - development/contributing/ide.md
+        - development/contributing/test.md
+        - development/contributing/ci.md
+        - development/contributing/code-style.md
+      - development/versioning.md
+    - Releases:
+      - releases/changelog.md
+      - Upgrade guides:
+        - releases/upgrade/index.md
+        - releases/upgrade/1.md
+        - releases/upgrade/0.20.md
+        - releases/upgrade/0.19.md
+  - Polars Cloud:
+    - "": 
+      - polars-cloud/quickstart.md
+      - Providers:
+        - polars-cloud/providers/aws.md
+      - Working with Polars Cloud:
+        - polars-cloud/explain/workspace.md
+        - polars-cloud/explain/compute.md
+        - polars-cloud/explain/queries.md
+      - Integrations:
+        - polars-cloud/integrations/airflow.md
+      - polars-cloud/cli.md
+      - polars-cloud/api-reference.md
+      - polars-cloud/faq.md
 not_in_nav: |
   /_build/
 validation:
@@ -124,18 +136,21 @@ theme:
   # Palette toggle for light mode
   - media: "(prefers-color-scheme: light)"
     scheme: default
+    primary: custom
     toggle:
       icon: material/brightness-7
       name: Switch to dark mode
   # Palette toggle for dark mode
   - media: "(prefers-color-scheme: dark)"
     scheme: slate
+    primary: custom
     toggle:
       icon: material/brightness-4
       name: Switch to light mode
   logo: _build/assets/logo.png
   features:
     - navigation.tracking
+    - navigation.sections
     - navigation.instant
     - navigation.tabs
     - navigation.tabs.sticky
@@ -162,6 +177,7 @@ strict: true
 # Formatting options
 markdown_extensions:
   - admonition
+  - md_in_html
   - pymdownx.details
   - attr_list
   - pymdownx.emoji:
