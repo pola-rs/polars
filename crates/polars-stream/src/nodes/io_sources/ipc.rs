@@ -31,6 +31,7 @@ use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
 
 use super::multi_scan::{RowGroup, RowRestrication, ScanNode};
+use crate::async_primitives::connector::Sender;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
@@ -509,7 +510,12 @@ impl ScanNode for IpcSourceNode {
         "multi_scan[ipc]"
     }
 
-    fn new(source: ScanSourceRef<'_>) -> impl Future<Output = PolarsResult<Self>> + Send {
+    fn new(
+        source: ScanSourceRef<'_>,
+        projection: Option<&Bitmap>,
+        row_restriction: Option<RowRestrication>,
+        row_index: Option<PlSmallStr>,
+    ) -> impl Future<Output = PolarsResult<Self>> + Send {
         async move {
             let source = source.into_owned()?;
             let options = IpcScanOptions;
@@ -532,10 +538,16 @@ impl ScanNode for IpcSourceNode {
             IpcSourceNode::new(source, file_info, options, None, file_options, None)
         }
     }
-
-    fn num_row_groups(&mut self) -> impl Future<Output = PolarsResult<usize>> + Send {
-        async { Ok(self.source.metadata.blocks.len()) }
+    fn source_spawn<'env, 's>(
+        &'env mut self,
+        scope: &'s TaskScope<'s, 'env>,
+        send: Sender<RowGroup<Morsel>>,
+        _state: &'s ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        todo!()
     }
+
     fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
         async {
             get_row_count_from_blocks(
@@ -550,48 +562,6 @@ impl ScanNode for IpcSourceNode {
             Ok(Arc::new(Schema::from_arrow_schema(
                 &self.source.metadata.schema,
             )))
-        }
-    }
-
-    fn read_row_group(
-        &self,
-        idx: usize,
-        projection: Option<&Bitmap>,
-        row_restriction: Option<RowRestrication>,
-        row_index: Option<PlSmallStr>,
-    ) -> impl Future<Output = PolarsResult<RowGroup>> + Send {
-
-        async move {
-            // @TODO: overflow
-            let row_count = get_row_count_from_blocks(
-                &mut std::io::Cursor::new(self.source.memslice.as_ref()),
-                &self.source.metadata.blocks[idx..idx + 1],
-            )? as IdxSize;
-
-            if projection.is_some_and(|p| p.set_bits() == 0) {
-                return Ok(
-                    RowGroup {
-                        df: unsafe { DataFrame::new_no_checks(row_count as usize, Vec::new()) },
-                        row_count,
-                    }
-                );
-            }
-
-            let projection_info = projection
-                .map(|p| prepare_projection(&self.source.metadata.schema, p.true_idx_iter().collect()));
-
-            let mut reader = FileReader::new_with_projection_info(
-                Cursor::new(self.source.memslice.as_ref()),
-                self.source.metadata.as_ref().clone(),
-                projection_info,
-                None,
-            );
-            reader.set_current_block(idx);
-            let rb = reader.next().unwrap()?;
-            let mut df = DataFrame::empty_with_arrow_schema(rb.schema());
-            df.append_record_batch(rb)?;
-
-            Ok(RowGroup { df, row_count })
         }
     }
 }
