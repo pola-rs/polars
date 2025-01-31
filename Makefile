@@ -140,9 +140,9 @@ fmt:  ## Run autoformatting and linting
 	
 .PHONY: fix
 fix:
-	cargo fix --workspace --all-targets --all-features
-	# We allow dirty on this one, if the repo was dirty the previous command would've failed.
-	cargo clippy --workspace --all-targets --all-features --fix --allow-dirty
+	cargo clippy --workspace --all-targets --all-features --fix 
+	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
+	cargo fmt --all
 	
 
 .PHONY: pre-commit
