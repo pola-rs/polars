@@ -297,6 +297,10 @@ class Catalog:
         """
         Delete a catalog.
 
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -352,6 +356,10 @@ class Catalog:
     ) -> None:
         """
         Delete a namespace (unity schema) in the catalog.
+
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
