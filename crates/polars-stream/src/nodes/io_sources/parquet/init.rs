@@ -158,7 +158,7 @@ impl ParquetSourceNode {
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
-        let last_morsel_split = self.config.num_pipelines;
+        let last_morsel_min_split = self.config.num_pipelines;
         let distribute_task = async_executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
 
@@ -191,9 +191,12 @@ impl ParquetSourceNode {
                     break;
                 }
 
-                for df in
-                    split_to_morsels(&df, ideal_morsel_size, next.is_none(), last_morsel_split)
-                {
+                for df in split_to_morsels(
+                    &df,
+                    ideal_morsel_size,
+                    next.is_none(),
+                    last_morsel_min_split,
+                ) {
                     if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
                         return Ok(());
                     }
@@ -356,16 +359,18 @@ fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
     last_morsel: bool,
-    last_morsel_split: usize,
+    last_morsel_min_split: usize,
 ) -> impl Iterator<Item = DataFrame> + '_ {
-    let n_morsels = if last_morsel {
-        last_morsel_split
-    } else if df.height() > 3 * ideal_morsel_size / 2 {
+    let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
         (df.height() / ideal_morsel_size).max(2)
     } else {
         1
     };
+
+    if last_morsel {
+        n_morsels = n_morsels.max(last_morsel_min_split);
+    }
 
     let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);
 
