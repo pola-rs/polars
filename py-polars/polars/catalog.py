@@ -433,7 +433,11 @@ class Catalog:
         Delete the table stored at this location.
 
         Note that depending on the table type and catalog server, this may not
-        delete the actual data files from storage.
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider.
+
+        If you would like to perform manual deletions, the storage location of
+        the files can be found using `get_table_info`.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
