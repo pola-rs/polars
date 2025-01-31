@@ -42,10 +42,10 @@ impl MergeSortedNode {
     }
 }
 
-/// Find a part amongst both unmerged buffers which is mergable.
+/// Find a part amongst both unmerged buffers which is mergeable.
 ///
-/// This returns `None` if there is nothing mergable at this point.
-fn find_mergable(
+/// This returns `None` if there is nothing mergeable at this point.
+fn find_mergeable(
     left_unmerged: &mut VecDeque<DataFrame>,
     right_unmerged: &mut VecDeque<DataFrame>,
 
@@ -319,7 +319,7 @@ impl ComputeNode for MergeSortedNode {
                     {
                         // If we have morsels from both input ports, find until where we can merge
                         // them and send that on to be merged.
-                        while let Some((left_mergeable, right_mergeable)) = find_mergable(
+                        while let Some((left_mergeable, right_mergeable)) = find_mergeable(
                             left_unmerged,
                             right_unmerged,
                             key_column_idx,
@@ -380,7 +380,7 @@ impl ComputeNode for MergeSortedNode {
 
                     // Clear out buffers until we cannot anymore. This helps allows us to go to the
                     // parallel case faster.
-                    while let Some((left_mergeable, right_mergeable)) = find_mergable(
+                    while let Some((left_mergeable, right_mergeable)) = find_mergeable(
                         left_unmerged,
                         right_unmerged,
                         key_column_idx,
