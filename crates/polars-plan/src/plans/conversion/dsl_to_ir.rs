@@ -117,7 +117,7 @@ pub(super) fn run_conversion(
 ) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
-        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node)
         .map_err(|e| e.context(format!("'{name}' failed").into()))?;
 
     Ok(lp_node)
