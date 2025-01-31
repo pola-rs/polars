@@ -574,7 +574,7 @@ def _maybe_init_credential_provider(
             print(msg, file=sys.stderr)
 
     if provider is not None and verbose:
-        msg = f"Auto-selected credential provider: {type(provider).__name__}"
+        msg = f"auto-selected credential provider: {type(provider).__name__}"
         print(msg, file=sys.stderr)
 
     return provider

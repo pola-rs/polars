@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import importlib
 import os
+import sys
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -210,8 +211,12 @@ class Catalog:
             table_info, "scan table"
         )
 
-        credential_provider = CatalogCredentialProvider(
-            self, table_info.table_id, write=False
+        credential_provider, storage_options = self._init_credentials(
+            credential_provider,
+            storage_options,
+            table_info,
+            write=False,
+            caller_name="scan_table",
         )
 
         _, storage_update_options, _ = self._get_table_credentials(
@@ -456,6 +461,63 @@ class Catalog:
             table_name=table_name,
         )
 
+    def _init_credentials(
+        self,
+        credential_provider: (CredentialProviderFunction | Literal["auto"] | None),
+        storage_options: dict[str, Any] | None,
+        table_info: TableInfo,
+        *,
+        write: bool,
+        caller_name: str,
+    ) -> tuple[CredentialProviderFunction | None, dict[str, Any] | None]:
+        if credential_provider != "auto":
+            return credential_provider, storage_options
+
+        verbose = os.getenv("POLARS_VERBOSE") == "1"
+
+        catalog_credential_provider = CatalogCredentialProvider(
+            self, table_info.table_id, write=write
+        )
+
+        try:
+            _, storage_update_options, _ = (
+                catalog_credential_provider._get_table_credentials_full_mandatory()
+            )
+
+        except Exception as e:
+            if verbose:
+                table_name = table_info.name
+                table_id = table_info.table_id
+                msg = (
+                    f"error auto-initializing CatalogCredentialProvider: {e} "
+                    f"{table_name = } ({table_id = })"
+                )
+                print(msg, file=sys.stderr)
+        else:
+            if storage_update_options:
+                storage_options = {**(storage_options or {}), **storage_update_options}
+
+            if verbose:
+                table_name = table_info.name
+                table_id = table_info.table_id
+                msg = (
+                    "auto-selected CatalogCredentialProvider for "
+                    f"{table_name = } ({table_id = })"
+                )
+                print(msg, file=sys.stderr)
+
+            return catalog_credential_provider, storage_options
+
+        # This should generally not happen, but if using the temporary
+        # credentials API fails for whatever reason, we fallback to our built-in
+        # credential provider resolution.
+
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        return _maybe_init_credential_provider(
+            "auto", table_info.storage_location, storage_options, caller_name
+        ), storage_options
+
     @classmethod
     def _get_databricks_token(cls) -> str:
         if importlib.util.find_spec("databricks.sdk") is None:
@@ -477,11 +539,27 @@ class CatalogCredentialProvider:
         self.write = write
 
     def __call__(self) -> CredentialProviderFunctionReturn:  # noqa: D102
-        creds, _, expiry = self.catalog._get_table_credentials(
+        creds, _, expiry = self._get_table_credentials_full_mandatory()
+        return creds, expiry
+
+    def _get_table_credentials_full_mandatory(
+        self,
+    ) -> tuple[dict[str, str], dict[str, str], int]:
+        # _get_table_credentials variant that errors if returned credentials is
+        # empty.
+        creds, storage_update_options, expiry = self.catalog._get_table_credentials(
             self.table_id, write=self.write
         )
 
-        return creds, expiry
+        if not creds:
+            table_id = self.table_id
+            msg = (
+                "did not receive credentials from temporary credentials API for "
+                f"{table_id = }"
+            )
+            raise Exception(msg)  # noqa: TRY002
+
+        return creds, storage_update_options, expiry
 
 
 def _extract_location_and_data_format(
