@@ -80,7 +80,7 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.7
 
       - name: Install Polars
-        run: cd .. && maturin develop --profile ci-test-python py-polars/Cargo.toml
+        run: cd .. && maturin develop --profile ci-test-python -m py-polars/Cargo.toml
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
