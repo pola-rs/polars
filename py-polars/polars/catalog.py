@@ -216,18 +216,8 @@ class Catalog:
             storage_options,
             table_info,
             write=False,
-            caller_name="scan_table",
+            caller_name="Catalog.scan_table",
         )
-
-        _, storage_update_options, _ = self._get_table_credentials(
-            table_info.table_id, write=False
-        )
-
-        if storage_options is not None or storage_update_options is not None:
-            storage_options = {
-                **(storage_options or {}),
-                **(storage_update_options or {}),
-            }
 
         if data_source_format in ["DELTA", "DELTASHARING"]:
             from polars.io.delta import scan_delta
