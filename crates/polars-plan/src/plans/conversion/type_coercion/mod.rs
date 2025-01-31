@@ -400,11 +400,11 @@ fn inline_or_prune_cast(
 fn try_inline_literal_cast(
     lv: &LiteralValue,
     dtype: &DataType,
-    cast_options: CastOptions,
+    options: CastOptions,
 ) -> PolarsResult<Option<LiteralValue>> {
     let lv = match lv {
         LiteralValue::Series(s) => {
-            let s = s.cast_with_options(dtype, cast_options)?;
+            let s = s.cast_with_options(dtype, options)?;
             LiteralValue::Series(SpecialEq::new(s))
         },
         LiteralValue::StrCat(s) => {
