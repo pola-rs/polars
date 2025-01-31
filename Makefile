@@ -137,6 +137,13 @@ fmt:  ## Run autoformatting and linting
 	cargo fmt --all
 	dprint fmt
 	$(VENV_BIN)/typos
+	
+.PHONY: fix
+fix:
+	cargo fix --workspace --all-targets --all-features
+	# We allow dirty on this one, if the repo was dirty the previous command would've failed.
+	cargo clippy --workspace --all-targets --all-features --fix --allow-dirty
+	
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks
