@@ -442,6 +442,9 @@ class Catalog:
         """
         Delete the table stored at this location.
 
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -545,8 +548,12 @@ class CatalogCredentialProvider:
     def _get_table_credentials_full_mandatory(
         self,
     ) -> tuple[dict[str, str], dict[str, str], int]:
-        # _get_table_credentials variant that errors if returned credentials is
-        # empty.
+        """
+        Retrieves full credential information.
+
+        This wrapper around Catalog._get_table_credentials that raises an error
+        if the API does not return any credentials.
+        """
         creds, storage_update_options, expiry = self.catalog._get_table_credentials(
             self.table_id, write=self.write
         )
