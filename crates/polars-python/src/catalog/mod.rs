@@ -10,7 +10,7 @@ use polars_io::cloud::credential_provider::PlCredentialProvider;
 use polars_io::pl_async;
 use pyo3::exceptions::PyValueError;
 use pyo3::sync::GILOnceCell;
-use pyo3::types::{PyAnyMethods, PyDict, PyList};
+use pyo3::types::{PyAnyMethods, PyDict, PyList, PyNone, PyTuple};
 use pyo3::{pyclass, pymethods, Bound, IntoPyObject, Py, PyAny, PyObject, PyResult, Python};
 
 use crate::lazyframe::PyLazyFrame;
@@ -19,7 +19,7 @@ use crate::utils::{to_py_err, EnterPolarsExt};
 
 macro_rules! pydict_insert_keys {
     ($dict:expr, {$a:expr}) => {
-        $dict.set_item(stringify!($a), $a).unwrap();
+        $dict.set_item(stringify!($a), $a)?;
     };
 
     ($dict:expr, {$a:expr, $($args:expr),+}) => {
@@ -164,6 +164,73 @@ impl PyCatalogClient {
             .map_err(to_py_err)?;
 
         table_info_to_pyobject(py, table_info).map(|x| x.into())
+    }
+
+    #[pyo3(signature = (table_id, write))]
+    pub fn get_table_credentials(
+        &self,
+        py: Python,
+        table_id: &str,
+        write: bool,
+    ) -> PyResult<PyObject> {
+        let table_credentials = py
+            .enter_polars(|| {
+                pl_async::get_runtime()
+                    .block_on_potential_spawn(self.client().get_table_credentials(table_id, write))
+            })
+            .map_err(to_py_err)?;
+
+        let expiry = table_credentials.expiration_time;
+
+        let credentials = PyDict::new(py);
+        // Keys in here are intended to be injected into `storage_options` from the Python side.
+        // Note this currently really only exists for `aws_endpoint_url`.
+        let storage_update_options = PyDict::new(py);
+
+        {
+            use polars_io::catalog::unity::models::{
+                TableCredentialsAws, TableCredentialsAzure, TableCredentialsGcp,
+                TableCredentialsVariants,
+            };
+            use TableCredentialsVariants::*;
+
+            match table_credentials.into_enum() {
+                Some(Aws(TableCredentialsAws {
+                    access_key_id,
+                    secret_access_key,
+                    session_token,
+                    access_point,
+                })) => {
+                    credentials.set_item("aws_access_key_id", access_key_id)?;
+                    credentials.set_item("aws_secret_access_key", secret_access_key)?;
+
+                    if let Some(session_token) = session_token {
+                        credentials.set_item("aws_session_token", session_token)?;
+                    }
+
+                    if let Some(access_point) = access_point {
+                        storage_update_options.set_item("aws_endpoint_url", access_point)?;
+                    }
+                },
+                Some(Azure(TableCredentialsAzure { sas_token })) => {
+                    credentials.set_item("sas_token", sas_token)?;
+                },
+                Some(Gcp(TableCredentialsGcp { oauth_token })) => {
+                    credentials.set_item("bearer_token", oauth_token)?;
+                },
+                None => {},
+            }
+        }
+
+        let credentials = if credentials.len()? > 0 {
+            credentials.into_any()
+        } else {
+            PyNone::get(py).as_any().clone()
+        };
+        let storage_update_options = storage_update_options.into_any();
+        let expiry = expiry.into_pyobject(py)?.into_any();
+
+        Ok(PyTuple::new(py, [credentials, storage_update_options, expiry])?.into())
     }
 
     #[pyo3(signature = (catalog_name, namespace, table_name, cloud_options, credential_provider, retries))]
@@ -456,6 +523,8 @@ fn table_info_to_pyobject(py: Python, table_info: TableInfo) -> PyResult<Bound<'
         updated_by,
     } = table_info;
 
+    let column_info_cls = COLUMN_INFO_CLS.get(py).unwrap().bind(py);
+
     let columns = columns
         .map(|columns| {
             columns
@@ -486,11 +555,7 @@ fn table_info_to_pyobject(py: Python, table_info: TableInfo) -> PyResult<Bound<'
                             partition_index,
                         });
 
-                        COLUMN_INFO_CLS
-                            .get(py)
-                            .unwrap()
-                            .bind(py)
-                            .call((), Some(&dict))
+                        column_info_cls.call((), Some(&dict))
                     },
                 )
                 .collect::<PyResult<Vec<_>>>()
