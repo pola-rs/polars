@@ -1,3 +1,5 @@
+from datetime import time
+
 import pytest
 from hypothesis import given
 
@@ -58,6 +60,7 @@ def test_merge_sorted_decimal_20990(precision: int) -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted_categorical() -> None:
     left = pl.Series("a", ["a", "b"], pl.Categorical()).sort().to_frame()
     right = pl.Series("a", ["a", "b", "b"], pl.Categorical()).sort().to_frame()
@@ -139,6 +142,9 @@ def test_merge_sorted_parametric(lhs: pl.Series, rhs: pl.Series) -> None:
         excluded_dtypes=[
             pl.Struct,  # Bug. See https://github.com/pola-rs/polars/issues/20986
             pl.Binary,  # Bug. See https://github.com/pola-rs/polars/issues/20988
+            pl.Categorical(
+                ordering="lexical"
+            ),  # Bug. See https://github.com/pola-rs/polars/issues/21025
         ],
         allow_null=False,  # See: https://github.com/pola-rs/polars/issues/20991
     ),
@@ -150,3 +156,11 @@ def test_merge_sorted_self_parametric(s: pl.Series) -> None:
     append_sorted = s.append(s).sort()
 
     assert_series_equal(merge_sorted, append_sorted)
+
+
+# This was an encountered bug in the streaming engine, it was actually a bug
+# with split_at.
+def test_merge_time() -> None:
+    s = pl.Series("a", [time(0, 0)], pl.Time)
+    df = pl.DataFrame([s])
+    assert df.merge_sorted(df, "a").get_column("a").dtype == pl.Time()
