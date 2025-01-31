@@ -434,7 +434,7 @@ class Catalog:
 
         Note that depending on the table type and catalog server, this may not
         delete the actual data files from storage. For more details, please
-        consult the documentation of the catalog provider.
+        consult the documentation of the catalog provider you are using.
 
         If you would like to perform manual deletions, the storage location of
         the files can be found using `get_table_info`.
