@@ -12,20 +12,8 @@ use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::compute_node_prelude::*;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
-#[derive(Debug)]
-enum State {
-    /// Merging values from buffered or ports.
-    Merging,
-    /// Flushing buffer values.
-    Flushing,
-    /// Passing values along from one of the ports.
-    Piping,
-}
-
 pub struct MergeSortedNode {
-    num_pipelines: usize,
     key_column_idx: usize,
-    state: State,
 
     seq: MorselSeq,
 
@@ -42,9 +30,7 @@ impl MergeSortedNode {
         let key_column_idx = schema.index_of(key.as_str()).unwrap();
 
         Self {
-            num_pipelines: 1,
             key_column_idx,
-            state: State::Merging,
 
             seq: MorselSeq::default(),
 
@@ -56,84 +42,156 @@ impl MergeSortedNode {
     }
 }
 
+/// Find a part amongst both unmerged buffers which is mergable.
+///
+/// This returns `None` if there is nothing mergable at this point.
+fn find_mergable(
+    left_unmerged: &mut VecDeque<DataFrame>,
+    right_unmerged: &mut VecDeque<DataFrame>,
+
+    key_column_idx: usize,
+
+    is_first: bool,
+    starting_nulls: &mut bool,
+) -> PolarsResult<Option<(DataFrame, DataFrame)>> {
+    fn first_non_empty(vd: &mut VecDeque<DataFrame>) -> Option<DataFrame> {
+        let mut df = vd.pop_front()?;
+        while df.is_empty() {
+            df = vd.pop_front()?;
+        }
+        Some(df)
+    }
+
+    loop {
+        let (mut left, mut right) = match (
+            first_non_empty(left_unmerged),
+            first_non_empty(right_unmerged),
+        ) {
+            (Some(l), Some(r)) => (l, r),
+            (Some(l), None) => {
+                left_unmerged.push_front(l);
+                return Ok(None);
+            },
+            (None, Some(r)) => {
+                right_unmerged.push_front(r);
+                return Ok(None);
+            },
+            (None, None) => return Ok(None),
+        };
+
+        let left_key = &left[key_column_idx];
+        let right_key = &right[key_column_idx];
+
+        let left_null_count = left_key.null_count();
+        let right_null_count = right_key.null_count();
+
+        let has_nulls = left_null_count > 0 || right_null_count > 0;
+
+        // If we are on the first morsel we need to decide whether we have
+        // nulls first or not.
+        if is_first
+            && has_nulls
+            && (left_key.head(Some(1)).has_nulls() || right_key.head(Some(1)).has_nulls())
+        {
+            *starting_nulls = true;
+        }
+
+        // For both left and right, find row index of the minimum of the maxima
+        // of the left and right key columns. We can safely merge until this
+        // point.
+        let mut left_cutoff = left.height();
+        let mut right_cutoff = right.height();
+
+        let left_key_last = left_key.tail(Some(1));
+        let right_key_last = right_key.tail(Some(1));
+
+        // We already made sure we had data to work with.
+        assert!(!left_key_last.is_empty());
+        assert!(!right_key_last.is_empty());
+
+        if has_nulls {
+            if *starting_nulls {
+                // If there are starting nulls do those first, then repeat
+                // without the nulls.
+                left_cutoff = left_null_count;
+                right_cutoff = right_null_count;
+            } else {
+                // If there are ending nulls then first do things without the
+                // nulls and then repeat with only the nulls the nulls.
+                let left_is_all_nulls = left_null_count == left.height();
+                let right_is_all_nulls = right_null_count == right.height();
+
+                match (left_is_all_nulls, right_is_all_nulls) {
+                    (false, false) => {
+                        let left_nulls;
+                        let right_nulls;
+                        (left, left_nulls) =
+                            left.split_at((left.height() - left_null_count) as i64);
+                        (right, right_nulls) =
+                            right.split_at((right.height() - right_null_count) as i64);
+
+                        left_unmerged.push_front(left_nulls);
+                        left_unmerged.push_front(left);
+                        right_unmerged.push_front(right_nulls);
+                        right_unmerged.push_front(right);
+                        continue;
+                    },
+                    (true, false) => left_cutoff = 0,
+                    (false, true) => right_cutoff = 0,
+                    (true, true) => {},
+                }
+            }
+        } else if left_key_last.lt(&right_key_last)?.all() {
+            // @TODO: This is essentially search sorted, but that does not
+            // support categoricals at moment.
+            let gt_mask = right_key.gt(&left_key_last)?.downcast_into_array();
+            right_cutoff = gt_mask.values().leading_zeros();
+        } else if left_key_last.gt(&right_key_last)?.all() {
+            // @TODO: This is essentially search sorted, but that does not
+            // support categoricals at moment.
+            let gt_mask = left_key.gt(&right_key_last)?.downcast_into_array();
+            left_cutoff = gt_mask.values().leading_zeros();
+        }
+
+        let left_mergeable: DataFrame;
+        let right_mergeable: DataFrame;
+        (left_mergeable, left) = left.split_at(left_cutoff as i64);
+        (right_mergeable, right) = right.split_at(right_cutoff as i64);
+
+        if !left.is_empty() {
+            left_unmerged.push_front(left);
+        }
+        if !right.is_empty() {
+            right_unmerged.push_front(right);
+        }
+
+        return Ok(Some((left_mergeable, right_mergeable)));
+    }
+}
+
 impl ComputeNode for MergeSortedNode {
     fn name(&self) -> &str {
         "merge_sorted"
-    }
-
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert_eq!(send.len(), 1);
         assert_eq!(recv.len(), 2);
 
-        // If the output doesn't want any more data, transition to being done.
-        if send[0] == PortState::Done {
-            recv[0] = PortState::Done;
-            recv[1] = PortState::Done;
-
-            self.left_unmerged.clear();
-            self.right_unmerged.clear();
-            self.state = State::Piping;
-
-            return Ok(());
-        }
-
-        if recv[0] == PortState::Done || recv[1] == PortState::Done {
-            if !self.left_unmerged.is_empty() || !self.right_unmerged.is_empty() {
-                self.state = State::Flushing;
-            } else {
-                self.state = State::Piping;
-            }
-        } else {
-            self.state = State::Merging;
-        }
-
-        match self.state {
-            State::Merging if send[0] == PortState::Blocked => {
-                recv[0] = PortState::Blocked;
-                recv[1] = PortState::Blocked;
+        match (send[0], recv[0], recv[1]) {
+            (PortState::Done, _, _) => {
+                recv[0] = PortState::Done;
+                recv[1] = PortState::Done;
             },
 
-            // If one input side is blocked and we haven't buffered anything for that side, we
-            // block the other ports as well.
-            State::Merging if recv[0] == PortState::Blocked && self.left_unmerged.is_empty() => {
-                send[0] = PortState::Blocked;
-                recv[1] = PortState::Blocked;
-            },
-            State::Merging if recv[1] == PortState::Blocked && self.right_unmerged.is_empty() => {
-                send[0] = PortState::Blocked;
-                recv[0] = PortState::Blocked;
-            },
-
-            State::Merging => {
-                if recv[0] != PortState::Blocked {
-                    recv[0] = PortState::Ready;
-                }
-                if recv[1] != PortState::Blocked {
-                    recv[1] = PortState::Ready;
-                }
-                send[0] = PortState::Ready;
-            },
-
-            State::Flushing => {
-                if recv[0] != PortState::Done {
-                    recv[0] = PortState::Blocked;
-                }
-                if recv[1] != PortState::Done {
-                    recv[1] = PortState::Blocked;
-                }
-            },
-
-            State::Piping if recv[0] == PortState::Done && recv[1] == PortState::Done => {
+            (_, PortState::Done, PortState::Done)
+                if self.left_unmerged.is_empty() && self.right_unmerged.is_empty() =>
+            {
                 send[0] = PortState::Done;
             },
-            State::Piping if recv[0] == PortState::Blocked || recv[1] == PortState::Blocked => {
-                send[0] = PortState::Blocked;
-            },
-            State::Piping if send[0] == PortState::Blocked => {
+
+            // If the output port is blocked, the input port is blocked as well.
+            (PortState::Blocked, _, _) => {
                 if recv[0] != PortState::Done {
                     recv[0] = PortState::Blocked;
                 }
@@ -141,15 +199,23 @@ impl ComputeNode for MergeSortedNode {
                     recv[1] = PortState::Blocked;
                 }
             },
-            State::Piping => {
-                if recv[0] != PortState::Done {
-                    recv[0] = PortState::Ready;
-                }
+
+            // If one of the two ports is blocked such that we cannot produce data anymore, block
+            // the other input port and output port.
+            (_, PortState::Blocked, _) if self.left_unmerged.is_empty() => {
+                send[0] = PortState::Blocked;
                 if recv[1] != PortState::Done {
-                    recv[1] = PortState::Ready;
+                    recv[1] = PortState::Blocked;
                 }
-                send[0] = PortState::Ready;
             },
+            (_, _, PortState::Blocked) if self.right_unmerged.is_empty() => {
+                send[0] = PortState::Blocked;
+                if recv[0] != PortState::Done {
+                    recv[0] = PortState::Blocked;
+                }
+            },
+
+            _ => send[0] = PortState::Ready,
         }
 
         Ok(())
@@ -166,283 +232,22 @@ impl ComputeNode for MergeSortedNode {
         assert_eq!(recv_ports.len(), 2);
         assert_eq!(send_ports.len(), 1);
 
+        let send = send_ports[0].take().unwrap().parallel();
+
         let seq = &mut self.seq;
         let starting_nulls = &mut self.starting_nulls;
         let key_column_idx = self.key_column_idx;
         let left_unmerged = &mut self.left_unmerged;
         let right_unmerged = &mut self.right_unmerged;
 
-        let source_token = SourceToken::new();
-
-        match self.state {
-            State::Merging => {
-                /// Request that a port stops producing [`Morsel`]s and buffer all the remaining
-                /// [`Morsel`]s.
-                async fn buffer_port(
-                    port: &mut Receiver<Morsel>,
-                    buffer: &mut VecDeque<DataFrame>,
-                ) {
-                    // If a stop was requested, we need to buffer the remaining
-                    // morsels and trigger a phase transition.
-                    let Ok(morsel) = port.recv().await else {
-                        return;
-                    };
-
-                    // Request the port stop producing morsels.
-                    morsel.source_token().stop();
-
-                    // Buffer all the morsels that were already produced.
-                    buffer.push_back(morsel.into_df());
-                    while let Ok(morsel) = port.recv().await {
-                        buffer.push_back(morsel.into_df());
-                    }
-                }
-
-                let send = send_ports[0].take().unwrap().parallel();
-
-                let (mut distributor, dist_recv) =
-                    distributor_channel(self.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-
-                let mut left = recv_ports[0].take().unwrap().serial();
-                let mut right = recv_ports[1].take().unwrap().serial();
-
-                let _source_token = source_token.clone();
-                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-                    let mut trigger_phase_transition = false;
-                    let source_token = _source_token;
-
-                    loop {
-                        if source_token.stop_requested() {
-                            trigger_phase_transition = true;
-                        }
-
-                        // If we have morsels from both input ports, find until where we can merge
-                        // them and send that on to be merged.
-                        while !left_unmerged.is_empty() && !right_unmerged.is_empty() {
-                            let mut left = left_unmerged.pop_front().unwrap();
-                            let mut right = right_unmerged.pop_front().unwrap();
-
-                            // Ensure that we have some data to merge.
-                            if left.is_empty() || right.is_empty() {
-                                if !left.is_empty() {
-                                    left_unmerged.push_front(left);
-                                }
-                                if !right.is_empty() {
-                                    right_unmerged.push_front(right);
-                                }
-                                continue;
-                            }
-
-                            let left_key = &left[key_column_idx];
-                            let right_key = &right[key_column_idx];
-
-                            let left_null_count = left_key.null_count();
-                            let right_null_count = right_key.null_count();
-
-                            let has_nulls = left_null_count > 0 || right_null_count > 0;
-
-                            // If we are on the first morsel we need to decide whether we have
-                            // nulls first or not.
-                            if seq.to_u64() == 0
-                                && has_nulls
-                                && (left_key.head(Some(1)).has_nulls()
-                                    || right_key.head(Some(1)).has_nulls())
-                            {
-                                *starting_nulls = true;
-                            }
-
-                            // For both left and right, find row index of the minimum of the maxima
-                            // of the left and right key columns. We can safely merge until this
-                            // point.
-                            let mut left_cutoff = left.height();
-                            let mut right_cutoff = right.height();
-
-                            let left_key_last = left_key.tail(Some(1));
-                            let right_key_last = right_key.tail(Some(1));
-
-                            // We already made sure we had data to work with.
-                            assert!(!left_key_last.is_empty());
-                            assert!(!right_key_last.is_empty());
-
-                            if has_nulls {
-                                if *starting_nulls {
-                                    // If there are starting nulls do those first, then repeat
-                                    // without the nulls.
-                                    left_cutoff = left_null_count;
-                                    right_cutoff = right_null_count;
-                                } else {
-                                    // If there are ending nulls then first do things without the
-                                    // nulls and then repeat with only the nulls the nulls.
-                                    let left_is_all_nulls = left_null_count == left.height();
-                                    let right_is_all_nulls = right_null_count == right.height();
-
-                                    match (left_is_all_nulls, right_is_all_nulls) {
-                                        (false, false) => {
-                                            let left_nulls;
-                                            let right_nulls;
-                                            (left, left_nulls) = left
-                                                .split_at((left.height() - left_null_count) as i64);
-                                            (right, right_nulls) = right.split_at(
-                                                (right.height() - right_null_count) as i64,
-                                            );
-
-                                            left_unmerged.push_front(left_nulls);
-                                            left_unmerged.push_front(left);
-                                            right_unmerged.push_front(right_nulls);
-                                            right_unmerged.push_front(right);
-                                            continue;
-                                        },
-                                        (true, false) => left_cutoff = 0,
-                                        (false, true) => right_cutoff = 0,
-                                        (true, true) => {},
-                                    }
-                                }
-                            } else if left_key_last.lt(&right_key_last)?.all() {
-                                // @TODO: This is essentially search sorted, but that does not
-                                // support categoricals at moment.
-                                let gt_mask = right_key.gt(&left_key_last)?.downcast_into_array();
-                                right_cutoff = gt_mask.values().leading_zeros();
-                            } else if left_key_last.gt(&right_key_last)?.all() {
-                                // @TODO: This is essentially search sorted, but that does not
-                                // support categoricals at moment.
-                                let gt_mask = left_key.gt(&right_key_last)?.downcast_into_array();
-                                left_cutoff = gt_mask.values().leading_zeros();
-                            }
-
-                            let left_mergeable: DataFrame;
-                            let right_mergeable: DataFrame;
-                            (left_mergeable, left) = left.split_at(left_cutoff as i64);
-                            (right_mergeable, right) = right.split_at(right_cutoff as i64);
-
-                            if distributor
-                                .send((*seq, left_mergeable, right_mergeable))
-                                .await
-                                .is_err()
-                            {
-                                return Ok(());
-                            };
-                            // The merging task might split the merged dataframe in two.
-                            *seq = seq.successor().successor();
-
-                            if !left.is_empty() {
-                                left_unmerged.push_front(left);
-                            }
-                            if !right.is_empty() {
-                                right_unmerged.push_front(right);
-                            }
-                        }
-
-                        if trigger_phase_transition {
-                            buffer_port(&mut left, left_unmerged).await;
-                            buffer_port(&mut right, right_unmerged).await;
-                            return Ok(());
-                        }
-
-                        let (empty_port, empty_unmerged) = if left_unmerged.is_empty() {
-                            (&mut left, &mut *left_unmerged)
-                        } else {
-                            (&mut right, &mut *right_unmerged)
-                        };
-
-                        // Try to get a new morsel from the empty side.
-                        let Ok(received_unmerged) = empty_port.recv().await else {
-                            trigger_phase_transition = true;
-                            continue;
-                        };
-                        empty_unmerged.push_back(received_unmerged.into_df());
-                    }
-                }));
-
-                // Task that actually merges the two dataframes. Since this merge might be very
-                // expensive, this is split over several tasks.
-                join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
-                    let source_token = source_token.clone();
-                    let ideal_morsel_size = get_ideal_morsel_size();
-                    scope.spawn_task(TaskPriority::High, async move {
-                        while let Ok((seq, left, right)) = recv.recv().await {
-                            let left_s = left[key_column_idx].as_materialized_series();
-                            let right_s = right[key_column_idx].as_materialized_series();
-
-                            let merged = _merge_sorted_dfs(&left, &right, left_s, right_s, false)?;
-
-                            if ideal_morsel_size > 1 && merged.height() > ideal_morsel_size {
-                                // The merged dataframe will have at most doubled in size from the
-                                // input so we can divide by half.
-                                let (m1, m2) = merged.split_at((merged.height() / 2) as i64);
-
-                                let morsel = Morsel::new(m1, seq, source_token.clone());
-                                if send.send(morsel).await.is_err() {
-                                    break;
-                                }
-                                let morsel = Morsel::new(m2, seq.successor(), source_token.clone());
-                                if send.send(morsel).await.is_err() {
-                                    break;
-                                }
-                            } else {
-                                let morsel = Morsel::new(merged, seq, source_token.clone());
-                                if send.send(morsel).await.is_err() {
-                                    break;
-                                }
-                            }
-                        }
-
-                        Ok(())
-                    })
-                }));
-            },
-
-            // If we have data left over from merging. We block the input ports until the buffered
-            // data is flushed out.
-            State::Flushing => {
-                assert!(recv_ports[0].is_none());
-                assert!(recv_ports[1].is_none());
-
-                assert!(left_unmerged.is_empty() || right_unmerged.is_empty());
-
-                let mut send = send_ports[0].take().unwrap().serial();
-
-                let buffer = if left_unmerged.is_empty() {
-                    right_unmerged
-                } else {
-                    left_unmerged
-                };
-
-                join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    while let Some(df) = buffer.pop_front() {
-                        if send
-                            .send(Morsel::new(df, *seq, source_token.clone()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                        *seq = seq.successor();
-
-                        if source_token.stop_requested() {
-                            break;
-                        }
-                    }
-
-                    Ok(())
-                }));
-            },
-
-            // When one of the input ports is closed, we don't have to merge anymore so we start
-            // passing the data along.
-            State::Piping => {
-                let send = send_ports[0].take().unwrap().parallel();
-
-                assert!(left_unmerged.is_empty());
-                assert!(right_unmerged.is_empty());
-
-                assert!(recv_ports[0].is_none() || recv_ports[1].is_none());
-
-                // When this gets spawned, exactly one port should be open.
-                let port = recv_ports[0].take().or(recv_ports[1].take());
-                let port = port.unwrap();
-
-                let inner_handles = port
-                    .parallel()
+        match (recv_ports[0].take(), recv_ports[1].take()) {
+            // If we do not need to merge or flush anymore, just start passing the port in
+            // parallel.
+            (Some(port), None) | (None, Some(port))
+                if left_unmerged.is_empty() && right_unmerged.is_empty() =>
+            {
+                let recv = port.parallel();
+                let inner_handles = recv
                     .into_iter()
                     .zip(send)
                     .map(|(mut recv, mut send)| {
@@ -450,7 +255,7 @@ impl ComputeNode for MergeSortedNode {
                         scope.spawn_task(TaskPriority::High, async move {
                             let mut max_seq = morsel_offset;
                             while let Ok(mut morsel) = recv.recv().await {
-                                // Ensure the morsel sequence id stream is monotonic.
+                                // Ensure the morsel sequence id stream is monotone non-decreasing.
                                 let seq = morsel.seq().offset_by(morsel_offset);
                                 max_seq = max_seq.max(seq);
 
@@ -470,6 +275,226 @@ impl ComputeNode for MergeSortedNode {
                         *seq = (*seq).max(handle.await);
                     }
                     Ok(())
+                }));
+            },
+
+            // This is the base case. Either:
+            // - Both streams are still open and we still need to merge.
+            // - One or both streams are closed stream is closed and we still have some buffered
+            // data.
+            (left, right) => {
+                async fn buffer_unmerged(
+                    port: &mut Receiver<Morsel>,
+                    unmerged: &mut VecDeque<DataFrame>,
+                ) {
+                    // If a stop was requested, we need to buffer the remaining
+                    // morsels and trigger a phase transition.
+                    let Ok(morsel) = port.recv().await else {
+                        return;
+                    };
+
+                    // Request the port stop producing morsels.
+                    morsel.source_token().stop();
+
+                    // Buffer all the morsels that were already produced.
+                    unmerged.push_back(morsel.into_df());
+                    while let Ok(morsel) = port.recv().await {
+                        unmerged.push_back(morsel.into_df());
+                    }
+                }
+
+                let (mut distributor, dist_recv) =
+                    distributor_channel(send.len(), DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
+
+                let mut left = left.map(|p| p.serial());
+                let mut right = right.map(|p| p.serial());
+
+                join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+                    let source_token = SourceToken::new();
+
+                    // While we can still load data for the empty side.
+                    while (left.is_some() || right.is_some())
+                        && !(left.is_none() && left_unmerged.is_empty())
+                        && !(right.is_none() && right_unmerged.is_empty())
+                    {
+                        // If we have morsels from both input ports, find until where we can merge
+                        // them and send that on to be merged.
+                        while let Some((left_mergeable, right_mergeable)) = find_mergable(
+                            left_unmerged,
+                            right_unmerged,
+                            key_column_idx,
+                            seq.to_u64() == 0,
+                            starting_nulls,
+                        )? {
+                            let left_mergeable =
+                                Morsel::new(left_mergeable, *seq, source_token.clone());
+                            *seq = seq.successor();
+
+                            if distributor
+                                .send((left_mergeable, right_mergeable))
+                                .await
+                                .is_err()
+                            {
+                                return Ok(());
+                            };
+                        }
+
+                        if source_token.stop_requested() {
+                            // Request that a port stops producing morsels and buffers all the
+                            // remaining morsels.
+                            if let Some(p) = &mut left {
+                                buffer_unmerged(p, left_unmerged).await;
+                            }
+                            if let Some(p) = &mut right {
+                                buffer_unmerged(p, right_unmerged).await;
+                            }
+                            break;
+                        }
+
+                        assert!(left_unmerged.is_empty() || right_unmerged.is_empty());
+                        let (empty_port, empty_unmerged) = match (
+                            left_unmerged.is_empty(),
+                            right_unmerged.is_empty(),
+                            left.as_mut(),
+                            right.as_mut(),
+                        ) {
+                            (true, _, Some(left), _) => (left, &mut *left_unmerged),
+                            (_, true, _, Some(right)) => (right, &mut *right_unmerged),
+
+                            // If the port that is empty is closed, we don't need to merge anymore.
+                            _ => break,
+                        };
+
+                        // Try to get a new morsel from the empty side.
+                        let Ok(m) = empty_port.recv().await else {
+                            if let Some(p) = &mut left {
+                                buffer_unmerged(p, left_unmerged).await;
+                            }
+                            if let Some(p) = &mut right {
+                                buffer_unmerged(p, right_unmerged).await;
+                            }
+                            break;
+                        };
+                        empty_unmerged.push_back(m.into_df());
+                    }
+
+                    // Clear out buffers until we cannot anymore. This helps allows us to go to the
+                    // parallel case faster.
+                    while let Some((left_mergeable, right_mergeable)) = find_mergable(
+                        left_unmerged,
+                        right_unmerged,
+                        key_column_idx,
+                        seq.to_u64() == 0,
+                        starting_nulls,
+                    )? {
+                        let left_mergeable =
+                            Morsel::new(left_mergeable, *seq, source_token.clone());
+                        *seq = seq.successor();
+
+                        if distributor
+                            .send((left_mergeable, right_mergeable))
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        };
+                    }
+
+                    // If one of the ports is done and does not have buffered data anymore, we
+                    // flush the data on the other side. After this point, this node just pipes
+                    // data through.
+                    let pass = if left.is_none() && left_unmerged.is_empty() {
+                        Some((right.as_mut(), &mut *right_unmerged))
+                    } else if right.is_none() && right_unmerged.is_empty() {
+                        Some((left.as_mut(), &mut *left_unmerged))
+                    } else {
+                        None
+                    };
+                    if let Some((pass_port, pass_unmerged)) = pass {
+                        for df in std::mem::take(pass_unmerged) {
+                            let m = Morsel::new(df, *seq, source_token.clone());
+                            *seq = seq.successor();
+                            if distributor.send((m, DataFrame::empty())).await.is_err() {
+                                return Ok(());
+                            }
+                        }
+
+                        // Start passing on the port that is port that is still open.
+                        if let Some(pass_port) = pass_port {
+                            let Ok(mut m) = pass_port.recv().await else {
+                                return Ok(());
+                            };
+                            if source_token.stop_requested() {
+                                m.source_token().stop();
+                            }
+                            m.set_seq(*seq);
+                            *seq = seq.successor();
+                            if distributor.send((m, DataFrame::empty())).await.is_err() {
+                                return Ok(());
+                            }
+
+                            while let Ok(mut m) = pass_port.recv().await {
+                                m.set_seq(*seq);
+                                *seq = seq.successor();
+                                if distributor.send((m, DataFrame::empty())).await.is_err() {
+                                    return Ok(());
+                                }
+                            }
+                        }
+                    }
+
+                    Ok(())
+                }));
+
+                // Task that actually merges the two dataframes. Since this merge might be very
+                // expensive, this is split over several tasks.
+                join_handles.extend(dist_recv.into_iter().zip(send).map(|(mut recv, mut send)| {
+                    let ideal_morsel_size = get_ideal_morsel_size();
+                    scope.spawn_task(TaskPriority::High, async move {
+                        while let Ok((left, right)) = recv.recv().await {
+                            // When we are flushing the buffer, we will just send one morsel from
+                            // the input. We don't want to mess with the source token or wait group
+                            // and just pass it on.
+                            if right.is_empty() {
+                                if send.send(left).await.is_err() {
+                                    return Ok(());
+                                }
+                                continue;
+                            }
+
+                            let (left, seq, source_token, wg) = left.into_inner();
+                            assert!(wg.is_none());
+
+                            let left_s = left[key_column_idx].as_materialized_series();
+                            let right_s = right[key_column_idx].as_materialized_series();
+
+                            let merged = _merge_sorted_dfs(&left, &right, left_s, right_s, false)?;
+
+                            if ideal_morsel_size > 1 && merged.height() > ideal_morsel_size {
+                                // The merged dataframe will have at most doubled in size from the
+                                // input so we can divide by half.
+                                let (m1, m2) = merged.split_at((merged.height() / 2) as i64);
+
+                                // MorselSeq have to be monotonely non-decreasing so we can
+                                // pass the same sequence token twice.
+                                let morsel = Morsel::new(m1, seq, source_token.clone());
+                                if send.send(morsel).await.is_err() {
+                                    break;
+                                }
+                                let morsel = Morsel::new(m2, seq, source_token.clone());
+                                if send.send(morsel).await.is_err() {
+                                    break;
+                                }
+                            } else {
+                                let morsel = Morsel::new(merged, seq, source_token.clone());
+                                if send.send(morsel).await.is_err() {
+                                    break;
+                                }
+                            }
+                        }
+
+                        Ok(())
+                    })
                 }));
             },
         }
