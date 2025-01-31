@@ -26,6 +26,14 @@ def register_io_source(
     """
     Register your IO plugin and initialize a LazyFrame.
 
+    See the `user guide <https://docs.pola.rs/user-guide/plugins/io_plugins>`_
+    for more information about plugins.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+
     Parameters
     ----------
     callable
@@ -36,17 +44,21 @@ def register_io_source(
             predicate
                 Polars expression. The reader must filter
                 their rows accordingly.
-            n_rows:
+            n_rows
                 Materialize only n rows from the source.
                 The reader can stop when `n_rows` are read.
             batch_size
                 A hint of the ideal batch size the reader's
                 generator must produce.
+
         The function should return a DataFrame batch
         (an iterator over individual DataFrames).
     schema
         Schema that the reader will produce before projection pushdown.
 
+    Returns
+    -------
+    LazyFrame
     """
 
     def wrap(
