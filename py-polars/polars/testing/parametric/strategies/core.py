@@ -231,13 +231,10 @@ def series(
             )
         )
 
-    print(values)
-    print(dtype)
     s = Series(name=name, values=values, dtype=dtype)
 
     # Apply masking out of values
     if do_mask_out:
-        print("hi")
         values = draw(
             st.lists(
                 st.booleans(),
@@ -252,7 +249,6 @@ def series(
 
     # Apply chunking
     if allow_chunks and size > 1 and draw(st.booleans()):
-        print("hi2")
         split_at = size // 2
         s = s[:split_at].append(s[split_at:])
 
