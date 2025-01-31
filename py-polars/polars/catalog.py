@@ -492,7 +492,7 @@ class Catalog:
             if storage_update_options:
                 storage_options = {**(storage_options or {}), **storage_update_options}
 
-            next(v)
+            [_] = v
 
         except Exception as e:
             if verbose:
