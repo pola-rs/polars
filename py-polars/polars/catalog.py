@@ -5,7 +5,7 @@ import importlib
 import os
 import sys
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Generator, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
@@ -485,23 +485,24 @@ class Catalog:
         )
 
         try:
-            _, storage_update_options, _ = (
-                catalog_credential_provider._get_table_credentials_full_mandatory()
-            )
+            v = catalog_credential_provider._credentials_iter()
+            storage_update_options = next(v)
+
+            if storage_update_options:
+                storage_options = {**(storage_options or {}), **storage_update_options}
+
+            next(v)
 
         except Exception as e:
             if verbose:
                 table_name = table_info.name
                 table_id = table_info.table_id
                 msg = (
-                    f"error auto-initializing CatalogCredentialProvider: {e} "
+                    f"error auto-initializing CatalogCredentialProvider: {e!r} "
                     f"{table_name = } ({table_id = })"
                 )
                 print(msg, file=sys.stderr)
         else:
-            if storage_update_options:
-                storage_options = {**(storage_options or {}), **storage_update_options}
-
             if verbose:
                 table_name = table_info.name
                 table_id = table_info.table_id
@@ -544,21 +545,17 @@ class CatalogCredentialProvider:
         self.write = write
 
     def __call__(self) -> CredentialProviderFunctionReturn:  # noqa: D102
-        creds, _, expiry = self._get_table_credentials_full_mandatory()
+        _, (creds, expiry) = self._credentials_iter()
         return creds, expiry
 
-    def _get_table_credentials_full_mandatory(
+    def _credentials_iter(
         self,
-    ) -> tuple[dict[str, str], dict[str, str], int]:
-        """
-        Retrieves full credential information.
-
-        This wrapper around Catalog._get_table_credentials that raises an error
-        if the API does not return any credentials.
-        """
+    ) -> Generator[Any]:
         creds, storage_update_options, expiry = self.catalog._get_table_credentials(
             self.table_id, write=self.write
         )
+
+        yield storage_update_options
 
         if not creds:
             table_id = self.table_id
@@ -568,7 +565,7 @@ class CatalogCredentialProvider:
             )
             raise Exception(msg)  # noqa: TRY002
 
-        return creds, storage_update_options, expiry
+        yield creds, expiry
 
 
 def _extract_location_and_data_format(
