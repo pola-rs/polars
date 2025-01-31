@@ -106,7 +106,7 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             out.into_series()
         },
         // slowest sum_as_series path
-        _ => ca
+        dt => ca
             .try_apply_amortized(|s| {
                 s.as_ref()
                     .sum_reduce()
@@ -114,7 +114,8 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             })?
             .explode()
             .unwrap()
-            .into_series(),
+            .into_series()
+            .cast(dt)?,
     };
     out.rename(ca.name().clone());
     Ok(out)
