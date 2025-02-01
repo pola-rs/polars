@@ -541,11 +541,8 @@ pub trait ListNameSpaceImpl: AsList {
                     let ca = s.i64().unwrap();
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
-                        Ordering::Equal => {
+                        Ordering::Equal | Ordering::Less => {
                             fill_values = ca.clone();
-                        },
-                        Ordering::Less => {
-                            fill_values = ca.slice(0, width);
                         },
                         Ordering::Greater => {
                             fill_values = Int64Chunked::new_vec(
@@ -567,11 +564,8 @@ pub trait ListNameSpaceImpl: AsList {
                     let ca = s.f64().unwrap();
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
-                        Ordering::Equal => {
+                        Ordering::Equal | Ordering::Less => {
                             fill_values = ca.clone();
-                        },
-                        Ordering::Less => {
-                            fill_values = ca.slice(0, width);
                         },
                         Ordering::Greater => {
                             fill_values = Float64Chunked::new_vec(
@@ -592,11 +586,8 @@ pub trait ListNameSpaceImpl: AsList {
                     let ca = s.str().unwrap();
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
-                        Ordering::Equal => {
+                        Ordering::Equal | Ordering::Less => {
                             fill_values = ca.clone();
-                        },
-                        Ordering::Less => {
-                            fill_values = ca.slice(0, width);
                         },
                         Ordering::Greater => {
                             fill_values = StringChunked::new(
@@ -617,11 +608,8 @@ pub trait ListNameSpaceImpl: AsList {
                     let ca = s.bool().unwrap();
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
-                        Ordering::Equal => {
+                        Ordering::Equal | Ordering::Less => {
                             fill_values = ca.clone();
-                        },
-                        Ordering::Less => {
-                            fill_values = ca.slice(0, width);
                         },
                         Ordering::Greater => {
                             fill_values = BooleanChunked::new(
