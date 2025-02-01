@@ -1055,15 +1055,20 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def pad_start(self, fill_value: IntoExpr, *, width: int) -> Expr:
+    def pad_start(self, fill_value: IntoExpr, *, width: IntoExpr) -> Expr:
         """
-        Fill each sub-list until it matches the length of the longest sub-list.
+        Pad the start of a sub-list until it reaches the given width.
 
         Parameters
         ----------
         fill_value
             Add this value at the left of the sub-list until the length of the
             sub-list is equal to the length of the longest sub-list.
+        width
+            Width to which sub-lists will be padded to. If a sub-list has more
+            than `width` elements, then it is not modified. If it has less than
+            `width` elements, `fill_value` is added on the left until `width`
+            is reached.
 
         Examples
         --------

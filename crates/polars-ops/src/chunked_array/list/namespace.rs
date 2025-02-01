@@ -515,7 +515,7 @@ pub trait ListNameSpaceImpl: AsList {
     }
 
     #[cfg(feature = "list_pad")]
-    fn lst_pad_start(&self, fill_value: &Column, width: usize) -> PolarsResult<ListChunked> {
+    fn lst_pad_start(&self, fill_value: &Column, width: &Column) -> PolarsResult<ListChunked> {
         let ca = self.as_list();
         let inner_dtype = ca.inner_dtype();
         let fill_dtype = fill_value.dtype();
@@ -524,6 +524,14 @@ pub trait ListNameSpaceImpl: AsList {
         let dtype = &DataType::List(Box::new(super_type.clone()));
         let ca = ca.cast(dtype)?;
         let ca = ca.list().unwrap();
+
+        let width = if width.len() == 1 {
+            &width.new_from_index(0, ca.len())
+        } else {
+            width
+        };
+        let width = width.strict_cast(&DataType::UInt64)?;
+        let mut width = width.u64()?.into_iter();
 
         let fill_value = if fill_value.len() == 1 {
             &fill_value.new_from_index(0, ca.len())
@@ -539,6 +547,7 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.i64().unwrap();
+                    let width = width.next().unwrap().unwrap() as usize;
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
                         Ordering::Equal | Ordering::Less => {
@@ -562,6 +571,7 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.f64().unwrap();
+                    let width = width.next().unwrap().unwrap() as usize;
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
                         Ordering::Equal | Ordering::Less => {
@@ -584,6 +594,7 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.str().unwrap();
+                    let width = width.next().unwrap().unwrap() as usize;
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
                         Ordering::Equal | Ordering::Less => {
@@ -606,6 +617,7 @@ pub trait ListNameSpaceImpl: AsList {
                     let binding = s.unwrap();
                     let s: &Series = binding.as_ref();
                     let ca = s.bool().unwrap();
+                    let width = width.next().unwrap().unwrap() as usize;
                     let mut fill_values;
                     match width.cmp(&ca.len()) {
                         Ordering::Equal | Ordering::Less => {
