@@ -1062,8 +1062,7 @@ class ListNameSpace:
         Parameters
         ----------
         fill_value
-            Add this value at the left of the sub-list until the length of the
-            sub-list is equal to the length of the longest sub-list.
+            Add this value at the left of the sub-list.
         length
             length to which sub-lists will be padded to. If a sub-list has more
             than `length` elements, then it is not modified. If it has less than
