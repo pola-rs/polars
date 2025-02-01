@@ -179,10 +179,13 @@ pub fn linear_spaces(
     end: PyExpr,
     num_samples: PyExpr,
     closed: Wrap<ClosedInterval>,
+    as_array: bool,
 ) -> PyResult<PyExpr> {
     let start = start.inner;
     let end = end.inner;
     let num_samples = num_samples.inner;
     let closed = closed.0;
-    Ok(dsl::linear_spaces(start, end, num_samples, closed).into())
+    let out =
+        dsl::linear_spaces(start, end, num_samples, closed, as_array).map_err(PyPolarsErr::from)?;
+    Ok(out.into())
 }

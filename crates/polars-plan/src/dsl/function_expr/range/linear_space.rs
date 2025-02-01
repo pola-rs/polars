@@ -73,7 +73,11 @@ pub(super) fn linear_space(s: &[Column], closed: ClosedInterval) -> PolarsResult
     }
 }
 
-pub(super) fn linear_spaces(s: &[Column], closed: ClosedInterval) -> PolarsResult<Column> {
+pub(super) fn linear_spaces(
+    s: &[Column],
+    closed: ClosedInterval,
+    array_width: Option<usize>,
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
     let num_samples = &s[2];
@@ -108,7 +112,10 @@ pub(super) fn linear_spaces(s: &[Column], closed: ClosedInterval) -> PolarsResul
             let out =
                 linear_spaces_impl_broadcast(start, end, num_samples, linspace_impl, &mut builder)?;
 
-            let to_type = DataType::List(Box::new(DataType::Float32));
+            let to_type = array_width.map_or_else(
+                || DataType::List(Box::new(DataType::Float32)),
+                |width| DataType::Array(Box::new(DataType::Float32), width),
+            );
             out.cast(&to_type)
         },
         (mut dt, dt2) if dt.is_temporal() && dt == dt2 => {
@@ -147,7 +154,10 @@ pub(super) fn linear_spaces(s: &[Column], closed: ClosedInterval) -> PolarsResul
             let out =
                 linear_spaces_impl_broadcast(start, end, num_samples, linspace_impl, &mut builder)?;
 
-            let to_type = DataType::List(Box::new(dt.clone()));
+            let to_type = array_width.map_or_else(
+                || DataType::List(Box::new(dt.clone())),
+                |width| DataType::Array(Box::new(dt.clone()), width),
+            );
             out.cast(&to_type)
         },
         (dt1, dt2) if !dt1.is_primitive_numeric() || !dt2.is_primitive_numeric() => {
@@ -185,7 +195,10 @@ pub(super) fn linear_spaces(s: &[Column], closed: ClosedInterval) -> PolarsResul
             let out =
                 linear_spaces_impl_broadcast(start, end, num_samples, linspace_impl, &mut builder)?;
 
-            let to_type = DataType::List(Box::new(DataType::Float64));
+            let to_type = array_width.map_or_else(
+                || DataType::List(Box::new(DataType::Float64)),
+                |width| DataType::Array(Box::new(DataType::Float64), width),
+            );
             out.cast(&to_type)
         },
     }

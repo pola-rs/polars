@@ -176,17 +176,63 @@ pub fn linear_space(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInt
     }
 }
 
+fn match_literal_int(expr: &Expr) -> PolarsResult<Option<usize>> {
+    match expr {
+        Expr::Literal(n) => Ok(match n {
+            LiteralValue::Int(v) => Some(usize::try_from(*v).unwrap()),
+            LiteralValue::UInt8(v) => Some(*v as usize),
+            LiteralValue::UInt16(v) => Some(*v as usize),
+            LiteralValue::UInt32(v) => Some(usize::try_from(*v).unwrap()),
+            LiteralValue::UInt64(v) => Some(usize::try_from(*v).unwrap()),
+            LiteralValue::Int8(v) => Some(usize::try_from(*v).unwrap()),
+            LiteralValue::Int16(v) => Some(usize::try_from(*v).unwrap()),
+            LiteralValue::Int32(v) => Some(usize::try_from(*v).unwrap()),
+            LiteralValue::Int64(v) => Some(usize::try_from(*v).unwrap()),
+            LiteralValue::Int128(v) => Some(usize::try_from(*v).unwrap()),
+            _ => {
+                polars_bail!(InvalidOperation: "'as_array' is only valid when 'num_samples' is a constant integer")
+            },
+        }),
+        Expr::Cast { expr, dtype, .. } => {
+            // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
+            if dtype.is_integer() {
+                match_literal_int(expr)
+            } else {
+                polars_bail!(InvalidOperation: "'as_array' is only valid when 'num_samples' is a constant integer")
+            }
+        },
+        _ => {
+            polars_bail!(InvalidOperation: "'as_array' is only valid when 'num_samples' is a constant integer")
+        },
+    }
+}
+
 /// Create a column of linearly-spaced sequences from 'start', 'end', and 'num_samples' expressions.
-pub fn linear_spaces(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInterval) -> Expr {
+pub fn linear_spaces(
+    start: Expr,
+    end: Expr,
+    num_samples: Expr,
+    closed: ClosedInterval,
+    as_array: bool,
+) -> PolarsResult<Expr> {
+    let array_width = if as_array {
+        match_literal_int(&num_samples)?
+    } else {
+        None
+    };
+
     let input = vec![start, end, num_samples];
 
-    Expr::Function {
+    Ok(Expr::Function {
         input,
-        function: FunctionExpr::Range(RangeFunction::LinearSpaces { closed }),
+        function: FunctionExpr::Range(RangeFunction::LinearSpaces {
+            closed,
+            array_width,
+        }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
-    }
+    })
 }

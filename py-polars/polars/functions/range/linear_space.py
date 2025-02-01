@@ -198,6 +198,7 @@ def linear_spaces(
     num_samples: int | IntoExprColumn,
     *,
     closed: ClosedInterval = ...,
+    as_array: bool = ...,
     eager: Literal[False] = ...,
 ) -> Expr: ...
 
@@ -209,6 +210,7 @@ def linear_spaces(
     num_samples: int | IntoExprColumn,
     *,
     closed: ClosedInterval = ...,
+    as_array: bool = ...,
     eager: Literal[True],
 ) -> Series: ...
 
@@ -220,6 +222,7 @@ def linear_spaces(
     num_samples: int | IntoExprColumn,
     *,
     closed: ClosedInterval = ...,
+    as_array: bool = ...,
     eager: bool,
 ) -> Expr | Series: ...
 
@@ -230,6 +233,7 @@ def linear_spaces(
     num_samples: int | IntoExprColumn,
     *,
     closed: ClosedInterval = "both",
+    as_array: bool = False,
     eager: bool = False,
 ) -> Expr | Series:
     """
@@ -245,6 +249,8 @@ def linear_spaces(
         Number of samples in the output sequence.
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the interval are closed (inclusive).
+    as_array
+        Return result as a fixed-length pl.Array. `num_samples` must be a constant.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
@@ -264,22 +270,32 @@ def linear_spaces(
 
     Examples
     --------
-    >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2], "step": [4, 5]})
-    >>> df.with_columns(linear_space=pl.linear_spaces("start", "end", "step"))
+    >>> df = pl.DataFrame({"start": [1, -1], "end": [3, 2], "num_samples": [4, 5]})
+    >>> df.with_columns(ls=pl.linear_spaces("start", "end", "num_samples"))
     shape: (2, 4)
-    ┌───────┬─────┬──────┬────────────────────────┐
-    │ start ┆ end ┆ step ┆ linear_space           │
-    │ ---   ┆ --- ┆ ---  ┆ ---                    │
-    │ i64   ┆ i64 ┆ i64  ┆ list[f64]              │
-    ╞═══════╪═════╪══════╪════════════════════════╡
-    │ 1     ┆ 3   ┆ 4    ┆ [1.0, 1.666667, … 3.0] │
-    │ -1    ┆ 2   ┆ 5    ┆ [-1.0, -0.25, … 2.0]   │
-    └───────┴─────┴──────┴────────────────────────┘
+    ┌───────┬─────┬─────────────┬────────────────────────┐
+    │ start ┆ end ┆ num_samples ┆ ls                     │
+    │ ---   ┆ --- ┆ ---         ┆ ---                    │
+    │ i64   ┆ i64 ┆ i64         ┆ list[f64]              │
+    ╞═══════╪═════╪═════════════╪════════════════════════╡
+    │ 1     ┆ 3   ┆ 4           ┆ [1.0, 1.666667, … 3.0] │
+    │ -1    ┆ 2   ┆ 5           ┆ [-1.0, -0.25, … 2.0]   │
+    └───────┴─────┴─────────────┴────────────────────────┘
+    >>> df.with_columns(ls=pl.linear_spaces("start", "end", 3, as_array=True))
+    shape: (2, 4)
+    ┌───────┬─────┬─────────────┬──────────────────┐
+    │ start ┆ end ┆ num_samples ┆ ls               │
+    │ ---   ┆ --- ┆ ---         ┆ ---              │
+    │ i64   ┆ i64 ┆ i64         ┆ array[f64, 3]    │
+    ╞═══════╪═════╪═════════════╪══════════════════╡
+    │ 1     ┆ 3   ┆ 4           ┆ [1.0, 2.0, 3.0]  │
+    │ -1    ┆ 2   ┆ 5           ┆ [-1.0, 0.5, 2.0] │
+    └───────┴─────┴─────────────┴──────────────────┘
     """
     start = parse_into_expression(start)
     end = parse_into_expression(end)
     num_samples = parse_into_expression(num_samples)
-    result = wrap_expr(plr.linear_spaces(start, end, num_samples, closed))
+    result = wrap_expr(plr.linear_spaces(start, end, num_samples, closed, as_array))
 
     if eager:
         return F.select(result).to_series()

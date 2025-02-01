@@ -35,6 +35,7 @@ pub enum RangeFunction {
     },
     LinearSpaces {
         closed: ClosedInterval,
+        array_width: Option<usize>,
     },
     #[cfg(feature = "dtype-date")]
     DateRange {
@@ -102,10 +103,17 @@ impl RangeFunction {
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
             IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
-            LinearSpace { closed: _ } => mapper.with_dtype(map_linspace_dtype(&mapper)?),
-            LinearSpaces { closed: _ } => {
-                let inner_dt = map_linspace_dtype(&mapper)?;
-                mapper.with_dtype(DataType::List(Box::new(inner_dt)))
+            LinearSpace { .. } => mapper.with_dtype(map_linspace_dtype(&mapper)?),
+            LinearSpaces {
+                closed: _,
+                array_width,
+            } => {
+                let inner = Box::new(map_linspace_dtype(&mapper)?);
+                let dt = match array_width {
+                    Some(width) => DataType::Array(inner, *width),
+                    None => DataType::List(inner),
+                };
+                mapper.with_dtype(dt)
             },
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => mapper.with_dtype(DataType::Date),
@@ -181,8 +189,11 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             LinearSpace { closed } => {
                 map_as_slice!(linear_space::linear_space, closed)
             },
-            LinearSpaces { closed } => {
-                map_as_slice!(linear_space::linear_spaces, closed)
+            LinearSpaces {
+                closed,
+                array_width,
+            } => {
+                map_as_slice!(linear_space::linear_spaces, closed, array_width)
             },
             #[cfg(feature = "dtype-date")]
             DateRange { interval, closed } => {
