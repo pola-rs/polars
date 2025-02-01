@@ -1373,19 +1373,19 @@ class ExprListNameSpace:
         other = parse_into_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
 
-    def pad_start(self, fill_value: IntoExpr, *, width: IntoExpr) -> Expr:
+    def pad_start(self, fill_value: IntoExpr, *, length: IntoExpr) -> Expr:
         """
-        Pad the start of a sub-list until it reaches the given width.
+        Pad the start of a sub-list until it reaches the given length.
 
         Parameters
         ----------
         fill_value
             Add this value at the left of the sub-list until the length of the
             sub-list is equal to the length of the longest sub-list.
-        width
-            Width to which sub-lists will be padded to. If a sub-list has more
-            than `width` elements, then it is not modified. If it has less than
-            `width` elements, `fill_value` is added on the left until `width`
+        length
+            length to which sub-lists will be padded to. If a sub-list has more
+            than `length` elements, then it is not modified. If it has less than
+            `length` elements, `fill_value` is added on the left until `length`
             is reached.
 
         Examples
@@ -1395,8 +1395,8 @@ class ExprListNameSpace:
         ... )
         >>> with pl.Config(fmt_table_cell_list_len=4):
         ...     df.select(
-        ...         filled_int=pl.col("a").list.pad_start(pl.col("int"), width=4),
-        ...         filled_float=pl.col("a").list.pad_start(pl.col("float"), width=1),
+        ...         filled_int=pl.col("a").list.pad_start(pl.col("int"), length=4),
+        ...         filled_float=pl.col("a").list.pad_start(pl.col("float"), length=1),
         ...     )
         shape: (3, 2)
         ┌──────────────────────┬─────────────────┐
@@ -1409,21 +1409,21 @@ class ExprListNameSpace:
         │ [2, 1, 2, 3]         ┆ [1.0, 2.0, 3.0] │
         └──────────────────────┴─────────────────┘
         >>> df = pl.DataFrame({"a": [["a"], [], ["b", "c", "d"]]})
-        >>> df.select(pl.col("a").list.pad_start("foo", width=2))
+        >>> df.select(pl.col("a").list.pad_start("foo", length=2))
         shape: (3, 1)
-        ┌───────────────────────┐
-        │ a                     │
-        │ ---                   │
-        │ list[str]             │
-        ╞═══════════════════════╡
-        │ ["foo", "a"]          │
-        │ ["foo", "foo"]        │
-        │ ["b", "c", "d"]       │
-        └───────────────────────┘
-        >>> # The `width` argument also accepts expressions, for instance to
+        ┌─────────────────┐
+        │ a               │
+        │ ---             │
+        │ list[str]       │
+        ╞═════════════════╡
+        │ ["foo", "a"]    │
+        │ ["foo", "foo"]  │
+        │ ["b", "c", "d"] │
+        └─────────────────┘
+        >>> # The `length` argument also accepts expressions, for instance to
         >>> # pad sub-lists to the longest sub-list:
         >>> df.select(
-        ...     pl.col("a").list.pad_start("foo", width=pl.col("a").list.len().max())
+        ...     pl.col("a").list.pad_start("foo", length=pl.col("a").list.len().max())
         ... )
         shape: (3, 1)
         ┌───────────────────────┐
@@ -1437,5 +1437,5 @@ class ExprListNameSpace:
         └───────────────────────┘
         """
         fill_value = parse_into_expression(fill_value, str_as_lit=True)
-        width = parse_into_expression(width, str_as_lit=True)
-        return wrap_expr(self._pyexpr.list_pad_start(fill_value, width))
+        length = parse_into_expression(length, str_as_lit=True)
+        return wrap_expr(self._pyexpr.list_pad_start(fill_value, length))

@@ -278,11 +278,11 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_pad")]
-    fn list_pad_start(&self, fill_value: PyExpr, width: PyExpr) -> Self {
+    fn list_pad_start(&self, fill_value: PyExpr, length: PyExpr) -> Self {
         self.inner
             .clone()
             .list()
-            .pad_start(fill_value.inner, width.inner)
+            .pad_start(fill_value.inner, length.inner)
             .into()
     }
 }

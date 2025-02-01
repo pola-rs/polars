@@ -679,6 +679,6 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 pub(super) fn pad_start(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
     let fill_value = &args[1];
-    let width = &args[2];
-    Ok(s.list()?.lst_pad_start(fill_value, width)?.into_column())
+    let length = &args[2];
+    Ok(s.list()?.lst_pad_start(fill_value, length)?.into_column())
 }
