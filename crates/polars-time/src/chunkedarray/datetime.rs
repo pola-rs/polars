@@ -198,17 +198,14 @@ pub trait DatetimeMethods: AsDatetime {
                                         error_time_values = Some((h, mnt, s, ns));
                                         None
                                     },
-                                    // We have a valid date.
+                                    // We have a valid time.
                                     |ndt| {
+                                        let t = ndt.and_utc();
                                         Some(match time_unit {
-                                            TimeUnit::Milliseconds => {
-                                                ndt.and_utc().timestamp_millis()
-                                            },
-                                            TimeUnit::Microseconds => {
-                                                ndt.and_utc().timestamp_micros()
-                                            },
+                                            TimeUnit::Milliseconds => t.timestamp_millis(),
+                                            TimeUnit::Microseconds => t.timestamp_micros(),
                                             TimeUnit::Nanoseconds => {
-                                                ndt.and_utc().timestamp_nanos_opt().unwrap()
+                                                t.timestamp_nanos_opt().unwrap()
                                             },
                                         })
                                     },
