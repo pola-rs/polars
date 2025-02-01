@@ -621,7 +621,6 @@ def test_sort_by_in_over_5499() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted() -> None:
     df_a = (
         pl.datetime_range(

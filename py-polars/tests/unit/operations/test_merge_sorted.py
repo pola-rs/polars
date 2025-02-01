@@ -60,7 +60,6 @@ def test_merge_sorted_decimal_20990(precision: int) -> None:
     assert_series_equal(result, expected)
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted_categorical() -> None:
     left = pl.Series("a", ["a", "b"], pl.Categorical()).sort().to_frame()
     right = pl.Series("a", ["a", "b", "b"], pl.Categorical()).sort().to_frame()

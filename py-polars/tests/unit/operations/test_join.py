@@ -64,7 +64,6 @@ def test_semi_anti_join() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming  # flaky in CI, https://github.com/pola-rs/polars/issues/20943
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
