@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, PanicException
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -304,11 +304,11 @@ def test_replace_date_invalid_components() -> None:
     df = pl.DataFrame({"a": [date(2025, 1, 1)]})
 
     with pytest.raises(
-        PanicException, match=r"Invalid date components \(2025, 13, 1\) supplied"
+        ComputeError, match=r"Invalid date components \(2025, 13, 1\) supplied"
     ):
         df.select(pl.col("a").dt.replace(month=13))
     with pytest.raises(
-        PanicException, match=r"Invalid date components \(2025, 1, 32\) supplied"
+        ComputeError, match=r"Invalid date components \(2025, 1, 32\) supplied"
     ):
         df.select(pl.col("a").dt.replace(day=32))
 
@@ -317,11 +317,11 @@ def test_replace_datetime_invalid_date_components() -> None:
     df = pl.DataFrame({"a": [datetime(2025, 1, 1)]})
 
     with pytest.raises(
-        PanicException, match=r"Invalid date components \(2025, 13, 1\) supplied"
+        ComputeError, match=r"Invalid date components \(2025, 13, 1\) supplied"
     ):
         df.select(pl.col("a").dt.replace(month=13))
     with pytest.raises(
-        PanicException, match=r"Invalid date components \(2025, 1, 32\) supplied"
+        ComputeError, match=r"Invalid date components \(2025, 1, 32\) supplied"
     ):
         df.select(pl.col("a").dt.replace(day=32))
 
@@ -331,25 +331,25 @@ def test_replace_datetime_invalid_time_components() -> None:
 
     # hour
     with pytest.raises(
-        PanicException, match=r"Invalid time components \(25, 0, 0, 0\) supplied"
+        ComputeError, match=r"Invalid time components \(25, 0, 0, 0\) supplied"
     ):
         df.select(pl.col("a").dt.replace(hour=25))
 
     # minute
     with pytest.raises(
-        PanicException, match=r"Invalid time components \(0, 61, 0, 0\) supplied"
+        ComputeError, match=r"Invalid time components \(0, 61, 0, 0\) supplied"
     ):
         df.select(pl.col("a").dt.replace(minute=61))
 
     # second
     with pytest.raises(
-        PanicException, match=r"Invalid time components \(0, 0, 61, 0\) supplied"
+        ComputeError, match=r"Invalid time components \(0, 0, 61, 0\) supplied"
     ):
         df.select(pl.col("a").dt.replace(second=61))
 
     # microsecond
     with pytest.raises(
-        PanicException,
+        ComputeError,
         match=r"Invalid time components \(0, 0, 0, 2000000000\) supplied",
     ):
         df.select(pl.col("a").dt.replace(microsecond=2_000_000))
