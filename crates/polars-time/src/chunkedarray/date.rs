@@ -84,21 +84,32 @@ pub trait DateMethods: AsDate {
         day: &Int8Chunked,
         name: PlSmallStr,
     ) -> PolarsResult<DateChunked> {
+        let mut error_values: Option<(i32, i8, i8)> = None;
         let mut ca: Int32Chunked = year
             .into_iter()
             .zip(month)
             .zip(day)
             .map(|((y, m), d)| {
                 if let (Some(y), Some(m), Some(d)) = (y, m, d) {
-                    let Some(ns) = NaiveDate::from_ymd_opt(y, m as u32, d as u32) else {
-                        panic!("Invalid date components ({}, {}, {}) supplied", y, m, d)
-                    };
-                    Some(ns.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+                    NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
+                        // If None is returned, then we have an invalid date.
+                        // We save the faulty values and move on.
+                        || {
+                            error_values = Some((y, m, d));
+                            None
+                        },
+                        // We have a valid date.
+                        |ns| Some(ns.num_days_from_ce() - EPOCH_DAYS_FROM_CE),
+                    )
                 } else {
                     None
                 }
             })
             .collect_trusted();
+        if let Some(values) = error_values {
+            // An invalid y/m/d was detected.
+            polars_bail!(ComputeError: format!("Invalid date components ({}, {}, {}) supplied", values.0, values.1, values.2))
+        };
         ca.rename(name);
         Ok(ca.into_date())
     }

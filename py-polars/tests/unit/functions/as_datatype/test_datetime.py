@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, PanicException
+from polars.exceptions import ComputeError
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
@@ -43,7 +43,7 @@ def test_date_datetime() -> None:
 def test_date_invalid_component(components: list[int]) -> None:
     y, m, d = components
     msg = rf"Invalid date components \({y}, {m}, {d}\) supplied"
-    with pytest.raises(PanicException, match=msg):
+    with pytest.raises(ComputeError, match=msg):
         pl.select(pl.date(*components))
 
 
@@ -58,7 +58,7 @@ def test_date_invalid_component(components: list[int]) -> None:
 def test_datetime_invalid_date_component(components: list[int]) -> None:
     y, m, d = components[0:3]
     msg = rf"Invalid date components \({y}, {m}, {d}\) supplied"
-    with pytest.raises(PanicException, match=msg):
+    with pytest.raises(ComputeError, match=msg):
         pl.select(pl.datetime(*components))
 
 
@@ -75,7 +75,7 @@ def test_datetime_invalid_time_component(components: list[int]) -> None:
     h, mnt, s, us = components[3:]
     ns = us * 1_000
     msg = rf"Invalid time components \({h}, {mnt}, {s}, {ns}\) supplied"
-    with pytest.raises(PanicException, match=msg):
+    with pytest.raises(ComputeError, match=msg):
         pl.select(pl.datetime(*components))
 
 
