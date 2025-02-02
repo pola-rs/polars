@@ -64,6 +64,7 @@ def test_semi_anti_join() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},

@@ -625,6 +625,7 @@ def test_categorical_fill_null_existing_category() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_fill_null_stringcache() -> None:
     df = pl.LazyFrame(
         {"index": [1, 2, 3], "cat": ["a", "b", None]},
@@ -849,6 +850,7 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
         pl.col("y").cast(pl.Categorical(ordering="lexical"))

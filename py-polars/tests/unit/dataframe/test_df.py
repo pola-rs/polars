@@ -1902,6 +1902,7 @@ def test_empty_projection() -> None:
     assert empty_df.shape == (0, 0)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, None]})
     assert_frame_equal(df.fill_null(4), pl.DataFrame({"a": [1, 2], "b": [3, 4]}))

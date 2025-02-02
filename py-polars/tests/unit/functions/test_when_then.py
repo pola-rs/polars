@@ -232,6 +232,7 @@ def test_object_when_then_4702() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_comp_categorical_lit_dtype() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "b", "e"], "values": [1, 5, 9]},

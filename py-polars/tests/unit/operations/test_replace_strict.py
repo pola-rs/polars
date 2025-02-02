@@ -351,6 +351,7 @@ def test_replace_strict_str_to_int() -> None:
         (contextlib.nullcontext(), pl.Enum(["a", "b", "OTHER"])),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_replace_strict_cat_str(
     context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
     dtype: pl.DataType,
