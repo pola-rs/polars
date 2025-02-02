@@ -1064,7 +1064,7 @@ class ListNameSpace:
         fill_value
             Add this value at the left of the sub-list.
         length
-            length to which sub-lists will be padded to. If a sub-list has more
+            Length to which sub-lists will be padded to. If a sub-list has more
             than `length` elements, then it is not modified. If it has less than
             `length` elements, `fill_value` is added on the left until `length`
             is reached.
