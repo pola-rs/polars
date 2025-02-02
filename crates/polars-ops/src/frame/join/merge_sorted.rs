@@ -157,6 +157,12 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
 
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
+        DataType::Binary => {
+            let lhs = lhs_s.binary().unwrap();
+            let rhs = rhs_s.binary().unwrap();
+
+            get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+        },
         _ => {
             with_match_physical_numeric_polars_type!(lhs_s.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs_s.as_ref().as_ref().as_ref();
