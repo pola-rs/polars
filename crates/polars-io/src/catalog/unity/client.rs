@@ -3,8 +3,8 @@ use polars_core::schema::Schema;
 use polars_error::{polars_bail, to_compute_err, PolarsResult};
 
 use super::models::{CatalogInfo, NamespaceInfo, TableCredentials, TableInfo};
+use super::schema::schema_to_column_info_list;
 use super::utils::{do_request, PageWalker};
-use crate::catalog::schema::schema_to_column_info_list;
 use crate::catalog::unity::models::{ColumnInfo, DataSourceFormat, TableType};
 use crate::impl_page_walk;
 use crate::utils::decode_json_response;
