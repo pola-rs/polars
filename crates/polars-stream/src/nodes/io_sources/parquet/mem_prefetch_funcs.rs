@@ -1,5 +1,5 @@
 pub(super) use polars_utils::mem::{
-    madvise_populate_read, madvise_sequential, madvise_willneed, prefetch_l2, force_populate_read
+    force_populate_read, madvise_populate_read, madvise_sequential, madvise_willneed, prefetch_l2,
 };
 pub(super) fn no_prefetch(_: &[u8]) {}
 
