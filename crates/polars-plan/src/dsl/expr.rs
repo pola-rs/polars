@@ -369,6 +369,38 @@ impl Expr {
             .get(root)
             .to_field_and_validate(schema, ctxt, expr_arena)
     }
+
+    /// Extract a constant usize from an expression.
+    pub fn extract_usize(&self) -> PolarsResult<Option<usize>> {
+        match self {
+            Expr::Literal(n) => Ok(match n {
+                LiteralValue::Int(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::UInt8(v) => Some(*v as usize),
+                LiteralValue::UInt16(v) => Some(*v as usize),
+                LiteralValue::UInt32(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::UInt64(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int8(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int16(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int32(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int64(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int128(v) => Some(usize::try_from(*v).unwrap()),
+                _ => {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                },
+            }),
+            Expr::Cast { expr, dtype, .. } => {
+                // lit(x, dtype=...) are Cast expressions. We verify the inner expression is literal.
+                if dtype.is_integer() {
+                    expr.extract_usize()
+                } else {
+                    polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+                }
+            },
+            _ => {
+                polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
+            },
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
