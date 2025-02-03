@@ -11,7 +11,7 @@ use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
 #[cfg(feature = "catalog")]
-use polars_python::catalog::PyCatalogClient;
+use polars_python::catalog::unity::PyCatalogClient;
 #[cfg(feature = "polars_cloud")]
 use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;

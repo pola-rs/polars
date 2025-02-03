@@ -5,8 +5,7 @@ use polars_utils::error::TruncateErrorDetail;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::unity::models::{ColumnInfo, ColumnTypeJson, TableInfo};
-use crate::catalog::unity::models::ColumnTypeJsonType;
+use super::models::{ColumnInfo, ColumnTypeJson, ColumnTypeJsonType, TableInfo};
 use crate::utils::decode_json_response;
 
 /// Returns `(schema, hive_schema)`
