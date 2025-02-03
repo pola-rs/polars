@@ -527,51 +527,14 @@ pub fn lower_ir(
             options,
         } => {
             let input = *input;
-            let output_schema = output_schema.clone();
             let keys = keys.clone();
             let aggs = aggs.clone();
+            let output_schema = output_schema.clone();
             let apply = apply.clone();
             let maintain_order = *maintain_order;
             let options = options.clone();
+
             let phys_input = lower_ir!(input)?;
-
-            // Streaming categoricals are not yet supported in the row-encoding
-            if keys
-                .iter()
-                .any(|e| output_schema.get(e.output_name()).unwrap().is_categorical())
-            {
-                let input_schema = phys_sm[phys_input.node].output_schema.clone();
-                let lmdf = Arc::new(LateMaterializedDataFrame::default());
-                let mut lp_arena = Arena::default();
-                let input_lp_node = lp_arena.add(lmdf.clone().as_ir_node(input_schema.clone()));
-                let distinct_lp_node = lp_arena.add(IR::GroupBy {
-                    input: input_lp_node,
-                    keys,
-                    aggs,
-                    schema: output_schema.clone(),
-                    apply,
-                    maintain_order,
-                    options,
-                });
-                let executor = Mutex::new(create_physical_plan(
-                    distinct_lp_node,
-                    &mut lp_arena,
-                    expr_arena,
-                )?);
-                let group_by_node = PhysNode {
-                    output_schema,
-                    kind: PhysNodeKind::InMemoryMap {
-                        input: phys_input,
-                        map: Arc::new(move |df| {
-                            lmdf.set_materialized_dataframe(df);
-                            let mut state = ExecutionState::new();
-                            executor.lock().execute(&mut state)
-                        }),
-                    },
-                };
-                return Ok(PhysStream::first(phys_sm.insert(group_by_node)));
-            }
-
             return build_group_by_stream(
                 phys_input,
                 &keys,
@@ -595,23 +558,13 @@ pub fn lower_ir(
         } => {
             let input_left = *input_left;
             let input_right = *input_right;
-
-            let schema_left = ir_arena.get(input_left).schema(ir_arena);
-            let schema_right = ir_arena.get(input_right).schema(ir_arena);
-            let joins_on_cats = left_on
-                .iter()
-                .any(|e| schema_left.get(e.output_name()).unwrap().is_categorical())
-                || right_on
-                    .iter()
-                    .any(|e| schema_right.get(e.output_name()).unwrap().is_categorical());
-
             let left_on = left_on.clone();
             let right_on = right_on.clone();
             let args = options.args.clone();
             let options = options.options.clone();
             let phys_left = lower_ir!(input_left)?;
             let phys_right = lower_ir!(input_right)?;
-            if args.how.is_equi() && !args.validation.needs_checks() && !joins_on_cats {
+            if args.how.is_equi() && !args.validation.needs_checks() {
                 // When lowering the expressions for the keys we need to ensure we keep around the
                 // payload columns, otherwise the input nodes can get replaced by input-independent
                 // nodes since the lowering code does not see we access any non-literal expressions.
