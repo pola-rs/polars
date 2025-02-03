@@ -60,7 +60,7 @@ impl RowValues {
                 names.push(s.name().to_string());
             }
             self.join_columns_material.push(s.array_ref(0).clone());
-            ctxts.push(get_row_encoding_context(s.dtype()));
+            ctxts.push(get_row_encoding_context(s.dtype(), false));
         }
 
         // We determine the indices of the columns that have to be removed
