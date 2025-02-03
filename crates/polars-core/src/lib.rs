@@ -2,7 +2,6 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![allow(ambiguous_glob_reexports)]
 #![cfg_attr(feature = "nightly", allow(clippy::non_canonical_partial_ord_impl))] // remove once stable
-
 extern crate core;
 
 #[macro_use]
