@@ -145,7 +145,7 @@ jobs:
         env:
           POLARS_FORCE_ASYNC: 1
         run: >
-          pytest tests/unit/io/
+          pytest -n auto tests/unit/io/
           -n auto --dist loadgroup
           -m "not release and not benchmark and not docs"
           --cov --cov-report xml:async.xml --cov-fail-under=0
