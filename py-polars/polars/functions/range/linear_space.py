@@ -219,18 +219,6 @@ def linear_spaces(
 def linear_spaces(
     start: NumericLiteral | TemporalLiteral | IntoExprColumn,
     end: NumericLiteral | TemporalLiteral | IntoExprColumn,
-    num_samples: int,
-    *,
-    closed: ClosedInterval = ...,
-    as_array: Literal[True],
-    eager: bool,
-) -> Series: ...
-
-
-@overload
-def linear_spaces(
-    start: NumericLiteral | TemporalLiteral | IntoExprColumn,
-    end: NumericLiteral | TemporalLiteral | IntoExprColumn,
     num_samples: int | IntoExprColumn,
     *,
     closed: ClosedInterval = ...,
