@@ -379,6 +379,7 @@ def test_replace_strict_cat_str(
 @pytest.mark.parametrize(
     "context", [pl.StringCache(), pytest.warns(CategoricalRemappingWarning)]
 )
+@pytest.mark.may_fail_auto_streaming
 def test_replace_strict_cat_cat(
     context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
 ) -> None:
