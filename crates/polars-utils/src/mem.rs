@@ -82,7 +82,7 @@ pub fn force_populate_read(slice: &[u8]) {
 
 #[cfg(target_family = "unix")]
 fn madvise(slice: &[u8], advice: libc::c_int) {
-    if slice.len() == 0 {
+    if slice.is_empty() {
         return;
     }
     let ptr = slice.as_ptr();
