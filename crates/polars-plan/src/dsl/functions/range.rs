@@ -215,13 +215,15 @@ pub fn linear_spaces(
     closed: ClosedInterval,
     as_array: bool,
 ) -> PolarsResult<Expr> {
+    let mut input = Vec::<Expr>::with_capacity(3);
+    input.push(start);
+    input.push(end);
     let array_width = if as_array {
         match_literal_int(&num_samples)?
     } else {
+        input.push(num_samples);
         None
     };
-
-    let input = vec![start, end, num_samples];
 
     Ok(Expr::Function {
         input,

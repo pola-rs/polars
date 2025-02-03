@@ -80,7 +80,15 @@ pub(super) fn linear_spaces(
 ) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
-    let num_samples = &s[2];
+
+    let num_samples = match array_width {
+        Some(ns) => {
+            // An array width is provided instead of a column of `num_sample`s.
+            let scalar = Scalar::new(DataType::UInt64, AnyValue::UInt64(ns as u64));
+            &Column::new_scalar(PlSmallStr::EMPTY, scalar, 1)
+        },
+        None => &s[2],
+    };
     let name = start.name().clone();
 
     let num_samples = num_samples.strict_cast(&DataType::UInt64)?;
