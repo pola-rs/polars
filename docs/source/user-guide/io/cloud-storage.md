@@ -59,6 +59,9 @@ use for authentication. This can be done in a few ways:
   cases a Python function can be provided for Polars to use to retrieve credentials:
 
 {{code_block('user-guide/io/cloud-storage','credential_provider_custom_func',['scan_parquet'])}}
+
+- Example for Azure:
+
 {{code_block('user-guide/io/cloud-storage','credential_provider_custom_func_azure',['scan_parquet', 'CredentialProviderAzure'])}}
 
 ## Scanning with PyArrow
