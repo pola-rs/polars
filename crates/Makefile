@@ -3,6 +3,10 @@
 SHELL=bash
 BASE ?= main
 
+.PHONY: fix
+fix:
+	@$(MAKE) -s -C .. $@
+
 .PHONY: fmt
 fmt:  ## Run rustfmt and dprint
 	cargo fmt --all

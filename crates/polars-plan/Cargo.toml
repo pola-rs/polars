@@ -194,8 +194,6 @@ bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
 polars_cloud = ["serde"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
 
-panic_on_schema = []
-
 [package.metadata.docs.rs]
 features = [
   "bitwise",

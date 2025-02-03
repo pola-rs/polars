@@ -30,6 +30,10 @@ impl Scalar {
         Self { dtype, value }
     }
 
+    pub fn null(dtype: DataType) -> Self {
+        Self::new(dtype, AnyValue::Null)
+    }
+
     #[inline(always)]
     pub fn is_null(&self) -> bool {
         self.value.is_null()
@@ -73,5 +77,11 @@ impl Scalar {
     #[inline(always)]
     pub fn update(&mut self, value: AnyValue<'static>) {
         self.value = value;
+    }
+
+    #[inline(always)]
+    pub fn with_value(mut self, value: AnyValue<'static>) -> Self {
+        self.update(value);
+        self
     }
 }

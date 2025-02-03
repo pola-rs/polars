@@ -87,6 +87,14 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::NegativeSlice {
+            input,
+            offset,
+            length,
+        } => (
+            format!("slice\\noffset: {offset}, length: {length}"),
+            from_ref(input),
+        ),
         PhysNodeKind::Filter { input, predicate } => (
             format!("filter\\n{}", fmt_exprs(from_ref(predicate), expr_arena)),
             from_ref(input),

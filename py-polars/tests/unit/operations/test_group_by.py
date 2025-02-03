@@ -1194,3 +1194,10 @@ def test_group_by_lit_series(capfd: Any, monkeypatch: Any) -> None:
     df.lazy().group_by("y").agg(pl.col("x").dot(a)).collect()
     captured = capfd.readouterr().err
     assert "are not partitionable" in captured
+
+
+def test_group_by_list_column() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 2], [3], [1, 2]]})
+    result = df.group_by("b").agg(pl.sum("a")).sort("b")
+    expected = pl.DataFrame({"b": [[1, 2], [3]], "a": [4, 2]})
+    assert_frame_equal(result, expected)

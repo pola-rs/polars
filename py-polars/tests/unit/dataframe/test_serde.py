@@ -40,6 +40,7 @@ def test_df_serde_roundtrip_json(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_df_serde(df: pl.DataFrame) -> None:
     serialized = df.serialize()
     assert isinstance(serialized, bytes)
@@ -47,6 +48,7 @@ def test_df_serde(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_df_serde_json_stringio(df: pl.DataFrame) -> None:
     serialized = df.serialize(format="json")
     assert isinstance(serialized, str)

@@ -371,6 +371,15 @@ def test_set_tbl_width_chars() -> None:
     with pl.Config(tbl_width_chars=87):
         assert max(len(line) for line in str(df).split("\n")) == 87
 
+    # check that -1 is interpreted as no limit
+    df = pl.DataFrame({str(i): ["a" * 25] for i in range(5)})
+    for tbl_width_chars, expected_width in [
+        (None, 100),
+        (-1, 141),
+    ]:
+        with pl.Config(tbl_width_chars=tbl_width_chars):
+            assert max(len(line) for line in str(df).split("\n")) == expected_width
+
 
 def test_shape_below_table_and_inlined_dtype() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})

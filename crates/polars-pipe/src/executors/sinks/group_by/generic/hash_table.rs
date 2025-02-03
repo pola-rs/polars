@@ -262,7 +262,7 @@ impl<const FIXED: bool> AggHashTable<FIXED> {
             .output_schema
             .iter_values()
             .take(self.num_keys)
-            .map(get_row_encoding_context)
+            .map(|dt| get_row_encoding_context(dt, false))
             .collect::<Vec<_>>();
         let fields = vec![Default::default(); self.num_keys];
         let key_columns =

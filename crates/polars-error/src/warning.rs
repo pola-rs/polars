@@ -1,15 +1,22 @@
+use parking_lot::RwLock;
+
 type WarningFunction = fn(&str, PolarsWarning);
-static mut WARNING_FUNCTION: Option<WarningFunction> = None;
+static WARNING_FUNCTION: RwLock<WarningFunction> = RwLock::new(eprintln);
+
+fn eprintln(fmt: &str, warning: PolarsWarning) {
+    eprintln!("{:?}: {}", warning, fmt);
+}
 
 /// Set the function that will be called by the `polars_warn!` macro.
 /// You can use this to set logging in polars.
-///
-/// # Safety
-/// The caller must ensure there is no other thread accessing this function
-/// or calling `polars_warn!`.
-pub unsafe fn set_warning_function(function: WarningFunction) {
-    WARNING_FUNCTION = Some(function)
+pub fn set_warning_function(function: WarningFunction) {
+    *WARNING_FUNCTION.write() = function;
 }
+
+pub fn get_warning_function() -> WarningFunction {
+    *WARNING_FUNCTION.read()
+}
+
 #[derive(Debug)]
 pub enum PolarsWarning {
     Deprecation,
@@ -18,13 +25,6 @@ pub enum PolarsWarning {
     MapWithoutReturnDtypeWarning,
 }
 
-fn eprintln(fmt: &str, warning: PolarsWarning) {
-    eprintln!("{:?}: {}", warning, fmt);
-}
-
-pub fn get_warning_function() -> WarningFunction {
-    unsafe { WARNING_FUNCTION.unwrap_or(eprintln) }
-}
 #[macro_export]
 macro_rules! polars_warn {
     ($variant:ident, $fmt:literal $(, $arg:tt)*) => {

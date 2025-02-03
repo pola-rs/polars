@@ -613,6 +613,10 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
+    if time.is_empty() {
+        return Ok(GroupsSlice::from(vec![]));
+    }
+
     let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);

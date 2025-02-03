@@ -19,7 +19,12 @@ from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
+    from polars._typing import (
+        ExcelSpreadsheetEngine,
+        PolarsDataType,
+        SchemaDict,
+        SelectorType,
+    )
 
 
 # pytestmark = pytest.mark.slow()
@@ -495,6 +500,7 @@ def test_read_invalid_worksheet(
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_read_mixed_dtype_columns(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,
@@ -541,22 +547,6 @@ def test_read_mixed_dtype_columns(
             schema_overrides=schema_overrides,
         ),
     )
-
-
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
-def test_write_excel_bytes(engine: ExcelSpreadsheetEngine) -> None:
-    df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
-
-    excel_bytes = BytesIO()
-    df.write_excel(excel_bytes)
-
-    df_read = pl.read_excel(excel_bytes, engine=engine)
-    assert_frame_equal(df, df_read)
-
-    # also confirm consistent behaviour when 'infer_schema_length=0'
-    df_read = pl.read_excel(excel_bytes, engine=engine, infer_schema_length=0)
-    expected = pl.DataFrame({"colx": ["1.5", "-2", "0"], "coly": ["a", None, "c"]})
-    assert_frame_equal(expected, df_read)
 
 
 def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> None:
@@ -900,10 +890,21 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
 
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
-def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
+@pytest.mark.parametrize(
+    ("engine", "list_dtype"),
+    [
+        ("calamine", pl.List(pl.Int8)),
+        ("openpyxl", pl.List(pl.UInt16)),
+        ("xlsx2csv", pl.Array(pl.Int32, 2)),
+    ],
+)
+def test_excel_write_compound_types(
+    engine: ExcelSpreadsheetEngine,
+    list_dtype: PolarsDataType,
+) -> None:
     df = pl.DataFrame(
-        {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
+        data={"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]},
+        schema_overrides={"x": pl.Array(pl.Int32, 2)},
     ).select("x", pl.struct(["y", "z"]))
 
     xls = BytesIO()
@@ -964,6 +965,22 @@ def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
     assert_frame_equal(df, xldf.head(3))
     assert xldf.height == 4
     assert xldf.row(3) == (None, 0, 0)
+
+
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+def test_excel_write_to_bytesio(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
+
+    excel_bytes = BytesIO()
+    df.write_excel(excel_bytes)
+
+    df_read = pl.read_excel(excel_bytes, engine=engine)
+    assert_frame_equal(df, df_read)
+
+    # also confirm consistent behaviour when 'infer_schema_length=0'
+    df_read = pl.read_excel(excel_bytes, engine=engine, infer_schema_length=0)
+    expected = pl.DataFrame({"colx": ["1.5", "-2", "0"], "coly": ["a", None, "c"]})
+    assert_frame_equal(expected, df_read)
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
@@ -1352,7 +1369,7 @@ def test_drop_empty_rows(
     assert df3.shape == (10, 4)
 
 
-def test_write_excel_select_col_dtype() -> None:
+def test_excel_write_select_col_dtype() -> None:
     from openpyxl import load_workbook
     from xlsxwriter import Workbook
 

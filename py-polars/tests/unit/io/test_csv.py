@@ -1501,7 +1501,6 @@ def test_csv_categorical_lifetime() -> None:
     assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_csv_categorical_categorical_merge() -> None:
     N = 50
     f = io.BytesIO()

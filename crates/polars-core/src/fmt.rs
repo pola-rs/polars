@@ -722,10 +722,15 @@ impl Display for DataFrame {
             let tbl_fallback_width = 100;
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
-                    Some(
-                        s.parse::<u16>()
-                            .expect("could not parse table width argument"),
-                    )
+                    let n = s
+                        .parse::<i64>()
+                        .expect("could not parse table width argument");
+                    let w = if n < 0 {
+                        u16::MAX
+                    } else {
+                        u16::try_from(n).expect("table width argument does not fit in u16")
+                    };
+                    Some(w)
                 })
                 .unwrap_or(None);
 

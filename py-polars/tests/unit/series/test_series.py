@@ -762,6 +762,7 @@ def test_init_nested_tuple() -> None:
     assert s3.dtype == pl.List(pl.Int32)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))

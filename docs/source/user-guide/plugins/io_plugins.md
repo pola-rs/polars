@@ -1,10 +1,10 @@
 # IO Plugins
 
-Besides [expression plugins](./index.md), we also support IO plugins. These allow you to register
-different file formats as sources to the Polars engines. Because sources can move data zero copy via
-Arrow FFI and sources can produce large chunks of data before returning, we've decided to interface
-to IO plugins via Python for now, as we don't think the short time the GIL is needed should lead to
-any contention.
+Besides [expression plugins](./expr_plugins.md), we also support IO plugins. These allow you to
+register different file formats as sources to the Polars engines. Because sources can move data zero
+copy via Arrow FFI and sources can produce large chunks of data before returning, we've decided to
+interface to IO plugins via Python for now, as we don't think the short time the GIL is needed
+should lead to any contention.
 
 E.g. an IO source can read their dataframe's in rust and only at the rendez-vous move the data
 zero-copy having only a short time the GIL is needed.

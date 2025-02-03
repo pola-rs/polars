@@ -156,7 +156,7 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
     }
     fn split_at(&self, offset: i64) -> (Series, Series) {
         let (a, b) = self.0.split_at(offset);
-        (a.into_series(), b.into_series())
+        (a.into_time().into_series(), b.into_time().into_series())
     }
 
     fn _sum_as_f64(&self) -> f64 {

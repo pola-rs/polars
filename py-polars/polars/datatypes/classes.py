@@ -448,6 +448,44 @@ class Time(TemporalType):
     The integer indicates the number of nanoseconds since midnight.
     """
 
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.max() == 86_399_999_999_999)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.min() == 0)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
+
 
 class Datetime(TemporalType):
     """
@@ -767,8 +805,13 @@ class Array(NestedType):
     ----------
     inner
         The `DataType` of the values within each array.
+    shape
+        The shape of the arrays.
     width
         The length of the arrays.
+
+        .. deprecated:: 0.20.31
+            The `width` parameter for `Array` is deprecated. Use `shape` instead.
 
     Examples
     --------

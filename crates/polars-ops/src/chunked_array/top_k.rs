@@ -205,12 +205,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
         },
         DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_column()),
         DataType::Null => Ok(src.slice(0, k)),
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => {
-            // Fallback to more generic impl.
-            top_k_by_impl(k, src, &[src.clone()], vec![descending])
-        },
-        _dt => {
+        dt if dt.is_primitive_numeric() => {
             macro_rules! dispatch {
                 ($ca:expr) => {{
                     top_k_num_impl($ca, k, descending).into_column()
@@ -219,6 +214,10 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
             unsafe {
                 downcast_as_macro_arg_physical!(&s, dispatch).from_physical_unchecked(origin_dtype)
             }
+        },
+        _ => {
+            // Fallback to more generic impl.
+            top_k_by_impl(k, src, &[src.clone()], vec![descending])
         },
     }
 }

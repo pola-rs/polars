@@ -602,10 +602,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    /// Get the variables that are used in the expression i.e. live variables.
-    /// This can contain duplicates.
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>);
-
     fn isolate_column_expr(
         &self,
         name: &str,
@@ -614,18 +610,6 @@ pub trait PhysicalExpr: Send + Sync {
         Option<SpecializedColumnPredicateExpr>,
     )>;
     fn to_column(&self) -> Option<&PlSmallStr> {
-        None
-    }
-
-    /// Replace columns that are known to be a constant value with their const value.
-    ///
-    /// This should not replace values that are calculated non-elementwise e.g. col.max(),
-    /// col.std(), etc.
-    fn replace_elementwise_const_columns(
-        &self,
-        const_columns: &PlHashMap<PlSmallStr, AnyValue<'static>>,
-    ) -> Option<Arc<dyn PhysicalExpr>> {
-        _ = const_columns;
         None
     }
 
@@ -667,10 +651,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr
             .evaluate(df, &state)
             .map(|c| c.take_materialized_series())
-    }
-
-    fn collect_live_columns(&self, live_columns: &mut PlIndexSet<PlSmallStr>) {
-        self.expr.collect_live_columns(live_columns);
     }
 
     #[cfg(feature = "parquet")]

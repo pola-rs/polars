@@ -149,8 +149,6 @@ impl PhysicalExpr for LiteralExpr {
         Some(self)
     }
 
-    fn collect_live_columns(&self, _lv: &mut PlIndexSet<PlSmallStr>) {}
-
     fn isolate_column_expr(
         &self,
         _name: &str,

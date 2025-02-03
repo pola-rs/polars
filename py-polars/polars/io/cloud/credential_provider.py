@@ -184,13 +184,14 @@ class CredentialProviderAzure(CredentialProvider):
         *,
         scopes: list[str] | None = None,
         tenant_id: str | None = None,
+        credentials: Any | None = None,
         _storage_account: str | None = None,
         _verbose: bool = False,
     ) -> None:
         """
         Initialize a credential provider for Microsoft Azure.
 
-        This uses `azure.identity.DefaultAzureCredential()`.
+        By default, this uses `azure.identity.DefaultAzureCredential()`.
 
         Parameters
         ----------
@@ -198,20 +199,35 @@ class CredentialProviderAzure(CredentialProvider):
             Scopes to pass to `get_token`
         tenant_id
             Azure tenant ID.
+        credentials
+            Optionally pass an instantiated Azure credential class to use (e.g.
+            `azure.identity.DefaultAzureCredential`). The credential class must
+            have a `get_token()` method.
         """
         msg = "`CredentialProviderAzure` functionality is considered unstable"
         issue_unstable_warning(msg)
 
         self.account_name = _storage_account
-        self.tenant_id = tenant_id
         self.scopes = (
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
         )
+        self.tenant_id = tenant_id
+        self.credentials = credentials
         self._verbose = _verbose
+
+        if credentials is not None:
+            # If the user passes a credentials class, we just need to ensure it
+            # has a `get_token()` method.
+            if not hasattr(credentials, "get_token"):
+                msg = (
+                    f"the provided `credentials` object {credentials!r} does "
+                    "not have a `get_token()` method."
+                )
+                raise ValueError(msg)
 
         # We don't need the module if we are permitted and able to retrieve the
         # account key from the Azure CLI.
-        if self._try_get_azure_storage_account_credentials_if_permitted() is None:
+        elif self._try_get_azure_storage_account_credentials_if_permitted() is None:
             self._ensure_module_availability()
 
         if self._verbose:
@@ -233,9 +249,12 @@ class CredentialProviderAzure(CredentialProvider):
             return v
 
         # Done like this to bypass mypy, we don't have stubs for azure.identity
-        credential = importlib.import_module("azure.identity").__dict__[
-            "DefaultAzureCredential"
-        ]()
+        credential = (
+            self.credentials
+            or importlib.import_module("azure.identity").__dict__[
+                "DefaultAzureCredential"
+            ]()
+        )
         token = credential.get_token(*self.scopes, tenant_id=self.tenant_id)
 
         return {
@@ -574,7 +593,7 @@ def _maybe_init_credential_provider(
             print(msg, file=sys.stderr)
 
     if provider is not None and verbose:
-        msg = f"Auto-selected credential provider: {type(provider).__name__}"
+        msg = f"auto-selected credential provider: {type(provider).__name__}"
         print(msg, file=sys.stderr)
 
     return provider
