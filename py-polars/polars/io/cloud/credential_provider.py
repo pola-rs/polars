@@ -201,7 +201,7 @@ class CredentialProviderAzure(CredentialProvider):
             Azure tenant ID.
         credentials
             Optionally pass an instantiated Azure credential class to use (e.g.
-            azure.identity.DefaultAzureCredential). The credential class must
+            `azure.identity.DefaultAzureCredential`). The credential class must
             have a `get_token()` method.
         """
         msg = "`CredentialProviderAzure` functionality is considered unstable"
