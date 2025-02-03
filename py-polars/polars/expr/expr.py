@@ -6068,7 +6068,7 @@ class Expr:
         """
         return self._from_pyexpr(self._pyexpr.reinterpret(signed))
 
-    @deprecate_renamed_parameter("fmt", "f_string", version="1.21.0")
+    @deprecate_renamed_parameter("fmt", "f_string", version="1.22.0")
     def inspect(self, f_string: str = "{}") -> Expr:
         """
         Print the value that this expression evaluates to and pass on the value.
