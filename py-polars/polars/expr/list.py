@@ -6,8 +6,6 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
-import polars as pl_full
-
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import find_stacklevel

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from os import get_exec_path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -25,8 +26,7 @@ def isnan(value: object) -> bool:
     return np.isnan(value)  # type: ignore[no-any-return]
 
 
-def assert_index_of(series: pl.Series, value: IntoExpr) -> None:
-    """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
+def get_expected_index(series: pl.Series, value: IntoExpr) -> int | None:
     if isnan(value):
         expected_index = None
         for i, o in enumerate(series.to_list()):
@@ -40,7 +40,12 @@ def assert_index_of(series: pl.Series, value: IntoExpr) -> None:
             expected_index = None
     if expected_index == -1:
         expected_index = None
+    return expected_index
 
+
+def assert_index_of(series: pl.Series, value: IntoExpr) -> None:
+    """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
+    expected_index = get_expected_index(series, value)
     orig_value = value
     for value in (orig_value, pl.lit(orig_value, dtype=series.dtype)):
         # Eager API:

@@ -1054,3 +1054,8 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+    def index_of_in(self, element: IntoExpr) -> Series:
+        """
+        TODO
+        """  # noqa: W505
