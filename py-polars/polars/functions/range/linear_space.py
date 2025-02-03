@@ -249,7 +249,9 @@ def linear_spaces(
     eager: bool = False,
 ) -> Expr | Series:
     """
-    Generate a sequence of evenly-spaced points for each row of the input columns.
+    Generate a sequence of evenly-spaced values for each row between `start` and `end`.
+
+    The number of values in each sequence is determined by `num_samples`.
 
     Parameters
     ----------
@@ -262,7 +264,7 @@ def linear_spaces(
     closed : {'both', 'left', 'right', 'none'}
         Define which sides of the interval are closed (inclusive).
     as_array
-        Return result as a fixed-length pl.Array. `num_samples` must be a constant.
+        Return result as a fixed-length `Array`. `num_samples` must be a constant.
     eager
         Evaluate immediately and return a `Series`.
         If set to `False` (default), return an expression instead.
