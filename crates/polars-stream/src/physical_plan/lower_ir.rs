@@ -597,7 +597,7 @@ pub fn lower_ir(
             let input_right = *input_right;
 
             let schema_left = ir_arena.get(input_left).schema(ir_arena);
-            let schema_right = ir_arena.get(input_left).schema(ir_arena);
+            let schema_right = ir_arena.get(input_right).schema(ir_arena);
             let joins_on_cats = left_on
                 .iter()
                 .any(|e| schema_left.get(e.output_name()).unwrap().is_categorical())
