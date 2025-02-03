@@ -6,13 +6,13 @@ pub(super) fn no_prefetch(_: &[u8]) {}
 pub(super) fn get_memory_prefetch_func(verbose: bool) -> fn(&[u8]) -> () {
     let memory_prefetch_func = match std::env::var("POLARS_MEMORY_PREFETCH").ok().as_deref() {
         None => {
-            // Sequential advice was observed to provide speedups on Linux.
-            // ref https://github.com/pola-rs/polars/pull/18152#discussion_r1721701965
-            #[cfg(target_os = "linux")]
+            // madvise_willneed performed the best on both MacOS on Apple Silicon and Ubuntu on x86-64,
+            // using PDS-H query 3 SF=10 after clearing file cache as a benchmark.
+            #[cfg(target_family = "unix")]
             {
-                madvise_sequential
+                madvise_willneed
             }
-            #[cfg(not(target_os = "linux"))]
+            #[cfg(not(target_family = "unix"))]
             {
                 no_prefetch
             }
