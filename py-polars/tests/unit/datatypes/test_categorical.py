@@ -868,6 +868,16 @@ def test_cat_append_lexical_sorted_flag() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+def test_cast_physical_lexical_sorted_flag_20864() -> None:
+    df = pl.DataFrame({"s": ["b", "a"], "v": [1, 2]})
+    sorted_physically = df.cast({"s": pl.Categorical("physical")}).sort("s")
+    sorted_lexically = sorted_physically.cast({"s": pl.Categorical("lexical")}).sort(
+        "s"
+    )
+    assert sorted_lexically["s"].to_list() == ["a", "b"]
+
+
+@pytest.mark.usefixtures("test_global_and_local")
 def test_get_cat_categories_multiple_chunks() -> None:
     df = pl.DataFrame(
         [
