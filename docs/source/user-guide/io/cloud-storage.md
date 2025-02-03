@@ -51,7 +51,8 @@ use for authentication. This can be done in a few ways:
   functionality. For example, `pl.CredentialProviderAWS` supports selecting AWS profiles, as well as
   assuming an IAM role:
 
-{{code_block('user-guide/io/cloud-storage','credential_provider_class',['scan_parquet', 'CredentialProviderAWS'])}}
+{{code_block('user-guide/io/cloud-storage','credential_provider_class',['scan_parquet',
+'CredentialProviderAWS'])}}
 
 ### Using a custom `credential_provider` function
 
@@ -62,7 +63,8 @@ use for authentication. This can be done in a few ways:
 
 - Example for Azure:
 
-{{code_block('user-guide/io/cloud-storage','credential_provider_custom_func_azure',['scan_parquet', 'CredentialProviderAzure'])}}
+{{code_block('user-guide/io/cloud-storage','credential_provider_custom_func_azure',['scan_parquet',
+'CredentialProviderAzure'])}}
 
 ## Scanning with PyArrow
 
