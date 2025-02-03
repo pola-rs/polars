@@ -22,9 +22,8 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
-#[cfg(feature = "dtype-duration")]
-use itoa;
 use num_traits::{Num, NumCast};
+use polars_error::feature_gated;
 
 use crate::config::*;
 use crate::prelude::*;
@@ -362,6 +361,12 @@ impl Debug for Series {
             },
             DataType::Int64 => {
                 format_array!(f, self.i64().unwrap(), "i64", self.name(), "Series")
+            },
+            DataType::Int128 => {
+                feature_gated!(
+                    "dtype-i128",
+                    format_array!(f, self.i128().unwrap(), "i128", self.name(), "Series")
+                )
             },
             DataType::Float32 => {
                 format_array!(f, self.f32().unwrap(), "f32", self.name(), "Series")
@@ -717,10 +722,15 @@ impl Display for DataFrame {
             let tbl_fallback_width = 100;
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
-                    Some(
-                        s.parse::<u16>()
-                            .expect("could not parse table width argument"),
-                    )
+                    let n = s
+                        .parse::<i64>()
+                        .expect("could not parse table width argument");
+                    let w = if n < 0 {
+                        u16::MAX
+                    } else {
+                        u16::try_from(n).expect("table width argument does not fit in u16")
+                    };
+                    Some(w)
                 })
                 .unwrap_or(None);
 
@@ -778,7 +788,7 @@ impl Display for DataFrame {
                 for (column_index, column) in table.column_iter_mut().enumerate() {
                     let dtype = fields[column_index].dtype();
                     let mut preset = str_preset.as_str();
-                    if dtype.is_numeric() || dtype.is_decimal() {
+                    if dtype.is_primitive_numeric() || dtype.is_decimal() {
                         preset = num_preset.as_str();
                     }
                     match preset {
@@ -1148,6 +1158,7 @@ impl Display for AnyValue<'_> {
             AnyValue::Int16(v) => fmt_integer(f, width, *v),
             AnyValue::Int32(v) => fmt_integer(f, width, *v),
             AnyValue::Int64(v) => fmt_integer(f, width, *v),
+            AnyValue::Int128(v) => feature_gated!("dtype-i128", fmt_integer(f, width, *v)),
             AnyValue::Float32(v) => fmt_float(f, width, *v),
             AnyValue::Float64(v) => fmt_float(f, width, *v),
             AnyValue::Boolean(v) => write!(f, "{}", *v),
@@ -1287,11 +1298,9 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::compute::decimal::format_decimal;
-
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let trim_zeros = get_trim_decimal_zeros();
-    let repr = format_decimal(v, scale, trim_zeros);
-    f.write_str(fmt_float_string(repr.as_str()).as_str())
+    f.write_str(fmt_float_string(fmt_buf.format(v, scale, trim_zeros)).as_str())
 }
 
 #[cfg(all(

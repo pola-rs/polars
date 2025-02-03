@@ -35,7 +35,7 @@
 use std::io::{Read, Seek};
 use std::path::PathBuf;
 
-use arrow::datatypes::ArrowSchemaRef;
+use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
@@ -115,6 +115,16 @@ impl<R: MmapBytesReader> IpcReader<R> {
         self.get_metadata()?;
         Ok(self.schema.as_ref().unwrap().clone())
     }
+
+    /// Get schema-level custom metadata of the Ipc file
+    pub fn custom_metadata(&mut self) -> PolarsResult<Option<Arc<Metadata>>> {
+        self.get_metadata()?;
+        Ok(self
+            .metadata
+            .as_ref()
+            .and_then(|meta| meta.custom_schema_metadata.clone()))
+    }
+
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
@@ -243,16 +253,16 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
         // In case only hive columns are projected, the df would be empty, but we need the row count
         // of the file in order to project the correct number of rows for the hive columns.
         let (mut df, row_count) = (|| {
-            if self
-                .projection
-                .as_ref()
-                .map(|x| x.is_empty())
-                .unwrap_or(false)
-            {
-                return PolarsResult::Ok((
-                    Default::default(),
-                    get_row_count(&mut self.reader)? as usize,
-                ));
+            if self.projection.as_ref().is_some_and(|x| x.is_empty()) {
+                let row_count = if let Some(v) = self.n_rows {
+                    v
+                } else {
+                    get_row_count(&mut self.reader)? as usize
+                };
+                let mut df = DataFrame::empty();
+                unsafe { df.set_height(row_count) };
+
+                return PolarsResult::Ok((df, row_count));
             }
 
             if self.memory_map.is_some() && self.reader.to_file().is_some() {

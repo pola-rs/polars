@@ -15,8 +15,6 @@ use polars_utils::itertools::Itertools;
 use crate::chunked_array::cast::{cast_chunks, CastOptions};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
-#[cfg(feature = "object")]
-use crate::chunked_array::object::extension::EXTENSION_NAME;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::parse_fixed_offset;
 #[cfg(feature = "timezones")]
@@ -50,6 +48,8 @@ impl Series {
             UInt16 => UInt16Chunked::from_chunks(name, chunks).into_series(),
             UInt32 => UInt32Chunked::from_chunks(name, chunks).into_series(),
             UInt64 => UInt64Chunked::from_chunks(name, chunks).into_series(),
+            #[cfg(feature = "dtype-i128")]
+            Int128 => Int128Chunked::from_chunks(name, chunks).into_series(),
             #[cfg(feature = "dtype-date")]
             Date => Int32Chunked::from_chunks(name, chunks)
                 .into_date()
@@ -166,7 +166,7 @@ impl Series {
             ArrowDataType::BinaryView => Ok(BinaryChunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::LargeBinary => {
                 if let Some(md) = md {
-                    if md.get("pl").map(|s| s.as_str()) == Some("maintain_type") {
+                    if md.maintain_type() {
                         return Ok(BinaryOffsetChunked::from_chunks(name, chunks).into_series());
                     }
                 }
@@ -211,6 +211,10 @@ impl Series {
             ArrowDataType::Int16 => Ok(Int16Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Int32 => Ok(Int32Chunked::from_chunks(name, chunks).into_series()),
             ArrowDataType::Int64 => Ok(Int64Chunked::from_chunks(name, chunks).into_series()),
+            ArrowDataType::Int128 => feature_gated!(
+                "dtype-i128",
+                Ok(Int128Chunked::from_chunks(name, chunks).into_series())
+            ),
             ArrowDataType::Float16 => {
                 let chunks =
                     cast_chunks(&chunks, &DataType::Float32, CastOptions::NonStrict).unwrap();
@@ -289,6 +293,30 @@ impl Series {
                     ArrowTimeUnit::Nanosecond => s,
                 })
             },
+            ArrowDataType::Decimal(precision, scale)
+            | ArrowDataType::Decimal256(precision, scale) => {
+                feature_gated!("dtype-decimal", {
+                    polars_ensure!(*scale <= *precision, InvalidOperation: "invalid decimal precision and scale (prec={precision}, scale={scale})");
+                    polars_ensure!(*precision <= 38, InvalidOperation: "polars does not support decimals about 38 precision");
+
+                    let mut chunks = chunks;
+                    // @NOTE: We cannot cast here as that will lower the scale.
+                    for chunk in chunks.iter_mut() {
+                        *chunk = std::mem::take(
+                            chunk
+                                .as_any_mut()
+                                .downcast_mut::<PrimitiveArray<i128>>()
+                                .unwrap(),
+                        )
+                        .to(ArrowDataType::Int128)
+                        .to_boxed();
+                    }
+                    let s = Int128Chunked::from_chunks(name, chunks)
+                        .into_decimal_unchecked(Some(*precision), *scale)
+                        .into_series();
+                    Ok(s)
+                })
+            },
             ArrowDataType::Null => Ok(new_null(name, &chunks)),
             #[cfg(not(feature = "dtype-categorical"))]
             ArrowDataType::Dictionary(_, _, _) => {
@@ -304,85 +332,116 @@ impl Series {
                     chunks[0].clone()
                 };
 
-                if !matches!(
+                // If the value type is a string, they are converted to Categoricals or Enums
+                if matches!(
                     value_type.as_ref(),
                     ArrowDataType::Utf8
                         | ArrowDataType::LargeUtf8
                         | ArrowDataType::Utf8View
                         | ArrowDataType::Null
                 ) {
-                    polars_bail!(
-                        ComputeError: "only string-like values are supported in dictionaries"
-                    );
+                    macro_rules! unpack_keys_values {
+                        ($dt:ty) => {{
+                            let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
+                            let keys = arr.keys();
+                            let keys = cast(keys, &ArrowDataType::UInt32).unwrap();
+                            let values = arr.values();
+                            let values = cast(&**values, &ArrowDataType::Utf8View)?;
+                            (keys, values)
+                        }};
+                    }
+
+                    use IntegerType as I;
+                    let (keys, values) = match key_type {
+                        I::Int8 => unpack_keys_values!(i8),
+                        I::UInt8 => unpack_keys_values!(u8),
+                        I::Int16 => unpack_keys_values!(i16),
+                        I::UInt16 => unpack_keys_values!(u16),
+                        I::Int32 => unpack_keys_values!(i32),
+                        I::UInt32 => unpack_keys_values!(u32),
+                        I::Int64 => unpack_keys_values!(i64),
+                        _ => polars_bail!(
+                            ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
+                        ),
+                    };
+
+                    let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
+                    let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+
+                    // Categoricals and Enums expect the RevMap values to not contain any nulls
+                    let (keys, values) =
+                        polars_compute::propagate_dictionary::propagate_dictionary_value_nulls(
+                            keys, values,
+                        );
+
+                    let mut ordering = CategoricalOrdering::default();
+                    if let Some(metadata) = md {
+                        if metadata.is_enum() {
+                            // SAFETY:
+                            // the invariants of an Arrow Dictionary guarantee the keys are in bounds
+                            return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                                UInt32Chunked::with_chunk(name, keys),
+                                Arc::new(RevMapping::build_local(values)),
+                                true,
+                                CategoricalOrdering::Physical, // Enum always uses physical ordering
+                            )
+                            .into_series());
+                        } else if let Some(o) = metadata.categorical() {
+                            ordering = o;
+                        }
+                    }
+
+                    return Ok(CategoricalChunked::from_keys_and_values(
+                        name, &keys, &values, ordering,
+                    )
+                    .into_series());
                 }
 
                 macro_rules! unpack_keys_values {
                     ($dt:ty) => {{
                         let arr = arr.as_any().downcast_ref::<DictionaryArray<$dt>>().unwrap();
                         let keys = arr.keys();
-                        let keys = cast(keys, &ArrowDataType::UInt32).unwrap();
-                        let values = arr.values();
-                        let values = cast(&**values, &ArrowDataType::Utf8View)?;
-                        (keys, values)
+                        let keys = polars_compute::cast::primitive_as_primitive::<
+                            $dt,
+                            <IdxType as PolarsNumericType>::Native,
+                        >(keys, &IDX_DTYPE.to_arrow(CompatLevel::newest()));
+                        (arr.values(), keys)
                     }};
                 }
 
-                let (keys, values) = match key_type {
-                    IntegerType::Int8 => {
-                        unpack_keys_values!(i8)
-                    },
-                    IntegerType::UInt8 => {
-                        unpack_keys_values!(u8)
-                    },
-                    IntegerType::Int16 => {
-                        unpack_keys_values!(i16)
-                    },
-                    IntegerType::UInt16 => {
-                        unpack_keys_values!(u16)
-                    },
-                    IntegerType::Int32 => {
-                        unpack_keys_values!(i32)
-                    },
-                    IntegerType::UInt32 => {
-                        unpack_keys_values!(u32)
-                    },
-                    IntegerType::Int64 => {
-                        unpack_keys_values!(i64)
-                    },
+                use IntegerType as I;
+                let (values, keys) = match key_type {
+                    I::Int8 => unpack_keys_values!(i8),
+                    I::UInt8 => unpack_keys_values!(u8),
+                    I::Int16 => unpack_keys_values!(i16),
+                    I::UInt16 => unpack_keys_values!(u16),
+                    I::Int32 => unpack_keys_values!(i32),
+                    I::UInt32 => unpack_keys_values!(u32),
+                    I::Int64 => unpack_keys_values!(i64),
                     _ => polars_bail!(
                         ComputeError: "dictionaries with unsigned 64-bit keys are not supported"
                     ),
                 };
-                let keys = keys.as_any().downcast_ref::<PrimitiveArray<u32>>().unwrap();
-                let values = values.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
 
-                if let Some(metadata) = md {
-                    if metadata.get(DTYPE_ENUM_KEY) == Some(&DTYPE_ENUM_VALUE.into()) {
-                        // SAFETY:
-                        // the invariants of an Arrow Dictionary guarantee the keys are in bounds
-                        return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
-                            UInt32Chunked::with_chunk(name, keys.clone()),
-                            Arc::new(RevMapping::build_local(values.clone())),
-                            true,
-                            Default::default(),
-                        )
-                        .into_series());
-                    }
-                }
-                // SAFETY:
-                // the invariants of an Arrow Dictionary guarantee the keys are in bounds
-                Ok(
-                    CategoricalChunked::from_keys_and_values(
-                        name,
-                        keys,
-                        values,
-                        Default::default(),
-                    )
-                    .into_series(),
-                )
+                // Convert the dictionary to a flat array
+                let values = Series::_try_from_arrow_unchecked_with_md(
+                    name,
+                    vec![values.clone()],
+                    values.dtype(),
+                    None,
+                )?;
+                let values = values.take_unchecked(&IdxCa::from_chunks_and_dtype(
+                    PlSmallStr::EMPTY,
+                    vec![keys.to_boxed()],
+                    IDX_DTYPE,
+                ));
+
+                Ok(values)
             },
             #[cfg(feature = "object")]
-            ArrowDataType::Extension(s, _, Some(_)) if s == EXTENSION_NAME => {
+            ArrowDataType::Extension(ext)
+                if ext.name == EXTENSION_NAME && ext.metadata.is_some() =>
+            {
                 assert_eq!(chunks.len(), 1);
                 let arr = chunks[0]
                     .as_any()
@@ -414,45 +473,6 @@ impl Series {
             ArrowDataType::FixedSizeBinary(_) => {
                 let chunks = cast_chunks(&chunks, &DataType::Binary, CastOptions::NonStrict)?;
                 Ok(BinaryChunked::from_chunks(name, chunks).into_series())
-            },
-            ArrowDataType::Decimal(precision, scale)
-            | ArrowDataType::Decimal256(precision, scale) => {
-                #[cfg(not(feature = "dtype-decimal"))]
-                {
-                    panic!("activate 'dtype-decimal'")
-                }
-
-                #[cfg(feature = "dtype-decimal")]
-                {
-                    #[cfg(feature = "python")]
-                    {
-                        let (precision, scale) = (Some(*precision), *scale);
-                        let chunks = cast_chunks(
-                            &chunks,
-                            &DataType::Decimal(precision, Some(scale)),
-                            CastOptions::NonStrict,
-                        )
-                        .unwrap();
-                        Ok(Int128Chunked::from_chunks(name, chunks)
-                            .into_decimal_unchecked(precision, scale)
-                            .into_series())
-                    }
-
-                    #[cfg(not(feature = "python"))]
-                    {
-                        let (precision, scale) = (Some(*precision), *scale);
-                        let chunks = cast_chunks(
-                            &chunks,
-                            &DataType::Decimal(precision, Some(scale)),
-                            CastOptions::NonStrict,
-                        )
-                        .unwrap();
-                        // or DecimalChunked?
-                        Ok(Int128Chunked::from_chunks(name, chunks)
-                            .into_decimal_unchecked(precision, scale)
-                            .into_series())
-                    }
-                }
             },
             ArrowDataType::Map(_, _) => map_arrays_to_series(name, chunks),
             dt => polars_bail!(ComputeError: "cannot create series from {:?}", dt),
@@ -527,7 +547,8 @@ unsafe fn to_physical_and_dtype(
                 })
                 .collect::<Vec<_>>();
 
-            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) =
+                to_physical_and_dtype(values, field.metadata.as_deref());
 
             let arrays = arrays
                 .iter()
@@ -555,7 +576,8 @@ unsafe fn to_physical_and_dtype(
                 })
                 .collect::<Vec<_>>();
 
-            let (converted_values, dtype) = to_physical_and_dtype(values, Some(&field.metadata));
+            let (converted_values, dtype) =
+                to_physical_and_dtype(values, field.metadata.as_deref());
 
             let arrays = arrays
                 .iter()
@@ -588,7 +610,7 @@ unsafe fn to_physical_and_dtype(
                             .map(|(value, field)| {
                                 let mut out = to_physical_and_dtype(
                                     vec![value.clone()],
-                                    Some(&field.metadata),
+                                    field.metadata.as_deref(),
                                 );
                                 (out.0.pop().unwrap(), out.1)
                             })
@@ -639,7 +661,7 @@ unsafe fn to_physical_and_dtype(
             (std::mem::take(s.chunks_mut()), dtype)
         },
         dt => {
-            let dtype = dt.into();
+            let dtype = DataType::from_arrow(dt, true, md);
             (arrays, dtype)
         },
     }
@@ -714,7 +736,7 @@ impl TryFrom<(&ArrowField, Vec<ArrayRef>)> for Series {
                 field.name.clone(),
                 chunks,
                 &dtype,
-                Some(&field.metadata),
+                field.metadata.as_deref(),
             )
         }
     }

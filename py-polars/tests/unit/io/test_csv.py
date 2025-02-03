@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
 import sys
 import textwrap
 import zlib
@@ -259,12 +260,12 @@ def test_csv_missing_utf8_is_empty_string() -> None:
 
 def test_csv_int_types() -> None:
     f = io.StringIO(
-        "u8,i8,u16,i16,u32,i32,u64,i64\n"
-        "0,0,0,0,0,0,0,0\n"
-        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808\n"
-        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807\n"
-        "01,01,01,01,01,01,01,01\n"
-        "01,-01,01,-01,01,-01,01,-01\n"
+        "u8,i8,u16,i16,u32,i32,u64,i64,i128\n"
+        "0,0,0,0,0,0,0,0,0\n"
+        "0,-128,0,-32768,0,-2147483648,0,-9223372036854775808,-170141183460469231731687303715884105728\n"
+        "255,127,65535,32767,4294967295,2147483647,18446744073709551615,9223372036854775807,170141183460469231731687303715884105727\n"
+        "01,01,01,01,01,01,01,01,01\n"
+        "01,-01,01,-01,01,-01,01,-01,01\n"
     )
     df = pl.read_csv(
         f,
@@ -277,6 +278,7 @@ def test_csv_int_types() -> None:
             "i32": pl.Int32,
             "u64": pl.UInt64,
             "i64": pl.Int64,
+            "i128": pl.Int128,
         },
     )
 
@@ -294,6 +296,16 @@ def test_csv_int_types() -> None:
                 "i64": pl.Series(
                     [0, -9223372036854775808, 9223372036854775807, 1, -1],
                     dtype=pl.Int64,
+                ),
+                "i128": pl.Series(
+                    [
+                        0,
+                        -170141183460469231731687303715884105728,
+                        170141183460469231731687303715884105727,
+                        1,
+                        1,
+                    ],
+                    dtype=pl.Int128,
                 ),
             }
         ),
@@ -364,7 +376,7 @@ def test_datetime_parsing_default_formats() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_partial_dtype_overwrite() -> None:
+def test_partial_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -378,7 +390,7 @@ def test_partial_dtype_overwrite() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_dtype_overwrite_with_column_name_selection() -> None:
+def test_schema_overrides_with_column_name_selection() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c,d
@@ -392,7 +404,7 @@ def test_dtype_overwrite_with_column_name_selection() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_dtype_overwrite_with_column_idx_selection() -> None:
+def test_schema_overrides_with_column_idx_selection() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c,d
@@ -492,7 +504,7 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_column_rename_and_dtype_overwrite() -> None:
+def test_column_rename_and_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
         a,b,c
@@ -1231,7 +1243,7 @@ def test_skip_new_line_embedded_lines() -> None:
         }
 
 
-def test_csv_dtype_overwrite_bool() -> None:
+def test_csv_schema_overrides_bool() -> None:
     csv = "a, b\n" + ",false\n" + ",false\n" + ",false"
     df = pl.read_csv(
         csv.encode(),
@@ -1489,7 +1501,6 @@ def test_csv_categorical_lifetime() -> None:
     assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_csv_categorical_categorical_merge() -> None:
     N = 50
     f = io.BytesIO()
@@ -2030,7 +2041,7 @@ def test_partial_read_compressed_file(
     assert df.shape == (30, 3)
 
 
-def test_read_csv_invalid_dtypes() -> None:
+def test_read_csv_invalid_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
         a,b
@@ -2044,6 +2055,32 @@ def test_read_csv_invalid_dtypes() -> None:
         TypeError, match="`schema_overrides` should be of type list or dict"
     ):
         pl.read_csv(f, schema_overrides={pl.Int64, pl.String})  # type: ignore[arg-type]
+
+
+def test_read_csv_invalid_schema_overrides_length() -> None:
+    csv = textwrap.dedent(
+        """\
+        a,b
+        1,foo
+        2,bar
+        3,baz
+        """
+    )
+    f = io.StringIO(csv)
+
+    # streaming dispatches read_csv -> _scan_csv_impl which does not accept a list
+    if (
+        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
+        == "1"
+    ):
+        err = TypeError
+        match = "expected 'schema_overrides' dict, found 'list'"
+    else:
+        err = InvalidOperationError
+        match = "The number of schema overrides must be less than or equal to the number of fields"
+
+    with pytest.raises(err, match=match):
+        pl.read_csv(f, schema_overrides=[pl.Int64, pl.String, pl.Boolean])
 
 
 @pytest.mark.parametrize("columns", [["b"], "b"])
@@ -2346,7 +2383,7 @@ time
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
-def test_csv_read_time_dtype_overwrite() -> None:
+def test_csv_read_time_schema_overrides() -> None:
     df = pl.Series("time", [0]).cast(pl.Time()).to_frame()
 
     assert_frame_equal(
@@ -2369,3 +2406,104 @@ def test_batched_csv_schema_overrides(io_files_path: Path) -> None:
     b = res[0]
     assert b["calories"].dtype == pl.String
     assert b.width == 4
+
+
+def test_csv_ragged_lines_20062() -> None:
+    buf = io.StringIO("""A,B,C,D,E,F,G,H,I,J,K,L,M,N,O,P,Q,R,S,T,U,V
+,"B",,,,,,,,,A,,,,,,,,
+a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,0.0,1.0,2.0,3.0
+""")
+    assert pl.read_csv(buf, truncate_ragged_lines=True).to_dict(as_series=False) == {
+        "A": [None, "a"],
+        "B": ["B", "a"],
+        "C": [None, "a"],
+        "D": [None, "a"],
+        "E": [None, "a"],
+        "F": [None, "a"],
+        "G": [None, "a"],
+        "H": [None, "a"],
+        "I": [None, "a"],
+        "J": [None, "a"],
+        "K": ["A", "a"],
+        "L": [None, "a"],
+        "M": [None, "a"],
+        "N": [None, "a"],
+        "O": [None, "a"],
+        "P": [None, "a"],
+        "Q": [None, "a"],
+        "R": [None, "a"],
+        "S": [None, "a"],
+        "T": [None, 0.0],
+        "U": [None, 1.0],
+        "V": [None, 2.0],
+    }
+
+
+def test_csv_skip_lines() -> None:
+    fh = io.BytesIO()
+    fh.write(b'Header line "1" -> quote count 2\n')
+    fh.write(b'Header line "2"" -> quote count 3\n')
+    fh.write(b'Header line "3" -> quote count 2 => Total 7 quotes ERROR\n')
+    fh.write(b"column_01, column_02, column_03\n")
+    fh.write(b"123.12, 21, 99.9\n")
+    fh.write(b"65.84, 75, 64.7\n")
+    fh.seek(0)
+
+    df = pl.read_csv(fh, has_header=True, skip_lines=3)
+    assert df.to_dict(as_series=False) == {
+        "column_01": [123.12, 65.84],
+        " column_02": [" 21", " 75"],
+        " column_03": [" 99.9", " 64.7"],
+    }
+
+    fh.seek(0)
+    assert_frame_equal(pl.scan_csv(fh, has_header=True, skip_lines=3).collect(), df)
+
+
+def test_csv_invalid_quoted_comment_line() -> None:
+    # Comment quotes should be ignored.
+    assert pl.read_csv(
+        b'#"Comment\nColA\tColB\n1\t2', separator="\t", comment_prefix="#"
+    ).to_dict(as_series=False) == {"ColA": [1], "ColB": [2]}
+
+
+def test_csv_compressed_new_columns_19916() -> None:
+    n_rows = 100
+
+    df = pl.DataFrame(
+        {
+            "a": range(n_rows),
+            "b": range(n_rows),
+            "c": range(n_rows),
+            "d": range(n_rows),
+            "e": range(n_rows),
+            "f": range(n_rows),
+        }
+    )
+
+    b = zstandard.compress(df.write_csv(include_header=False).encode())
+
+    q = pl.scan_csv(b, has_header=False, new_columns=["a", "b", "c", "d", "e", "f"])
+    assert_frame_equal(q.collect(), df)
+
+
+def test_trailing_separator_8240() -> None:
+    csv = "A|B|"
+
+    expected = pl.DataFrame(
+        {"column_1": ["A"], "column_2": ["B"], "column_3": [None]},
+        schema={"column_1": pl.String, "column_2": pl.String, "column_3": pl.String},
+    )
+
+    result = pl.read_csv(io.StringIO(csv), separator="|", has_header=False)
+    assert_frame_equal(result, expected)
+
+    result = pl.scan_csv(io.StringIO(csv), separator="|", has_header=False).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_header_only_column_selection_17173() -> None:
+    csv = "A,B"
+    result = pl.read_csv(io.StringIO(csv), columns=["B"])
+    expected = pl.Series("B", [], pl.String()).to_frame()
+    assert_frame_equal(result, expected)

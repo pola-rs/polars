@@ -1,16 +1,14 @@
 use arrow::types::AlignedBytes;
 
-use super::{
-    oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, verify_dict_indices_slice,
-};
+use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, IndexMapping};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 /// Decoding kernel for required dictionary encoded.
 #[inline(never)]
-pub fn decode<B: AlignedBytes>(
+pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[B],
+    dict: D,
     target: &mut Vec<B>,
     mut num_rows_to_skip: usize,
 ) -> ParquetResult<()> {
@@ -41,7 +39,7 @@ pub fn decode<B: AlignedBytes>(
                     continue;
                 }
 
-                let Some(&value) = dict.get(value as usize) else {
+                let Some(value) = dict.get(value) else {
                     return Err(oob_dict_idx());
                 };
 
@@ -54,10 +52,10 @@ pub fn decode<B: AlignedBytes>(
 
                     if let Some((chunk, chunk_size)) = decoder.chunked().next_inexact() {
                         let chunk = &chunk[num_rows_to_skip..chunk_size];
-                        verify_dict_indices_slice(chunk, dict.len())?;
+                        verify_dict_indices(chunk, dict.len())?;
                         target.extend(chunk.iter().map(|&idx| {
                             // SAFETY: The dict indices were verified before.
-                            *unsafe { dict.get_unchecked(idx as usize) }
+                            unsafe { dict.get_unchecked(idx) }
                         }));
                     }
                 }
@@ -67,15 +65,15 @@ pub fn decode<B: AlignedBytes>(
                     verify_dict_indices(&chunk, dict.len())?;
                     target.extend(chunk.iter().map(|&idx| {
                         // SAFETY: The dict indices were verified before.
-                        *unsafe { dict.get_unchecked(idx as usize) }
+                        unsafe { dict.get_unchecked(idx) }
                     }));
                 }
 
                 if let Some((chunk, chunk_size)) = chunked.remainder() {
-                    verify_dict_indices_slice(&chunk[..chunk_size], dict.len())?;
+                    verify_dict_indices(&chunk[..chunk_size], dict.len())?;
                     target.extend(chunk[..chunk_size].iter().map(|&idx| {
                         // SAFETY: The dict indices were verified before.
-                        *unsafe { dict.get_unchecked(idx as usize) }
+                        unsafe { dict.get_unchecked(idx) }
                     }));
                 }
             },

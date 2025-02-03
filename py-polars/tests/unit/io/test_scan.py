@@ -16,6 +16,7 @@ from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import SchemaDict
+    from tests.unit.conftest import MemoryUsage
 
 
 @dataclass
@@ -42,7 +43,7 @@ def _assert_force_async(capfd: Any, data_file_extension: str) -> None:
         return
 
     captured = capfd.readouterr().err
-    assert captured.count("ASYNC READING FORCED") == 1
+    assert captured.count("ASYNC READING FORCED") >= 1
 
 
 def _scan(
@@ -653,7 +654,7 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
-def test_scan_include_file_name(
+def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
@@ -683,13 +684,20 @@ def test_scan_include_file_name(
     lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
     assert_frame_equal(lf.collect(streaming=streaming), df)
 
-    # TODO: Support this with CSV
-    if scan_func not in [pl.scan_csv, pl.scan_ndjson]:
-        # Test projecting only the path column
-        assert_frame_equal(
-            lf.select("path").collect(streaming=streaming),
-            df.select("path"),
-        )
+    # Test projecting only the path column
+    q = lf.select("path")
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(streaming=streaming),
+        df.select("path"),
+    )
+
+    q = q.select("path").head(3)
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(streaming=streaming),
+        df.select("path").head(3),
+    )
 
     # Test predicates
     for predicate in [pl.col("path") != pl.col("x"), pl.col("path") != ""]:
@@ -757,6 +765,20 @@ def test_scan_in_memory(method: str) -> None:
     g.seek(0)
     result = (getattr(pl, f"scan_{method}"))([f, g]).slice(-1, 1).collect()
     assert_frame_equal(df.vstack(df).slice(-1, 1), result)
+
+
+def test_scan_pyobject_zero_copy_buffer_mutate() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+    df.write_ipc(f)
+    f.seek(0)
+
+    q = pl.scan_ipc(f)
+    assert_frame_equal(q.collect(), df)
+
+    f.write(b"AAA")
+    assert_frame_equal(q.collect(), df)
 
 
 @pytest.mark.parametrize(
@@ -915,3 +937,30 @@ def test_predicate_stats_eval_nested_binary() -> None:
         ),
         pl.DataFrame({"x": [2]}),
     )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("streaming", [True, False])
+def test_scan_csv_bytesio_memory_usage(
+    streaming: bool,
+    memory_usage_without_pyarrow: MemoryUsage,
+) -> None:
+    memory_usage = memory_usage_without_pyarrow
+
+    # Create CSV that is ~6-7 MB in size:
+    f = io.BytesIO()
+    df = pl.DataFrame({"mydata": pl.int_range(0, 1_000_000, eager=True)})
+    df.write_csv(f)
+    assert 6_000_000 < f.tell() < 7_000_000
+    f.seek(0, 0)
+
+    # A lazy scan shouldn't make a full copy of the data:
+    starting_memory = memory_usage.get_current()
+    assert (
+        pl.scan_csv(f)
+        .filter(pl.col("mydata") == 999_999)
+        .collect(new_streaming=streaming)  # type: ignore[call-overload]
+        .item()
+        == 999_999
+    )
+    assert memory_usage.get_peak() - starting_memory < 1_000_000

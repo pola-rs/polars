@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::utils::{combine_validities_and, combine_validities_and_not};
 use polars_compute::if_then_else::{if_then_else_validity, IfThenElseKernel};
 
@@ -225,8 +225,6 @@ impl ChunkZip<StructType> for StructChunked {
         debug_assert!(mask.length == 1 || mask.length == length);
         debug_assert!(other.length == 1 || other.length == length);
 
-        let length = length as usize;
-
         let mut if_true: Cow<ChunkedArray<StructType>> = Cow::Borrowed(self);
         let mut if_false: Cow<ChunkedArray<StructType>> = Cow::Borrowed(other);
 
@@ -307,7 +305,7 @@ impl ChunkZip<StructType> for StructChunked {
                     if validity.unset_bits() > 0 {
                         rechunked_validity
                             .get_or_insert_with(|| {
-                                let mut bm = MutableBitmap::with_capacity(total_length);
+                                let mut bm = BitmapBuilder::with_capacity(total_length);
                                 bm.extend_constant(rechunked_length, true);
                                 bm
                             })
@@ -322,7 +320,7 @@ impl ChunkZip<StructType> for StructChunked {
                 rechunked_validity.extend_constant(total_length - rechunked_validity.len(), true);
             }
 
-            rechunked_validity.map(MutableBitmap::freeze)
+            rechunked_validity.map(BitmapBuilder::freeze)
         }
 
         // Zip the validities.
@@ -501,7 +499,7 @@ impl ChunkZip<StructType> for StructChunked {
                     }
                 }
 
-                out.null_count = null_count as IdxSize;
+                out.null_count = null_count;
             } else {
                 // SAFETY: We do not change the lengths of the chunks and we update the null_count
                 // afterwards.
@@ -511,7 +509,7 @@ impl ChunkZip<StructType> for StructChunked {
                     *chunk = chunk.with_validity(None);
                 }
 
-                out.null_count = 0 as IdxSize;
+                out.null_count = 0;
             }
         }
 

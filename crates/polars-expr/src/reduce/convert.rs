@@ -3,6 +3,7 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 
 use super::*;
+use crate::reduce::first_last::{new_first_reduction, new_last_reduction};
 use crate::reduce::len::LenReduce;
 use crate::reduce::mean::new_mean_reduction;
 use crate::reduce::min_max::{new_max_reduction, new_min_reduction};
@@ -19,7 +20,7 @@ pub fn into_reduction(
         expr_arena
             .get(node)
             .to_dtype(schema, Context::Default, expr_arena)?
-            .materialize_unknown()
+            .materialize_unknown(false)
     };
     let out = match expr_arena.get(node) {
         AExpr::Agg(agg) => match agg {
@@ -39,6 +40,8 @@ pub fn into_reduction(
             IRAggExpr::Std(input, ddof) => {
                 (new_var_std_reduction(get_dt(*input)?, true, *ddof), *input)
             },
+            IRAggExpr::First(input) => (new_first_reduction(get_dt(*input)?), *input),
+            IRAggExpr::Last(input) => (new_last_reduction(get_dt(*input)?), *input),
             _ => todo!(),
         },
         AExpr::Len => {

@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
-use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::hashing::hash_to_partition;
@@ -41,6 +41,9 @@ pub enum LiteralValue {
     Int32(i32),
     /// A 64-bit integer number.
     Int64(i64),
+    #[cfg(feature = "dtype-i128")]
+    /// A 128-bit integer number.
+    Int128(i128),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -98,12 +101,8 @@ impl LiteralValue {
         }
     }
 
-    pub(crate) fn projects_as_scalar(&self) -> bool {
-        match self {
-            LiteralValue::Range { low, high, .. } => high.saturating_sub(*low) == 1,
-            LiteralValue::Series(s) => s.len() == 1,
-            _ => true,
-        }
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 
     pub fn to_any_value(&self) -> Option<AnyValue> {
@@ -123,6 +122,8 @@ impl LiteralValue {
             Int16(v) => AnyValue::Int16(*v),
             Int32(v) => AnyValue::Int32(*v),
             Int64(v) => AnyValue::Int64(*v),
+            #[cfg(feature = "dtype-i128")]
+            Int128(v) => AnyValue::Int128(*v),
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
             #[cfg(feature = "dtype-decimal")]
@@ -196,6 +197,8 @@ impl LiteralValue {
             LiteralValue::Int16(_) => DataType::Int16,
             LiteralValue::Int32(_) => DataType::Int32,
             LiteralValue::Int64(_) => DataType::Int64,
+            #[cfg(feature = "dtype-i128")]
+            LiteralValue::Int128(_) => DataType::Int128,
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
             #[cfg(feature = "dtype-decimal")]
@@ -220,7 +223,7 @@ impl LiteralValue {
         }
     }
 
-    pub(crate) fn new_idxsize(value: IdxSize) -> Self {
+    pub fn new_idxsize(value: IdxSize) -> Self {
         #[cfg(feature = "bigidx")]
         {
             LiteralValue::UInt64(value)
@@ -231,8 +234,13 @@ impl LiteralValue {
         }
     }
 
-    pub fn is_scalar(&self) -> bool {
-        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
+    pub fn is_null(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::OtherScalar(sc) => sc.is_null(),
+            Self::Series(s) => s.len() == 1 && s.null_count() == 1,
+            _ => false,
+        }
     }
 }
 
@@ -311,6 +319,10 @@ impl From<AnyValue<'_>> for LiteralValue {
             AnyValue::Date(v) => LiteralValue::Date(v),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(value, tu, tz) => LiteralValue::DateTime(value, tu, tz.cloned()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(value, tu, tz) => {
+                LiteralValue::DateTime(value, tu, tz.as_ref().map(AsRef::as_ref).cloned())
+            },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(value, tu) => LiteralValue::Duration(value, tu),
             #[cfg(feature = "dtype-time")]
@@ -442,6 +454,11 @@ impl Literal for ChronoDuration {
 #[cfg(feature = "dtype-duration")]
 impl Literal for Duration {
     fn lit(self) -> Expr {
+        assert!(
+            self.months() == 0,
+            "Cannot create literal duration that is not of fixed length; found {}",
+            self
+        );
         let ns = self.duration_ns();
         Expr::Literal(LiteralValue::Duration(
             if self.negative() { -ns } else { ns },

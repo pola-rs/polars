@@ -44,7 +44,7 @@ impl PhysicalExpr for AliasExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.physical_expr.evaluate_on_groups(df, groups, state)?;
@@ -57,6 +57,16 @@ impl PhysicalExpr for AliasExpr {
             ac.with_values(c, ac.is_aggregated(), Some(&self.expr))?;
         }
         Ok(ac)
+    }
+
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -83,7 +93,7 @@ impl PartitionedAggregation for AliasExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();
@@ -94,7 +104,7 @@ impl PartitionedAggregation for AliasExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let agg = self.physical_expr.as_partitioned_aggregator().unwrap();

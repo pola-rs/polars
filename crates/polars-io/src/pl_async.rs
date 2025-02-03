@@ -14,7 +14,7 @@ pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
 /// Used to determine chunks when splitting large ranges, or combining small
 /// ranges.
-pub(super) static DOWNLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
+static DOWNLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
     let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
         .as_deref()
         .map(|x| x.parse().expect("integer"))
@@ -29,6 +29,23 @@ pub(super) static DOWNLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
 
 pub(super) fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
+}
+
+static UPLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
+    let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
+        .as_deref()
+        .map(|x| x.parse().expect("integer"))
+        .unwrap_or(64 * 1024 * 1024);
+
+    if config::verbose() {
+        eprintln!("async upload_chunk_size: {}", v)
+    }
+
+    v
+});
+
+pub(super) fn get_upload_chunk_size() -> usize {
+    *UPLOAD_CHUNK_SIZE
 }
 
 pub trait GetSize {
@@ -265,7 +282,7 @@ impl RuntimeManager {
             .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
         if polars_core::config::verbose() {
-            eprintln!("Async thread count: {}", n_threads);
+            eprintln!("async thread count: {}", n_threads);
         }
 
         let rt = Builder::new_multi_thread()

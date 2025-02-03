@@ -1,6 +1,7 @@
 from polars.io.cloud.credential_provider import (
     CredentialProvider,
     CredentialProviderAWS,
+    CredentialProviderAzure,
     CredentialProviderFunction,
     CredentialProviderFunctionReturn,
     CredentialProviderGCP,
@@ -9,6 +10,7 @@ from polars.io.cloud.credential_provider import (
 __all__ = [
     "CredentialProvider",
     "CredentialProviderAWS",
+    "CredentialProviderAzure",
     "CredentialProviderFunction",
     "CredentialProviderFunctionReturn",
     "CredentialProviderGCP",

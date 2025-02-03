@@ -50,8 +50,9 @@ pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     type Owned: Debug + Clone + Sync + Send + AsRef<Self>;
 
     /// # Safety
-    /// The caller must ensure `index < self.len()`.
+    /// The caller must ensure that `slice` is a valid view.
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
+    fn from_bytes(slice: &[u8]) -> Option<&Self>;
 
     fn to_bytes(&self) -> &[u8];
 
@@ -69,6 +70,10 @@ impl ViewType for str {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         std::str::from_utf8_unchecked(slice)
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        std::str::from_utf8(slice).ok()
     }
 
     #[inline(always)]
@@ -92,6 +97,10 @@ impl ViewType for [u8] {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         slice
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        Some(slice)
     }
 
     #[inline(always)]
@@ -174,7 +183,7 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             // }
 
             for (i, view) in views.iter().enumerate() {
-                let is_valid = validity.as_ref().map_or(true, |v| v.get_bit(i));
+                let is_valid = validity.as_ref().is_none_or(|v| v.get_bit(i));
 
                 if !is_valid {
                     continue;
@@ -481,13 +490,21 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let views = self.views.make_mut();
         let completed_buffers = self.buffers.to_vec();
         let validity = self.validity.map(|bitmap| bitmap.make_mut());
+
+        // We need to know the total_bytes_len if we are going to mutate it.
+        let mut total_bytes_len = self.total_bytes_len.load(Ordering::Relaxed);
+        if total_bytes_len == UNKNOWN_LEN {
+            total_bytes_len = views.iter().map(|view| view.length as u64).sum();
+        }
+        let total_bytes_len = total_bytes_len as usize;
+
         MutableBinaryViewArray {
             views,
             completed_buffers,
             in_progress_buffer: vec![],
             validity,
             phantom: Default::default(),
-            total_bytes_len: self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            total_bytes_len,
             total_buffer_len: self.total_buffer_len,
             stolen_buffers: PlHashMap::new(),
         }
@@ -592,7 +609,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         debug_assert!(
-            validity.as_ref().map_or(true, |v| v.len() == self.len()),
+            validity.as_ref().is_none_or(|v| v.len() == self.len()),
             "{} != {}",
             validity.as_ref().unwrap().len(),
             self.len()

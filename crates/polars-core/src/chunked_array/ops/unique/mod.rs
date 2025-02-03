@@ -1,11 +1,10 @@
 use std::hash::Hash;
+use std::ops::Deref;
 
 use arrow::bitmap::MutableBitmap;
-use polars_compute::unique::{BooleanUniqueKernelState, PrimitiveRangedUniqueState};
-use polars_utils::float::IsFloat;
+use polars_compute::unique::BooleanUniqueKernelState;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
-use crate::chunked_array::metadata::MetadataEnv;
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
 use crate::series::IsSorted;
@@ -27,21 +26,21 @@ fn finish_is_unique_helper(
 }
 
 pub(crate) fn is_unique_helper(
-    groups: GroupsProxy,
+    groups: &GroupPositions,
     len: IdxSize,
     unique_val: bool,
     duplicated_val: bool,
 ) -> BooleanChunked {
     debug_assert_ne!(unique_val, duplicated_val);
 
-    let idx = match groups {
-        GroupsProxy::Idx(groups) => groups
-            .into_iter()
+    let idx = match groups.deref() {
+        GroupsType::Idx(groups) => groups
+            .iter()
             .filter_map(|(first, g)| if g.len() == 1 { Some(first) } else { None })
             .collect::<Vec<_>>(),
-        GroupsProxy::Slice { groups, .. } => groups
-            .into_iter()
-            .filter_map(|[first, len]| if len == 1 { Some(first) } else { None })
+        GroupsType::Slice { groups, .. } => groups
+            .iter()
+            .filter_map(|[first, len]| if *len == 1 { Some(*first) } else { None })
             .collect(),
     };
     finish_is_unique_helper(idx, len, unique_val, duplicated_val)
@@ -124,33 +123,6 @@ where
                 }
             },
             IsSorted::Not => {
-                if !T::Native::is_float() && MetadataEnv::experimental_enabled() {
-                    let md = self.metadata();
-                    if let (Some(min), Some(max)) = (md.get_min_value(), md.get_max_value()) {
-                        let dtype = self.field.as_ref().dtype().to_arrow(CompatLevel::oldest());
-                        if let Some(mut state) = PrimitiveRangedUniqueState::new(
-                            *min,
-                            *max,
-                            self.null_count() > 0,
-                            dtype,
-                        ) {
-                            use polars_compute::unique::RangedUniqueKernel;
-
-                            for chunk in self.downcast_iter() {
-                                state.append(chunk);
-
-                                if state.has_seen_all() {
-                                    break;
-                                }
-                            }
-
-                            let unique = state.finalize_unique();
-
-                            return Ok(Self::with_chunk(self.name().clone(), unique));
-                        }
-                    }
-                }
-
                 let sorted = self.sort(false);
                 sorted.unique()
             },
@@ -269,9 +241,7 @@ impl ChunkUnique for BooleanChunked {
     fn unique(&self) -> PolarsResult<Self> {
         use polars_compute::unique::RangedUniqueKernel;
 
-        let dtype = self.field.as_ref().dtype().to_arrow(CompatLevel::oldest());
-        let has_null = self.null_count() > 0;
-        let mut state = BooleanUniqueKernelState::new(has_null, dtype);
+        let mut state = BooleanUniqueKernelState::new();
 
         for arr in self.downcast_iter() {
             state.append(arr);

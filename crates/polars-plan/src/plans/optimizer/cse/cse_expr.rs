@@ -8,7 +8,7 @@ use crate::prelude::visitor::AexprNode;
 
 const SERIES_LIMIT: usize = 1000;
 
-use polars_core::hashing::_boost_hash_combine;
+use polars_utils::hashing::_boost_hash_combine;
 
 #[derive(Debug, Clone)]
 struct ProjectionExprs {
@@ -182,10 +182,6 @@ fn skip_pre_visit(ae: &AExpr, is_groupby: bool) -> bool {
     match ae {
         AExpr::Window { .. } => true,
         #[cfg(feature = "dtype-struct")]
-        AExpr::Function {
-            function: FunctionExpr::AsStruct,
-            ..
-        } => true,
         AExpr::Ternary { .. } => is_groupby,
         _ => false,
     }
@@ -350,11 +346,11 @@ impl ExprIdentifierVisitor<'_> {
                 // other operations we cannot add to the state as they have the output size of the
                 // groups, not the original dataframe
                 if self.is_group_by {
-                    if ae.groups_sensitive() {
+                    if !ae.is_elementwise_top_level() {
                         return REFUSE_NO_MEMBER;
                     }
                     match ae {
-                        AExpr::AnonymousFunction { .. } | AExpr::Filter { .. } => REFUSE_NO_MEMBER,
+                        AExpr::AnonymousFunction { .. } => REFUSE_NO_MEMBER,
                         AExpr::Cast { .. } => REFUSE_ALLOW_MEMBER,
                         _ => ACCEPT,
                     }
@@ -723,6 +719,45 @@ impl CommonSubExprOptimizer {
                     out_e
                 } else {
                     out_e.set_node(out_node);
+
+                    // Ensure the function ExprIR's have the proper names.
+                    let mut scratch = vec![];
+                    let mut stack = vec![(e.node(), out_node)];
+                    while let Some((original, new)) = stack.pop() {
+                        let aes = expr_arena.get_many_mut([original, new]);
+
+                        aes[0].inputs_rev(&mut scratch);
+                        aes[1].inputs_rev(&mut scratch);
+
+                        for i in 0..scratch.len() / 2 {
+                            stack.push((scratch[i], scratch[i + 1]));
+                        }
+                        scratch.clear();
+
+                        match expr_arena.get_many_mut([original, new]) {
+                            [AExpr::Function {
+                                input: input_original,
+                                ..
+                            }, AExpr::Function {
+                                input: input_new, ..
+                            }] => {
+                                for (new, original) in input_new.iter_mut().zip(input_original) {
+                                    new.set_alias(original.output_name().clone());
+                                }
+                            },
+                            [AExpr::AnonymousFunction {
+                                input: input_original,
+                                ..
+                            }, AExpr::AnonymousFunction {
+                                input: input_new, ..
+                            }] => {
+                                for (new, original) in input_new.iter_mut().zip(input_original) {
+                                    new.set_alias(original.output_name().clone());
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
 
                     // If we don't end with an alias we add an alias. Because the normal left-hand
                     // rule we apply for determining the name will not work we now refer to

@@ -154,6 +154,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MaintainOrderJoin,
         MultiColSelector,
         MultiIndexSelector,
         OneOrMoreDataTypes,
@@ -177,6 +178,7 @@ if TYPE_CHECKING:
     )
     from polars._utils.various import NoDefault
     from polars.interchange.dataframe import PolarsDataFrame
+    from polars.io.cloud import CredentialProviderFunction
     from polars.ml.torch import PolarsDataset
 
     if sys.version_info >= (3, 10):
@@ -406,7 +408,11 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
-        elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
+        elif (
+            not hasattr(data, "__arrow_c_stream__")
+            and not isinstance(data, Sized)
+            and isinstance(data, (Generator, Iterable))
+        ):
             self._df = iterable_to_pydf(
                 data,
                 schema=schema,
@@ -640,6 +646,16 @@ class DataFrame:
           is shorthand for
           `alt.Chart(df).mark_attr(tooltip=True).encode(**kwargs).interactive()`
 
+        For configuration, we suggest reading
+        `Chart Configuration <https://altair-viz.github.io/altair-tutorial/notebooks/08-Configuration.html>`_.
+        For example, you can:
+
+        - Change the width/height/title with
+          ``.properties(width=500, height=350, title="My amazing plot")``.
+        - Change the x-axis label rotation with ``.configure_axisX(labelAngle=30)``.
+        - Change the opacity of the points in your scatter plot with
+          ``.configure_point(opacity=.5)``.
+
         Examples
         --------
         Scatter plot:
@@ -652,6 +668,13 @@ class DataFrame:
         ...     }
         ... )
         >>> df.plot.point(x="length", y="width", color="species")  # doctest: +SKIP
+
+        Set the x-axis title by using ``altair.X``:
+
+        >>> import altair as alt
+        >>> df.plot.point(
+        ...     x=alt.X("length", title="Length"), y="width", color="species"
+        ... )  # doctest: +SKIP
 
         Line plot:
 
@@ -677,6 +700,10 @@ class DataFrame:
         >>> df.plot.bar(
         ...     x="day", y="value", color="day", column="group"
         ... )  # doctest: +SKIP
+
+        Or, to make a stacked version of the plot above:
+
+        >>> df.plot.bar(x="day", y="value", color="group")  # doctest: +SKIP
         """
         if not _ALTAIR_AVAILABLE or parse_version(altair.__version__) < (5, 4, 0):
             msg = "altair>=5.4.0 is required for `.plot`"
@@ -1131,11 +1158,11 @@ class DataFrame:
     def __le__(self, other: Any) -> DataFrame:
         return self._comp(other, "lt_eq")
 
-    def __getstate__(self) -> list[Series]:
-        return self.get_columns()
+    def __getstate__(self) -> bytes:
+        return self.serialize()
 
-    def __setstate__(self, state: list[Series]) -> None:
-        self._df = DataFrame(state)._df
+    def __setstate__(self, state: bytes) -> None:
+        self._df = self.deserialize(BytesIO(state))._df
 
     def __mul__(self, other: DataFrame | Series | int | float) -> DataFrame:
         if isinstance(other, DataFrame):
@@ -1525,7 +1552,7 @@ class DataFrame:
 
         See Also
         --------
-        row: Get the values of a single row, either by index or by predicate.
+        row : Get the values of a single row, either by index or by predicate.
 
         Notes
         -----
@@ -2612,8 +2639,8 @@ class DataFrame:
         ...     }
         ... )
         >>> bytes = df.serialize()
-        >>> bytes  # doctest: +ELLIPSIS
-        b'\xa1gcolumns\x82\xa4dnamecfoohdatatypeeInt64lbit_settings\x00fvalues\x83...'
+        >>> type(bytes)
+        <class 'bytes'>
 
         The bytes can later be deserialized back into a DataFrame.
 
@@ -2758,6 +2785,9 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
+        storage_options: dict[str, Any] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
+        retries: int = ...,
     ) -> str: ...
 
     @overload
@@ -2778,6 +2808,9 @@ class DataFrame:
         float_precision: int | None = ...,
         null_value: str | None = ...,
         quote_style: CsvQuoteStyle | None = ...,
+        storage_options: dict[str, Any] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
+        retries: int = ...,
     ) -> None: ...
 
     def write_csv(
@@ -2797,6 +2830,11 @@ class DataFrame:
         float_precision: int | None = None,
         null_value: str | None = None,
         quote_style: CsvQuoteStyle | None = None,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
+        retries: int = 2,
     ) -> str | None:
         """
         Write to comma-separated values (CSV) file.
@@ -2856,6 +2894,30 @@ class DataFrame:
               Namely, when writing a field that does not parse as a valid float
               or integer, then quotes will be used even if they aren`t strictly
               necessary.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Examples
         --------
@@ -2910,6 +2972,18 @@ class DataFrame:
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, file, storage_options, "write_csv"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
         self._df.write_csv(
             file,
             include_bom,
@@ -2925,6 +2999,9 @@ class DataFrame:
             float_precision,
             null_value,
             quote_style,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
         )
 
         if should_return_buffer:
@@ -3033,8 +3110,8 @@ class DataFrame:
         Parameters
         ----------
         workbook : {str, Workbook}
-            String name or path of the workbook to create, BytesIO object to write
-            into, or an open `xlsxwriter.Workbook` object that has not been closed.
+            String name or path of the workbook to create, BytesIO object, file opened
+            in binary-mode, or an `xlsxwriter.Workbook` object that has not been closed.
             If None, writes to a `dataframe.xlsx` workbook in the working directory.
         worksheet : {str, Worksheet}
             Name of target worksheet or an `xlsxwriter.Worksheet` object (in which
@@ -3400,6 +3477,12 @@ class DataFrame:
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
         df, is_empty = self, not len(self)
 
+        # The _xl_setup_table_columns function in the below section
+        # converts all collection types (e.g. List, Struct, Object) to strings
+        # Hence, we need to store the original schema so that it can be used
+        # when selecting columns using column selectors based on datatypes
+        df_original = df.clear()
+
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
         column_formats = column_formats or {}
@@ -3467,13 +3550,25 @@ class DataFrame:
         elif isinstance(hidden_columns, str):
             hidden = {hidden_columns}
         else:
-            hidden = set(_expand_selectors(df, hidden_columns))
+            hidden = set(_expand_selectors(df_original, hidden_columns))
+
+        # Autofit section needs to be present above column_widths section
+        # to ensure that parameters provided in the column_widths section
+        # are not overwritten by autofit
+        #
+        # table/rows all written; apply (optional) autofit
+        if autofit and not is_empty:
+            xlv = xlsxwriter.__version__
+            if parse_version(xlv) < (3, 0, 8):
+                msg = f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
+                raise ModuleUpgradeRequiredError(msg)
+            ws.autofit()
 
         if isinstance(column_widths, int):
             column_widths = dict.fromkeys(df.columns, column_widths)
         else:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
-                df, column_widths, expand_keys=True, expand_values=False
+                df_original, column_widths, expand_keys=True, expand_values=False
             )
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
@@ -3515,14 +3610,6 @@ class DataFrame:
                 for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
                     ws.set_row_pixels(idx, height)
 
-        # table/rows all written; apply (optional) autofit
-        if autofit and not is_empty:
-            xlv = xlsxwriter.__version__
-            if parse_version(xlv) < (3, 0, 8):
-                msg = f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
-                raise ModuleUpgradeRequiredError(msg)
-            ws.autofit()
-
         if freeze_panes:
             if isinstance(freeze_panes, str):
                 ws.freeze_panes(freeze_panes)
@@ -3540,6 +3627,11 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
+        retries: int = 2,
     ) -> BytesIO: ...
 
     @overload
@@ -3549,6 +3641,11 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
+        retries: int = 2,
     ) -> None: ...
 
     @deprecate_renamed_parameter("future", "compat_level", version="1.1")
@@ -3558,6 +3655,11 @@ class DataFrame:
         *,
         compression: IpcCompression = "uncompressed",
         compat_level: CompatLevel | None = None,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
+        retries: int = 2,
     ) -> BytesIO | None:
         """
         Write to Arrow IPC binary stream or Feather file.
@@ -3574,6 +3676,30 @@ class DataFrame:
         compat_level
             Use a specific compatibility level
             when exporting Polars' internal data structures.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Examples
         --------
@@ -3603,7 +3729,30 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        self._df.write_ipc(file, compression, compat_level)
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = (
+            None
+            if return_bytes
+            else _maybe_init_credential_provider(
+                credential_provider, file, storage_options, "write_ipc"
+            )
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
+        self._df.write_ipc(
+            file,
+            compression,
+            compat_level,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+        )
         return file if return_bytes else None  # type: ignore[return-value]
 
     @overload
@@ -3692,6 +3841,11 @@ class DataFrame:
         pyarrow_options: dict[str, Any] | None = None,
         partition_by: str | Sequence[str] | None = None,
         partition_chunk_size_bytes: int = 4_294_967_296,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Write to Apache Parquet file.
@@ -3752,6 +3906,30 @@ class DataFrame:
             writing. Note this is calculated using the size of the DataFrame in
             memory - the size of the output file may differ depending on the
             file format / compression.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Examples
         --------
@@ -3833,41 +4011,57 @@ class DataFrame:
                     **(pyarrow_options or {}),
                 )
 
+            return
+
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, file, storage_options, "write_parquet"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
         else:
-            if isinstance(statistics, bool) and statistics:
-                statistics = {
-                    "min": True,
-                    "max": True,
-                    "distinct_count": False,
-                    "null_count": True,
-                }
-            elif isinstance(statistics, bool) and not statistics:
-                statistics = {}
-            elif statistics == "full":
-                statistics = {
-                    "min": True,
-                    "max": True,
-                    "distinct_count": True,
-                    "null_count": True,
-                }
+            # Handle empty dict input
+            storage_options = None
 
-            if partition_by is not None:
-                msg = "The `partition_by` parameter of `write_parquet` is considered unstable."
-                issue_unstable_warning(msg)
+        if isinstance(statistics, bool) and statistics:
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": False,
+                "null_count": True,
+            }
+        elif isinstance(statistics, bool) and not statistics:
+            statistics = {}
+        elif statistics == "full":
+            statistics = {
+                "min": True,
+                "max": True,
+                "distinct_count": True,
+                "null_count": True,
+            }
 
-            if isinstance(partition_by, str):
-                partition_by = [partition_by]
+        if partition_by is not None:
+            msg = "The `partition_by` parameter of `write_parquet` is considered unstable."
+            issue_unstable_warning(msg)
 
-            self._df.write_parquet(
-                file,
-                compression,
-                compression_level,
-                statistics,
-                row_group_size,
-                data_page_size,
-                partition_by=partition_by,
-                partition_chunk_size_bytes=partition_chunk_size_bytes,
-            )
+        if isinstance(partition_by, str):
+            partition_by = [partition_by]
+
+        self._df.write_parquet(
+            file,
+            compression,
+            compression_level,
+            statistics,
+            row_group_size,
+            data_page_size,
+            partition_by=partition_by,
+            partition_chunk_size_bytes=partition_chunk_size_bytes,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+        )
 
     def write_database(
         self,
@@ -4105,6 +4299,7 @@ class DataFrame:
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
         overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
     ) -> None: ...
 
@@ -4116,6 +4311,7 @@ class DataFrame:
         mode: Literal["merge"],
         overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
 
@@ -4126,6 +4322,9 @@ class DataFrame:
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool | None = None,
         storage_options: dict[str, str] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
     ) -> deltalake.table.TableMerger | None:
@@ -4158,6 +4357,14 @@ class DataFrame:
             - See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
             - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
             - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
             See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
@@ -4240,6 +4447,21 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+        Write DataFrame as a Delta Lake table with zstd compression.
+        For all `delta_write_options` keyword arguments, check the deltalake docs
+        `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
+        and for Writer Properties in particular `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+
+        >>> import deltalake
+        >>> df.write_delta(
+        ...     table_path,
+        ...     delta_write_options={
+        ...         "writer_properties": deltalake.WriterProperties(compression="zstd"),
+        ...     },
+        ... )  # doctest: +SKIP
+
         Merge the DataFrame with an existing Delta Lake table.
         For all `TableMerger` methods, check the deltalake docs
         `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
@@ -4283,13 +4505,48 @@ class DataFrame:
         _check_if_delta_available()
 
         from deltalake import DeltaTable, write_deltalake
+        from deltalake import __version__ as delta_version
+        from packaging.version import Version
 
         _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        data = self.to_arrow()
+        if Version(delta_version) >= Version("0.23.0"):
+            data = self.to_arrow(compat_level=CompatLevel.newest())
+        else:
+            data = self.to_arrow()
+
+        from polars.io.cloud.credential_provider import (
+            _get_credentials_from_provider_expiry_aware,
+            _maybe_init_credential_provider,
+        )
+
+        if not isinstance(target, DeltaTable):
+            credential_provider = _maybe_init_credential_provider(
+                credential_provider, target, storage_options, "write_delta"
+            )
+        elif credential_provider is not None and credential_provider != "auto":
+            msg = "cannot use credential_provider when passing a DeltaTable object"
+            raise ValueError(msg)
+        else:
+            credential_provider = None
+
+        credential_provider_creds = {}
+
+        if credential_provider is not None:
+            credential_provider_creds = _get_credentials_from_provider_expiry_aware(
+                credential_provider
+            )
+
+        # We aren't calling into polars-native write functions so we just update
+        # the storage_options here.
+        storage_options = (
+            {**(storage_options or {}), **credential_provider_creds}
+            if storage_options is not None or credential_provider is not None
+            else None
+        )
 
         if mode == "merge":
             if delta_merge_options is None:
@@ -4316,7 +4573,6 @@ class DataFrame:
                 schema=schema,
                 mode=mode,
                 storage_options=storage_options,
-                large_dtypes=True,
                 **delta_write_options,
             )
             return None
@@ -4337,6 +4593,11 @@ class DataFrame:
         this function returns the visible size of the buffer, not its total capacity.
 
         FFI buffers are included in this estimation.
+
+        Note
+        ----
+        For objects, the estimated size only reports the pointer size, which is
+        a huge underestimation.
 
         Parameters
         ----------
@@ -5642,6 +5903,83 @@ class DataFrame:
         """
         return self.head(n)
 
+    def drop_nans(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+    ) -> DataFrame:
+        """
+        Drop all rows that contain one or more NaN values.
+
+        The original order of the remaining rows is preserved.
+
+        Parameters
+        ----------
+        subset
+            Column name(s) for which NaN values are considered; if set to `None`
+            (default), use all columns (note that only floating-point columns
+            can contain NaNs).
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [-20.5, float("nan"), 80.0],
+        ...         "bar": [float("nan"), 110.0, 25.5],
+        ...         "ham": ["xxx", "yyy", None],
+        ...     }
+        ... )
+
+        The default behavior of this method is to drop rows where any single
+        value in the row is NaN:
+
+        >>> df.drop_nans()
+        shape: (1, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ f64  ┆ f64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ 80.0 ┆ 25.5 ┆ null │
+        └──────┴──────┴──────┘
+
+        This behaviour can be constrained to consider only a subset of columns, as
+        defined by name, or with a selector. For example, dropping rows only if
+        there is a NaN in the "bar" column:
+
+        >>> df.drop_nans(subset=["bar"])
+        shape: (2, 3)
+        ┌──────┬───────┬──────┐
+        │ foo  ┆ bar   ┆ ham  │
+        │ ---  ┆ ---   ┆ ---  │
+        │ f64  ┆ f64   ┆ str  │
+        ╞══════╪═══════╪══════╡
+        │ NaN  ┆ 110.0 ┆ yyy  │
+        │ 80.0 ┆ 25.5  ┆ null │
+        └──────┴───────┴──────┘
+
+        Dropping a row only if *all* values are NaN requires a different formulation:
+
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [float("nan"), float("nan"), float("nan"), float("nan")],
+        ...         "b": [10.0, 2.5, float("nan"), 5.25],
+        ...         "c": [65.75, float("nan"), float("nan"), 10.5],
+        ...     }
+        ... )
+        >>> df.filter(~pl.all_horizontal(pl.all().is_nan()))
+        shape: (3, 3)
+        ┌─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     │
+        │ --- ┆ ---  ┆ ---   │
+        │ f64 ┆ f64  ┆ f64   │
+        ╞═════╪══════╪═══════╡
+        │ NaN ┆ 10.0 ┆ 65.75 │
+        │ NaN ┆ 2.5  ┆ NaN   │
+        │ NaN ┆ 5.25 ┆ 10.5  │
+        └─────┴──────┴───────┘
+        """
+        return self.lazy().drop_nans(subset).collect(_eager=True)
+
     def drop_nulls(
         self,
         subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
@@ -6667,6 +7005,8 @@ class DataFrame:
         allow_parallel: bool = True,
         force_parallel: bool = False,
         coalesce: bool = True,
+        allow_exact_matches: bool = True,
+        check_sortedness: bool = True,
     ) -> DataFrame:
         """
         Perform an asof join.
@@ -6674,7 +7014,8 @@ class DataFrame:
         This is similar to a left-join except that we match on nearest key rather than
         equal keys.
 
-        Both DataFrames must be sorted by the asof_join key.
+        Both DataFrames must be sorted by the `on` key (within each `by` group, if
+        specified).
 
         For each row in the left DataFrame:
 
@@ -6751,6 +7092,17 @@ class DataFrame:
 
             Note that joining on any other expressions than `col`
             will turn off coalescing.
+        allow_exact_matches
+            Whether exact matches are valid join predicates.
+
+            - If True, allow matching with the same ``on`` value
+                (i.e. less-than-or-equal-to / greater-than-or-equal-to)
+            - If False, don't match the same ``on`` value
+                (i.e., strictly less-than / strictly greater-than).
+        check_sortedness
+            Check the sortedness of the asof keys. If the keys are not sorted Polars
+            will error, or in case of 'by' argument raise a warning. This might become
+            a hard error in the future.
 
         Examples
         --------
@@ -6983,6 +7335,8 @@ class DataFrame:
                 allow_parallel=allow_parallel,
                 force_parallel=force_parallel,
                 coalesce=coalesce,
+                allow_exact_matches=allow_exact_matches,
+                check_sortedness=check_sortedness,
             )
             .collect(_eager=True)
         )
@@ -6999,6 +7353,7 @@ class DataFrame:
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
+        maintain_order: MaintainOrderJoin | None = None,
     ) -> DataFrame:
         """
         Join in SQL-like fashion.
@@ -7008,7 +7363,8 @@ class DataFrame:
         other
             DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames.
+            Name(s) of the join columns in both DataFrames. If set, `left_on` and
+            `right_on` should be None. This should not be specified if `how="cross"`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -7029,8 +7385,6 @@ class DataFrame:
             * *anti*
                 Returns rows from the left table that have no match in the right table.
 
-            .. note::
-                A left join preserves the row order of the left DataFrame.
         left_on
             Name(s) of the left join column(s).
         right_on
@@ -7064,6 +7418,24 @@ class DataFrame:
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
+            Which DataFrame row order to preserve, if any.
+            Do not rely on any observed ordering without explicitly
+            setting this parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance
+            Supported for inner, left, right and full joins
+
+            * *none*
+                No specific ordering is desired. The ordering might differ across
+                Polars versions or even between different runs.
+            * *left*
+                Preserves the order of the left DataFrame.
+            * *right*
+                Preserves the order of the right DataFrame.
+            * *left_right*
+                First preserves the order of the left DataFrame, then the right.
+            * *right_left*
+                First preserves the order of the right DataFrame, then the left.
 
         See Also
         --------
@@ -7108,7 +7480,20 @@ class DataFrame:
         │ 3    ┆ 8.0  ┆ c    ┆ null  ┆ null      │
         └──────┴──────┴──────┴───────┴───────────┘
 
-        >>> df.join(other_df, on="ham", how="left", coalesce=True)
+        >>> df.join(other_df, on="ham", how="full", coalesce=True)
+        shape: (4, 4)
+        ┌──────┬──────┬─────┬───────┐
+        │ foo  ┆ bar  ┆ ham ┆ apple │
+        │ ---  ┆ ---  ┆ --- ┆ ---   │
+        │ i64  ┆ f64  ┆ str ┆ str   │
+        ╞══════╪══════╪═════╪═══════╡
+        │ 1    ┆ 6.0  ┆ a   ┆ x     │
+        │ 2    ┆ 7.0  ┆ b   ┆ y     │
+        │ null ┆ null ┆ d   ┆ z     │
+        │ 3    ┆ 8.0  ┆ c   ┆ null  │
+        └──────┴──────┴─────┴───────┘
+
+        >>> df.join(other_df, on="ham", how="left")
         shape: (3, 4)
         ┌─────┬─────┬─────┬───────┐
         │ foo ┆ bar ┆ ham ┆ apple │
@@ -7141,6 +7526,24 @@ class DataFrame:
         │ 3   ┆ 8.0 ┆ c   │
         └─────┴─────┴─────┘
 
+        >>> df.join(other_df, how="cross")
+        shape: (9, 5)
+        ┌─────┬─────┬─────┬───────┬───────────┐
+        │ foo ┆ bar ┆ ham ┆ apple ┆ ham_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---       │
+        │ i64 ┆ f64 ┆ str ┆ str   ┆ str       │
+        ╞═════╪═════╪═════╪═══════╪═══════════╡
+        │ 1   ┆ 6.0 ┆ a   ┆ x     ┆ a         │
+        │ 1   ┆ 6.0 ┆ a   ┆ y     ┆ b         │
+        │ 1   ┆ 6.0 ┆ a   ┆ z     ┆ d         │
+        │ 2   ┆ 7.0 ┆ b   ┆ x     ┆ a         │
+        │ 2   ┆ 7.0 ┆ b   ┆ y     ┆ b         │
+        │ 2   ┆ 7.0 ┆ b   ┆ z     ┆ d         │
+        │ 3   ┆ 8.0 ┆ c   ┆ x     ┆ a         │
+        │ 3   ┆ 8.0 ┆ c   ┆ y     ┆ b         │
+        │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
+        └─────┴─────┴─────┴───────┴───────────┘
+
         Notes
         -----
         For joining on columns with categorical data, see :class:`polars.StringCache`.
@@ -7161,6 +7564,7 @@ class DataFrame:
                 validate=validate,
                 join_nulls=join_nulls,
                 coalesce=coalesce,
+                maintain_order=maintain_order,
             )
             .collect(_eager=True)
         )
@@ -7652,8 +8056,8 @@ class DataFrame:
             Mapping of column names (or selector) to dtypes, or a single dtype
             to which all columns will be cast.
         strict
-            Throw an error if a cast could not be done (for instance, due to an
-            overflow).
+            Raise if cast is invalid on rows after predicates are pushed down.
+            If `False`, invalid casts will produce null values.
 
         Examples
         --------
@@ -8171,7 +8575,7 @@ class DataFrame:
               {'min', 'max', 'first', 'last', 'sum', 'mean', 'median', 'len'}
             - An expression to do the aggregation.
         maintain_order
-            Sort the grouped keys so that the output order is predictable.
+            Ensure the values of `index` are sorted by discovery order.
         sort_columns
             Sort the transposed columns by name. Default is by order of discovery.
         separator
@@ -8429,9 +8833,9 @@ class DataFrame:
 
         return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
 
-    @unstable()
     def unstack(
         self,
+        *,
         step: int,
         how: UnstackDirection = "vertical",
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -8439,10 +8843,6 @@ class DataFrame:
     ) -> DataFrame:
         """
         Unstack a long table to a wide form without doing an aggregation.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         This can be much faster than a pivot, because it can skip the grouping phase.
 
@@ -9449,7 +9849,9 @@ class DataFrame:
                 9.0
         ]
         """
-        return wrap_s(self._df.sum_horizontal(ignore_nulls)).alias("sum")
+        return self.select(
+            sum=F.sum_horizontal(F.all(), ignore_nulls=ignore_nulls)
+        ).to_series()
 
     def mean(self) -> DataFrame:
         """
@@ -9509,7 +9911,9 @@ class DataFrame:
                 4.5
         ]
         """
-        return wrap_s(self._df.mean_horizontal(ignore_nulls)).alias("mean")
+        return self.select(
+            mean=F.mean_horizontal(F.all(), ignore_nulls=ignore_nulls)
+        ).to_series()
 
     def std(self, ddof: int = 1) -> DataFrame:
         """
@@ -10067,7 +10471,7 @@ class DataFrame:
         Apply a horizontal reduction on a DataFrame.
 
         This can be used to effectively determine aggregations on a row level, and can
-        be applied to any DataType that can be supercasted (casted to a similar parent
+        be applied to any DataType that can be supercast (cast to a similar parent
         type).
 
         An example of the supercast rules when applying an arithmetic operation on two
@@ -10931,8 +11335,7 @@ class DataFrame:
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
         """
-        columns = _expand_selectors(self, columns, *more_columns)
-        return self._from_pydf(self._df.unnest(columns))
+        return self.lazy().unnest(columns, *more_columns).collect(_eager=True)
 
     def corr(self, **kwargs: Any) -> DataFrame:
         """
@@ -11033,6 +11436,11 @@ class DataFrame:
         │ steve  ┆ 42  │
         │ elise  ┆ 44  │
         └────────┴─────┘
+
+        Notes
+        -----
+        No guarantee is given over the output row order when the key is equal
+        between the both dataframes.
         """
         return self.lazy().merge_sorted(other.lazy(), key).collect(_eager=True)
 
@@ -11043,16 +11451,16 @@ class DataFrame:
         descending: bool = False,
     ) -> DataFrame:
         """
-        Indicate that one or multiple columns are sorted.
+        Flag a column as sorted.
 
         This can speed up future operations.
 
         Parameters
         ----------
         column
-            Column that are sorted
+            Column that is sorted
         descending
-            Whether the columns are sorted in descending order.
+            Whether the column is sorted in descending order.
 
         Warnings
         --------

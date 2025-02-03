@@ -28,10 +28,14 @@ impl_parse!(i8);
 impl_parse!(i16);
 impl_parse!(i32);
 impl_parse!(i64);
+
 impl_parse!(u8);
 impl_parse!(u16);
 impl_parse!(u32);
 impl_parse!(u64);
+
+#[cfg(feature = "dtype-i128")]
+impl_parse!(i128);
 
 impl Parse for f32 {
     fn parse(val: &[u8]) -> Option<Self>
@@ -202,12 +206,15 @@ pub fn fixed_size_binary_to_binview(from: &FixedSizeBinaryArray) -> BinaryViewAr
     // This is zero-copy for the buffer since split just increases the data since
     let mut buffer = from.values().clone();
     let mut buffers = Vec::with_capacity(num_buffers);
-    for _ in 0..num_buffers - 1 {
-        let slice;
-        (slice, buffer) = buffer.split_at(split_point);
-        buffers.push(slice);
+
+    if let Some(num_buffers) = num_buffers.checked_sub(1) {
+        for _ in 0..num_buffers {
+            let slice;
+            (slice, buffer) = buffer.split_at(split_point);
+            buffers.push(slice);
+        }
+        buffers.push(buffer);
     }
-    buffers.push(buffer);
 
     let mut iter = from.values_iter();
     let iter = iter.by_ref();

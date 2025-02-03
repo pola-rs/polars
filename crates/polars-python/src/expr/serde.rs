@@ -1,6 +1,7 @@
-use std::io::{BufReader, BufWriter, Cursor};
+use std::io::{BufReader, BufWriter};
 
 use polars::lazy::prelude::Expr;
+use polars_utils::pl_serialize;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
@@ -12,33 +13,31 @@ use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
-        ciborium::ser::into_writer(&self.inner, &mut writer)
+        pl_serialize::SerializeOptions::default()
+            .serialize_into_writer(&mut writer, &self.inner)
             .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
 
-        Ok(PyBytes::new_bound(py, &writer).to_object(py))
+        Ok(PyBytes::new(py, &writer))
     }
 
     fn __setstate__(&mut self, state: &Bound<PyAny>) -> PyResult<()> {
         // Used in pickle/pickling
-        match state.extract::<PyBackedBytes>() {
-            Ok(s) => {
-                let cursor = Cursor::new(&*s);
-                self.inner = ciborium::de::from_reader(cursor)
-                    .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
-                Ok(())
-            },
-            Err(e) => Err(e),
-        }
+        let bytes = state.extract::<PyBackedBytes>()?;
+        self.inner = pl_serialize::SerializeOptions::default()
+            .deserialize_from_reader(&*bytes)
+            .map_err(|e| PyPolarsErr::Other(format!("{}", e)))?;
+        Ok(())
     }
 
     /// Serialize into binary data.
     fn serialize_binary(&self, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        ciborium::into_writer(&self.inner, writer)
+        pl_serialize::SerializeOptions::default()
+            .serialize_into_writer(writer, &self.inner)
             .map_err(|err| ComputeError::new_err(err.to_string()))
     }
 
@@ -56,7 +55,8 @@ impl PyExpr {
     fn deserialize_binary(py_f: PyObject) -> PyResult<PyExpr> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
-        let expr = ciborium::from_reader::<Expr, _>(reader)
+        let expr: Expr = pl_serialize::SerializeOptions::default()
+            .deserialize_from_reader(reader)
             .map_err(|err| ComputeError::new_err(err.to_string()))?;
         Ok(expr.into())
     }

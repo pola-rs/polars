@@ -192,8 +192,7 @@ impl PearsonState {
         self.mean_y = new_mean_y;
     }
 
-    pub fn finalize(&self, _ddof: u8) -> f64 {
-        // The division by sample_weight - ddof on both sides cancels out.
+    pub fn finalize(&self) -> f64 {
         let denom = (self.dp_xx * self.dp_yy).sqrt();
         if denom == 0.0 {
             f64::NAN

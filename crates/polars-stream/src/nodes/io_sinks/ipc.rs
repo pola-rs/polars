@@ -16,12 +16,13 @@ use polars_io::SerWriter;
 use polars_utils::priority::Priority;
 
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
+use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{ComputeNode, JoinHandle, PortState, TaskPriority, TaskScope};
 use crate::pipe::{RecvPort, SendPort};
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
+type Linearized = Priority<Reverse<u64>, (Vec<EncodedData>, EncodedData)>;
 pub struct IpcSinkNode {
     path: PathBuf,
 
@@ -32,6 +33,10 @@ pub struct IpcSinkNode {
 
     num_encoders: usize,
     chunk_size: usize,
+
+    // IO task related:
+    senders: Vec<Inserter<Linearized>>,
+    io_task: Option<tokio::task::JoinHandle<PolarsResult<()>>>,
 }
 
 impl IpcSinkNode {
@@ -50,6 +55,9 @@ impl IpcSinkNode {
 
             num_encoders: 1,
             chunk_size: get_ideal_morsel_size(), // @TODO: change to something more appropriate
+
+            senders: Vec::new(),
+            io_task: None,
         })
     }
 }
@@ -61,6 +69,50 @@ impl ComputeNode for IpcSinkNode {
 
     fn initialize(&mut self, num_pipelines: usize) {
         self.num_encoders = num_pipelines;
+
+        // Encode tasks -> IO task
+        let (mut linearizer, senders) =
+            Linearizer::<Linearized>::new(self.num_encoders, DEFAULT_LINEARIZER_BUFFER_SIZE);
+
+        self.senders = senders;
+
+        // IO task.
+        //
+        // Task that will actually do write to the target file.
+        let io_runtime = polars_io::pl_async::get_runtime();
+
+        let path = self.path.clone();
+        let write_options = self.write_options;
+        let input_schema = self.input_schema.clone();
+
+        self.io_task = Some(io_runtime.spawn(async move {
+            use tokio::fs::OpenOptions;
+
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(path.as_path())
+                .await?;
+            let writer = BufWriter::new(file.into_std().await);
+            let mut writer = IpcWriter::new(writer)
+                .with_compression(write_options.compression)
+                .with_parallel(false)
+                .batched(&input_schema)?;
+
+            // Linearize from all the Encoder tasks.
+            while let Some(encoded_data) = linearizer.get().await {
+                let (dicts, record_batch) = encoded_data.1;
+
+                // @TODO: At the moment this is a sync write, this is not ideal because we can only
+                // have so many blocking threads in the tokio threadpool.
+                writer.write_encoded(dicts.as_slice(), &record_batch)?;
+            }
+
+            writer.finish()?;
+
+            PolarsResult::Ok(())
+        }));
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
@@ -71,6 +123,13 @@ impl ComputeNode for IpcSinkNode {
         // also done.
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
+        } else if let Some(io_task) = self.io_task.take() {
+            // Stop the IO task from waiting for more morsels.
+            self.senders.clear();
+
+            polars_io::pl_async::get_runtime()
+                .block_on(io_task)
+                .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))?;
         }
 
         Ok(())
@@ -92,18 +151,14 @@ impl ComputeNode for IpcSinkNode {
         // Buffer task -> Encode tasks
         let (mut distribute, distribute_channels) =
             distributor_channel(self.num_encoders, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        // Encode tasks -> IO task
-        let (mut linearizer, senders) = Linearizer::<
-            Priority<Reverse<u64>, (Vec<EncodedData>, EncodedData)>,
-        >::new(
-            self.num_encoders, DEFAULT_LINEARIZER_BUFFER_SIZE
-        );
 
         let options = WriteOptions {
             compression: self.write_options.compression.map(Into::into),
         };
 
-        let slf = &*self;
+        let input_schema = &self.input_schema;
+        let compat_level = self.compat_level;
+        let chunk_size = self.chunk_size;
 
         // Buffer task.
         //
@@ -111,7 +166,7 @@ impl ComputeNode for IpcSinkNode {
         // and then sends the whole record batch to be encoded and written.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let mut seq = 0;
-            let mut buffer = DataFrame::empty_with_schema(slf.input_schema.as_ref());
+            let mut buffer = DataFrame::empty_with_schema(input_schema.as_ref());
             let mut dictionary_tracker = DictionaryTracker {
                 dictionaries: Default::default(),
                 cannot_replace: false,
@@ -119,10 +174,9 @@ impl ComputeNode for IpcSinkNode {
 
             // Search for Dictionary fields and which need to handled in special ways when encoding
             // IPC.
-            let ipc_fields = slf
-                .input_schema
+            let ipc_fields = input_schema
                 .iter_fields()
-                .map(|f| f.to_arrow(slf.compat_level))
+                .map(|f| f.to_arrow(compat_level))
                 .collect::<Vec<_>>();
             let ipc_fields = default_ipc_fields(ipc_fields.iter());
             let dict_columns_idxs = ipc_fields
@@ -133,9 +187,9 @@ impl ComputeNode for IpcSinkNode {
 
             let mut stop_requested = false;
             loop {
-                if buffer.height() >= slf.chunk_size || (buffer.height() > 0 && stop_requested) {
+                if buffer.height() >= chunk_size || (buffer.height() > 0 && stop_requested) {
                     let df;
-                    (df, buffer) = buffer.split_at(buffer.height().min(slf.chunk_size) as i64);
+                    (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
                     // We want to rechunk for two reasons:
                     // 1. the IPC writer expects aligned column chunks
@@ -144,7 +198,7 @@ impl ComputeNode for IpcSinkNode {
                     //
                     // This also properly sets the inner types of the record batches, which is
                     // important for dictionary and nested type encoding.
-                    let record_batch = df.rechunk_to_record_batch(slf.compat_level);
+                    let record_batch = df.rechunk_to_record_batch(compat_level);
 
                     // If there are dictionaries, we might need to emit the original dictionary
                     // definitions or dictionary deltas. We have precomputed which columns contain
@@ -190,7 +244,7 @@ impl ComputeNode for IpcSinkNode {
         // Encoding task.
         //
         // Task encodes the buffered record batch and sends it to be written to the file.
-        for (mut receiver, mut sender) in distribute_channels.into_iter().zip(senders) {
+        for (mut receiver, sender) in distribute_channels.into_iter().zip(self.senders.iter_mut()) {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok((seq, dicts_to_encode, record_batch)) = receiver.recv().await {
                     let mut encoded_dictionaries = Vec::new();
@@ -217,42 +271,5 @@ impl ComputeNode for IpcSinkNode {
                 PolarsResult::Ok(())
             }));
         }
-
-        // IO task.
-        //
-        // Task that will actually do write to the target file.
-        let io_runtime = polars_io::pl_async::get_runtime();
-
-        let path = self.path.clone();
-        let write_options = self.write_options;
-        let input_schema = self.input_schema.clone();
-
-        let io_task = io_runtime.spawn(async move {
-            use tokio::fs::OpenOptions;
-
-            let file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path.as_path())
-                .await?;
-            let writer = BufWriter::new(file.into_std().await);
-            let mut writer = IpcWriter::new(writer)
-                .with_compression(write_options.compression)
-                .with_parallel(false)
-                .batched(&input_schema)?;
-
-            // Linearize from all the Encoder tasks.
-            while let Some(encoded_data) = linearizer.get().await {
-                let (dicts, record_batch) = encoded_data.1;
-                writer.write_encoded(dicts.as_slice(), &record_batch)?;
-            }
-
-            writer.finish()?;
-
-            PolarsResult::Ok(())
-        });
-        join_handles
-            .push(scope.spawn_task(TaskPriority::Low, async move { io_task.await.unwrap() }));
     }
 }

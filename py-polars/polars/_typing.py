@@ -6,6 +6,7 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
+    Callable,
     Literal,
     Protocol,
     TypedDict,
@@ -108,6 +109,9 @@ IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
+MaintainOrderJoin: TypeAlias = Literal[
+    "none", "left", "right", "left_right", "right_left"
+]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal[
@@ -122,6 +126,7 @@ PivotAgg: TypeAlias = Literal[
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
+Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
     "b",
     "kb",
@@ -146,6 +151,7 @@ StartBy: TypeAlias = Literal[
     "sunday",
 ]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
+UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 MapElementsStrategy: TypeAlias = Literal["thread_local", "threading"]
@@ -170,6 +176,10 @@ ConcatMethod = Literal[
     "diagonal_relaxed",
     "horizontal",
     "align",
+    "align_full",
+    "align_inner",
+    "align_left",
+    "align_right",
 ]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
@@ -231,7 +241,7 @@ FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
 BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
-ExcelSpreadsheetEngine: TypeAlias = Literal["xlsx2csv", "openpyxl", "calamine"]
+ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
 
 
 class SeriesBuffers(TypedDict):
@@ -295,7 +305,7 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
 
-ScanSource: TypeAlias = Union[
+FileSource: TypeAlias = Union[
     str,
     Path,
     IO[bytes],
@@ -305,3 +315,5 @@ ScanSource: TypeAlias = Union[
     list[IO[bytes]],
     list[bytes],
 ]
+
+JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]

@@ -4,7 +4,7 @@ use polars_compute::cast::CastOptionsImpl;
 #[cfg(feature = "serde-lazy")]
 use serde::{Deserialize, Serialize};
 
-use crate::chunked_array::metadata::MetadataProperties;
+use super::flags::StatisticsFlags;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::validate_time_zone;
 #[cfg(feature = "dtype-datetime")]
@@ -75,7 +75,26 @@ fn cast_impl_inner(
     dtype: &DataType,
     options: CastOptions,
 ) -> PolarsResult<Series> {
-    let chunks = cast_chunks(chunks, &dtype.to_physical(), options)?;
+    let chunks = match dtype {
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => {
+            let mut chunks = cast_chunks(chunks, dtype, options)?;
+            // @NOTE: We cannot cast here as that will lower the scale.
+            for chunk in chunks.iter_mut() {
+                *chunk = std::mem::take(
+                    chunk
+                        .as_any_mut()
+                        .downcast_mut::<PrimitiveArray<i128>>()
+                        .unwrap(),
+                )
+                .to(ArrowDataType::Int128)
+                .to_boxed();
+            }
+            chunks
+        },
+        _ => cast_chunks(chunks, &dtype.to_physical(), options)?,
+    };
+
     let out = Series::try_from((name, chunks))?;
     use DataType::*;
     let out = match dtype {
@@ -91,6 +110,8 @@ fn cast_impl_inner(
         Duration(tu) => out.into_duration(*tu),
         #[cfg(feature = "dtype-time")]
         Time => out.into_time(),
+        #[cfg(feature = "dtype-decimal")]
+        Decimal(precision, scale) => out.into_decimal(*precision, scale.unwrap_or(0))?,
         _ => out,
     };
 
@@ -181,7 +202,7 @@ where
                 };
                 let categories = rev_map.get_categories();
                 // Check if indices are in bounds
-                if let Some(m) = ca.max() {
+                if let Some(m) = ChunkAgg::max(&ca) {
                     if m >= categories.len() as u32 {
                         polars_bail!(OutOfBounds: "index {} is bigger than the number of categories {}",m,categories.len());
                     }
@@ -303,6 +324,7 @@ impl ChunkCast for StringChunked {
                             *precision,
                             *scale,
                         )
+                        .to(ArrowDataType::Int128)
                     });
                     Ok(Int128Chunked::from_chunk_iter(self.name().clone(), chunks)
                         .into_decimal_unchecked(*precision, *scale)
@@ -358,15 +380,14 @@ impl BinaryChunked {
     pub unsafe fn to_string_unchecked(&self) -> StringChunked {
         let chunks = self
             .downcast_iter()
-            .map(|arr| arr.to_utf8view_unchecked().boxed())
+            .map(|arr| unsafe { arr.to_utf8view_unchecked() }.boxed())
             .collect();
         let field = Arc::new(Field::new(self.name().clone(), DataType::String));
 
         let mut ca = StringChunked::new_with_compute_len(field, chunks);
 
-        use MetadataProperties as P;
-        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
-
+        use StatisticsFlags as F;
+        ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
         ca
     }
 }
@@ -381,9 +402,8 @@ impl StringChunked {
 
         let mut ca = BinaryChunked::new_with_compute_len(field, chunks);
 
-        use MetadataProperties as P;
-        ca.copy_metadata_cast(self, P::SORTED | P::FAST_EXPLODE_LIST);
-
+        use StatisticsFlags as F;
+        ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
         ca
     }
 }
@@ -457,7 +477,7 @@ impl ChunkCast for ListChunked {
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_list(self, child_type, options)?;
-                        // SAFETY: we just casted so the dtype matches.
+                        // SAFETY: we just cast so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
@@ -479,7 +499,7 @@ impl ChunkCast for ListChunked {
 
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(self.chunks(), &physical_type, options)?;
-                // SAFETY: we just casted so the dtype matches.
+                // SAFETY: we just cast so the dtype matches.
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(
@@ -530,7 +550,7 @@ impl ChunkCast for ArrayChunked {
                     _ => {
                         // ensure the inner logical type bubbles up
                         let (arr, child_type) = cast_fixed_size_list(self, child_type, options)?;
-                        // SAFETY: we just casted so the dtype matches.
+                        // SAFETY: we just cast so the dtype matches.
                         // we must take this path to correct for physical types.
                         unsafe {
                             Ok(Series::from_chunks_and_dtype_unchecked(
@@ -546,7 +566,7 @@ impl ChunkCast for ArrayChunked {
                 let physical_type = dtype.to_physical();
                 // cast to the physical type to avoid logical chunks.
                 let chunks = cast_chunks(self.chunks(), &physical_type, options)?;
-                // SAFETY: we just casted so the dtype matches.
+                // SAFETY: we just cast so the dtype matches.
                 // we must take this path to correct for physical types.
                 unsafe {
                     Ok(Series::from_chunks_and_dtype_unchecked(

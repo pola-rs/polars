@@ -125,7 +125,7 @@ impl GlobalLock {
         if let Ok(mut this) = self.inner.try_write() {
             if Arc::strong_count(&self.access_tracker.0) <= 2 {
                 return if this.state.take().is_some() {
-                    this.file.unlock().unwrap();
+                    FileExt::unlock(&this.file).unwrap();
                     Some(true)
                 } else {
                     Some(false)
@@ -156,7 +156,7 @@ impl GlobalLock {
             let mut this = self.inner.write().unwrap();
 
             if this.state.is_none() {
-                this.file.lock_shared().unwrap();
+                FileExt::lock_shared(&this.file).unwrap();
                 this.state = Some(LockedState::Shared);
             }
         }
@@ -200,7 +200,7 @@ impl GlobalLock {
             }
 
             if this.state.take().is_some() {
-                this.file.unlock().unwrap();
+                FileExt::unlock(&this.file).unwrap();
             }
 
             if this.file.try_lock_exclusive().is_ok() {

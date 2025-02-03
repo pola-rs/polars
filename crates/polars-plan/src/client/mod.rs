@@ -1,7 +1,7 @@
 mod check;
 
-use arrow::legacy::error::to_compute_err;
 use polars_core::error::PolarsResult;
+use polars_utils::pl_serialize;
 
 use crate::plans::DslPlan;
 
@@ -12,7 +12,7 @@ pub fn prepare_cloud_plan(dsl: DslPlan) -> PolarsResult<Vec<u8>> {
 
     // Serialize the plan.
     let mut writer = Vec::new();
-    ciborium::into_writer(&dsl, &mut writer).map_err(to_compute_err)?;
+    pl_serialize::SerializeOptions::default().serialize_into_writer(&mut writer, &dsl)?;
 
     Ok(writer)
 }

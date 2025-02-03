@@ -87,6 +87,14 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::NegativeSlice {
+            input,
+            offset,
+            length,
+        } => (
+            format!("slice\\noffset: {offset}, length: {length}"),
+            from_ref(input),
+        ),
         PhysNodeKind::Filter { input, predicate } => (
             format!("filter\\n{}", fmt_exprs(from_ref(predicate), expr_arena)),
             from_ref(input),
@@ -107,6 +115,8 @@ fn visualize_plan_rec(
             FileType::Csv(_) => ("csv-sink".to_string(), from_ref(input)),
             #[cfg(feature = "json")]
             FileType::Json(_) => ("json-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
         },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
@@ -214,8 +224,20 @@ fn visualize_plan_rec(
             left_on,
             right_on,
             args,
+            ..
+        }
+        | PhysNodeKind::EquiJoin {
+            input_left,
+            input_right,
+            left_on,
+            right_on,
+            args,
         } => {
-            let mut label = "in-memory-join".to_string();
+            let mut label = if matches!(phys_sm[node_key].kind, PhysNodeKind::EquiJoin { .. }) {
+                "equi-join".to_string()
+            } else {
+                "in-memory-join".to_string()
+            };
             write!(label, r"\nleft_on:\n{}", fmt_exprs(left_on, expr_arena)).unwrap();
             write!(label, r"\nright_on:\n{}", fmt_exprs(right_on, expr_arena)).unwrap();
             write!(
@@ -229,6 +251,15 @@ fn visualize_plan_rec(
             }
             (label, &[*input_left, *input_right][..])
         },
+        #[cfg(feature = "merge_sorted")]
+        PhysNodeKind::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => (
+            format!("merge sorted on '{key}'"),
+            &[*input_left, *input_right][..],
+        ),
     };
 
     out.push(format!(
@@ -237,10 +268,10 @@ fn visualize_plan_rec(
         label
     ));
     for input in inputs {
-        visualize_plan_rec(*input, phys_sm, expr_arena, visited, out);
+        visualize_plan_rec(input.node, phys_sm, expr_arena, visited, out);
         out.push(format!(
             "{} -> {};",
-            input.data().as_ffi(),
+            input.node.data().as_ffi(),
             node_key.data().as_ffi()
         ));
     }

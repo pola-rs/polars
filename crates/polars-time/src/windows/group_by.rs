@@ -1,10 +1,10 @@
 use arrow::legacy::time_zone::Tz;
 use arrow::trusted_len::TrustedLen;
-use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
+use rayon::prelude::*;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -613,6 +613,10 @@ pub fn group_by_values(
     tu: TimeUnit,
     tz: Option<Tz>,
 ) -> PolarsResult<GroupsSlice> {
+    if time.is_empty() {
+        return Ok(GroupsSlice::from(vec![]));
+    }
+
     let mut thread_offsets = _split_offsets(time.len(), POOL.current_num_threads());
     // there are duplicates in the splits, so we opt for a single partition
     prune_splits_on_duplicates(time, &mut thread_offsets);

@@ -1,4 +1,6 @@
-use arrow::temporal_conversions::{MILLISECONDS, SECONDS_IN_DAY};
+use arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
+use chrono::{Datelike, NaiveDate};
+use polars_core::utils::CustomIterTools;
 
 use super::*;
 
@@ -74,6 +76,30 @@ pub trait DateMethods: AsDate {
     }
 
     fn parse_from_str_slice(name: PlSmallStr, v: &[&str], fmt: &str) -> DateChunked;
+
+    /// Construct a date ChunkedArray from individual time components.
+    fn new_from_parts(
+        year: &Int32Chunked,
+        month: &Int8Chunked,
+        day: &Int8Chunked,
+        name: PlSmallStr,
+    ) -> PolarsResult<DateChunked> {
+        let mut ca: Int32Chunked = year
+            .into_iter()
+            .zip(month)
+            .zip(day)
+            .map(|((y, m), d)| {
+                if let (Some(y), Some(m), Some(d)) = (y, m, d) {
+                    NaiveDate::from_ymd_opt(y, m as u32, d as u32)
+                        .map(|t| t.num_days_from_ce() - EPOCH_DAYS_FROM_CE)
+                } else {
+                    None
+                }
+            })
+            .collect_trusted();
+        ca.rename(name);
+        Ok(ca.into_date())
+    }
 }
 
 impl DateMethods for DateChunked {

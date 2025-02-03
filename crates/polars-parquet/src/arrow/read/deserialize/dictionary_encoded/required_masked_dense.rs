@@ -2,14 +2,14 @@ use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices};
+use super::{oob_dict_idx, required_skip_whole_chunks, verify_dict_indices, IndexMapping};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 
 #[inline(never)]
-pub fn decode<B: AlignedBytes>(
+pub fn decode<B: AlignedBytes, D: IndexMapping<Output = B>>(
     mut values: HybridRleDecoder<'_>,
-    dict: &[B],
+    dict: D,
     mut filter: Bitmap,
     target: &mut Vec<B>,
 ) -> ParquetResult<()> {
@@ -64,7 +64,7 @@ pub fn decode<B: AlignedBytes>(
                 let num_chunk_rows = current_filter.set_bits();
 
                 if num_chunk_rows > 0 {
-                    let Some(&value) = dict.get(value as usize) else {
+                    let Some(value) = dict.get(value) else {
                         return Err(oob_dict_idx());
                     };
 
@@ -72,7 +72,7 @@ pub fn decode<B: AlignedBytes>(
                 }
             },
             HybridRleChunk::Bitpacked(mut decoder) => {
-                let size = decoder.len().min(filter.len());
+                let size = decoder.len();
                 let mut chunked = decoder.chunked();
 
                 let mut buffer_part_idx = 0;
@@ -82,7 +82,7 @@ pub fn decode<B: AlignedBytes>(
 
                 let current_filter;
 
-                (current_filter, filter) = filter.split_at(size);
+                (current_filter, filter) = filter.split_at(size - num_rows_to_skip);
 
                 let mut iter = |mut f: u64, len: usize| {
                     debug_assert!(len <= 64);
@@ -139,7 +139,7 @@ pub fn decode<B: AlignedBytes>(
                         //    dictionary following the original `dict.is_empty` check.
                         // 2. Each time we write to `values_buffer`, it is followed by a
                         //    `verify_dict_indices`.
-                        let value = *unsafe { dict.get_unchecked(idx as usize) };
+                        let value = unsafe { dict.get_unchecked(idx) };
                         unsafe { target_ptr.add(num_written).write(value) };
 
                         num_written += 1;
@@ -165,7 +165,6 @@ pub fn decode<B: AlignedBytes>(
                 }
 
                 let (f, fl) = f_iter.remainder();
-
                 iter(f, fl)?;
             },
         }

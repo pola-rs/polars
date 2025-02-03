@@ -87,7 +87,7 @@ pub trait Utf8JsonPathImpl: AsString {
             .take(number_of_rows.unwrap_or(ca.len()));
 
         polars_json::ndjson::infer_iter(values_iter)
-            .map(|d| DataType::from(&d))
+            .map(|d| DataType::from_arrow_dtype(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 
@@ -141,6 +141,8 @@ impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
+
     use super::*;
 
     #[test]
@@ -215,7 +217,7 @@ mod tests {
             .iter(),
         )
         .unwrap()
-        .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))
+        .with_outer_validity(Some(Bitmap::from_iter([false, true, true, false])))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 

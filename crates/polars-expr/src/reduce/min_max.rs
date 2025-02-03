@@ -190,10 +190,10 @@ impl Reducer for BinaryMinReducer {
     }
 
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        self.reduce_one(a, b.as_deref())
+        self.reduce_one(a, b.as_deref(), 0)
     }
 
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, _seq_id: u64) {
         match (a, b) {
             (_, None) => {},
             (l @ None, Some(r)) => *l = Some(r.to_owned()),
@@ -206,8 +206,8 @@ impl Reducer for BinaryMinReducer {
         }
     }
 
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &BinaryChunked) {
-        self.reduce_one(v, ca.min_binary())
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &BinaryChunked, _seq_id: u64) {
+        self.reduce_one(v, ca.min_binary(), 0)
     }
 
     fn finish(
@@ -238,11 +238,11 @@ impl Reducer for BinaryMaxReducer {
 
     #[inline(always)]
     fn combine(&self, a: &mut Self::Value, b: &Self::Value) {
-        self.reduce_one(a, b.as_deref())
+        self.reduce_one(a, b.as_deref(), 0)
     }
 
     #[inline(always)]
-    fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>) {
+    fn reduce_one(&self, a: &mut Self::Value, b: Option<&[u8]>, _seq_id: u64) {
         match (a, b) {
             (_, None) => {},
             (l @ None, Some(r)) => *l = Some(r.to_owned()),
@@ -256,8 +256,8 @@ impl Reducer for BinaryMaxReducer {
     }
 
     #[inline(always)]
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &BinaryChunked) {
-        self.reduce_one(v, ca.max_binary())
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &BinaryChunked, _seq_id: u64) {
+        self.reduce_one(v, ca.max_binary(), 0)
     }
 
     #[inline(always)]
@@ -294,7 +294,12 @@ impl GroupedReduction for BoolMinGroupedReduction {
         self.mask.resize(num_groups as usize, false);
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -312,6 +317,7 @@ impl GroupedReduction for BoolMinGroupedReduction {
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
@@ -430,7 +436,12 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         self.mask.resize(num_groups as usize, false);
     }
 
-    fn update_group(&mut self, values: &Series, group_idx: IdxSize) -> PolarsResult<()> {
+    fn update_group(
+        &mut self,
+        values: &Series,
+        group_idx: IdxSize,
+        _seq_id: u64,
+    ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &DataType::Boolean);
@@ -448,6 +459,7 @@ impl GroupedReduction for BoolMaxGroupedReduction {
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
+        _seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.

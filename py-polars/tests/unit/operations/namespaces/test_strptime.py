@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -16,11 +17,7 @@ from polars.exceptions import ChronoFormatWarning, ComputeError, InvalidOperatio
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import PolarsTemporalType, TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_str_strptime() -> None:
@@ -148,6 +145,22 @@ def test_to_date_non_exact_strptime() -> None:
 )
 def test_to_date_all_inferred_date_patterns(time_string: str, expected: date) -> None:
     result = pl.Series([time_string]).str.to_date()
+    assert result[0] == expected
+
+
+@pytest.mark.parametrize(
+    ("time_string", "expected"),
+    [
+        ("2024-12-04 09:08:00", datetime(2024, 12, 4, 9, 8, 0)),
+        ("2024-12-4 9:8:0", datetime(2024, 12, 4, 9, 8, 0)),
+        ("2024/12/04 9:8", datetime(2024, 12, 4, 9, 8, 0)),
+        ("4/12/2024 9:8", datetime(2024, 12, 4, 9, 8, 0)),
+    ],
+)
+def test_to_datetime_infer_missing_digit_in_time_16092(
+    time_string: str, expected: datetime
+) -> None:
+    result = pl.Series([time_string]).str.to_datetime()
     assert result[0] == expected
 
 

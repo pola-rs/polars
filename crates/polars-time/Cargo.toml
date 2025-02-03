@@ -16,12 +16,14 @@ polars-error = { workspace = true }
 polars-ops = { workspace = true }
 polars-utils = { workspace = true }
 
-atoi = { workspace = true }
+atoi_simd = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 now = { version = "0.1" }
+num-traits = { workspace = true }
 once_cell = { workspace = true }
+rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, optional = true }
 strum_macros = { workspace = true }
@@ -30,6 +32,11 @@ strum_macros = { workspace = true }
 polars-ops = { workspace = true, features = ["abs"] }
 
 [features]
+dtype-i8 = ["polars-core/dtype-i8"]
+dtype-i16 = ["polars-core/dtype-i16"]
+dtype-u8 = ["polars-core/dtype-u8"]
+dtype-u16 = ["polars-core/dtype-u16"]
+dtype-i128 = ["polars-core/dtype-i128"]
 dtype-date = ["polars-core/dtype-date", "temporal"]
 dtype-datetime = ["polars-core/dtype-datetime", "temporal"]
 dtype-time = ["polars-core/dtype-time", "temporal"]

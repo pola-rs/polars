@@ -63,10 +63,13 @@ fn deserialize_column_chunk<'de, D>(deserializer: D) -> std::result::Result<Colu
 where
     D: Deserializer<'de>,
 {
-    let buf = Vec::<u8>::deserialize(deserializer)?;
-    let mut cursor = Cursor::new(&buf[..]);
-    let mut protocol = TCompactInputProtocol::new(&mut cursor, usize::MAX);
-    ColumnChunk::read_from_in_protocol(&mut protocol).map_err(D::Error::custom)
+    use polars_utils::pl_serialize::deserialize_map_bytes;
+
+    deserialize_map_bytes(deserializer, &mut |b| {
+        let mut b = b.as_ref();
+        let mut protocol = TCompactInputProtocol::new(&mut b, usize::MAX);
+        ColumnChunk::read_from_in_protocol(&mut protocol).map_err(D::Error::custom)
+    })?
 }
 
 // Represents common operations for a column chunk.

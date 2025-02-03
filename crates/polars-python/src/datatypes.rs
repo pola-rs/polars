@@ -37,6 +37,7 @@ pub(crate) enum PyDataType {
     Decimal(Option<usize>, usize),
     Array(usize),
     Enum(Utf8ViewArray),
+    Int128,
 }
 
 impl From<&DataType> for PyDataType {
@@ -47,6 +48,7 @@ impl From<&DataType> for PyDataType {
             DataType::Int16 => Int16,
             DataType::Int32 => Int32,
             DataType::Int64 => Int64,
+            DataType::Int128 => Int128,
             DataType::UInt8 => UInt8,
             DataType::UInt16 => UInt16,
             DataType::UInt32 => UInt32,
@@ -110,6 +112,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
             PyDataType::Array(width) => Array(DataType::Null.into(), width),
+            PyDataType::Int128 => Int128,
         }
     }
 }

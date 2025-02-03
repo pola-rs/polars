@@ -3,7 +3,6 @@ from __future__ import annotations
 import gzip
 import io
 import json
-import typing
 import zlib
 from collections import OrderedDict
 from decimal import Decimal as D
@@ -15,6 +14,7 @@ import zstandard
 if TYPE_CHECKING:
     from pathlib import Path
 
+import orjson
 import pytest
 
 import polars as pl
@@ -70,7 +70,7 @@ def test_write_json_decimal() -> None:
 def test_json_infer_schema_length_11148() -> None:
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
     with pytest.raises(
-        pl.exceptions.ComputeError, match="extra key in struct data: col2"
+        pl.exceptions.ComputeError, match="extra field in struct data: col2"
     ):
         pl.read_json(json.dumps(response).encode(), infer_schema_length=2)
 
@@ -311,9 +311,8 @@ def test_ndjson_null_inference_13183() -> None:
 
 
 @pytest.mark.write_disk
-@typing.no_type_check
 def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
-    # this shouldn't be passed, but still we test if we can handle it gracefully
+    # This shouldn't be passed, but still we test if we can handle it gracefully
     df = pl.DataFrame(
         {
             "x": [1, 2, 3],
@@ -322,8 +321,10 @@ def test_json_wrong_input_handle_textio(tmp_path: Path) -> None:
     )
     file_path = tmp_path / "test.ndjson"
     df.write_ndjson(file_path)
-    with open(file_path) as f:  # noqa: PTH123
-        assert_frame_equal(pl.read_ndjson(f), df)
+
+    with file_path.open() as f:
+        result = pl.read_ndjson(f)
+        assert_frame_equal(result, df)
 
 
 def test_json_normalize() -> None:
@@ -364,7 +365,17 @@ def test_json_normalize() -> None:
             "fitness": {"height": 130, "weight": 60},
         },
     ]
-    assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
+    assert pl.json_normalize(data, max_level=1, separator=":").to_dict(
+        as_series=False,
+    ) == {
+        "id": [1, None, 2],
+        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
+        "fitness:height": [130, 130, 130],
+        "fitness:weight": [60, 60, 60],
+    }
+    assert pl.json_normalize(data, max_level=0).to_dict(
+        as_series=False,
+    ) == {
         "id": [1, None, 2],
         "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
         "fitness": [
@@ -373,11 +384,16 @@ def test_json_normalize() -> None:
             '{"height": 130, "weight": 60}',
         ],
     }
-    assert pl.json_normalize(data, max_level=1).to_dict(as_series=False) == {
+    assert pl.json_normalize(data, max_level=0, encoder=orjson.dumps).to_dict(
+        as_series=False,
+    ) == {
         "id": [1, None, 2],
         "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
-        "fitness.height": [130, 130, 130],
-        "fitness.weight": [60, 60, 60],
+        "fitness": [
+            b'{"height":130,"weight":60}',
+            b'{"height":130,"weight":60}',
+            b'{"height":130,"weight":60}',
+        ],
     }
 
 
@@ -471,7 +487,7 @@ def test_read_json_raise_on_data_type_mismatch() -> None:
 
 
 def test_read_json_struct_schema() -> None:
-    with pytest.raises(ComputeError, match="extra key in struct data: b"):
+    with pytest.raises(ComputeError, match="extra field in struct data: b"):
         pl.read_json(
             b"""\
 [

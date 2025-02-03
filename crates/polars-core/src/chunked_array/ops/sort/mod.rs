@@ -10,17 +10,16 @@ mod categorical;
 
 use std::cmp::Ordering;
 
+pub(crate) use arg_sort::arg_sort_row_fmt;
 pub(crate) use arg_sort_multiple::argsort_multiple_row_fmt;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::buffer::Buffer;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
-use crate::chunked_array::ops::row_encode::{
-    _get_rows_encoded_ca, convert_series_for_row_encoding,
-};
+use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
@@ -114,7 +113,7 @@ where
 }
 
 fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
-    let mut validity = MutableBitmap::with_capacity(len);
+    let mut validity = BitmapBuilder::with_capacity(len);
     if nulls_last {
         validity.extend_constant(len - null_count, true);
         validity.extend_constant(null_count, false);
@@ -122,7 +121,7 @@ fn create_validity(len: usize, null_count: usize, nulls_last: bool) -> Bitmap {
         validity.extend_constant(null_count, false);
         validity.extend_constant(len - null_count, true);
     }
-    validity.into()
+    validity.freeze()
 }
 
 macro_rules! sort_with_fast_path {
@@ -155,6 +154,33 @@ macro_rules! sort_with_fast_path {
         };
 
 
+    }}
+}
+
+macro_rules! arg_sort_fast_path {
+    ($ca:ident,  $options:expr) => {{
+        // if already sorted in required order we can just return 0..len
+        if $options.limit.is_none() &&
+        ($options.descending && $ca.is_sorted_descending_flag() || ($ca.is_sorted_ascending_flag() && !$options.descending)) {
+            // there are nulls
+            if $ca.null_count() > 0 {
+                // if the nulls are already last we can return 0..len
+                if ($options.nulls_last && $ca.get($ca.len() - 1).is_none() ) ||
+                // if the nulls are already first we can return 0..len
+                (! $options.nulls_last && $ca.get(0).is_none())
+                {
+                   return ChunkedArray::with_chunk($ca.name().clone(),
+                    IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize)).collect::<Vec<IdxSize>>()), None));
+                }
+                // nulls are not at the right place
+                // continue w/ sorting
+                // TODO: we can optimize here and just put the null at the correct place
+            } else {
+                // no nulls
+                return ChunkedArray::with_chunk($ca.name().clone(),
+                IdxArr::from_data_default(Buffer::from((0..($ca.len() as IdxSize )).collect::<Vec<IdxSize>>()), None));
+            }
+        }
     }}
 }
 
@@ -224,16 +250,31 @@ where
     T: PolarsNumericType,
 {
     options.multithreaded &= POOL.current_num_threads() > 1;
+    arg_sort_fast_path!(ca, options);
     if ca.null_count() == 0 {
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.values().as_slice().iter().copied());
-        arg_sort::arg_sort_no_nulls(ca.name().clone(), iter, options, ca.len())
+        arg_sort::arg_sort_no_nulls(
+            ca.name().clone(),
+            iter,
+            options,
+            ca.len(),
+            ca.is_sorted_flag(),
+        )
     } else {
         let iter = ca
             .downcast_iter()
             .map(|arr| arr.iter().map(|opt| opt.copied()));
-        arg_sort::arg_sort(ca.name().clone(), iter, options, ca.null_count(), ca.len())
+        arg_sort::arg_sort(
+            ca.name().clone(),
+            iter,
+            options,
+            ca.null_count(),
+            ca.len(),
+            ca.is_sorted_flag(),
+            ca.get(0).is_none(),
+        )
     }
 }
 
@@ -412,12 +453,14 @@ impl ChunkSort<BinaryType> for BinaryChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_fast_path!(self, options);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
+                self.is_sorted_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -426,6 +469,8 @@ impl ChunkSort<BinaryType> for BinaryChunked {
                 options,
                 self.null_count(),
                 self.len(),
+                self.is_sorted_flag(),
+                self.get(0).is_none(),
             )
         }
     }
@@ -643,7 +688,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
         if self.null_count() == 0 {
             let len = self.len();
             let n_set = self.sum().unwrap() as usize;
-            let mut bitmap = MutableBitmap::with_capacity(len);
+            let mut bitmap = BitmapBuilder::with_capacity(len);
             let (first, second, n_set) = if options.descending {
                 (true, false, len - n_set)
             } else {
@@ -651,7 +696,7 @@ impl ChunkSort<BooleanType> for BooleanChunked {
             };
             bitmap.extend_constant(len - n_set, first);
             bitmap.extend_constant(n_set, second);
-            let arr = BooleanArray::from_data_default(bitmap.into(), None);
+            let arr = BooleanArray::from_data_default(bitmap.freeze(), None);
 
             return unsafe { self.with_chunks(vec![Box::new(arr) as ArrayRef]) };
         }
@@ -680,12 +725,14 @@ impl ChunkSort<BooleanType> for BooleanChunked {
     }
 
     fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        arg_sort_fast_path!(self, options);
         if self.null_count() == 0 {
             arg_sort::arg_sort_no_nulls(
                 self.name().clone(),
                 self.downcast_iter().map(|arr| arr.values_iter()),
                 options,
                 self.len(),
+                self.is_sorted_flag(),
             )
         } else {
             arg_sort::arg_sort(
@@ -694,6 +741,8 @@ impl ChunkSort<BooleanType> for BooleanChunked {
                 options,
                 self.null_count(),
                 self.len(),
+                self.is_sorted_flag(),
+                self.get(0).is_none(),
             )
         }
     }
@@ -729,12 +778,7 @@ pub(crate) fn prepare_arg_sort(
 ) -> PolarsResult<(Column, Vec<Column>)> {
     let n_cols = columns.len();
 
-    let mut columns = columns
-        .iter()
-        .map(Column::as_materialized_series)
-        .map(convert_series_for_row_encoding)
-        .map(|s| s.map(Column::from))
-        .collect::<PolarsResult<Vec<_>>>()?;
+    let mut columns = columns;
 
     _broadcast_bools(n_cols, &mut sort_options.descending);
     _broadcast_bools(n_cols, &mut sort_options.nulls_last);
@@ -746,7 +790,6 @@ pub(crate) fn prepare_arg_sort(
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-
     #[test]
     fn test_arg_sort() {
         let a = Int32Chunked::new(

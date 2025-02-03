@@ -42,9 +42,7 @@ pub struct SortOptions {
     /// Default `false`.
     pub maintain_order: bool,
     /// Limit a sort output, this is for optimization purposes and might be ignored.
-    /// - Len
-    /// - Descending
-    pub limit: Option<(IdxSize, bool)>,
+    pub limit: Option<IdxSize>,
 }
 
 /// Sort options for multi-series sorting.
@@ -101,9 +99,7 @@ pub struct SortMultipleOptions {
     /// Whether maintain the order of equal elements. Default `false`.
     pub maintain_order: bool,
     /// Limit a sort output, this is for optimization purposes and might be ignored.
-    /// - Len
-    /// - Descending
-    pub limit: Option<(IdxSize, bool)>,
+    pub limit: Option<IdxSize>,
 }
 
 impl Default for SortOptions {
@@ -149,7 +145,7 @@ impl SortMultipleOptions {
         self
     }
 
-    /// Implement order for all columns. Default `false`.
+    /// Sort order for all columns. Default `false` which is ascending.
     pub fn with_order_descending(mut self, descending: bool) -> Self {
         self.descending = vec![descending];
         self

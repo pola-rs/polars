@@ -11,7 +11,7 @@
 //! * [`ListArray`] and [`MutableListArray`], an array of arrays (e.g. `[[1, 2], None, [], [None]]`)
 //! * [`StructArray`] and [`MutableStructArray`], an array of arrays identified by a string (e.g. `{"a": [1, 2], "b": [true, false]}`)
 //!
-//! All immutable arrays implement the trait object [`Array`] and that can be downcasted
+//! All immutable arrays implement the trait object [`Array`] and that can be downcast
 //! to a concrete struct based on [`PhysicalType`](crate::datatypes::PhysicalType) available from [`Array::dtype`].
 //! All immutable arrays are backed by [`Buffer`](crate::buffer::Buffer) and thus cloning and slicing them is `O(1)`.
 //!
@@ -58,7 +58,7 @@ pub trait Splitable: Sized {
 }
 
 /// A trait representing an immutable Arrow array. Arrow arrays are trait objects
-/// that are infallibly downcasted to concrete types according to the [`Array::dtype`].
+/// that are infallibly downcast to concrete types according to the [`Array::dtype`].
 pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
     /// Converts itself to a reference of [`Any`], which enables downcasting to concrete types.
     fn as_any(&self) -> &dyn Any;
@@ -199,6 +199,23 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
 }
 
 dyn_clone::clone_trait_object!(Array);
+
+pub trait IntoBoxedArray {
+    fn into_boxed(self) -> Box<dyn Array>;
+}
+
+impl<A: Array> IntoBoxedArray for A {
+    #[inline(always)]
+    fn into_boxed(self) -> Box<dyn Array> {
+        Box::new(self) as _
+    }
+}
+impl IntoBoxedArray for Box<dyn Array> {
+    #[inline(always)]
+    fn into_boxed(self) -> Box<dyn Array> {
+        self
+    }
+}
 
 /// A trait describing a mutable array; i.e. an array whose values can be changed.
 ///
@@ -735,7 +752,7 @@ pub type ArrayRef = Box<dyn Array>;
 impl Splitable for Option<Bitmap> {
     #[inline(always)]
     fn check_bound(&self, offset: usize) -> bool {
-        self.as_ref().map_or(true, |v| offset <= v.len())
+        self.as_ref().is_none_or(|v| offset <= v.len())
     }
 
     unsafe fn _split_at_unchecked(&self, offset: usize) -> (Self, Self) {

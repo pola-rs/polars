@@ -244,8 +244,8 @@ def test_collapse_joins() -> None:
 
     dont_mix = cross.filter(pl.col.x + pl.col.a != 0)
     e = dont_mix.explain()
-    assert "CROSS JOIN" in e
-    assert "FILTER" in e
+    assert "NESTED LOOP JOIN" in e
+    assert "FILTER" not in e
     assert_frame_equal(
         dont_mix.collect(collapse_joins=False),
         dont_mix.collect(),
@@ -254,7 +254,7 @@ def test_collapse_joins() -> None:
 
     no_literals = cross.filter(pl.col.x == 2)
     e = no_literals.explain()
-    assert "CROSS JOIN" in e
+    assert "NESTED LOOP JOIN" in e
     assert_frame_equal(
         no_literals.collect(collapse_joins=False),
         no_literals.collect(),
@@ -264,6 +264,7 @@ def test_collapse_joins() -> None:
     iejoin = cross.filter(pl.col.x >= pl.col.a)
     e = iejoin.explain()
     assert "IEJOIN" in e
+    assert "NESTED LOOP JOIN" not in e
     assert "CROSS JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
@@ -276,6 +277,7 @@ def test_collapse_joins() -> None:
     e = iejoin.explain()
     assert "IEJOIN" in e
     assert "CROSS JOIN" not in e
+    assert "NESTED LOOP JOIN" not in e
     assert "FILTER" not in e
     assert_frame_equal(
         iejoin.collect(collapse_joins=False), iejoin.collect(), check_row_order=False
@@ -327,3 +329,45 @@ def test_collapse_joins_combinations() -> None:
                     print()
 
                     raise
+
+
+def test_select_after_join_where_20831() -> None:
+    left = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 1, None],
+            "b": [1, 2, 3, 4, 5],
+            "c": [2, 3, 4, 5, 6],
+        }
+    )
+
+    right = pl.LazyFrame(
+        {
+            "a": [1, 4, 3, 7, None, None, 1],
+            "c": [2, 3, 4, 5, 6, 7, 8],
+            "d": [6, None, 7, 8, -1, 2, 4],
+        }
+    )
+
+    q = left.join_where(
+        right, pl.col("b") * 2 <= pl.col("a_right"), pl.col("a") < pl.col("c_right")
+    )
+
+    assert_frame_equal(
+        q.select("d").collect().sort("d"),
+        pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
+    )
+
+    assert q.select(pl.len()).collect().item() == 6
+
+    q = (
+        left.join(right, how="cross")
+        .filter(pl.col("b") * 2 <= pl.col("a_right"))
+        .filter(pl.col("a") < pl.col("c_right"))
+    )
+
+    assert_frame_equal(
+        q.select("d").collect().sort("d"),
+        pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
+    )
+
+    assert q.select(pl.len()).collect().item() == 6

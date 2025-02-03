@@ -44,6 +44,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
         DataType::Int16 => downcast_and_pack!(Int16Array, Int16),
         DataType::Int32 => downcast_and_pack!(Int32Array, Int32),
         DataType::Int64 => downcast_and_pack!(Int64Array, Int64),
+        DataType::Int128 => downcast_and_pack!(Int128Array, Int128),
         DataType::Float32 => downcast_and_pack!(Float32Array, Float32),
         DataType::Float64 => downcast_and_pack!(Float64Array, Float64),
         DataType::List(dt) => {
@@ -57,7 +58,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                     vec![v],
                     &dt.to_physical(),
                 )
-                .cast_unchecked(dt)
+                .from_physical_unchecked(dt)
                 .unwrap();
                 AnyValue::List(s)
             }
@@ -74,7 +75,7 @@ pub(crate) unsafe fn arr_to_any_value<'a>(
                     vec![v],
                     &dt.to_physical(),
                 )
-                .cast_unchecked(dt)
+                .from_physical_unchecked(dt)
                 .unwrap();
                 AnyValue::Array(s, *width)
             }

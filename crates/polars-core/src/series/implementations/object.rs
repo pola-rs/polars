@@ -1,7 +1,8 @@
 use std::any::Any;
 use std::borrow::Cow;
 
-use super::{BitRepr, MetadataFlags};
+use self::compare_inner::TotalOrdInner;
+use super::{BitRepr, StatisticsFlags};
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::chunked_array::ops::compare_inner::{IntoTotalEqInner, TotalEqInner};
@@ -40,18 +41,21 @@ where
         self.0.dtype()
     }
 
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        invalid_operation_panic!(into_total_ord_inner, self)
     }
 
     fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -69,8 +73,8 @@ where
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
     #[cfg(feature = "zip_with")]
     fn zip_with_same_type(&self, mask: &BooleanChunked, other: &Series) -> PolarsResult<Series> {
@@ -116,11 +120,12 @@ where
     }
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
-        if self.dtype() != other.dtype() {
-            polars_bail!(append);
-        }
-        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())?;
-        Ok(())
+        polars_ensure!(self.dtype() == other.dtype(), append);
+        ObjectChunked::append(&mut self.0, other.as_ref().as_ref())
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.dtype() == other.dtype(), append);
+        ObjectChunked::append_owned(&mut self.0, other.take_inner())
     }
 
     fn extend(&mut self, _other: &Series) -> PolarsResult<()> {
@@ -232,6 +237,14 @@ where
 
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

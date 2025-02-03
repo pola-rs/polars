@@ -1,5 +1,7 @@
 //! Comparison operations on Series.
 
+use polars_error::feature_gated;
+
 use crate::prelude::*;
 use crate::series::arithmetic::coerce_lhs_rhs;
 use crate::series::nulls::replace_non_null;
@@ -47,8 +49,11 @@ macro_rules! impl_eq_compare {
             _ => (),
         };
 
-        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs).map_err(|_| polars_err!(SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
-        lhs.name(), lhs.dtype(), rhs.name(), rhs.dtype()))?;
+        let (lhs, rhs) = coerce_lhs_rhs(lhs, rhs)
+            .map_err(|_| polars_err!(
+                    SchemaMismatch: "could not evaluate comparison between series '{}' of dtype: {} and series '{}' of dtype: {}",
+                    lhs.name(), lhs.dtype(), rhs.name(), rhs.dtype()
+            ))?;
         let lhs = lhs.to_physical_repr();
         let rhs = rhs.to_physical_repr();
         let mut out = match lhs.dtype() {
@@ -56,14 +61,15 @@ macro_rules! impl_eq_compare {
             Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             String => lhs.str().unwrap().$method(rhs.str().unwrap()),
             Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
-            UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
-            UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),
+            UInt8 => feature_gated!("dtype-u8", lhs.u8().unwrap().$method(rhs.u8().unwrap())),
+            UInt16 => feature_gated!("dtype-u16", lhs.u16().unwrap().$method(rhs.u16().unwrap())),
             UInt32 => lhs.u32().unwrap().$method(rhs.u32().unwrap()),
             UInt64 => lhs.u64().unwrap().$method(rhs.u64().unwrap()),
-            Int8 => lhs.i8().unwrap().$method(rhs.i8().unwrap()),
-            Int16 => lhs.i16().unwrap().$method(rhs.i16().unwrap()),
+            Int8 => feature_gated!("dtype-i8", lhs.i8().unwrap().$method(rhs.i8().unwrap())),
+            Int16 => feature_gated!("dtype-i16", lhs.i16().unwrap().$method(rhs.i16().unwrap())),
             Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
             Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
+            Int128 => feature_gated!("dtype-i128", lhs.i128().unwrap().$method(rhs.i128().unwrap())),
             Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             List(_) => lhs.list().unwrap().$method(rhs.list().unwrap()),
@@ -71,16 +77,6 @@ macro_rules! impl_eq_compare {
             Array(_, _) => lhs.array().unwrap().$method(rhs.array().unwrap()),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => lhs.struct_().unwrap().$method(rhs.struct_().unwrap()),
-            #[cfg(feature = "dtype-decimal")]
-            Decimal(_, s1) => {
-                let DataType::Decimal(_, s2) = rhs.dtype() else {
-                    unreachable!()
-                };
-                let scale = s1.max(s2).unwrap();
-                let lhs = lhs.decimal().unwrap().to_scale(scale).unwrap();
-                let rhs = rhs.decimal().unwrap().to_scale(scale).unwrap();
-                lhs.0.$method(&rhs.0)
-            },
 
             dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };
@@ -160,14 +156,15 @@ macro_rules! impl_ineq_compare {
             Boolean => lhs.bool().unwrap().$method(rhs.bool().unwrap()),
             String => lhs.str().unwrap().$method(rhs.str().unwrap()),
             Binary => lhs.binary().unwrap().$method(rhs.binary().unwrap()),
-            UInt8 => lhs.u8().unwrap().$method(rhs.u8().unwrap()),
-            UInt16 => lhs.u16().unwrap().$method(rhs.u16().unwrap()),
+            UInt8 => feature_gated!("dtype-u8", lhs.u8().unwrap().$method(rhs.u8().unwrap())),
+            UInt16 => feature_gated!("dtype-u16", lhs.u16().unwrap().$method(rhs.u16().unwrap())),
             UInt32 => lhs.u32().unwrap().$method(rhs.u32().unwrap()),
             UInt64 => lhs.u64().unwrap().$method(rhs.u64().unwrap()),
-            Int8 => lhs.i8().unwrap().$method(rhs.i8().unwrap()),
-            Int16 => lhs.i16().unwrap().$method(rhs.i16().unwrap()),
+            Int8 => feature_gated!("dtype-i8", lhs.i8().unwrap().$method(rhs.i8().unwrap())),
+            Int16 => feature_gated!("dtype-i16", lhs.i16().unwrap().$method(rhs.i16().unwrap())),
             Int32 => lhs.i32().unwrap().$method(rhs.i32().unwrap()),
             Int64 => lhs.i64().unwrap().$method(rhs.i64().unwrap()),
+            Int128 => feature_gated!("dtype-i128", lhs.i128().unwrap().$method(rhs.i128().unwrap())),
             Float32 => lhs.f32().unwrap().$method(rhs.f32().unwrap()),
             Float64 => lhs.f64().unwrap().$method(rhs.f64().unwrap()),
             List(_) => bail_invalid_ineq!(lhs, rhs, $op),
@@ -175,16 +172,6 @@ macro_rules! impl_ineq_compare {
             Array(_, _) => bail_invalid_ineq!(lhs, rhs, $op),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => bail_invalid_ineq!(lhs, rhs, $op),
-            #[cfg(feature = "dtype-decimal")]
-            Decimal(_, s1) => {
-                let DataType::Decimal(_, s2) = rhs.dtype() else {
-                    unreachable!()
-                };
-                let scale = s1.max(s2).unwrap();
-                let lhs = lhs.decimal().unwrap().to_scale(scale).unwrap();
-                let rhs = rhs.decimal().unwrap().to_scale(scale).unwrap();
-                lhs.0.$method(&rhs.0)
-            },
 
             dt => polars_bail!(InvalidOperation: "could not apply comparison on series of dtype '{}; operand names: '{}', '{}'", dt, lhs.name(), rhs.name()),
         };
@@ -197,7 +184,7 @@ fn validate_types(left: &DataType, right: &DataType) -> PolarsResult<()> {
     use DataType::*;
 
     match (left, right) {
-        (String, dt) | (dt, String) if dt.is_numeric() => {
+        (String, dt) | (dt, String) if dt.is_primitive_numeric() => {
             polars_bail!(ComputeError: "cannot compare string with numeric type ({})", dt)
         },
         #[cfg(feature = "dtype-categorical")]

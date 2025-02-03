@@ -40,8 +40,6 @@ impl Int64Chunked {
             })
             .collect::<Vec<Box<dyn Array>>>();
 
-        let null_count = null_count as IdxSize;
-
         debug_assert!(null_count >= self.null_count);
 
         // @TODO: We throw away metadata here. That is mostly not needed.
@@ -94,7 +92,7 @@ impl LogicalType for TimeChunked {
                     self.dtype(), dtype
                 )
             },
-            dt if dt.is_numeric() => self.0.cast_with_options(dtype, cast_options),
+            dt if dt.is_primitive_numeric() => self.0.cast_with_options(dtype, cast_options),
             _ => {
                 polars_bail!(
                     InvalidOperation:

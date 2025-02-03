@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 
@@ -5,6 +6,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
 
@@ -159,7 +161,13 @@ def test_is_in_join_blocked() -> None:
     lf2 = pl.LazyFrame(
         {"values22": [1, 2, None, 4, 5, 6], "values20": [1, 2, 3, 4, 5, 6]}
     )
-    lf_all = lf2.join(lf1, left_on="values20", right_on="values0", how="left")
+    lf_all = lf2.join(
+        lf1,
+        left_on="values20",
+        right_on="values0",
+        how="left",
+        maintain_order="right_left",
+    )
 
     result = lf_all.filter(~pl.col("Groups").is_in(["A", "B", "F"]))
 
@@ -194,7 +202,9 @@ def test_no_predicate_push_down_with_cast_and_alias_11883() -> None:
         .filter(pl.col("b") == 1)
         .filter((pl.col("b") >= 1) & (pl.col("b") < 1))
     )
-    assert "SELECTION: None" in out.explain(predicate_pushdown=True)
+    assert (
+        re.search(r"FILTER.*FROM\n\s*DF", out.explain(predicate_pushdown=True)) is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -268,7 +278,7 @@ def test_literal_series_expr_predicate_pushdown() -> None:
         .filter(pl.col("x").is_in([0, 1]))
     )
 
-    assert "FILTER" not in lf.explain()
+    assert re.search(r"FILTER .* FROM\n\s*DF", lf.explain()) is not None
     assert lf.collect().to_series().to_list() == [1]
 
 
@@ -278,8 +288,9 @@ def test_multi_alias_pushdown() -> None:
     actual = lf.with_columns(m="a", n="b").filter((pl.col("m") + pl.col("n")) < 2)
     plan = actual.explain()
 
-    assert "FILTER" not in plan
-    assert r'SELECTION: [([(col("a")) + (col("b"))]) < (2)]' in plan
+    print(plan)
+    assert plan.count("FILTER") == 1
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
 
     with pytest.warns(UserWarning, match="Comparisons with None always result in null"):
         # confirm we aren't using `eq_missing` in the query plan (denoted as " ==v ")
@@ -304,8 +315,12 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     ).filter(pl.col("key") == 5)
 
     plan = actual.explain()
-    assert "FILTER" not in plan
-    assert r'SELECTION: [(col("key")) == (5)]' in plan
+
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
+    assert plan.count("FILTER") == 1
 
     actual = (
         lf.with_columns(
@@ -317,13 +332,8 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
 
     plan = actual.explain()
-    assert "FILTER" not in plan
-    assert (
-        # hashbrown::HashMap is unordered.
-        r'SELECTION: [([(col("key")) == (5)]) & ([(col("key_2")) == (5)])]' in plan
-        or r'SELECTION: [([(col("key_2")) == (5)]) & ([(col("key")) == (5)])]' in plan
-    )
-
+    assert plan.count("FILTER") == 1
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
     actual = (
         lf.with_columns(
             (pl.col("value") * 2).over("key", "key_2").alias("value_2"),
@@ -334,8 +344,11 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
 
     plan = actual.explain()
-    assert "FILTER" in plan
-    assert r'SELECTION: [(col("key")) == (5)]' in plan
+    assert plan.count("FILTER") == 2
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
 
     actual = (
         lf.with_columns(
@@ -346,8 +359,11 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
         .filter(pl.col("key_2") == 5)
     )
     plan = actual.explain()
-    assert "FILTER" in plan
-    assert r'SELECTION: [(col("key")) == (5)]' in plan
+    assert plan.count("FILTER") == 2
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(5\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
 
     # Should block when .over() contains groups-sensitive expr
     actual = (
@@ -360,9 +376,9 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     )
 
     plan = actual.explain()
+    assert plan.count("FILTER") == 1
     assert "FILTER" in plan
-    assert "SELECTION: None" in plan
-
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is None
     # Ensure the implementation doesn't accidentally push a window expression
     # that only refers to the common window keys.
     actual = lf.with_columns(
@@ -370,14 +386,24 @@ def test_predicate_pushdown_with_window_projections_12637() -> None:
     ).filter(pl.len().over("key") == 1)
 
     plan = actual.explain()
-    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
-    assert "SELECTION: None" in plan
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is None
+    assert plan.count("FILTER") == 1
 
     # Test window in filter
     actual = lf.filter(pl.len().over("key") == 1).filter(pl.col("key") == 1)
     plan = actual.explain()
-    assert r'FILTER [(len().over([col("key")])) == (1)]' in plan
-    assert r'SELECTION: [(col("key")) == (1)]' in plan
+    assert plan.count("FILTER") == 2
+    assert (
+        re.search(
+            r'FILTER \[\(len\(\).over\(\[col\("key"\)\]\)\) == \(1\)\]\s*FROM\n\s*FILTER',
+            plan,
+        )
+        is not None
+    )
+    assert (
+        re.search(r'FILTER \[\(col\("key"\)\) == \(1\)\]\s*FROM\n\s*DF', plan)
+        is not None
+    )
 
 
 def test_predicate_reduction() -> None:
@@ -497,7 +523,7 @@ def test_predicate_push_down_with_alias_15442() -> None:
     assert output.to_dict(as_series=False) == {"a": [1]}
 
 
-def test_predicate_push_down_list_gather_17492() -> None:
+def test_predicate_slice_pushdown_list_gather_17492() -> None:
     lf = pl.LazyFrame({"val": [[1], [1, 1]], "len": [1, 2]})
 
     assert_frame_equal(
@@ -506,11 +532,20 @@ def test_predicate_push_down_list_gather_17492() -> None:
     )
 
     # null_on_oob=True can pass
-    assert "FILTER" not in (
+
+    plan = (
         lf.filter(pl.col("len") == 2)
         .filter(pl.col("val").list.get(1, null_on_oob=True) == 1)
         .explain()
     )
+
+    assert re.search(r"FILTER.*FROM\n\s*DF", plan) is not None
+
+    # Also check slice pushdown
+    q = lf.with_columns(pl.col("val").list.get(1).alias("b")).slice(1, 1)
+
+    with pytest.raises(ComputeError, match="get index is out of bounds"):
+        q.collect()
 
 
 def test_predicate_pushdown_struct_unnest_19632() -> None:
@@ -593,3 +628,24 @@ def test_predicate_pushdown_join_19772(
 
     assert_frame_equal(q.collect(no_optimization=True), expect)
     assert_frame_equal(q.collect(), expect)
+
+
+def test_predicate_pushdown_scalar_20489() -> None:
+    df = pl.DataFrame({"a": [1]})
+    mask = pl.Series([False])
+
+    assert_frame_equal(
+        df.lazy().with_columns(b=pl.Series([2])).filter(mask).collect(),
+        pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64}),
+    )
+
+
+def test_predicates_not_split_when_pushdown_disabled_20475() -> None:
+    # This is important for the eager `DataFrame.filter()`, as that runs without
+    # predicate pushdown enabled. Splitting the predicates in that case can
+    # severely degrade performance.
+    q = pl.LazyFrame({"a": 1, "b": 1, "c": 1}).filter(
+        pl.col("a") > 0, pl.col("b") > 0, pl.col("c") > 0
+    )
+
+    assert q.explain(predicate_pushdown=False).count("FILTER") == 1

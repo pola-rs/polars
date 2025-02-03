@@ -25,10 +25,10 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
 
@@ -39,6 +39,13 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
             ca.into_datetime(self.0.time_unit(), self.0.time_zone().clone())
                 .into_series()
         })
+    }
+
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        self.0.physical().into_total_eq_inner()
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        self.0.physical().into_total_ord_inner()
     }
 
     fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
@@ -56,7 +63,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         self.0
             .agg_min(groups)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
@@ -64,14 +71,14 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0
             .agg_max(groups)
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         self.0
             .agg_list(groups)
@@ -124,7 +131,7 @@ impl private::PrivateSeries for SeriesWrap<DatetimeChunked> {
         polars_bail!(opq = rem, self.dtype(), rhs.dtype());
     }
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         self.0.group_tuples(multithreaded, sorted)
     }
 
@@ -190,9 +197,20 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
 
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
-        let other = other.to_physical_repr();
-        self.0.append(other.as_ref().as_ref().as_ref())?;
-        Ok(())
+        let mut other = other.to_physical_repr().into_owned();
+        self.0
+            .append_owned(std::mem::take(other._get_inner_mut().as_mut()))
+    }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(std::mem::take(
+            &mut other
+                ._get_inner_mut()
+                .as_any_mut()
+                .downcast_mut::<DatetimeChunked>()
+                .unwrap()
+                .0,
+        ))
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -258,10 +276,6 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
             DataType::String => Ok(self.0.to_string("iso")?.into_series()),
             _ => self.0.cast_with_options(dtype, cast_options),
         }
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]
@@ -357,7 +371,16 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

@@ -34,7 +34,7 @@ use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
-use polars_ops::frame::JoinCoalesce;
+use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
 pub use polars_plan::frame::{AllowedOptimizations, OptFlags};
@@ -153,6 +153,13 @@ impl LazyFrame {
         self
     }
 
+    /// Check if operations are order dependent and unset maintaining_order if
+    /// the order would not be observed.
+    pub fn with_check_order(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::CHECK_ORDER_OBSERVE, toggle);
+        self
+    }
+
     /// Toggle predicate pushdown optimization.
     pub fn with_predicate_pushdown(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::PREDICATE_PUSHDOWN, toggle);
@@ -162,6 +169,12 @@ impl LazyFrame {
     /// Toggle type coercion optimization.
     pub fn with_type_coercion(mut self, toggle: bool) -> Self {
         self.opt_state.set(OptFlags::TYPE_COERCION, toggle);
+        self
+    }
+
+    /// Toggle type check optimization.
+    pub fn with_type_check(mut self, toggle: bool) -> Self {
+        self.opt_state.set(OptFlags::TYPE_CHECK, toggle);
         self
     }
 
@@ -601,10 +614,10 @@ impl LazyFrame {
             opt_state &= !OptFlags::COMM_SUBPLAN_ELIM;
         }
 
-        // The new streaming engine can't deal with the way the common
-        // subexpression elimination adds length-incorrect with_columns.
         #[cfg(feature = "cse")]
         if new_streaming {
+            // The new streaming engine can't deal with the way the common
+            // subexpression elimination adds length-incorrect with_columns.
             opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
         }
 
@@ -673,7 +686,7 @@ impl LazyFrame {
         } else {
             true
         };
-        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &expr_arena)?;
+        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
@@ -725,7 +738,7 @@ impl LazyFrame {
             let mut physical_plan = create_physical_plan(
                 alp_plan.lp_top,
                 &mut alp_plan.lp_arena,
-                &alp_plan.expr_arena,
+                &mut alp_plan.expr_arena,
             )?;
             let mut state = ExecutionState::new();
             physical_plan.execute(&mut state)
@@ -755,34 +768,15 @@ impl LazyFrame {
     #[cfg(feature = "parquet")]
     pub fn sink_parquet(
         self,
-        path: impl AsRef<Path>,
+        path: &dyn AsRef<Path>,
         options: ParquetWriteOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Parquet(options),
-            },
-            "collect().write_parquet()",
-        )
-    }
-
-    /// Stream a query result into a parquet file on an ObjectStore-compatible cloud service. This is useful if the final result doesn't fit
-    /// into memory, and where you do not want to write to a local file but to a location in the cloud.
-    /// This method will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(all(feature = "cloud_write", feature = "parquet"))]
-    pub fn sink_parquet_cloud(
-        self,
-        uri: String,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        parquet_options: ParquetWriteOptions,
-    ) -> PolarsResult<()> {
-        self.sink(
-            SinkType::Cloud {
-                uri: Arc::new(uri),
                 cloud_options,
-                file_type: FileType::Parquet(parquet_options),
             },
             "collect().write_parquet()",
         )
@@ -792,70 +786,57 @@ impl LazyFrame {
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "ipc")]
-    pub fn sink_ipc(self, path: impl AsRef<Path>, options: IpcWriterOptions) -> PolarsResult<()> {
+    pub fn sink_ipc(
+        self,
+        path: impl AsRef<Path>,
+        options: IpcWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Ipc(options),
+                cloud_options,
             },
             "collect().write_ipc()",
         )
-    }
-
-    /// Stream a query result into an ipc/arrow file on an ObjectStore-compatible cloud service.
-    /// This is useful if the final result doesn't fit
-    /// into memory, and where you do not want to write to a local file but to a location in the cloud.
-    /// This method will return an error if the query cannot be completely done in a
-    /// streaming fashion.
-    #[cfg(all(feature = "cloud_write", feature = "ipc"))]
-    pub fn sink_ipc_cloud(
-        mut self,
-        uri: String,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-        ipc_options: IpcWriterOptions,
-    ) -> PolarsResult<()> {
-        self.opt_state |= OptFlags::STREAMING;
-        self.logical_plan = DslPlan::Sink {
-            input: Arc::new(self.logical_plan),
-            payload: SinkType::Cloud {
-                uri: Arc::new(uri),
-                cloud_options,
-                file_type: FileType::Ipc(ipc_options),
-            },
-        };
-        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
-        polars_ensure!(
-            is_streaming,
-            ComputeError: "cannot run the whole query in a streaming order; \
-                           use `collect().write_ipc()` instead"
-        );
-        let _ = physical_plan.execute(&mut state)?;
-        Ok(())
     }
 
     /// Stream a query result into an csv file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "csv")]
-    pub fn sink_csv(self, path: impl AsRef<Path>, options: CsvWriterOptions) -> PolarsResult<()> {
+    pub fn sink_csv(
+        self,
+        path: impl AsRef<Path>,
+        options: CsvWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Csv(options),
+                cloud_options,
             },
             "collect().write_csv()",
         )
     }
 
-    /// Stream a query result into a json file. This is useful if the final result doesn't fit
+    /// Stream a query result into a JSON file. This is useful if the final result doesn't fit
     /// into memory. This methods will return an error if the query cannot be completely done in a
     /// streaming fashion.
     #[cfg(feature = "json")]
-    pub fn sink_json(self, path: impl AsRef<Path>, options: JsonWriterOptions) -> PolarsResult<()> {
+    pub fn sink_json(
+        self,
+        path: impl AsRef<Path>,
+        options: JsonWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
                 file_type: FileType::Json(options),
+                cloud_options,
             },
             "collect().write_ndjson()` or `collect().write_json()",
         )
@@ -887,6 +868,7 @@ impl LazyFrame {
                 payload,
             });
 
+            let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
             };
@@ -917,7 +899,6 @@ impl LazyFrame {
     #[cfg(any(
         feature = "ipc",
         feature = "parquet",
-        feature = "cloud_write",
         feature = "csv",
         feature = "json",
     ))]
@@ -1663,7 +1644,17 @@ impl LazyFrame {
         Self::from_logical_plan(lp, opt_state)
     }
 
-    /// Drop rows containing None.
+    /// Drop rows containing one or more NaN values.
+    ///
+    /// `subset` is an optional `Vec` of column names to consider for NaNs; if None, all
+    /// floating point columns are considered.
+    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().drop_nans(subset).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Drop rows containing one or more None values.
     ///
     /// `subset` is an optional `Vec` of column names to consider for nulls; if None, all
     /// columns are considered.
@@ -1858,25 +1849,14 @@ impl LazyFrame {
     where
         S: Into<PlSmallStr>,
     {
-        // The two DataFrames are temporary concatenated
-        // this indicates until which chunk the data is from the left df
-        // this trick allows us to reuse the `Union` architecture to get map over
-        // two DataFrames
         let key = key.into();
-        let left = self.map_private(DslFunction::FunctionIR(FunctionIR::Rechunk));
-        let q = concat(
-            &[left, other],
-            UnionArgs {
-                rechunk: false,
-                parallel: true,
-                ..Default::default()
-            },
-        )?;
-        Ok(
-            q.map_private(DslFunction::FunctionIR(FunctionIR::MergeSorted {
-                column: key,
-            })),
-        )
+
+        let lp = DslPlan::MergeSorted {
+            input_left: Arc::new(self.logical_plan),
+            input_right: Arc::new(other.logical_plan),
+            key,
+        };
+        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
 }
 
@@ -2021,8 +2001,9 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<PlSmallStr>,
     validation: JoinValidation,
-    coalesce: JoinCoalesce,
     join_nulls: bool,
+    coalesce: JoinCoalesce,
+    maintain_order: MaintainOrderJoin,
 }
 impl JoinBuilder {
     /// Create the `JoinBuilder` with the provided `LazyFrame` as the left table.
@@ -2035,10 +2016,11 @@ impl JoinBuilder {
             right_on: vec![],
             allow_parallel: true,
             force_parallel: false,
-            join_nulls: false,
             suffix: None,
             validation: Default::default(),
+            join_nulls: false,
             coalesce: Default::default(),
+            maintain_order: Default::default(),
         }
     }
 
@@ -2119,6 +2101,12 @@ impl JoinBuilder {
         self
     }
 
+    /// Whether to preserve the row order.
+    pub fn maintain_order(mut self, maintain_order: MaintainOrderJoin) -> Self {
+        self.maintain_order = maintain_order;
+        self
+    }
+
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
         let mut opt_state = self.lf.opt_state;
@@ -2136,6 +2124,7 @@ impl JoinBuilder {
             slice: None,
             join_nulls: self.join_nulls,
             coalesce: self.coalesce,
+            maintain_order: self.maintain_order,
         };
 
         let lp = self
@@ -2232,6 +2221,7 @@ impl JoinBuilder {
             slice: None,
             join_nulls: self.join_nulls,
             coalesce: self.coalesce,
+            maintain_order: self.maintain_order,
         };
         let options = JoinOptions {
             allow_parallel: self.allow_parallel,

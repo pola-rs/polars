@@ -1,23 +1,99 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:mansum]
+    use polars::lazy::dsl::sum_horizontal;
     use polars::prelude::*;
-    // Contribute the Rust translation of the Python example by opening a PR.
+
+    let df = df!(
+        "label" => ["foo", "bar", "spam"],
+        "a" => [1, 2, 3],
+        "b" => [10, 20, 30],
+    )?;
+
+    let result = df
+        .clone()
+        .lazy()
+        .select([
+            fold_exprs(
+                lit(0),
+                |acc, val| (&acc + &val).map(Some),
+                [col("a"), col("b")],
+            )
+            .alias("sum_fold"),
+            sum_horizontal([col("a"), col("b")], true)?.alias("sum_horz"),
+        ])
+        .collect()?;
+
+    println!("{:?}", result);
     // --8<-- [end:mansum]
 
     // --8<-- [start:mansum-explicit]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let acc = lit(0);
+    let f = |acc: Expr, val: Expr| acc + val;
+
+    let result = df
+        .clone()
+        .lazy()
+        .select([
+            f(f(acc, col("a")), col("b")),
+            fold_exprs(
+                lit(0),
+                |acc, val| (&acc + &val).map(Some),
+                [col("a"), col("b")],
+            )
+            .alias("sum_fold"),
+        ])
+        .collect()?;
+
+    println!("{:?}", result);
     // --8<-- [end:mansum-explicit]
 
     // --8<-- [start:manprod]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .select([fold_exprs(
+            lit(0),
+            |acc, val| (&acc * &val).map(Some),
+            [col("a"), col("b")],
+        )
+        .alias("prod")])
+        .collect()?;
+
+    println!("{:?}", result);
     // --8<-- [end:manprod]
 
     // --8<-- [start:manprod-fixed]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .select([fold_exprs(
+            lit(1),
+            |acc, val| (&acc * &val).map(Some),
+            [col("a"), col("b")],
+        )
+        .alias("prod")])
+        .collect()?;
+
+    println!("{:?}", result);
     // --8<-- [end:manprod-fixed]
 
     // --8<-- [start:conditional]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let df = df!(
+        "a" => [1, 2, 3],
+        "b" => [0, 1, 2],
+    )?;
+
+    let result = df
+        .clone()
+        .lazy()
+        .filter(fold_exprs(
+            lit(true),
+            |acc, val| (&acc & &val).map(Some),
+            [col("*").gt(1)],
+        ))
+        .collect()?;
+
+    println!("{:?}", result);
     // --8<-- [end:conditional]
 
     // --8<-- [start:string]

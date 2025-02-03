@@ -39,6 +39,7 @@ pub trait RoundSeries: SeriesSealed {
         if let Some(ca) = s.try_decimal() {
             let precision = ca.precision();
             let scale = ca.scale() as u32;
+
             if scale <= decimals {
                 return Ok(ca.clone().into_series());
             }
@@ -66,7 +67,7 @@ pub trait RoundSeries: SeriesSealed {
             return Ok(ca.into_series());
         }
 
-        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "round can only be used on numeric types" );
+        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "round can only be used on numeric types" );
         Ok(s.clone())
     }
 
@@ -114,7 +115,7 @@ pub trait RoundSeries: SeriesSealed {
             return Ok(s);
         }
 
-        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
+        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "round_sig_figs can only be used on numeric types" );
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             let s = ca.apply_values(|value| {
@@ -164,7 +165,7 @@ pub trait RoundSeries: SeriesSealed {
             return Ok(ca.into_series());
         }
 
-        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "floor can only be used on numeric types" );
+        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "floor can only be used on numeric types" );
         Ok(s.clone())
     }
 
@@ -203,7 +204,7 @@ pub trait RoundSeries: SeriesSealed {
             return Ok(ca.into_series());
         }
 
-        polars_ensure!(s.dtype().is_numeric(), InvalidOperation: "ceil can only be used on numeric types" );
+        polars_ensure!(s.dtype().is_primitive_numeric(), InvalidOperation: "ceil can only be used on numeric types" );
         Ok(s.clone())
     }
 }

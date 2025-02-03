@@ -157,6 +157,11 @@ impl_bitwise_kernel! {
     (f64, f64::to_bits, f64::from_bits),
 }
 
+#[cfg(feature = "dtype-i128")]
+impl_bitwise_kernel! {
+    (i128, identity, identity),
+}
+
 impl BitwiseKernel for BooleanArray {
     type Scalar = bool;
 

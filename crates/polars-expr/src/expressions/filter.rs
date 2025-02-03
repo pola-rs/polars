@@ -24,6 +24,7 @@ impl PhysicalExpr for FilterExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
+
     fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let s_f = || self.input.evaluate(df, state);
         let predicate_f = || self.by.evaluate(df, state);
@@ -37,7 +38,7 @@ impl PhysicalExpr for FilterExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let ac_s_f = || self.input.evaluate_on_groups(df, groups, state);
@@ -88,7 +89,7 @@ impl PhysicalExpr for FilterExpr {
             // All values false - create empty groups.
             let groups = if !predicate.any() {
                 let groups = groups.iter().map(|gi| [gi.first(), 0]).collect::<Vec<_>>();
-                GroupsProxy::Slice {
+                GroupsType::Slice {
                     groups,
                     rolling: false,
                 }
@@ -98,8 +99,8 @@ impl PhysicalExpr for FilterExpr {
                 let predicate = predicate.rechunk();
                 let predicate = predicate.downcast_iter().next().unwrap();
                 POOL.install(|| {
-                    match groups.as_ref() {
-                        GroupsProxy::Idx(groups) => {
+                    match groups.as_ref().as_ref() {
+                        GroupsType::Idx(groups) => {
                             let groups = groups
                                 .par_iter()
                                 .map(|(first, idx)| unsafe {
@@ -117,9 +118,9 @@ impl PhysicalExpr for FilterExpr {
                                 })
                                 .collect();
 
-                            GroupsProxy::Idx(groups)
+                            GroupsType::Idx(groups)
                         },
-                        GroupsProxy::Slice { groups, .. } => {
+                        GroupsType::Slice { groups, .. } => {
                             let groups = groups
                                 .par_iter()
                                 .map(|&[first, len]| unsafe {
@@ -134,15 +135,26 @@ impl PhysicalExpr for FilterExpr {
                                     (*idx.first().unwrap_or(&first), idx)
                                 })
                                 .collect();
-                            GroupsProxy::Idx(groups)
+                            GroupsType::Idx(groups)
                         },
                     }
                 })
             };
 
-            ac_s.with_groups(groups).set_original_len(false);
+            ac_s.with_groups(groups.into_sliceable())
+                .set_original_len(false);
             Ok(ac_s)
         }
+    }
+
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

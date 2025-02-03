@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import typing
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -402,7 +403,7 @@ def test_group_by_sorted_empty_dataframe_3680() -> None:
         .sort("key")
         .group_by("key")
         .tail(1)
-        .collect()
+        .collect(_check_order=False)
     )
     assert df.rows() == []
     assert df.shape == (0, 2)
@@ -925,6 +926,7 @@ def test_group_by_multiple_null_cols_15623() -> None:
 
 
 @pytest.mark.release
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_vs_str_group_by() -> None:
     # this triggers the perfect hash table
     s = pl.Series("a", np.random.randint(0, 50, 100))
@@ -1153,3 +1155,49 @@ def test_group_by_agg_19173() -> None:
     out = df.head(0).group_by("g").agg((pl.col.x - pl.col.x.sum() * pl.col.x) ** 2)
     assert out.to_dict(as_series=False) == {"g": [], "x": []}
     assert out.schema == pl.Schema([("g", pl.Int64), ("x", pl.List(pl.Float64))])
+
+
+def test_group_by_map_groups_slice_pushdown_20002() -> None:
+    schema = {
+        "a": pl.Int8,
+        "b": pl.UInt8,
+    }
+
+    df = (
+        pl.LazyFrame(
+            data={"a": [1, 2, 3, 4, 5], "b": [90, 80, 70, 60, 50]},
+            schema=schema,
+        )
+        .group_by("a", maintain_order=True)
+        .map_groups(lambda df: df * 2.0, schema=schema)
+        .head(3)
+        .collect()
+    )
+
+    assert_frame_equal(
+        df,
+        pl.DataFrame(
+            {
+                "a": [2.0, 4.0, 6.0],
+                "b": [180.0, 160.0, 140.0],
+            }
+        ),
+    )
+
+
+@typing.no_type_check
+def test_group_by_lit_series(capfd: Any, monkeypatch: Any) -> None:
+    monkeypatch.setenv("POLARS_VERBOSE", "1")
+    n = 10
+    df = pl.DataFrame({"x": np.ones(2 * n), "y": n * list(range(2))})
+    a = np.ones(n, dtype=float)
+    df.lazy().group_by("y").agg(pl.col("x").dot(a)).collect()
+    captured = capfd.readouterr().err
+    assert "are not partitionable" in captured
+
+
+def test_group_by_list_column() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": [[1, 2], [3], [1, 2]]})
+    result = df.group_by("b").agg(pl.sum("a")).sort("b")
+    expected = pl.DataFrame({"b": [[1, 2], [3]], "a": [4, 2]})
+    assert_frame_equal(result, expected)

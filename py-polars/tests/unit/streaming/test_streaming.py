@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_streaming_categoricals_5921() -> None:
     with pl.StringCache():
         out_lazy = (
@@ -369,3 +368,22 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.write_disk
+def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    (
+        pl.LazyFrame({"a": pl.Series([1])})
+        .with_columns(b=pl.col("a").is_in(pl.Series([1, 2, 3])))
+        .sink_parquet(tmp_path / "1")
+    )
+
+    (
+        pl.LazyFrame({"a": pl.Series([1])})
+        .with_columns(
+            b=pl.when(pl.col("a").is_in(pl.Series([1, 2, 3]))).then(pl.col("a"))
+        )
+        .sink_parquet(tmp_path / "1")
+    )

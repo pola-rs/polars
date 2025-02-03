@@ -377,6 +377,22 @@ impl Expr {
         )
     }
 
+    #[cfg(feature = "index_of")]
+    /// Find the index of a value.
+    pub fn index_of<E: Into<Expr>>(self, element: E) -> Expr {
+        let element = element.into();
+        Expr::Function {
+            input: vec![self, element],
+            function: FunctionExpr::IndexOf,
+            options: FunctionOptions {
+                flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
+                fmt_str: "index_of",
+                cast_options: Some(CastingRules::FirstArgLossless),
+                ..Default::default()
+            },
+        }
+    }
+
     #[cfg(feature = "search_sorted")]
     /// Find indices where elements should be inserted to maintain order.
     pub fn search_sorted<E: Into<Expr>>(self, element: E, side: SearchSortedSide) -> Expr {
@@ -388,9 +404,9 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "search_sorted",
-                cast_to_supertypes: Some(
+                cast_options: Some(CastingRules::Supertype(
                     (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-                ),
+                )),
                 ..Default::default()
             },
         }
@@ -398,6 +414,7 @@ impl Expr {
 
     /// Cast expression to another data type.
     /// Throws an error if conversion had overflows.
+    /// Returns an Error if cast is invalid on rows after predicates are pushed down.
     pub fn strict_cast(self, dtype: DataType) -> Self {
         Expr::Cast {
             expr: Arc::new(self),
@@ -708,8 +725,8 @@ impl Expr {
         input.push(self);
         input.extend_from_slice(arguments);
 
-        let cast_to_supertypes = if cast_to_supertypes {
-            Some(Default::default())
+        let supertype = if cast_to_supertypes {
+            Some(CastingRules::cast_to_supertypes())
         } else {
             None
         };
@@ -725,7 +742,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::GroupWise,
                 flags,
-                cast_to_supertypes,
+                cast_options: supertype,
                 ..Default::default()
             },
         }
@@ -753,7 +770,7 @@ impl Expr {
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
                 flags,
-                cast_to_supertypes,
+                cast_options: cast_to_supertypes.map(CastingRules::Supertype),
                 ..Default::default()
             },
         }
@@ -849,6 +866,8 @@ impl Expr {
                     T::Float32 => T::Float32,
                     T::Float64 => T::Float64,
                     T::UInt64 => T::UInt64,
+                    #[cfg(feature = "dtype-i128")]
+                    T::Int128 => T::Int128,
                     _ => T::Int64,
                 })
             }),
@@ -1052,7 +1071,7 @@ impl Expr {
             function: FunctionExpr::FillNull,
             options: FunctionOptions {
                 collect_groups: ApplyOptions::ElementWise,
-                cast_to_supertypes: Some(Default::default()),
+                cast_options: Some(CastingRules::cast_to_supertypes()),
                 ..Default::default()
             },
         }
@@ -1513,7 +1532,7 @@ impl Expr {
                         .map(|ca| ca.into_column()),
                 }?;
                 if let DataType::Float32 = c.dtype() {
-                    out.cast(&DataType::Float32).map(Column::from).map(Some)
+                    out.cast(&DataType::Float32).map(Some)
                 } else {
                     Ok(Some(out))
                 }
@@ -1800,7 +1819,7 @@ impl Expr {
     /// Returns whether all values in the column are `true`.
     ///
     /// If `ignore_nulls` is `False`, [Kleene logic] is used to deal with nulls:
-    /// if the column contains any null values and no `true` values, the output
+    /// if the column contains any null values and no `false` values, the output
     /// is null.
     ///
     /// [Kleene logic]: https://en.wikipedia.org/wiki/Three-valued_logic

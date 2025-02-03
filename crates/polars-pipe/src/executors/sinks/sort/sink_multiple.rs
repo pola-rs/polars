@@ -1,20 +1,23 @@
 use std::any::Any;
 
 use arrow::array::BinaryArray;
-use polars_core::chunked_array::ops::row_encode::_get_rows_encoded_compat_array;
 use polars_core::prelude::sort::_broadcast_bools;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_row::decode::decode_rows_from_binary;
-use polars_row::EncodingField;
+use polars_row::{RowEncodingContext, RowEncodingOptions};
 
+use self::row_encode::get_row_encoding_context;
 use super::*;
 use crate::operators::{
     DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult, Source, SourceResult,
 };
 const POLARS_SORT_COLUMN: &str = "__POLARS_SORT_COLUMN";
 
-fn get_sort_fields(sort_idx: &[usize], sort_options: &SortMultipleOptions) -> Vec<EncodingField> {
+fn get_sort_fields(
+    sort_idx: &[usize],
+    sort_options: &SortMultipleOptions,
+) -> Vec<RowEncodingOptions> {
     let mut descending = sort_options.descending.clone();
     let mut nulls_last = sort_options.nulls_last.clone();
 
@@ -24,22 +27,8 @@ fn get_sort_fields(sort_idx: &[usize], sort_options: &SortMultipleOptions) -> Ve
     descending
         .into_iter()
         .zip(nulls_last)
-        .map(|(descending, nulls_last)| EncodingField::new_sorted(descending, nulls_last))
+        .map(|(descending, nulls_last)| RowEncodingOptions::new_sorted(descending, nulls_last))
         .collect()
-}
-
-#[cfg(feature = "dtype-categorical")]
-fn sort_column_can_be_decoded(schema: &Schema, sort_idx: &[usize]) -> bool {
-    !sort_idx.iter().any(|i| {
-        matches!(
-            schema.get_at_index(*i).unwrap().1,
-            DataType::Categorical(_, _) | DataType::Enum(_, _)
-        )
-    })
-}
-#[cfg(not(feature = "dtype-categorical"))]
-fn sort_column_can_be_decoded(_schema: &Schema, _sort_idx: &[usize]) -> bool {
-    true
 }
 
 fn sort_by_idx<V: Clone>(values: &[V], idx: &[usize]) -> Vec<V> {
@@ -59,10 +48,10 @@ fn finalize_dataframe(
     df: &mut DataFrame,
     sort_idx: &[usize],
     sort_options: &SortMultipleOptions,
-    can_decode: bool,
     sort_dtypes: Option<&[ArrowDataType]>,
     rows: &mut Vec<&'static [u8]>,
-    sort_fields: &[EncodingField],
+    sort_opts: &[RowEncodingOptions],
+    sort_dicts: &[Option<RowEncodingContext>],
     schema: &Schema,
 ) {
     // pop the encoded sort column
@@ -74,37 +63,39 @@ fn finalize_dataframe(
     // these are the columns we sorted by
     // those need to be inserted at the `sort_idx` position
     // in the `DataFrame`.
-    if can_decode {
-        let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
+    let sort_dtypes = sort_dtypes.expect("should be set if 'can_decode'");
 
-        let encoded = encoded.binary_offset().unwrap();
-        assert_eq!(encoded.chunks().len(), 1);
-        let arr = encoded.downcast_iter().next().unwrap();
+    let encoded = encoded.binary_offset().unwrap();
+    assert_eq!(encoded.chunks().len(), 1);
+    let arr = encoded.downcast_iter().next().unwrap();
 
-        // SAFETY:
-        // temporary extend lifetime
-        // this is safe as the lifetime in rows stays bound to this scope
-        let arrays = unsafe {
-            let arr = std::mem::transmute::<&'_ BinaryArray<i64>, &'static BinaryArray<i64>>(arr);
-            decode_rows_from_binary(arr, sort_fields, sort_dtypes, rows)
-        };
-        rows.clear();
+    // SAFETY:
+    // temporary extend lifetime
+    // this is safe as the lifetime in rows stays bound to this scope
+    let arrays = unsafe {
+        let arr = std::mem::transmute::<&'_ BinaryArray<i64>, &'static BinaryArray<i64>>(arr);
+        decode_rows_from_binary(arr, sort_opts, sort_dicts, sort_dtypes, rows)
+    };
+    rows.clear();
 
-        let arrays = sort_by_idx(&arrays, sort_idx);
-        let mut sort_idx = sort_idx.to_vec();
-        sort_idx.sort_unstable();
+    let arrays = sort_by_idx(&arrays, sort_idx);
+    let mut sort_idx = sort_idx.to_vec();
+    sort_idx.sort_unstable();
 
-        for (sort_idx, arr) in sort_idx.into_iter().zip(arrays) {
-            let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
-            assert_eq!(logical_dtype.to_physical(), DataType::from(arr.dtype()));
-            let col = unsafe {
-                Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr], logical_dtype)
-            }
-            .into_column();
-
-            // SAFETY: col has the same length as the df height because it was popped from df.
-            unsafe { df.get_columns_mut() }.insert(sort_idx, col);
+    for (&sort_idx, arr) in sort_idx.iter().zip(arrays) {
+        let (name, logical_dtype) = schema.get_at_index(sort_idx).unwrap();
+        assert_eq!(
+            logical_dtype.to_physical(),
+            DataType::from_arrow_dtype(arr.dtype())
+        );
+        let col = unsafe {
+            Series::from_chunks_and_dtype_unchecked(name.clone(), vec![arr], logical_dtype)
         }
+        .into_column();
+
+        // SAFETY: col has the same length as the df height because it was popped from df.
+        unsafe { df.get_columns_mut() }.insert(sort_idx, col);
+        df.clear_schema();
     }
 
     // SAFETY: We just change the sorted flag.
@@ -131,15 +122,11 @@ pub struct SortSinkMultiple {
     slice: Option<(i64, usize)>,
     sort_options: SortMultipleOptions,
     // Needed for encoding
-    sort_fields: Arc<[EncodingField]>,
+    sort_opts: Arc<[RowEncodingOptions]>,
+    sort_dicts: Arc<[Option<RowEncodingContext>]>,
     sort_dtypes: Option<Arc<[DataType]>>,
     // amortize allocs
     sort_column: Vec<ArrayRef>,
-    // if we can decode the sort columns, we will remove those
-    // columns and decode the binary row-format to restore the
-    // original columns. This ensures we don't need to keep
-    // redundant data around in memory or on disk
-    can_decode: bool,
 }
 
 impl SortSinkMultiple {
@@ -149,26 +136,30 @@ impl SortSinkMultiple {
         output_schema: SchemaRef,
         sort_idx: Vec<usize>,
     ) -> PolarsResult<Self> {
-        let can_decode = sort_column_can_be_decoded(&output_schema, &sort_idx);
         let mut schema = (*output_schema).clone();
 
-        let mut sort_dtypes = None;
-        if can_decode {
-            polars_ensure!(sort_idx.iter().collect::<PlHashSet::<_>>().len() == sort_idx.len(), ComputeError: "only supports sorting by unique columns");
+        let sort_ctxts = sort_idx
+            .iter()
+            .map(|i| {
+                let (_, dtype) = schema.get_at_index(*i).unwrap();
+                get_row_encoding_context(dtype, true)
+            })
+            .collect::<Vec<_>>();
 
-            let mut dtypes = vec![DataType::Null; sort_idx.len()];
+        polars_ensure!(sort_idx.iter().collect::<PlHashSet::<_>>().len() == sort_idx.len(), ComputeError: "only supports sorting by unique columns");
 
-            // we remove columns by index, but then the indices aren't correct anymore
-            // so we do it in the proper order and keep track of the indices removed
-            let mut sorted_sort_idx = sort_idx.iter().copied().enumerate().collect::<Vec<_>>();
-            // Sort by `sort_idx`.
-            sorted_sort_idx.sort_unstable_by_key(|k| k.1);
-            // remove the sort indices as we will encode them into the sort binary
-            for (iterator_i, (original_idx, sort_i)) in sorted_sort_idx.iter().enumerate() {
-                dtypes[*original_idx] = schema.shift_remove_index(*sort_i - iterator_i).unwrap().1;
-            }
-            sort_dtypes = Some(dtypes.into());
+        let mut dtypes = vec![DataType::Null; sort_idx.len()];
+
+        // we remove columns by index, but then the indices aren't correct anymore
+        // so we do it in the proper order and keep track of the indices removed
+        let mut sorted_sort_idx = sort_idx.iter().copied().enumerate().collect::<Vec<_>>();
+        // Sort by `sort_idx`.
+        sorted_sort_idx.sort_unstable_by_key(|k| k.1);
+        // remove the sort indices as we will encode them into the sort binary
+        for (iterator_i, (original_idx, sort_i)) in sorted_sort_idx.iter().enumerate() {
+            dtypes[*original_idx] = schema.shift_remove_index(*sort_i - iterator_i).unwrap().1;
         }
+        let sort_dtypes = Some(dtypes.into());
         schema.with_column(POLARS_SORT_COLUMN.into(), DataType::BinaryOffset);
         let sort_fields = get_sort_fields(&sort_idx, &sort_options);
 
@@ -191,10 +182,10 @@ impl SortSinkMultiple {
             slice,
             sort_options,
             sort_idx: Arc::from(sort_idx),
-            sort_fields: Arc::from(sort_fields),
+            sort_opts: Arc::from(sort_fields),
+            sort_dicts: Arc::from(sort_ctxts),
             sort_dtypes,
             sort_column: vec![],
-            can_decode,
             output_schema,
         })
     }
@@ -205,30 +196,29 @@ impl SortSinkMultiple {
         self.sort_column.clear();
 
         for i in self.sort_idx.iter() {
-            let s = &df.get_columns()[*i];
-            let arr = _get_rows_encoded_compat_array(s.as_materialized_series())?;
+            let s = &df.get_columns()[*i].as_materialized_series();
+            let arr = s.to_physical_repr().rechunk().chunks()[0].to_boxed();
             self.sort_column.push(arr);
         }
 
-        if self.can_decode {
-            // we remove columns by index, but then the aren't correct anymore
-            // so we do it in the proper order and keep track of the indices removed
-            let mut sorted_sort_idx = self.sort_idx.to_vec();
-            sorted_sort_idx.sort_unstable();
+        // we remove columns by index, but then the aren't correct anymore
+        // so we do it in the proper order and keep track of the indices removed
+        let mut sorted_sort_idx = self.sort_idx.to_vec();
+        sorted_sort_idx.sort_unstable();
 
-            // SAFETY: We do not adjust the names or lengths or columns.
-            let cols = unsafe { df.get_columns_mut() };
+        // SAFETY: We do not adjust the names or lengths or columns.
+        let cols = unsafe { df.get_columns_mut() };
 
-            sorted_sort_idx
-                .into_iter()
-                .enumerate()
-                .for_each(|(i, sort_idx)| {
-                    // shifts all columns right from removed one to the left so
-                    // therefore we subtract `i` as the shifted count
-                    let _ = cols.remove(sort_idx - i);
-                })
-        }
+        sorted_sort_idx
+            .into_iter()
+            .enumerate()
+            .for_each(|(i, sort_idx)| {
+                // shifts all columns right from removed one to the left so
+                // therefore we subtract `i` as the shifted count
+                let _ = cols.remove(sort_idx - i);
+            });
 
+        df.clear_schema();
         let name = PlSmallStr::from_static(POLARS_SORT_COLUMN);
         let column = if chunk.data.height() == 0 && chunk.data.width() > 0 {
             Column::new_empty(name, &DataType::BinaryOffset)
@@ -236,7 +226,8 @@ impl SortSinkMultiple {
             let rows_encoded = polars_row::convert_columns(
                 self.sort_column[0].len(), // @NOTE: does not work for ZFS
                 &self.sort_column,
-                &self.sort_fields,
+                &self.sort_opts,
+                &self.sort_dicts,
             );
             let series = unsafe {
                 Series::from_chunks_and_dtype_unchecked(
@@ -275,11 +266,11 @@ impl Sink for SortSinkMultiple {
         Box::new(Self {
             sort_idx: self.sort_idx.clone(),
             sort_sink,
-            sort_fields: self.sort_fields.clone(),
+            sort_opts: self.sort_opts.clone(),
             slice: self.slice,
             sort_options: self.sort_options.clone(),
+            sort_dicts: self.sort_dicts.clone(),
             sort_column: vec![],
-            can_decode: self.can_decode,
             sort_dtypes: self.sort_dtypes.clone(),
             output_schema: self.output_schema.clone(),
         })
@@ -301,10 +292,10 @@ impl Sink for SortSinkMultiple {
                     &mut df,
                     self.sort_idx.as_ref(),
                     &self.sort_options,
-                    self.can_decode,
                     sort_dtypes.as_deref(),
                     &mut vec![],
-                    self.sort_fields.as_ref(),
+                    self.sort_opts.as_ref(),
+                    self.sort_dicts.as_ref(),
                     &self.output_schema,
                 );
                 Ok(FinalizedSink::Finished(df))
@@ -313,10 +304,10 @@ impl Sink for SortSinkMultiple {
                 source,
                 sort_idx: self.sort_idx.clone(),
                 sort_options: self.sort_options.clone(),
-                can_decode: self.can_decode,
                 sort_dtypes,
                 rows: vec![],
-                sort_fields: self.sort_fields.clone(),
+                sort_opts: self.sort_opts.clone(),
+                sort_dicts: self.sort_dicts.clone(),
                 output_schema: self.output_schema.clone(),
             }))),
             // SortSink should not produce this branch
@@ -337,10 +328,10 @@ struct DropEncoded {
     source: Box<dyn Source>,
     sort_idx: Arc<[usize]>,
     sort_options: SortMultipleOptions,
-    can_decode: bool,
     sort_dtypes: Option<Vec<ArrowDataType>>,
     rows: Vec<&'static [u8]>,
-    sort_fields: Arc<[EncodingField]>,
+    sort_opts: Arc<[RowEncodingOptions]>,
+    sort_dicts: Arc<[Option<RowEncodingContext>]>,
     output_schema: SchemaRef,
 }
 
@@ -353,10 +344,10 @@ impl Source for DropEncoded {
                     &mut chunk.data,
                     self.sort_idx.as_ref(),
                     &self.sort_options,
-                    self.can_decode,
                     self.sort_dtypes.as_deref(),
                     &mut self.rows,
-                    self.sort_fields.as_ref(),
+                    self.sort_opts.as_ref(),
+                    self.sort_dicts.as_ref(),
                     &self.output_schema,
                 )
             }

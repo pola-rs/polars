@@ -14,7 +14,7 @@ pub fn decompress_lz4(input_buf: &[u8], output_buf: &mut [u8]) -> PolarsResult<(
 #[cfg_attr(docsrs, doc(cfg(feature = "io_ipc_compression")))]
 pub fn decompress_zstd(input_buf: &[u8], output_buf: &mut [u8]) -> PolarsResult<()> {
     use std::io::Read;
-    let mut decoder = zstd::Decoder::new(input_buf)?;
+    let mut decoder = zstd::Decoder::with_buffer(input_buf)?;
     decoder.read_exact(output_buf).map_err(|e| e.into())
 }
 

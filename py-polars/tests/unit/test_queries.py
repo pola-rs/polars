@@ -8,6 +8,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from tests.unit.conftest import NUMERIC_DTYPES
 
 
 def test_sort_by_bools() -> None:
@@ -171,19 +172,33 @@ def test_group_by_agg_equals_zero_3535() -> None:
     }
 
 
+def test_group_by_followed_by_limit() -> None:
+    lf = pl.LazyFrame(
+        {
+            "key": ["xx", "yy", "zz", "xx", "zz", "zz"],
+            "val1": [15, 25, 10, 20, 20, 20],
+            "val2": [-33, 20, 44, -2, 16, 71],
+        }
+    )
+    grp = lf.group_by("key", maintain_order=True).agg(pl.col("val1", "val2").sum())
+    assert sorted(grp.collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+        ("zz", 50, 131),
+    ]
+    assert sorted(grp.head(2).collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+    ]
+    assert sorted(grp.head(10).collect().rows()) == [
+        ("xx", 35, -35),
+        ("yy", 25, 20),
+        ("zz", 50, 131),
+    ]
+
+
 def test_dtype_concat_3735() -> None:
-    for dt in [
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Float32,
-        pl.Float64,
-    ]:
+    for dt in NUMERIC_DTYPES:
         d1 = pl.DataFrame([pl.Series("val", [1, 2], dtype=dt)])
 
     d2 = pl.DataFrame([pl.Series("val", [3, 4], dtype=dt)])

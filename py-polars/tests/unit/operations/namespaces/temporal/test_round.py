@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import hypothesis.strategies as st
 import pytest
@@ -12,13 +13,7 @@ from polars._utils.convert import parse_as_duration_string
 from polars.testing import assert_series_equal
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars.type_aliases import TimeUnit
-
-
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu"])

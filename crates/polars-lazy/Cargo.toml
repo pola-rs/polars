@@ -10,6 +10,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
+chrono = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
@@ -38,6 +39,7 @@ serde_json = { workspace = true }
 version_check = { workspace = true }
 
 [features]
+catalog = ["polars-io/catalog"]
 nightly = ["polars-core/nightly", "polars-pipe?/nightly", "polars-plan/nightly"]
 streaming = ["polars-pipe", "polars-plan/streaming", "polars-ops/chunked_ids", "polars-expr/streaming"]
 new_streaming = ["polars-stream"]
@@ -64,7 +66,6 @@ cloud = [
   "polars-mem-engine/cloud",
   "polars-stream?/cloud",
 ]
-cloud_write = ["cloud"]
 ipc = ["polars-io/ipc", "polars-plan/ipc", "polars-pipe?/ipc", "polars-mem-engine/ipc", "polars-stream?/ipc"]
 json = [
   "polars-io/json",
@@ -98,6 +99,7 @@ dtype-full = [
   "dtype-decimal",
   "dtype-duration",
   "dtype-i16",
+  "dtype-i128",
   "dtype-i8",
   "dtype-struct",
   "dtype-time",
@@ -113,6 +115,7 @@ dtype-array = [
 dtype-categorical = [
   "polars-plan/dtype-categorical",
   "polars-pipe?/dtype-categorical",
+  "polars-stream?/dtype-categorical",
   "polars-expr/dtype-categorical",
   "polars-mem-engine/dtype-categorical",
 ]
@@ -144,6 +147,7 @@ dtype-duration = [
   "polars-mem-engine/dtype-duration",
 ]
 dtype-i16 = ["polars-plan/dtype-i16", "polars-pipe?/dtype-i16", "polars-expr/dtype-i16", "polars-mem-engine/dtype-i16"]
+dtype-i128 = ["polars-plan/dtype-i128", "polars-pipe?/dtype-i128", "polars-expr/dtype-i128"]
 dtype-i8 = ["polars-plan/dtype-i8", "polars-pipe?/dtype-i8", "polars-expr/dtype-i8", "polars-mem-engine/dtype-i8"]
 dtype-struct = [
   "polars-plan/dtype-struct",
@@ -161,7 +165,7 @@ dtype-time = [
 dtype-u16 = ["polars-plan/dtype-u16", "polars-pipe?/dtype-u16", "polars-expr/dtype-u16", "polars-mem-engine/dtype-u16"]
 dtype-u8 = ["polars-plan/dtype-u8", "polars-pipe?/dtype-u8", "polars-expr/dtype-u8", "polars-mem-engine/dtype-u8"]
 
-object = ["polars-plan/object", "polars-mem-engine/object"]
+object = ["polars-plan/object", "polars-mem-engine/object", "polars-stream?/object"]
 month_start = ["polars-plan/month_start"]
 month_end = ["polars-plan/month_end"]
 offset_by = ["polars-plan/offset_by"]
@@ -231,15 +235,24 @@ list_eval = []
 cumulative_eval = []
 list_to_struct = ["polars-plan/list_to_struct"]
 array_to_struct = ["polars-plan/array_to_struct"]
-python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python", "polars-mem-engine/python"]
+python = [
+  "pyo3",
+  "polars-plan/python",
+  "polars-core/python",
+  "polars-io/python",
+  "polars-mem-engine/python",
+  "polars-stream?/python",
+]
 row_hash = ["polars-plan/row_hash"]
 reinterpret = ["polars-plan/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-plan/string_pad"]
+string_normalize = ["polars-plan/string_normalize"]
 string_reverse = ["polars-plan/string_reverse"]
 string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
+index_of = ["polars-plan/index_of"]
 search_sorted = ["polars-plan/search_sorted"]
-merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted"]
+merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted", "polars-mem-engine/merge_sorted"]
 meta = ["polars-plan/meta"]
 pivot = ["polars-core/rows", "polars-ops/pivot", "polars-plan/pivot"]
 top_k = ["polars-plan/top_k"]
@@ -277,11 +290,8 @@ string_encoding = ["polars-plan/string_encoding"]
 bigidx = ["polars-plan/bigidx", "polars-utils/bigidx"]
 polars_cloud = ["polars-plan/polars_cloud"]
 
-panic_on_schema = ["polars-plan/panic_on_schema", "polars-expr/panic_on_schema"]
-
 test = [
   "polars-plan/debugging",
-  "panic_on_schema",
   "rolling_window",
   "rank",
   "round_series",
@@ -305,6 +315,7 @@ test_all = [
   "row_hash",
   "string_pad",
   "string_to_integer",
+  "index_of",
   "search_sorted",
   "top_k",
   "pivot",
@@ -331,7 +342,6 @@ features = [
   "bigidx",
   "binary_encoding",
   "cloud",
-  "cloud_write",
   "coalesce",
   "concat_str",
   "cov",
@@ -352,6 +362,7 @@ features = [
   "fused",
   "futures",
   "hist",
+  "index_of",
   "interpolate",
   "interpolate_by",
   "ipc",
@@ -403,6 +414,7 @@ features = [
   "sign",
   "streaming",
   "string_encoding",
+  "string_normalize",
   "string_pad",
   "string_reverse",
   "string_to_integer",

@@ -4,7 +4,7 @@ pub mod series;
 
 #[cfg(test)]
 mod test {
-    use crate::chunked_array::metadata::MetadataFlags;
+    use crate::chunked_array::flags::StatisticsFlags;
     use crate::prelude::*;
     use crate::series::IsSorted;
 
@@ -12,14 +12,14 @@ mod test {
     fn test_serde() -> PolarsResult<()> {
         let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(2)]);
 
-        let json = serde_json::to_string(&ca).unwrap();
+        let json = serde_json::to_string(&ca.clone().into_series()).unwrap();
 
         let out = serde_json::from_str::<Series>(&json).unwrap();
         assert!(ca.into_series().equals_missing(&out));
 
         let ca = StringChunked::new("foo".into(), &[Some("foo"), None, Some("bar")]);
 
-        let json = serde_json::to_string(&ca).unwrap();
+        let json = serde_json::to_string(&ca.clone().into_series()).unwrap();
 
         let out = serde_json::from_str::<Series>(&json).unwrap(); // uses `Deserialize<'de>`
         assert!(ca.into_series().equals_missing(&out));
@@ -32,7 +32,7 @@ mod test {
     fn test_serde_owned() {
         let ca = UInt32Chunked::new("foo".into(), &[Some(1), None, Some(2)]);
 
-        let json = serde_json::to_string(&ca).unwrap();
+        let json = serde_json::to_string(&ca.clone().into_series()).unwrap();
 
         let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap(); // uses `DeserializeOwned`
         assert!(ca.into_series().equals_missing(&out));
@@ -54,9 +54,9 @@ mod test {
         for mut column in df.columns {
             column.set_sorted_flag(IsSorted::Descending);
             let json = serde_json::to_string(&column).unwrap();
-            let out = serde_json::from_reader::<_, Series>(json.as_bytes()).unwrap();
+            let out = serde_json::from_reader::<_, Column>(json.as_bytes()).unwrap();
             let f = out.get_flags();
-            assert_ne!(f, MetadataFlags::empty());
+            assert_ne!(f, StatisticsFlags::empty());
             assert_eq!(column.get_flags(), out.get_flags());
         }
     }

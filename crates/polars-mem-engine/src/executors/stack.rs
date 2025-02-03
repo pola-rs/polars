@@ -11,7 +11,7 @@ pub struct StackExec {
     pub(crate) output_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
-    pub(crate) streamable: bool,
+    pub(crate) allow_vertical_parallelism: bool,
 }
 
 impl StackExec {
@@ -23,7 +23,7 @@ impl StackExec {
         let schema = &*self.output_schema;
 
         // Vertical and horizontal parallelism.
-        let df = if self.streamable
+        let df = if self.allow_vertical_parallelism
             && df.first_col_n_chunks() > 1
             && df.height() > 0
             && self.options.run_parallel
@@ -65,7 +65,7 @@ impl StackExec {
                 // new, unique column names. It is immediately
                 // followed by a projection which pulls out the
                 // possibly mismatching column lengths.
-                unsafe { df.column_extend_unchecked(res.into_iter().map(Column::from)) };
+                unsafe { df.column_extend_unchecked(res) };
             } else {
                 let (df_height, df_width) = df.shape();
 

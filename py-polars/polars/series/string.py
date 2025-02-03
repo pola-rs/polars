@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from polars._utils.deprecation import deprecate_function
+from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 from polars._utils.unstable import unstable
 from polars._utils.various import no_default
 from polars.datatypes.constants import N_INFER_DEFAULT
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
+        UnicodeForm,
     )
     from polars._utils.various import NoDefault
     from polars.polars import PySeries
@@ -270,6 +271,7 @@ class StringNameSpace:
         ]
         """
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
@@ -528,7 +530,7 @@ class StringNameSpace:
         ]
         """
 
-    def ends_with(self, suffix: str | Expr) -> Series:
+    def ends_with(self, suffix: str | Expr | None) -> Series:
         """
         Check if string values end with a substring.
 
@@ -679,10 +681,10 @@ class StringNameSpace:
 
     def json_path_match(self, json_path: IntoExprColumn) -> Series:
         """
-        Extract the first match of json string with provided JSONPath expression.
+        Extract the first match of JSON string with provided JSONPath expression.
 
-        Throw errors if encounter invalid json strings.
-        All return value will be casted to String regardless of the original value.
+        Throw errors if encounter invalid JSON strings.
+        All return values will be cast to String regardless of the original value.
 
         Documentation on JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
@@ -1284,7 +1286,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove leading and trailing characters.
 
@@ -1319,7 +1321,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars_start(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove leading characters.
 
@@ -1353,7 +1355,7 @@ class StringNameSpace:
         ]
         """
 
-    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Series:
+    def strip_chars_end(self, characters: IntoExpr = None) -> Series:
         r"""
         Remove trailing characters.
 
@@ -2058,9 +2060,9 @@ class StringNameSpace:
         overlapping: bool = False,
     ) -> Series:
         """
-        Use the Aho-Corasick algorithm to find many matches.
+        Use the Aho-Corasick algorithm to find all matches.
 
-        The function will return the bytes offset of the start of each match.
+        The function returns the byte offset of the start of each match.
         The return type will be `List<UInt32>`
 
         Parameters
@@ -2223,3 +2225,33 @@ class StringNameSpace:
             "abc\(\\w\+\)"
         ]
         """
+
+    def normalize(self, form: UnicodeForm = "NFC") -> Series:
+        """
+        Returns the Unicode normal form of the string values.
+
+        This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        Parameters
+        ----------
+        form : {'NFC', 'NFKC', 'NFD', 'NFKD'}
+            Unicode form to use.
+
+        Examples
+        --------
+        >>> s = pl.Series(["01²", "ＫＡＤＯＫＡＷＡ"])
+        >>> s.str.normalize("NFC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "01²"
+                "ＫＡＤＯＫＡＷＡ"
+        ]
+        >>> s.str.normalize("NFKC")
+        shape: (2,)
+        Series: '' [str]
+        [
+                "012"
+                "KADOKAWA"
+        ]
+        """  # noqa: RUF002

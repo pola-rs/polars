@@ -1,5 +1,6 @@
 use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_io::predicates::SpecializedColumnPredicateExpr;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
 
@@ -8,6 +9,7 @@ use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
 
+#[derive(Clone)]
 pub struct BinaryExpr {
     left: Arc<dyn PhysicalExpr>,
     op: Operator,
@@ -45,7 +47,9 @@ fn apply_operator_owned(left: Column, right: Column, op: Operator) -> PolarsResu
     match op {
         Operator::Plus => left.try_add_owned(right),
         Operator::Minus => left.try_sub_owned(right),
-        Operator::Multiply if left.dtype().is_numeric() && right.dtype().is_numeric() => {
+        Operator::Multiply
+            if left.dtype().is_primitive_numeric() && right.dtype().is_primitive_numeric() =>
+        {
             left.try_mul_owned(right)
         },
         _ => apply_operator(&left, &right, op),
@@ -221,7 +225,7 @@ impl PhysicalExpr for BinaryExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let (result_a, result_b) = POOL.install(|| {
@@ -263,6 +267,33 @@ impl PhysicalExpr for BinaryExpr {
             },
             _ => self.apply_group_aware(ac_l, ac_r),
         }
+    }
+
+    fn isolate_column_expr(
+        &self,
+        name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        let other = match (self.left.to_column(), self.right.to_column()) {
+            (Some(col), None) if col.as_str() == name => &self.right,
+            (None, Some(col)) if col.as_str() == name => &self.left,
+            _ => return None,
+        };
+
+        let value = other.evaluate_inline()?;
+        let value = value.as_scalar_column()?;
+
+        let scalar = value.scalar();
+        use Operator as O;
+        let specialized = match self.op {
+            O::Eq => Some(SpecializedColumnPredicateExpr::Eq(scalar.clone())),
+            O::EqValidity => Some(SpecializedColumnPredicateExpr::EqMissing(scalar.clone())),
+            _ => None,
+        };
+
+        Some((Arc::new(self.clone()) as _, specialized))
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -498,7 +529,7 @@ impl PartitionedAggregation for BinaryExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let left = self.left.as_partitioned_aggregator().unwrap();
@@ -511,7 +542,7 @@ impl PartitionedAggregation for BinaryExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

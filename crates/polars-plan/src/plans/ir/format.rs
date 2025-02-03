@@ -1,6 +1,4 @@
-use std::borrow::Cow;
-use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
@@ -261,7 +259,6 @@ impl<'a> IRDisplay<'a> {
             DataFrameScan {
                 schema,
                 output_schema,
-                filter: selection,
                 ..
             } => {
                 let total_columns = schema.len();
@@ -270,26 +267,14 @@ impl<'a> IRDisplay<'a> {
                 } else {
                     "*".to_string()
                 };
-                let selection = match selection {
-                    Some(s) => Cow::Owned(self.display_expr(s).to_string()),
-                    None => Cow::Borrowed("None"),
-                };
                 write!(
                     f,
-                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS; SELECTION: {}",
+                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS",
                     "",
                     schema.iter_names().take(4).collect::<Vec<_>>(),
                     n_columns,
                     total_columns,
-                    selection,
                 )
-            },
-            Reduce { input, exprs, .. } => {
-                // @NOTE: Maybe there should be a clear delimiter here?
-                let default_exprs = self.display_expr_slice(exprs);
-
-                write!(f, "{:indent$} REDUCE {default_exprs} FROM", "")?;
-                self.with_root(*input)._format(f, sub_indent)
             },
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
@@ -306,13 +291,21 @@ impl<'a> IRDisplay<'a> {
                 self.with_root(*input)._format(f, sub_indent)
             },
             GroupBy {
-                input, keys, aggs, ..
+                input,
+                keys,
+                aggs,
+                apply,
+                ..
             } => {
-                let aggs = self.display_expr_slice(aggs);
                 let keys = self.display_expr_slice(keys);
 
                 write!(f, "{:indent$}AGGREGATE", "")?;
-                write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
+                if apply.is_some() {
+                    write!(f, "\n{:indent$}\tMAP_GROUPS BY {keys} FROM", "")?;
+                } else {
+                    let aggs = self.display_expr_slice(aggs);
+                    write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
+                }
                 self.with_root(*input)._format(f, sub_indent)
             },
             Join {
@@ -326,13 +319,25 @@ impl<'a> IRDisplay<'a> {
                 let left_on = self.display_expr_slice(left_on);
                 let right_on = self.display_expr_slice(right_on);
 
-                let how = &options.args.how;
-                write!(f, "{:indent$}{how} JOIN:", "")?;
-                write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
-                self.with_root(*input_left)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                self.with_root(*input_right)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}END {how} JOIN", "")
+                // Fused cross + filter (show as nested loop join)
+                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                    let predicate = self.display_expr(predicate);
+                    let name = "NESTED LOOP";
+                    write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {name} JOIN", "")
+                } else {
+                    let how = &options.args.how;
+                    write!(f, "{:indent$}{how} JOIN:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {how} JOIN", "")
+                }
             },
             HStack { input, exprs, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
@@ -372,8 +377,6 @@ impl<'a> IRDisplay<'a> {
                 let name = match payload {
                     SinkType::Memory => "SINK (memory)",
                     SinkType::File { .. } => "SINK (file)",
-                    #[cfg(feature = "cloud")]
-                    SinkType::Cloud { .. } => "SINK (cloud)",
                 };
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
@@ -390,6 +393,19 @@ impl<'a> IRDisplay<'a> {
                 )?;
 
                 self.with_root(*input)._format(f, sub_indent)
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                write!(f, "{:indent$}MERGE SORTED ON '{key}':", "")?;
+                write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                self.with_root(*input_left)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                self.with_root(*input_right)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}END MERGE_SORTED", "")
             },
             Invalid => write!(f, "{:indent$}INVALID", ""),
         }
@@ -416,6 +432,12 @@ impl<'a> ExprIRDisplay<'a> {
 impl Display for IRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self._format(f, 0)
+    }
+}
+
+impl fmt::Debug for IRDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self, f)
     }
 }
 
@@ -593,16 +615,6 @@ impl Display for ExprIRDisplay<'_> {
                     Var(expr, _) => write!(f, "{}.var()", self.with_root(expr)),
                     Std(expr, _) => write!(f, "{}.std()", self.with_root(expr)),
                     Quantile { expr, .. } => write!(f, "{}.quantile()", self.with_root(expr)),
-                    #[cfg(feature = "bitwise")]
-                    Bitwise(expr, t) => {
-                        let t = match t {
-                            BitwiseAggFunction::And => "and",
-                            BitwiseAggFunction::Or => "or",
-                            BitwiseAggFunction::Xor => "xor",
-                        };
-
-                        write!(f, "{}.bitwise.{t}()", self.with_root(expr))
-                    },
                 }
             },
             Cast {

@@ -3,11 +3,13 @@ mod warning;
 
 use std::borrow::Cow;
 use std::collections::TryReserveError;
+use std::convert::Infallible;
 use std::error::Error;
 use std::fmt::{self, Display, Formatter, Write};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock};
 use std::{env, io};
+pub mod signals;
 
 pub use warning::*;
 
@@ -27,7 +29,7 @@ static ERROR_STRATEGY: LazyLock<ErrorStrategy> = LazyLock::new(|| {
     }
 });
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ErrString(Cow<'static, str>);
 
 impl ErrString {
@@ -73,47 +75,58 @@ impl Display for ErrString {
     }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone)]
 pub enum PolarsError {
-    #[error("not found: {0}")]
     ColumnNotFound(ErrString),
-    #[error("{0}")]
     ComputeError(ErrString),
-    #[error("duplicate: {0}")]
     Duplicate(ErrString),
-    #[error("{0}")]
     InvalidOperation(ErrString),
-    #[error("{}", match msg {
-        Some(msg) => format!("{}", msg),
-        None => format!("{}", error)
-    })]
     IO {
         error: Arc<io::Error>,
         msg: Option<ErrString>,
     },
-    #[error("no data: {0}")]
     NoData(ErrString),
-    #[error("{0}")]
     OutOfBounds(ErrString),
-    #[error("field not found: {0}")]
     SchemaFieldNotFound(ErrString),
-    #[error("{0}")]
     SchemaMismatch(ErrString),
-    #[error("lengths don't match: {0}")]
     ShapeMismatch(ErrString),
-    #[error("{0}")]
     SQLInterface(ErrString),
-    #[error("{0}")]
     SQLSyntax(ErrString),
-    #[error("string caches don't match: {0}")]
     StringCacheMismatch(ErrString),
-    #[error("field not found: {0}")]
     StructFieldNotFound(ErrString),
-    #[error("{error}: {msg}")]
     Context {
         error: Box<PolarsError>,
         msg: ErrString,
     },
+}
+
+impl Error for PolarsError {}
+
+impl Display for PolarsError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use PolarsError::*;
+        match self {
+            ComputeError(msg)
+            | InvalidOperation(msg)
+            | OutOfBounds(msg)
+            | SchemaMismatch(msg)
+            | SQLInterface(msg)
+            | SQLSyntax(msg) => write!(f, "{msg}"),
+
+            ColumnNotFound(msg) => write!(f, "not found: {msg}"),
+            Duplicate(msg) => write!(f, "duplicate: {msg}"),
+            IO { error, msg } => match msg {
+                Some(m) => write!(f, "{m}"),
+                None => write!(f, "{error}"),
+            },
+            NoData(msg) => write!(f, "no data: {msg}"),
+            SchemaFieldNotFound(msg) => write!(f, "field not found: {msg}"),
+            ShapeMismatch(msg) => write!(f, "lengths don't match: {msg}"),
+            StringCacheMismatch(msg) => write!(f, "string caches don't match: {msg}"),
+            StructFieldNotFound(msg) => write!(f, "field not found: {msg}"),
+            Context { error, msg } => write!(f, "{error}: {msg}"),
+        }
+    }
 }
 
 impl From<io::Error> for PolarsError {
@@ -165,6 +178,12 @@ impl From<arrow_format::ipc::planus::Error> for PolarsError {
 impl From<TryReserveError> for PolarsError {
     fn from(value: TryReserveError) -> Self {
         polars_err!(ComputeError: "OOM: {}", value)
+    }
+}
+
+impl From<Infallible> for PolarsError {
+    fn from(_: Infallible) -> Self {
+        unreachable!()
     }
 }
 

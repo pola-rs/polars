@@ -12,6 +12,7 @@ use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
+use super::CsvParseOptions;
 use crate::path_utils::is_cloud_url;
 use crate::utils::compression::maybe_decompress_bytes;
 
@@ -92,7 +93,7 @@ pub fn count_rows_from_slice(
 
     let iter = file_chunks.into_par_iter().map(|(start, stop)| {
         let local_bytes = &bytes[start..stop];
-        let row_iterator = SplitLines::new(local_bytes, quote_char, eol_char);
+        let row_iterator = SplitLines::new(local_bytes, quote_char, eol_char, comment_prefix);
         if comment_prefix.is_some() {
             Ok(row_iterator
                 .filter(|line| !line.is_empty() && !is_comment_line(line, comment_prefix))
@@ -123,9 +124,10 @@ pub(super) fn skip_bom(input: &[u8]) -> &[u8] {
 /// Checks if a line in a CSV file is a comment based on the given comment prefix configuration.
 ///
 /// This function is used during CSV parsing to determine whether a line should be ignored based on its starting characters.
+#[inline]
 pub(super) fn is_comment_line(line: &[u8], comment_prefix: Option<&CommentPrefix>) -> bool {
     match comment_prefix {
-        Some(CommentPrefix::Single(c)) => line.starts_with(&[*c]),
+        Some(CommentPrefix::Single(c)) => line.first() == Some(c),
         Some(CommentPrefix::Multi(s)) => line.starts_with(s.as_bytes()),
         None => false,
     }
@@ -139,6 +141,17 @@ pub(super) fn next_line_position_naive(input: &[u8], eol_char: u8) -> Option<usi
         return None;
     }
     Some(pos)
+}
+
+pub(super) fn skip_lines_naive(mut input: &[u8], eol_char: u8, skip: usize) -> &[u8] {
+    for _ in 0..skip {
+        if let Some(pos) = next_line_position_naive(input, eol_char) {
+            input = &input[pos..];
+        } else {
+            return input;
+        }
+    }
+    input
 }
 
 /// Find the nearest next line position that is not embedded in a String field.
@@ -204,7 +217,7 @@ pub(super) fn next_line_position(
         }
         debug_assert!(pos <= input.len());
         let new_input = unsafe { input.get_unchecked(pos..) };
-        let mut lines = SplitLines::new(new_input, quote_char, eol_char);
+        let mut lines = SplitLines::new(new_input, quote_char, eol_char, None);
         let line = lines.next();
 
         match (line, expected_fields) {
@@ -343,6 +356,7 @@ pub(super) struct SplitLines<'a> {
     previous_valid_eols: u64,
     total_index: usize,
     quoting: bool,
+    comment_prefix: Option<&'a CommentPrefix>,
 }
 
 #[cfg(feature = "simd")]
@@ -357,7 +371,12 @@ use polars_utils::clmul::prefix_xorsum_inclusive;
 type SimdVec = u8x64;
 
 impl<'a> SplitLines<'a> {
-    pub(super) fn new(slice: &'a [u8], quote_char: Option<u8>, eol_char: u8) -> Self {
+    pub(super) fn new(
+        slice: &'a [u8],
+        quote_char: Option<u8>,
+        eol_char: u8,
+        comment_prefix: Option<&'a CommentPrefix>,
+    ) -> Self {
         let quoting = quote_char.is_some();
         let quote_char = quote_char.unwrap_or(b'\"');
         #[cfg(feature = "simd")]
@@ -376,18 +395,19 @@ impl<'a> SplitLines<'a> {
             previous_valid_eols: 0,
             total_index: 0,
             quoting,
+            comment_prefix,
         }
     }
 }
 
-impl<'a> Iterator for SplitLines<'a> {
-    type Item = &'a [u8];
-
-    #[inline]
-    #[cfg(not(feature = "simd"))]
-    fn next(&mut self) -> Option<&'a [u8]> {
+impl<'a> SplitLines<'a> {
+    // scalar as in non-simd
+    fn next_scalar(&mut self) -> Option<&'a [u8]> {
         if self.v.is_empty() {
             return None;
+        }
+        if is_comment_line(self.v, self.comment_prefix) {
+            return self.next_comment_line();
         }
         {
             let mut pos = 0u32;
@@ -431,6 +451,31 @@ impl<'a> Iterator for SplitLines<'a> {
             }
         }
     }
+    fn next_comment_line(&mut self) -> Option<&'a [u8]> {
+        if let Some(pos) = next_line_position_naive(self.v, self.eol_char) {
+            unsafe {
+                // return line up to this position
+                let ret = Some(self.v.get_unchecked(..(pos - 1)));
+                // skip the '\n' token and update slice.
+                self.v = self.v.get_unchecked(pos..);
+                ret
+            }
+        } else {
+            let remainder = self.v;
+            self.v = &[];
+            Some(remainder)
+        }
+    }
+}
+
+impl<'a> Iterator for SplitLines<'a> {
+    type Item = &'a [u8];
+
+    #[inline]
+    #[cfg(not(feature = "simd"))]
+    fn next(&mut self) -> Option<&'a [u8]> {
+        self.next_scalar()
+    }
 
     #[inline]
     #[cfg(feature = "simd")]
@@ -452,6 +497,9 @@ impl<'a> Iterator for SplitLines<'a> {
         }
         if self.v.is_empty() {
             return None;
+        }
+        if self.comment_prefix.is_some() {
+            return self.next_scalar();
         }
 
         self.total_index = 0;
@@ -717,6 +765,15 @@ pub(super) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &
     }
 }
 
+#[inline]
+pub(super) fn skip_this_line_naive(input: &[u8], eol_char: u8) -> &[u8] {
+    if let Some(pos) = next_line_position_naive(input, eol_char) {
+        unsafe { input.get_unchecked(pos..) }
+    } else {
+        &[]
+    }
+}
+
 /// Parse CSV.
 ///
 /// # Arguments
@@ -729,14 +786,9 @@ pub(super) fn skip_this_line(bytes: &[u8], quote: Option<u8>, eol_char: u8) -> &
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_lines(
     mut bytes: &[u8],
+    parse_options: &CsvParseOptions,
     offset: usize,
-    separator: u8,
-    comment_prefix: Option<&CommentPrefix>,
-    quote_char: Option<u8>,
-    eol_char: u8,
-    missing_is_null: bool,
     ignore_errors: bool,
-    mut truncate_ragged_lines: bool,
     null_values: Option<&NullValuesCompiled>,
     projection: &[usize],
     buffers: &mut [Buffer],
@@ -749,6 +801,7 @@ pub(super) fn parse_lines(
         !projection.is_empty(),
         "at least one column should be projected"
     );
+    let mut truncate_ragged_lines = parse_options.truncate_ragged_lines;
     // During projection pushdown we are not checking other csv fields.
     // This would be very expensive and we don't care as we only want
     // the projected columns.
@@ -770,9 +823,9 @@ pub(super) fn parse_lines(
 
         if bytes.is_empty() {
             return Ok(original_bytes_len);
-        } else if is_comment_line(bytes, comment_prefix) {
+        } else if is_comment_line(bytes, parse_options.comment_prefix.as_ref()) {
             // deal with comments
-            let bytes_rem = skip_this_line(bytes, quote_char, eol_char);
+            let bytes_rem = skip_this_line_naive(bytes, parse_options.eol_char);
             bytes = bytes_rem;
             continue;
         }
@@ -784,7 +837,12 @@ pub(super) fn parse_lines(
         let mut next_projected = unsafe { projection_iter.next().unwrap_unchecked() };
         let mut processed_fields = 0;
 
-        let mut iter = SplitFields::new(bytes, separator, quote_char, eol_char);
+        let mut iter = SplitFields::new(
+            bytes,
+            parse_options.separator,
+            parse_options.quote_char,
+            parse_options.eol_char,
+        );
         let mut idx = 0u32;
         let mut read_sol = 0;
         loop {
@@ -829,9 +887,9 @@ pub(super) fn parse_lines(
                             add_null = unsafe { null_values.is_null(field, idx as usize) }
                         }
                         if add_null {
-                            buf.add_null(!missing_is_null && field.is_empty())
+                            buf.add_null(!parse_options.missing_is_null && field.is_empty())
                         } else {
-                            buf.add(field, ignore_errors, needs_escaping, missing_is_null)
+                            buf.add(field, ignore_errors, needs_escaping, parse_options.missing_is_null)
                                 .map_err(|e| {
                                     let bytes_offset = offset + field.as_ptr() as usize - start;
                                     let unparsable = String::from_utf8_lossy(field);
@@ -863,7 +921,7 @@ pub(super) fn parse_lines(
                         match projection_iter.next() {
                             Some(p) => next_projected = p,
                             None => {
-                                if bytes.get(read_sol - 1) == Some(&eol_char) {
+                                if bytes.get(read_sol - 1) == Some(&parse_options.eol_char) {
                                     bytes = &bytes[read_sol..];
                                 } else {
                                     if !truncate_ragged_lines && read_sol < bytes.len() {
@@ -873,8 +931,8 @@ Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
                                     }
                                     let bytes_rem = skip_this_line(
                                         unsafe { bytes.get_unchecked(read_sol - 1..) },
-                                        quote_char,
-                                        eol_char,
+                                        parse_options.quote_char,
+                                        parse_options.eol_char,
                                     );
                                     bytes = bytes_rem;
                                 }
@@ -896,7 +954,7 @@ Consider setting 'truncate_ragged_lines={}'."#, polars_error::constants::TRUE)
                 // SAFETY: processed fields index can never exceed the projection indices.
                 buffers.get_unchecked_mut(processed_fields)
             };
-            buf.add_null(!missing_is_null);
+            buf.add_null(!parse_options.missing_is_null);
             processed_fields += 1;
         }
         line_count += 1;
@@ -910,13 +968,13 @@ mod test {
     #[test]
     fn test_splitlines() {
         let input = "1,\"foo\n\"\n2,\"foo\n\"\n";
-        let mut lines = SplitLines::new(input.as_bytes(), Some(b'"'), b'\n');
+        let mut lines = SplitLines::new(input.as_bytes(), Some(b'"'), b'\n', None);
         assert_eq!(lines.next(), Some("1,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), Some("2,\"foo\n\"".as_bytes()));
         assert_eq!(lines.next(), None);
 
         let input2 = "1,'foo\n'\n2,'foo\n'\n";
-        let mut lines2 = SplitLines::new(input2.as_bytes(), Some(b'\''), b'\n');
+        let mut lines2 = SplitLines::new(input2.as_bytes(), Some(b'\''), b'\n', None);
         assert_eq!(lines2.next(), Some("1,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), Some("2,'foo\n'".as_bytes()));
         assert_eq!(lines2.next(), None);

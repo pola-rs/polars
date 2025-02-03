@@ -139,7 +139,9 @@ def test_unnest_columns_available() -> None:
     q = df.with_columns(
         pl.col("genres")
         .str.split("|")
-        .list.to_struct(n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}")
+        .list.to_struct(
+            n_field_strategy="max_width", fields=lambda i: f"genre{i + 1}", _eager=True
+        )
     ).unnest("genres")
 
     out = q.collect()
@@ -225,7 +227,7 @@ def test_asof_join_projection_() -> None:
         "b",
         "c",
         "d",
-        pl.lit(0).alias("group"),
+        pl.lit(0, dtype=pl.Int64).alias("group"),
         pl.lit(0.1).alias("val"),
     ]
     dirty_lf1 = lf1.select(expressions)
@@ -498,7 +500,6 @@ def test_non_coalesce_multi_key_join_projection_pushdown_16554(
             coalesce=False,
         )
         .select("a", "b", "c")
-        .sort("a")
         .collect()
     )
 
@@ -514,7 +515,7 @@ def test_non_coalesce_multi_key_join_projection_pushdown_16554(
         .collect()
     )
 
-    assert_frame_equal(out.sort("a"), expect)
+    assert_frame_equal(out, expect, check_row_order=False)
 
 
 @pytest.mark.parametrize("how", ["semi", "anti"])
@@ -535,7 +536,7 @@ def test_projection_empty_frame_len_16904() -> None:
 
     q = df.select(pl.len())
 
-    assert "PROJECT */0" in q.explain()
+    assert "PROJECT 0/0" in q.explain()
 
     expect = pl.DataFrame({"len": [0]}, schema_overrides={"len": pl.UInt32()})
     assert_frame_equal(q.collect(), expect)
@@ -612,3 +613,36 @@ a,b,c,d,e
     # [dyn int: 1.alias("x"), dyn int: 1.alias("y")]
     # Csv SCAN [20 in-mem bytes]
     assert plan.endswith("PROJECT 1/6 COLUMNS")
+
+
+def test_projection_pushdown_height_20221() -> None:
+    q = pl.LazyFrame({"a": range(5)}).select("a", b=pl.col("a").first()).select("b")
+    assert_frame_equal(q.collect(), pl.DataFrame({"b": [0, 0, 0, 0, 0]}))
+
+
+def test_select_len_20337() -> None:
+    strs = [str(i) for i in range(3)]
+    q = pl.LazyFrame({"a": strs, "b": strs, "c": strs, "d": range(3)})
+
+    q = q.group_by(pl.col("c")).agg(
+        (pl.col("d") * j).alias(f"mult {j}") for j in [1, 2]
+    )
+
+    q = q.with_row_index("foo")
+    assert q.select(pl.len()).collect().item() == 3
+
+
+def test_filter_count_projection_20902() -> None:
+    lineitem_ldf = pl.LazyFrame(
+        {
+            "l_partkey": [1],
+            "l_quantity": [1],
+            "l_extendedprice": [1],
+        }
+    )
+    assert (
+        "PROJECT 1/3"
+        in lineitem_ldf.filter(pl.col("l_partkey").is_between(10, 20))
+        .select(pl.len())
+        .explain()
+    )

@@ -233,7 +233,7 @@ def test_error_on_double_agg() -> None:
 def test_filter_not_of_type_bool() -> None:
     df = pl.DataFrame({"json_val": ['{"a":"hello"}', None, '{"a":"world"}']})
     with pytest.raises(
-        ComputeError, match="filter predicate must be of type `Boolean`, got"
+        InvalidOperationError, match="filter predicate must be of type `Boolean`, got"
     ):
         df.filter(pl.col("json_val").str.json_path_match("$.a"))
 
@@ -268,7 +268,7 @@ def test_invalid_concat_type_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
+        match="DataFrame `how` must be one of {'vertical', '.+', 'align_right'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
 
@@ -706,7 +706,7 @@ def test_no_panic_pandas_nat() -> None:
 
 def test_list_to_struct_invalid_type() -> None:
     with pytest.raises(pl.exceptions.InvalidOperationError):
-        pl.DataFrame({"a": 1}).select(pl.col("a").list.to_struct())
+        pl.DataFrame({"a": 1}).to_series().list.to_struct()
 
 
 def test_raise_invalid_agg() -> None:
@@ -736,3 +736,12 @@ def test_raise_column_not_found_in_join_arg() -> None:
     b = pl.DataFrame({"y": [1, 2, 3]})
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
         a.join(b, on="y")
+
+
+def test_raise_on_different_results_20104() -> None:
+    df = pl.DataFrame({"x": [1, 2]})
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        df.rolling("x", period="3i").agg(
+            result=pl.col("x").gather_every(2, offset=1).map_batches(pl.Series.min)
+        )

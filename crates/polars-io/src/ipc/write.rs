@@ -1,5 +1,6 @@
 use std::io::Write;
 
+use arrow::datatypes::Metadata;
 use arrow::io::ipc::write::{self, EncodedData, WriteOptions};
 use polars_core::prelude::*;
 #[cfg(feature = "serde")]
@@ -36,8 +37,16 @@ impl IpcWriterOptions {
 /// fn example(df: &mut DataFrame) -> PolarsResult<()> {
 ///     let mut file = File::create("file.ipc").expect("could not create file");
 ///
-///     IpcWriter::new(&mut file)
-///         .finish(df)
+///     let mut writer = IpcWriter::new(&mut file);
+///
+///     let custom_metadata = [
+///         ("first_name".into(), "John".into()),
+///         ("last_name".into(), "Doe".into()),
+///     ]
+///     .into_iter()
+///     .collect();
+///     writer.set_custom_schema_metadata(Arc::new(custom_metadata));
+///     writer.finish(df)
 /// }
 ///
 /// ```
@@ -48,6 +57,7 @@ pub struct IpcWriter<W> {
     /// Polars' flavor of arrow. This might be temporary.
     pub(super) compat_level: CompatLevel,
     pub(super) parallel: bool,
+    pub(super) custom_schema_metadata: Option<Arc<Metadata>>,
 }
 
 impl<W: Write> IpcWriter<W> {
@@ -84,6 +94,11 @@ impl<W: Write> IpcWriter<W> {
             compat_level: self.compat_level,
         })
     }
+
+    /// Sets custom schema metadata. Must be called before `start` is called
+    pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
+        self.custom_schema_metadata = Some(custom_metadata);
+    }
 }
 
 impl<W> SerWriter<W> for IpcWriter<W>
@@ -96,11 +111,12 @@ where
             compression: None,
             compat_level: CompatLevel::newest(),
             parallel: true,
+            custom_schema_metadata: None,
         }
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        let schema = schema_to_arrow_checked(&df.schema(), self.compat_level, "ipc")?;
+        let schema = schema_to_arrow_checked(df.schema(), self.compat_level, "ipc")?;
         let mut ipc_writer = write::FileWriter::try_new(
             &mut self.writer,
             Arc::new(schema),
@@ -109,6 +125,10 @@ where
                 compression: self.compression.map(|c| c.into()),
             },
         )?;
+        if let Some(custom_metadata) = &self.custom_schema_metadata {
+            ipc_writer.set_custom_schema_metadata(Arc::clone(custom_metadata));
+        }
+
         if self.parallel {
             df.align_chunks_par();
         } else {

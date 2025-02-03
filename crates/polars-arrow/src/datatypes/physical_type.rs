@@ -76,6 +76,8 @@ pub enum IntegerType {
     Int32,
     /// A signed 64-bit integer.
     Int64,
+    /// A signed 128-bit integer.
+    Int128,
     /// An unsigned 8-bit integer.
     UInt8,
     /// An unsigned 16-bit integer.

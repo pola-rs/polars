@@ -67,7 +67,7 @@ impl Series {
                 }
             },
             DataType::BinaryOffset => {
-                let length = size as IdxSize;
+                let length = size;
 
                 let offsets = vec![0; size + 1];
                 let array = BinaryArray::<i64>::new(
@@ -89,7 +89,7 @@ impl Series {
             },
             DataType::Null => Series::new_null(name, size),
             DataType::Unknown(kind) => {
-                let dtype = kind.materialize().expect("expected known type");
+                let dtype = kind.materialize().unwrap_or(DataType::Null);
                 Series::full_null(name, size, &dtype)
             },
             #[cfg(feature = "object")]

@@ -8,9 +8,7 @@ use polars_error::{PolarsError, PolarsResult};
 use super::cache::{get_env_file_cache_ttl, FILE_CACHE};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
-use crate::cloud::{
-    build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
-};
+use crate::cloud::{build_object_store, object_path_from_str, CloudLocation, CloudOptions};
 use crate::path_utils::{ensure_directory_init, is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 use crate::pl_async;
 
@@ -77,7 +75,7 @@ pub fn init_entries_from_uri_list(
                     .map(|i| async move {
                         let (_, object_store) =
                             build_object_store(&uri_list[i], cloud_options, false).await?;
-                        PolarsResult::Ok(PolarsObjectStore::new(object_store))
+                        PolarsResult::Ok(object_store)
                     }),
             )
             .await

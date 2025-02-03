@@ -243,7 +243,7 @@ fn partition_df(
     let partitions = partitions.idx().unwrap().clone();
 
     let out = match groups {
-        GroupsProxy::Idx(idx) => {
+        GroupsType::Idx(idx) => {
             let iter = idx.into_iter().map(move |(_, group)| {
                 // groups are in bounds and sorted
                 unsafe {
@@ -252,7 +252,7 @@ fn partition_df(
             });
             Box::new(iter) as DfIter
         },
-        GroupsProxy::Slice { groups, .. } => {
+        GroupsType::Slice { groups, .. } => {
             let iter = groups
                 .into_iter()
                 .map(move |[first, len]| df.slice(first as i64, len as usize));

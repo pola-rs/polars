@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::ops::Deref;
 
-use polars_core::export::regex;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
@@ -501,14 +500,17 @@ impl SQLContext {
 
     fn execute_truncate_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         if let Statement::Truncate {
-            table_name,
+            table_names,
             partitions,
             ..
         } = stmt
         {
             match partitions {
                 None => {
-                    let tbl = table_name.to_string();
+                    if table_names.len() != 1 {
+                        polars_bail!(SQLInterface: "TRUNCATE expects exactly one table name; found {}", table_names.len())
+                    }
+                    let tbl = table_names[0].to_string();
                     if let Some(lf) = self.table_map.get_mut(&tbl) {
                         *lf = DataFrame::empty_with_schema(
                             lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
@@ -563,6 +565,8 @@ impl SQLContext {
                     | JoinOperator::LeftOuter(constraint)
                     | JoinOperator::RightOuter(constraint)
                     | JoinOperator::Inner(constraint)
+                    | JoinOperator::Anti(constraint)
+                    | JoinOperator::Semi(constraint)
                     | JoinOperator::LeftAnti(constraint)
                     | JoinOperator::LeftSemi(constraint)
                     | JoinOperator::RightAnti(constraint)
@@ -589,9 +593,9 @@ impl SQLContext {
                                 JoinOperator::RightOuter(_) => JoinType::Right,
                                 JoinOperator::Inner(_) => JoinType::Inner,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
+                                JoinOperator::Anti(_) | JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::LeftSemi(_) | JoinOperator::RightSemi(_) => JoinType::Semi,
+                                JoinOperator::Semi(_) | JoinOperator::LeftSemi(_) | JoinOperator::RightSemi(_) => JoinType::Semi,
                                 join_type => polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type),
                             },
                         )?
@@ -718,7 +722,9 @@ impl SQLContext {
 
             // Final/selected cols, accounting for 'SELECT *' modifiers
             let mut retained_cols = Vec::with_capacity(projections.len());
+            let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
+            let mut all_literal = true;
 
             // Note: if there is an 'order by' then we project everything (original cols
             // and new projections) and *then* select the final cols; the retained cols
@@ -732,11 +738,13 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
+                    all_literal &= expr_to_leaf_column_names_iter(p).next().is_none();
                     retained_cols.push(if have_order_by {
                         col(name.as_str())
                     } else {
                         p.clone()
                     });
+                    retained_names.push(col(name));
                 }
             }
 
@@ -752,7 +760,12 @@ impl SQLContext {
             }
 
             lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
-            lf = lf.select(retained_cols);
+
+            if all_literal && !have_order_by {
+                lf = lf.with_columns(retained_cols).select(retained_names);
+            } else {
+                lf = lf.select(retained_cols);
+            }
 
             if !select_modifiers.rename.is_empty() {
                 lf = lf.rename(
@@ -971,7 +984,7 @@ impl SQLContext {
                 name, alias, args, ..
             } => {
                 if let Some(args) = args {
-                    return self.execute_table_function(name, alias, args);
+                    return self.execute_table_function(name, alias, &args.args);
                 }
                 let tbl_name = name.0.first().unwrap().value.as_str();
                 if let Some(lf) = self.get_table_from_current_scope(tbl_name) {
@@ -1016,10 +1029,10 @@ impl SQLContext {
                         .columns
                         .iter()
                         .map(|c| {
-                            if c.value.is_empty() {
+                            if c.name.value.is_empty() {
                                 None
                             } else {
-                                Some(PlSmallStr::from_str(c.value.as_str()))
+                                Some(PlSmallStr::from_str(c.name.value.as_str()))
                             }
                         })
                         .collect();
@@ -1105,7 +1118,7 @@ impl SQLContext {
         order_by: &Option<OrderBy>,
         selected: Option<&[Expr]>,
     ) -> PolarsResult<LazyFrame> {
-        if order_by.as_ref().map_or(true, |ob| ob.exprs.is_empty()) {
+        if order_by.as_ref().is_none_or(|ob| ob.exprs.is_empty()) {
             return Ok(lf);
         }
         let schema = self.get_frame_schema(&mut lf)?;
@@ -1341,7 +1354,7 @@ impl SQLContext {
                 .replace('%', ".*")
                 .replace('_', ".");
 
-            modifiers.ilike = Some(regex::Regex::new(format!("^(?i){}$", rx).as_str()).unwrap());
+            modifiers.ilike = Some(regex::Regex::new(format!("^(?is){}$", rx).as_str()).unwrap());
         }
 
         // SELECT * RENAME
@@ -1387,7 +1400,8 @@ impl SQLContext {
                 )
             } else {
                 let existing_columns: Vec<_> = schema.iter_names().collect();
-                let new_columns: Vec<_> = alias.columns.iter().map(|c| c.value.clone()).collect();
+                let new_columns: Vec<_> =
+                    alias.columns.iter().map(|c| c.name.value.clone()).collect();
                 Ok(lf.rename(existing_columns, new_columns, true))
             }
         }

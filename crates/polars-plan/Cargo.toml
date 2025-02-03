@@ -27,10 +27,9 @@ ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
-bytes = { workspace = true }
+bytes = { workspace = true, features = ["serde"] }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-ciborium = { workspace = true, optional = true }
 either = { workspace = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
@@ -52,8 +51,9 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "ciborium", "polars-utils/python"]
+python = ["dep:pyo3", "polars-utils/python"]
 serde = [
+  "ir_serde",
   "dep:serde",
   "polars-core/serde-lazy",
   "polars-time/serde",
@@ -85,8 +85,9 @@ future = []
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
+dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
-dtype-decimal = ["polars-core/dtype-decimal"]
+dtype-decimal = ["polars-core/dtype-decimal", "dtype-i128"]
 dtype-date = ["polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-time/dtype-datetime", "temporal"]
 dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration", "temporal", "polars-ops/dtype-duration"]
@@ -155,9 +156,11 @@ array_to_struct = ["polars-ops/array_to_struct"]
 row_hash = ["polars-core/row_hash", "polars-ops/hash"]
 reinterpret = ["polars-core/reinterpret", "polars-ops/reinterpret"]
 string_pad = ["polars-ops/string_pad"]
+string_normalize = ["polars-ops/string_normalize"]
 string_reverse = ["polars-ops/string_reverse"]
 string_to_integer = ["polars-ops/string_to_integer"]
 arg_where = []
+index_of = ["polars-ops/index_of"]
 search_sorted = ["polars-ops/search_sorted"]
 merge_sorted = ["polars-ops/merge_sorted"]
 meta = []
@@ -188,10 +191,8 @@ month_end = ["polars-time/month_end"]
 offset_by = ["polars-time/offset_by"]
 
 bigidx = ["polars-core/bigidx", "polars-utils/bigidx"]
-polars_cloud = ["serde", "ciborium"]
+polars_cloud = ["serde"]
 ir_serde = ["serde", "polars-utils/ir_serde"]
-
-panic_on_schema = []
 
 [package.metadata.docs.rs]
 features = [
@@ -262,6 +263,7 @@ features = [
   "find_many",
   "string_encoding",
   "ipc",
+  "index_of",
   "search_sorted",
   "unique_counts",
   "dtype-u8",
@@ -278,7 +280,6 @@ features = [
   "replace",
   "dtype-u16",
   "regex",
-  "ciborium",
   "dtype-decimal",
   "arg_where",
   "business",

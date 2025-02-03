@@ -10,12 +10,16 @@ mod memory;
 use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
+#[cfg(feature = "catalog")]
+use polars_python::catalog::unity::PyCatalogClient;
 #[cfg(feature = "polars_cloud")]
 use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;
 use polars_python::expr::PyExpr;
 use polars_python::functions::PyStringCacheHolder;
-use polars_python::lazyframe::{PyInProcessQuery, PyLazyFrame};
+#[cfg(not(target_arch = "wasm32"))]
+use polars_python::lazyframe::PyInProcessQuery;
+use polars_python::lazyframe::PyLazyFrame;
 use polars_python::lazygroupby::PyLazyGroupBy;
 use polars_python::series::PySeries;
 #[cfg(feature = "sql")]
@@ -38,6 +42,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Cache>().unwrap();
     m.add_class::<GroupBy>().unwrap();
     m.add_class::<Join>().unwrap();
+    m.add_class::<MergeSorted>().unwrap();
     m.add_class::<HStack>().unwrap();
     m.add_class::<Reduce>().unwrap();
     m.add_class::<Distinct>().unwrap();
@@ -87,6 +92,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<PySeries>().unwrap();
     m.add_class::<PyDataFrame>().unwrap();
     m.add_class::<PyLazyFrame>().unwrap();
+    #[cfg(not(target_arch = "wasm32"))]
     m.add_class::<PyInProcessQuery>().unwrap();
     m.add_class::<PyLazyGroupBy>().unwrap();
     m.add_class::<PyExpr>().unwrap();
@@ -118,6 +124,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::int_ranges))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::linear_space))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::date_range))
         .unwrap();
@@ -214,6 +222,10 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::when)).unwrap();
 
+    // Functions: other
+    m.add_wrapped(wrap_pyfunction!(functions::check_length))
+        .unwrap();
+
     #[cfg(feature = "sql")]
     m.add_wrapped(wrap_pyfunction!(functions::sql_expr))
         .unwrap();
@@ -231,6 +243,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     #[cfg(feature = "clipboard")]
     m.add_wrapped(wrap_pyfunction!(functions::write_clipboard_string))
         .unwrap();
+    #[cfg(feature = "catalog")]
+    m.add_class::<PyCatalogClient>().unwrap();
 
     // Functions - meta
     m.add_wrapped(wrap_pyfunction!(functions::get_index_type))
@@ -288,100 +302,85 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
 
     // Exceptions - Errors
-    m.add(
-        "PolarsError",
-        py.get_type_bound::<exceptions::PolarsError>(),
-    )
-    .unwrap();
+    m.add("PolarsError", py.get_type::<exceptions::PolarsError>())
+        .unwrap();
     m.add(
         "ColumnNotFoundError",
-        py.get_type_bound::<exceptions::ColumnNotFoundError>(),
+        py.get_type::<exceptions::ColumnNotFoundError>(),
     )
     .unwrap();
-    m.add(
-        "ComputeError",
-        py.get_type_bound::<exceptions::ComputeError>(),
-    )
-    .unwrap();
+    m.add("ComputeError", py.get_type::<exceptions::ComputeError>())
+        .unwrap();
     m.add(
         "DuplicateError",
-        py.get_type_bound::<exceptions::DuplicateError>(),
+        py.get_type::<exceptions::DuplicateError>(),
     )
     .unwrap();
     m.add(
         "InvalidOperationError",
-        py.get_type_bound::<exceptions::InvalidOperationError>(),
+        py.get_type::<exceptions::InvalidOperationError>(),
     )
     .unwrap();
-    m.add(
-        "NoDataError",
-        py.get_type_bound::<exceptions::NoDataError>(),
-    )
-    .unwrap();
+    m.add("NoDataError", py.get_type::<exceptions::NoDataError>())
+        .unwrap();
     m.add(
         "OutOfBoundsError",
-        py.get_type_bound::<exceptions::OutOfBoundsError>(),
+        py.get_type::<exceptions::OutOfBoundsError>(),
     )
     .unwrap();
     m.add(
         "SQLInterfaceError",
-        py.get_type_bound::<exceptions::SQLInterfaceError>(),
+        py.get_type::<exceptions::SQLInterfaceError>(),
     )
     .unwrap();
     m.add(
         "SQLSyntaxError",
-        py.get_type_bound::<exceptions::SQLSyntaxError>(),
+        py.get_type::<exceptions::SQLSyntaxError>(),
     )
     .unwrap();
-    m.add(
-        "SchemaError",
-        py.get_type_bound::<exceptions::SchemaError>(),
-    )
-    .unwrap();
+    m.add("SchemaError", py.get_type::<exceptions::SchemaError>())
+        .unwrap();
     m.add(
         "SchemaFieldNotFoundError",
-        py.get_type_bound::<exceptions::SchemaFieldNotFoundError>(),
+        py.get_type::<exceptions::SchemaFieldNotFoundError>(),
     )
     .unwrap();
-    m.add("ShapeError", py.get_type_bound::<exceptions::ShapeError>())
+    m.add("ShapeError", py.get_type::<exceptions::ShapeError>())
         .unwrap();
     m.add(
         "StringCacheMismatchError",
-        py.get_type_bound::<exceptions::StringCacheMismatchError>(),
+        py.get_type::<exceptions::StringCacheMismatchError>(),
     )
     .unwrap();
     m.add(
         "StructFieldNotFoundError",
-        py.get_type_bound::<exceptions::StructFieldNotFoundError>(),
+        py.get_type::<exceptions::StructFieldNotFoundError>(),
     )
     .unwrap();
 
     // Exceptions - Warnings
-    m.add(
-        "PolarsWarning",
-        py.get_type_bound::<exceptions::PolarsWarning>(),
-    )
-    .unwrap();
+    m.add("PolarsWarning", py.get_type::<exceptions::PolarsWarning>())
+        .unwrap();
     m.add(
         "PerformanceWarning",
-        py.get_type_bound::<exceptions::PerformanceWarning>(),
+        py.get_type::<exceptions::PerformanceWarning>(),
     )
     .unwrap();
     m.add(
         "CategoricalRemappingWarning",
-        py.get_type_bound::<exceptions::CategoricalRemappingWarning>(),
+        py.get_type::<exceptions::CategoricalRemappingWarning>(),
     )
     .unwrap();
     m.add(
         "MapWithoutReturnDtypeWarning",
-        py.get_type_bound::<exceptions::MapWithoutReturnDtypeWarning>(),
+        py.get_type::<exceptions::MapWithoutReturnDtypeWarning>(),
     )
     .unwrap();
 
     // Exceptions - Panic
     m.add(
         "PanicException",
-        py.get_type_bound::<pyo3::panic::PanicException>(),
+        py.get_type::<pyo3::panic::PanicException>(),
     )
     .unwrap();
 

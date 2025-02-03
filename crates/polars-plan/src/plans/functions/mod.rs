@@ -1,7 +1,5 @@
 mod count;
 mod dsl;
-#[cfg(feature = "merge_sorted")]
-mod merge_sorted;
 #[cfg(feature = "python")]
 mod python_udf;
 mod rename;
@@ -22,8 +20,6 @@ use strum_macros::IntoStaticStr;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_udf::PythonFunction;
-#[cfg(feature = "merge_sorted")]
-use crate::plans::functions::merge_sorted::merge_sorted;
 use crate::plans::ir::ScanSourcesDisplay;
 use crate::prelude::*;
 
@@ -31,45 +27,26 @@ use crate::prelude::*;
 #[derive(Clone, IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum FunctionIR {
+    RowIndex {
+        name: PlSmallStr,
+        offset: Option<IdxSize>,
+        // Might be cached.
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
+        schema: CachedSchema,
+    },
     #[cfg(feature = "python")]
     OpaquePython(OpaquePythonUdf),
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
-    Opaque {
-        function: Arc<dyn DataFrameUdf>,
-        schema: Option<Arc<dyn UdfSchema>>,
-        ///  allow predicate pushdown optimizations
-        predicate_pd: bool,
-        ///  allow projection pushdown optimizations
-        projection_pd: bool,
-        streamable: bool,
-        // used for formatting
-        fmt_str: PlSmallStr,
-    },
+
     FastCount {
         sources: ScanSources,
         scan_type: FileScan,
         alias: Option<PlSmallStr>,
     },
-    /// Streaming engine pipeline
-    #[cfg_attr(feature = "ir_serde", serde(skip))]
-    Pipeline {
-        function: Arc<Mutex<dyn DataFrameUdfMut>>,
-        schema: SchemaRef,
-        original: Option<Arc<IRPlan>>,
-    },
+
     Unnest {
         columns: Arc<[PlSmallStr]>,
     },
     Rechunk,
-    // The two DataFrames are temporary concatenated
-    // this indicates until which chunk the data is from the left df
-    // this trick allows us to reuse the `Union` architecture to get map over
-    // two DataFrames
-    #[cfg(feature = "merge_sorted")]
-    MergeSorted {
-        // sorted column that serves as the key
-        column: PlSmallStr,
-    },
     Rename {
         existing: Arc<[PlSmallStr]>,
         new: Arc<[PlSmallStr]>,
@@ -89,12 +66,24 @@ pub enum FunctionIR {
         #[cfg_attr(feature = "ir_serde", serde(skip))]
         schema: CachedSchema,
     },
-    RowIndex {
-        name: PlSmallStr,
-        // Might be cached.
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        schema: CachedSchema,
-        offset: Option<IdxSize>,
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    Opaque {
+        function: Arc<dyn DataFrameUdf>,
+        schema: Option<Arc<dyn UdfSchema>>,
+        ///  allow predicate pushdown optimizations
+        predicate_pd: bool,
+        ///  allow projection pushdown optimizations
+        projection_pd: bool,
+        streamable: bool,
+        // used for formatting
+        fmt_str: PlSmallStr,
+    },
+    /// Streaming engine pipeline
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    Pipeline {
+        function: Arc<Mutex<dyn DataFrameUdfMut>>,
+        schema: SchemaRef,
+        original: Option<Arc<IRPlan>>,
     },
 }
 
@@ -129,8 +118,6 @@ impl PartialEq for FunctionIR {
             #[cfg(feature = "pivot")]
             (Unpivot { args: l, .. }, Unpivot { args: r, .. }) => l == r,
             (RowIndex { name: l, .. }, RowIndex { name: r, .. }) => l == r,
-            #[cfg(feature = "merge_sorted")]
-            (MergeSorted { column: l }, MergeSorted { column: r }) => l == r,
             _ => false,
         }
     }
@@ -155,8 +142,6 @@ impl Hash for FunctionIR {
             FunctionIR::Pipeline { .. } => {},
             FunctionIR::Unnest { columns } => columns.hash(state),
             FunctionIR::Rechunk => {},
-            #[cfg(feature = "merge_sorted")]
-            FunctionIR::MergeSorted { column } => column.hash(state),
             FunctionIR::Rename {
                 existing,
                 new,
@@ -187,8 +172,6 @@ impl FunctionIR {
         use FunctionIR::*;
         match self {
             Rechunk | Pipeline { .. } => false,
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => false,
             FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
@@ -203,8 +186,6 @@ impl FunctionIR {
     pub fn expands_rows(&self) -> bool {
         use FunctionIR::*;
         match self {
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             Explode { .. } => true,
@@ -221,8 +202,6 @@ impl FunctionIR {
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
             Rechunk | Unnest { .. } | Rename { .. } | Explode { .. } => true,
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => true,
             RowIndex { .. } | FastCount { .. } => false,
             Pipeline { .. } => unimplemented!(),
         }
@@ -237,8 +216,6 @@ impl FunctionIR {
             Rechunk | FastCount { .. } | Unnest { .. } | Rename { .. } | Explode { .. } => true,
             #[cfg(feature = "pivot")]
             Unpivot { .. } => true,
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => true,
             RowIndex { .. } => true,
             Pipeline { .. } => unimplemented!(),
         }
@@ -249,8 +226,6 @@ impl FunctionIR {
         match self {
             Unnest { columns } => Cow::Borrowed(columns.as_ref()),
             Explode { columns, .. } => Cow::Borrowed(columns.as_ref()),
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { column, .. } => Cow::Owned(vec![column.clone()]),
             _ => Cow::Borrowed(&[]),
         }
     }
@@ -265,7 +240,7 @@ impl FunctionIR {
                 validate_output,
                 schema,
                 ..
-            }) => python_udf::call_python_udf(function, df, *validate_output, schema.as_deref()),
+            }) => python_udf::call_python_udf(function, df, *validate_output, schema.clone()),
             FastCount {
                 sources,
                 scan_type,
@@ -275,8 +250,6 @@ impl FunctionIR {
                 df.as_single_chunk_par();
                 Ok(df)
             },
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { column } => merge_sorted(&df, column.as_ref()),
             Unnest { columns: _columns } => {
                 feature_gated!("dtype-struct", df.unnest(_columns.iter().cloned()))
             },

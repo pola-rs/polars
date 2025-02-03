@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from io import BytesIO
+from os import PathLike
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, overload
 
@@ -11,9 +12,7 @@ from polars.datatypes import (
     Datetime,
     Float64,
     Int64,
-    List,
     Object,
-    Struct,
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
@@ -189,13 +188,13 @@ def _xl_column_range(
     include_header: bool,
     as_range: bool = True,
 ) -> tuple[int, int, int, int] | str:
-    """Return the excel sheet range of a named column, accounting for all offsets."""
+    """Return the Excel sheet range of a named column, accounting for all offsets."""
     col_start = (
         table_start[0] + int(include_header),
         table_start[1] + (df.get_column_index(col) if isinstance(col, str) else col[0]),
     )
     col_finish = (
-        col_start[0] + len(df) - 1,
+        col_start[0] + df.height - 1,
         col_start[1] + (0 if isinstance(col, str) else (col[1] - col[0])),
     )
     if as_range:
@@ -357,7 +356,7 @@ def _xl_setup_table_columns(
     cast_cols = [
         F.col(col).map_batches(_map_str).alias(col)
         for col, tp in df.schema.items()
-        if tp in (List, Struct, Object)
+        if (tp.is_nested() or tp == Object)
     ]
     if cast_cols:
         df = df.with_columns(cast_cols)
@@ -568,7 +567,7 @@ def _xl_setup_workbook(
     workbook: Workbook | BytesIO | Path | str | None,
     worksheet: str | Worksheet | None = None,
 ) -> tuple[Workbook, Worksheet, bool]:
-    """Establish the target excel workbook and worksheet."""
+    """Establish the target Excel workbook and worksheet."""
     from xlsxwriter import Workbook
     from xlsxwriter.worksheet import Worksheet
 
@@ -594,13 +593,20 @@ def _xl_setup_workbook(
         if isinstance(workbook, BytesIO):
             wb, ws, can_close = Workbook(workbook, workbook_options), None, True
         else:
-            file = Path("dataframe.xlsx" if workbook is None else workbook)
-            wb = Workbook(
-                (file if file.suffix else file.with_suffix(".xlsx"))
-                .expanduser()
-                .resolve(strict=False),
-                workbook_options,
-            )
+            if workbook is None:
+                file = Path("dataframe.xlsx")
+            elif isinstance(workbook, str):
+                file = Path(workbook)
+            else:
+                file = workbook
+
+            if isinstance(file, PathLike):
+                file = (
+                    (file if file.suffix else file.with_suffix(".xlsx"))
+                    .expanduser()
+                    .resolve(strict=False)
+                )
+            wb = Workbook(file, workbook_options)
             ws, can_close = None, True
 
     if ws is None:

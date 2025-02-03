@@ -616,6 +616,33 @@ def test_series_from_repr() -> None:
     )
     assert_series_equal(s, pl.Series("flt", [], dtype=pl.Float32))
 
+    s = cast(
+        pl.Series,
+        pl.from_repr(
+            """
+            Series: 'flt' [f64]
+            [
+                null
+                +inf
+                -inf
+                inf
+                0.0
+                NaN
+            ]
+            >>> print("stuff")
+            """
+        ),
+    )
+    inf, nan = float("inf"), float("nan")
+    assert_series_equal(
+        s,
+        pl.Series(
+            name="flt",
+            dtype=pl.Float64,
+            values=[None, inf, -inf, inf, 0.0, nan],
+        ),
+    )
+
 
 def test_dataframe_from_repr_custom_separators() -> None:
     # repr created with custom digit-grouping
@@ -800,3 +827,38 @@ def test_misaligned_nested_arrow_19097() -> None:
     a = a.replace(2, None)  # then we add a validity mask with offset=0
     a = a.reshape((2, 1))  # then we make it nested
     assert_series_equal(pl.Series("a", a.to_arrow()), a)
+
+
+def test_arrow_roundtrip_lex_cat_20288() -> None:
+    tb = (
+        pl.Series("a", ["A", "B"], pl.Categorical(ordering="lexical"))
+        .to_frame()
+        .to_arrow()
+    )
+    df = pl.from_arrow(tb)
+    assert isinstance(df, pl.DataFrame)
+    dt = df.schema["a"]
+    assert isinstance(dt, pl.Categorical)
+    assert dt.ordering == "lexical"
+
+
+def test_from_arrow_string_cache_20271() -> None:
+    with pl.StringCache():
+        s = pl.Series("a", ["A", "B", "C"], pl.Categorical)
+        df = pl.from_arrow(
+            pa.table({"b": pa.DictionaryArray.from_arrays([0, 1], ["D", "E"])})
+        )
+        assert isinstance(df, pl.DataFrame)
+
+        assert_series_equal(
+            s.to_physical(), pl.Series("a", [0, 1, 2]), check_dtypes=False
+        )
+        assert_series_equal(df.to_series(), pl.Series("b", ["D", "E"], pl.Categorical))
+        assert_series_equal(
+            df.to_series().to_physical(), pl.Series("b", [3, 4]), check_dtypes=False
+        )
+
+
+def test_to_arrow_empty_chunks_20627() -> None:
+    df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
+    assert df.to_arrow().shape == (1, 1)

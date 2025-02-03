@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
-polars-compute = { workspace = true }
+polars-compute = { workspace = true, features = ["gather"] }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
 polars-schema = { workspace = true }
@@ -38,11 +38,10 @@ regex = { workspace = true, optional = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
 strum_macros = { workspace = true }
-thiserror = { workspace = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
-bincode = { version = "1" }
+bincode = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -112,7 +111,8 @@ dtype-time = ["temporal"]
 dtype-array = ["arrow/dtype-array", "polars-compute/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal"]
+dtype-i128 = ["polars-compute/dtype-i128"]
+dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -122,7 +122,15 @@ dtype-struct = []
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
-serde = ["dep:serde", "bitflags/serde", "polars-schema/serde", "polars-utils/serde"]
+serde = [
+  "dep:serde",
+  "bitflags/serde",
+  "polars-schema/serde",
+  "polars-utils/serde",
+  "arrow/io_ipc",
+  "arrow/io_ipc_compression",
+  "serde_json",
+]
 serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
 
 docs-selection = [
@@ -142,6 +150,7 @@ docs-selection = [
   "row_hash",
   "rolling_window",
   "rolling_window_by",
+  "serde",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",

@@ -34,6 +34,8 @@ mod ewm_by;
 mod fill_null;
 #[cfg(feature = "fused")]
 mod fused;
+#[cfg(feature = "index_of")]
+mod index_of;
 mod list;
 #[cfg(feature = "log")]
 mod log;
@@ -93,7 +95,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use self::binary::BinaryFunction;
 #[cfg(feature = "bitwise")]
-pub use self::bitwise::{BitwiseAggFunction, BitwiseFunction};
+pub use self::bitwise::BitwiseFunction;
 pub use self::boolean::BooleanFunction;
 #[cfg(feature = "business")]
 pub(super) use self::business::BusinessFunction;
@@ -154,6 +156,8 @@ pub enum FunctionExpr {
     Hash(u64, u64, u64, u64),
     #[cfg(feature = "arg_where")]
     ArgWhere,
+    #[cfg(feature = "index_of")]
+    IndexOf,
     #[cfg(feature = "search_sorted")]
     SearchSorted(SearchSortedSide),
     #[cfg(feature = "range")]
@@ -282,7 +286,6 @@ pub enum FunctionExpr {
     #[cfg(feature = "cov")]
     Correlation {
         method: correlation::CorrelationMethod,
-        ddof: u8,
     },
     #[cfg(feature = "peaks")]
     PeakMin,
@@ -333,8 +336,12 @@ pub enum FunctionExpr {
     },
     MaxHorizontal,
     MinHorizontal,
-    SumHorizontal,
-    MeanHorizontal,
+    SumHorizontal {
+        ignore_nulls: bool,
+    },
+    MeanHorizontal {
+        ignore_nulls: bool,
+    },
     #[cfg(feature = "ewma")]
     EwmMean {
         options: EWMOptions,
@@ -392,6 +399,8 @@ impl Hash for FunctionExpr {
             #[cfg(feature = "business")]
             Business(f) => f.hash(state),
             Pow(f) => f.hash(state),
+            #[cfg(feature = "index_of")]
+            IndexOf => {},
             #[cfg(feature = "search_sorted")]
             SearchSorted(f) => f.hash(state),
             #[cfg(feature = "random")]
@@ -420,8 +429,16 @@ impl Hash for FunctionExpr {
                 lib.hash(state);
                 symbol.hash(state);
             },
-            MaxHorizontal | MinHorizontal | SumHorizontal | MeanHorizontal | DropNans
-            | DropNulls | Reverse | ArgUnique | Shift | ShiftAndFill => {},
+            MaxHorizontal
+            | MinHorizontal
+            | SumHorizontal { .. }
+            | MeanHorizontal { .. }
+            | DropNans
+            | DropNulls
+            | Reverse
+            | ArgUnique
+            | Shift
+            | ShiftAndFill => {},
             #[cfg(feature = "mode")]
             Mode => {},
             #[cfg(feature = "abs")]
@@ -629,6 +646,8 @@ impl Display for FunctionExpr {
             Hash(_, _, _, _) => "hash",
             #[cfg(feature = "arg_where")]
             ArgWhere => "arg_where",
+            #[cfg(feature = "index_of")]
+            IndexOf => "index_of",
             #[cfg(feature = "search_sorted")]
             SearchSorted(_) => "search_sorted",
             #[cfg(feature = "range")]
@@ -760,8 +779,8 @@ impl Display for FunctionExpr {
             ForwardFill { .. } => "forward_fill",
             MaxHorizontal => "max_horizontal",
             MinHorizontal => "min_horizontal",
-            SumHorizontal => "sum_horizontal",
-            MeanHorizontal => "mean_horizontal",
+            SumHorizontal { .. } => "sum_horizontal",
+            MeanHorizontal { .. } => "mean_horizontal",
             #[cfg(feature = "ewma")]
             EwmMean { .. } => "ewm_mean",
             #[cfg(feature = "ewma_by")]
@@ -917,6 +936,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "arg_where")]
             ArgWhere => {
                 wrap!(arg_where::arg_where)
+            },
+            #[cfg(feature = "index_of")]
+            IndexOf => {
+                map_as_slice!(index_of::index_of)
             },
             #[cfg(feature = "search_sorted")]
             SearchSorted(side) => {
@@ -1092,7 +1115,7 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Fused(op) => map_as_slice!(fused::fused, op),
             ConcatExpr(rechunk) => map_as_slice!(concat::concat_expr, rechunk),
             #[cfg(feature = "cov")]
-            Correlation { method, ddof } => map_as_slice!(correlation::corr, ddof, method),
+            Correlation { method } => map_as_slice!(correlation::corr, method),
             #[cfg(feature = "peaks")]
             PeakMin => map!(peaks::peak_min),
             #[cfg(feature = "peaks")]
@@ -1170,8 +1193,8 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             ForwardFill { limit } => map!(dispatch::forward_fill, limit),
             MaxHorizontal => wrap!(dispatch::max_horizontal),
             MinHorizontal => wrap!(dispatch::min_horizontal),
-            SumHorizontal => wrap!(dispatch::sum_horizontal),
-            MeanHorizontal => wrap!(dispatch::mean_horizontal),
+            SumHorizontal { ignore_nulls } => wrap!(dispatch::sum_horizontal, ignore_nulls),
+            MeanHorizontal { ignore_nulls } => wrap!(dispatch::mean_horizontal, ignore_nulls),
             #[cfg(feature = "ewma")]
             EwmMean { options } => map!(ewm::ewm_mean, options),
             #[cfg(feature = "ewma_by")]

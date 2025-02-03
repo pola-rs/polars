@@ -28,6 +28,7 @@ ahash = { workspace = true }
 apache-avro = { version = "0.17", features = ["snappy"] }
 arrow = { workspace = true }
 avro-schema = { workspace = true, features = ["async"] }
+chrono = { workspace = true }
 either = { workspace = true }
 ethnum = "1"
 futures = { workspace = true }
@@ -64,7 +65,7 @@ default = [
 ]
 ndarray = ["polars-core/ndarray"]
 # serde support for dataframes and series
-serde = ["polars-core/serde", "polars-utils/serde"]
+serde = ["polars-core/serde", "polars-utils/serde", "ir_serde"]
 serde-lazy = [
   "polars-core/serde-lazy",
   "polars-lazy?/serde",
@@ -76,7 +77,6 @@ serde-lazy = [
 parquet = ["polars-io", "polars-lazy?/parquet", "polars-io/parquet", "polars-sql?/parquet"]
 async = ["polars-lazy?/async"]
 cloud = ["polars-lazy?/cloud", "polars-io/cloud"]
-cloud_write = ["cloud", "polars-lazy?/cloud_write"]
 aws = ["async", "cloud", "polars-io/aws"]
 http = ["async", "cloud", "polars-io/http"]
 azure = ["async", "cloud", "polars-io/azure"]
@@ -154,7 +154,6 @@ month_start = ["polars-lazy?/month_start"]
 month_end = ["polars-lazy?/month_end"]
 offset_by = ["polars-lazy?/offset_by"]
 decompress = ["polars-io/decompress"]
-decompress-fast = ["polars-io/decompress-fast"]
 describe = ["polars-core/describe"]
 diagonal_concat = ["polars-core/diagonal_concat", "polars-lazy?/diagonal_concat", "polars-sql?/diagonal_concat"]
 diff = ["polars-ops/diff", "polars-lazy?/diff"]
@@ -213,12 +212,14 @@ rolling_window = ["polars-core/rolling_window", "polars-lazy?/rolling_window"]
 rolling_window_by = ["polars-core/rolling_window_by", "polars-lazy?/rolling_window_by", "polars-time/rolling_window_by"]
 round_series = ["polars-ops/round_series", "polars-lazy?/round_series"]
 row_hash = ["polars-core/row_hash", "polars-lazy?/row_hash"]
+index_of = ["polars-lazy?/index_of"]
 search_sorted = ["polars-lazy?/search_sorted"]
 semi_anti_join = ["polars-lazy?/semi_anti_join", "polars-ops/semi_anti_join", "polars-sql?/semi_anti_join"]
 sign = ["polars-lazy?/sign"]
 streaming = ["polars-lazy?/streaming"]
 string_encoding = ["polars-ops/string_encoding", "polars-lazy?/string_encoding", "polars-core/strings"]
 string_pad = ["polars-lazy?/string_pad", "polars-ops/string_pad"]
+string_normalize = ["polars-lazy?/string_normalize", "polars-ops/string_normalize"]
 string_reverse = ["polars-lazy?/string_reverse", "polars-ops/string_reverse"]
 string_to_integer = ["polars-lazy?/string_to_integer", "polars-ops/string_to_integer"]
 take_opt_iter = ["polars-core/take_opt_iter"]
@@ -266,6 +267,7 @@ dtype-full = [
   "dtype-array",
   "dtype-i8",
   "dtype-i16",
+  "dtype-i128",
   "dtype-decimal",
   "dtype-u8",
   "dtype-u16",
@@ -297,6 +299,7 @@ dtype-datetime = [
 ]
 dtype-duration = [
   "polars-core/dtype-duration",
+  "polars-io/dtype-duration",
   "polars-lazy?/dtype-duration",
   "polars-time?/dtype-duration",
   "polars-ops/dtype-duration",
@@ -319,12 +322,21 @@ dtype-i8 = [
   "polars-io/dtype-i8",
   "polars-lazy?/dtype-i8",
   "polars-ops/dtype-i8",
+  "polars-time?/dtype-i8",
 ]
 dtype-i16 = [
   "polars-core/dtype-i16",
   "polars-io/dtype-i16",
   "polars-lazy?/dtype-i16",
   "polars-ops/dtype-i16",
+  "polars-time?/dtype-i16",
+]
+dtype-i128 = [
+  "polars-core/dtype-i128",
+  "polars-io/dtype-i128",
+  "polars-lazy?/dtype-i128",
+  "polars-ops/dtype-i128",
+  "polars-time?/dtype-i128",
 ]
 dtype-decimal = [
   "polars-core/dtype-decimal",
@@ -338,12 +350,14 @@ dtype-u8 = [
   "polars-io/dtype-u8",
   "polars-lazy?/dtype-u8",
   "polars-ops/dtype-u8",
+  "polars-time?/dtype-u8",
 ]
 dtype-u16 = [
   "polars-core/dtype-u16",
   "polars-io/dtype-u16",
   "polars-lazy?/dtype-u16",
   "polars-ops/dtype-u16",
+  "polars-time?/dtype-u16",
 ]
 dtype-categorical = [
   "polars-core/dtype-categorical",
@@ -423,7 +437,6 @@ docs-selection = [
   "ir_serde",
   "cloud",
   "async",
-  "cloud_write",
 ]
 
 bench = [

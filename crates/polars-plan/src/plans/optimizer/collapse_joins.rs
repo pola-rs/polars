@@ -8,12 +8,12 @@ use std::sync::Arc;
 use polars_core::schema::*;
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::{IEJoinOptions, InequalityOperator};
-use polars_ops::frame::{JoinCoalesce, JoinType};
+use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
-use crate::dsl::Operator;
+use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::{ExprIR, OutputName};
 
 /// Join origin of an expression
@@ -77,7 +77,11 @@ fn remove_suffix(
     for expr in exprs {
         if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
             if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
-                expr.set_columnlhs(PlSmallStr::from(&colname[..colname.len() - suffix.len()]));
+                let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+                *expr = ExprIR::new(
+                    expr_arena.add(AExpr::Column(name.clone())),
+                    OutputName::ColumnLhs(name),
+                );
             }
         }
 
@@ -85,7 +89,7 @@ fn remove_suffix(
         stack.push(expr.node());
         while let Some(node) = stack.pop() {
             let expr = expr_arena.get_mut(node);
-            expr.nodes(&mut stack);
+            expr.inputs_rev(&mut stack);
 
             let AExpr::Column(colname) = expr else {
                 continue;
@@ -311,7 +315,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                                 ) -> bool {
                                     aexpr_to_leaf_names_iter(node, expr_arena).any(|name| {
                                         if let Some(dt) = schema.get(name.as_str()) {
-                                            dt.to_physical().is_numeric()
+                                            dt.to_physical().is_primitive_numeric()
                                         } else {
                                             false
                                         }
@@ -353,6 +357,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         remove_suffix(&mut ie_right_on, expr_arena, right_schema, suffix.as_str());
                         can_simplify_join = true;
                     }
+                    can_simplify_join |= options.args.how.is_cross();
                 }
 
                 if can_simplify_join {
@@ -387,7 +392,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn insert_fitting_join(
+fn insert_fitting_join(
     eq_left_on: Vec<ExprIR>,
     eq_right_on: Vec<ExprIR>,
     #[cfg(feature = "iejoin")] ie_left_on: Vec<ExprIR>,
@@ -408,7 +413,7 @@ pub fn insert_fitting_join(
         debug_assert_eq!(ie_left_on.len(), ie_right_on.len());
         debug_assert!(ie_op.len() <= 2);
     }
-    debug_assert_eq!(options.args.how, JoinType::Cross);
+    debug_assert!(matches!(options.args.how, JoinType::Cross));
 
     let remaining_predicates = remaining_predicates
         .iter()
@@ -444,10 +449,11 @@ pub fn insert_fitting_join(
             let operator2 = ie_op.get(1).copied();
 
             // Do an IEjoin.
-            options.args.how = JoinType::IEJoin(IEJoinOptions {
+            options.args.how = JoinType::IEJoin;
+            options.options = Some(JoinTypeOptionsIR::IEJoin(IEJoinOptions {
                 operator1,
                 operator2,
-            });
+            }));
             // We need to make sure not to delete any columns
             options.args.coalesce = JoinCoalesce::KeepColumns;
 
@@ -471,6 +477,15 @@ pub fn insert_fitting_join(
                     Some(acc.map_or(e, |acc| and_expr(acc, e, expr_arena)))
                 },
             );
+
+            let mut remaining_predicates = remaining_predicates;
+            if let Some(pred) = remaining_predicates
+                .take_if(|_| matches!(options.args.maintain_order, MaintainOrderJoin::None))
+            {
+                options.options = Some(JoinTypeOptionsIR::Cross {
+                    predicate: ExprIR::from_node(pred, expr_arena),
+                })
+            }
 
             (Vec::new(), Vec::new(), remaining_predicates)
         },

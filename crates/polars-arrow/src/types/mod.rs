@@ -16,16 +16,12 @@
 //! represent chunks of bits (e.g. 8 bits via `u8`, 16 via `u16`), and [`BitChunkIter`],
 //! that can be used to iterate over bitmaps in [`BitChunk`]s according to
 //! Arrow's definition of bitmaps.
-//!
-//! Finally, this module contains traits used to compile code based on [`NativeType`] optimized
-//! for SIMD, at [`mod@simd`].
 
 mod aligned_bytes;
 pub use aligned_bytes::*;
 mod bit_chunk;
 pub use bit_chunk::{BitChunk, BitChunkIter, BitChunkOnes};
 mod index;
-pub mod simd;
 pub use index::*;
 mod native;
 pub use native::*;

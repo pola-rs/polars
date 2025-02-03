@@ -10,7 +10,8 @@ use crate::conversion::{get_lf, Wrap};
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::map::lazy::binary_lambda;
-use crate::prelude::{vec_extract_wrapped, ObjectValue};
+use crate::prelude::vec_extract_wrapped;
+use crate::utils::EnterPolarsExt;
 use crate::{map, PyDataFrame, PyExpr, PyLazyFrame, PySeries};
 
 macro_rules! set_unwrapped_or_0 {
@@ -116,19 +117,16 @@ pub fn col(name: &str) -> PyExpr {
 pub fn collect_all(lfs: Vec<PyLazyFrame>, py: Python) -> PyResult<Vec<PyDataFrame>> {
     use polars_core::utils::rayon::prelude::*;
 
-    let out = py.allow_threads(|| {
+    py.enter_polars(|| {
         polars_core::POOL.install(|| {
             lfs.par_iter()
                 .map(|lf| {
                     let df = lf.ldf.clone().collect()?;
                     Ok(PyDataFrame::new(df))
                 })
-                .collect::<polars_core::error::PolarsResult<Vec<_>>>()
-                .map_err(PyPolarsErr::from)
+                .collect::<PolarsResult<Vec<_>>>()
         })
-    });
-
-    Ok(out?)
+    })
 }
 
 #[pyfunction]
@@ -151,7 +149,7 @@ pub fn collect_all_with_callback(lfs: Vec<PyLazyFrame>, lambda: PyObject) {
             },
             Err(err) => {
                 lambda
-                    .call1(py, (PyErr::from(err).to_object(py),))
+                    .call1(py, (PyErr::from(err),))
                     .map_err(|err| err.restore(py))
                     .ok();
             },
@@ -174,7 +172,7 @@ pub fn concat_lf(
     let len = seq.len()?;
     let mut lfs = Vec::with_capacity(len);
 
-    for res in seq.iter()? {
+    for res in seq.try_iter()? {
         let item = res?;
         let lf = get_lf(&item)?;
         lfs.push(lf);
@@ -302,7 +300,7 @@ pub fn concat_lf_diagonal(
     parallel: bool,
     to_supertypes: bool,
 ) -> PyResult<PyLazyFrame> {
-    let iter = lfs.iter()?;
+    let iter = lfs.try_iter()?;
 
     let lfs = iter
         .map(|item| {
@@ -326,7 +324,7 @@ pub fn concat_lf_diagonal(
 
 #[pyfunction]
 pub fn concat_lf_horizontal(lfs: &Bound<'_, PyAny>, parallel: bool) -> PyResult<PyLazyFrame> {
-    let iter = lfs.iter()?;
+    let iter = lfs.try_iter()?;
 
     let lfs = iter
         .map(|item| {
@@ -437,8 +435,9 @@ pub fn nth(n: i64) -> PyExpr {
 
 #[pyfunction]
 pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyResult<PyExpr> {
+    let py = value.py();
     if value.is_instance_of::<PyBool>() {
-        let val = value.extract::<bool>().unwrap();
+        let val = value.extract::<bool>()?;
         Ok(dsl::lit(val).into())
     } else if let Ok(int) = value.downcast::<PyInt>() {
         let v = int
@@ -447,7 +446,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
             .map_err(PyPolarsErr::from)?;
         Ok(Expr::Literal(LiteralValue::Int(v)).into())
     } else if let Ok(float) = value.downcast::<PyFloat>() {
-        let val = float.extract::<f64>().unwrap();
+        let val = float.extract::<f64>()?;
         Ok(Expr::Literal(LiteralValue::Float(val)).into())
     } else if let Ok(pystr) = value.downcast::<PyString>() {
         Ok(dsl::lit(pystr.to_string()).into())
@@ -479,10 +478,7 @@ pub fn lit(value: &Bound<'_, PyAny>, allow_object: bool, is_scalar: bool) -> PyR
         match av {
             #[cfg(feature = "object")]
             AnyValue::ObjectOwned(_) => {
-                let s = Python::with_gil(|py| {
-                    PySeries::new_object(py, "", vec![ObjectValue::from(value.into_py(py))], false)
-                        .series
-                });
+                let s = PySeries::new_object(py, "", vec![value.extract()?], false).series;
                 Ok(dsl::lit(s).into())
             },
             _ => Ok(Expr::Literal(LiteralValue::from(av)).into()),
@@ -504,8 +500,8 @@ pub fn map_mul(
 }
 
 #[pyfunction]
-pub fn pearson_corr(a: PyExpr, b: PyExpr, ddof: u8) -> PyExpr {
-    dsl::pearson_corr(a.inner, b.inner, ddof).into()
+pub fn pearson_corr(a: PyExpr, b: PyExpr) -> PyExpr {
+    dsl::pearson_corr(a.inner, b.inner).into()
 }
 
 #[pyfunction]
@@ -537,10 +533,10 @@ pub fn repeat(value: PyExpr, n: PyExpr, dtype: Option<Wrap<DataType>>) -> PyResu
 }
 
 #[pyfunction]
-pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, ddof: u8, propagate_nans: bool) -> PyExpr {
+pub fn spearman_rank_corr(a: PyExpr, b: PyExpr, propagate_nans: bool) -> PyExpr {
     #[cfg(feature = "propagate_nans")]
     {
-        dsl::spearman_rank_corr(a.inner, b.inner, ddof, propagate_nans).into()
+        dsl::spearman_rank_corr(a.inner, b.inner, propagate_nans).into()
     }
     #[cfg(not(feature = "propagate_nans"))]
     {

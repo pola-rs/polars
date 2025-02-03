@@ -2,6 +2,13 @@ use std::hash::{Hash, Hasher};
 
 use crate::nulls::IsNull;
 
+// Hash combine from c++' boost lib.
+#[inline(always)]
+pub fn _boost_hash_combine(l: u64, r: u64) -> u64 {
+    l ^ r.wrapping_add(0x9e3779b9u64.wrapping_add(l << 6).wrapping_add(r >> 2))
+}
+
+#[inline(always)]
 pub const fn folded_multiply(a: u64, b: u64) -> u64 {
     let full = (a as u128).wrapping_mul(b as u128);
     (full as u64) ^ ((full >> 64) as u64)

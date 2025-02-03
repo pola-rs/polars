@@ -19,3 +19,12 @@ def test_literal_scalar_list_18686() -> None:
             ("lit2", pl.List(pl.Null)),
         ]
     )
+
+
+def test_literal_integer_20807() -> None:
+    for i in range(100):
+        value = 2**i
+        assert pl.select(pl.lit(value)).item() == value
+        assert pl.select(pl.lit(-value)).item() == -value
+        assert pl.select(pl.lit(value, dtype=pl.Int128)).item() == value
+        assert pl.select(pl.lit(-value, dtype=pl.Int128)).item() == -value

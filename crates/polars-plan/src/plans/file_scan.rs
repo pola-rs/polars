@@ -19,6 +19,11 @@ pub enum FileScan {
         options: CsvReadOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
+    #[cfg(feature = "json")]
+    NDJson {
+        options: NDJsonReadOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
     #[cfg(feature = "parquet")]
     Parquet {
         options: ParquetOptions,
@@ -31,12 +36,7 @@ pub enum FileScan {
         options: IpcScanOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         #[cfg_attr(feature = "serde", serde(skip))]
-        metadata: Option<arrow::io::ipc::read::FileMetadata>,
-    },
-    #[cfg(feature = "json")]
-    NDJson {
-        options: NDJsonReadOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
     },
     #[cfg_attr(feature = "serde", serde(skip))]
     Anonymous {
@@ -168,7 +168,7 @@ impl FileScan {
             #[cfg(feature = "ipc")]
             Self::Ipc { .. } => _file_options.row_index.is_some(),
             #[cfg(feature = "parquet")]
-            Self::Parquet { .. } => _file_options.row_index.is_some(),
+            Self::Parquet { .. } => false,
             #[allow(unreachable_patterns)]
             _ => false,
         }

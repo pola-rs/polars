@@ -3,12 +3,12 @@ mod unpivot;
 
 use std::borrow::Cow;
 
-use polars_core::export::rayon::prelude::*;
 use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_utils::format_pl_smallstr;
+use rayon::prelude::*;
 pub use unpivot::UnpivotDF;
 
 const HASHMAP_INIT_SIZE: usize = 512;
@@ -76,7 +76,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
             let ca = s.u32().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
         },
-        _ => unsafe { s.cast_unchecked(logical_type).unwrap() },
+        _ => unsafe { s.from_physical_unchecked(logical_type).unwrap() },
     }
 }
 
@@ -334,7 +334,7 @@ fn pivot_impl_single_column(
             debug_assert_eq!(row_locations.len(), col_locations.len());
             debug_assert_eq!(value_agg_phys.len(), row_locations.len());
 
-            let mut cols = if value_agg_phys.dtype().is_numeric() {
+            let mut cols = if value_agg_phys.dtype().is_primitive_numeric() {
                 macro_rules! dispatch {
                     ($ca:expr) => {{
                         positioning::position_aggregates_numeric(

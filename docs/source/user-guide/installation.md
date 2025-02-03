@@ -98,9 +98,7 @@ pip install 'polars[numpy,fsspec]'
 
 !!! note
 
-    To install the GPU engine, you need to pass
-    `--extra-index-url=https://pypi.nvidia.com` to `pip`. See [GPU
-    support](gpu-support.md) for more detailed instructions and
+    See [GPU support](gpu-support.md) for more detailed instructions and
     prerequisites.
 
 #### Interoperability
@@ -155,7 +153,7 @@ pip install 'polars[numpy,fsspec]'
 | style       | Style dataframes through the `style` namespace. |
 | timezone    | Timezone support[^note].                        |
 
-[^note]: Only needed if you are on Python < 3.9 or you are on Windows.
+[^note]: Only needed if you are on Windows.
 
 ### Rust
 
@@ -212,8 +210,9 @@ The opt-in features are:
     - `ipc` - Arrow's IPC format serialization.
     - `decompress` - Automatically infer compression of csvs and decompress them.
     Supported compressions:
-      - zip
       - gzip
+      - zlib
+      - zstd
 - Dataframe operations:
     - `dynamic_group_by` - Group by based on a time window instead of predefined keys.
     Also activates rolling window group by operations.

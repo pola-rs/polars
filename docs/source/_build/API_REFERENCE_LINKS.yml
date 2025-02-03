@@ -12,6 +12,9 @@ python:
   concat_list: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.concat_list.html
   concat_str: https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.concat_str.html
   Config: https://docs.pola.rs/api/python/stable/reference/config.html
+  CredentialProviderAWS: https://docs.pola.rs/api/python/stable/reference/api/polars.CredentialProviderAWS.html
+  CredentialProviderAzure: https://docs.pola.rs/api/python/stable/reference/api/polars.CredentialProviderAzure.html
+  CredentialProviderGCP: https://docs.pola.rs/api/python/stable/reference/api/polars.CredentialProviderGCP.html
   cs.by_name: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.by_name
   cs.contains: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.contains
   cs.first: https://docs.pola.rs/api/python/stable/reference/selectors.html#polars.selectors.first

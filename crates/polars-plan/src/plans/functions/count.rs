@@ -66,7 +66,7 @@ pub fn count_rows(
                 sources,
                 #[cfg(feature = "cloud")]
                 cloud_options.as_ref(),
-                metadata.as_ref(),
+                metadata.as_deref(),
             ),
             #[cfg(feature = "json")]
             FileScan::NDJson {

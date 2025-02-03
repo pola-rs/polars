@@ -1,9 +1,6 @@
-use polars::export::arrow;
-use polars::export::arrow::array::Array;
-use polars::export::arrow::ffi;
-use polars::export::arrow::ffi::{
-    ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema,
-};
+use arrow::array::Array;
+use arrow::ffi;
+use arrow::ffi::{ArrowArray, ArrowArrayStream, ArrowArrayStreamReader, ArrowSchema};
 use polars::prelude::*;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
@@ -113,7 +110,7 @@ pub(crate) fn import_stream_pycapsule(capsule: &Bound<PyCapsule>) -> PyResult<Py
 
     // Series::try_from fails for an empty vec of chunks
     let s = if produced_arrays.is_empty() {
-        let polars_dt = DataType::from_arrow(stream.field().dtype(), false);
+        let polars_dt = DataType::from_arrow_field(stream.field());
         Series::new_empty(stream.field().name.clone(), &polars_dt)
     } else {
         Series::try_from((stream.field(), produced_arrays)).unwrap()

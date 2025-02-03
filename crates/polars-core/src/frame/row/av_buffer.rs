@@ -1,5 +1,6 @@
 use std::hint::unreachable_unchecked;
 
+use arrow::bitmap::BitmapBuilder;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
 
@@ -89,18 +90,23 @@ impl<'a> AnyValueBuffer<'a> {
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Date(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-date")]
-            (Date(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Date(builder), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder, tu_l, _), AnyValue::Datetime(v, tu_r, _)) => {
+            (
+                Datetime(builder, tu_l, _),
+                AnyValue::Datetime(v, tu_r, _) | AnyValue::DatetimeOwned(v, tu_r, _),
+            ) => {
                 // we convert right tu to left tu
                 // so we swap.
                 let v = convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder, _, _), val) if val.is_numeric() => {
+            (Datetime(builder, _, _), val) if val.is_primitive_numeric() => {
                 builder.append_value(val.extract()?)
             },
             #[cfg(feature = "dtype-duration")]
@@ -111,13 +117,17 @@ impl<'a> AnyValueBuffer<'a> {
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-duration")]
-            (Duration(builder, _), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Duration(builder, _), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-time")]
-            (Time(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Time(builder), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use AnyValues for that
             (All(_, vals), v) => vals.push(v),
@@ -334,7 +344,7 @@ pub enum AnyValueBufferTrusted<'a> {
     String(StringChunkedBuilder),
     #[cfg(feature = "dtype-struct")]
     // not the trusted variant!
-    Struct(Vec<(AnyValueBuffer<'a>, PlSmallStr)>),
+    Struct(BitmapBuilder, Vec<(AnyValueBuffer<'a>, PlSmallStr)>),
     Null(NullChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
@@ -365,7 +375,8 @@ impl<'a> AnyValueBufferTrusted<'a> {
             Float64(builder) => builder.append_null(),
             String(builder) => builder.append_null(),
             #[cfg(feature = "dtype-struct")]
-            Struct(builders) => {
+            Struct(outer_validity, builders) => {
+                outer_validity.push(false);
                 for (b, _) in builders.iter_mut() {
                     b.add(AnyValue::Null);
                 }
@@ -480,7 +491,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         builder.append_value(v.as_str())
                     },
                     #[cfg(feature = "dtype-struct")]
-                    Struct(builders) => {
+                    Struct(outer_validity, builders) => {
                         let AnyValue::StructOwned(payload) = val else {
                             unreachable_unchecked()
                         };
@@ -495,6 +506,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                                 builder.add(av.clone());
                             }
                         }
+                        outer_validity.push(true);
                     },
                     All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
@@ -519,7 +531,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                         builder.append_value(v)
                     },
                     #[cfg(feature = "dtype-struct")]
-                    Struct(builders) => {
+                    Struct(outer_validity, builders) => {
                         let AnyValue::Struct(idx, arr, fields) = val else {
                             unreachable_unchecked()
                         };
@@ -536,6 +548,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                                 builder.add(av);
                             }
                         }
+                        outer_validity.push(true);
                     },
                     All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
@@ -613,7 +626,7 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 new.finish().into_series()
             },
             #[cfg(feature = "dtype-struct")]
-            Struct(b) => {
+            Struct(outer_validity, b) => {
                 // @Q? Maybe we need to add a length parameter here for ZFS's. I am not very happy
                 // with just setting the length to zero for that case.
                 if b.is_empty() {
@@ -640,8 +653,12 @@ impl<'a> AnyValueBufferTrusted<'a> {
 
                 let length = if min_len == 0 { 0 } else { max_len };
 
+                let old_outer_validity = core::mem::take(outer_validity);
+                outer_validity.reserve(capacity);
+
                 StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())
                     .unwrap()
+                    .with_outer_validity(Some(old_outer_validity.freeze()))
                     .into_series()
             },
             Null(b) => {
@@ -710,6 +727,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
             },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
+                let outer_validity = BitmapBuilder::with_capacity(len);
                 let buffers = fields
                     .iter()
                     .map(|field| {
@@ -718,7 +736,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
                         (buffer, field.name.clone())
                     })
                     .collect::<Vec<_>>();
-                AnyValueBufferTrusted::Struct(buffers)
+                AnyValueBufferTrusted::Struct(outer_validity, buffers)
             },
             // List can be recursive so use AnyValues for that
             dt => AnyValueBufferTrusted::All(dt.clone(), Vec::with_capacity(len)),

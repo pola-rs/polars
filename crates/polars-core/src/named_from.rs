@@ -38,7 +38,7 @@ impl_named_from_owned!(Vec<i8>, Int8Type);
 impl_named_from_owned!(Vec<i16>, Int16Type);
 impl_named_from_owned!(Vec<i32>, Int32Type);
 impl_named_from_owned!(Vec<i64>, Int64Type);
-#[cfg(feature = "dtype-decimal")]
+#[cfg(feature = "dtype-i128")]
 impl_named_from_owned!(Vec<i128>, Int128Type);
 #[cfg(feature = "dtype-u8")]
 impl_named_from_owned!(Vec<u8>, UInt8Type);

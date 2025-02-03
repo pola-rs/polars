@@ -66,7 +66,7 @@ impl FixedSizeListArray {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != length)
+            .is_some_and(|validity| validity.len() != length)
         {
             polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
         }
@@ -89,7 +89,7 @@ impl FixedSizeListArray {
         let has_valid_validity = self
             .validity
             .as_ref()
-            .map_or(true, |v| v.len() == self.length);
+            .is_none_or(|v| v.len() == self.length);
 
         has_valid_length && has_valid_validity
     }

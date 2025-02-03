@@ -82,7 +82,7 @@ impl NullArray {
     }
 
     #[inline]
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.length
     }
 }

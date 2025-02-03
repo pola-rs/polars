@@ -3,9 +3,12 @@
 #![allow(non_local_definitions)]
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 #![allow(clippy::disallowed_types)]
+#![allow(clippy::useless_conversion)] // Needed for now due to https://github.com/PyO3/pyo3/issues/4828.
 
 #[cfg(feature = "csv")]
 pub mod batched_csv;
+#[cfg(feature = "catalog")]
+pub mod catalog;
 #[cfg(feature = "polars_cloud")]
 pub mod cloud;
 pub mod conversion;

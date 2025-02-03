@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{FieldRef, FixedSizeListRef, MapRef, TimeRef, TimestampRef, UnionRef};
 use polars_error::{polars_bail, polars_err, PolarsResult};
@@ -6,8 +8,8 @@ use polars_utils::pl_str::PlSmallStr;
 use super::super::{IpcField, IpcSchema};
 use super::{OutOfSpecKind, StreamMetadata};
 use crate::datatypes::{
-    get_extension, ArrowDataType, ArrowSchema, Extension, Field, IntegerType, IntervalUnit,
-    Metadata, TimeUnit, UnionMode,
+    get_extension, ArrowDataType, ArrowSchema, Extension, ExtensionType, Field, IntegerType,
+    IntervalUnit, Metadata, TimeUnit, UnionMode, UnionType,
 };
 
 fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
@@ -27,7 +29,7 @@ fn try_unzip_vec<A, B, I: Iterator<Item = PolarsResult<(A, B)>>>(
 fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Field, IpcField)> {
     let metadata = read_metadata(&ipc_field)?;
 
-    let extension = get_extension(&metadata);
+    let extension = metadata.as_ref().and_then(get_extension);
 
     let (dtype, ipc_field_) = get_dtype(ipc_field, extension, true)?;
 
@@ -39,13 +41,13 @@ fn deserialize_field(ipc_field: arrow_format::ipc::FieldRef) -> PolarsResult<(Fi
         ),
         dtype,
         is_nullable: ipc_field.nullable()?,
-        metadata,
+        metadata: metadata.map(Arc::new),
     };
 
     Ok((field, ipc_field_))
 }
 
-fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Metadata> {
+fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Option<Metadata>> {
     Ok(if let Some(list) = field.custom_metadata()? {
         let mut metadata_map = Metadata::new();
         for kv in list {
@@ -54,9 +56,9 @@ fn read_metadata(field: &arrow_format::ipc::FieldRef) -> PolarsResult<Metadata> 
                 metadata_map.insert(PlSmallStr::from_str(k), PlSmallStr::from_str(v));
             }
         }
-        metadata_map
+        Some(metadata_map)
     } else {
-        Metadata::default()
+        None
     })
 }
 
@@ -70,7 +72,8 @@ fn deserialize_integer(int: arrow_format::ipc::IntRef) -> PolarsResult<IntegerTy
         (32, false) => IntegerType::UInt32,
         (64, true) => IntegerType::Int64,
         (64, false) => IntegerType::UInt64,
-        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32 or 64."),
+        (128, true) => IntegerType::Int128,
+        _ => polars_bail!(oos = "IPC: indexType can only be 8, 16, 32, 64 or 128."),
     })
 }
 
@@ -129,7 +132,10 @@ fn deserialize_union(union_: UnionRef, field: FieldRef) -> PolarsResult<(ArrowDa
         fields: ipc_fields,
         dictionary_id: None,
     };
-    Ok((ArrowDataType::Union(fields, ids, mode), ipc_field))
+    Ok((
+        ArrowDataType::Union(Box::new(UnionType { fields, ids, mode })),
+        ipc_field,
+    ))
 }
 
 fn deserialize_map(map: MapRef, field: FieldRef) -> PolarsResult<(ArrowDataType, IpcField)> {
@@ -255,7 +261,11 @@ fn get_dtype(
         let (name, metadata) = extension;
         let (dtype, fields) = get_dtype(field, None, false)?;
         return Ok((
-            ArrowDataType::Extension(name, Box::new(dtype), metadata),
+            ArrowDataType::Extension(Box::new(ExtensionType {
+                name,
+                inner: dtype,
+                metadata,
+            })),
             fields,
         ));
     }
@@ -356,9 +366,11 @@ fn get_dtype(
 }
 
 /// Deserialize an flatbuffers-encoded Schema message into [`ArrowSchema`] and [`IpcSchema`].
-pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchema)> {
+pub fn deserialize_schema(
+    message: &[u8],
+) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
     let message = arrow_format::ipc::MessageRef::read_as_root(message)
-        .map_err(|_err| polars_err!(oos = "Unable deserialize message: {err:?}"))?;
+        .map_err(|err| polars_err!(oos = format!("Unable deserialize message: {err:?}")))?;
 
     let schema = match message
         .header()?
@@ -374,7 +386,7 @@ pub fn deserialize_schema(message: &[u8]) -> PolarsResult<(ArrowSchema, IpcSchem
 /// Deserialize the raw Schema table from IPC format to Schema data type
 pub(super) fn fb_to_schema(
     schema: arrow_format::ipc::SchemaRef,
-) -> PolarsResult<(ArrowSchema, IpcSchema)> {
+) -> PolarsResult<(ArrowSchema, IpcSchema, Option<Metadata>)> {
     let fields = schema
         .fields()?
         .ok_or_else(|| polars_err!(oos = OutOfSpecKind::MissingFields))?;
@@ -393,18 +405,39 @@ pub(super) fn fb_to_schema(
         arrow_format::ipc::Endianness::Big => false,
     };
 
+    let custom_schema_metadata = match schema.custom_metadata()? {
+        None => None,
+        Some(metadata) => {
+            let metadata: Metadata = metadata
+                .into_iter()
+                .filter_map(|kv_result| {
+                    // FIXME: silently hiding errors here
+                    let kv_ref = kv_result.ok()?;
+                    Some((kv_ref.key().ok()??.into(), kv_ref.value().ok()??.into()))
+                })
+                .collect();
+
+            if metadata.is_empty() {
+                None
+            } else {
+                Some(metadata)
+            }
+        },
+    };
+
     Ok((
         arrow_schema,
         IpcSchema {
             fields: ipc_fields,
             is_little_endian,
         },
+        custom_schema_metadata,
     ))
 }
 
 pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMetadata> {
     let message = arrow_format::ipc::MessageRef::read_as_root(meta)
-        .map_err(|_err| polars_err!(oos = "Unable to get root as message: {err:?}"))?;
+        .map_err(|err| polars_err!(oos = format!("Unable to get root as message: {err:?}")))?;
     let version = message.version()?;
     // message header is a Schema, so read it
     let header = message
@@ -415,11 +448,12 @@ pub(super) fn deserialize_stream_metadata(meta: &[u8]) -> PolarsResult<StreamMet
     } else {
         polars_bail!(oos = "The first IPC message of the stream must be a schema")
     };
-    let (schema, ipc_schema) = fb_to_schema(schema)?;
+    let (schema, ipc_schema, custom_schema_metadata) = fb_to_schema(schema)?;
 
     Ok(StreamMetadata {
         schema,
         version,
         ipc_schema,
+        custom_schema_metadata,
     })
 }

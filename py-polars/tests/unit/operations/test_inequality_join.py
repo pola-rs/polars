@@ -297,8 +297,7 @@ def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     )
 
     explained = q.explain()
-    assert "CROSS" in explained
-    assert "FILTER" in explained
+    assert "NESTED LOOP" in explained
     actual = q.collect()
     assert actual.to_dict(as_series=False) == {
         "group": [0, 0, 0, 0, 0, 0, 1, 1, 1],
@@ -462,17 +461,6 @@ def test_raise_on_ambiguous_name() -> None:
         df.join_where(df, pl.col("id") >= pl.col("id"))
 
 
-def test_raise_on_multiple_binary_comparisons() -> None:
-    df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(
-        pl.exceptions.InvalidOperationError,
-        match="only one binary comparison allowed in each 'join_where' predicate; found ",
-    ):
-        df.join_where(
-            df, (pl.col("id") < pl.col("id")) ^ (pl.col("id") >= pl.col("id"))
-        )
-
-
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
     with pytest.raises(
@@ -603,8 +591,9 @@ def test_join_on_strings() -> None:
 
     q = df.join_where(df, pl.col("a").ge(pl.col("a_right")))
 
-    assert "CROSS JOIN" in q.explain()
-    assert q.collect().to_dict(as_series=False) == {
+    assert "NESTED LOOP JOIN" in q.explain()
+    # Note: Output is flaky without sort when POLARS_MAX_THREADS=1
+    assert q.collect().sort(pl.all()).to_dict(as_series=False) == {
         "a": ["a", "b", "b", "c", "c", "c"],
         "b": ["b", "b", "b", "b", "b", "b"],
         "a_right": ["a", "a", "b", "a", "b", "c"],
@@ -655,3 +644,41 @@ def test_join_predicate_pushdown_19580() -> None:
     )
 
     assert_frame_equal(expect, q.collect(), check_row_order=False)
+
+
+def test_join_where_literal_20061() -> None:
+    df_left = pl.DataFrame(
+        {"id": [1, 2, 3], "value_left": [10, 20, 30], "flag": [1, 0, 1]}
+    )
+
+    df_right = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "value_right": [5, 5, 25],
+            "flag": [1, 0, 1],
+        }
+    )
+
+    assert df_left.join_where(
+        df_right,
+        pl.col("value_left") > pl.col("value_right"),
+        pl.col("flag_right").cast(pl.Int32) == 1,
+    ).sort("id").to_dict(as_series=False) == {
+        "id": [1, 2, 3, 3],
+        "value_left": [10, 20, 30, 30],
+        "flag": [1, 0, 1, 1],
+        "id_right": [1, 1, 1, 3],
+        "value_right": [5, 5, 5, 25],
+        "flag_right": [1, 1, 1, 1],
+    }
+
+
+def test_boolean_predicate_join_where() -> None:
+    urls = pl.LazyFrame({"url": "abcd.com/page"})
+    categories = pl.LazyFrame({"base_url": "abcd.com", "category": "landing page"})
+    assert (
+        "NESTED LOOP JOIN"
+        in urls.join_where(
+            categories, pl.col("url").str.starts_with(pl.col("base_url"))
+        ).explain()
+    )

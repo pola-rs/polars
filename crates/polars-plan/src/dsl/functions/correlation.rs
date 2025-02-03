@@ -4,15 +4,14 @@ use super::*;
 pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
-        method: CorrelationMethod::Covariance,
-        ddof,
+        method: CorrelationMethod::Covariance(ddof),
     };
     Expr::Function {
         input,
         function,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: Some(Default::default()),
+            cast_options: Some(CastingRules::cast_to_supertypes()),
             flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
             ..Default::default()
         },
@@ -20,22 +19,17 @@ pub fn cov(a: Expr, b: Expr, ddof: u8) -> Expr {
 }
 
 /// Compute the pearson correlation between two columns.
-///
-/// # Arguments
-/// * ddof
-///     Delta degrees of freedom
-pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
+pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::Pearson,
-        ddof,
     };
     Expr::Function {
         input,
         function,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: Some(Default::default()),
+            cast_options: Some(CastingRules::cast_to_supertypes()),
             flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
             ..Default::default()
         },
@@ -45,25 +39,22 @@ pub fn pearson_corr(a: Expr, b: Expr, ddof: u8) -> Expr {
 /// Compute the spearman rank correlation between two columns.
 /// Missing data will be excluded from the computation.
 /// # Arguments
-/// * ddof
-///     Delta degrees of freedom
 /// * propagate_nans
 ///     If `true` any `NaN` encountered will lead to `NaN` in the output.
 ///     If to `false` then `NaN` are regarded as larger than any finite number
 ///     and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
-pub fn spearman_rank_corr(a: Expr, b: Expr, ddof: u8, propagate_nans: bool) -> Expr {
+pub fn spearman_rank_corr(a: Expr, b: Expr, propagate_nans: bool) -> Expr {
     let input = vec![a, b];
     let function = FunctionExpr::Correlation {
         method: CorrelationMethod::SpearmanRank(propagate_nans),
-        ddof,
     };
     Expr::Function {
         input,
         function,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: Some(Default::default()),
+            cast_options: Some(CastingRules::cast_to_supertypes()),
             flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
             ..Default::default()
         },

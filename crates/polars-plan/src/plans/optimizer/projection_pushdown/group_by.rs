@@ -10,9 +10,7 @@ pub(super) fn process_group_by(
     schema: SchemaRef,
     maintain_order: bool,
     options: Arc<GroupbyOptions>,
-    acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
@@ -32,13 +30,13 @@ pub(super) fn process_group_by(
         let input = lp_arena.add(lp);
 
         let builder = IRBuilder::new(input, expr_arena, lp_arena);
-        Ok(proj_pd.finish_node_simple_projection(&acc_projections, builder))
+        Ok(proj_pd.finish_node_simple_projection(&ctx.acc_projections, builder))
     } else {
-        let has_pushed_down = !acc_projections.is_empty();
+        let has_pushed_down = ctx.has_pushed_down();
 
         // TODO! remove unnecessary vec alloc.
         let (mut acc_projections, _local_projections, mut names) = split_acc_projections(
-            acc_projections,
+            ctx.acc_projections,
             lp_arena.get(input).schema(lp_arena).as_ref(),
             expr_arena,
             false,
@@ -48,8 +46,8 @@ pub(super) fn process_group_by(
         let projected_aggs = aggs
             .into_iter()
             .filter(|agg| {
-                if has_pushed_down && projections_seen > 0 {
-                    projected_names.contains(agg.output_name())
+                if has_pushed_down && ctx.inner.projections_seen > 0 {
+                    ctx.projected_names.contains(agg.output_name())
                 } else {
                     true
                 }
@@ -77,15 +75,9 @@ pub(super) fn process_group_by(
             let node = expr_arena.add(AExpr::Column(options.index_column.clone()));
             add_expr_to_accumulated(node, &mut acc_projections, &mut names, expr_arena);
         }
+        let ctx = ProjectionContext::new(acc_projections, names, ctx.inner);
 
-        proj_pd.pushdown_and_assign(
-            input,
-            acc_projections,
-            names,
-            projections_seen,
-            lp_arena,
-            expr_arena,
-        )?;
+        proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 
         let builder = IRBuilder::new(input, expr_arena, lp_arena).group_by(
             keys,

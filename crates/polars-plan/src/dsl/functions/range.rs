@@ -1,3 +1,7 @@
+use polars_ops::series::ClosedInterval;
+#[cfg(feature = "temporal")]
+use polars_time::ClosedWindow;
+
 use super::*;
 
 /// Generate a range of integers.
@@ -89,7 +93,7 @@ pub fn datetime_range(
         }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: Some(Default::default()),
+            cast_options: Some(CastingRules::cast_to_supertypes()),
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
@@ -118,7 +122,7 @@ pub fn datetime_ranges(
         }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            cast_to_supertypes: Some(Default::default()),
+            cast_options: Some(CastingRules::cast_to_supertypes()),
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
             ..Default::default()
         },
@@ -149,6 +153,21 @@ pub fn time_ranges(start: Expr, end: Expr, interval: Duration, closed: ClosedWin
     Expr::Function {
         input,
         function: FunctionExpr::Range(RangeFunction::TimeRanges { interval, closed }),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
+            ..Default::default()
+        },
+    }
+}
+
+/// Generate a series of equally-spaced points.
+pub fn linear_space(start: Expr, end: Expr, num_samples: Expr, closed: ClosedInterval) -> Expr {
+    let input = vec![start, end, num_samples];
+
+    Expr::Function {
+        input,
+        function: FunctionExpr::Range(RangeFunction::LinearSpace { closed }),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,

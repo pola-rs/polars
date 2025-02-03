@@ -16,6 +16,7 @@ from polars.datatypes.classes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Struct,
     Time,
@@ -79,6 +80,7 @@ SIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(
         Int16,
         Int32,
         Int64,
+        Int128,
     ]
 )
 UNSIGNED_INTEGER_DTYPES: frozenset[PolarsIntegerType] = DataTypeGroup(

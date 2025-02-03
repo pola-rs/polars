@@ -1,13 +1,11 @@
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::RwLockReadGuard;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataTrait;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -31,16 +29,6 @@ impl IsSorted {
     }
 }
 
-macro_rules! invalid_operation_panic {
-    ($op:ident, $s:expr) => {
-        panic!(
-            "`{}` operation not supported for dtype `{}`",
-            stringify!($op),
-            $s._dtype()
-        )
-    };
-}
-
 pub enum BitRepr {
     Small(UInt32Chunked),
     Large(UInt64Chunked),
@@ -48,7 +36,7 @@ pub enum BitRepr {
 
 pub(crate) mod private {
     use super::*;
-    use crate::chunked_array::metadata::MetadataFlags;
+    use crate::chunked_array::flags::StatisticsFlags;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
 
     pub trait PrivateSeriesNumeric {
@@ -76,9 +64,9 @@ pub(crate) mod private {
 
         fn compute_len(&mut self);
 
-        fn _get_flags(&self) -> MetadataFlags;
+        fn _get_flags(&self) -> StatisticsFlags;
 
-        fn _set_flags(&mut self, flags: MetadataFlags);
+        fn _set_flags(&mut self, flags: StatisticsFlags);
 
         unsafe fn equal_element(
             &self,
@@ -88,14 +76,11 @@ pub(crate) mod private {
         ) -> bool {
             invalid_operation_panic!(equal_element, self)
         }
-        #[allow(clippy::wrong_self_convention)]
-        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-            invalid_operation_panic!(into_total_eq_inner, self)
-        }
-        #[allow(clippy::wrong_self_convention)]
-        fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
-            invalid_operation_panic!(into_total_ord_inner, self)
-        }
+        #[expect(clippy::wrong_self_convention)]
+        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
+        #[expect(clippy::wrong_self_convention)]
+        fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a>;
+
         fn vec_hash(&self, _build_hasher: PlRandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash, self._dtype());
         }
@@ -111,41 +96,41 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        unsafe fn agg_std(&self, groups: &GroupsType, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        unsafe fn agg_var(&self, groups: &GroupsType, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// # Safety
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -153,7 +138,7 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "bitwise")]
-        unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -161,7 +146,7 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "bitwise")]
-        unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -169,7 +154,7 @@ pub(crate) mod private {
         ///
         /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "bitwise")]
-        unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -189,7 +174,7 @@ pub(crate) mod private {
             polars_bail!(opq = remainder, self._dtype());
         }
         #[cfg(feature = "algorithm_group_by")]
-        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
             polars_bail!(opq = group_tuples, self._dtype());
         }
         #[cfg(feature = "zip_with")]
@@ -217,14 +202,6 @@ pub trait SeriesTrait:
 {
     /// Rename the Series.
     fn rename(&mut self, name: PlSmallStr);
-
-    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
-        None
-    }
-
-    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
-        None
-    }
 
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkLenIter;
@@ -278,8 +255,8 @@ pub trait SeriesTrait:
     /// end of the array
     fn split_at(&self, _offset: i64) -> (Series, Series);
 
-    #[doc(hidden)]
-    fn append(&mut self, _other: &Series) -> PolarsResult<()>;
+    fn append(&mut self, other: &Series) -> PolarsResult<()>;
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()>;
 
     #[doc(hidden)]
     fn extend(&mut self, _other: &Series) -> PolarsResult<()>;
@@ -333,7 +310,7 @@ pub trait SeriesTrait:
             return None;
         }
 
-        let mut bm = MutableBitmap::with_capacity(self.len());
+        let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.chunks() {
             if let Some(v) = arr.validity() {
                 bm.extend_from_bitmap(v);
@@ -341,7 +318,7 @@ pub trait SeriesTrait:
                 bm.extend_constant(arr.len(), true);
             }
         }
-        Some(bm.into())
+        bm.into_opt_validity()
     }
 
     /// Drop all null values and return a new Series.
@@ -398,7 +375,12 @@ pub trait SeriesTrait:
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue>;
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+        polars_ensure!(index < self.len(), oob = index, self.len());
+        // SAFETY: Just did bounds check
+        let value = unsafe { self.get_unchecked(index) };
+        Ok(value)
+    }
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
@@ -407,9 +389,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
-        invalid_operation_panic!(get_unchecked, self)
-    }
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue;
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         polars_bail!(opq = sort_with, self._dtype());
@@ -583,14 +563,15 @@ pub trait SeriesTrait:
         invalid_operation_panic!(get_object_chunked_unchecked, self)
     }
 
-    /// Get a hold to self as `Any` trait reference.
+    /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait
+    /// reference.
     fn as_any(&self) -> &dyn Any;
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        invalid_operation_panic!(as_any_mut, self)
-    }
+    /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait mutable
+    /// reference.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -612,7 +593,7 @@ pub trait SeriesTrait:
 impl (dyn SeriesTrait + '_) {
     pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
     where
-        N: 'static + PolarsDataType,
+        N: 'static + PolarsDataType<IsLogical = FalseT>,
     {
         polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())

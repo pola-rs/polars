@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 import pytest
 
 import polars as pl
 from polars.exceptions import InvalidOperationError
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 @pytest.fixture
@@ -138,3 +139,19 @@ def test_clip_bound_invalid_for_original_dtype() -> None:
         InvalidOperationError, match="conversion from `i32` to `u32` failed"
     ):
         s.clip(-1, 5)
+
+
+def test_clip_decimal() -> None:
+    ser = pl.Series("a", ["1.1", "2.2", "3.3"], pl.Decimal(21, 1))
+
+    result = ser.clip(lower_bound=Decimal("1.5"), upper_bound=Decimal("2.5"))
+    expected = pl.Series("a", ["1.5", "2.2", "2.5"], pl.Decimal(21, 1))
+    assert_series_equal(result, expected)
+
+    result = ser.clip(lower_bound=Decimal("1.5"))
+    expected = pl.Series("a", ["1.5", "2.2", "3.3"], pl.Decimal(21, 1))
+    assert_series_equal(result, expected)
+
+    result = ser.clip(upper_bound=Decimal("2.5"))
+    expected = pl.Series("a", ["1.1", "2.2", "2.5"], pl.Decimal(21, 1))
+    assert_series_equal(result, expected)

@@ -114,6 +114,7 @@ class DataFramePlot:
         Polars does not implement plotting logic itself but instead defers to
         `Altair <https://altair-viz.github.io/>`_.
 
+        `df.plot.line(**kwargs)` is shorthand for
         `alt.Chart(df).mark_line().encode(**kwargs).interactive()`,
         and is provided for convenience - for full customisatibility, use a plotting
         library directly.
@@ -238,7 +239,7 @@ class DataFramePlot:
     def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
         method = getattr(self._chart, f"mark_{attr}", None)
         if method is None:
-            msg = "Altair has no method 'mark_{attr}'"
+            msg = f"Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
 
         accepts_tooltip_argument = "tooltip" in {

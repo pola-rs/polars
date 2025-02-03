@@ -1,5 +1,4 @@
-use num::{One, Zero};
-use polars_core::export::num;
+use num_traits::{One, Zero};
 use polars_core::with_match_physical_numeric_polars_type;
 
 use super::*;
@@ -7,7 +6,7 @@ use super::*;
 pub(super) fn sign(s: &Column) -> PolarsResult<Column> {
     let s = s.as_materialized_series();
     let dt = s.dtype();
-    polars_ensure!(dt.is_numeric(), opq = sign, dt);
+    polars_ensure!(dt.is_primitive_numeric(), opq = sign, dt);
     with_match_physical_numeric_polars_type!(dt, |$T| {
         let ca: &ChunkedArray<$T> = s.as_ref().as_ref();
         Ok(sign_impl(ca))

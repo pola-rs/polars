@@ -10,7 +10,7 @@ fn get_expr(input: &[Node], op: FusedOperator, expr_arena: &Arena<AExpr>) -> AEx
         .collect();
     let mut options = FunctionOptions {
         collect_groups: ApplyOptions::ElementWise,
-        cast_to_supertypes: Some(Default::default()),
+        cast_options: Some(CastingRules::cast_to_supertypes()),
         ..Default::default()
     };
     // order of operations change because of FMA
@@ -45,8 +45,8 @@ fn check_eligible(
     // Exclude literals for now as these will not benefit from fused operations downstream #9857
     // This optimization would also interfere with the `col -> lit` type-coercion rules
     // And it might also interfere with constant folding which is a more suitable optimizations here
-    if type_left.is_numeric()
-        && type_right.is_numeric()
+    if type_left.is_primitive_numeric()
+        && type_right.is_primitive_numeric()
         && !has_aexpr_literal(*left, expr_arena)
         && !has_aexpr_literal(*right, expr_arena)
     {

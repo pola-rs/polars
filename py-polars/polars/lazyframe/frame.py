@@ -62,6 +62,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     Null,
     Object,
     String,
@@ -109,6 +110,7 @@ if TYPE_CHECKING:
         JoinStrategy,
         JoinValidation,
         Label,
+        MaintainOrderJoin,
         Orientation,
         PolarsDataType,
         PythonDataType,
@@ -120,6 +122,7 @@ if TYPE_CHECKING:
         UniqueKeepStrategy,
     )
     from polars.dependencies import numpy as np
+    from polars.io.cloud import CredentialProviderFunction
 
     if sys.version_info >= (3, 10):
         from typing import Concatenate, ParamSpec
@@ -325,11 +328,10 @@ class LazyFrame:
         return self
 
     def __getstate__(self) -> bytes:
-        return self._ldf.__getstate__()
+        return self.serialize()
 
     def __setstate__(self, state: bytes) -> None:
-        self._ldf = LazyFrame()._ldf  # Initialize with a dummy
-        self._ldf.__setstate__(state)
+        self._ldf = self.deserialize(BytesIO(state))._ldf
 
     @classmethod
     def _scan_python_function(
@@ -1010,6 +1012,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         format: ExplainFormat = "plain",
         optimized: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1020,6 +1023,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         streaming: bool = False,
         tree_format: bool | None = None,
+        _check_order: bool = True,
     ) -> str:
         """
         Create a string representation of the query plan.
@@ -1092,18 +1096,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("Streaming mode is considered unstable.")
 
         if optimized:
+            type_check = _type_check
             ldf = self._ldf.optimization_toggle(
-                type_coercion,
-                predicate_pushdown,
-                projection_pushdown,
-                simplify_expression,
-                slice_pushdown,
-                comm_subplan_elim,
-                comm_subexpr_elim,
-                cluster_with_columns,
-                collapse_joins,
-                streaming,
+                type_coercion=type_coercion,
+                type_check=type_check,
+                predicate_pushdown=predicate_pushdown,
+                projection_pushdown=projection_pushdown,
+                simplify_expression=simplify_expression,
+                slice_pushdown=slice_pushdown,
+                comm_subplan_elim=comm_subplan_elim,
+                comm_subexpr_elim=comm_subexpr_elim,
+                cluster_with_columns=cluster_with_columns,
+                collapse_joins=collapse_joins,
+                streaming=streaming,
                 _eager=False,
+                _check_order=_check_order,
                 new_streaming=False,
             )
             if format == "tree":
@@ -1125,6 +1132,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         raw_output: bool = False,
         figsize: tuple[float, float] = (16.0, 12.0),
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1134,6 +1142,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> str | None:
         """
         Show a plot of the query plan.
@@ -1187,18 +1196,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
         """
+        type_check = _type_check
         _ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -1595,6 +1607,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1608,6 +1621,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
@@ -1691,18 +1705,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns = False
             collapse_joins = False
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         df, timings = ldf.profile()
@@ -1752,6 +1769,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1765,6 +1783,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine: EngineType = "cpu",
         background: Literal[True],
         _eager: bool = False,
+        _check_order: bool = True,
     ) -> InProcessQuery: ...
 
     @overload
@@ -1772,6 +1791,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1784,6 +1804,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "cpu",
         background: Literal[False] = False,
+        _check_order: bool = True,
         _eager: bool = False,
     ) -> DataFrame: ...
 
@@ -1791,6 +1812,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -1803,6 +1825,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "cpu",
         background: bool = False,
+        _check_order: bool = True,
         _eager: bool = False,
         **_kwargs: Any,
     ) -> DataFrame | InProcessQuery:
@@ -1971,6 +1994,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
             cluster_with_columns = False
             collapse_joins = False
+            _check_order = False
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1990,19 +2014,22 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Don't run on GPU in _eager mode (but don't warn)
             is_gpu = False
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
-            _eager,
-            new_streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
+            _eager=_eager,
+            _check_order=_check_order,
+            new_streaming=new_streaming,
         )
 
         if background:
@@ -2016,7 +2043,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 err_prefix="GPU engine requested, but required package",
                 install_message=(
                     "Please install using the command "
-                    "`pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu12` "
+                    "`pip install cudf-polars-cu12` "
                     "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
                     "if your system has a CUDA 11 driver)."
                 ),
@@ -2034,6 +2061,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: Literal[True],
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2052,6 +2080,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: Literal[False] = False,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2069,6 +2098,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         gevent: bool = False,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2079,6 +2109,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
         Collect DataFrame asynchronously in thread pool.
@@ -2188,18 +2219,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
+        type_check = _type_check
         ldf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -2253,12 +2287,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         data_page_size: int | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2326,6 +2366,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2338,6 +2402,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2363,6 +2428,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "null_count": True,
             }
 
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_parquet"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
         return lf.sink_parquet(
             path=normalize_filepath(path),
             compression=compression,
@@ -2371,6 +2448,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             row_group_size=row_group_size,
             data_page_size=data_page_size,
             maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
         )
 
     @unstable()
@@ -2381,12 +2461,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         compression: str | None = "zstd",
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -2421,6 +2507,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2433,6 +2543,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2441,10 +2552,25 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_ipc"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
         return lf.sink_ipc(
             path=path,
             compression=compression,
             maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
         )
 
     @unstable()
@@ -2467,12 +2593,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         quote_style: CsvQuoteStyle | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
@@ -2555,6 +2687,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2574,6 +2730,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2581,6 +2738,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins=collapse_joins,
             no_optimization=no_optimization,
         )
+
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_csv"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
 
         return lf.sink_csv(
             path=normalize_filepath(path),
@@ -2598,6 +2767,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             null_value=null_value,
             quote_style=quote_style,
             maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
         )
 
     @unstable()
@@ -2607,12 +2779,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         *,
         maintain_order: bool = True,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        storage_options: dict[str, Any] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+        retries: int = 2,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
@@ -2644,6 +2822,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        retries
+            Number of retries if accessing a cloud instance fails.
 
         Returns
         -------
@@ -2656,6 +2858,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         lf = self._set_sink_optimizations(
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2664,26 +2867,48 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        return lf.sink_json(path=path, maintain_order=maintain_order)
+        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+
+        credential_provider = _maybe_init_credential_provider(
+            credential_provider, path, storage_options, "sink_ndjson"
+        )
+
+        if storage_options:
+            storage_options = list(storage_options.items())  # type: ignore[assignment]
+        else:
+            # Handle empty dict input
+            storage_options = None
+
+        return lf.sink_json(
+            path=path,
+            maintain_order=maintain_order,
+            cloud_options=storage_options,
+            credential_provider=credential_provider,
+            retries=retries,
+        )
 
     def _set_sink_optimizations(
         self,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
+        _check_order: bool = True,
     ) -> PyLazyFrame:
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
             slice_pushdown = False
+            _check_order = False
 
         return self._ldf.optimization_toggle(
             type_coercion=type_coercion,
+            type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2694,6 +2919,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins=collapse_joins,
             streaming=True,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
 
@@ -2707,6 +2933,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n_rows: int = 500,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2741,6 +2968,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._fetch(
             n_rows=n_rows,
             type_coercion=type_coercion,
+            _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
@@ -2758,6 +2986,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         n_rows: int = 500,
         *,
         type_coercion: bool = True,
+        _type_check: bool = True,
         predicate_pushdown: bool = True,
         projection_pushdown: bool = True,
         simplify_expression: bool = True,
@@ -2768,6 +2997,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        _check_order: bool = True,
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -2856,18 +3086,21 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
+        type_check = _type_check
         lf = self._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            collapse_joins,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         return wrap_df(lf.fetch(n_rows))
@@ -4033,6 +4266,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         allow_parallel: bool = True,
         force_parallel: bool = False,
         coalesce: bool = True,
+        allow_exact_matches: bool = True,
+        check_sortedness: bool = True,
     ) -> LazyFrame:
         """
         Perform an asof join.
@@ -4040,7 +4275,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         This is similar to a left-join except that we match on nearest key rather than
         equal keys.
 
-        Both DataFrames must be sorted by the join_asof key.
+        Both DataFrames must be sorted by the `on` key (within each `by` group, if
+        specified).
 
         For each row in the left DataFrame:
 
@@ -4117,6 +4353,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             Note that joining on any other expressions than `col`
             will turn off coalescing.
+        allow_exact_matches
+            Whether exact matches are valid join predicates.
+
+            - If True, allow matching with the same ``on`` value
+                (i.e. less-than-or-equal-to / greater-than-or-equal-to)
+            - If False, don't match the same ``on`` value
+                (i.e., strictly less-than / strictly greater-than).
+        check_sortedness
+            Check the sortedness of the asof keys. If the keys are not sorted Polars
+            will error, or in case of 'by' argument raise a warning. This might become
+            a hard error in the future.
+
 
         Examples
         --------
@@ -4334,9 +4582,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if by is not None:
             by_left_ = [by] if isinstance(by, str) else by
             by_right_ = by_left_
-        elif (by_left is not None) and (by_right is not None):
-            by_left_ = [by_left] if isinstance(by_left, str) else by_left
-            by_right_ = [by_right] if isinstance(by_right, str) else by_right
+        elif (by_left is not None) or (by_right is not None):
+            by_left_ = [by_left] if isinstance(by_left, str) else by_left  # type: ignore[assignment]
+            by_right_ = [by_right] if isinstance(by_right, str) else by_right  # type: ignore[assignment]
+
         else:
             # no by
             by_left_ = None
@@ -4370,6 +4619,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 tolerance_num,
                 tolerance_str,
                 coalesce=coalesce,
+                allow_eq=allow_exact_matches,
+                check_sortedness=check_sortedness,
             )
         )
 
@@ -4385,6 +4636,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         validate: JoinValidation = "m:m",
         join_nulls: bool = False,
         coalesce: bool | None = None,
+        maintain_order: MaintainOrderJoin | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
     ) -> LazyFrame:
@@ -4396,8 +4648,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         other
             Lazy DataFrame to join with.
         on
-            Join column of both DataFrames. If set, `left_on` and `right_on` should be
-            None.
+            Name(s) of the join columns in both DataFrames. If set, `left_on` and
+            `right_on` should be None. This should not be specified if `how="cross"`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -4417,9 +4669,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 Returns rows from the left table that have a match in the right table.
             * *anti*
                 Returns rows from the left table that have no match in the right table.
-
-            .. note::
-                A left join preserves the row order of the left DataFrame.
         left_on
             Join column of the left DataFrame.
         right_on
@@ -4453,6 +4702,24 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             .. note::
                 Joining on any other expressions than `col`
                 will turn off coalescing.
+        maintain_order : {'none', 'left', 'right', 'left_right', 'right_left'}
+            Which DataFrame row order to preserve, if any.
+            Do not rely on any observed ordering without explicitly
+            setting this parameter, as your code may break in a future release.
+            Not specifying any ordering can improve performance
+            Supported for inner, left, right and full joins
+
+            * *none*
+                No specific ordering is desired. The ordering might differ across
+                Polars versions or even between different runs.
+            * *left*
+                Preserves the order of the left DataFrame.
+            * *right*
+                Preserves the order of the right DataFrame.
+            * *left_right*
+                First preserves the order of the left DataFrame, then the right.
+            * *right_left*
+                First preserves the order of the right DataFrame, then the left.
         allow_parallel
             Allow the physical plan to optionally evaluate the computation of both
             DataFrames up to the join in parallel.
@@ -4531,10 +4798,31 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ╞═════╪═════╪═════╡
         │ 3   ┆ 8.0 ┆ c   │
         └─────┴─────┴─────┘
+
+        >>> lf.join(other_lf, how="cross").collect()
+        shape: (9, 5)
+        ┌─────┬─────┬─────┬───────┬───────────┐
+        │ foo ┆ bar ┆ ham ┆ apple ┆ ham_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---       │
+        │ i64 ┆ f64 ┆ str ┆ str   ┆ str       │
+        ╞═════╪═════╪═════╪═══════╪═══════════╡
+        │ 1   ┆ 6.0 ┆ a   ┆ x     ┆ a         │
+        │ 1   ┆ 6.0 ┆ a   ┆ y     ┆ b         │
+        │ 1   ┆ 6.0 ┆ a   ┆ z     ┆ d         │
+        │ 2   ┆ 7.0 ┆ b   ┆ x     ┆ a         │
+        │ 2   ┆ 7.0 ┆ b   ┆ y     ┆ b         │
+        │ 2   ┆ 7.0 ┆ b   ┆ z     ┆ d         │
+        │ 3   ┆ 8.0 ┆ c   ┆ x     ┆ a         │
+        │ 3   ┆ 8.0 ┆ c   ┆ y     ┆ b         │
+        │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
+        └─────┴─────┴─────┴───────┴───────────┘
         """
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
             raise TypeError(msg)
+
+        if maintain_order is None:
+            maintain_order = "none"
 
         uses_on = on is not None
         uses_left_on = left_on is not None
@@ -4575,6 +4863,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     how,
                     suffix,
                     validate,
+                    maintain_order,
                 )
             )
 
@@ -4600,6 +4889,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 how,
                 suffix,
                 validate,
+                maintain_order,
                 coalesce,
             )
         )
@@ -5685,10 +5975,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         dtypes: Sequence[PolarsDataType] | None
 
         if value is not None:
-
-            def infer_dtype(value: Any) -> PolarsDataType:
-                return next(iter(self.select(value).collect_schema().values()))
-
             if isinstance(value, pl.Expr):
                 dtypes = None
             elif isinstance(value, bool):
@@ -5699,6 +5985,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                     Int16,
                     Int32,
                     Int64,
+                    Int128,
                     UInt8,
                     UInt16,
                     UInt32,
@@ -6169,12 +6456,91 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             subset = parse_into_list_of_expressions(subset)
         return self._from_pyldf(self._ldf.unique(maintain_order, subset, keep))
 
+    def drop_nans(
+        self,
+        subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
+    ) -> LazyFrame:
+        """
+        Drop all rows that contain one or more NaN values.
+
+        The original order of the remaining rows is preserved.
+
+        Parameters
+        ----------
+        subset
+            Column name(s) for which NaN values are considered; if set to `None`
+            (default), use all columns (note that only floating-point columns
+            can contain NaNs).
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [-20.5, float("nan"), 80.0],
+        ...         "bar": [float("nan"), 110.0, 25.5],
+        ...         "ham": ["xxx", "yyy", None],
+        ...     }
+        ... )
+
+        The default behavior of this method is to drop rows where any single
+        value in the row is NaN:
+
+        >>> lf.drop_nans().collect()
+        shape: (1, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ f64  ┆ f64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ 80.0 ┆ 25.5 ┆ null │
+        └──────┴──────┴──────┘
+
+        This behaviour can be constrained to consider only a subset of columns, as
+        defined by name, or with a selector. For example, dropping rows only if
+        there is a NaN in the "bar" column:
+
+        >>> lf.drop_nans(subset=["bar"]).collect()
+        shape: (2, 3)
+        ┌──────┬───────┬──────┐
+        │ foo  ┆ bar   ┆ ham  │
+        │ ---  ┆ ---   ┆ ---  │
+        │ f64  ┆ f64   ┆ str  │
+        ╞══════╪═══════╪══════╡
+        │ NaN  ┆ 110.0 ┆ yyy  │
+        │ 80.0 ┆ 25.5  ┆ null │
+        └──────┴───────┴──────┘
+
+        Dropping a row only if *all* values are NaN requires a different formulation:
+
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [float("nan"), float("nan"), float("nan"), float("nan")],
+        ...         "b": [10.0, 2.5, float("nan"), 5.25],
+        ...         "c": [65.75, float("nan"), float("nan"), 10.5],
+        ...     }
+        ... )
+        >>> lf.filter(~pl.all_horizontal(pl.all().is_nan())).collect()
+        shape: (3, 3)
+        ┌─────┬──────┬───────┐
+        │ a   ┆ b    ┆ c     │
+        │ --- ┆ ---  ┆ ---   │
+        │ f64 ┆ f64  ┆ f64   │
+        ╞═════╪══════╪═══════╡
+        │ NaN ┆ 10.0 ┆ 65.75 │
+        │ NaN ┆ 2.5  ┆ NaN   │
+        │ NaN ┆ 5.25 ┆ 10.5  │
+        └─────┴──────┴───────┘
+        """
+        if subset is not None:
+            subset = parse_into_list_of_expressions(subset)
+        return self._from_pyldf(self._ldf.drop_nans(subset))
+
     def drop_nulls(
         self,
         subset: ColumnNameOrSelector | Collection[ColumnNameOrSelector] | None = None,
     ) -> LazyFrame:
         """
-        Drop all rows that contain null values.
+        Drop all rows that contain one or more null values.
 
         The original order of the remaining rows is preserved.
 
@@ -6195,7 +6561,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ... )
 
         The default behavior of this method is to drop rows where any single
-        value of the row is null.
+        value in the row is null:
 
         >>> lf.drop_nulls().collect()
         shape: (1, 3)
@@ -6223,10 +6589,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8   ┆ null │
         └─────┴─────┴──────┘
 
-        This method drops a row if any single value of the row is null.
-
-        Below are some example snippets that show how you could drop null
-        values based on other conditions:
+        Dropping a row only if *all* values are null requires a different formulation:
 
         >>> lf = pl.LazyFrame(
         ...     {
@@ -6235,21 +6598,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         "c": [1, None, None, 1],
         ...     }
         ... )
-        >>> lf.collect()
-        shape: (4, 3)
-        ┌──────┬──────┬──────┐
-        │ a    ┆ b    ┆ c    │
-        │ ---  ┆ ---  ┆ ---  │
-        │ null ┆ i64  ┆ i64  │
-        ╞══════╪══════╪══════╡
-        │ null ┆ 1    ┆ 1    │
-        │ null ┆ 2    ┆ null │
-        │ null ┆ null ┆ null │
-        │ null ┆ 1    ┆ 1    │
-        └──────┴──────┴──────┘
-
-        Drop a row only if all values are null:
-
         >>> lf.filter(~pl.all_horizontal(pl.all().is_null())).collect()
         shape: (3, 3)
         ┌──────┬─────┬──────┐
@@ -6585,6 +6933,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ steve  ┆ 42  │
         │ elise  ┆ 44  │
         └────────┴─────┘
+
+        Notes
+        -----
+        No guarantee is given over the output row order when the key is equal
+        between the both dataframes.
         """
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 
@@ -6595,16 +6948,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending: bool = False,
     ) -> LazyFrame:
         """
-        Indicate that one or multiple columns are sorted.
+        Flag a column as sorted.
 
         This can speed up future operations.
 
         Parameters
         ----------
         column
-            Columns that are sorted
+            Column that is sorted
         descending
-            Whether the columns are sorted in descending order.
+            Whether the column is sorted in descending order.
 
         Warnings
         --------

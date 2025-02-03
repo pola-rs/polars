@@ -1,6 +1,8 @@
 pub(crate) mod any_value;
 pub(crate) mod chunked_array;
 mod datetime;
+
+use std::convert::Infallible;
 use std::fmt::{Display, Formatter};
 use std::fs::File;
 use std::hash::{Hash, Hasher};
@@ -9,7 +11,6 @@ use std::path::PathBuf;
 #[cfg(feature = "object")]
 use polars::chunked_array::object::PolarsObjectSafe;
 use polars::frame::row::Row;
-use polars::frame::NullStrategy;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
@@ -22,6 +23,7 @@ use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::plans::ScanSources;
+use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
 use pyo3::basic::CompareOp;
@@ -29,14 +31,14 @@ use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
-use pyo3::types::{PyDict, PyList, PySequence};
+use pyo3::types::{PyDict, PyList, PySequence, PyString};
 
 use crate::error::PyPolarsErr;
 use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
 use crate::prelude::*;
-use crate::py_modules::{POLARS, SERIES};
+use crate::py_modules::{pl_series, polars};
 use crate::series::PySeries;
 use crate::{PyDataFrame, PyLazyFrame};
 
@@ -106,12 +108,10 @@ pub(crate) fn get_series(obj: &Bound<'_, PyAny>) -> PyResult<Series> {
     Ok(s.extract::<PySeries>()?.series)
 }
 
-pub(crate) fn to_series(py: Python, s: PySeries) -> PyObject {
-    let series = SERIES.bind(py);
-    let constructor = series
-        .getattr(intern!(series.py(), "_from_pyseries"))
-        .unwrap();
-    constructor.call1((s,)).unwrap().into_py(py)
+pub(crate) fn to_series(py: Python, s: PySeries) -> PyResult<Bound<PyAny>> {
+    let series = pl_series(py).bind(py);
+    let constructor = series.getattr(intern!(py, "_from_pyseries"))?;
+    constructor.call1((s,))
 }
 
 impl<'a> FromPyObject<'a> for Wrap<PlSmallStr> {
@@ -144,16 +144,16 @@ impl<'a> FromPyObject<'a> for Wrap<NullValues> {
     }
 }
 
-fn struct_dict<'a>(
-    py: Python,
+fn struct_dict<'py, 'a>(
+    py: Python<'py>,
     vals: impl Iterator<Item = AnyValue<'a>>,
     flds: &[Field],
-) -> PyObject {
-    let dict = PyDict::new_bound(py);
-    for (fld, val) in flds.iter().zip(vals) {
-        dict.set_item(fld.name().as_str(), Wrap(val)).unwrap()
-    }
-    dict.into_py(py)
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    flds.iter().zip(vals).try_for_each(|(fld, val)| {
+        dict.set_item(fld.name().as_str(), Wrap(val).into_pyobject(py)?)
+    })?;
+    Ok(dict)
 }
 
 // accept u128 array to ensure alignment is correct
@@ -179,138 +179,140 @@ fn decimal_to_digits(v: i128, buf: &mut [u128; 3]) -> usize {
     len
 }
 
-impl ToPyObject for Wrap<DataType> {
-    fn to_object(&self, py: Python) -> PyObject {
-        let pl = POLARS.bind(py);
+impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let pl = polars(py).bind(py);
 
         match &self.0 {
             DataType::Int8 => {
-                let class = pl.getattr(intern!(py, "Int8")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Int8"))?;
+                class.call0()
             },
             DataType::Int16 => {
-                let class = pl.getattr(intern!(py, "Int16")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Int16"))?;
+                class.call0()
             },
             DataType::Int32 => {
-                let class = pl.getattr(intern!(py, "Int32")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Int32"))?;
+                class.call0()
             },
             DataType::Int64 => {
-                let class = pl.getattr(intern!(py, "Int64")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Int64"))?;
+                class.call0()
             },
             DataType::UInt8 => {
-                let class = pl.getattr(intern!(py, "UInt8")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "UInt8"))?;
+                class.call0()
             },
             DataType::UInt16 => {
-                let class = pl.getattr(intern!(py, "UInt16")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "UInt16"))?;
+                class.call0()
             },
             DataType::UInt32 => {
-                let class = pl.getattr(intern!(py, "UInt32")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "UInt32"))?;
+                class.call0()
             },
             DataType::UInt64 => {
-                let class = pl.getattr(intern!(py, "UInt64")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "UInt64"))?;
+                class.call0()
+            },
+            DataType::Int128 => {
+                let class = pl.getattr(intern!(py, "Int128"))?;
+                class.call0()
             },
             DataType::Float32 => {
-                let class = pl.getattr(intern!(py, "Float32")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Float32"))?;
+                class.call0()
             },
             DataType::Float64 | DataType::Unknown(UnknownKind::Float) => {
-                let class = pl.getattr(intern!(py, "Float64")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Float64"))?;
+                class.call0()
             },
             DataType::Decimal(precision, scale) => {
-                let class = pl.getattr(intern!(py, "Decimal")).unwrap();
+                let class = pl.getattr(intern!(py, "Decimal"))?;
                 let args = (*precision, *scale);
-                class.call1(args).unwrap().into()
+                class.call1(args)
             },
             DataType::Boolean => {
-                let class = pl.getattr(intern!(py, "Boolean")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Boolean"))?;
+                class.call0()
             },
             DataType::String | DataType::Unknown(UnknownKind::Str) => {
-                let class = pl.getattr(intern!(py, "String")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "String"))?;
+                class.call0()
             },
             DataType::Binary => {
-                let class = pl.getattr(intern!(py, "Binary")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Binary"))?;
+                class.call0()
             },
             DataType::Array(inner, size) => {
-                let class = pl.getattr(intern!(py, "Array")).unwrap();
-                let inner = Wrap(*inner.clone()).to_object(py);
-                let args = (inner, *size);
-                class.call1(args).unwrap().into()
+                let class = pl.getattr(intern!(py, "Array"))?;
+                let inner = Wrap(*inner.clone());
+                let args = (&inner, *size);
+                class.call1(args)
             },
             DataType::List(inner) => {
-                let class = pl.getattr(intern!(py, "List")).unwrap();
-                let inner = Wrap(*inner.clone()).to_object(py);
-                class.call1((inner,)).unwrap().into()
+                let class = pl.getattr(intern!(py, "List"))?;
+                let inner = Wrap(*inner.clone());
+                class.call1((&inner,))
             },
             DataType::Date => {
-                let class = pl.getattr(intern!(py, "Date")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Date"))?;
+                class.call0()
             },
             DataType::Datetime(tu, tz) => {
-                let datetime_class = pl.getattr(intern!(py, "Datetime")).unwrap();
-                datetime_class
-                    .call1((tu.to_ascii(), tz.as_deref()))
-                    .unwrap()
-                    .into()
+                let datetime_class = pl.getattr(intern!(py, "Datetime"))?;
+                datetime_class.call1((tu.to_ascii(), tz.as_deref()))
             },
             DataType::Duration(tu) => {
-                let duration_class = pl.getattr(intern!(py, "Duration")).unwrap();
-                duration_class.call1((tu.to_ascii(),)).unwrap().into()
+                let duration_class = pl.getattr(intern!(py, "Duration"))?;
+                duration_class.call1((tu.to_ascii(),))
             },
             #[cfg(feature = "object")]
             DataType::Object(_, _) => {
-                let class = pl.getattr(intern!(py, "Object")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Object"))?;
+                class.call0()
             },
             DataType::Categorical(_, ordering) => {
-                let class = pl.getattr(intern!(py, "Categorical")).unwrap();
-                class
-                    .call1((Wrap(*ordering).to_object(py),))
-                    .unwrap()
-                    .into()
+                let class = pl.getattr(intern!(py, "Categorical"))?;
+                class.call1((Wrap(*ordering),))
             },
             DataType::Enum(rev_map, _) => {
                 // we should always have an initialized rev_map coming from rust
                 let categories = rev_map.as_ref().unwrap().get_categories();
-                let class = pl.getattr(intern!(py, "Enum")).unwrap();
+                let class = pl.getattr(intern!(py, "Enum"))?;
                 let s =
                     Series::from_arrow(PlSmallStr::from_static("category"), categories.to_boxed())
-                        .unwrap();
-                let series = to_series(py, s.into());
-                class.call1((series,)).unwrap().into()
+                        .map_err(PyPolarsErr::from)?;
+                let series = to_series(py, s.into())?;
+                class.call1((series,))
             },
-            DataType::Time => pl.getattr(intern!(py, "Time")).unwrap().into(),
+            DataType::Time => pl.getattr(intern!(py, "Time")),
             DataType::Struct(fields) => {
-                let field_class = pl.getattr(intern!(py, "Field")).unwrap();
+                let field_class = pl.getattr(intern!(py, "Field"))?;
                 let iter = fields.iter().map(|fld| {
                     let name = fld.name().as_str();
-                    let dtype = Wrap(fld.dtype().clone()).to_object(py);
-                    field_class.call1((name, dtype)).unwrap()
+                    let dtype = Wrap(fld.dtype().clone());
+                    field_class.call1((name, &dtype)).unwrap()
                 });
-                let fields = PyList::new_bound(py, iter);
-                let struct_class = pl.getattr(intern!(py, "Struct")).unwrap();
-                struct_class.call1((fields,)).unwrap().into()
+                let fields = PyList::new(py, iter)?;
+                let struct_class = pl.getattr(intern!(py, "Struct"))?;
+                struct_class.call1((fields,))
             },
             DataType::Null => {
-                let class = pl.getattr(intern!(py, "Null")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Null"))?;
+                class.call0()
             },
             DataType::Unknown(UnknownKind::Int(v)) => {
-                Wrap(materialize_dyn_int(*v).dtype()).to_object(py)
+                Wrap(materialize_dyn_int(*v).dtype()).into_pyobject(py)
             },
             DataType::Unknown(_) => {
-                let class = pl.getattr(intern!(py, "Unknown")).unwrap();
-                class.call0().unwrap().into()
+                let class = pl.getattr(intern!(py, "Unknown"))?;
+                class.call0()
             },
             DataType::BinaryOffset => {
                 unimplemented!()
@@ -350,6 +352,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Int16" => DataType::Int16,
                     "Int32" => DataType::Int32,
                     "Int64" => DataType::Int64,
+                    "Int128" => DataType::Int128,
                     "UInt8" => DataType::UInt8,
                     "UInt16" => DataType::UInt16,
                     "UInt32" => DataType::UInt32,
@@ -384,6 +387,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             "Int16" => DataType::Int16,
             "Int32" => DataType::Int32,
             "Int64" => DataType::Int64,
+            "Int128" => DataType::Int128,
             "UInt8" => DataType::UInt8,
             "UInt16" => DataType::UInt16,
             "UInt32" => DataType::UInt32,
@@ -459,24 +463,27 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
     }
 }
 
-impl ToPyObject for Wrap<CategoricalOrdering> {
-    fn to_object(&self, py: Python<'_>) -> PyObject {
-        let ordering = match self.0 {
+impl<'py> IntoPyObject<'py> for Wrap<CategoricalOrdering> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        match self.0 {
             CategoricalOrdering::Physical => "physical",
             CategoricalOrdering::Lexical => "lexical",
-        };
-        ordering.into_py(py)
+        }
+        .into_pyobject(py)
     }
 }
 
-impl ToPyObject for Wrap<TimeUnit> {
-    fn to_object(&self, py: Python) -> PyObject {
-        let time_unit = match self.0 {
-            TimeUnit::Nanoseconds => "ns",
-            TimeUnit::Microseconds => "us",
-            TimeUnit::Milliseconds => "ms",
-        };
-        time_unit.into_py(py)
+impl<'py> IntoPyObject<'py> for Wrap<TimeUnit> {
+    type Target = PyString;
+    type Output = Bound<'py, Self::Target>;
+    type Error = Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        self.0.to_ascii().into_pyobject(py)
     }
 }
 
@@ -543,7 +550,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         enum MutableSources {
             Paths(Vec<PathBuf>),
             Files(Vec<File>),
-            Buffers(Vec<bytes::Bytes>),
+            Buffers(Vec<MemSlice>),
         }
 
         let num_items = list.len();
@@ -594,13 +601,17 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
     }
 }
 
-impl IntoPy<PyObject> for Wrap<&Schema> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
-        let dict = PyDict::new_bound(py);
-        for (k, v) in self.0.iter() {
-            dict.set_item(k.as_str(), Wrap(v.clone())).unwrap();
-        }
-        dict.into_py(py)
+impl<'py> IntoPyObject<'py> for Wrap<&Schema> {
+    type Target = PyDict;
+    type Output = Bound<'py, Self::Target>;
+    type Error = PyErr;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        let dict = PyDict::new(py);
+        self.0
+            .iter()
+            .try_for_each(|(k, v)| dict.set_item(k.as_str(), &Wrap(v.clone())))?;
+        Ok(dict)
     }
 }
 
@@ -678,10 +689,8 @@ impl From<PyObject> for ObjectValue {
 
 impl<'a> FromPyObject<'a> for ObjectValue {
     fn extract_bound(ob: &Bound<'a, PyAny>) -> PyResult<Self> {
-        Python::with_gil(|py| {
-            Ok(ObjectValue {
-                inner: ob.to_object(py),
-            })
+        Ok(ObjectValue {
+            inner: ob.to_owned().unbind(),
         })
     }
 }
@@ -696,9 +705,13 @@ impl From<&dyn PolarsObjectSafe> for &ObjectValue {
     }
 }
 
-impl ToPyObject for ObjectValue {
-    fn to_object(&self, py: Python) -> PyObject {
-        self.inner.clone_ref(py)
+impl<'a, 'py> IntoPyObject<'py> for &'a ObjectValue {
+    type Target = PyAny;
+    type Output = Borrowed<'a, 'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
+        Ok(self.inner.bind_borrowed(py))
     }
 }
 
@@ -712,7 +725,7 @@ impl<'a, T: NativeType + FromPyObject<'a>> FromPyObject<'a> for Wrap<Vec<T>> {
     fn extract_bound(obj: &Bound<'a, PyAny>) -> PyResult<Self> {
         let seq = obj.downcast::<PySequence>()?;
         let mut v = Vec::with_capacity(seq.len().unwrap_or(0));
-        for item in seq.iter()? {
+        for item in seq.try_iter()? {
             v.push(item?.extract::<T>()?);
         }
         Ok(Wrap(v))
@@ -1156,6 +1169,24 @@ impl<'py> FromPyObject<'py> for Wrap<JoinValidation> {
     }
 }
 
+impl<'py> FromPyObject<'py> for Wrap<MaintainOrderJoin> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "none" => MaintainOrderJoin::None,
+            "left" => MaintainOrderJoin::Left,
+            "right" => MaintainOrderJoin::Right,
+            "left_right" => MaintainOrderJoin::LeftRight,
+            "right_left" => MaintainOrderJoin::RightLeft,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`maintain_order` must be one of {{'none', 'left', 'right', 'left_right', 'right_left'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
+    }
+}
+
 #[cfg(feature = "csv")]
 impl<'py> FromPyObject<'py> for Wrap<QuoteStyle> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
@@ -1295,5 +1326,23 @@ impl<'a> FromPyObject<'a> for PyCompatLevel {
                 "'compat_level' argument accepts int or bool",
             ));
         }))
+    }
+}
+
+#[cfg(feature = "string_normalize")]
+impl<'py> FromPyObject<'py> for Wrap<UnicodeForm> {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let parsed = match &*ob.extract::<PyBackedStr>()? {
+            "NFC" => UnicodeForm::NFC,
+            "NFKC" => UnicodeForm::NFKC,
+            "NFD" => UnicodeForm::NFD,
+            "NFKD" => UnicodeForm::NFKD,
+            v => {
+                return Err(PyValueError::new_err(format!(
+                    "`form` must be one of {{'NFC', 'NFKC', 'NFD', 'NFKD'}}, got {v}",
+                )))
+            },
+        };
+        Ok(Wrap(parsed))
     }
 }

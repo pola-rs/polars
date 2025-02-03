@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import compileall
-import multiprocessing
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -69,6 +67,7 @@ def _import_timings_as_frame(n_tries: int) -> tuple[pl.DataFrame, int]:
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Unreliable on Windows")
+@pytest.mark.debug
 @pytest.mark.slow
 def test_polars_import() -> None:
     # up-front compile '.py' -> '.pyc' before timing
@@ -99,32 +98,3 @@ def test_polars_import() -> None:
             import_time_ms = polars_import_time // 1_000
             msg = f"Possible import speed regression; took {import_time_ms}ms\n{df_import}"
             raise AssertionError(msg)
-
-
-def run_in_child() -> int:
-    return 123
-
-
-@pytest.mark.skipif(not hasattr(os, "fork"), reason="Requires fork()")
-def test_fork_safety(recwarn: pytest.WarningsRecorder) -> None:
-    def get_num_fork_warnings() -> int:
-        fork_warnings = 0
-        for warning in recwarn:
-            if issubclass(warning.category, RuntimeWarning) and str(
-                warning.message
-            ).startswith("Using fork() can cause Polars"):
-                fork_warnings += 1
-        return fork_warnings
-
-    assert get_num_fork_warnings() == 0
-
-    # Using forkserver and spawn context should not do any of our warning:
-    for context in ["spawn", "forkserver"]:
-        with multiprocessing.get_context(context).Pool(1) as pool:
-            assert pool.apply(run_in_child) == 123
-    assert get_num_fork_warnings() == 0
-
-    # Using fork()-based multiprocessing should raise a warning:
-    with multiprocessing.get_context("fork").Pool(1) as pool:
-        assert pool.apply(run_in_child) == 123
-    assert get_num_fork_warnings() == 1

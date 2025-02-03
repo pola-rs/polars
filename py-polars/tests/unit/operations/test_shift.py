@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import date
 
+import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 
@@ -74,6 +76,7 @@ def test_shift_expr() -> None:
     assert out.to_dict(as_series=False) == {"a": [5, 5, 1, 2, 3], "b": [5, 5, 1, 2, 3]}
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_shift_categorical() -> None:
     df = pl.Series("a", ["a", "b"], dtype=pl.Categorical).to_frame()
 

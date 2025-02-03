@@ -184,7 +184,7 @@ impl<O: Offset> Offsets<O> {
 
     /// Returns a range (start, end) corresponding to the position `index`
     /// # Panic
-    /// This function panics iff `index >= self.len()`
+    /// This function panics iff `index >= self.len_proxy()`
     #[inline]
     pub fn start_end(&self, index: usize) -> (usize, usize) {
         // soundness: the invariant of the function
@@ -398,6 +398,11 @@ impl<O: Offset> OffsetsBuffer<O> {
         Self(vec![O::zero()].into())
     }
 
+    #[inline]
+    pub fn one_with_length(length: O) -> Self {
+        Self(vec![O::zero(), length].into())
+    }
+
     /// Copy-on-write API to convert [`OffsetsBuffer`] into [`Offsets`].
     #[inline]
     pub fn into_mut(self) -> either::Either<Self, Offsets<O>> {
@@ -458,7 +463,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
     /// Returns a `length` corresponding to the position `index`
     /// # Panic
-    /// This function panics iff `index >= self.len()`
+    /// This function panics iff `index >= self.len_proxy()`
     #[inline]
     pub fn length_at(&self, index: usize) -> usize {
         let (start, end) = self.start_end(index);
@@ -467,7 +472,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
     /// Returns a range (start, end) corresponding to the position `index`
     /// # Panic
-    /// This function panics iff `index >= self.len()`
+    /// This function panics iff `index >= self.len_proxy()`
     #[inline]
     pub fn start_end(&self, index: usize) -> (usize, usize) {
         // soundness: the invariant of the function
@@ -508,7 +513,7 @@ impl<O: Offset> OffsetsBuffer<O> {
 
     /// Returns an iterator with the lengths of the offsets
     #[inline]
-    pub fn lengths(&self) -> impl Iterator<Item = usize> + '_ {
+    pub fn lengths(&self) -> impl ExactSizeIterator<Item = usize> + '_ {
         self.0.windows(2).map(|w| (w[1] - w[0]).to_usize())
     }
 

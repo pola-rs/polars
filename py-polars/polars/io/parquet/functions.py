@@ -31,14 +31,14 @@ if TYPE_CHECKING:
     from typing import Literal
 
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import ParallelStrategy, ScanSource, SchemaDict
+    from polars._typing import FileSource, ParallelStrategy, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def read_parquet(
-    source: ScanSource,
+    source: FileSource,
     *,
     columns: list[int] | list[str] | None = None,
     n_rows: int | None = None,
@@ -74,7 +74,7 @@ def read_parquet(
 
         File-like objects are supported (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance) For file-like objects, stream position
+        function, or a `BytesIO` instance). For file-like objects, the stream position
         may not be updated accordingly after reading.
     columns
         Columns to select. Accepts a list of column indices (starting at zero) or a list
@@ -304,9 +304,8 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
     source
         Path to a file or a file-like object (by "file-like object" we refer to objects
         that have a `read()` method, such as a file handler like the builtin `open`
-        function, or a `BytesIO` instance).
-        For file-like objects,
-        stream position may not be updated accordingly after reading.
+        function, or a `BytesIO` instance). For file-like objects, the stream position
+        may not be updated accordingly after reading.
 
     Returns
     -------
@@ -322,7 +321,7 @@ def read_parquet_schema(source: str | Path | IO[bytes] | bytes) -> dict[str, Dat
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
 @deprecate_renamed_parameter("row_count_offset", "row_index_offset", version="0.20.4")
 def scan_parquet(
-    source: ScanSource,
+    source: FileSource,
     *,
     n_rows: int | None = None,
     row_index_name: str | None = None,

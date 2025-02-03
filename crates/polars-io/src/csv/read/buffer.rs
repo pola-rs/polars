@@ -82,6 +82,13 @@ impl PrimitiveParser for Int64Type {
         atoi_simd::parse_skipped(bytes).ok()
     }
 }
+#[cfg(feature = "dtype-i128")]
+impl PrimitiveParser for Int128Type {
+    #[inline]
+    fn parse(bytes: &[u8]) -> Option<i128> {
+        atoi_simd::parse_skipped(bytes).ok()
+    }
+}
 
 trait ParsedBuffer {
     fn parse_bytes(
@@ -259,6 +266,7 @@ pub struct CategoricalField {
     escape_scratch: Vec<u8>,
     quote_char: u8,
     builder: CategoricalChunkedBuilder,
+    is_enum: bool,
 }
 
 #[cfg(feature = "dtype-categorical")]
@@ -275,6 +283,16 @@ impl CategoricalField {
             escape_scratch: vec![],
             quote_char: quote_char.unwrap_or(b'"'),
             builder,
+            is_enum: false,
+        }
+    }
+
+    fn new_enum(quote_char: Option<u8>, builder: CategoricalChunkedBuilder) -> Self {
+        Self {
+            escape_scratch: vec![],
+            quote_char: quote_char.unwrap_or(b'"'),
+            builder,
+            is_enum: true,
         }
     }
 
@@ -511,6 +529,8 @@ pub fn init_buffers(
                 &DataType::Int16 => Buffer::Int16(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int32 => Buffer::Int32(PrimitiveChunkedBuilder::new(name, capacity)),
                 &DataType::Int64 => Buffer::Int64(PrimitiveChunkedBuilder::new(name, capacity)),
+                #[cfg(feature = "dtype-i128")]
+                &DataType::Int128 => Buffer::Int128(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u8")]
                 &DataType::UInt8 => Buffer::UInt8(PrimitiveChunkedBuilder::new(name, capacity)),
                 #[cfg(feature = "dtype-u16")]
@@ -552,7 +572,19 @@ pub fn init_buffers(
                 DataType::Categorical(_, ordering) => Buffer::Categorical(CategoricalField::new(
                     name, capacity, quote_char, *ordering,
                 )),
-                // TODO (ENUM) support writing to Enum
+                #[cfg(feature = "dtype-categorical")]
+                DataType::Enum(rev_map, _) => {
+                    let Some(rev_map) = rev_map else {
+                        polars_bail!(ComputeError: "enum categories must be set")
+                    };
+                    let cats = rev_map.get_categories();
+                    let mut builder =
+                        CategoricalChunkedBuilder::new(name, capacity, Default::default());
+                    for cat in cats.values_iter() {
+                        builder.register_value(cat);
+                    }
+                    Buffer::Categorical(CategoricalField::new_enum(quote_char, builder))
+                },
                 dt => polars_bail!(
                     ComputeError: "unsupported data type when reading CSV: {} when reading CSV", dt,
                 ),
@@ -571,6 +603,8 @@ pub enum Buffer {
     Int16(PrimitiveChunkedBuilder<Int16Type>),
     Int32(PrimitiveChunkedBuilder<Int32Type>),
     Int64(PrimitiveChunkedBuilder<Int64Type>),
+    #[cfg(feature = "dtype-i128")]
+    Int128(PrimitiveChunkedBuilder<Int128Type>),
     #[cfg(feature = "dtype-u8")]
     UInt8(PrimitiveChunkedBuilder<UInt8Type>),
     #[cfg(feature = "dtype-u16")]
@@ -605,6 +639,8 @@ impl Buffer {
             Buffer::Int16(v) => v.finish().into_series(),
             Buffer::Int32(v) => v.finish().into_series(),
             Buffer::Int64(v) => v.finish().into_series(),
+            #[cfg(feature = "dtype-i128")]
+            Buffer::Int128(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u8")]
             Buffer::UInt8(v) => v.finish().into_series(),
             #[cfg(feature = "dtype-u16")]
@@ -643,7 +679,22 @@ impl Buffer {
             Buffer::Categorical(buf) => {
                 #[cfg(feature = "dtype-categorical")]
                 {
-                    buf.builder.finish().into_series()
+                    let ca = buf.builder.finish();
+
+                    if buf.is_enum {
+                        let DataType::Categorical(Some(rev_map), _) = ca.dtype() else {
+                            unreachable!()
+                        };
+                        let idx = ca.physical().clone();
+                        let dtype = DataType::Enum(Some(rev_map.clone()), Default::default());
+
+                        unsafe {
+                            CategoricalChunked::from_cats_and_dtype_unchecked(idx, dtype)
+                                .into_series()
+                        }
+                    } else {
+                        ca.into_series()
+                    }
                 }
                 #[cfg(not(feature = "dtype-categorical"))]
                 {
@@ -663,6 +714,8 @@ impl Buffer {
             Buffer::Int16(v) => v.append_null(),
             Buffer::Int32(v) => v.append_null(),
             Buffer::Int64(v) => v.append_null(),
+            #[cfg(feature = "dtype-i128")]
+            Buffer::Int128(v) => v.append_null(),
             #[cfg(feature = "dtype-u8")]
             Buffer::UInt8(v) => v.append_null(),
             #[cfg(feature = "dtype-u16")]
@@ -707,6 +760,8 @@ impl Buffer {
             Buffer::Int16(_) => DataType::Int16,
             Buffer::Int32(_) => DataType::Int32,
             Buffer::Int64(_) => DataType::Int64,
+            #[cfg(feature = "dtype-i128")]
+            Buffer::Int128(_) => DataType::Int128,
             #[cfg(feature = "dtype-u8")]
             Buffer::UInt8(_) => DataType::UInt8,
             #[cfg(feature = "dtype-u16")]
@@ -779,6 +834,15 @@ impl Buffer {
                 None,
             ),
             Int64(buf) => <PrimitiveChunkedBuilder<Int64Type> as ParsedBuffer>::parse_bytes(
+                buf,
+                bytes,
+                ignore_errors,
+                needs_escaping,
+                missing_is_null,
+                None,
+            ),
+            #[cfg(feature = "dtype-i128")]
+            Int128(buf) => <PrimitiveChunkedBuilder<Int128Type> as ParsedBuffer>::parse_bytes(
                 buf,
                 bytes,
                 ignore_errors,

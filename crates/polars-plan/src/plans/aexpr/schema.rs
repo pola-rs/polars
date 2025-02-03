@@ -1,3 +1,7 @@
+#[cfg(feature = "dtype-decimal")]
+use polars_core::chunked_array::arithmetic::{
+    _get_decimal_scale_add_sub, _get_decimal_scale_div, _get_decimal_scale_mul,
+};
 use recursive::recursive;
 
 use super::*;
@@ -8,7 +12,7 @@ fn float_type(field: &mut Field) {
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(..) => true,
         DataType::Boolean => true,
-        dt => dt.is_numeric(),
+        dt => dt.is_primitive_numeric(),
     };
     if should_coerce {
         field.coerce(DataType::Float64);
@@ -301,13 +305,6 @@ impl AExpr {
                         float_type(&mut field);
                         Ok(field)
                     },
-                    #[cfg(feature = "bitwise")]
-                    Bitwise(expr, _) => {
-                        *agg_list = false;
-                        let field = ctx.arena.get(*expr).to_field_impl(ctx, &mut false)?;
-                        // @Q? Do we need to coerce here?
-                        Ok(field)
-                    },
                 }
             },
             Cast { expr, dtype, .. } => {
@@ -474,6 +471,7 @@ fn get_arithmetic_field(
                 (_, Duration(_)) | (Duration(_), _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
+                (Time, Time) => Duration(TimeUnit::Nanoseconds),
                 (_, Time) | (Time, _) => {
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
@@ -505,6 +503,11 @@ fn get_arithmetic_field(
                         list_dtype.leaf_dtype(),
                         other_dtype.leaf_dtype(),
                     )?)
+                },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
+                    let scale = _get_decimal_scale_add_sub(*scale_left, *scale_right);
+                    Decimal(None, Some(scale))
                 },
                 (left, right) => try_get_supertype(left, right)?,
             }
@@ -555,6 +558,11 @@ fn get_arithmetic_field(
                         other_dtype.leaf_dtype(),
                     )?)
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
+                    let scale = _get_decimal_scale_add_sub(*scale_left, *scale_right);
+                    Decimal(None, Some(scale))
+                },
                 (left, right) => try_get_supertype(left, right)?,
             }
         },
@@ -578,7 +586,7 @@ fn get_arithmetic_field(
                     // True divide handled somewhere else
                     polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                 },
-                (l, Duration(_)) if l.is_numeric() => match op {
+                (l, Duration(_)) if l.is_primitive_numeric() => match op {
                     Operator::Multiply => {
                         left_field.coerce(right_type);
                         return Ok(left_field);
@@ -587,6 +595,23 @@ fn get_arithmetic_field(
                         polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                     },
                 },
+                #[cfg(feature = "dtype-decimal")]
+                (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
+                    let scale = match op {
+                        Operator::Multiply => _get_decimal_scale_mul(*scale_left, *scale_right),
+                        Operator::Divide | Operator::TrueDivide => {
+                            _get_decimal_scale_div(*scale_left)
+                        },
+                        _ => {
+                            debug_assert!(false);
+                            *scale_left
+                        },
+                    };
+                    let dtype = Decimal(None, Some(scale));
+                    left_field.coerce(dtype);
+                    return Ok(left_field);
+                },
+
                 (l @ List(a), r @ List(b))
                     if ![a, b]
                         .into_iter()
@@ -690,11 +715,16 @@ fn get_truediv_field(
             })
         },
         (Float32, _) => Float32,
-        (dt, _) if dt.is_numeric() => Float64,
+        #[cfg(feature = "dtype-decimal")]
+        (Decimal(_, Some(scale_left)), Decimal(_, _)) => {
+            let scale = _get_decimal_scale_div(*scale_left);
+            Decimal(None, Some(scale))
+        },
+        (dt, _) if dt.is_primitive_numeric() => Float64,
         #[cfg(feature = "dtype-duration")]
         (Duration(_), Duration(_)) => Float64,
         #[cfg(feature = "dtype-duration")]
-        (Duration(_), dt) if dt.is_numeric() => return Ok(left_field),
+        (Duration(_), dt) if dt.is_primitive_numeric() => return Ok(left_field),
         #[cfg(feature = "dtype-duration")]
         (Duration(_), dt) => {
             polars_bail!(InvalidOperation: "true division of {} with {} is not allowed", left_field.dtype(), dt)

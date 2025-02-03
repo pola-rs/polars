@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
+from typing import Any
 
 import numpy as np
 import pytest
@@ -9,6 +10,7 @@ import pytest
 import polars as pl
 from polars.exceptions import PolarsInefficientMapWarning
 from polars.testing import assert_frame_equal, assert_series_equal
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 pytestmark = pytest.mark.filterwarnings(
     "ignore::polars.exceptions.PolarsInefficientMapWarning"
@@ -48,20 +50,28 @@ def test_map_elements_arithmetic_consistency() -> None:
 
 def test_map_elements_struct() -> None:
     df = pl.DataFrame(
-        {"A": ["a", "a"], "B": [2, 3], "C": [True, False], "D": [12.0, None]}
+        {
+            "A": ["a", "a", None],
+            "B": [2, 3, None],
+            "C": [True, False, None],
+            "D": [12.0, None, None],
+            "E": [None, [1], [2, 3]],
+        }
     )
     out = df.with_columns(pl.struct(df.columns).alias("struct")).select(
         pl.col("struct").map_elements(lambda x: x["A"]).alias("A_field"),
         pl.col("struct").map_elements(lambda x: x["B"]).alias("B_field"),
         pl.col("struct").map_elements(lambda x: x["C"]).alias("C_field"),
         pl.col("struct").map_elements(lambda x: x["D"]).alias("D_field"),
+        pl.col("struct").map_elements(lambda x: x["E"]).alias("E_field"),
     )
     expected = pl.DataFrame(
         {
-            "A_field": ["a", "a"],
-            "B_field": [2, 3],
-            "C_field": [True, False],
-            "D_field": [12.0, None],
+            "A_field": ["a", "a", None],
+            "B_field": [2, 3, None],
+            "C_field": [True, False, None],
+            "D_field": [12.0, None, None],
+            "E_field": [None, [1], [2, 3]],
         }
     )
 
@@ -129,17 +139,8 @@ def test_map_elements_list_any_value_fallback() -> None:
 
 
 def test_map_elements_all_types() -> None:
-    dtypes = [
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-    ]
     # test we don't panic
+    dtypes = NUMERIC_DTYPES + TEMPORAL_DTYPES + [pl.Decimal(None, 2)]
     for dtype in dtypes:
         pl.Series([1, 2, 3, 4, 5], dtype=dtype).map_elements(lambda x: x)
 
@@ -180,17 +181,16 @@ def test_empty_list_in_map_elements() -> None:
     ).to_dict(as_series=False) == {"a": [[], [1, 2], [], [5]]}
 
 
-def test_map_elements_skip_nulls() -> None:
-    some_map = {None: "a", 1: "b"}
-    s = pl.Series([None, 1])
+@pytest.mark.parametrize("value", [1, True, "abc", [1, 2], {"a": 1}])
+@pytest.mark.parametrize("return_value", [1, True, "abc", [1, 2], {"a": 1}])
+def test_map_elements_skip_nulls(value: Any, return_value: Any) -> None:
+    s = pl.Series([value, None])
 
-    assert s.map_elements(
-        lambda x: some_map[x], return_dtype=pl.String, skip_nulls=True
-    ).to_list() == [None, "b"]
+    result = s.map_elements(lambda x: return_value, skip_nulls=True).to_list()
+    assert result == [return_value, None]
 
-    assert s.map_elements(
-        lambda x: some_map[x], return_dtype=pl.String, skip_nulls=False
-    ).to_list() == ["a", "b"]
+    result = s.map_elements(lambda x: return_value, skip_nulls=False).to_list()
+    assert result == [return_value, return_value]
 
 
 def test_map_elements_object_dtypes() -> None:

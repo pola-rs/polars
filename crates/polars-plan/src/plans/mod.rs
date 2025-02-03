@@ -97,10 +97,10 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         keys: Vec<Expr>,
         aggs: Vec<Expr>,
-        #[cfg_attr(feature = "serde", serde(skip))]
-        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        apply: Option<(Arc<dyn DataFrameUdf>, SchemaRef)>,
     },
     /// Join operation
     Join {
@@ -161,12 +161,18 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         payload: SinkType,
     },
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        input_left: Arc<DslPlan>,
+        input_right: Arc<DslPlan>,
+        key: PlSmallStr,
+    },
     IR {
-        #[cfg_attr(feature = "serde", serde(skip))]
-        node: Option<Node>,
-        version: u32,
         // Keep the original Dsl around as we need that for serialization.
         dsl: Arc<DslPlan>,
+        version: u32,
+        #[cfg_attr(feature = "serde", serde(skip))]
+        node: Option<Node>,
     },
 }
 
@@ -196,7 +202,9 @@ impl Clone for DslPlan {
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
-            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version}
+            #[cfg(feature = "merge_sorted")]
+            Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
+            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
         }
     }
 }
@@ -204,10 +212,10 @@ impl Clone for DslPlan {
 impl Default for DslPlan {
     fn default() -> Self {
         let df = DataFrame::empty();
-        let schema = df.schema();
+        let schema = df.schema().clone();
         DslPlan::DataFrameScan {
             df: Arc::new(df),
-            schema: Arc::new(schema),
+            schema,
         }
     }
 }
@@ -225,7 +233,7 @@ impl DslPlan {
         struct DslPlanDisplay(IRPlan);
         impl fmt::Display for DslPlanDisplay {
             fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                self.0.as_ref().display().fmt(f)
+                fmt::Display::fmt(&self.0.as_ref().display(), f)
             }
         }
         Ok(DslPlanDisplay(self.clone().to_alp()?))

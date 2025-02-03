@@ -72,8 +72,6 @@ impl TreeWalker for Expr {
                 AggGroups(x) => AggGroups(am(x, f)?),
                 Std(x, ddf) => Std(am(x, f)?, ddf),
                 Var(x, ddf) => Var(am(x, f)?, ddf),
-                #[cfg(feature = "bitwise")]
-                Bitwise(x, t) => Bitwise(am(x, f)?, t),
             }),
             Ternary { predicate, truthy, falsy } => Ternary { predicate: am(predicate, &mut f)?, truthy: am(truthy, &mut f)?, falsy: am(falsy, f)? },
             Function { input, function, options } => Function { input: input.into_iter().map(f).collect::<Result<_, _>>()?, function, options },
@@ -229,15 +227,15 @@ impl AExpr {
 
 #[cfg(feature = "cse")]
 impl<'a> AExprArena<'a> {
-    fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
+    pub fn new(node: Node, arena: &'a Arena<AExpr>) -> Self {
         Self { node, arena }
     }
-    fn to_aexpr(&self) -> &'a AExpr {
+    pub fn to_aexpr(&self) -> &'a AExpr {
         self.arena.get(self.node)
     }
 
     // Check single node on equality
-    fn is_equal_single(&self, other: &Self) -> bool {
+    pub fn is_equal_single(&self, other: &Self) -> bool {
         let self_ae = self.to_aexpr();
         let other_ae = other.to_aexpr();
         self_ae.is_equal_node(other_ae)
@@ -247,8 +245,8 @@ impl<'a> AExprArena<'a> {
 #[cfg(feature = "cse")]
 impl PartialEq for AExprArena<'_> {
     fn eq(&self, other: &Self) -> bool {
-        let mut scratch1 = vec![];
-        let mut scratch2 = vec![];
+        let mut scratch1 = unitvec![];
+        let mut scratch2 = unitvec![];
 
         scratch1.push(self.node);
         scratch2.push(other.node);
@@ -263,8 +261,8 @@ impl PartialEq for AExprArena<'_> {
                         return false;
                     }
 
-                    l.to_aexpr().nodes(&mut scratch1);
-                    r.to_aexpr().nodes(&mut scratch2);
+                    l.to_aexpr().inputs_rev(&mut scratch1);
+                    r.to_aexpr().inputs_rev(&mut scratch2);
                 },
                 (None, None) => return true,
                 _ => return false,
@@ -282,7 +280,7 @@ impl TreeWalker for AexprNode {
     ) -> PolarsResult<VisitRecursion> {
         let mut scratch = unitvec![];
 
-        self.to_aexpr(arena).nodes(&mut scratch);
+        self.to_aexpr(arena).inputs_rev(&mut scratch);
         for node in scratch.as_slice() {
             let aenode = AexprNode::new(*node);
             match op(&aenode, arena)? {
@@ -303,7 +301,7 @@ impl TreeWalker for AexprNode {
         let mut scratch = unitvec![];
 
         let ae = arena.get(self.node).clone();
-        ae.nodes(&mut scratch);
+        ae.inputs_rev(&mut scratch);
 
         // rewrite the nodes
         for node in scratch.as_mut_slice() {
@@ -311,6 +309,7 @@ impl TreeWalker for AexprNode {
             *node = op(aenode, arena)?.node;
         }
 
+        scratch.as_mut_slice().reverse();
         let ae = ae.replace_inputs(&scratch);
         self.node = arena.add(ae);
         Ok(self)

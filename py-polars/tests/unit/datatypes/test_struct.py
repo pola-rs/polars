@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 from dataclasses import dataclass
 from datetime import datetime, time
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import pandas as pd
 import pyarrow as pa
@@ -264,32 +264,30 @@ def test_from_dicts_struct() -> None:
 @pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"a": [[1, 2, 3], [1, 2]]})
-    assert df.select([pl.col("a").list.to_struct()]).to_series().to_list() == [
+    assert df.to_series().list.to_struct().to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": 3},
         {"field_0": 1, "field_1": 2, "field_2": None},
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.select(
-        pl.col("a").list.to_struct(fields=lambda idx: f"col_name_{idx}")
-    ).to_series().to_list() == [
+    assert df.to_series().list.to_struct(
+        fields=lambda idx: f"col_name_{idx}"
+    ).to_list() == [
         {"col_name_0": 1, "col_name_1": 2},
         {"col_name_0": 1, "col_name_1": 2},
     ]
 
     df = pl.DataFrame({"a": [[1, 2], [1, 2, 3]]})
-    assert df.select(
-        pl.col("a").list.to_struct(n_field_strategy="max_width")
-    ).to_series().to_list() == [
+    assert df.to_series().list.to_struct(n_field_strategy="max_width").to_list() == [
         {"field_0": 1, "field_1": 2, "field_2": None},
         {"field_0": 1, "field_1": 2, "field_2": 3},
     ]
 
     # set upper bound
     df = pl.DataFrame({"lists": [[1, 1, 1], [0, 1, 0], [1, 0, 0]]})
-    assert df.lazy().select(pl.col("lists").list.to_struct(upper_bound=3)).unnest(
-        "lists"
-    ).sum().collect().columns == ["field_0", "field_1", "field_2"]
+    assert df.lazy().select(
+        pl.col("lists").list.to_struct(upper_bound=3, _eager=True)
+    ).unnest("lists").sum().collect().columns == ["field_0", "field_1", "field_2"]
 
 
 def test_sort_df_with_list_struct() -> None:
@@ -1145,7 +1143,7 @@ def test_list_to_struct_19208() -> None:
         }
     )
     assert pl.concat([df[0], df[1], df[2]]).select(
-        pl.col("nested").list.to_struct()
+        pl.col("nested").list.to_struct(_eager=True)
     ).to_dict(as_series=False) == {
         "nested": [{"field_0": {"a": 1}}, {"field_0": None}, {"field_0": {"a": 3}}]
     }
@@ -1214,3 +1212,17 @@ def test_struct_field_list_eval_17356() -> None:
             [{"name": "ALICE", "age": 65, "car": "Mazda"}],
         ],
     }
+
+
+@pytest.mark.parametrize("data", [[1], [[1]], {"a": 1}, [{"a": 1}]])
+def test_leaf_list_eq_19613(data: Any) -> None:
+    assert not pl.DataFrame([data]).equals(pl.DataFrame([[data]]))
+
+
+def test_nested_object_raises_15237() -> None:
+    obj = object()
+    df = pl.DataFrame({"a": [obj]})
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError, match="nested objects are not allowed"
+    ):
+        df.select(pl.struct("a"))

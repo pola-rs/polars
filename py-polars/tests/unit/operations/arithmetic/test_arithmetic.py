@@ -549,14 +549,20 @@ def test_power_series() -> None:
     assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
 
     # rpow
-    assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
-    assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
+    assert_series_equal(2.0**a, pl.Series(None, [2.0, 4.0], dtype=Float64))
+    assert_series_equal(2**b, pl.Series(None, [None, 4.0], dtype=Float64))
 
     with pytest.raises(ColumnNotFoundError):
         "hi" ** a
 
     # Series.pow() method
     assert_series_equal(a.pow(2), pl.Series([1, 4], dtype=Int64))
+
+
+def test_rpow_name_20071() -> None:
+    result = 1 ** pl.Series("a", [1, 2])
+    expected = pl.Series("a", [1, 1], pl.Int32)
+    assert_series_equal(result, expected)
 
 
 @pytest.mark.parametrize(
@@ -782,6 +788,31 @@ def test_date_datetime_sub() -> None:
     ).to_dict(as_series=False) == {
         "foo": [timedelta(days=-4)],
         "bar": [timedelta(days=4)],
+    }
+
+
+def test_time_time_sub() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": pl.Series([-1, 0, 10]).cast(pl.Datetime("us")),
+            "bar": pl.Series([1, 0, 1]).cast(pl.Datetime("us")),
+        }
+    )
+
+    assert df.select(
+        pl.col("foo").dt.time() - pl.col("bar").dt.time(),
+        pl.col("bar").dt.time() - pl.col("foo").dt.time(),
+    ).to_dict(as_series=False) == {
+        "foo": [
+            timedelta(days=1, microseconds=-2),
+            timedelta(0),
+            timedelta(microseconds=9),
+        ],
+        "bar": [
+            timedelta(days=-1, microseconds=2),
+            timedelta(0),
+            timedelta(microseconds=-9),
+        ],
     }
 
 

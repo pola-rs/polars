@@ -5,10 +5,12 @@ use polars::io::csv::read::OwnedBatchedCsvReader;
 use polars::io::mmap::MmapBytesReader;
 use polars::io::RowIndex;
 use polars::prelude::*;
+use polars_utils::open_file;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, Wrap};
 
 #[pyclass]
@@ -22,7 +24,7 @@ pub struct PyBatchedCsv {
 impl PyBatchedCsv {
     #[staticmethod]
     #[pyo3(signature = (
-        infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows,
+        infer_schema_length, chunk_size, has_header, ignore_errors, n_rows, skip_rows, skip_lines,
         projection, separator, rechunk, columns, encoding, n_threads, path, schema_overrides,
         overwrite_dtype_slice, low_memory, comment_prefix, quote_char, null_values,
         missing_utf8_is_empty_string, try_parse_dates, skip_rows_after_header, row_index,
@@ -35,6 +37,7 @@ impl PyBatchedCsv {
         ignore_errors: bool,
         n_rows: Option<usize>,
         skip_rows: usize,
+        skip_lines: usize,
         projection: Option<Vec<usize>>,
         separator: &str,
         rechunk: bool,
@@ -90,13 +93,14 @@ impl PyBatchedCsv {
                 .collect::<Vec<_>>()
         });
 
-        let file = std::fs::File::open(path).map_err(PyPolarsErr::from)?;
+        let file = open_file(&path).map_err(PyPolarsErr::from)?;
         let reader = Box::new(file) as Box<dyn MmapBytesReader>;
         let reader = CsvReadOptions::default()
             .with_infer_schema_length(infer_schema_length)
             .with_has_header(has_header)
             .with_n_rows(n_rows)
             .with_skip_rows(skip_rows)
+            .with_skip_rows(skip_lines)
             .with_ignore_errors(ignore_errors)
             .with_projection(projection.map(Arc::new))
             .with_rechunk(rechunk)
@@ -133,13 +137,7 @@ impl PyBatchedCsv {
 
     fn next_batches(&self, py: Python, n: usize) -> PyResult<Option<Vec<PyDataFrame>>> {
         let reader = &self.reader;
-        let batches = py.allow_threads(move || {
-            reader
-                .lock()
-                .map_err(|e| PyPolarsErr::Other(e.to_string()))?
-                .next_batches(n)
-                .map_err(PyPolarsErr::from)
-        })?;
+        let batches = py.enter_polars(move || reader.lock().unwrap().next_batches(n))?;
 
         // SAFETY: same memory layout
         let batches = unsafe {

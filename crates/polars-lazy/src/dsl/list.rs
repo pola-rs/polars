@@ -21,7 +21,7 @@ impl IntoListNameSpace for ListNameSpace {
     }
 }
 
-fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
+fn offsets_to_groups(offsets: &[i64]) -> Option<GroupPositions> {
     let mut start = offsets[0];
     let end = *offsets.last().unwrap();
     if IdxSize::try_from(end - start).is_err() {
@@ -37,10 +37,13 @@ fn offsets_to_groups(offsets: &[i64]) -> Option<GroupsProxy> {
             [offset, len]
         })
         .collect();
-    Some(GroupsProxy::Slice {
-        groups,
-        rolling: false,
-    })
+    Some(
+        GroupsType::Slice {
+            groups,
+            rolling: false,
+        }
+        .into_sliceable(),
+    )
 }
 
 fn run_per_sublist(
@@ -127,7 +130,7 @@ fn run_on_group_by_engine(
     let inner_dtype = lst.inner_dtype();
     // SAFETY:
     // Invariant in List means values physicals can be cast to inner dtype
-    let values = unsafe { values.cast_unchecked(inner_dtype).unwrap() };
+    let values = unsafe { values.from_physical_unchecked(inner_dtype).unwrap() };
 
     let df_context = values.into_frame();
     let phys_expr =

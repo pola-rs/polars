@@ -200,7 +200,7 @@ def test_hive_partitioned_projection_pushdown(
         q = pl.scan_parquet(
             root / "**/*.parquet",
             hive_partitioning=True,
-            parallel=parallel,  # type: ignore[arg-type]
+            parallel=parallel,
         )
 
         expected = q.collect().select("category")
@@ -502,7 +502,14 @@ def test_hive_partition_force_async_17155(tmp_path: Path, monkeypatch: Any) -> N
     ("scan_func", "write_func"),
     [
         (partial(pl.scan_parquet, parallel="row_groups"), pl.DataFrame.write_parquet),
+        (partial(pl.scan_parquet, parallel="columns"), pl.DataFrame.write_parquet),
         (partial(pl.scan_parquet, parallel="prefiltered"), pl.DataFrame.write_parquet),
+        (
+            lambda *a, **kw: pl.scan_parquet(*a, parallel="prefiltered", **kw).filter(
+                pl.col("b") == pl.col("b")
+            ),
+            pl.DataFrame.write_parquet,
+        ),
         (pl.scan_ipc, pl.DataFrame.write_ipc),
     ],
 )

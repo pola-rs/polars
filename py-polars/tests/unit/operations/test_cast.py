@@ -11,6 +11,7 @@ from polars._utils.constants import MS_PER_SECOND, NS_PER_SECOND, US_PER_SECOND
 from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal
 from polars.testing.asserts.series import assert_series_equal
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType
@@ -560,21 +561,14 @@ def test_strict_cast_string(
 @pytest.mark.parametrize(
     "dtype_out",
     [
-        (pl.UInt8),
-        (pl.Int8),
-        (pl.UInt16),
-        (pl.Int16),
-        (pl.UInt32),
-        (pl.Int32),
-        (pl.UInt64),
-        (pl.Int64),
-        (pl.Date),
-        (pl.Datetime),
-        (pl.Time),
-        (pl.Duration),
-        (pl.String),
-        (pl.Categorical),
-        (pl.Enum(["1", "2"])),
+        *INTEGER_DTYPES,
+        pl.Date,
+        pl.Datetime,
+        pl.Time,
+        pl.Duration,
+        pl.String,
+        pl.Categorical,
+        pl.Enum(["1", "2"]),
     ],
 )
 def test_cast_categorical_name_retention(
@@ -633,7 +627,7 @@ def test_invalid_cast_float_to_decimal(value: float) -> None:
     s = pl.Series([value], dtype=pl.Float64)
     with pytest.raises(
         InvalidOperationError,
-        match="conversion from `f64` to `decimal\\[38,0\\]` failed",
+        match=r"conversion from `f64` to `decimal\[\*,0\]` failed",
     ):
         s.cast(pl.Decimal)
 
@@ -669,10 +663,7 @@ def test_all_null_cast_5826() -> None:
     assert out.item() is None
 
 
-@pytest.mark.parametrize(
-    "dtype",
-    [pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64, pl.Int8, pl.Int16, pl.Int32, pl.Int64],
-)
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
 def test_bool_numeric_supertype(dtype: PolarsDataType) -> None:
     df = pl.DataFrame({"v": [1, 2, 3, 4, 5, 6]})
     result = df.select((pl.col("v") < 3).sum().cast(dtype) / pl.len())
@@ -690,3 +681,36 @@ def test_cast_int_to_string_unsets_sorted_flag_19424() -> None:
     s = pl.Series([1, 2]).set_sorted()
     assert s.flags["SORTED_ASC"]
     assert not s.cast(pl.String).flags["SORTED_ASC"]
+
+
+def test_cast_integer_to_decimal() -> None:
+    s = pl.Series([1, 2, 3])
+    result = s.cast(pl.Decimal(10, 2))
+    expected = pl.Series(
+        "", [Decimal("1.00"), Decimal("2.00"), Decimal("3.00")], pl.Decimal(10, 2)
+    )
+    assert_series_equal(result, expected)
+
+
+def test_cast_python_dtypes() -> None:
+    s = pl.Series([0, 1])
+    assert s.cast(int).dtype == pl.Int64
+    assert s.cast(float).dtype == pl.Float64
+    assert s.cast(bool).dtype == pl.Boolean
+    assert s.cast(str).dtype == pl.String
+
+
+def test_overflowing_cast_literals_21023() -> None:
+    for no_optimization in [True, False]:
+        assert_frame_equal(
+            (
+                pl.LazyFrame()
+                .select(
+                    pl.lit(pl.Series([128], dtype=pl.Int64)).cast(
+                        pl.Int8, wrap_numerical=True
+                    )
+                )
+                .collect(no_optimization=no_optimization)
+            ),
+            pl.Series([-128], dtype=pl.Int8).to_frame(),
+        )

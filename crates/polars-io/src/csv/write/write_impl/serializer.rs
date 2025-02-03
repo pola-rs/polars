@@ -242,9 +242,9 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let value = arrow::compute::decimal::format_decimal(item, scale, trim_zeros);
-        buf.extend_from_slice(value.as_str().as_bytes());
+        buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -535,6 +535,7 @@ pub(super) fn serializer_for<'a>(
         DataType::UInt32 => quote_if_always!(integer_serializer::<u32>),
         DataType::Int64 => quote_if_always!(integer_serializer::<i64>),
         DataType::UInt64 => quote_if_always!(integer_serializer::<u64>),
+        DataType::Int128 => quote_if_always!(integer_serializer::<i128>),
         DataType::Float32 => match options.float_precision {
             Some(precision) => match options.float_scientific {
                 Some(true) => {

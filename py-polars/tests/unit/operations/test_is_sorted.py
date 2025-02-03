@@ -331,6 +331,7 @@ def test_sorted_flag() -> None:
     pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
     dfa = pl.DataFrame(
@@ -421,3 +422,8 @@ def test_is_sorted_chunked_select() -> None:
         .set_sorted("a")
         .select(pl.col("a").alias("b"))
     )["b"].flags["SORTED_ASC"]
+
+
+def test_is_sorted_arithmetic_overflow_14106() -> None:
+    s = pl.Series([0, 200], dtype=pl.UInt8).sort()
+    assert not (s + 200).is_sorted()

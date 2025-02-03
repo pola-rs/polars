@@ -33,7 +33,7 @@ pub fn register_plugin_function(
     };
 
     let cast_to_supertypes = if cast_to_supertype {
-        Some(Default::default())
+        Some(CastingRules::cast_to_supertypes())
     } else {
         None
     };
@@ -56,7 +56,7 @@ pub fn register_plugin_function(
         },
         options: FunctionOptions {
             collect_groups,
-            cast_to_supertypes,
+            cast_options: cast_to_supertypes,
             flags,
             ..Default::default()
         },
@@ -67,5 +67,7 @@ pub fn register_plugin_function(
 #[pyfunction]
 pub fn __register_startup_deps() {
     #[cfg(feature = "object")]
-    crate::on_startup::register_startup_deps()
+    unsafe {
+        crate::on_startup::register_startup_deps(true)
+    }
 }

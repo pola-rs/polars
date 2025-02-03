@@ -1,5 +1,5 @@
 use arrow::bitmap::utils::get_bit_unchecked;
-use polars_utils::hashing::folded_multiply;
+use polars_utils::hashing::{_boost_hash_combine, folded_multiply};
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 use rayon::prelude::*;
 use xxhash_rust::xxh3::xxh3_64_with_seed;
@@ -167,7 +167,7 @@ vec_hash_numeric!(UInt16Chunked);
 vec_hash_numeric!(UInt8Chunked);
 vec_hash_numeric!(Float64Chunked);
 vec_hash_numeric!(Float32Chunked);
-#[cfg(feature = "dtype-decimal")]
+#[cfg(any(feature = "dtype-decimal", feature = "dtype-i128"))]
 vec_hash_numeric!(Int128Chunked);
 
 impl VecHash for StringChunked {

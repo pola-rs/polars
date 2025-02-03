@@ -371,6 +371,15 @@ def test_set_tbl_width_chars() -> None:
     with pl.Config(tbl_width_chars=87):
         assert max(len(line) for line in str(df).split("\n")) == 87
 
+    # check that -1 is interpreted as no limit
+    df = pl.DataFrame({str(i): ["a" * 25] for i in range(5)})
+    for tbl_width_chars, expected_width in [
+        (None, 100),
+        (-1, 141),
+    ]:
+        with pl.Config(tbl_width_chars=tbl_width_chars):
+            assert max(len(line) for line in str(df).split("\n")) == expected_width
+
 
 def test_shape_below_table_and_inlined_dtype() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3, 4], "c": [5, 6]})
@@ -722,6 +731,94 @@ def test_config_load_save_context() -> None:
     # ensure earlier state was restored
     assert os.environ["POLARS_FMT_TABLE_FORMATTING"] == "ASCII_MARKDOWN"
     assert os.environ["POLARS_VERBOSE"]
+
+
+def test_config_instances() -> None:
+    # establish two config instances that defer setting their options
+    cfg_markdown = pl.Config(
+        tbl_formatting="MARKDOWN",
+        apply_on_context_enter=True,
+    )
+    cfg_compact = pl.Config(
+        tbl_rows=4,
+        tbl_cols=4,
+        tbl_column_data_type_inline=True,
+        apply_on_context_enter=True,
+    )
+
+    # check instance (in)equality
+    assert cfg_markdown != cfg_compact
+    assert cfg_markdown == pl.Config(
+        tbl_formatting="MARKDOWN", apply_on_context_enter=True
+    )
+
+    # confirm that the options have not been applied yet
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    # confirm that the deferred options are applied when the instance context
+    # is entered into, and that they can be re-used without leaking state
+    @cfg_markdown
+    def fn1() -> str | None:
+        return os.environ.get("POLARS_FMT_TABLE_FORMATTING")
+
+    assert fn1() == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    with cfg_markdown:  # can re-use instance as decorator and context
+        assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    @cfg_markdown
+    def fn2() -> str | None:
+        return os.environ.get("POLARS_FMT_TABLE_FORMATTING")
+
+    assert fn2() == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    df = pl.DataFrame({f"c{idx}": [idx] * 10 for idx in range(10)})
+
+    @cfg_compact
+    def fn3(df: pl.DataFrame) -> str:
+        return repr(df)
+
+    # reuse config instance and confirm state does not leak between invocations
+    for _ in range(3):
+        assert (
+            fn3(df)
+            == dedent("""
+            shape: (10, 10)
+            ┌──────────┬──────────┬───┬──────────┬──────────┐
+            │ c0 (i64) ┆ c1 (i64) ┆ … ┆ c8 (i64) ┆ c9 (i64) │
+            ╞══════════╪══════════╪═══╪══════════╪══════════╡
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ …        ┆ …        ┆ … ┆ …        ┆ …        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            └──────────┴──────────┴───┴──────────┴──────────┘""").lstrip()
+        )
+
+        assert (
+            repr(df)
+            == dedent("""
+            shape: (10, 10)
+            ┌─────┬─────┬─────┬─────┬───┬─────┬─────┬─────┬─────┐
+            │ c0  ┆ c1  ┆ c2  ┆ c3  ┆ … ┆ c6  ┆ c7  ┆ c8  ┆ c9  │
+            │ --- ┆ --- ┆ --- ┆ --- ┆   ┆ --- ┆ --- ┆ --- ┆ --- │
+            │ i64 ┆ i64 ┆ i64 ┆ i64 ┆   ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
+            ╞═════╪═════╪═════╪═════╪═══╪═════╪═════╪═════╪═════╡
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            └─────┴─────┴─────┴─────┴───┴─────┴─────┴─────┴─────┘""").lstrip()
+        )
 
 
 def test_config_scope() -> None:

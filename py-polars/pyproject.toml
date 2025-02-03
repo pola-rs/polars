@@ -26,9 +26,12 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
 ]
+dynamic = ["version"]
 
 [project.urls]
 Homepage = "https://www.pola.rs/"
@@ -55,13 +58,13 @@ excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
 connectorx = ["connectorx >= 0.3.2"]
 sqlalchemy = ["sqlalchemy", "polars[pandas]"]
-database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
+database = ["polars[adbc,connectorx,sqlalchemy]"]
 
 # Cloud
 fsspec = ["fsspec"]
 
 # Other I/O
-deltalake = ["deltalake >= 0.15.0"]
+deltalake = ["deltalake >= 0.19.0"]
 iceberg = ["pyiceberg >= 0.5.0"]
 
 # Other
@@ -70,7 +73,7 @@ cloudpickle = ["cloudpickle"]
 graph = ["matplotlib"]
 plot = ["altair >= 5.4.0"]
 style = ["great-tables >= 0.8.0"]
-timezone = ["backports.zoneinfo; python_version < '3.9'", "tzdata; platform_system == 'Windows'"]
+timezone = ["tzdata; platform_system == 'Windows'"]
 
 # GPU Engine
 gpu = ["cudf-polars-cu12"]
@@ -112,7 +115,6 @@ module = [
   "kuzu",
   "matplotlib.*",
   "moto.server",
-  "nest_asyncio",
   "openpyxl",
   "polars.polars",
   "pyarrow.*",
@@ -183,8 +185,6 @@ ignore = [
   "D104", # Missing docstring in public package
   "D105", # Missing docstring in magic method
   # ------------------------------------------------------------------
-  "ANN101", # Missing type annotation for `self` in method
-  "ANN102", # Missing type annotation for `cls` in classmethod
   "ANN401", # Dynamically typed expressions (Any) are disallowed
   "D401", # Relax NumPy docstring convention: first line should be imperative
   "E501", # Line length regulated by formatter
@@ -194,6 +194,7 @@ ignore = [
   "RUF005", # Consider expression instead of concatenation
   "SIM102", # Use a single `if` statement instead of nested `if` statements
   "SIM108", # Use ternary operator
+  "SIM114", # Combine `if` branches
   "TD002", # Missing author in TODO
   "TD003", # Missing issue link on the line following this TODO
   "TRY003", # Avoid specifying long messages outside the exception class
@@ -252,9 +253,17 @@ filterwarnings = [
   # TODO: Excel tests lead to unclosed file warnings
   # https://github.com/pola-rs/polars/issues/14466
   "ignore:unclosed file.*:ResourceWarning",
+  # TODO: Database tests lead to unclosed database warnings
+  # https://github.com/pola-rs/polars/issues/20296
+  "ignore:unclosed database.*:ResourceWarning",
   # Ignore invalid warnings when running earlier versions of SQLAlchemy (we
   # know they are invalid because our standard tests run the latest version)
   "ignore:Deprecated API features detected.*:DeprecationWarning",
+  # numpy import can generate this warning in Python 3.13 on certain runners
+  "ignore:.*numpy\\.longdouble.*:UserWarning",
+  # The old streaming engine is deprecated, until the new streaming engine is
+  # done just ignore the deprecation warnings.
+  "ignore:The old streaming engine*:DeprecationWarning",
 ]
 xfail_strict = true
 

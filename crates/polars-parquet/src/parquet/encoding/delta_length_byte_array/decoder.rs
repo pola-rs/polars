@@ -23,6 +23,10 @@ impl<'a> Decoder<'a> {
             offset: 0,
         })
     }
+
+    pub fn len(&self) -> usize {
+        self.lengths.len()
+    }
 }
 
 #[cfg(test)]

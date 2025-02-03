@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Collection
 from datetime import date
 from decimal import Decimal as D
 from typing import TYPE_CHECKING
@@ -12,6 +13,8 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+
     from polars._typing import PolarsDataType
 
 
@@ -31,7 +34,6 @@ def test_struct_logical_is_in() -> None:
 
     s1 = df1.select(pl.struct(["x", "y"])).to_series()
     s2 = df2.select(pl.struct(["x", "y"])).to_series()
-
     assert s1.is_in(s2).to_list() == [False, False, True, True, True, True, True]
 
 
@@ -143,9 +145,11 @@ def test_is_in_series() -> None:
     # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
     a = pl.Series("a", [1, 2])
     b = pl.Series("b", [1, 3]).is_in(a)
+    c = pl.Series("c", [1, 3]).is_in(a.to_frame())  # type: ignore[arg-type]
 
     assert a.name == "a"
     assert_series_equal(b, pl.Series("b", [True, False]))
+    assert_series_equal(c, pl.Series("c", [True, False]))
 
 
 def test_is_in_null() -> None:
@@ -155,9 +159,18 @@ def test_is_in_null() -> None:
     assert_series_equal(result, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_is_in_invalid_shape() -> None:
     with pytest.raises(ComputeError):
         pl.Series("a", [1, 2, 3]).is_in([[]])
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_is_in_list_rhs() -> None:
+    assert_series_equal(
+        pl.Series([1, 2, 3, 4, 5]).is_in([[1], [2, 9], [None], None, None]),
+        pl.Series([True, True, False, False, False]),
+    )
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
@@ -310,6 +323,7 @@ def test_is_in_with_wildcard_13809() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+@pytest.mark.may_fail_auto_streaming
 def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
     s = pl.Series(["c", "c", "b"], dtype=dtype)
 
@@ -321,6 +335,7 @@ def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+@pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [
@@ -346,6 +361,7 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
         ("e", [False, False, False, None, False]),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -> None:
     df = pl.Series(
         "li",
@@ -417,3 +433,34 @@ def test_is_in_decimal() -> None:
     assert pl.DataFrame({"a": [D("0.0"), D("0.2"), D("0.1")]}).select(
         pl.col("a").is_in([1, 0, 2])
     )["a"].to_list() == [True, False, False]
+
+
+def test_is_in_collection() -> None:
+    df = pl.DataFrame(
+        {
+            "lbl": ["aa", "bb", "cc", "dd", "ee"],
+            "val": [0, 1, 2, 3, 4],
+        }
+    )
+
+    class CustomCollection(Collection[int]):
+        def __init__(self, vals: Collection[int]) -> None:
+            super().__init__()
+            self.vals = vals
+
+        def __contains__(self, x: object) -> bool:
+            return x in self.vals
+
+        def __iter__(self) -> Iterator[int]:
+            yield from self.vals
+
+        def __len__(self) -> int:
+            return len(self.vals)
+
+    for constraint_values in (
+        {3, 2, 1},
+        frozenset({3, 2, 1}),
+        CustomCollection([3, 2, 1]),
+    ):
+        res = df.filter(pl.col("val").is_in(constraint_values))
+        assert set(res["lbl"]) == {"bb", "cc", "dd"}

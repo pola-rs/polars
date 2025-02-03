@@ -3,7 +3,7 @@ macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
         use std::fmt::Write;
 
-        let mut string = PlSmallStr::EMPTY;
+        let mut string = $crate::pl_str::PlSmallStr::EMPTY;
         write!(string, $($arg)*).unwrap();
         string
     }}
@@ -46,6 +46,11 @@ impl PlSmallStr {
     }
 
     #[inline(always)]
+    pub fn as_mut_str(&mut self) -> &mut str {
+        self.0.as_mut_str()
+    }
+
+    #[inline(always)]
     pub fn into_string(self) -> String {
         self.0.into_string()
     }
@@ -73,6 +78,13 @@ impl core::ops::Deref for PlSmallStr {
     #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.as_str()
+    }
+}
+
+impl core::ops::DerefMut for PlSmallStr {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.as_mut_str()
     }
 }
 

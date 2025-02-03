@@ -4,9 +4,7 @@ use std::path::Path;
 
 use polars_error::*;
 
-fn verbose() -> bool {
-    std::env::var("POLARS_VERBOSE").as_deref().unwrap_or("") == "1"
-}
+use crate::config::verbose;
 
 pub fn _limit_path_len_io_err(path: &Path, err: io::Error) -> PolarsError {
     let path = path.to_string_lossy();
@@ -21,6 +19,15 @@ pub fn _limit_path_len_io_err(path: &Path, err: io::Error) -> PolarsError {
 
 pub fn open_file(path: &Path) -> PolarsResult<File> {
     File::open(path).map_err(|err| _limit_path_len_io_err(path, err))
+}
+
+pub fn open_file_write(path: &Path) -> PolarsResult<File> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|err| _limit_path_len_io_err(path, err))
 }
 
 pub fn create_file(path: &Path) -> PolarsResult<File> {

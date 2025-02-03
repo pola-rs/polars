@@ -11,7 +11,8 @@ fn get_suffix(suffix: Option<PlSmallStr>) -> PlSmallStr {
     suffix.unwrap_or_else(|| PlSmallStr::from_static("_right"))
 }
 
-/// Utility method to finish a join.
+/// Renames the columns on the right to not clash with the left using a specified or otherwise default suffix
+/// and then merges the right dataframe into the left
 #[doc(hidden)]
 pub fn _finish_join(
     mut df_left: DataFrame,
@@ -25,16 +26,19 @@ pub fn _finish_join(
     });
 
     let mut rename_strs = Vec::with_capacity(df_right.width());
+    let right_names = df_right.schema();
 
-    df_right.get_columns().iter().for_each(|series| {
-        if left_names.contains(series.name()) {
-            rename_strs.push(series.name().to_owned())
+    for name in right_names.iter_names() {
+        if left_names.contains(name) {
+            rename_strs.push(name.clone())
         }
-    });
+    }
+
     let suffix = get_suffix(suffix);
 
     for name in rename_strs {
         let new_name = _join_suffix_name(name.as_str(), suffix.as_str());
+
         df_right.rename(&name, new_name.clone()).map_err(|_| {
             polars_err!(Duplicate: "column with name '{}' already exists\n\n\
             You may want to try:\n\
@@ -44,7 +48,7 @@ pub fn _finish_join(
     }
 
     drop(left_names);
-    df_left.hstack_mut(df_right.get_columns())?;
+    unsafe { df_left.hstack_mut_unchecked(df_right.get_columns()) };
     Ok(df_left)
 }
 
@@ -59,12 +63,12 @@ pub fn _coalesce_full_join(
     // know for certain that the column name for left is `name`
     // and for right is `name + suffix`
     let schema_left = if keys_left == keys_right {
-        Schema::default()
+        Arc::new(Schema::default())
     } else {
-        df_left.schema()
+        df_left.schema().clone()
     };
 
-    let schema = df.schema();
+    let schema = df.schema().clone();
     let mut to_remove = Vec::with_capacity(keys_right.len());
 
     // SAFETY: we maintain invariants.
@@ -91,6 +95,7 @@ pub fn _coalesce_full_join(
     for pos in to_remove {
         let _ = columns.remove(pos);
     }
+    df.clear_schema();
     df
 }
 

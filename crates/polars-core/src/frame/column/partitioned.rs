@@ -12,12 +12,14 @@ use crate::frame::Scalar;
 use crate::series::IsSorted;
 
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct PartitionedColumn {
     name: PlSmallStr,
 
     values: Series,
     ends: Arc<[IdxSize]>,
 
+    #[cfg_attr(feature = "serde", serde(skip))]
     materialized: OnceLock<Series>,
 }
 

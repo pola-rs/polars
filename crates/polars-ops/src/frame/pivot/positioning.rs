@@ -93,7 +93,7 @@ pub(super) fn position_aggregates(
                     },
                     _ => Series::from_any_values_and_dtype(name, avs, &phys_type, false).unwrap(),
                 };
-                unsafe { out.cast_unchecked(logical_type).unwrap() }.into()
+                unsafe { out.from_physical_unchecked(logical_type).unwrap() }.into()
             })
             .collect::<Vec<_>>()
     })
@@ -172,7 +172,7 @@ where
                     .map(PlSmallStr::from_str)
                     .unwrap_or_else(|| PlSmallStr::from_static("null"));
                 let out = ChunkedArray::<T>::from_slice_options(name, opt_values).into_series();
-                unsafe { out.cast_unchecked(logical_type).unwrap() }.into()
+                unsafe { out.from_physical_unchecked(logical_type).unwrap() }.into()
             })
             .collect::<Vec<_>>()
     })
@@ -230,7 +230,7 @@ where
 pub(super) fn compute_col_idx(
     pivot_df: &DataFrame,
     column: &str,
-    groups: &GroupsProxy,
+    groups: &GroupsType,
 ) -> PolarsResult<(Vec<IdxSize>, Column)> {
     let column_s = pivot_df.column(column)?;
     let column_agg = unsafe { column_s.agg_first(groups) };
@@ -401,7 +401,7 @@ fn compute_row_index_struct(
 pub(super) fn compute_row_idx(
     pivot_df: &DataFrame,
     index: &[PlSmallStr],
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     count: usize,
 ) -> PolarsResult<(Vec<IdxSize>, usize, Option<Vec<Column>>)> {
     let (row_locations, n_rows, row_index) = if index.len() == 1 {

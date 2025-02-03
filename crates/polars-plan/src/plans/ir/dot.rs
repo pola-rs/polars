@@ -199,11 +199,6 @@ impl<'a> IRDotDisplay<'a> {
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "WITH COLUMNS {exprs}"))?;
             },
-            Reduce { input, exprs, .. } => {
-                let exprs = self.display_exprs(exprs);
-                self.with_root(*input)._format(f, Some(id), last)?;
-                write_label(f, id, |f| write!(f, "REDUCE {exprs}"))?;
-            },
             Slice { input, offset, len } => {
                 self.with_root(*input)._format(f, Some(id), last)?;
                 write_label(f, id, |f| write!(f, "SLICE offset: {offset}; len: {len}"))?;
@@ -234,16 +229,13 @@ impl<'a> IRDotDisplay<'a> {
             DataFrameScan {
                 schema,
                 output_schema,
-                filter: selection,
                 ..
             } => {
                 let num_columns = NumColumnsSchema(output_schema.as_ref().map(|p| p.as_ref()));
-                let selection = selection.as_ref().map(|e| self.display_expr(e));
-                let selection = OptionExprIRDisplay(selection);
                 let total_columns = schema.len();
 
                 write_label(f, id, |f| {
-                    write!(f, "TABLE\nπ {num_columns}/{total_columns};\nσ {selection}")
+                    write!(f, "TABLE\nπ {num_columns}/{total_columns}")
                 })?;
             },
             Scan {
@@ -319,8 +311,6 @@ impl<'a> IRDotDisplay<'a> {
                     f.write_str(match payload {
                         SinkType::Memory => "SINK (MEMORY)",
                         SinkType::File { .. } => "SINK (FILE)",
-                        #[cfg(feature = "cloud")]
-                        SinkType::Cloud { .. } => "SINK (CLOUD)",
                     })
                 })?;
             },
@@ -334,6 +324,17 @@ impl<'a> IRDotDisplay<'a> {
                     write!(f, "simple π {num_columns}/{total_columns}\n[{columns}]")
                 })?;
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                self.with_root(*input_left)._format(f, Some(id), last)?;
+                self.with_root(*input_right)._format(f, Some(id), last)?;
+
+                write_label(f, id, |f| write!(f, "MERGE_SORTED ON '{key}'",))?;
+            },
             Invalid => write_label(f, id, |f| f.write_str("INVALID"))?,
         }
 
@@ -346,7 +347,6 @@ pub struct PathsDisplay<'a>(pub &'a [PathBuf]);
 pub struct ScanSourcesDisplay<'a>(pub &'a ScanSources);
 struct NumColumns<'a>(Option<&'a [PlSmallStr]>);
 struct NumColumnsSchema<'a>(Option<&'a Schema>);
-struct OptionExprIRDisplay<'a>(Option<ExprIRDisplay<'a>>);
 
 impl fmt::Display for ScanSourceRef<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -404,15 +404,6 @@ impl fmt::Display for NumColumnsSchema<'_> {
         match self.0 {
             None => f.write_str("*"),
             Some(columns) => columns.len().fmt(f),
-        }
-    }
-}
-
-impl fmt::Display for OptionExprIRDisplay<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            None => f.write_str("None"),
-            Some(expr) => expr.fmt(f),
         }
     }
 }

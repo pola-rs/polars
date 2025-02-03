@@ -9,9 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:props_groups]
     let props_groups = CsvReadOptions::default()
         .with_has_header(true)
-        .try_into_reader_with_file_path(Some(
-            "../../../assets/data/monopoly_props_groups.csv".into(),
-        ))?
+        .try_into_reader_with_file_path(Some("docs/assets/data/monopoly_props_groups.csv".into()))?
         .finish()?
         .head(Some(5));
     println!("{}", props_groups);
@@ -20,9 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [start:props_prices]
     let props_prices = CsvReadOptions::default()
         .with_has_header(true)
-        .try_into_reader_with_file_path(Some(
-            "../../../assets/data/monopoly_props_prices.csv".into(),
-        ))?
+        .try_into_reader_with_file_path(Some("docs/assets/data/monopoly_props_prices.csv".into()))?
         .finish()?
         .head(Some(5));
     println!("{}", props_prices);
@@ -256,6 +252,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ["stock"],
         AsofStrategy::Backward,
         None,
+        true,
+        true,
     )?;
     println!("{}", result);
     // --8<-- [end:asof]
@@ -269,6 +267,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ["stock"],
         AsofStrategy::Backward,
         Some(AnyValue::Duration(60000, TimeUnit::Milliseconds)),
+        true,
+        true,
     )?;
     println!("{}", result);
     // --8<-- [end:asof-tolerance]

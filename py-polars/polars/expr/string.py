@@ -8,6 +8,7 @@ import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     issue_deprecation_warning,
 )
 from polars._utils.parse import parse_into_expression
@@ -28,6 +29,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
+        UnicodeForm,
     )
     from polars._utils.various import NoDefault
 
@@ -313,6 +315,7 @@ class ExprStringNameSpace:
             msg = "`dtype` must be of type {Date, Datetime, Time}"
             raise ValueError(msg)
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
@@ -524,7 +527,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
 
-    def strip_chars(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
@@ -581,7 +584,7 @@ class ExprStringNameSpace:
         characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
 
-    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars_start(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading characters.
 
@@ -650,7 +653,7 @@ class ExprStringNameSpace:
         characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
 
-    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars_end(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove trailing characters.
 
@@ -1232,8 +1235,8 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
+        json_path_match : Extract the first match from a JSON string using the provided
+            JSONPath.
 
         Examples
         --------
@@ -1259,19 +1262,18 @@ class ExprStringNameSpace:
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
-        Extract the first match of JSON string with the provided JSONPath expression.
+        Extract the first match from a JSON string using the provided JSONPath.
 
-        Throws errors if invalid JSON strings are encountered.
-        All return values will be cast to :class:`String` regardless of the original
-        value.
+        Throws errors if invalid JSON strings are encountered. All return values
+        are cast to :class:`String`, regardless of the original value.
 
-        Documentation on JSONPath standard can be found
+        Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string.
+            A valid JSONPath query string.
 
         Returns
         -------
@@ -2930,6 +2932,47 @@ class ExprStringNameSpace:
         └──────────┴──────────────┘
         """
         return wrap_expr(self._pyexpr.str_escape_regex())
+
+    def normalize(self, form: UnicodeForm = "NFC") -> Expr:
+        """
+        Returns the Unicode normal form of the string values.
+
+        This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        Parameters
+        ----------
+        form : {'NFC', 'NFKC', 'NFD', 'NFKD'}
+            Unicode form to use.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["01²", "ＫＡＤＯＫＡＷＡ"]})
+        >>> new = df.with_columns(
+        ...     nfc=pl.col("text").str.normalize("NFC"),
+        ...     nfkc=pl.col("text").str.normalize("NFKC"),
+        ... )
+        >>> new
+        shape: (2, 3)
+        ┌──────────────────┬──────────────────┬──────────┐
+        │ text             ┆ nfc              ┆ nfkc     │
+        │ ---              ┆ ---              ┆ ---      │
+        │ str              ┆ str              ┆ str      │
+        ╞══════════════════╪══════════════════╪══════════╡
+        │ 01²              ┆ 01²              ┆ 012      │
+        │ ＫＡＤＯＫＡＷＡ    ┆ ＫＡＤＯＫＡＷＡ    ┆ KADOKAWA │
+        └──────────────────┴──────────────────┴──────────┘
+        >>> new.select(pl.all().str.len_bytes())
+        shape: (2, 3)
+        ┌──────┬─────┬──────┐
+        │ text ┆ nfc ┆ nfkc │
+        │ ---  ┆ --- ┆ ---  │
+        │ u32  ┆ u32 ┆ u32  │
+        ╞══════╪═════╪══════╡
+        │ 4    ┆ 4   ┆ 3    │
+        │ 24   ┆ 24  ┆ 8    │
+        └──────┴─────┴──────┘
+        """  # noqa: RUF002
+        return wrap_expr(self._pyexpr.str_normalize(form))
 
 
 def _validate_format_argument(format: str | None) -> None:

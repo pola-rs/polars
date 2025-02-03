@@ -3,7 +3,6 @@ from datetime import timedelta
 import pytest
 
 import polars as pl
-from polars.exceptions import PanicException
 from polars.testing import assert_frame_equal
 
 
@@ -168,7 +167,7 @@ def test_series_duration_std_var() -> None:
 
 def test_series_duration_var_overflow() -> None:
     s = pl.Series([timedelta(days=10), timedelta(days=20), timedelta(days=40)])
-    with pytest.raises(PanicException, match="OverflowError"):
+    with pytest.raises(OverflowError):
         s.var()
 
 
@@ -203,3 +202,9 @@ def test_series_duration_units() -> None:
         ),
         pl.DataFrame({"x": [td(microseconds=i) for i in range(4)]}),
     )
+
+
+def test_comparison_with_string_raises_9461() -> None:
+    df = pl.DataFrame({"duration": [timedelta(hours=2)]})
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.filter(pl.col("duration") > "1h")

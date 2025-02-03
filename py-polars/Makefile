@@ -41,6 +41,10 @@ build-debug-release: .venv  ## Same as build-release, but with full debug symbol
 .PHONY: build-dist-release
 build-dist-release: .venv  ## Compile and install Python Polars binary with super slow extra optimization turned on, for distribution
 	@$(MAKE) -s -C .. $@
+	
+.PHONY: fix
+fix:
+	@$(MAKE) -s -C .. $@
 
 .PHONY: lint
 lint: .venv  ## Run lint checks (only)

@@ -38,12 +38,6 @@ def test_prepare_cloud_plan(lf: pl.LazyFrame) -> None:
             pl.col("b").map_batches(lambda x: sum(x))
         ),
         pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).map_batches(lambda x: x),
-        pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
-        .group_by("a")
-        .map_groups(lambda x: x, schema={"b": pl.Int64}),
-        pl.LazyFrame({"a": [1, 2], "b": [3, 4]})
-        .group_by("a")
-        .agg(pl.col("b").map_batches(lambda x: sum(x))),
         pl.scan_parquet(CLOUD_SOURCE).filter(
             pl.col("a") < pl.lit(1).map_elements(lambda x: x + 1)
         ),

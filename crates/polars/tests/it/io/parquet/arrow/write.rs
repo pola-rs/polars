@@ -19,24 +19,12 @@ fn round_trip_opt_stats(
     compression: CompressionOptions,
     encodings: Vec<Encoding>,
 ) -> PolarsResult<()> {
-    let (array, _statistics) = match file {
-        "nested" => (
-            pyarrow_nested_nullable(column),
-            pyarrow_nested_nullable_statistics(column),
-        ),
-        "nullable" => (
-            pyarrow_nullable(column),
-            pyarrow_nullable_statistics(column),
-        ),
-        "required" => (
-            pyarrow_required(column),
-            pyarrow_required_statistics(column),
-        ),
-        "struct" => (pyarrow_struct(column), pyarrow_struct_statistics(column)),
-        "nested_edge" => (
-            pyarrow_nested_edge(column),
-            pyarrow_nested_edge_statistics(column),
-        ),
+    let array = match file {
+        "nested" => pyarrow_nested_nullable(column),
+        "nullable" => pyarrow_nullable(column),
+        "required" => pyarrow_required(column),
+        "struct" => pyarrow_struct(column),
+        "nested_edge" => pyarrow_nested_edge(column),
         _ => unreachable!(),
     };
 
@@ -50,7 +38,11 @@ fn round_trip_opt_stats(
         data_page_size: None,
     };
 
-    let iter = vec![RecordBatchT::try_new(array.len(), vec![array.clone()])];
+    let iter = vec![RecordBatchT::try_new(
+        array.len(),
+        Arc::new(schema.clone()),
+        vec![array.clone()],
+    )];
 
     let row_groups =
         RowGroupIterator::try_new(iter.into_iter(), &schema, options, vec![encodings])?;
@@ -404,18 +396,6 @@ fn utf8_required_v2_delta() -> PolarsResult<()> {
         Version::V2,
         CompressionOptions::Uncompressed,
         vec![Encoding::DeltaLengthByteArray],
-    )
-}
-
-#[cfg(feature = "parquet")]
-#[test]
-fn i64_optional_v2_dict_compressed() -> PolarsResult<()> {
-    round_trip(
-        "int32_dict",
-        "nullable",
-        Version::V2,
-        CompressionOptions::Snappy,
-        vec![Encoding::RleDictionary],
     )
 }
 

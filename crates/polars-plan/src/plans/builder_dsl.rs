@@ -231,6 +231,26 @@ impl DslBuilder {
         )
     }
 
+    pub fn drop_nans(self, subset: Option<Vec<Expr>>) -> Self {
+        if let Some(subset) = subset {
+            self.filter(
+                all_horizontal(
+                    subset
+                        .into_iter()
+                        .map(|v| v.is_not_nan())
+                        .collect::<Vec<_>>(),
+                )
+                .unwrap(),
+            )
+        } else {
+            self.filter(
+                // TODO: when Decimal supports NaN, include here
+                all_horizontal([dtype_cols([DataType::Float32, DataType::Float64]).is_not_nan()])
+                    .unwrap(),
+            )
+        }
+    }
+
     pub fn drop_nulls(self, subset: Option<Vec<Expr>>) -> Self {
         if let Some(subset) = subset {
             self.filter(
@@ -315,7 +335,7 @@ impl DslBuilder {
     }
 
     pub fn from_existing_df(df: DataFrame) -> Self {
-        let schema = Arc::new(df.schema());
+        let schema = df.schema().clone();
         DslPlan::DataFrameScan {
             df: Arc::new(df),
             schema,

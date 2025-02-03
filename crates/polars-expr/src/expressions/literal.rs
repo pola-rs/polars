@@ -25,6 +25,8 @@ impl LiteralExpr {
             Int16(v) => Int16Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             Int32(v) => Int32Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             Int64(v) => Int64Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
+            #[cfg(feature = "dtype-i128")]
+            Int128(v) => Int128Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-u8")]
             UInt8(v) => UInt8Chunked::full(get_literal_name().clone(), *v, 1).into_column(),
             #[cfg(feature = "dtype-u16")]
@@ -119,6 +121,7 @@ impl PhysicalExpr for LiteralExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.1)
     }
+
     fn evaluate(&self, _df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
         self.as_column()
     }
@@ -135,7 +138,7 @@ impl PhysicalExpr for LiteralExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let s = self.evaluate(df, state)?;
@@ -144,6 +147,16 @@ impl PhysicalExpr for LiteralExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
+    }
+
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
@@ -163,7 +176,7 @@ impl PartitionedAggregation for LiteralExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         self.evaluate(df, state)
@@ -172,7 +185,7 @@ impl PartitionedAggregation for LiteralExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

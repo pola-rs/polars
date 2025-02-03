@@ -25,15 +25,15 @@ where
     F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
-    let mut exprs = exprs.as_ref().to_vec();
-    exprs.push(acc);
+    let mut exprs_v = Vec::with_capacity(exprs.as_ref().len() + 1);
+    exprs_v.push(acc);
+    exprs_v.extend(exprs.as_ref().iter().cloned());
+    let exprs = exprs_v;
 
     let function = new_column_udf(move |columns: &mut [Column]| {
-        let mut columns = columns.to_vec();
-        let mut acc = columns.pop().unwrap();
-
-        for c in columns {
-            if let Some(a) = f(acc.clone(), c)? {
+        let mut acc = columns.first().unwrap().clone();
+        for c in &columns[1..] {
+            if let Some(a) = f(acc.clone(), c.clone())? {
                 acc = a
             }
         }
@@ -43,7 +43,8 @@ where
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: GetOutput::super_type(),
+        // Take the type of the accumulator.
+        output_type: GetOutput::first(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             flags: FunctionFlags::default()
@@ -274,36 +275,34 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 }
 
 /// Sum all values horizontally across columns.
-pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
 
     Ok(Expr::Function {
         input: exprs,
-        function: FunctionExpr::SumHorizontal,
+        function: FunctionExpr::SumHorizontal { ignore_nulls },
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default()
                 | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            cast_to_supertypes: None,
             ..Default::default()
         },
     })
 }
 
 /// Compute the mean of all values horizontally across columns.
-pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
 
     Ok(Expr::Function {
         input: exprs,
-        function: FunctionExpr::MeanHorizontal,
+        function: FunctionExpr::MeanHorizontal { ignore_nulls },
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default()
                 | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            cast_to_supertypes: None,
             ..Default::default()
         },
     })
@@ -319,8 +318,8 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         function: FunctionExpr::Coalesce,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            cast_to_supertypes: Some(Default::default()),
             flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            cast_options: Some(CastingRules::cast_to_supertypes()),
             ..Default::default()
         },
     }

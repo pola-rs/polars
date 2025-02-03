@@ -1,6 +1,7 @@
 import pytest
 
 import polars as pl
+from polars.testing import assert_frame_equal
 
 
 @pytest.mark.may_fail_auto_streaming
@@ -47,3 +48,39 @@ def test_scalar_19957() -> None:
         "foo": [1, 1, 1],
         "bar": [1, 1, 1],
     }
+
+
+def test_scalar_len_20046() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert (
+        df.lazy()
+        .select(
+            pl.col("a"),
+            pl.lit(1),
+        )
+        .select(pl.len())
+        .collect()
+        .item()
+        == 3
+    )
+
+    q = pl.LazyFrame({"a": range(3)}).select(
+        pl.first("a"),
+        pl.col("a").alias("b"),
+    )
+
+    assert q.select(pl.len()).collect().item() == 3
+
+
+def test_scalar_identification_function_expr_in_binary() -> None:
+    x = pl.Series("x", [1, 2, 3])
+    assert_frame_equal(
+        pl.select(x).with_columns(o=pl.col("x").null_count() > 0),
+        pl.select(x, o=False),
+    )
+
+
+def test_scalar_rechunk_20627() -> None:
+    df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
+    assert df.rechunk().to_series().n_chunks() == 1

@@ -76,7 +76,7 @@ impl ListChunked {
 
 impl DataFrame {
     /// Create a 2D [`ndarray::Array`] from this [`DataFrame`]. This requires all columns in the
-    /// [`DataFrame`] to be non-null and numeric. They will be casted to the same data type
+    /// [`DataFrame`] to be non-null and numeric. They will be cast to the same data type
     /// (if they aren't already).
     ///
     /// For floating point data we implicitly convert `None` to `NaN` without failure.

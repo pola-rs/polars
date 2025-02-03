@@ -1,23 +1,25 @@
 use std::ops::Sub;
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
-use polars_core::export::regex;
 use polars_core::prelude::{
     polars_bail, polars_err, DataType, PolarsResult, QuantileMethod, Schema, TimeUnit,
 };
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
+use polars_ops::chunked_array::UnicodeForm;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, cols, lit, StrptimeOptions};
 use polars_utils::pl_str::PlSmallStr;
+use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
     OrderByExpr, Value as SQLValue, WindowSpec, WindowType,
 };
+use sqlparser::tokenizer::Span;
 
 use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
 use crate::SQLContext;
@@ -219,7 +221,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     TanD,
     /// SQL 'acos' function
-    /// Compute inverse cosinus of the input expression (in radians).
+    /// Compute inverse cosine of the input expression (in radians).
     /// ```sql
     /// SELECT ACOS(column_1) FROM df;
     /// ```
@@ -243,7 +245,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     Atan2,
     /// SQL 'acosd' function
-    /// Compute inverse cosinus of the input expression (in degrees).
+    /// Compute inverse cosine of the input expression (in degrees).
     /// ```sql
     /// SELECT ACOSD(column_1) FROM df;
     /// ```
@@ -374,6 +376,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LTRIM(column_1) FROM df;
     /// ```
     LTrim,
+    /// SQL 'normalize' function
+    /// Convert string to Unicode normalization form
+    /// (one of NFC, NFKC, NFD, or NFKD - unquoted).
+    /// ```sql
+    /// SELECT NORMALIZE(column_1, NFC) FROM df;
+    /// ```
+    Normalize,
     /// SQL 'octet_length' function
     /// Returns the length of a given string in bytes.
     /// ```sql
@@ -389,7 +398,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'replace' function
     /// Replace a given substring with another string.
     /// ```sql
-    /// SELECT REPLACE(column_1,'old','new') FROM df;
+    /// SELECT REPLACE(column_1, 'old', 'new') FROM df;
     /// ```
     Replace,
     /// SQL 'reverse' function
@@ -424,7 +433,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     StrPos,
     /// SQL 'substr' function
-    /// Returns a portion of the data (first character = 0) in the range.
+    /// Returns a portion of the data (first character = 1) in the range.
     ///   \[start, start + length]
     /// ```sql
     /// SELECT SUBSTR(column_1, 3, 5) FROM df;
@@ -857,6 +866,7 @@ impl PolarsSQLFunctions {
             "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
+            "normalize" => Self::Normalize,
             "octet_length" => Self::OctetLength,
             "strpos" => Self::StrPos,
             "regexp_like" => Self::RegexpLike,
@@ -1058,6 +1068,7 @@ impl SQLFunctionVisitor<'_> {
                             &DateTimeField::Custom(Ident {
                                 value: p.to_string(),
                                 quote_style: None,
+                                span: Span::empty(),
                             }),
                         )
                     },
@@ -1146,6 +1157,36 @@ impl SQLFunctionVisitor<'_> {
                     2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                     _ => {
                         polars_bail!(SQLSyntax: "LTRIM expects 1-2 arguments (found {})", args.len())
+                    },
+                }
+            },
+            Normalize => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| e.str().normalize(UnicodeForm::NFC)),
+                    2 => {
+                        let form = if let FunctionArgExpr::Expr(SQLExpr::Identifier(Ident {
+                            value: s,
+                            quote_style: None,
+                            span: _,
+                        })) = args[1]
+                        {
+                            match s.to_uppercase().as_str() {
+                                "NFC" => UnicodeForm::NFC,
+                                "NFD" => UnicodeForm::NFD,
+                                "NFKC" => UnicodeForm::NFKC,
+                                "NFKD" => UnicodeForm::NFKD,
+                                _ => {
+                                    polars_bail!(SQLSyntax: "invalid 'form' for NORMALIZE (found {})", s)
+                                },
+                            }
+                        } else {
+                            polars_bail!(SQLSyntax: "invalid 'form' for NORMALIZE (found {})", args[1])
+                        };
+                        self.try_visit_binary(|e, _form: Expr| Ok(e.str().normalize(form.clone())))
+                    },
+                    _ => {
+                        polars_bail!(SQLSyntax: "NORMALIZE expects 1-2 arguments (found {})", args.len())
                     },
                 }
             },
@@ -1511,7 +1552,7 @@ impl SQLFunctionVisitor<'_> {
                 f(parse_sql_expr(sql_expr, self.ctx, self.active_schema)?)
             },
             [FunctionArgExpr::Wildcard] => f(parse_sql_expr(
-                &SQLExpr::Wildcard,
+                &SQLExpr::Wildcard(AttachedToken::empty()),
                 self.ctx,
                 self.active_schema,
             )?),
@@ -1813,6 +1854,7 @@ fn _extract_func_args(
                     .iter()
                     .map(|arg| match arg {
                         FunctionArg::Named { arg, .. } => arg,
+                        FunctionArg::ExprNamed { arg, .. } => arg,
                         FunctionArg::Unnamed(arg) => arg,
                     })
                     .collect();

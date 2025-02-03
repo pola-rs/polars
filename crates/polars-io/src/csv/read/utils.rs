@@ -1,9 +1,9 @@
-#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+#[cfg(feature = "decompress")]
 use std::io::Read;
 use std::mem::MaybeUninit;
 
 use super::parser::next_line_position;
-#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+#[cfg(feature = "decompress")]
 use super::parser::next_line_position_naive;
 use super::splitfields::SplitFields;
 
@@ -45,7 +45,7 @@ pub(crate) fn get_file_chunks(
     offsets
 }
 
-#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+#[cfg(feature = "decompress")]
 fn decompress_impl<R: Read>(
     decoder: &mut R,
     n_rows: Option<usize>,
@@ -121,7 +121,7 @@ fn decompress_impl<R: Read>(
     })
 }
 
-#[cfg(any(feature = "decompress", feature = "decompress-fast"))]
+#[cfg(feature = "decompress")]
 pub(crate) fn decompress(
     bytes: &[u8],
     n_rows: Option<usize>,
@@ -142,7 +142,7 @@ pub(crate) fn decompress(
                 decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
             },
             SupportedCompression::ZSTD => {
-                let mut decoder = zstd::Decoder::new(bytes).ok()?;
+                let mut decoder = zstd::Decoder::with_buffer(bytes).ok()?;
                 decompress_impl(&mut decoder, n_rows, separator, quote_char, eol_char)
             },
         }

@@ -1,9 +1,11 @@
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use std::cell::Cell;
+
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
-use crate::chunked_array::metadata::MetadataProperties;
+use crate::chunked_array::flags::StatisticsFlags;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::utils::slice_offsets;
@@ -90,17 +92,31 @@ pub(crate) fn slice(
     (new_chunks, new_len)
 }
 
+// When we deal with arrays and lists we can easily exceed the limit if
+// we take the underlying values array as a Series. This call stack
+// is hard to follow, so for this one case we make an exception
+// and use a thread local.
+thread_local!(static CHECK_LENGTH: Cell<bool> = const { Cell::new(true) });
+
+/// Meant for internal use. In very rare conditions this can be turned off.
+/// # Safety
+/// The caller must ensure the Series that exceeds the length get's deconstructed
+/// into array values or list values before and never is used.
+pub unsafe fn _set_check_length(check: bool) {
+    CHECK_LENGTH.set(check)
+}
+
 impl<T: PolarsDataType> ChunkedArray<T> {
     /// Get the length of the ChunkedArray
     #[inline]
     pub fn len(&self) -> usize {
-        self.length as usize
+        self.length
     }
 
     /// Return the number of null values in the ChunkedArray.
     #[inline]
     pub fn null_count(&self) -> usize {
-        self.null_count as usize
+        self.null_count
     }
 
     /// Set the null count directly.
@@ -111,7 +127,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     /// # Safety
     /// The new null count must match the total null count of the underlying
     /// arrays.
-    pub unsafe fn set_null_count(&mut self, null_count: IdxSize) {
+    pub unsafe fn set_null_count(&mut self, null_count: usize) {
         self.null_count = null_count;
     }
 
@@ -131,13 +147,15 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         }
         let len = inner(&self.chunks);
         // Length limit is `IdxSize::MAX - 1`. We use `IdxSize::MAX` to indicate `NULL` in indexing.
-        assert!(len < IdxSize::MAX as usize, "{}", LENGTH_LIMIT_MSG);
-        self.length = len as IdxSize;
+        if len >= (IdxSize::MAX as usize) && CHECK_LENGTH.get() {
+            panic!("{}", LENGTH_LIMIT_MSG);
+        }
+        self.length = len;
         self.null_count = self
             .chunks
             .iter()
             .map(|arr| arr.null_count())
-            .sum::<usize>() as IdxSize;
+            .sum::<usize>();
     }
 
     pub fn rechunk(&self) -> Self {
@@ -158,16 +176,8 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
                     let mut ca = unsafe { self.copy_with_chunks(chunks) };
 
-                    use MetadataProperties as P;
-                    ca.copy_metadata(
-                        self,
-                        P::SORTED
-                            | P::FAST_EXPLODE_LIST
-                            | P::MIN_VALUE
-                            | P::MAX_VALUE
-                            | P::DISTINCT_COUNT,
-                    );
-
+                    use StatisticsFlags as F;
+                    ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
                     ca
                 }
             },
@@ -183,7 +193,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             return None;
         }
 
-        let mut bm = MutableBitmap::with_capacity(self.len());
+        let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.downcast_iter() {
             if let Some(v) = arr.validity() {
                 bm.extend_from_bitmap(v);
@@ -191,7 +201,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 bm.extend_constant(arr.len(), true);
             }
         }
-        Some(bm.into())
+        bm.into_opt_validity()
     }
 
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.
@@ -205,49 +215,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         let mut out_l = unsafe { self.copy_with_chunks(l) };
         let mut out_r = unsafe { self.copy_with_chunks(r) };
 
-        use MetadataProperties as P;
-        let mut properties_l = P::SORTED | P::FAST_EXPLODE_LIST;
-        let mut properties_r = P::SORTED | P::FAST_EXPLODE_LIST;
-
-        let is_ascending = self.is_sorted_ascending_flag();
-        let is_descending = self.is_sorted_descending_flag();
-
-        if is_ascending || is_descending {
-            let has_nulls_at_start = self.null_count() != 0
-                && self
-                    .chunks()
-                    .first()
-                    .unwrap()
-                    .as_ref()
-                    .validity()
-                    .map_or(false, |bm| bm.get(0).unwrap());
-
-            if !has_nulls_at_start {
-                let can_copy_min_value = !has_nulls_at_start && is_ascending;
-                let can_copy_max_value = !has_nulls_at_start && is_descending;
-
-                properties_l.set(P::MIN_VALUE, can_copy_min_value);
-                properties_l.set(P::MAX_VALUE, can_copy_max_value);
-            }
-
-            let has_nulls_at_end = self.null_count() != 0
-                && self
-                    .chunks()
-                    .last()
-                    .unwrap()
-                    .as_ref()
-                    .validity()
-                    .map_or(false, |bm| bm.get(bm.len() - 1).unwrap());
-
-            if !has_nulls_at_end {
-                let can_copy_min_value = !has_nulls_at_end && is_descending;
-                let can_copy_max_value = !has_nulls_at_end && is_ascending;
-                properties_r.set(P::MIN_VALUE, can_copy_min_value);
-                properties_r.set(P::MAX_VALUE, can_copy_max_value);
-            }
-        }
-        out_l.copy_metadata(self, properties_l);
-        out_r.copy_metadata(self, properties_r);
+        use StatisticsFlags as F;
+        out_l.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
+        out_r.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
 
         (out_l, out_r)
     }
@@ -264,54 +234,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             let (chunks, len) = slice(&self.chunks, offset, length, self.len());
             let mut out = unsafe { self.copy_with_chunks(chunks) };
 
-            use MetadataProperties as P;
-            let mut properties = P::SORTED | P::FAST_EXPLODE_LIST;
-
-            let is_ascending = self.is_sorted_ascending_flag();
-            let is_descending = self.is_sorted_descending_flag();
-
-            if length != 0 && (is_ascending || is_descending) {
-                let (raw_offset, slice_len) = slice_offsets(offset, length, self.len());
-
-                let mut can_copy_min_value = false;
-                let mut can_copy_max_value = false;
-
-                let is_at_start = raw_offset == 0;
-                if is_at_start {
-                    let has_nulls_at_start = self.null_count() != 0
-                        && self
-                            .chunks()
-                            .first()
-                            .unwrap()
-                            .as_ref()
-                            .validity()
-                            .map_or(false, |bm| bm.get(0).unwrap());
-
-                    can_copy_min_value |= !has_nulls_at_start && is_ascending;
-                    can_copy_max_value |= !has_nulls_at_start && is_descending;
-                }
-
-                let is_until_end = raw_offset + slice_len == self.len();
-                if is_until_end {
-                    let has_nulls_at_end = self.null_count() != 0
-                        && self
-                            .chunks()
-                            .last()
-                            .unwrap()
-                            .as_ref()
-                            .validity()
-                            .map_or(false, |bm| bm.get(bm.len() - 1).unwrap());
-
-                    can_copy_min_value |= !has_nulls_at_end && is_descending;
-                    can_copy_max_value |= !has_nulls_at_end && is_ascending;
-                }
-
-                properties.set(P::MIN_VALUE, can_copy_min_value);
-                properties.set(P::MAX_VALUE, can_copy_max_value);
-            }
-
-            out.copy_metadata(self, properties);
-            out.length = len as IdxSize;
+            use StatisticsFlags as F;
+            out.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
+            out.length = len;
 
             out
         };

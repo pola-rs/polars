@@ -56,8 +56,6 @@ macro_rules! push_expr {
                     AggGroups(e) => $push($c, e),
                     Std(e, _) => $push($c, e),
                     Var(e, _) => $push($c, e),
-                    #[cfg(feature = "bitwise")]
-                    Bitwise(e, _) => $push($c, e),
                 }
             },
             Ternary {
@@ -178,7 +176,7 @@ impl<'a> Iterator for AExprIter<'a> {
             // take the arena because the bchk doesn't allow a mutable borrow to the field.
             let arena = self.arena.unwrap();
             let current_expr = arena.get(node);
-            current_expr.nodes(&mut self.stack);
+            current_expr.inputs_rev(&mut self.stack);
 
             self.arena = Some(arena);
             (node, current_expr)

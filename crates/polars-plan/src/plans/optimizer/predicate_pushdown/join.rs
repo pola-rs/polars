@@ -84,7 +84,7 @@ fn join_produces_null(how: &JoinType) -> LeftRight<bool> {
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => LeftRight(false, false),
         #[cfg(feature = "iejoin")]
-        JoinType::IEJoin(..) => LeftRight(false, false),
+        JoinType::IEJoin => LeftRight(false, false),
     }
 }
 
@@ -121,7 +121,7 @@ fn predicate_applies_to_both_tables(
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
-    opt: &PredicatePushDown,
+    opt: &mut PredicatePushDown,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     input_left: Node,
@@ -252,5 +252,6 @@ pub(super) fn process_join(
         schema,
         options,
     };
+
     Ok(opt.optional_apply_predicate(lp, local_predicates, lp_arena, expr_arena))
 }

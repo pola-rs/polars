@@ -41,7 +41,7 @@ pub(super) fn parquet_file_info(
             let first_path = &sources.as_paths().unwrap()[0];
             feature_gated!("cloud", {
                 let uri = first_path.to_string_lossy();
-                get_runtime().block_on(async {
+                get_runtime().block_on_potential_spawn(async {
                     let mut reader =
                         ParquetAsyncReader::from_uri(&uri, cloud_options, None).await?;
 

@@ -11,7 +11,7 @@ use super::common::*;
 use super::schema::fb_to_schema;
 use super::{Dictionaries, OutOfSpecKind, SendableIterator};
 use crate::array::Array;
-use crate::datatypes::ArrowSchemaRef;
+use crate::datatypes::{ArrowSchemaRef, Metadata};
 use crate::io::ipc::IpcSchema;
 use crate::record_batch::RecordBatchT;
 
@@ -20,6 +20,9 @@ use crate::record_batch::RecordBatchT;
 pub struct FileMetadata {
     /// The schema that is read from the file footer
     pub schema: ArrowSchemaRef,
+
+    /// The custom metadata that is read from the schema
+    pub custom_schema_metadata: Option<Arc<Metadata>>,
 
     /// The files' [`IpcSchema`]
     pub ipc_schema: IpcSchema,
@@ -38,15 +41,24 @@ pub struct FileMetadata {
 
 /// Read the row count by summing the length of the of the record batches
 pub fn get_row_count<R: Read + Seek>(reader: &mut R) -> PolarsResult<i64> {
-    let mut message_scratch: Vec<u8> = Default::default();
     let (_, footer_len) = read_footer_len(reader)?;
     let footer = read_footer(reader, footer_len)?;
     let (_, blocks) = deserialize_footer_blocks(&footer)?;
 
+    get_row_count_from_blocks(reader, &blocks)
+}
+
+///  Read the row count by summing the length of the of the record batches in blocks
+pub fn get_row_count_from_blocks<R: Read + Seek>(
+    reader: &mut R,
+    blocks: &[arrow_format::ipc::Block],
+) -> PolarsResult<i64> {
+    let mut message_scratch: Vec<u8> = Default::default();
+
     blocks
-        .into_iter()
+        .iter()
         .map(|block| {
-            let message = get_message_from_block(reader, &block, &mut message_scratch)?;
+            let message = get_message_from_block(reader, block, &mut message_scratch)?;
             let record_batch = get_record_batch(message)?;
             record_batch.length().map_err(|e| e.into())
         })
@@ -245,7 +257,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
         .map(|dicts| dicts.collect::<PolarsResult<Vec<_>>>())
         .transpose()?;
     let ipc_schema = deserialize_schema_ref_from_footer(footer)?;
-    let (schema, ipc_schema) = fb_to_schema(ipc_schema)?;
+    let (schema, ipc_schema, custom_schema_metadata) = fb_to_schema(ipc_schema)?;
 
     Ok(FileMetadata {
         schema: Arc::new(schema),
@@ -253,6 +265,7 @@ pub fn deserialize_footer(footer_data: &[u8], size: u64) -> PolarsResult<FileMet
         blocks,
         dictionaries,
         size,
+        custom_schema_metadata: custom_schema_metadata.map(Arc::new),
     })
 }
 

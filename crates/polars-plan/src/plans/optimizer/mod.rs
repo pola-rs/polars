@@ -18,6 +18,7 @@ mod fused;
 mod join_utils;
 mod predicate_pushdown;
 mod projection_pushdown;
+mod set_order;
 mod simplify_expr;
 mod slice_pushdown_expr;
 mod slice_pushdown_lp;
@@ -34,6 +35,7 @@ use slice_pushdown_lp::SlicePushDown;
 pub use stack_opt::{OptimizationRule, StackOptimizer};
 
 use self::flatten_union::FlattenUnionRule;
+use self::set_order::set_order_flags;
 pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
@@ -68,6 +70,19 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
 
+    if opt_state.streaming() {
+        polars_warn!(
+            Deprecation,
+            "\
+The old streaming engine is being deprecated and will soon be replaced by the new streaming \
+engine. Starting Polars version 1.23.0 and until the new streaming engine is released, the old \
+streaming engine may become less usable. For people who rely on the old streaming engine, it is \
+suggested to pin your version to before 1.23.0.
+
+More information on the new streaming engine: https://github.com/pola-rs/polars/issues/20947"
+        )
+    }
+
     // Gradually fill the rules passed to the optimizer
     let opt = StackOptimizer {};
     let mut rules: Vec<Box<dyn OptimizationRule>> = Vec::with_capacity(8);
@@ -81,20 +96,8 @@ pub fn optimize(
     }
     let mut lp_top = to_alp(logical_plan, expr_arena, lp_arena, &mut opt_state)?;
 
-    // get toggle values
-    let cluster_with_columns = opt_state.contains(OptFlags::CLUSTER_WITH_COLUMNS);
-    let collapse_joins = opt_state.contains(OptFlags::COLLAPSE_JOINS);
-    let predicate_pushdown = opt_state.contains(OptFlags::PREDICATE_PUSHDOWN);
-    let projection_pushdown = opt_state.contains(OptFlags::PROJECTION_PUSHDOWN);
-    let simplify_expr = opt_state.contains(OptFlags::SIMPLIFY_EXPR);
-    let slice_pushdown = opt_state.contains(OptFlags::SLICE_PUSHDOWN);
-    let streaming = opt_state.contains(OptFlags::STREAMING);
-    let new_streaming = opt_state.contains(OptFlags::NEW_STREAMING);
-    let fast_projection = opt_state.contains(OptFlags::FAST_PROJECTION);
-
     // Don't run optimizations that don't make sense on a single node.
     // This keeps eager execution more snappy.
-    let eager = opt_state.contains(OptFlags::EAGER);
     #[cfg(feature = "cse")]
     let comm_subplan_elim = opt_state.contains(OptFlags::COMM_SUBPLAN_ELIM);
 
@@ -104,7 +107,8 @@ pub fn optimize(
     let comm_subexpr_elim = false;
 
     #[allow(unused_variables)]
-    let agg_scan_projection = opt_state.contains(OptFlags::FILE_CACHING) && !streaming && !eager;
+    let agg_scan_projection =
+        opt_state.contains(OptFlags::FILE_CACHING) && !opt_state.streaming() && !opt_state.eager();
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
@@ -112,11 +116,18 @@ pub fn optimize(
 
     // Collect members for optimizations that need it.
     let mut members = MemberCollector::new();
-    if !eager && (comm_subexpr_elim || projection_pushdown) {
+    if !opt_state.eager() && (comm_subexpr_elim || opt_state.projection_pushdown()) {
         members.collect(lp_top, lp_arena, expr_arena)
     }
 
-    if simplify_expr {
+    // Run before slice pushdown
+    if opt_state.contains(OptFlags::CHECK_ORDER_OBSERVE)
+        && members.has_group_by | members.has_sort | members.has_distinct
+    {
+        set_order_flags(lp_top, lp_arena, expr_arena, scratch);
+    }
+
+    if opt_state.simplify_expr() {
         #[cfg(feature = "fused")]
         rules.push(Box::new(fused::FusedArithmetic {}));
     }
@@ -144,45 +155,48 @@ pub fn optimize(
     let _cse_plan_changed = false;
 
     // Should be run before predicate pushdown.
-    if projection_pushdown {
-        let mut projection_pushdown_opt = ProjectionPushDown::new();
+    if opt_state.projection_pushdown() {
+        let mut projection_pushdown_opt = ProjectionPushDown::new(opt_state.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = projection_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
 
         if projection_pushdown_opt.is_count_star {
             let mut count_star_opt = CountStar::new();
-            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top);
+            count_star_opt.optimize_plan(lp_arena, expr_arena, lp_top)?;
         }
     }
 
-    if predicate_pushdown {
-        let predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
+    if opt_state.predicate_pushdown() {
+        let mut predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
     }
 
-    if cluster_with_columns {
+    if opt_state.cluster_with_columns() {
         cluster_with_columns::optimize(lp_top, lp_arena, expr_arena)
     }
 
     // Make sure it is after predicate pushdown
-    if collapse_joins && members.has_filter_with_join_input {
+    if opt_state.collapse_joins() && members.has_filter_with_join_input {
         collapse_joins::optimize(lp_top, lp_arena, expr_arena)
     }
 
     // Make sure its before slice pushdown.
-    if fast_projection {
-        rules.push(Box::new(SimpleProjectionAndCollapse::new(eager)));
+    if opt_state.fast_projection() {
+        rules.push(Box::new(SimpleProjectionAndCollapse::new(
+            opt_state.eager(),
+        )));
     }
 
-    if !eager {
+    if !opt_state.eager() {
         rules.push(Box::new(DelayRechunk::new()));
     }
 
-    if slice_pushdown {
-        let slice_pushdown_opt = SlicePushDown::new(streaming, new_streaming);
+    if opt_state.slice_pushdown() {
+        let mut slice_pushdown_opt =
+            SlicePushDown::new(opt_state.streaming(), opt_state.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = slice_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
 
@@ -193,11 +207,11 @@ pub fn optimize(
     }
     // This optimization removes branches, so we must do it when type coercion
     // is completed.
-    if simplify_expr {
+    if opt_state.simplify_expr() {
         rules.push(Box::new(SimplifyBooleanRule {}));
     }
 
-    if !eager {
+    if !opt_state.eager() {
         rules.push(Box::new(FlattenUnionRule {}));
     }
 
@@ -205,7 +219,15 @@ pub fn optimize(
 
     if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
         // We only want to run this on cse inserted caches
-        cache_states::set_cache_states(lp_top, lp_arena, expr_arena, scratch, expr_eval, verbose)?;
+        cache_states::set_cache_states(
+            lp_top,
+            lp_arena,
+            expr_arena,
+            scratch,
+            expr_eval,
+            verbose,
+            opt_state.new_streaming(),
+        )?;
     }
 
     // This one should run (nearly) last as this modifies the projections

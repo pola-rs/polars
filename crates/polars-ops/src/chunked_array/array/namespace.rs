@@ -46,7 +46,7 @@ pub trait ArrayNameSpace: AsArray {
 
         match ca.inner_dtype() {
             DataType::Boolean => Ok(count_boolean_bits(ca).into_series()),
-            dt if dt.is_numeric() => Ok(sum_array_numerical(ca, dt)),
+            dt if dt.is_primitive_numeric() => Ok(sum_array_numerical(ca, dt)),
             dt => sum_with_nulls(ca, dt),
         }
     }

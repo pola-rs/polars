@@ -1,3 +1,5 @@
+use polars_ops::series::NullStrategy;
+
 use super::*;
 
 pub(super) fn reverse(s: &Column) -> PolarsResult<Column> {
@@ -103,12 +105,25 @@ pub(super) fn min_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     polars_ops::prelude::min_horizontal(s)
 }
 
-pub(super) fn sum_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
-    polars_ops::prelude::sum_horizontal(s)
+pub(super) fn sum_horizontal(s: &mut [Column], ignore_nulls: bool) -> PolarsResult<Option<Column>> {
+    let null_strategy = if ignore_nulls {
+        NullStrategy::Ignore
+    } else {
+        NullStrategy::Propagate
+    };
+    polars_ops::prelude::sum_horizontal(s, null_strategy)
 }
 
-pub(super) fn mean_horizontal(s: &mut [Column]) -> PolarsResult<Option<Column>> {
-    polars_ops::prelude::mean_horizontal(s)
+pub(super) fn mean_horizontal(
+    s: &mut [Column],
+    ignore_nulls: bool,
+) -> PolarsResult<Option<Column>> {
+    let null_strategy = if ignore_nulls {
+        NullStrategy::Ignore
+    } else {
+        NullStrategy::Propagate
+    };
+    polars_ops::prelude::mean_horizontal(s, null_strategy)
 }
 
 pub(super) fn drop_nulls(s: &Column) -> PolarsResult<Column> {

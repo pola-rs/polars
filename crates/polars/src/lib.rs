@@ -2,7 +2,7 @@
 //!
 //! Polars is a DataFrame library for Rust. It is based on [Apache Arrow](https://arrow.apache.org/)'s memory model.
 //! Apache Arrow provides very cache efficient columnar data structures and is becoming the defacto
-//! standard forcolumnar data.
+//! standard for columnar data.
 //!
 //! ## Quickstart
 //! We recommend building queries directly with [polars-lazy]. This allows you to combine
@@ -206,8 +206,9 @@
 //!     - `ipc` - Arrow's IPC format serialization
 //!     - `decompress` - Automatically infer compression of csvs and decompress them.
 //!                      Supported compressions:
-//!                         - zip
 //!                         - gzip
+//!                         - zlib
+//!                         - zstd
 //!
 //! [`StringChunked`]: crate::datatypes::StringChunked
 //! [column selection]: polars_lazy::dsl::col
@@ -413,8 +414,6 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;
-#[doc(hidden)]
-pub mod export;
 pub mod prelude;
 #[cfg(feature = "sql")]
 pub mod sql;

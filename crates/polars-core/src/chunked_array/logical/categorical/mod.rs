@@ -14,7 +14,7 @@ pub use revmap::*;
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::using_string_cache;
@@ -26,7 +26,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
@@ -174,15 +174,15 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn get_flags(&self) -> MetadataFlags {
+    pub(crate) fn get_flags(&self) -> StatisticsFlags {
         self.physical().get_flags()
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, mut flags: MetadataFlags) {
+    pub(crate) fn set_flags(&mut self, mut flags: StatisticsFlags) {
         // We should not set the sorted flag if we are sorting in lexical order
         if self.uses_lexical_ordering() {
-            flags.set_sorted_flag(IsSorted::Not)
+            flags.set_sorted(IsSorted::Not)
         }
         self.physical_mut().set_flags(flags)
     }
@@ -415,10 +415,15 @@ impl LogicalType for CategoricalChunked {
                         return Ok(self.to_local().set_ordering(*ordering, true).into_series());
                     }
                 }
-                // Otherwise we do nothing
-                Ok(self.clone().set_ordering(*ordering, true).into_series())
+                // If casting to lexical categorical, set sorted flag as not set
+
+                let mut ca = self.clone().set_ordering(*ordering, true);
+                if ca.uses_lexical_ordering() {
+                    ca.physical.set_sorted_flag(IsSorted::Not);
+                }
+                Ok(ca.into_series())
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 // Apply the cast to the categories and then index into the casted series.
                 // This has to be local for the gather.
                 let slf = self.to_local();

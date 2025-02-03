@@ -457,6 +457,18 @@ impl PyExpr {
                                     })
                                 }
                             },
+                            Int128 => {
+                                if is_float {
+                                    let v = obj.extract::<f64>(py).unwrap();
+                                    Ok(Int128Chunked::from_slice(PlSmallStr::EMPTY, &[v as i128])
+                                        .into_series())
+                                } else {
+                                    obj.extract::<i128>(py).map(|v| {
+                                        Int128Chunked::from_slice(PlSmallStr::EMPTY, &[v])
+                                            .into_series()
+                                    })
+                                }
+                            },
                             Float32 => obj.extract::<f32>(py).map(|v| {
                                 Float32Chunked::from_slice(PlSmallStr::EMPTY, &[v]).into_series()
                             }),

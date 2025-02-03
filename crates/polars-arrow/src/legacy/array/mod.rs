@@ -2,7 +2,7 @@ use crate::array::{
     new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray,
     PrimitiveArray, StructArray, ViewType,
 };
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::utils::CustomIterTools;
 use crate::offset::Offsets;
@@ -60,7 +60,7 @@ pub trait ListFromIter {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
 
-        let mut validity = MutableBitmap::with_capacity(lower);
+        let mut validity = BitmapBuilder::with_capacity(lower);
         let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
@@ -73,7 +73,7 @@ pub trait ListFromIter {
             ListArray::<i64>::default_datatype(dtype.clone()),
             Offsets::new_unchecked(offsets).into(),
             Box::new(values.to(dtype)),
-            Some(validity.into()),
+            validity.into_opt_validity(),
         )
     }
 
@@ -121,7 +121,7 @@ pub trait ListFromIter {
         let iterator = iter.into_iter();
         let (lower, _) = iterator.size_hint();
 
-        let mut validity = MutableBitmap::with_capacity(lower);
+        let mut validity = BitmapBuilder::with_capacity(lower);
         let mut offsets = Vec::<i64>::with_capacity(lower + 1);
         let mut length_so_far = 0i64;
         offsets.push(length_so_far);
@@ -151,7 +151,7 @@ pub trait ListFromIter {
             ListArray::<i64>::default_datatype(T::DATA_TYPE),
             Offsets::new_unchecked(offsets).into(),
             values.freeze().boxed(),
-            Some(validity.into()),
+            validity.into_opt_validity(),
         )
     }
 

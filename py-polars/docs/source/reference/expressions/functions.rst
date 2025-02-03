@@ -55,6 +55,7 @@ These functions are available from the Polars module root and can be used as exp
    int_ranges
    last
    len
+   linear_space
    lit
    map_batches
    map_groups

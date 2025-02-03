@@ -1,5 +1,5 @@
-use polars_core::error::polars_err;
 use polars_core::prelude::PolarsResult;
+use polars_utils::pl_serialize;
 
 use crate::prelude::*;
 
@@ -62,8 +62,7 @@ pub fn serialize(expr: &Expr) -> PolarsResult<Option<Vec<u8>>> {
         return Ok(None);
     }
     let mut buf = vec![];
-    ciborium::into_writer(expr, &mut buf)
-        .map_err(|_| polars_err!(ComputeError: "could not serialize: {}", expr))?;
+    pl_serialize::serialize_into_writer(&mut buf, expr)?;
 
     Ok(Some(buf))
 }

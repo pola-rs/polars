@@ -137,7 +137,7 @@ def test_join_asof_mismatched_dtypes() -> None:
         {"a": pl.Series([1, 2, 3], dtype=pl.Int64), "b": ["a", "b", "c"]}
     )
     df2 = pl.DataFrame(
-        {"a": pl.Series([1, 2, 3], dtype=pl.Int32), "c": ["d", "e", "f"]}
+        {"a": pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64), "c": ["d", "e", "f"]}
     )
 
     with pytest.raises(
@@ -262,6 +262,18 @@ def test_join_asof_tolerance() -> None:
         "trade": [101, 299, 301, 500],
         "quote": [100, None, 300, None],
     }
+
+    for invalid_tolerance, match in [
+        ("foo", "expected leading integer"),
+        ([None], "could not extract number"),
+    ]:
+        with pytest.raises(pl.exceptions.PolarsError, match=match):
+            df_trades.join_asof(
+                df_quotes,
+                on="time",
+                by="stock",
+                tolerance=invalid_tolerance,  # type: ignore[arg-type]
+            )
 
 
 def test_join_asof_tolerance_forward() -> None:
@@ -1196,3 +1208,79 @@ def test_asof_join_by_schema() -> None:
     )
 
     assert q.collect_schema() == q.collect().schema
+
+
+def test_raise_invalid_by_arg_13020() -> None:
+    df1 = pl.DataFrame({"asOfDate": [date(2020, 1, 1)]})
+    df2 = pl.DataFrame(
+        {
+            "endityId": [date(2020, 1, 1)],
+            "eventDate": ["A"],
+        }
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="expected both"):
+        df1.sort("asOfDate").join_asof(
+            df2.sort("eventDate"),
+            left_on="asOfDate",
+            right_on="eventDate",
+            by_left=None,
+            by_right=["entityId"],
+        )
+
+
+def test_join_asof_no_exact_matches() -> None:
+    trades = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.038",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+            ],
+            "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+            "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+            "quantity": [75, 155, 100, 100, 100],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    quotes = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.030",
+                "2016-05-25 13:30:00.041",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.049",
+                "2016-05-25 13:30:00.072",
+                "2016-05-25 13:30:00.075",
+            ],
+            "ticker": ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"],
+            "bid": [720.50, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
+            "ask": [720.93, 51.96, 51.98, 52.00, 720.93, 98.01, 720.88, 52.03],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    assert trades.join_asof(
+        quotes, on="time", by="ticker", tolerance="10ms", allow_exact_matches=False
+    ).to_dict(as_series=False) == {
+        "time": [
+            datetime(2016, 5, 25, 13, 30, 0, 23000),
+            datetime(2016, 5, 25, 13, 30, 0, 38000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+        ],
+        "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+        "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+        "quantity": [75, 155, 100, 100, 100],
+        "bid": [None, 51.97, None, None, None],
+        "ask": [None, 51.98, None, None, None],
+    }
+
+
+def test_join_asof_not_sorted_warning() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
+    with pytest.warns(UserWarning, match="asof join is not sorted"):
+        df.join_asof(df, on="b", by="a")

@@ -100,6 +100,11 @@ impl<D> Schema<D> {
         self.fields.get(name)
     }
 
+    /// Get a mutable reference to the dtype of the field named `name`, or `None` if the field doesn't exist.
+    pub fn get_mut(&mut self, name: &str) -> Option<&mut D> {
+        self.fields.get_mut(name)
+    }
+
     /// Get a reference to the dtype of the field named `name`, or `Err(PolarsErr)` if the field doesn't exist.
     pub fn try_get(&self, name: &str) -> PolarsResult<&D> {
         self.get(name)
@@ -285,6 +290,26 @@ impl<D> Schema<D> {
 
         Ok(i)
     }
+
+    /// Compare the fields between two schema returning the additional columns that each schema has.
+    pub fn field_compare<'a, 'b>(
+        &'a self,
+        other: &'b Self,
+        self_extra: &mut Vec<(usize, (&'a PlSmallStr, &'a D))>,
+        other_extra: &mut Vec<(usize, (&'b PlSmallStr, &'b D))>,
+    ) {
+        self_extra.extend(
+            self.iter()
+                .enumerate()
+                .filter(|(_, (n, _))| !other.contains(n)),
+        );
+        other_extra.extend(
+            other
+                .iter()
+                .enumerate()
+                .filter(|(_, (n, _))| !self.contains(n)),
+        );
+    }
 }
 
 impl<D> Schema<D>
@@ -401,37 +426,18 @@ where
     }
 }
 
-pub fn ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
-    let mut iter_lhs = lhs.iter_names();
-    let mut iter_rhs = rhs.iter_names();
+pub fn debug_ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
+    if cfg!(debug_assertions) {
+        let lhs = lhs.iter_names().collect::<Vec<_>>();
+        let rhs = rhs.iter_names().collect::<Vec<_>>();
 
-    for i in 0..iter_lhs.len().min(iter_rhs.len()) {
-        let l = iter_lhs.next().unwrap();
-        let r = iter_rhs.next().unwrap();
-
-        if l != r {
+        if lhs != rhs {
             polars_bail!(
                 SchemaMismatch:
-                "schema names differ at position {}: {} != {}",
-                1 + i, l, r
+                "lhs: {:?} rhs: {:?}",
+                lhs, rhs
             )
         }
-    }
-
-    if let Some(v) = iter_lhs.next() {
-        polars_bail!(
-            SchemaMismatch:
-            "schema contained extra column: {}",
-            v
-        )
-    }
-
-    if let Some(v) = iter_rhs.next() {
-        polars_bail!(
-            SchemaMismatch:
-            "schema didn't contain column: {}",
-            v
-        )
     }
 
     Ok(())

@@ -4,7 +4,7 @@ use super::*;
 use crate::prelude::visitor::IRNode;
 
 mod identifier_impl {
-    use polars_core::hashing::_boost_hash_combine;
+    use polars_utils::hashing::_boost_hash_combine;
 
     use super::*;
     /// Identifier that shows the sub-expression path.

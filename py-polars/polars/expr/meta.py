@@ -331,8 +331,8 @@ class ExprMetaNameSpace:
 
         >>> expr = pl.col("foo").sum().over("bar")
         >>> bytes = expr.meta.serialize()
-        >>> bytes  # doctest: +ELLIPSIS
-        b'\xa1fWindow\xa4hfunction\xa1cAgg\xa1cSum\xa1fColumncfoolpartition_by\x81...'
+        >>> type(bytes)
+        <class 'bytes'>
 
         The bytes can later be deserialized back into an `Expr` object.
 

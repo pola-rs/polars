@@ -14,10 +14,10 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().dtype()
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
 
@@ -51,33 +51,33 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
         self.0.agg_min(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
         self.0.agg_max(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
         self.0.agg_sum(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+    unsafe fn agg_std(&self, groups: &GroupsType, _ddof: u8) -> Series {
         self.0
             .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
             .unwrap()
             .agg_std(groups, _ddof)
     }
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+    unsafe fn agg_var(&self, groups: &GroupsType, _ddof: u8) -> Series {
         self.0
             .cast_with_options(&DataType::Float64, CastOptions::Overflowing)
             .unwrap()
@@ -85,21 +85,21 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
     }
 
     #[cfg(feature = "bitwise")]
-    unsafe fn agg_and(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
         self.0.agg_and(groups)
     }
     #[cfg(feature = "bitwise")]
-    unsafe fn agg_or(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
         self.0.agg_or(groups)
     }
     #[cfg(feature = "bitwise")]
-    unsafe fn agg_xor(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
         self.0.agg_xor(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
     fn arg_sort_multiple(
@@ -115,14 +115,6 @@ impl private::PrivateSeries for SeriesWrap<BooleanChunked> {
 }
 
 impl SeriesTrait for SeriesWrap<BooleanChunked> {
-    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
-        self.0.metadata_dyn()
-    }
-
-    fn boxed_metadata<'a>(&'a self) -> Option<Box<dyn MetadataTrait + 'a>> {
-        Some(self.0.boxed_metadata_dyn())
-    }
-
     fn rename(&mut self, name: PlSmallStr) {
         self.0.rename(name);
     }
@@ -156,6 +148,10 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.as_ref().as_ref())?;
         Ok(())
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -206,10 +202,6 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]
@@ -365,5 +357,13 @@ impl SeriesTrait for SeriesWrap<BooleanChunked> {
     }
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

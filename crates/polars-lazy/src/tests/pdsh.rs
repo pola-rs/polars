@@ -107,7 +107,7 @@ fn test_q2() -> PolarsResult<()> {
         Field::new("s_phone".into(), DataType::String),
         Field::new("s_comment".into(), DataType::String),
     ]);
-    assert_eq!(&out.schema(), &schema);
+    assert_eq!(&**out.schema(), &schema);
 
     Ok(())
 }

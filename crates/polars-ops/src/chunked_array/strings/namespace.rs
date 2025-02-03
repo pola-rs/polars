@@ -5,15 +5,16 @@ use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "string_to_integer")]
-use polars_core::export::num::Num;
-use polars_core::export::regex::Regex;
+use num_traits::Num;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
-use regex::escape;
+use regex::{escape, Regex};
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
+#[cfg(feature = "string_normalize")]
+use crate::prelude::strings::normalize::UnicodeForm;
 use crate::prelude::strings::starts_with::starts_with_str;
 
 // We need this to infer the right lifetimes for the match closure.
@@ -625,6 +626,14 @@ pub trait StringNameSpaceImpl: AsString {
     fn concat(&self, other: &StringChunked) -> StringChunked {
         let ca = self.as_string();
         ca + other
+    }
+
+    /// Normalizes the string values
+    #[must_use]
+    #[cfg(feature = "string_normalize")]
+    fn str_normalize(&self, form: UnicodeForm) -> StringChunked {
+        let ca = self.as_string();
+        normalize::normalize(ca, form)
     }
 
     /// Reverses the string values

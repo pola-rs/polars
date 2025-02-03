@@ -17,9 +17,15 @@ impl CategoricalChunked {
     fn set_lengths(&mut self, other: &Self) {
         let length_self = &mut self.physical_mut().length;
         *length_self = length_self
-            .checked_add(other.len() as IdxSize)
+            .checked_add(other.len())
             .expect(LENGTH_LIMIT_MSG);
-        self.physical_mut().null_count += other.null_count() as IdxSize;
+
+        assert!(
+            IdxSize::try_from(*length_self).is_ok(),
+            "{}",
+            LENGTH_LIMIT_MSG
+        );
+        self.physical_mut().null_count += other.null_count();
     }
 
     pub fn append(&mut self, other: &Self) -> PolarsResult<()> {
@@ -34,5 +40,10 @@ impl CategoricalChunked {
         let mut new_self = call_categorical_merge_operation(self, other, CategoricalAppend)?;
         std::mem::swap(self, &mut new_self);
         Ok(())
+    }
+
+    pub fn append_owned(&mut self, other: Self) -> PolarsResult<()> {
+        // @TODO: Move the implementation to append_owned and make append dispatch here.
+        self.append(&other)
     }
 }

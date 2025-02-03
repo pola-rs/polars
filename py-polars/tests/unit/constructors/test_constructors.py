@@ -5,6 +5,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from random import shuffle
 from typing import TYPE_CHECKING, Any, Literal, NamedTuple
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -14,20 +15,23 @@ from packaging.version import parse as parse_version
 from pydantic import BaseModel, Field, TypeAdapter
 
 import polars as pl
+import polars.selectors as cs
 from polars._utils.construction.utils import try_get_type_hints
 from polars.datatypes import numpy_char_code_to_dtype
 from polars.dependencies import dataclasses, pydantic
-from polars.exceptions import ShapeError
+from polars.exceptions import DuplicateError, ShapeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
+    import sys
     from collections.abc import Callable
-    from zoneinfo import ZoneInfo
 
     from polars._typing import PolarsDataType
 
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
+    if sys.version_info >= (3, 11):
+        from typing import Self
+    else:
+        from typing_extensions import Self
 
 
 # -----------------------------------------------------------------------------------
@@ -720,6 +724,21 @@ def test_init_arrow() -> None:
         pl.DataFrame(pa.table({"a": [1, 2, 3], "b": [4, 5, 6]}), schema=["c", "d", "e"])
 
 
+def test_init_arrow_dupes() -> None:
+    tbl = pa.Table.from_arrays(
+        arrays=[
+            pa.array([1, 2, 3], type=pa.int32()),
+            pa.array([4, 5, 6], type=pa.int32()),
+        ],
+        schema=pa.schema([("col", pa.int32()), ("col", pa.int32())]),
+    )
+    with pytest.raises(
+        DuplicateError,
+        match="column 'col' appears more than once; names must be unique",
+    ):
+        pl.DataFrame(tbl)
+
+
 def test_init_from_frame() -> None:
     df1 = pl.DataFrame({"id": [0, 1], "misc": ["a", "b"], "val": [-10, 10]})
     assert_frame_equal(df1, pl.DataFrame(df1))
@@ -917,7 +936,7 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
         schema={"ts": pl.Datetime("ms")},
     )
-    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:
@@ -1164,6 +1183,43 @@ def test_from_dicts_schema_columns_do_not_match() -> None:
     assert_frame_equal(result, expected)
 
 
+def test_from_dicts_infer_integer_types() -> None:
+    data = [
+        {
+            "a": 2**7 - 1,
+            "b": 2**15 - 1,
+            "c": 2**31 - 1,
+            "d": 2**63 - 1,
+            "e": 2**127 - 1,
+        }
+    ]
+    result = pl.from_dicts(data).schema
+    # all values inferred as i64 except for values too large for i64
+    expected = {
+        "a": pl.Int64,
+        "b": pl.Int64,
+        "c": pl.Int64,
+        "d": pl.Int64,
+        "e": pl.Int128,
+    }
+    assert result == expected
+
+    with pytest.raises(OverflowError):
+        pl.from_dicts([{"too_big": 2**127}])
+
+
+def test_from_dicts_list_large_int_17006() -> None:
+    data = [{"x": [2**64 - 1]}]
+
+    result = pl.from_dicts(data, schema={"x": pl.List(pl.UInt64)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.List(pl.UInt64)})
+    assert_frame_equal(result, expected)
+
+    result = pl.from_dicts(data, schema={"x": pl.Array(pl.UInt64, 1)})
+    expected = pl.DataFrame({"x": [[2**64 - 1]]}, schema={"x": pl.Array(pl.UInt64, 1)})
+    assert_frame_equal(result, expected)
+
+
 def test_from_rows_dtype() -> None:
     # 50 is the default inference length
     # 5182
@@ -1354,24 +1410,23 @@ def test_from_records_nullable_structs() -> None:
     assert series.to_list() == []
 
 
-def test_from_categorical_in_struct_defined_by_schema() -> None:
+@pytest.mark.parametrize("unnest_column", ["a", pl.col("a"), cs.by_name("a")])
+def test_from_categorical_in_struct_defined_by_schema(unnest_column: Any) -> None:
     df = pl.DataFrame(
-        {
-            "a": [
-                {"value": "foo", "counts": 1},
-                {"value": "bar", "counts": 2},
-            ]
-        },
+        {"a": [{"value": "foo", "counts": 1}, {"value": "bar", "counts": 2}]},
         schema={"a": pl.Struct({"value": pl.Categorical, "counts": pl.UInt32})},
     )
-
-    result = df.unnest("a")
 
     expected = pl.DataFrame(
         {"value": ["foo", "bar"], "counts": [1, 2]},
         schema={"value": pl.Categorical, "counts": pl.UInt32},
     )
-    assert_frame_equal(result, expected, categorical_as_str=True)
+
+    res_eager = df.unnest(unnest_column)
+    assert_frame_equal(res_eager, expected, categorical_as_str=True)
+
+    res_lazy = df.lazy().unnest(unnest_column)
+    assert_frame_equal(res_lazy.collect(), expected, categorical_as_str=True)
 
 
 def test_nested_schema_construction() -> None:
@@ -1648,7 +1703,7 @@ class PyCapsuleStreamHolder:
     """
     Hold the Arrow C Stream pycapsule.
 
-    A class that exposes _only_ the Arrow C Stream interface via Arrow PyCapsules. This
+    A class that exposes the Arrow C Stream interface via Arrow PyCapsules. This
     ensures that the consumer is seeing _only_ the `__arrow_c_stream__` dunder, and that
     nothing else (e.g. the dataframe or array interface) is actually being used.
     """
@@ -1660,6 +1715,12 @@ class PyCapsuleStreamHolder:
 
     def __arrow_c_stream__(self, requested_schema: object = None) -> object:
         return self.arrow_obj.__arrow_c_stream__(requested_schema)
+
+    def __iter__(self) -> None:
+        return
+
+    def __next__(self) -> None:
+        return
 
 
 class PyCapsuleArrayHolder:
@@ -1680,6 +1741,7 @@ class PyCapsuleArrayHolder:
         return self.arrow_obj.__arrow_c_array__(requested_schema)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
     df = df.rechunk()
     pyarrow_table = df.to_arrow()
@@ -1751,4 +1813,81 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
     expected = pl.DataFrame({"dt": [dt, dt]})
     assert_frame_equal(df, expected)
 
-    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz and "UTC")}
+    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz)}
+
+
+@pytest.mark.parametrize(
+    "tz",
+    [
+        None,
+        ZoneInfo("Asia/Tokyo"),
+        ZoneInfo("Europe/Amsterdam"),
+        ZoneInfo("UTC"),
+        timezone.utc,
+    ],
+)
+def test_init_list_of_nested_dicts_with_timezone(tz: Any) -> None:
+    dt = datetime(2021, 1, 1, 0, 0, 0, 0, tzinfo=tz)
+    data = [{"timestamp": {"content": datetime(2021, 1, 1, 0, 0, tzinfo=tz)}}]
+
+    df = pl.DataFrame(data).unnest("timestamp")
+    expected = pl.DataFrame({"content": [dt]})
+    assert_frame_equal(df, expected)
+
+    assert df.schema == {"content": pl.Datetime("us", time_zone=tz)}
+
+
+def test_init_from_subclassed_types() -> None:
+    # more detailed test of one custom subclass...
+    import codecs
+
+    class SuperSecretString(str):
+        def __new__(cls, value: str) -> Self:
+            return super().__new__(cls, value)
+
+        def __repr__(self) -> str:
+            return codecs.encode(self, "rot_13")
+
+    w = "windmolen"
+    sstr = SuperSecretString(w)
+
+    assert sstr == w
+    assert isinstance(sstr, str)
+    assert repr(sstr) == "jvaqzbyra"
+    assert_series_equal(pl.Series([w, w]), pl.Series([sstr, sstr]))
+
+    # ...then validate across other basic types
+    for BaseType, value in (
+        (int, 42),
+        (float, 5.5),
+        (bytes, b"value"),
+        (str, "value"),
+    ):
+
+        class SubclassedType(BaseType):  # type: ignore[misc,valid-type]
+            def __new__(cls, value: Any) -> Self:
+                return super().__new__(cls, value)  # type: ignore[no-any-return]
+
+        assert (
+            pl.Series([value]).to_list() == pl.Series([SubclassedType(value)]).to_list()
+        )
+
+
+def test_series_init_with_python_type_7737() -> None:
+    assert pl.Series([], dtype=int).dtype == pl.Int64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=float).dtype == pl.Float64  # type: ignore[arg-type]
+    assert pl.Series([], dtype=bool).dtype == pl.Boolean  # type: ignore[arg-type]
+    assert pl.Series([], dtype=str).dtype == pl.Utf8  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        pl.Series(["a"], dtype=int)  # type: ignore[arg-type]
+
+    with pytest.raises(TypeError):
+        pl.Series([True], dtype=str)  # type: ignore[arg-type]
+
+
+def test_init_from_list_shape_6968() -> None:
+    df1 = pl.DataFrame([[1, None], [2, None], [3, None]])
+    df2 = pl.DataFrame([[None, None], [2, None], [3, None]])
+    assert df1.shape == (2, 3)
+    assert df2.shape == (2, 3)

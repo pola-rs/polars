@@ -189,7 +189,6 @@ impl<'a> TreeFmtNode<'a> {
                     DataFrameScan {
                         schema,
                         output_schema,
-                        filter: selection,
                         ..
                     } => ND(
                         wh(
@@ -205,11 +204,7 @@ impl<'a> TreeFmtNode<'a> {
                                 schema.len()
                             ),
                         ),
-                        if let Some(expr) = selection {
-                            vec![self.expr_node(Some("SELECTION:".to_string()), expr)]
-                        } else {
-                            vec![]
-                        },
+                        vec![],
                     ),
                     Union { inputs, .. } => ND(
                         wh(
@@ -312,14 +307,6 @@ impl<'a> TreeFmtNode<'a> {
                             .chain([self.lp_node(None, *input)])
                             .collect(),
                     ),
-                    Reduce { input, exprs, .. } => ND(
-                        wh(h, "REDUCE"),
-                        exprs
-                            .iter()
-                            .map(|expr| self.expr_node(Some("expression:".to_string()), expr))
-                            .chain([self.lp_node(None, *input)])
-                            .collect(),
-                    ),
                     Distinct { input, options } => ND(
                         wh(
                             h,
@@ -356,8 +343,6 @@ impl<'a> TreeFmtNode<'a> {
                             match payload {
                                 SinkType::Memory => "SINK (memory)",
                                 SinkType::File { .. } => "SINK (file)",
-                                #[cfg(feature = "cloud")]
-                                SinkType::Cloud { .. } => "SINK (cloud)",
                             },
                         ),
                         vec![self.lp_node(None, *input)],
@@ -375,6 +360,18 @@ impl<'a> TreeFmtNode<'a> {
                             vec![self.lp_node(None, *input)],
                         )
                     },
+                    #[cfg(feature = "merge_sorted")]
+                    MergeSorted {
+                        input_left,
+                        input_right,
+                        key,
+                    } => ND(
+                        wh(h, &format!("MERGE SORTED ON '{key}")),
+                        [self.lp_node(Some("LEFT PLAN:".to_string()), *input_left)]
+                            .into_iter()
+                            .chain([self.lp_node(Some("RIGHT PLAN:".to_string()), *input_right)])
+                            .collect(),
+                    ),
                     Invalid => ND(wh(h, "INVALID"), vec![]),
                 }
             },

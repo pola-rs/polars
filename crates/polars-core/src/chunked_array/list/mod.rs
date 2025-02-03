@@ -1,6 +1,8 @@
 //! Special list utility methods
 pub(super) mod iterator;
 
+use std::borrow::Cow;
+
 use crate::prelude::*;
 
 impl ListChunked {
@@ -34,6 +36,86 @@ impl ListChunked {
         debug_assert_eq!(&inner_dtype.to_physical(), self.inner_dtype());
         let fld = Arc::make_mut(&mut self.field);
         fld.coerce(DataType::List(Box::new(inner_dtype)))
+    }
+
+    /// Convert the datatype of the list into the physical datatype.
+    pub fn to_physical_repr(&self) -> Cow<ListChunked> {
+        let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
+            return Cow::Borrowed(self);
+        };
+
+        assert_eq!(self.chunks().len(), physical_repr.chunks().len());
+
+        let chunks: Vec<_> = self
+            .downcast_iter()
+            .zip(physical_repr.into_chunks())
+            .map(|(chunk, values)| {
+                LargeListArray::new(
+                    ArrowDataType::LargeList(Box::new(ArrowField::new(
+                        PlSmallStr::from_static("item"),
+                        values.dtype().clone(),
+                        true,
+                    ))),
+                    chunk.offsets().clone(),
+                    values,
+                    chunk.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect();
+
+        let name = self.name().clone();
+        let dtype = DataType::List(Box::new(self.inner_dtype().to_physical()));
+        Cow::Owned(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
+    }
+
+    /// Convert a non-logical [`ListChunked`] back into a logical [`ListChunked`] without casting.
+    ///
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn from_physical_unchecked(
+        &self,
+        to_inner_dtype: DataType,
+    ) -> PolarsResult<ListChunked> {
+        debug_assert!(!self.inner_dtype().is_logical());
+
+        let inner_chunks = self
+            .downcast_iter()
+            .map(|chunk| chunk.values())
+            .cloned()
+            .collect();
+
+        let inner = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                inner_chunks,
+                self.inner_dtype(),
+            )
+        };
+        let inner = unsafe { inner.from_physical_unchecked(&to_inner_dtype) }?;
+
+        let chunks: Vec<_> = self
+            .downcast_iter()
+            .zip(inner.into_chunks())
+            .map(|(chunk, values)| {
+                LargeListArray::new(
+                    ArrowDataType::LargeList(Box::new(ArrowField::new(
+                        PlSmallStr::from_static("item"),
+                        values.dtype().clone(),
+                        true,
+                    ))),
+                    chunk.offsets().clone(),
+                    values,
+                    chunk.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect();
+
+        let name = self.name().clone();
+        let dtype = DataType::List(Box::new(to_inner_dtype));
+        Ok(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
     }
 
     /// Get the inner values as [`Series`], ignoring the list offsets.

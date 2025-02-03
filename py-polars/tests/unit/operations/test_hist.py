@@ -335,6 +335,7 @@ def test_hist() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_hist_all_null() -> None:
     s = pl.Series([None], dtype=pl.Float64)
     out = s.hist()
@@ -370,6 +371,8 @@ def test_hist_all_null() -> None:
 def test_hist_rand(n_values: int, n_null: int) -> None:
     s_rand = pl.Series([None] * n_null, dtype=pl.Int64)
     s_values = pl.Series(np.random.randint(0, 100, n_values), dtype=pl.Int64)
+    if s_values.n_unique() == 1:
+        pytest.skip("Identical values not tested.")
     s = pl.concat((s_rand, s_values))
     out = s.hist(bin_count=10)
 
@@ -424,3 +427,50 @@ def test_hist_max_boundary_19998() -> None:
     )
     result = s.hist(bin_count=50)
     assert result["count"].sum() == 4
+
+
+def test_hist_max_boundary_20133() -> None:
+    # Given a set of values that result in bin index to be a floating point number that
+    # is represented as 5.000000000000001
+    s = pl.Series(
+        [
+            6.197601318359375,
+            83.5203145345052,
+        ]
+    )
+
+    # When histogram is calculated
+    result = s.hist(bin_count=5)
+
+    # Then there is no exception (previously was possible to get index out of bounds
+    # here) and all the numbers fit into at least one of the bins
+    assert result["count"].sum() == 2
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_hist_same_values_20030() -> None:
+    out = pl.Series([1, 1]).hist(bin_count=2)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([1.0, 1.5], dtype=pl.Float64),
+            "category": pl.Series(["(0.5, 1.0]", "(1.0, 1.5]"], dtype=pl.Categorical),
+            "count": pl.Series([2, 0], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_hist_breakpoint_accuracy() -> None:
+    s = pl.Series([1, 2, 3, 4])
+    out = s.hist(bin_count=3)
+    expected = pl.DataFrame(
+        {
+            "breakpoint": pl.Series([2.0, 3.0, 4.0], dtype=pl.Float64),
+            "category": pl.Series(
+                ["(0.997, 2.0]", "(2.0, 3.0]", "(3.0, 4.0]"], dtype=pl.Categorical
+            ),
+            "count": pl.Series([2, 1, 1], dtype=pl.get_index_type()),
+        }
+    )
+    assert_frame_equal(out, expected)

@@ -1,6 +1,6 @@
 use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
-use arrow::compute::take::take_unchecked;
+use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 

@@ -5,10 +5,17 @@ from typing import TYPE_CHECKING
 from polars._utils.parse import parse_into_expression
 from polars._utils.various import scale_bytes
 from polars._utils.wrap import wrap_expr
+from polars.datatypes import parse_into_dtype
 
 if TYPE_CHECKING:
     from polars import Expr
-    from polars._typing import IntoExpr, SizeUnit, TransferEncoding
+    from polars._typing import (
+        Endianness,
+        IntoExpr,
+        PolarsDataType,
+        SizeUnit,
+        TransferEncoding,
+    )
 
 
 class ExprBinaryNameSpace:
@@ -289,3 +296,45 @@ class ExprBinaryNameSpace:
         sz = wrap_expr(self._pyexpr.bin_size_bytes())
         sz = scale_bytes(sz, unit)
         return sz
+
+    def reinterpret(
+        self, *, dtype: PolarsDataType, endianness: Endianness = "little"
+    ) -> Expr:
+        r"""
+        Interpret a buffer as a numerical Polars type.
+
+        Parameters
+        ----------
+        dtype : PolarsDataType
+            Which type to interpret binary column into.
+        endianness : {"big", "little"}, optional
+            Which endianness to use when interpreting bytes, by default "little".
+
+        Returns
+        -------
+        Expr
+            Expression of data type `dtype`.
+            Note that if binary array is too short value will be null.
+            If binary array is too long, remainder will be ignored.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"data": [b"\x05\x00\x00\x00", b"\x10\x00\x01\x00"]})
+        >>> df.with_columns(  # doctest: +IGNORE_RESULT
+        ...     bin2int=pl.col("data").bin.reinterpret(
+        ...         dtype=pl.Int32, endianness="little"
+        ...     ),
+        ... )
+        shape: (2, 2)
+        ┌─────────────────────┬─────────┐
+        │ data                ┆ bin2int │
+        │ ---                 ┆ ---     │
+        │ binary              ┆ i32     │
+        ╞═════════════════════╪═════════╡
+        │ b"\x05\x00\x00\x00" ┆ 5       │
+        │ b"\x10\x00\x01\x00" ┆ 65552   │
+        └─────────────────────┴─────────┘
+        """
+        dtype = parse_into_dtype(dtype)
+
+        return wrap_expr(self._pyexpr.from_buffer(dtype, endianness))

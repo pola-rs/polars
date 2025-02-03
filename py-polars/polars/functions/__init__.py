@@ -80,6 +80,7 @@ from polars.functions.range import (
     datetime_ranges,
     int_range,
     int_ranges,
+    linear_space,
     time_range,
     time_ranges,
 )
@@ -149,6 +150,7 @@ __all__ = [
     "int_range",
     "int_ranges",
     "last",
+    "linear_space",
     "lit",
     "map_batches",
     "map_groups",

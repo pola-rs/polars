@@ -24,7 +24,6 @@ fn empty_df() -> IR {
         df: Arc::new(Default::default()),
         schema: Arc::new(Default::default()),
         output_schema: None,
-        filter: None,
     }
 }
 
@@ -63,12 +62,13 @@ pub fn to_alp(
     lp: DslPlan,
     expr_arena: &mut Arena<AExpr>,
     lp_arena: &mut Arena<IR>,
-    // Only `SIMPLIFY_EXPR` and `TYPE_COERCION` are respected.
+    // Only `SIMPLIFY_EXPR`, `TYPE_COERCION`, `TYPE_CHECK` are respected.
     opt_flags: &mut OptFlags,
 ) -> PolarsResult<Node> {
     let conversion_optimizer = ConversionOptimizer::new(
         opt_flags.contains(OptFlags::SIMPLIFY_EXPR),
         opt_flags.contains(OptFlags::TYPE_COERCION),
+        opt_flags.contains(OptFlags::TYPE_CHECK),
     );
 
     let mut ctxt = DslConversionContext {
@@ -117,7 +117,7 @@ pub(super) fn run_conversion(
 ) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
-        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node)
         .map_err(|e| e.context(format!("'{name}' failed").into()))?;
 
     Ok(lp_node)
@@ -163,21 +163,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
                 let sources = match &scan_type {
                     #[cfg(feature = "parquet")]
-                    FileScan::Parquet {
-                        ref cloud_options, ..
-                    } => sources
+                    FileScan::Parquet { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
                     #[cfg(feature = "ipc")]
-                    FileScan::Ipc {
-                        ref cloud_options, ..
-                    } => sources
+                    FileScan::Ipc { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
                     #[cfg(feature = "csv")]
-                    FileScan::Csv {
-                        ref cloud_options, ..
-                    } => sources.expand_paths(&file_options, cloud_options.as_ref())?,
+                    FileScan::Csv { cloud_options, .. } => {
+                        sources.expand_paths(&file_options, cloud_options.as_ref())?
+                    },
                     #[cfg(feature = "json")]
-                    FileScan::NDJson { .. } => sources.expand_paths(&file_options, None)?,
+                    FileScan::NDJson { cloud_options, .. } => {
+                        sources.expand_paths(&file_options, cloud_options.as_ref())?
+                    },
                     FileScan::Anonymous { .. } => sources,
                 };
 
@@ -219,7 +217,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         let (file_info, md) =
                             scans::ipc_file_info(&sources, &file_options, cloud_options.as_ref())
                                 .map_err(|e| e.context(failed_here!(ipc scan)))?;
-                        *metadata = Some(md);
+                        *metadata = Some(Arc::new(md));
                         file_info
                     },
                     #[cfg(feature = "csv")]
@@ -343,7 +341,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,
                         output_schema: None,
-                        filter: None,
                     }
                 } else {
                     IR::Scan {
@@ -380,6 +377,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 convert_utils::convert_st_union(&mut inputs, ctxt.lp_arena, ctxt.expr_arena)
                     .map_err(|e| e.context(failed_here!(vertical concat)))?;
             }
+
+            let first = *inputs.first().ok_or_else(
+                || polars_err!(InvalidOperation: "expected at least one input in 'union'/'concat'"),
+            )?;
+            let schema = ctxt.lp_arena.get(first).schema(ctxt.lp_arena);
+            for n in &inputs[1..] {
+                let schema_i = ctxt.lp_arena.get(*n).schema(ctxt.lp_arena);
+                // The first argument
+                schema_i.matches_schema(schema.as_ref()).map_err(|_| polars_err!(InvalidOperation:  "'union'/'concat' inputs should all have the same schema,\
+                    got\n{:?} and \n{:?}", schema, schema_i)
+                )?;
+            }
+
             let options = args.into();
             IR::Union { inputs, options }
         },
@@ -406,7 +416,12 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let predicate_ae = to_expr_ir(predicate.clone(), ctxt.expr_arena)?;
 
-            return if is_streamable(predicate_ae.node(), ctxt.expr_arena, Default::default()) {
+            // TODO: We could do better here by using `pushdown_eligibility()`
+            return if ctxt.opt_flags.predicate_pushdown()
+                && permits_filter_pushdown_rec(
+                    ctxt.expr_arena.get(predicate_ae.node()),
+                    ctxt.expr_arena,
+                ) {
                 // Split expression that are ANDed into multiple Filter nodes as the optimizer can then
                 // push them down independently. Especially if they refer columns from different tables
                 // this will be more performant.
@@ -415,6 +430,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 // filter [foo == bar]
                 // filter [ham == spam]
                 let mut predicates = vec![];
+
                 let mut stack = vec![predicate_ae.node()];
                 while let Some(n) = stack.pop() {
                     if let AExpr::BinaryExpr {
@@ -437,6 +453,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let lp = IR::Filter { input, predicate };
                     input = run_conversion(lp, ctxt, "filter")?;
                 }
+
                 Ok(input)
             } else {
                 ctxt.conversion_optimizer
@@ -457,7 +474,6 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             df,
             schema,
             output_schema: None,
-            filter: None,
         },
         DslPlan::Select {
             expr,
@@ -633,6 +649,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt,
             )
             .map_err(|e| e.context(failed_here!(join)))
+            .map(|t| t.0)
         },
         DslPlan::HStack {
             input,
@@ -662,8 +679,20 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             let subset = options
                 .subset
-                .map(|s| expand_selectors(s, input_schema.as_ref(), &[]))
+                .map(|s| {
+                    let cols = expand_selectors(s, input_schema.as_ref(), &[])?;
+
+                    // Checking if subset columns exist in the dataframe
+                    for col in cols.iter() {
+                        let _ = input_schema
+                            .try_get(col)
+                            .map_err(|_| polars_err!(col_not_found = col))?;
+                    }
+
+                    Ok::<_, PolarsError>(cols)
+                })
                 .transpose()?;
+
             let options = DistinctOptionsIR {
                 subset,
                 maintain_order: options.maintain_order,
@@ -766,28 +795,32 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 DslFunction::Stats(sf) => {
                     let exprs = match sf {
                         StatsFunction::Var { ddof } => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
                             |name| col(name.clone()).var(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Std { ddof } => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_bool(),
+                            |dt| dt.is_primitive_numeric() || dt.is_bool(),
                             |name| col(name.clone()).std(ddof),
                             &input_schema,
                         ),
                         StatsFunction::Quantile { quantile, method } => stats_helper(
-                            |dt| dt.is_numeric(),
+                            |dt| dt.is_primitive_numeric(),
                             |name| col(name.clone()).quantile(quantile.clone(), method),
                             &input_schema,
                         ),
                         StatsFunction::Mean => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
+                            |dt| {
+                                dt.is_primitive_numeric()
+                                    || dt.is_temporal()
+                                    || dt == &DataType::Boolean
+                            },
                             |name| col(name.clone()).mean(),
                             &input_schema,
                         ),
                         StatsFunction::Sum => stats_helper(
                             |dt| {
-                                dt.is_numeric()
+                                dt.is_primitive_numeric()
                                     || dt.is_decimal()
                                     || matches!(dt, DataType::Boolean | DataType::Duration(_))
                             },
@@ -805,7 +838,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             &input_schema,
                         ),
                         StatsFunction::Median => stats_helper(
-                            |dt| dt.is_numeric() || dt.is_temporal() || dt == &DataType::Boolean,
+                            |dt| {
+                                dt.is_primitive_numeric()
+                                    || dt.is_temporal()
+                                    || dt == &DataType::Boolean
+                            },
                             |name| col(name.clone()).median(),
                             &input_schema,
                         ),
@@ -866,6 +903,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             IR::Sink { input, payload }
+        },
+        #[cfg(feature = "merge_sorted")]
+        DslPlan::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => {
+            let input_left = to_alp_impl(owned(input_left), ctxt)
+                .map_err(|e| e.context(failed_here!(merge_sorted)))?;
+            let input_right = to_alp_impl(owned(input_right), ctxt)
+                .map_err(|e| e.context(failed_here!(merge_sorted)))?;
+
+            IR::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            }
         },
         DslPlan::IR { node, dsl, version } => {
             return if node.is_some()
@@ -974,7 +1028,7 @@ fn resolve_with_columns(
             );
             polars_bail!(ComputeError: msg)
         }
-        new_schema.with_column(field.name().clone(), field.dtype().clone());
+        new_schema.with_column(field.name, field.dtype.materialize_unknown(true)?);
         arena.clear();
     }
 

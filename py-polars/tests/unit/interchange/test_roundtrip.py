@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sys
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -12,8 +11,12 @@ from hypothesis import given
 
 import polars as pl
 from polars._utils.various import parse_version
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import dataframes
+
+skip_if_broken_pandas_version = pytest.mark.skipif(
+    pd.__version__.startswith("2"), reason="bug. see #20316"
+)
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -32,8 +35,9 @@ protocol_dtypes: list[PolarsDataType] = [
     pl.Boolean,
     pl.String,
     pl.Datetime,
+    # This is broken for empty dataframes
     # TODO: Enable lexically ordered categoricals
-    pl.Categorical("physical"),
+    # pl.Categorical("physical"),
     # TODO: Add Enum
     # pl.Enum,
 ]
@@ -72,10 +76,6 @@ def test_to_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="The correct `from_dataframe` implementation for pandas is not available before Python 3.9",
-)
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
@@ -92,10 +92,6 @@ def test_to_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="The correct `from_dataframe` implementation for pandas is not available before Python 3.9",
-)
 @pytest.mark.filterwarnings(
     "ignore:.*PEP3118 format string that does not match its itemsize:RuntimeWarning"
 )
@@ -148,6 +144,7 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df)
 
 
+@skip_if_broken_pandas_version
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
@@ -158,16 +155,13 @@ def test_from_dataframe_pyarrow_zero_copy_parametric(df: pl.DataFrame) -> None:
         ],
     )
 )
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
-)
 def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
     result = pl.from_dataframe(df_pd)
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@skip_if_broken_pandas_version
 @given(
     dataframes(
         allowed_dtypes=protocol_dtypes,
@@ -183,10 +177,6 @@ def test_from_dataframe_pandas_parametric(df: pl.DataFrame) -> None:
         min_size=1,
         allow_chunks=False,
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
@@ -207,10 +197,6 @@ def test_from_dataframe_pandas_zero_copy_parametric(df: pl.DataFrame) -> None:
         min_size=1,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
@@ -234,10 +220,6 @@ def test_from_dataframe_pandas_native_parametric(df: pl.DataFrame) -> None:
         allow_chunks=False,
         allow_null=False,  # Bug: https://github.com/pola-rs/polars/issues/16190
     )
-)
-@pytest.mark.skipif(
-    sys.version_info < (3, 9),
-    reason="Older versions of pandas do not implement the required conversions",
 )
 def test_from_dataframe_pandas_native_zero_copy_parametric(df: pl.DataFrame) -> None:
     df_pd = df.to_pandas()
@@ -286,3 +268,25 @@ def test_from_dataframe_pandas_timestamp_ns() -> None:
     df_pd = df.to_pandas(use_pyarrow_extension_array=True)
     result = pl.from_dataframe(df_pd)
     assert_frame_equal(result, df)
+
+
+def test_from_pyarrow_str_dict_with_null_values_20270() -> None:
+    tb = pa.table(
+        {
+            "col1": pa.DictionaryArray.from_arrays(
+                [0, 0, None, 1, 2], ["A", None, "B"]
+            ),
+        },
+        schema=pa.schema({"col1": pa.dictionary(pa.uint32(), pa.string())}),
+    )
+    df = pl.from_arrow(tb)
+    assert isinstance(df, pl.DataFrame)
+
+    assert_series_equal(
+        df.to_series(), pl.Series("col1", ["A", "A", None, None, "B"], pl.Categorical)
+    )
+    assert_series_equal(
+        df.select(pl.col.col1.cat.get_categories()).to_series(),
+        pl.Series(["A", "B"]),
+        check_names=False,
+    )

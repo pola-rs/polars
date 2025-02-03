@@ -16,10 +16,10 @@ pub mod expr;
 pub(crate) mod hashing;
 mod into_groups;
 mod perfect;
-mod proxy;
+mod position;
 
 pub use into_groups::*;
-pub use proxy::*;
+pub use position::*;
 
 use crate::chunked_array::ops::row_encode::{
     encode_rows_unordered, encode_rows_vertical_par_unordered,
@@ -76,7 +76,7 @@ impl DataFrame {
             let by = by
                 .iter()
                 .filter(|s| !s.dtype().is_null())
-                .map(|c| c.as_materialized_series().clone())
+                .cloned()
                 .collect::<Vec<_>>();
             if by.is_empty() {
                 let groups = if self.is_empty() {
@@ -84,7 +84,7 @@ impl DataFrame {
                 } else {
                     vec![[0, self.height() as IdxSize]]
                 };
-                Ok(GroupsProxy::Slice {
+                Ok(GroupsType::Slice {
                     groups,
                     rolling: false,
                 })
@@ -98,7 +98,7 @@ impl DataFrame {
                 rows.group_tuples(multithreaded, sorted)
             }
         };
-        Ok(GroupBy::new(self, by, groups?, None))
+        Ok(GroupBy::new(self, by, groups?.into_sliceable(), None))
     }
 
     /// Group DataFrame using a Series column.
@@ -184,20 +184,20 @@ impl DataFrame {
 /// ```
 ///
 #[derive(Debug, Clone)]
-pub struct GroupBy<'df> {
-    pub df: &'df DataFrame,
+pub struct GroupBy<'a> {
+    pub df: &'a DataFrame,
     pub(crate) selected_keys: Vec<Column>,
     // [first idx, [other idx]]
-    groups: GroupsProxy,
+    groups: GroupPositions,
     // columns selected for aggregation
     pub(crate) selected_agg: Option<Vec<PlSmallStr>>,
 }
 
-impl<'df> GroupBy<'df> {
+impl<'a> GroupBy<'a> {
     pub fn new(
-        df: &'df DataFrame,
+        df: &'a DataFrame,
         by: Vec<Column>,
-        groups: GroupsProxy,
+        groups: GroupPositions,
         selected_agg: Option<Vec<PlSmallStr>>,
     ) -> Self {
         GroupBy {
@@ -223,7 +223,7 @@ impl<'df> GroupBy<'df> {
     /// The Vec returned contains:
     ///     (first_idx, [`Vec<indexes>`])
     ///     Where second value in the tuple is a vector with all matching indexes.
-    pub fn get_groups(&self) -> &GroupsProxy {
+    pub fn get_groups(&self) -> &GroupPositions {
         &self.groups
     }
 
@@ -235,15 +235,15 @@ impl<'df> GroupBy<'df> {
     /// # Safety
     /// Groups should always be in bounds of the `DataFrame` hold by this [`GroupBy`].
     /// If you mutate it, you must hold that invariant.
-    pub unsafe fn get_groups_mut(&mut self) -> &mut GroupsProxy {
+    pub unsafe fn get_groups_mut(&mut self) -> &mut GroupPositions {
         &mut self.groups
     }
 
-    pub fn take_groups(self) -> GroupsProxy {
+    pub fn take_groups(self) -> GroupPositions {
         self.groups
     }
 
-    pub fn take_groups_mut(&mut self) -> GroupsProxy {
+    pub fn take_groups_mut(&mut self) -> GroupPositions {
         std::mem::take(&mut self.groups)
     }
 
@@ -264,7 +264,7 @@ impl<'df> GroupBy<'df> {
                 .map(Column::as_materialized_series)
                 .map(|s| {
                     match groups {
-                        GroupsProxy::Idx(groups) => {
+                        GroupsType::Idx(groups) => {
                             // SAFETY: groups are always in bounds.
                             let mut out = unsafe { s.take_slice_unchecked(groups.first()) };
                             if groups.sorted {
@@ -272,7 +272,7 @@ impl<'df> GroupBy<'df> {
                             };
                             out
                         },
-                        GroupsProxy::Slice { groups, rolling } => {
+                        GroupsType::Slice { groups, rolling } => {
                             if *rolling && !groups.is_empty() {
                                 // Groups can be sliced.
                                 let offset = groups[0][0];
@@ -841,6 +841,17 @@ impl<'df> GroupBy<'df> {
         df.as_single_chunk_par();
         Ok(df)
     }
+
+    pub fn sliced(mut self, slice: Option<(i64, usize)>) -> Self {
+        match slice {
+            None => self,
+            Some((offset, length)) => {
+                self.groups = (self.groups.slice(offset, length)).clone();
+                self.selected_keys = self.keys_sliced(slice);
+                self
+            },
+        }
+    }
 }
 
 unsafe fn take_df(df: &DataFrame, g: GroupsIndicator) -> DataFrame {
@@ -864,22 +875,10 @@ pub enum GroupByMethod {
     Groups,
     NUnique,
     Quantile(f64, QuantileMethod),
-    Count {
-        include_nulls: bool,
-    },
+    Count { include_nulls: bool },
     Implode,
     Std(u8),
     Var(u8),
-    #[cfg(feature = "bitwise")]
-    Bitwise(GroupByBitwiseMethod),
-}
-
-#[cfg(feature = "bitwise")]
-#[derive(Copy, Clone, Debug)]
-pub enum GroupByBitwiseMethod {
-    And,
-    Or,
-    Xor,
 }
 
 impl Display for GroupByMethod {
@@ -902,24 +901,8 @@ impl Display for GroupByMethod {
             Implode => "list",
             Std(_) => "std",
             Var(_) => "var",
-            #[cfg(feature = "bitwise")]
-            Bitwise(t) => {
-                f.write_str("bitwise_")?;
-                return Display::fmt(t, f);
-            },
         };
         write!(f, "{s}")
-    }
-}
-
-#[cfg(feature = "bitwise")]
-impl Display for GroupByBitwiseMethod {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::And => f.write_str("and"),
-            Self::Or => f.write_str("or"),
-            Self::Xor => f.write_str("xor"),
-        }
     }
 }
 
@@ -943,8 +926,6 @@ pub fn fmt_group_by_column(name: &str, method: GroupByMethod) -> PlSmallStr {
         Quantile(quantile, _interpol) => format_pl_smallstr!("{name}_quantile_{quantile:.2}"),
         Std(_) => format_pl_smallstr!("{name}_agg_std"),
         Var(_) => format_pl_smallstr!("{name}_agg_var"),
-        #[cfg(feature = "bitwise")]
-        Bitwise(f) => format_pl_smallstr!("{name}_agg_bitwise_{f}"),
     }
 }
 

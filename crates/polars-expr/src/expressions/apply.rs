@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::sync::OnceLock;
 
 use polars_core::chunked_array::builder::get_list_builder;
+use polars_core::chunked_array::from_iterator_par::try_list_from_par_iter;
 use polars_core::prelude::*;
 use polars_core::POOL;
 #[cfg(feature = "parquet")]
@@ -15,6 +16,7 @@ use crate::expressions::{
     AggState, AggregationContext, PartitionedAggregation, PhysicalExpr, UpdateGroups,
 };
 
+#[derive(Clone)]
 pub struct ApplyExpr {
     inputs: Vec<Arc<dyn PhysicalExpr>>,
     function: SpecialEq<Arc<dyn ColumnsUdf>>,
@@ -73,7 +75,7 @@ impl ApplyExpr {
     fn prepare_multiple_inputs<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Vec<AggregationContext<'a>>> {
         let f = |e: &Arc<dyn PhysicalExpr>| e.evaluate_on_groups(df, groups, state);
@@ -181,7 +183,7 @@ impl ApplyExpr {
 
                 out
             } else {
-                POOL.install(|| iter.collect::<PolarsResult<_>>())?
+                POOL.install(|| try_list_from_par_iter(iter, PlSmallStr::EMPTY))?
             }
         } else {
             agg.list()
@@ -298,9 +300,11 @@ impl ApplyExpr {
 
 fn all_unit_length(ca: &ListChunked) -> bool {
     assert_eq!(ca.chunks().len(), 1);
+
     let list_arr = ca.downcast_iter().next().unwrap();
     let offset = list_arr.offsets().as_slice();
-    (offset[offset.len() - 1] as usize) == list_arr.len()
+    // Note: Checking offset.last() == 0 handles the Null dtype - in that case the offsets can be (e.g. [0,0,0 ...])
+    (offset[offset.len() - 1] as usize) == list_arr.len() || offset[offset.len() - 1] == 0
 }
 
 fn check_map_output_len(input_len: usize, output_len: usize, expr: &Expr) -> PolarsResult<()> {
@@ -324,15 +328,10 @@ impl PhysicalExpr for ApplyExpr {
                 self.inputs
                     .par_iter()
                     .map(f)
-                    .map(|v| v.map(Column::from))
                     .collect::<PolarsResult<Vec<_>>>()
             })
         } else {
-            self.inputs
-                .iter()
-                .map(f)
-                .map(|v| v.map(Column::from))
-                .collect::<PolarsResult<Vec<_>>>()
+            self.inputs.iter().map(f).collect::<PolarsResult<Vec<_>>>()
         }?;
 
         if self.allow_rename {
@@ -365,7 +364,7 @@ impl PhysicalExpr for ApplyExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         polars_ensure!(
@@ -425,6 +424,17 @@ impl PhysicalExpr for ApplyExpr {
             }
         }
     }
+
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }
@@ -504,7 +514,6 @@ fn apply_multiple_elementwise<'a>(
 
                     ac.flat_naive().into_owned()
                 })
-                .map(Column::from)
                 .collect::<Vec<_>>();
 
             let input_len = c[0].len();
@@ -564,7 +573,7 @@ impl ApplyExpr {
                         Some(null_count)
                             if stats
                                 .num_rows()
-                                .map_or(false, |num_rows| num_rows == null_count) =>
+                                .is_some_and(|num_rows| num_rows == null_count) =>
                         {
                             Ok(false)
                         },
@@ -659,7 +668,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let a = self.inputs[0].as_partitioned_aggregator().unwrap();
@@ -676,7 +685,7 @@ impl PartitionedAggregation for ApplyExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        _groups: &GroupsProxy,
+        _groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         Ok(partitioned)

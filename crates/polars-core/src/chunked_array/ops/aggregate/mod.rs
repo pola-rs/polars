@@ -2,14 +2,11 @@
 mod quantile;
 mod var;
 
-use std::ops::Add;
-
-use arrow::compute;
-use arrow::types::simd::Simd;
 use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
+use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
 use polars_utils::min_max::MinMax;
 use polars_utils::sync::SyncPtr;
 pub use quantile::*;
@@ -18,7 +15,6 @@ pub use var::*;
 use super::float_sorted_arg_max::{
     float_arg_max_sorted_ascending, float_arg_max_sorted_descending,
 };
-use crate::chunked_array::metadata::MetadataEnv;
 use crate::chunked_array::ChunkedArray;
 use crate::datatypes::{BooleanChunked, PolarsNumericType};
 use crate::prelude::*;
@@ -46,8 +42,7 @@ pub trait ChunkAggSeries {
 
 fn sum<T>(array: &PrimitiveArray<T>) -> T
 where
-    T: NumericNative + NativeType,
-    <T as Simd>::Simd: Add<Output = <T as Simd>::Simd> + compute::aggregate::Sum<T>,
+    T: NumericNative + NativeType + WrappingSum,
 {
     if array.null_count() == array.len() {
         return T::default();
@@ -70,16 +65,15 @@ where
             }
         }
     } else {
-        compute::aggregate::sum_primitive(array).unwrap_or(T::zero())
+        wrapping_sum_arr(array)
     }
 }
 
 impl<T> ChunkAgg<T::Native> for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: WrappingSum,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
 {
     fn sum(&self) -> Option<T::Native> {
         Some(
@@ -115,10 +109,6 @@ where
                 .reduce(MinMax::min_ignore_nan),
         };
 
-        if MetadataEnv::experimental_enabled() {
-            self.interior_mut_metadata().set_min_value(result);
-        }
-
         result
     }
 
@@ -152,10 +142,6 @@ where
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
         };
-
-        if MetadataEnv::experimental_enabled() {
-            self.interior_mut_metadata().set_max_value(result);
-        }
 
         result
     }
@@ -204,18 +190,6 @@ where
                     )
                 }),
         };
-
-        if MetadataEnv::experimental_enabled() {
-            let (min, max) = match result {
-                Some((min, max)) => (Some(min), Some(max)),
-                None => (None, None),
-            };
-
-            let mut md = self.interior_mut_metadata();
-
-            md.set_min_value(min);
-            md.set_max_value(max);
-        }
 
         result
     }
@@ -291,9 +265,8 @@ impl BooleanChunked {
 impl<T> ChunkAggSeries for ChunkedArray<T>
 where
     T: PolarsNumericType,
+    T::Native: WrappingSum,
     PrimitiveArray<T::Native>: for<'a> MinMaxKernel<Scalar<'a> = T::Native>,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
     ChunkedArray<T>: IntoSeries,
 {
     fn sum_reduce(&self) -> Scalar {
@@ -366,9 +339,7 @@ impl VarAggSeries for Float64Chunked {
 impl<T> QuantileAggSeries for ChunkedArray<T>
 where
     T: PolarsIntegerType,
-    T::Native: Ord,
-    <T::Native as Simd>::Simd:
-        Add<Output = <T::Native as Simd>::Simd> + compute::aggregate::Sum<T::Native>,
+    T::Native: Ord + WrappingSum,
 {
     fn quantile_reduce(&self, quantile: f64, method: QuantileMethod) -> PolarsResult<Scalar> {
         let v = self.quantile(quantile, method)?;

@@ -77,14 +77,14 @@ def test_streaming_joins() -> None:
         pl_result = (
             dfa_pl.lazy()
             .join(dfb_pl.lazy(), on="a", how=how)
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
             .collect(streaming=True)
         )
 
         a = (
             pl.from_pandas(pd_result)
             .with_columns(pl.all().cast(int))
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
         )
         assert_frame_equal(a, pl_result, check_dtypes=False)
 
@@ -308,3 +308,16 @@ def test_flush_join_and_operation_19040() -> None:
         "B": [None, 1],
         "C": [None, 1],
     }
+
+
+def test_full_coalesce_join_and_rename_15583() -> None:
+    df1 = pl.LazyFrame({"a": [1, 2, 3]})
+    df2 = pl.LazyFrame({"a": [3, 4, 5]})
+
+    result = (
+        df1.join(df2, on="a", how="full", coalesce=True)
+        .select(pl.all().name.map(lambda c: c.upper()))
+        .sort("A")
+        .collect(streaming=True)
+    )
+    assert result["A"].to_list() == [1, 2, 3, 4, 5]

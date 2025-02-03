@@ -4,7 +4,7 @@ use arrow::array::{Array, PrimitiveArray};
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
 use arrow::types::NativeType;
-use polars_core::export::num::{NumCast, ToPrimitive};
+use num_traits::{NumCast, ToPrimitive};
 
 use super::*;
 use crate::chunked_array::sum::sum_slice;
@@ -51,6 +51,7 @@ pub(super) fn sum_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Ser
                 Int16 => dispatch_sum::<i16, i64>(values, offsets, arr.validity()),
                 Int32 => dispatch_sum::<i32, i32>(values, offsets, arr.validity()),
                 Int64 => dispatch_sum::<i64, i64>(values, offsets, arr.validity()),
+                Int128 => dispatch_sum::<i128, i128>(values, offsets, arr.validity()),
                 UInt8 => dispatch_sum::<u8, i64>(values, offsets, arr.validity()),
                 UInt16 => dispatch_sum::<u16, i64>(values, offsets, arr.validity()),
                 UInt32 => dispatch_sum::<u32, u32>(values, offsets, arr.validity()),
@@ -105,7 +106,7 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             out.into_series()
         },
         // slowest sum_as_series path
-        _ => ca
+        dt => ca
             .try_apply_amortized(|s| {
                 s.as_ref()
                     .sum_reduce()
@@ -113,7 +114,8 @@ pub(super) fn sum_with_nulls(ca: &ListChunked, inner_dtype: &DataType) -> Polars
             })?
             .explode()
             .unwrap()
-            .into_series(),
+            .into_series()
+            .cast(dt)?,
     };
     out.rename(ca.name().clone());
     Ok(out)
@@ -160,6 +162,7 @@ pub(super) fn mean_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Se
                 Int16 => dispatch_mean::<i16, f64>(values, offsets, arr.validity()),
                 Int32 => dispatch_mean::<i32, f64>(values, offsets, arr.validity()),
                 Int64 => dispatch_mean::<i64, f64>(values, offsets, arr.validity()),
+                Int128 => dispatch_mean::<i128, f64>(values, offsets, arr.validity()),
                 UInt8 => dispatch_mean::<u8, f64>(values, offsets, arr.validity()),
                 UInt16 => dispatch_mean::<u16, f64>(values, offsets, arr.validity()),
                 UInt32 => dispatch_mean::<u32, f64>(values, offsets, arr.validity()),

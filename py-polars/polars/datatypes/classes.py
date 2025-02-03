@@ -4,7 +4,7 @@ import contextlib
 import enum
 from collections import OrderedDict
 from collections.abc import Mapping
-from datetime import timezone
+from datetime import tzinfo
 from inspect import isclass
 from typing import TYPE_CHECKING, Any
 
@@ -142,7 +142,7 @@ class DataType(metaclass=DataTypeClass):
         Parameters
         ----------
         other
-            the other polars dtype to compare with.
+            the other Polars dtype to compare with.
 
         Examples
         --------
@@ -319,6 +319,17 @@ class Int64(SignedIntegerType):
     """64-bit signed integer type."""
 
 
+class Int128(SignedIntegerType):
+    """
+    128-bit signed integer type.
+
+    .. warning::
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
+    """
+
+
 class UInt8(UnsignedIntegerType):
     """8-bit unsigned integer type."""
 
@@ -437,6 +448,44 @@ class Time(TemporalType):
     The integer indicates the number of nanoseconds since midnight.
     """
 
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.max() == 86_399_999_999_999)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.min() == 0)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
+
 
 class Datetime(TemporalType):
     """
@@ -464,7 +513,7 @@ class Datetime(TemporalType):
     time_zone: str | None
 
     def __init__(
-        self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
+        self, time_unit: TimeUnit = "us", time_zone: str | tzinfo | None = None
     ) -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
@@ -473,7 +522,7 @@ class Datetime(TemporalType):
             )
             raise ValueError(msg)
 
-        if isinstance(time_zone, timezone):
+        if isinstance(time_zone, tzinfo):
             time_zone = str(time_zone)
 
         self.time_unit = time_unit
@@ -582,7 +631,7 @@ class Categorical(DataType):
 
 class Enum(DataType):
     """
-    A fixed set categorical encoding of a set of strings.
+    A fixed categorical encoding of a unique set of strings.
 
     .. warning::
         This functionality is considered **unstable**.
@@ -592,8 +641,22 @@ class Enum(DataType):
     Parameters
     ----------
     categories
-        The categories in the dataset. Categories must be strings.
-    """
+        The categories in the dataset; must be a unique set of strings, or an
+        existing Python string-valued enum.
+
+    Examples
+    --------
+    Explicitly define enumeration categories:
+
+    >>> pl.Enum(["north", "south", "east", "west"])
+    Enum(categories=['north', 'south', 'east', 'west'])
+
+    Initialise from an existing Python enumeration:
+
+    >>> from http import HTTPMethod
+    >>> pl.Enum(HTTPMethod)
+    Enum(categories=['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'])
+    """  # noqa: W505
 
     categories: Series
 
@@ -608,7 +671,16 @@ class Enum(DataType):
         )
 
         if isclass(categories) and issubclass(categories, enum.Enum):
-            categories = pl.Series(values=categories.__members__.values())
+            for enum_subclass in (enum.Flag, enum.IntEnum):
+                if issubclass(categories, enum_subclass):
+                    enum_type_name = categories.__name__
+                    msg = f"Enum categories must be strings; `{enum_type_name}` values are integers"
+                    raise TypeError(msg)
+
+            enum_values = [
+                getattr(v, "value", v) for v in categories.__members__.values()
+            ]
+            categories = pl.Series(values=enum_values)
         elif not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 
@@ -733,8 +805,13 @@ class Array(NestedType):
     ----------
     inner
         The `DataType` of the values within each array.
+    shape
+        The shape of the arrays.
     width
         The length of the arrays.
+
+        .. deprecated:: 0.20.31
+            The `width` parameter for `Array` is deprecated. Use `shape` instead.
 
     Examples
     --------
@@ -779,7 +856,7 @@ class Array(NestedType):
             self.size = shape
             self.shape = (shape,) + inner_shape
 
-        elif isinstance(shape, tuple):
+        elif isinstance(shape, tuple) and isinstance(shape[0], int):  # type: ignore[redundant-expr]
             if len(shape) > 1:
                 inner_parsed = Array(inner_parsed, shape[1:])
 

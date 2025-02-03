@@ -19,6 +19,8 @@ pub enum BinaryFunction {
     #[cfg(feature = "binary_encoding")]
     Base64Encode,
     Size,
+    #[cfg(feature = "binary_encoding")]
+    FromBuffer(DataType, bool),
 }
 
 impl BinaryFunction {
@@ -32,6 +34,8 @@ impl BinaryFunction {
             #[cfg(feature = "binary_encoding")]
             HexEncode | Base64Encode => mapper.with_dtype(DataType::String),
             Size => mapper.with_dtype(DataType::UInt32),
+            #[cfg(feature = "binary_encoding")]
+            FromBuffer(dtype, _) => mapper.with_dtype(dtype.clone()),
         }
     }
 }
@@ -52,6 +56,8 @@ impl Display for BinaryFunction {
             #[cfg(feature = "binary_encoding")]
             Base64Encode => "base64_encode",
             Size => "size_bytes",
+            #[cfg(feature = "binary_encoding")]
+            FromBuffer(_, _) => "from_buffer",
         };
         write!(f, "bin.{s}")
     }
@@ -79,6 +85,8 @@ impl From<BinaryFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "binary_encoding")]
             Base64Encode => map!(base64_encode),
             Size => map!(size_bytes),
+            #[cfg(feature = "binary_encoding")]
+            FromBuffer(dtype, is_little_endian) => map!(from_buffer, &dtype, is_little_endian),
         }
     }
 }
@@ -139,6 +147,17 @@ pub(super) fn base64_decode(s: &Column, strict: bool) -> PolarsResult<Column> {
 pub(super) fn base64_encode(s: &Column) -> PolarsResult<Column> {
     let ca = s.binary()?;
     Ok(ca.base64_encode().into())
+}
+
+#[cfg(feature = "binary_encoding")]
+pub(super) fn from_buffer(
+    s: &Column,
+    dtype: &DataType,
+    is_little_endian: bool,
+) -> PolarsResult<Column> {
+    let ca = s.binary()?;
+    ca.from_buffer(dtype, is_little_endian)
+        .map(|val| val.into())
 }
 
 impl From<BinaryFunction> for FunctionExpr {

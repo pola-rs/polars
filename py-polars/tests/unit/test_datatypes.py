@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pickle
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -215,14 +215,23 @@ def test_raise_invalid_namespace() -> None:
         (pl.UInt32, 0, 4294967295),
         (pl.Int64, -9223372036854775808, 9223372036854775807),
         (pl.UInt64, 0, 18446744073709551615),
+        (
+            pl.Int128,
+            -170141183460469231731687303715884105728,
+            170141183460469231731687303715884105727,
+        ),
         (pl.Float32, float("-inf"), float("inf")),
         (pl.Float64, float("-inf"), float("inf")),
+        (pl.Time, time(0, 0), time(23, 59, 59, 999999)),
     ],
 )
 def test_max_min(
-    dtype: datatypes.IntegerType | datatypes.Float32 | datatypes.Float64,
-    upper: int | float,
-    lower: int | float,
+    dtype: datatypes.IntegerType
+    | datatypes.Float32
+    | datatypes.Float64
+    | datatypes.Time,
+    upper: int | float | time,
+    lower: int | float | time,
 ) -> None:
     df = pl.select(min=dtype.min(), max=dtype.max())
     assert df.to_series(0).item() == lower

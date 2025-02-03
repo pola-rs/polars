@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
@@ -13,6 +14,9 @@ from polars.exceptions import (
     SchemaError,
 )
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_list_arr_get() -> None:
@@ -638,14 +642,14 @@ def test_list_unique2() -> None:
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    assert df.select(pl.col("n").list.to_struct()).rows(named=True) == [
+    assert df.select(pl.col("n").list.to_struct(_eager=True)).rows(named=True) == [
         {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
         {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
     ]
 
-    assert df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        named=True
-    ) == [
+    assert df.select(
+        pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", _eager=True)
+    ).rows(named=True) == [
         {"n": {"n0": 0, "n1": 1, "n2": 2}},
         {"n": {"n0": 0, "n1": 1, "n2": None}},
     ]
@@ -668,14 +672,22 @@ def test_list_to_struct() -> None:
     #   retrieve the lazy schema
     # * The upper bound is respected during execution
     q = df.lazy().select(
-        pl.col("n").list.to_struct(fields=str, upper_bound=2).struct.unnest()
+        pl.col("n")
+        .list.to_struct(fields=str, upper_bound=2, _eager=True)
+        .struct.unnest()
     )
     assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
     assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
 
-    assert df.lazy().select(pl.col("n").list.to_struct()).collect_schema() == {
-        "n": pl.Unknown
-    }
+    assert df.lazy().select(
+        pl.col("n").list.to_struct(_eager=True)
+    ).collect_schema() == {"n": pl.Unknown}
+
+
+def test_list_to_struct_all_null_12119() -> None:
+    s = pl.Series([None], dtype=pl.List(pl.Int64))
+    result = s.list.to_struct(fields=["a", "b", "c"]).to_list()
+    assert result == [{"a": None, "b": None, "c": None}]
 
 
 def test_select_from_list_to_struct_11143() -> None:
@@ -971,3 +983,21 @@ def test_list_eval_element_schema_19345() -> None:
         ),
         pl.DataFrame({"a": [[1]]}),
     )
+
+
+@pytest.mark.parametrize(
+    ("agg", "inner_dtype", "expected_dtype"),
+    [
+        ("sum", pl.Int8, pl.Int64),
+        ("max", pl.Int8, pl.Int8),
+        ("sum", pl.Duration("us"), pl.Duration("us")),
+        ("min", pl.Duration("ms"), pl.Duration("ms")),
+        ("min", pl.String, pl.String),
+        ("max", pl.String, pl.String),
+    ],
+)
+def test_list_agg_all_null(
+    agg: str, inner_dtype: PolarsDataType, expected_dtype: PolarsDataType
+) -> None:
+    s = pl.Series([None, None], dtype=pl.List(inner_dtype))
+    assert getattr(s.list, agg)().dtype == expected_dtype

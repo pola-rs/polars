@@ -149,7 +149,7 @@ aggregating expressions. In turn, we can specify as many aggregating expressions
 --8<-- "python/user-guide/concepts/expressions.py:group_by-3"
 ```
 
-See also `group_by_dynamic` and `group_by_rolling` for other grouping contexts.
+See also `group_by_dynamic` and `rolling` for other grouping contexts.
 
 ## Expression expansion
 

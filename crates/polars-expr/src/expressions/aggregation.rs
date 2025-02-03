@@ -4,7 +4,6 @@ use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
-use polars_core::chunked_array::metadata::MetadataEnv;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{NoNull, _split_offsets};
@@ -66,23 +65,15 @@ impl PhysicalExpr for AggregationExpr {
         };
 
         match group_by {
-            GroupByMethod::Min => {
-                if MetadataEnv::experimental_enabled() {
-                    if let Some(sc) = s.get_metadata().and_then(|v| v.min_value()) {
-                        return Ok(sc.into_column(s.name().clone()));
-                    }
-                }
-
-                match s.is_sorted_flag() {
-                    IsSorted::Ascending | IsSorted::Descending => {
-                        s.min_reduce().map(|sc| sc.into_column(s.name().clone()))
-                    },
-                    IsSorted::Not => parallel_op_columns(
-                        |s| s.min_reduce().map(|sc| sc.into_column(s.name().clone())),
-                        s,
-                        allow_threading,
-                    ),
-                }
+            GroupByMethod::Min => match s.is_sorted_flag() {
+                IsSorted::Ascending | IsSorted::Descending => {
+                    s.min_reduce().map(|sc| sc.into_column(s.name().clone()))
+                },
+                IsSorted::Not => parallel_op_columns(
+                    |s| s.min_reduce().map(|sc| sc.into_column(s.name().clone())),
+                    s,
+                    allow_threading,
+                ),
             },
             #[cfg(feature = "propagate_nans")]
             GroupByMethod::NanMin => parallel_op_columns(
@@ -100,23 +91,15 @@ impl PhysicalExpr for AggregationExpr {
             GroupByMethod::NanMin => {
                 panic!("activate 'propagate_nans' feature")
             },
-            GroupByMethod::Max => {
-                if MetadataEnv::experimental_enabled() {
-                    if let Some(sc) = s.get_metadata().and_then(|v| v.max_value()) {
-                        return Ok(sc.into_column(s.name().clone()));
-                    }
-                }
-
-                match s.is_sorted_flag() {
-                    IsSorted::Ascending | IsSorted::Descending => {
-                        s.max_reduce().map(|sc| sc.into_column(s.name().clone()))
-                    },
-                    IsSorted::Not => parallel_op_columns(
-                        |s| s.max_reduce().map(|sc| sc.into_column(s.name().clone())),
-                        s,
-                        allow_threading,
-                    ),
-                }
+            GroupByMethod::Max => match s.is_sorted_flag() {
+                IsSorted::Ascending | IsSorted::Descending => {
+                    s.max_reduce().map(|sc| sc.into_column(s.name().clone()))
+                },
+                IsSorted::Not => parallel_op_columns(
+                    |s| s.max_reduce().map(|sc| sc.into_column(s.name().clone())),
+                    s,
+                    allow_threading,
+                ),
             },
             #[cfg(feature = "propagate_nans")]
             GroupByMethod::NanMax => parallel_op_columns(
@@ -152,18 +135,9 @@ impl PhysicalExpr for AggregationExpr {
                 allow_threading,
             ),
             GroupByMethod::Groups => unreachable!(),
-            GroupByMethod::NUnique => {
-                if MetadataEnv::experimental_enabled() {
-                    if let Some(count) = s.get_metadata().and_then(|v| v.distinct_count()) {
-                        let count = count + IdxSize::from(s.null_count() > 0);
-                        return Ok(IdxCa::from_slice(s.name().clone(), &[count]).into_column());
-                    }
-                }
-
-                s.n_unique().map(|count| {
-                    IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column()
-                })
-            },
+            GroupByMethod::NUnique => s.n_unique().map(|count| {
+                IdxCa::from_slice(s.name().clone(), &[count as IdxSize]).into_column()
+            }),
             GroupByMethod::Count { include_nulls } => {
                 let count = s.len() - s.null_count() * !include_nulls as usize;
 
@@ -177,31 +151,13 @@ impl PhysicalExpr for AggregationExpr {
                 .var_reduce(ddof)
                 .map(|sc| sc.into_column(s.name().clone())),
             GroupByMethod::Quantile(_, _) => unimplemented!(),
-            #[cfg(feature = "bitwise")]
-            GroupByMethod::Bitwise(f) => match f {
-                GroupByBitwiseMethod::And => parallel_op_columns(
-                    |s| s.and_reduce().map(|sc| sc.into_column(s.name().clone())),
-                    s,
-                    allow_threading,
-                ),
-                GroupByBitwiseMethod::Or => parallel_op_columns(
-                    |s| s.or_reduce().map(|sc| sc.into_column(s.name().clone())),
-                    s,
-                    allow_threading,
-                ),
-                GroupByBitwiseMethod::Xor => parallel_op_columns(
-                    |s| s.xor_reduce().map(|sc| sc.into_column(s.name().clone())),
-                    s,
-                    allow_threading,
-                ),
-            },
         }
     }
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
@@ -331,8 +287,8 @@ impl PhysicalExpr for AggregationExpr {
                                 let out: IdxCa = if matches!(s.dtype(), &DataType::Null) {
                                     IdxCa::full(s.name().clone(), 0, groups.len())
                                 } else {
-                                    match groups.as_ref() {
-                                        GroupsProxy::Idx(idx) => {
+                                    match groups.as_ref().as_ref() {
+                                        GroupsType::Idx(idx) => {
                                             let s = s.rechunk();
                                             // @scalar-opt
                                             // @partition-opt
@@ -351,7 +307,7 @@ impl PhysicalExpr for AggregationExpr {
                                                 })
                                                 .collect_ca_trusted_with_dtype(keep_name, IDX_DTYPE)
                                         },
-                                        GroupsProxy::Slice { groups, .. } => {
+                                        GroupsType::Slice { groups, .. } => {
                                             // Slice and use computed null count
                                             groups
                                                 .iter()
@@ -429,16 +385,6 @@ impl PhysicalExpr for AggregationExpr {
                     // implemented explicitly in AggQuantile struct
                     unimplemented!()
                 },
-                #[cfg(feature = "bitwise")]
-                GroupByMethod::Bitwise(f) => {
-                    let (c, groups) = ac.get_final_aggregation();
-                    let agg_c = match f {
-                        GroupByBitwiseMethod::And => c.agg_and(&groups),
-                        GroupByBitwiseMethod::Or => c.agg_or(&groups),
-                        GroupByBitwiseMethod::Xor => c.agg_xor(&groups),
-                    };
-                    AggregatedScalar(agg_c.with_name(keep_name))
-                },
                 GroupByMethod::NanMin => {
                     #[cfg(feature = "propagate_nans")]
                     {
@@ -496,6 +442,16 @@ impl PhysicalExpr for AggregationExpr {
         }
     }
 
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
+    }
+
     fn is_scalar(&self) -> bool {
         true
     }
@@ -509,7 +465,7 @@ impl PartitionedAggregation for AggregationExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<Column> {
         let expr = self.input.as_partitioned_aggregator().unwrap();
@@ -533,7 +489,7 @@ impl PartitionedAggregation for AggregationExpr {
                     };
                     agg_s.rename(new_name.clone());
 
-                    if !agg_s.dtype().is_numeric() {
+                    if !agg_s.dtype().is_primitive_numeric() {
                         Ok(agg_s)
                     } else {
                         let agg_s = match agg_s.dtype() {
@@ -597,7 +553,7 @@ impl PartitionedAggregation for AggregationExpr {
     fn finalize(
         &self,
         partitioned: Column,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<Column> {
         match self.agg_type.groupby {
@@ -655,8 +611,8 @@ impl PartitionedAggregation for AggregationExpr {
                     Ok(())
                 };
 
-                match groups {
-                    GroupsProxy::Idx(groups) => {
+                match groups.as_ref() {
+                    GroupsType::Idx(groups) => {
                         for (_, idx) in groups {
                             let ca = unsafe {
                                 // SAFETY:
@@ -666,7 +622,7 @@ impl PartitionedAggregation for AggregationExpr {
                             process_group(ca)?;
                         }
                     },
-                    GroupsProxy::Slice { groups, .. } => {
+                    GroupsType::Slice { groups, .. } => {
                         for [first, len] in groups {
                             let len = *len as usize;
                             let ca = ca.slice(*first as i64, len);
@@ -762,7 +718,7 @@ impl PhysicalExpr for AggQuantileExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac = self.input.evaluate_on_groups(df, groups, state)?;
@@ -783,6 +739,16 @@ impl PhysicalExpr for AggQuantileExpr {
             AggregatedScalar(agg),
             Cow::Borrowed(groups),
         ))
+    }
+
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -836,5 +802,5 @@ where
         acc
     });
 
-    unsafe { f(out.cast_unchecked(dtype).unwrap()) }
+    unsafe { f(out.from_physical_unchecked(dtype).unwrap()) }
 }

@@ -109,7 +109,7 @@ impl Series {
         );
         let arr = &*self.chunks()[0];
 
-        if phys_dtype.is_numeric() {
+        if phys_dtype.is_primitive_numeric() {
             if arr.null_count() == 0 {
                 with_match_physical_numeric_type!(phys_dtype, |$T| {
                         let arr = arr.as_any().downcast_ref::<PrimitiveArray<$T>>().unwrap();

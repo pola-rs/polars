@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -18,11 +19,7 @@ from tests.unit.conftest import (
 )
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import PolarsDataType
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_arg_true() -> None:

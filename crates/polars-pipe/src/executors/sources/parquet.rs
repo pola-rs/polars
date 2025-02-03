@@ -15,7 +15,7 @@ use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_io::pl_async::get_runtime;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::ScanIOPredicate;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
@@ -48,7 +48,7 @@ pub struct ParquetSource {
     prefetch_size: usize,
     first_schema: Arc<ArrowSchema>,
     projected_arrow_schema: Option<Arc<ArrowSchema>>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
 }
 
 impl ParquetSource {
@@ -140,7 +140,7 @@ impl ParquetSource {
                     ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
                     ri
                 }))
-                .with_predicate(predicate.clone())
+                .with_predicate(predicate)
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
                 .with_include_file_path(
@@ -209,7 +209,7 @@ impl ParquetSource {
                         self.file_options.allow_missing_columns,
                     )
                     .await?
-                    .with_predicate(predicate.clone())
+                    .with_predicate(predicate)
                     .use_statistics(options.use_statistics)
                     .with_hive_partition_columns(hive_partitions)
                     .with_include_file_path(
@@ -252,7 +252,7 @@ impl ParquetSource {
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<Self> {
         let paths = sources
             .as_paths()

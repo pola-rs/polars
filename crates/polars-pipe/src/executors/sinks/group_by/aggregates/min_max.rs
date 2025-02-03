@@ -1,8 +1,8 @@
 use std::any::Any;
 
 use arrow::array::PrimitiveArray;
+use num_traits::NumCast;
 use polars_compute::min_max::MinMaxKernel;
-use polars_core::export::num::NumCast;
 use polars_core::prelude::*;
 use polars_utils::min_max::MinMax;
 
@@ -85,7 +85,7 @@ where
     }
 
     fn dtype(&self) -> DataType {
-        (&ArrowDataType::from(K::PRIMITIVE)).into()
+        DataType::from_arrow_dtype(&ArrowDataType::from(K::PRIMITIVE))
     }
 
     fn combine(&mut self, other: &dyn Any) {
