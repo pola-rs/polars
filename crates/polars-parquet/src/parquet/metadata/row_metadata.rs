@@ -36,7 +36,10 @@ impl InitColumnLookup for ColumnLookup {
 /// Metadata for a row group.
 #[derive(Debug, Clone, Default)]
 pub struct RowGroupMetadata {
-    columns: Arc<[ColumnChunkMetadata]>,
+    // Moving of `ColumnChunkMetadata` is very expensive they are rather big. So, we arc the vec
+    // instead of having an arc slice. This way we don't to move the vec values into an arc when
+    // collecting.
+    columns: Arc<Vec<ColumnChunkMetadata>>,
     column_lookup: PlHashMap<PlSmallStr, UnitVec<usize>>,
     num_rows: usize,
     total_byte_size: usize,
@@ -135,7 +138,8 @@ impl RowGroupMetadata {
 
                 Ok(column)
             })
-            .collect::<ParquetResult<Arc<[_]>>>()?;
+            .collect::<ParquetResult<Vec<_>>>()?;
+        let columns = Arc::new(columns);
 
         Ok(RowGroupMetadata {
             columns,
