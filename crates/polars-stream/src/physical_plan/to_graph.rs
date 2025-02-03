@@ -357,23 +357,25 @@ fn to_graph_rec<'a>(
             scan_sources,
             projection,
             scan_type,
-        } => {
-            match scan_type {
-                polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
+        } => match scan_type {
+            polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
                         scan_sources.clone(),
                         projection.clone(),
                     ),
-                    [],
                 ),
-                polars_plan::plans::FileScan::Ipc { .. } => ctx.graph.add_node(
+                [],
+            ),
+            polars_plan::plans::FileScan::Ipc { .. } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<
                         nodes::io_sources::ipc::IpcSourceNode,
                     >::new(scan_sources.clone(), projection.clone()),
-                    [],
                 ),
-                _ => todo!(),
-            }
+                [],
+            ),
+            _ => todo!(),
         },
 
         v @ FileScan { .. } => {
@@ -457,14 +459,16 @@ fn to_graph_rec<'a>(
                         assert!(predicate.is_none());
 
                         ctx.graph.add_node(
-                            nodes::io_sources::ipc::IpcSourceNode::new(
-                                scan_sources,
-                                file_info,
-                                options,
-                                cloud_options,
-                                file_options,
-                                first_metadata,
-                            )?,
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::ipc::IpcSourceNode::new(
+                                    scan_sources,
+                                    file_info,
+                                    options,
+                                    cloud_options,
+                                    file_options,
+                                    first_metadata,
+                                )?,
+                            ),
                             [],
                         )
                     },

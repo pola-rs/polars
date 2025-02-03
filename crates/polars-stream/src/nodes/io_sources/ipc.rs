@@ -2,7 +2,8 @@ use std::cmp::Reverse;
 use std::future::Future;
 use std::io::Cursor;
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, Mutex};
 
 use polars_core::config;
 use polars_core::frame::DataFrame;
@@ -19,26 +20,24 @@ use polars_core::utils::slice_offsets;
 use polars_error::{ErrString, PolarsError, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
-use polars_io::ipc::{IpcReadOptions, IpcScanOptions};
-use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_io::ipc::IpcScanOptions;
 use polars_io::utils::columns_to_projection;
 use polars_io::RowIndex;
-use polars_plan::plans::{FileInfo, ScanSourceRef, ScanSources};
+use polars_plan::plans::{FileInfo, ScanSource, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
 
-use super::multi_scan::{RowGroup, RowRestrication, ScanNode};
-use crate::async_primitives::connector::Sender;
+use super::multi_scan::{MultiScanable, RowGroup, RowRestrication};
+use super::SourceNode;
+use crate::async_executor::spawn;
+use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
-use crate::nodes::{
-    ComputeNode, JoinHandle, Morsel, MorselSeq, PortState, TaskPriority, TaskScope,
-};
-use crate::pipe::{RecvPort, SendPort};
+use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
@@ -53,11 +52,12 @@ pub struct IpcSourceNode {
     config: IpcSourceNodeConfig,
     num_pipelines: usize,
 
-    /// Every phase we need to be able to continue from where we left off, so we save the state of
-    /// the Walker task.
-    state: IpcSourceNodeState,
+    // Initial state
+    row_index_offset: IdxSize,
+    slice: Range<usize>,
 }
 
+#[derive(Clone)]
 pub struct IpcSourceNodeConfig {
     row_index: Option<RowIndex>,
     projection_info: Option<ProjectionInfo>,
@@ -66,13 +66,7 @@ pub struct IpcSourceNodeConfig {
     include_file_paths: Option<PlSmallStr>,
 }
 
-pub struct IpcSourceNodeState {
-    morsel_seq: u64,
-    row_idx_offset: IdxSize,
-    block_offset: usize,
-    slice: Range<usize>,
-}
-
+#[derive(Clone)]
 pub struct Source {
     file_path: Option<Arc<str>>,
     memslice: Arc<MemSlice>,
@@ -130,13 +124,7 @@ impl IpcSourceNode {
         };
         let (offset, length) = slice;
         let slice = offset..offset + length;
-
-        let state = IpcSourceNodeState {
-            morsel_seq: 0,
-            row_idx_offset: row_index.as_ref().map_or(0, |ri| ri.offset),
-            slice,
-            block_offset: 0,
-        };
+        let row_index_offset = row_index.as_ref().map_or(0, |ri| ri.offset);
 
         let projection = with_columns
             .as_ref()
@@ -166,7 +154,8 @@ impl IpcSourceNode {
 
             num_pipelines: 0,
 
-            state,
+            slice,
+            row_index_offset,
         })
     }
 }
@@ -198,51 +187,22 @@ fn get_max_morsel_size() -> usize {
         .max(1)
 }
 
-impl ComputeNode for IpcSourceNode {
-    fn name(&self) -> &str {
-        "ipc_source"
-    }
+impl SourceNode for IpcSourceNode {
+    const BASE_NAME: &'static str = "ipc";
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
-        assert!(recv.is_empty());
-        assert_eq!(send.len(), 1);
-
-        if self.state.slice.is_empty()
-            || self.state.block_offset == self.source.metadata.blocks.len()
-        {
-            send[0] = PortState::Done;
-        }
-
-        if send[0] != PortState::Done {
-            send[0] = PortState::Ready;
-        }
-
-        Ok(())
-    }
-
-    fn spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        recv_ports: &mut [Option<RecvPort<'_>>],
-        send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
+    fn source_start(
+        &self,
+        num_pipelines: usize,
+        mut send_port_recv: Receiver<Sender<RowGroup<Morsel>>>,
+        _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv_ports.is_empty());
-        assert_eq!(send_ports.len(), 1);
-
         // Split size for morsels.
         let max_morsel_size = get_max_morsel_size();
         let source_token = SourceToken::new();
 
-        let num_pipelines = self.num_pipelines;
-        let config = &self.config;
-        let source = &self.source;
-        let state = &mut self.state;
+        let config = self.config.clone();
+        let source = self.source.clone();
 
         /// Messages sent from Walker task to Decoder tasks.
         struct BatchMessage {
@@ -260,8 +220,6 @@ impl ComputeNode for IpcSourceNode {
             num_pipelines,
             DEFAULT_LINEARIZER_BUFFER_SIZE,
         );
-        // Distributor task -> output.
-        let mut sender = send_ports[0].take().unwrap().serial();
 
         // Distributor task.
         //
@@ -271,12 +229,33 @@ impl ComputeNode for IpcSourceNode {
         // morsels at the same time. At the same time, other decoders might not produce anything.
         // Therefore, we would like to distribute the output of a single decoder task over the
         // available output pipelines.
-        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            while let Some(morsel) = decoded_rx.get().await {
-                if sender.send(morsel.1).await.is_err() {
-                    break;
+        join_handles.push(spawn(TaskPriority::High, async move {
+            let mut buffered = None;
+            'send_port: while let Ok(mut sender) = send_port_recv.recv().await {
+                if let Some(rg) = buffered.take() {
+                    if let Err(rg) = sender.send(rg).await {
+                        buffered = Some(rg);
+                        continue;
+                    }
                 }
+
+                while let Some(morsel) = decoded_rx.get().await {
+                    // @TODO: fix row count
+                    let row_count = morsel.1.df().height() as IdxSize;
+                    let rg = RowGroup {
+                        data: morsel.1,
+                        row_count,
+                    };
+
+                    if let Err(rg) = sender.send(rg).await {
+                        buffered = Some(rg);
+                        continue 'send_port;
+                    }
+                }
+
+                return Ok(());
             }
+
             PolarsResult::Ok(())
         }));
 
@@ -289,7 +268,9 @@ impl ComputeNode for IpcSourceNode {
         let decoder_tasks = decoded_tx.into_iter().zip(batch_rxs)
             .map(|(mut send, mut rx)| {
                 let source_token = source_token.clone();
-                scope.spawn_task(TaskPriority::Low, async move {
+                let source = source.clone();
+                let config = config.clone();
+                spawn(TaskPriority::Low, async move {
                     // Amortize allocations.
                     let mut data_scratch = Vec::new();
                     let mut message_scratch = Vec::new();
@@ -373,10 +354,18 @@ impl ComputeNode for IpcSourceNode {
             })
             .collect::<Vec<_>>();
 
+        let slice = self.slice.clone();
+        let row_index_offset = self.row_index_offset;
+
         // Walker task.
         //
         // Walks all the sources and supplies block ranges to the decoder tasks.
-        join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
+        join_handles.push(spawn(TaskPriority::Low, async move {
+            let mut morsel_seq: u64 = 0;
+            let mut row_idx_offset: IdxSize = row_index_offset;
+            let mut block_offset: usize = 0;
+            let mut slice: Range<usize> = slice;
+
             struct Batch {
                 row_idx_offset: IdxSize,
                 block_start: usize,
@@ -385,7 +374,7 @@ impl ComputeNode for IpcSourceNode {
 
             // Batch completion parameters
             let batch_size_limit = get_ideal_morsel_size();
-            let sliced_batch_size_limit = state.slice.len().div_ceil(num_pipelines);
+            let sliced_batch_size_limit = slice.len().div_ceil(num_pipelines);
             let batch_block_limit = source.metadata.blocks.len().div_ceil(num_pipelines);
 
             let mut reader = FileReader::new_with_projection_info(
@@ -395,14 +384,14 @@ impl ComputeNode for IpcSourceNode {
                 None,
             );
 
-            reader.set_current_block(state.block_offset);
+            reader.set_current_block(block_offset);
 
-            if state.slice.start > 0 {
+            if slice.start > 0 {
                 // Skip over all blocks that the slice would skip anyway.
-                let new_offset = reader.skip_blocks_till_limit(state.slice.start as u64)?;
+                let new_offset = reader.skip_blocks_till_limit(slice.start as u64)?;
 
-                state.row_idx_offset += (state.slice.start as u64 - new_offset) as IdxSize;
-                state.slice = new_offset as usize..new_offset as usize + state.slice.len();
+                row_idx_offset += (slice.start as u64 - new_offset) as IdxSize;
+                slice = new_offset as usize..new_offset as usize + slice.len();
             }
 
             'read: {
@@ -412,16 +401,16 @@ impl ComputeNode for IpcSourceNode {
                 }
 
                 let mut batch = Batch {
-                    row_idx_offset: state.row_idx_offset,
+                    row_idx_offset,
                     block_start: reader.get_current_block(),
                     num_rows: 0,
                 };
 
                 // We don't yet want to commit these values to the state in case this batch gets
                 // cancelled.
-                let mut uncommitted_slice = state.slice.clone();
-                let mut uncommitted_row_idx_offset = state.row_idx_offset;
-                while !state.slice.is_empty() {
+                let mut uncommitted_slice = slice.clone();
+                let mut uncommitted_row_idx_offset = row_idx_offset;
+                while !slice.is_empty() {
                     let mut is_batch_complete = false;
 
                     match reader.next_record_batch() {
@@ -463,7 +452,7 @@ impl ComputeNode for IpcSourceNode {
                         let message = BatchMessage {
                             row_idx_offset: batch.row_idx_offset,
                             slice: batch_slice,
-                            morsel_seq_base: state.morsel_seq,
+                            morsel_seq_base: morsel_seq,
                             block_range,
                         };
 
@@ -481,13 +470,13 @@ impl ComputeNode for IpcSourceNode {
                         // Now, we know that the a decoder will process it.
                         //
                         // This might generate several morsels if the record batch is very large.
-                        state.morsel_seq += batch_slice_len.div_ceil(max_morsel_size) as u64;
-                        state.slice = uncommitted_slice.clone();
-                        state.row_idx_offset = uncommitted_row_idx_offset;
-                        state.block_offset = current_block;
+                        morsel_seq += batch_slice_len.div_ceil(max_morsel_size) as u64;
+                        slice = uncommitted_slice.clone();
+                        row_idx_offset = uncommitted_row_idx_offset;
+                        block_offset = current_block;
 
                         batch = Batch {
-                            row_idx_offset: state.row_idx_offset,
+                            row_idx_offset,
                             block_start: current_block,
                             num_rows: 0,
                         };
@@ -505,19 +494,15 @@ impl ComputeNode for IpcSourceNode {
     }
 }
 
-impl ScanNode for IpcSourceNode {
-    fn name() -> &'static str {
-        "multi_scan[ipc]"
-    }
-
+impl MultiScanable for IpcSourceNode {
     fn new(
-        source: ScanSourceRef<'_>,
+        source: ScanSource,
         projection: Option<&Bitmap>,
         row_restriction: Option<RowRestrication>,
         row_index: Option<PlSmallStr>,
     ) -> impl Future<Output = PolarsResult<Self>> + Send {
         async move {
-            let source = source.into_owned()?;
+            let source = source.into_sources();
             let options = IpcScanOptions;
 
             let memslice = source.at(0).to_memslice()?;
@@ -537,15 +522,6 @@ impl ScanNode for IpcSourceNode {
 
             IpcSourceNode::new(source, file_info, options, None, file_options, None)
         }
-    }
-    fn source_spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        send: Sender<RowGroup<Morsel>>,
-        _state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        todo!()
     }
 
     fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {

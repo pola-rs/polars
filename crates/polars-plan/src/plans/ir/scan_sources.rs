@@ -46,6 +46,25 @@ pub enum ScanSourceRef<'a> {
     Buffer(&'a MemSlice),
 }
 
+/// A single source to scan from
+#[derive(Debug)]
+pub enum ScanSource {
+    Path(PathBuf),
+    File(File),
+    Buffer(MemSlice),
+}
+
+impl ScanSource {
+    pub fn into_sources(self) -> ScanSources {
+        match self {
+            ScanSource::Path(p) => ScanSources::Paths([p].into()),
+            ScanSource::File(f) => ScanSources::Files([f].into()),
+            ScanSource::Buffer(m) => ScanSources::Buffers([m].into()),
+        }
+
+    }
+}
+
 /// An iterator for [`ScanSources`]
 pub struct ScanSourceIter<'a> {
     sources: &'a ScanSources,
@@ -241,10 +260,10 @@ impl ScanSourceRef<'_> {
     }
 
     // @TODO: I would like to remove this function eventually.
-    pub fn into_owned(&self) -> PolarsResult<ScanSources> {
+    pub fn into_owned(&self) -> PolarsResult<ScanSource> {
         Ok(match self {
-            ScanSourceRef::Path(path) => ScanSources::Paths([path.to_path_buf()].into()),
-            _ => ScanSources::Buffers([self.to_memslice()?].into()),
+            ScanSourceRef::Path(path) => ScanSource::Path(path.to_path_buf()),
+            _ => ScanSource::Buffer(self.to_memslice()?),
         })
     }
 

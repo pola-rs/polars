@@ -15,7 +15,7 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{try_set_sorted_flag, FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{FileInfo, ScanSourceRef, ScanSources};
+use polars_plan::plans::{FileInfo, ScanSource, ScanSourceRef, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -25,7 +25,9 @@ use tokio::sync::OnceCell;
 use self::metadata_utils::read_parquet_metadata_bytes;
 use self::row_group_data_fetch::{FetchedBytes, RowGroupData};
 use self::row_group_decode::RowGroupDecoder;
-use super::multi_scan::{RowGroup, RowRestrication, ScanNode};
+use super::multi_scan::{MultiScanable, RowGroup, RowRestrication};
+use super::SourceNode;
+use crate::async_primitives::connector::{Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -294,28 +296,28 @@ impl ComputeNode for ParquetSourceNode {
     }
 }
 
-impl ScanNode for ParquetSourceNode {
-    fn name() -> &'static str {
-        "multi_scan[parquet]"
-    }
+impl SourceNode for ParquetSourceNode {
+    const BASE_NAME: &'static str = "parquet";
 
+    fn source_start(
+        &self,
+        num_pipelines: usize,
+        send_port_recv: Receiver<Sender<RowGroup<Morsel>>>,
+        state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        todo!()
+    }
+}
+
+impl MultiScanable for ParquetSourceNode {
     fn new(
-        source: ScanSourceRef<'_>,
+        source: ScanSource,
         projection: Option<&Bitmap>,
         row_restriction: Option<RowRestrication>,
         row_index: Option<PlSmallStr>,
     ) -> impl Future<Output = PolarsResult<Self>> + Send {
         async { todo!() }
-    }
-
-    fn source_spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        send: crate::async_primitives::connector::Sender<RowGroup<Morsel>>,
-        _state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        todo!()
     }
 
     fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
