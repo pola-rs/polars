@@ -19,7 +19,6 @@ if TYPE_CHECKING:
 pytestmark = pytest.mark.xdist_group("streaming")
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_streaming_categoricals_5921() -> None:
     with pl.StringCache():
         out_lazy = (

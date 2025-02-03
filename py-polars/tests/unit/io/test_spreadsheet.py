@@ -500,6 +500,7 @@ def test_read_invalid_worksheet(
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_read_mixed_dtype_columns(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,

@@ -868,6 +868,7 @@ impl LazyFrame {
                 payload,
             });
 
+            let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
             };

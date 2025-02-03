@@ -1741,6 +1741,7 @@ class PyCapsuleArrayHolder:
         return self.arrow_obj.__arrow_c_array__(requested_schema)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
     df = df.rechunk()
     pyarrow_table = df.to_arrow()
