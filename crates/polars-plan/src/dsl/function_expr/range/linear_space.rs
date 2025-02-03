@@ -81,13 +81,13 @@ pub(super) fn linear_spaces(
     let start = &s[0];
     let end = &s[1];
 
-    let num_samples = match array_width {
+    let (num_samples, capacity_factor) = match array_width {
         Some(ns) => {
             // An array width is provided instead of a column of `num_sample`s.
             let scalar = Scalar::new(DataType::UInt64, AnyValue::UInt64(ns as u64));
-            &Column::new_scalar(PlSmallStr::EMPTY, scalar, 1)
+            (&Column::new_scalar(PlSmallStr::EMPTY, scalar, 1), ns)
         },
-        None => &s[2],
+        None => (&s[2], CAPACITY_FACTOR),
     };
     let name = start.name().clone();
 
@@ -100,7 +100,7 @@ pub(super) fn linear_spaces(
             let mut builder = ListPrimitiveChunkedBuilder::<Float32Type>::new(
                 name,
                 len,
-                len * CAPACITY_FACTOR,
+                len * capacity_factor,
                 DataType::Float32,
             );
 
@@ -145,7 +145,7 @@ pub(super) fn linear_spaces(
             let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
                 name,
                 len,
-                len * CAPACITY_FACTOR,
+                len * capacity_factor,
                 DataType::Float64,
             );
 
@@ -186,7 +186,7 @@ pub(super) fn linear_spaces(
             let mut builder = ListPrimitiveChunkedBuilder::<Float64Type>::new(
                 name,
                 len,
-                len * CAPACITY_FACTOR,
+                len * capacity_factor,
                 DataType::Float64,
             );
 
