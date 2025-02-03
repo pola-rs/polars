@@ -30,7 +30,6 @@ adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
 connectorx
 kuzu
-nest-asyncio
 # Cloud
 cloudpickle
 fsspec
@@ -54,6 +53,8 @@ gevent
 matplotlib
 # Testing
 hypothesis
+# Miscellaneous
+orjson
 
 # -------
 # TOOLING

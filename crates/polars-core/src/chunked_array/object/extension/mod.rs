@@ -6,7 +6,7 @@ use std::mem;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use arrow::array::FixedSizeBinaryArray;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::BitmapBuilder;
 use arrow::buffer::Buffer;
 use arrow::datatypes::ExtensionType;
 use polars_extension::PolarsExtension;
@@ -72,14 +72,13 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     let n_t_vals = iter.size_hint().1.unwrap();
 
     let mut buf = Vec::with_capacity(n_t_vals * t_size);
-    let mut validity = MutableBitmap::with_capacity(n_t_vals);
+    let mut validity = BitmapBuilder::with_capacity(n_t_vals);
 
     // when we transmute from &[u8] to T, T must be aligned correctly,
     // so we pad with bytes until the alignment matches
     let n_padding = (buf.as_ptr() as usize) % t_alignment;
     buf.extend(std::iter::repeat(0).take(n_padding));
 
-    let mut null_count = 0 as IdxSize;
     // transmute T as bytes and copy in buffer
     for opt_t in iter.into_iter() {
         match opt_t {
@@ -92,7 +91,6 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
                 mem::forget(t);
             },
             None => {
-                null_count += 1;
                 unsafe {
                     buf.extend_from_slice(any_as_u8_slice(&T::default()));
                     // SAFETY: we allocated upfront
@@ -129,17 +127,10 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
         inner: physical_type,
         metadata: Some(metadata),
     }));
-    // first freeze, otherwise we compute null
-    let validity = if null_count > 0 {
-        Some(validity.into())
-    } else {
-        None
-    };
 
-    let array = FixedSizeBinaryArray::new(extension_type, buf, validity);
+    let array = FixedSizeBinaryArray::new(extension_type, buf, validity.into_opt_validity());
 
-    // SAFETY:
-    // we just heap allocated the ExtensionSentinel, so its alive.
+    // SAFETY: we just heap allocated the ExtensionSentinel, so its alive.
     unsafe { PolarsExtension::new(array) }
 }
 

@@ -582,13 +582,26 @@ impl<'a> ParallelIterator for GroupsTypeParIter<'a> {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GroupPositions {
     sliced: ManuallyDrop<GroupsType>,
     // Unsliced buffer
     original: Arc<GroupsType>,
     offset: i64,
     len: usize,
+}
+
+impl Clone for GroupPositions {
+    fn clone(&self) -> Self {
+        let sliced = slice_groups_inner(&self.original, self.offset, self.len);
+
+        Self {
+            sliced,
+            original: self.original.clone(),
+            offset: self.offset,
+            len: self.len,
+        }
+    }
 }
 
 impl PartialEq for GroupPositions {
@@ -620,8 +633,12 @@ impl Default for GroupPositions {
 impl GroupPositions {
     pub fn slice(&self, offset: i64, len: usize) -> Self {
         let offset = self.offset + offset;
-        assert!(len <= self.len);
-        slice_groups(self.original.clone(), offset, len)
+        slice_groups(
+            self.original.clone(),
+            offset,
+            // invariant that len should be in bounds, so truncate if not
+            if len > self.len { self.len } else { len },
+        )
     }
 
     pub fn sort(&mut self) {

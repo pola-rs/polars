@@ -14,6 +14,7 @@ import zstandard
 if TYPE_CHECKING:
     from pathlib import Path
 
+import orjson
 import pytest
 
 import polars as pl
@@ -364,7 +365,17 @@ def test_json_normalize() -> None:
             "fitness": {"height": 130, "weight": 60},
         },
     ]
-    assert pl.json_normalize(data, max_level=0).to_dict(as_series=False) == {
+    assert pl.json_normalize(data, max_level=1, separator=":").to_dict(
+        as_series=False,
+    ) == {
+        "id": [1, None, 2],
+        "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
+        "fitness:height": [130, 130, 130],
+        "fitness:weight": [60, 60, 60],
+    }
+    assert pl.json_normalize(data, max_level=0).to_dict(
+        as_series=False,
+    ) == {
         "id": [1, None, 2],
         "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
         "fitness": [
@@ -373,11 +384,16 @@ def test_json_normalize() -> None:
             '{"height": 130, "weight": 60}',
         ],
     }
-    assert pl.json_normalize(data, max_level=1).to_dict(as_series=False) == {
+    assert pl.json_normalize(data, max_level=0, encoder=orjson.dumps).to_dict(
+        as_series=False,
+    ) == {
         "id": [1, None, 2],
         "name": ["Cole Volk", "Mark Reg", "Faye Raker"],
-        "fitness.height": [130, 130, 130],
-        "fitness.weight": [60, 60, 60],
+        "fitness": [
+            b'{"height":130,"weight":60}',
+            b'{"height":130,"weight":60}',
+            b'{"height":130,"weight":60}',
+        ],
     }
 
 

@@ -362,6 +362,7 @@ unsafe fn materialize_join(
     right_row_idx: &IdxCa,
     suffix: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
+    try_raise_keyboard_interrupt();
     let (join_left, join_right) = {
         POOL.join(
             || left.take_unchecked(left_row_idx),

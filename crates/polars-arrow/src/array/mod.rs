@@ -200,6 +200,23 @@ pub trait Array: Send + Sync + dyn_clone::DynClone + 'static {
 
 dyn_clone::clone_trait_object!(Array);
 
+pub trait IntoBoxedArray {
+    fn into_boxed(self) -> Box<dyn Array>;
+}
+
+impl<A: Array> IntoBoxedArray for A {
+    #[inline(always)]
+    fn into_boxed(self) -> Box<dyn Array> {
+        Box::new(self) as _
+    }
+}
+impl IntoBoxedArray for Box<dyn Array> {
+    #[inline(always)]
+    fn into_boxed(self) -> Box<dyn Array> {
+        self
+    }
+}
+
 /// A trait describing a mutable array; i.e. an array whose values can be changed.
 ///
 /// Mutable arrays cannot be cloned but can be mutated in place,

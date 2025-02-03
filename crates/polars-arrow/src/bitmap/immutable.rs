@@ -422,19 +422,16 @@ impl Bitmap {
     /// Initializes an new [`Bitmap`] filled with the given value.
     #[inline]
     pub fn new_with_value(value: bool, length: usize) -> Self {
-        // Don't use `MutableBitmap::from_len_zeroed().into()`, it triggers a bitcount.
-        let bytes = if value {
-            vec![u8::MAX; length.saturating_add(7) / 8]
-        } else {
-            vec![0; length.saturating_add(7) / 8]
-        };
-        let unset_bits = if value { 0 } else { length };
+        if !value {
+            return Self::new_zeroed(length);
+        }
+
         unsafe {
             Bitmap::from_inner_unchecked(
-                SharedStorage::from_vec(bytes),
+                SharedStorage::from_vec(vec![u8::MAX; length.saturating_add(7) / 8]),
                 0,
                 length,
-                Some(unset_bits),
+                Some(0),
             )
         }
     }

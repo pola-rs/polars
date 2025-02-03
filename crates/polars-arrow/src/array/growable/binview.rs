@@ -8,7 +8,7 @@ use super::Growable;
 use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
 use crate::array::growable::utils::{extend_validity, extend_validity_copies, prepare_validity};
 use crate::array::{Array, MutableBinaryViewArray, View};
-use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::bitmap::BitmapBuilder;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
@@ -16,7 +16,7 @@ use crate::datatypes::ArrowDataType;
 pub struct GrowableBinaryViewArray<'a, T: ViewType + ?Sized> {
     arrays: Vec<&'a BinaryViewArrayGeneric<T>>,
     dtype: ArrowDataType,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     inner: MutableBinaryViewArray<T>,
     same_buffers: Option<&'a Arc<[Buffer<u8>]>>,
     total_same_buffers_len: usize, // Only valid if same_buffers is Some.
@@ -81,14 +81,14 @@ impl<'a, T: ViewType + ?Sized> GrowableBinaryViewArray<'a, T> {
                     self.dtype.clone(),
                     arr.views.into(),
                     buffers.clone(),
-                    self.validity.take().map(Bitmap::from),
+                    self.validity.take().map(BitmapBuilder::freeze),
                     arr.total_bytes_len,
                     self.total_same_buffers_len,
                 )
             }
         } else {
             arr.freeze_with_dtype(self.dtype.clone())
-                .with_validity(self.validity.take().map(Bitmap::from))
+                .with_validity(self.validity.take().map(BitmapBuilder::freeze))
         }
     }
 }

@@ -263,6 +263,8 @@ def _(a: Call) -> Any:
     f = _convert_predicate(a.func)
     if f == "field":
         return args
+    elif f == "scalar":
+        return args[0]
     elif f in _temporal_conversions:
         # convert from polars-native i64 to ISO8601 string
         return _temporal_conversions[f](*args).isoformat()

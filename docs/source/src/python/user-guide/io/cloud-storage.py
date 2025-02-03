@@ -63,6 +63,30 @@ lf = pl.scan_parquet(
 df = lf.collect()
 # --8<-- [end:credential_provider_custom_func]
 
+# --8<-- [start:credential_provider_custom_func_azure]
+def credential_provider():
+    credential = DefaultAzureCredential(exclude_managed_identity_credential=True)
+    token = credential.get_token("https://storage.azure.com/.default")
+
+    return {"bearer_token": token.token}, token.expires_on
+
+
+pl.scan_parquet(
+    "abfss://...@.../...",
+    credential_provider=credential_provider,
+)
+
+# Note that for the above case, this shortcut is also available:
+
+pl.scan_parquet(
+    "abfss://...@.../...",
+    credential_provider=pl.CredentialProviderAzure(
+        credentials=DefaultAzureCredential(exclude_managed_identity_credential=True)
+    ),
+)
+
+# --8<-- [end:credential_provider_custom_func_azure]
+
 # --8<-- [start:scan_pyarrow_dataset]
 import polars as pl
 import pyarrow.dataset as ds

@@ -686,7 +686,7 @@ impl LazyFrame {
         } else {
             true
         };
-        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &expr_arena)?;
+        let physical_plan = create_physical_plan(lp_top, &mut lp_arena, &mut expr_arena)?;
 
         let state = ExecutionState::new();
         Ok((state, physical_plan, no_file_sink))
@@ -738,7 +738,7 @@ impl LazyFrame {
             let mut physical_plan = create_physical_plan(
                 alp_plan.lp_top,
                 &mut alp_plan.lp_arena,
-                &alp_plan.expr_arena,
+                &mut alp_plan.expr_arena,
             )?;
             let mut state = ExecutionState::new();
             physical_plan.execute(&mut state)
@@ -868,6 +868,7 @@ impl LazyFrame {
                 payload,
             });
 
+            let _hold = StringCacheHolder::hold();
             let f = || {
                 polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
             };
@@ -1848,25 +1849,14 @@ impl LazyFrame {
     where
         S: Into<PlSmallStr>,
     {
-        // The two DataFrames are temporary concatenated
-        // this indicates until which chunk the data is from the left df
-        // this trick allows us to reuse the `Union` architecture to get map over
-        // two DataFrames
         let key = key.into();
-        let left = self.map_private(DslFunction::FunctionIR(FunctionIR::Rechunk));
-        let q = concat(
-            &[left, other],
-            UnionArgs {
-                rechunk: false,
-                parallel: true,
-                ..Default::default()
-            },
-        )?;
-        Ok(
-            q.map_private(DslFunction::FunctionIR(FunctionIR::MergeSorted {
-                column: key,
-            })),
-        )
+
+        let lp = DslPlan::MergeSorted {
+            input_left: Arc::new(self.logical_plan),
+            input_right: Arc::new(other.logical_plan),
+            key,
+        };
+        Ok(LazyFrame::from_logical_plan(lp, self.opt_state))
     }
 }
 

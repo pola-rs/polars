@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import warnings
 from collections import OrderedDict
-from datetime import date, datetime
+from datetime import date, datetime, time
 from io import BytesIO
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -18,7 +19,13 @@ from tests.unit.conftest import FLOAT_DTYPES, NUMERIC_DTYPES
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from polars._typing import ExcelSpreadsheetEngine, SchemaDict, SelectorType
+    from polars._typing import (
+        ExcelSpreadsheetEngine,
+        PolarsDataType,
+        SchemaDict,
+        SelectorType,
+    )
+
 
 # pytestmark = pytest.mark.slow()
 
@@ -93,9 +100,9 @@ def path_empty_rows_excel(io_files_path: Path) -> Path:
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -130,9 +137,9 @@ def test_read_spreadsheet(
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -174,9 +181,9 @@ def test_read_excel_multiple_worksheets(
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -241,9 +248,9 @@ def test_read_excel_multiple_workbooks(
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -262,7 +269,7 @@ def test_read_excel_all_sheets(
         sheet_id=0,
         **params,
     )
-    assert len(frames) == (4 if str(spreadsheet_path).endswith("ods") else 5)
+    assert len(frames) == (4 if str(spreadsheet_path).endswith("ods") else 6)
 
     expected1 = pl.DataFrame({"hello": ["Row 1", "Row 2"]})
     expected2 = pl.DataFrame({"world": ["Row 3", "Row 4"]})
@@ -381,14 +388,84 @@ def test_read_dropped_cols(
 
 
 @pytest.mark.parametrize(
+    ("source", "params"),
+    [
+        ("path_xls", {"engine": "calamine", "sheet_name": "temporal"}),
+        ("path_xlsx", {"engine": "calamine", "table_name": "TemporalData"}),
+        ("path_xlsx", {"engine": "openpyxl", "sheet_name": "temporal"}),
+        ("path_xlsb", {"engine": "calamine", "sheet_name": "temporal"}),
+    ],
+)
+def test_read_excel_temporal_data(
+    source: str,
+    params: dict[str, str],
+    request: pytest.FixtureRequest,
+) -> None:
+    source_path = request.getfixturevalue(source)
+
+    temporal_schema = {
+        "id": pl.UInt16(),
+        "dtm": pl.Datetime("ms"),
+        "dt": pl.Date(),
+        "dtm_str": pl.Datetime(time_zone="Asia/Tokyo"),
+        "dt_str": pl.Date(),
+        "tm_str": pl.Time(),
+    }
+    parsed_df = pl.read_excel(  # type: ignore[call-overload]
+        source_path,
+        **params,
+        schema_overrides=temporal_schema,
+    )
+    TK = ZoneInfo("Asia/Tokyo")
+
+    expected = pl.DataFrame(
+        {
+            "id": [100, 200, 300, 400],
+            "dtm": [
+                datetime(1999, 12, 31, 1, 2, 3),
+                None,
+                datetime(1969, 7, 5, 10, 30, 45),
+                datetime(2077, 10, 10, 5, 59, 44),
+            ],
+            "dt": [
+                date(2000, 1, 18),
+                date(1965, 8, 8),
+                date(2027, 4, 22),
+                None,
+            ],
+            "dtm_str": [
+                None,
+                datetime(1900, 1, 30, 14, 50, 20, tzinfo=TK),
+                datetime(2026, 5, 7, 23, 59, 59, tzinfo=TK),
+                datetime(2007, 6, 1, 0, 0, tzinfo=TK),
+            ],
+            "dt_str": [
+                date(2000, 6, 14),
+                date(1978, 2, 28),
+                None,
+                date(2040, 12, 4),
+            ],
+            "tm_str": [
+                time(23, 50, 22),
+                time(0, 0, 1),
+                time(10, 10, 33),
+                time(18, 30, 15),
+            ],
+        },
+        schema=temporal_schema,
+    )
+    assert_frame_equal(expected, parsed_df)
+
+
+@pytest.mark.parametrize(
     ("read_spreadsheet", "source", "params"),
     [
         # xls file
         (pl.read_excel, "path_xls", {"engine": "calamine"}),
         # xlsx file
-        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
-        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
         (pl.read_excel, "path_xlsx", {"engine": "calamine"}),
+        (pl.read_excel, "path_xlsx", {"engine": "openpyxl"}),
+        (pl.read_excel, "path_xlsx", {"engine": "xlsx2csv"}),
         # xlsb file (binary)
         (pl.read_excel, "path_xlsb", {"engine": "calamine"}),
         # open document
@@ -423,6 +500,7 @@ def test_read_invalid_worksheet(
         (pl.read_ods, "path_ods_mixed", {}),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_read_mixed_dtype_columns(
     read_spreadsheet: Callable[..., dict[str, pl.DataFrame]],
     source: str,
@@ -469,22 +547,6 @@ def test_read_mixed_dtype_columns(
             schema_overrides=schema_overrides,
         ),
     )
-
-
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
-def test_write_excel_bytes(engine: ExcelSpreadsheetEngine) -> None:
-    df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
-
-    excel_bytes = BytesIO()
-    df.write_excel(excel_bytes)
-
-    df_read = pl.read_excel(excel_bytes, engine=engine)
-    assert_frame_equal(df, df_read)
-
-    # also confirm consistent behaviour when 'infer_schema_length=0'
-    df_read = pl.read_excel(excel_bytes, engine=engine, infer_schema_length=0)
-    expected = pl.DataFrame({"colx": ["1.5", "-2", "0"], "coly": ["a", None, "c"]})
-    assert_frame_equal(expected, df_read)
 
 
 def test_schema_overrides(path_xlsx: Path, path_xlsb: Path, path_ods: Path) -> None:
@@ -828,10 +890,21 @@ def test_excel_write_column_and_row_totals(engine: ExcelSpreadsheetEngine) -> No
         assert xldf.row(-1) == (None, 0.0, 0.0, 0, 0, None, 0.0, 0)
 
 
-@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
-def test_excel_write_compound_types(engine: ExcelSpreadsheetEngine) -> None:
+@pytest.mark.parametrize(
+    ("engine", "list_dtype"),
+    [
+        ("calamine", pl.List(pl.Int8)),
+        ("openpyxl", pl.List(pl.UInt16)),
+        ("xlsx2csv", pl.Array(pl.Int32, 2)),
+    ],
+)
+def test_excel_write_compound_types(
+    engine: ExcelSpreadsheetEngine,
+    list_dtype: PolarsDataType,
+) -> None:
     df = pl.DataFrame(
-        {"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]}
+        data={"x": [[1, 2], [3, 4], [5, 6]], "y": ["a", "b", "c"], "z": [9, 8, 7]},
+        schema_overrides={"x": pl.Array(pl.Int32, 2)},
     ).select("x", pl.struct(["y", "z"]))
 
     xls = BytesIO()
@@ -892,6 +965,22 @@ def test_excel_read_named_table_with_total_row(tmp_path: Path) -> None:
     assert_frame_equal(df, xldf.head(3))
     assert xldf.height == 4
     assert xldf.row(3) == (None, 0, 0)
+
+
+@pytest.mark.parametrize("engine", ["calamine", "openpyxl", "xlsx2csv"])
+def test_excel_write_to_bytesio(engine: ExcelSpreadsheetEngine) -> None:
+    df = pl.DataFrame({"colx": [1.5, -2, 0], "coly": ["a", None, "c"]})
+
+    excel_bytes = BytesIO()
+    df.write_excel(excel_bytes)
+
+    df_read = pl.read_excel(excel_bytes, engine=engine)
+    assert_frame_equal(df, df_read)
+
+    # also confirm consistent behaviour when 'infer_schema_length=0'
+    df_read = pl.read_excel(excel_bytes, engine=engine, infer_schema_length=0)
+    expected = pl.DataFrame({"colx": ["1.5", "-2", "0"], "coly": ["a", None, "c"]})
+    assert_frame_equal(expected, df_read)
 
 
 @pytest.mark.parametrize("engine", ["xlsx2csv", "openpyxl", "calamine"])
@@ -1278,3 +1367,53 @@ def test_drop_empty_rows(
         drop_empty_rows=False,
     )
     assert df3.shape == (10, 4)
+
+
+def test_excel_write_select_col_dtype() -> None:
+    from openpyxl import load_workbook
+    from xlsxwriter import Workbook
+
+    def get_col_widths(wb_bytes: BytesIO) -> dict[str, int]:
+        return {
+            k: round(v.width)
+            for k, v in load_workbook(wb_bytes).active.column_dimensions.items()
+        }
+
+    df = pl.DataFrame(
+        {
+            "name": [["Alice", "Ben"], ["Charlie", "Delta"]],
+            "col2": ["Hi", "Bye"],
+        }
+    )
+
+    # column_widths test:
+    # pl.List(pl.String)) datatype should not match column with no list
+    check = BytesIO()
+    with Workbook(check) as wb:
+        df.write_excel(wb, column_widths={cs.by_dtype(pl.List(pl.String)): 300})
+
+    assert get_col_widths(check) == {"A": 43}
+
+    # column_widths test:
+    # pl.String datatype should not match column with list
+    check = BytesIO()
+    with Workbook(check) as wb:
+        df.write_excel(wb, column_widths={cs.by_dtype(pl.String): 300})
+
+    assert get_col_widths(check) == {"B": 43}
+
+    # hidden_columns test:
+    # pl.List(pl.String)) datatype should not match column with no list
+    check = BytesIO()
+    with Workbook(check) as wb:
+        df.write_excel(wb, hidden_columns=cs.by_dtype(pl.List(pl.String)))
+
+    assert get_col_widths(check) == {"A": 0}
+
+    # hidden_columns test:
+    # pl.String datatype should not match column with list
+    check = BytesIO()
+    with Workbook(check) as wb:
+        df.write_excel(wb, hidden_columns=cs.by_dtype(pl.String))
+
+    assert get_col_widths(check) == {"B": 0}

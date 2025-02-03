@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
@@ -193,7 +193,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             return None;
         }
 
-        let mut bm = MutableBitmap::with_capacity(self.len());
+        let mut bm = BitmapBuilder::with_capacity(self.len());
         for arr in self.downcast_iter() {
             if let Some(v) = arr.validity() {
                 bm.extend_from_bitmap(v);
@@ -201,7 +201,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 bm.extend_constant(arr.len(), true);
             }
         }
-        Some(bm.into())
+        bm.into_opt_validity()
     }
 
     /// Split the array. The chunks are reallocated the underlying data slices are zero copy.

@@ -115,6 +115,7 @@ def test_unpivot_categorical_global() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_unpivot_categorical_raise_19770() -> None:
     with pytest.raises(pl.exceptions.ComputeError):
         (pl.DataFrame({"x": ["foo"]}).cast(pl.Categorical).unpivot())

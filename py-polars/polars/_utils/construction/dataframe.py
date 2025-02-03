@@ -34,7 +34,6 @@ from polars._utils.various import (
 from polars.datatypes import (
     N_INFER_DEFAULT,
     Categorical,
-    Datetime,
     Enum,
     String,
     Struct,
@@ -701,19 +700,6 @@ def _sequence_of_dict_to_pydf(
         if column_names
         else None
     )
-    tz_overrides = {
-        column_name: Datetime("us", time_zone="UTC")
-        for column_name, first_value in first_element.items()
-        if (
-            isinstance(first_value, datetime)
-            and hasattr(first_value, "tzinfo")
-            and first_value.tzinfo is not None
-            and column_name not in schema_overrides
-            and (schema is None or column_name not in schema)
-        )
-    }
-    if tz_overrides:
-        schema_overrides = {**schema_overrides, **tz_overrides}
 
     pydf = PyDataFrame.from_dicts(
         data,
@@ -1289,7 +1275,7 @@ def numpy_to_pydf(
             )._s
             for series_name, record_name in zip(column_names, record_names)
         ]
-    elif shape == (0,):
+    elif shape == (0,) and n_columns == 0:
         data_series = []
 
     elif len(shape) == 1:

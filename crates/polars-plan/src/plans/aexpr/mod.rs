@@ -1,5 +1,7 @@
+mod evaluate;
 #[cfg(feature = "cse")]
 mod hash;
+pub mod predicates;
 mod scalar;
 mod schema;
 mod traverse;
@@ -47,6 +49,7 @@ pub enum IRAggExpr {
         method: QuantileMethod,
     },
     Sum(Node),
+    // include_nulls
     Count(Node, bool),
     Std(Node, u8),
     Var(Node, u8),

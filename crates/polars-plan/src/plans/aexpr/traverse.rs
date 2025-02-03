@@ -3,7 +3,7 @@ use super::*;
 impl AExpr {
     /// Push the inputs of this node to the given container, in reverse order.
     /// This ensures the primary node responsible for the name is pushed last.
-    pub(crate) fn inputs_rev<E>(&self, container: &mut E)
+    pub fn inputs_rev<E>(&self, container: &mut E)
     where
         E: Extend<Node>,
     {

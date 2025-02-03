@@ -144,6 +144,16 @@ impl IR {
                 input: inputs.pop().unwrap(),
                 columns: columns.clone(),
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left: _,
+                input_right: _,
+                key,
+            } => MergeSorted {
+                input_left: inputs[0],
+                input_right: inputs[1],
+                key: key.clone(),
+            },
             Invalid => unreachable!(),
         }
     }
@@ -177,6 +187,8 @@ impl IR {
             PythonScan { .. } => {},
             HConcat { .. } => {},
             ExtContext { .. } | Sink { .. } | SimpleProjection { .. } => {},
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => {},
             Invalid => unreachable!(),
         }
     }
@@ -234,6 +246,15 @@ impl IR {
             DataFrameScan { .. } => return,
             #[cfg(feature = "python")]
             PythonScan { .. } => return,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                ..
+            } => {
+                container.extend([*input_left, *input_right]);
+                return;
+            },
             Invalid => unreachable!(),
         };
         container.extend([input])

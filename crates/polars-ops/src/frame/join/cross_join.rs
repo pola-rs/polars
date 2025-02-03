@@ -133,6 +133,7 @@ fn cross_join_dfs(
         }
     };
     let (l_df, r_df) = if parallel {
+        try_raise_keyboard_interrupt();
         POOL.install(|| rayon::join(create_left_df, create_right_df))
     } else {
         (create_left_df(), create_right_df())

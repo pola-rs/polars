@@ -87,6 +87,14 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::NegativeSlice {
+            input,
+            offset,
+            length,
+        } => (
+            format!("slice\\noffset: {offset}, length: {length}"),
+            from_ref(input),
+        ),
         PhysNodeKind::Filter { input, predicate } => (
             format!("filter\\n{}", fmt_exprs(from_ref(predicate), expr_arena)),
             from_ref(input),
@@ -243,6 +251,15 @@ fn visualize_plan_rec(
             }
             (label, &[*input_left, *input_right][..])
         },
+        #[cfg(feature = "merge_sorted")]
+        PhysNodeKind::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => (
+            format!("merge sorted on '{key}'"),
+            &[*input_left, *input_right][..],
+        ),
     };
 
     out.push(format!(

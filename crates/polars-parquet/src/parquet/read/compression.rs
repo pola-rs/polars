@@ -212,6 +212,10 @@ impl DataPageItem {
         self.page.num_values()
     }
 
+    pub fn page(&self) -> &CompressedDataPage {
+        &self.page
+    }
+
     pub fn decompress(self, decompressor: &mut BasicDecompressor) -> ParquetResult<DataPage> {
         let p = decompress(CompressedPage::Data(self.page), &mut decompressor.buffer)?;
         let Page::Data(p) = p else {

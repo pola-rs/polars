@@ -164,6 +164,15 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.categorical().unwrap())
     }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        let other = other
+            ._get_inner_mut()
+            .as_any_mut()
+            .downcast_mut::<CategoricalChunked>()
+            .unwrap();
+        self.0.append_owned(std::mem::take(other))
+    }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
@@ -300,6 +309,10 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

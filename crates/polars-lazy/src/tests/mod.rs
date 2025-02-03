@@ -31,11 +31,11 @@ fn load_df() -> DataFrame {
 
 use std::io::Cursor;
 
+#[cfg(feature = "temporal")]
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use optimization_checks::*;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::df;
-#[cfg(feature = "temporal")]
-use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;

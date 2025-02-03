@@ -150,6 +150,12 @@ pub enum IR {
         input: Node,
         payload: SinkType,
     },
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        input_left: Node,
+        input_right: Node,
+        key: PlSmallStr,
+    },
     #[default]
     Invalid,
 }

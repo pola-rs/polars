@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
-use polars_core::export::arrow::bitmap::Bitmap;
+use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
@@ -567,16 +567,38 @@ impl PhysicalExpr for WindowExpr {
 
                         let get_join_tuples = || {
                             if group_by_columns.len() == 1 {
+                                let mut left = group_by_columns[0].clone();
                                 // group key from right column
-                                let right = &keys[0];
-                                PolarsResult::Ok(Arc::new(
-                                    group_by_columns[0]
-                                        .as_materialized_series()
-                                        .hash_join_left(
-                                            right.as_materialized_series(),
-                                            JoinValidation::ManyToMany,
-                                            true,
+                                let mut right = keys[0].clone();
+
+                                let (left, right) = if left.dtype().is_nested() {
+                                    (
+                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                            "".into(),
+                                            row_encode::_get_rows_encoded_unordered(&[
+                                                left.clone()
+                                            ])?
+                                            .into_array(),
                                         )
+                                        .into_series(),
+                                        ChunkedArray::<BinaryOffsetType>::with_chunk(
+                                            "".into(),
+                                            row_encode::_get_rows_encoded_unordered(&[
+                                                right.clone()
+                                            ])?
+                                            .into_array(),
+                                        )
+                                        .into_series(),
+                                    )
+                                } else {
+                                    (
+                                        left.into_materialized_series().clone(),
+                                        right.into_materialized_series().clone(),
+                                    )
+                                };
+
+                                PolarsResult::Ok(Arc::new(
+                                    left.hash_join_left(&right, JoinValidation::ManyToMany, true)
                                         .unwrap()
                                         .1,
                                 ))
@@ -628,14 +650,14 @@ impl PhysicalExpr for WindowExpr {
         false
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        for i in &self.group_by {
-            i.collect_live_columns(lv);
-        }
-        if let Some((i, _)) = &self.order_by {
-            i.collect_live_columns(lv);
-        }
-        self.phys_function.collect_live_columns(lv);
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     #[allow(clippy::ptr_arg)]

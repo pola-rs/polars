@@ -1,7 +1,7 @@
 //! null-preserving operators such as [`and`], [`or`] and [`not`].
 use super::utils::combine_validities_and;
 use crate::array::{Array, BooleanArray};
-use crate::bitmap::{Bitmap, MutableBitmap};
+use crate::bitmap::Bitmap;
 use crate::datatypes::ArrowDataType;
 use crate::scalar::BooleanScalar;
 
@@ -149,7 +149,7 @@ pub fn is_null(input: &dyn Array) -> BooleanArray {
     let len = input.len();
 
     let values = match input.validity() {
-        None => MutableBitmap::from_len_zeroed(len).into(),
+        None => Bitmap::new_zeroed(len),
         Some(buffer) => !buffer,
     };
 
@@ -168,11 +168,7 @@ pub fn is_null(input: &dyn Array) -> BooleanArray {
 /// ```
 pub fn is_not_null(input: &dyn Array) -> BooleanArray {
     let values = match input.validity() {
-        None => {
-            let mut mutable = MutableBitmap::new();
-            mutable.extend_constant(input.len(), true);
-            mutable.into()
-        },
+        None => Bitmap::new_with_value(true, input.len()),
         Some(buffer) => buffer.clone(),
     };
     BooleanArray::new(ArrowDataType::Boolean, values, None)
@@ -219,15 +215,11 @@ pub fn and_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray 
 /// ```
 pub fn or_scalar(array: &BooleanArray, scalar: &BooleanScalar) -> BooleanArray {
     match scalar.value() {
-        Some(true) => {
-            let mut values = MutableBitmap::new();
-            values.extend_constant(array.len(), true);
-            BooleanArray::new(
-                ArrowDataType::Boolean,
-                values.into(),
-                array.validity().cloned(),
-            )
-        },
+        Some(true) => BooleanArray::new(
+            ArrowDataType::Boolean,
+            Bitmap::new_with_value(true, array.len()),
+            array.validity().cloned(),
+        ),
         Some(false) => array.clone(),
         None => BooleanArray::new_null(ArrowDataType::Boolean, array.len()),
     }

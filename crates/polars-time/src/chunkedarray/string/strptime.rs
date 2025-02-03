@@ -1,6 +1,5 @@
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 //!
-use atoi::FromRadix10;
 use chrono::{NaiveDate, NaiveDateTime};
 use once_cell::sync::Lazy;
 use regex::Regex;
@@ -14,7 +13,7 @@ static TWELVE_HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[Il]")
 static MERIDIEM_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[pP]").unwrap());
 
 #[inline]
-fn update_and_parse<T: atoi::FromRadix10>(
+fn update_and_parse<T: atoi_simd::Parse>(
     incr: usize,
     offset: usize,
     vals: &[u8],
@@ -22,7 +21,7 @@ fn update_and_parse<T: atoi::FromRadix10>(
     // this maybe oob because we cannot entirely sure about fmt lengths
     let new_offset = offset + incr;
     let bytes = vals.get(offset..new_offset)?;
-    let (val, parsed) = T::from_radix_10(bytes);
+    let (val, parsed) = atoi_simd::parse_any(bytes).ok()?;
     if parsed == 0 {
         None
     } else {
@@ -154,7 +153,7 @@ impl StrpTimeState {
                         let new_offset = offset + 2;
                         let bytes = val.get_unchecked(offset..new_offset);
 
-                        let (decade, parsed) = i32::from_radix_10(bytes);
+                        let (decade, parsed) = atoi_simd::parse_any::<i32>(bytes).ok()?;
                         if parsed == 0 {
                             return None;
                         }

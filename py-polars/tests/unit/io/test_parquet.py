@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from tests.unit.conftest import MemoryUsage
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -37,6 +38,7 @@ def test_round_trip(df: pl.DataFrame) -> None:
     assert_frame_equal(pl.read_parquet(f), df)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_scan_round_trip(df: pl.DataFrame) -> None:
     f = io.BytesIO()
     df.write_parquet(f)
@@ -832,6 +834,7 @@ def test_parquet_string_rle_encoding() -> None:
     )
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_sliced_dict_with_nulls_14904() -> None:
     df = (
         pl.DataFrame({"x": [None, None]})
@@ -2434,6 +2437,7 @@ def test_dict_masked(
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_sliced_20017() -> None:
     f = io.BytesIO()
     df = (
@@ -2611,6 +2615,7 @@ def test_parquet_unsupported_dictionary_to_pl_17945() -> None:
     )
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_parquet_cast_to_cat() -> None:
     t = pa.table(
         {
@@ -2749,3 +2754,26 @@ def test_struct_list_statistics_20510() -> None:
     result = pl.scan_parquet(f).filter(pl.col("name") == "b").collect()
 
     assert_frame_equal(result, df.filter(pl.col("name") == "b"))
+
+
+def test_required_masked_skip_values_20809(monkeypatch: Any) -> None:
+    df = pl.DataFrame(
+        [pl.Series("a", list(range(20)) + [42] * 15), pl.Series("b", range(35))]
+    )
+    needle = [16, 33]
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    f.seek(0)
+    monkeypatch.setenv("POLARS_PQ_PREFILTERED_MASK", "pre")
+    df1 = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(pl.col.b.is_in(needle))
+        .collect()
+    )
+
+    f.seek(0)
+    df2 = pl.read_parquet(f, parallel="columns").filter(pl.col.b.is_in(needle))
+
+    assert_frame_equal(df1, df2)

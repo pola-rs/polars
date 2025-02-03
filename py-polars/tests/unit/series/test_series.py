@@ -498,35 +498,40 @@ def test_cast() -> None:
         pl.Series(["1", "2", "3", "4", "foobar"]).cast(int)
 
 
-def test_to_pandas() -> None:
-    for test_data in (
+@pytest.mark.parametrize(
+    "test_data",
+    [
         [1, None, 2],
         ["abc", None, "xyz"],
         [None, datetime.now()],
         [[1, 2], [3, 4], None],
-    ):
-        a = pl.Series("s", test_data)
-        b = a.to_pandas()
+    ],
+)
+def test_to_pandas(test_data: list[Any]) -> None:
+    a = pl.Series("s", test_data)
+    b = a.to_pandas()
 
-        assert a.name == b.name
-        assert b.isnull().sum() == 1
+    assert a.name == b.name
+    assert b.isnull().sum() == 1
 
-        if a.dtype == pl.List:
-            vals_b = [(None if x is None else x.tolist()) for x in b]
-        else:
-            vals_b = b.replace({np.nan: None}).values.tolist()
+    vals_b: list[Any]
+    if a.dtype == pl.List:
+        vals_b = [(None if x is None else x.tolist()) for x in b]
+    else:
+        v = b.replace({np.nan: None}).values.tolist()
+        vals_b = cast(list[Any], v)
 
-        assert vals_b == test_data
+    assert vals_b == test_data
 
-        try:
-            c = a.to_pandas(use_pyarrow_extension_array=True)
-            assert a.name == c.name
-            assert c.isnull().sum() == 1
-            vals_c = [None if x is pd.NA else x for x in c.tolist()]
-            assert vals_c == test_data
-        except ModuleNotFoundError:
-            # Skip test if pandas>=1.5.0 or Pyarrow>=8.0.0 is not installed.
-            pass
+    try:
+        c = a.to_pandas(use_pyarrow_extension_array=True)
+        assert a.name == c.name
+        assert c.isnull().sum() == 1
+        vals_c = [None if x is pd.NA else x for x in c.tolist()]
+        assert vals_c == test_data
+    except ModuleNotFoundError:
+        # Skip test if pandas>=1.5.0 or Pyarrow>=8.0.0 is not installed.
+        pass
 
 
 def test_series_to_list() -> None:
@@ -757,6 +762,7 @@ def test_init_nested_tuple() -> None:
     assert s3.dtype == pl.List(pl.Int32)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_fill_null() -> None:
     s = pl.Series("a", [1, 2, None])
     assert_series_equal(s.fill_null(strategy="forward"), pl.Series("a", [1, 2, 2]))
@@ -1016,7 +1022,7 @@ def test_diff() -> None:
 
 def test_pct_change() -> None:
     s = pl.Series("a", [1, 2, 4, 8, 16, 32, 64])
-    expected = pl.Series("a", [None, None, float("inf"), 3.0, 3.0, 3.0, 3.0])
+    expected = pl.Series("a", [None, None, 3.0, 3.0, 3.0, 3.0, 3.0])
     assert_series_equal(s.pct_change(2), expected)
     assert_series_equal(s.pct_change(pl.Series([2])), expected)
     # negative
@@ -1622,18 +1628,26 @@ def test_nested_list_types_preserved(dtype: pl.DataType) -> None:
         assert srs_nested.dtype == dtype
 
 
-def test_log_exp() -> None:
-    a = pl.Series("a", [1, 100, 1000])
-    b = pl.Series("a", [0.0, 2.0, 3.0])
-    assert_series_equal(a.log10(), b)
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        pl.Float64,
+        pl.Int32,
+        pl.Decimal(21, 3),
+    ],
+)
+def test_log_exp(dtype: pl.DataType) -> None:
+    a = pl.Series("a", [1, 100, 1000], dtype=dtype)
+    b = pl.Series("a", [0, 2, 3], dtype=dtype)
+    assert_series_equal(a.log10(), b.cast(pl.Float64))
 
-    expected = pl.Series("a", np.log(a.to_numpy()))
+    expected = pl.Series("a", np.log(a.cast(pl.Float64).to_numpy()))
     assert_series_equal(a.log(), expected)
 
-    expected = pl.Series("a", np.exp(b.to_numpy()))
+    expected = pl.Series("a", np.exp(b.cast(pl.Float64).to_numpy()))
     assert_series_equal(b.exp(), expected)
 
-    expected = pl.Series("a", np.log1p(a.to_numpy()))
+    expected = pl.Series("a", np.log1p(a.cast(pl.Float64).to_numpy()))
     assert_series_equal(a.log1p(), expected)
 
 

@@ -4,7 +4,7 @@ use super::utils::extend_offset_values;
 use super::Growable;
 use crate::array::growable::utils::{extend_validity, prepare_validity};
 use crate::array::{Array, BinaryArray};
-use crate::bitmap::MutableBitmap;
+use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets};
 
@@ -12,7 +12,7 @@ use crate::offset::{Offset, Offsets};
 pub struct GrowableBinary<'a, O: Offset> {
     arrays: Vec<&'a BinaryArray<O>>,
     dtype: ArrowDataType,
-    validity: Option<MutableBitmap>,
+    validity: Option<BitmapBuilder>,
     values: Vec<u8>,
     offsets: Offsets<O>,
 }
@@ -49,7 +49,7 @@ impl<'a, O: Offset> GrowableBinary<'a, O> {
             dtype,
             offsets.into(),
             values.into(),
-            validity.map(|v| v.into()),
+            validity.map(|v| v.freeze()),
         )
     }
 }
@@ -97,7 +97,7 @@ impl<'a, O: Offset> From<GrowableBinary<'a, O>> for BinaryArray<O> {
             val.dtype,
             val.offsets.into(),
             val.values.into(),
-            val.validity.map(|v| v.into()),
+            val.validity.map(|v| v.freeze()),
         )
     }
 }

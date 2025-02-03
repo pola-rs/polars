@@ -1,5 +1,5 @@
 pub(super) use polars_utils::mem::{
-    madvise_populate_read, madvise_sequential, madvise_willneed, prefetch_l2,
+    force_populate_read, madvise_populate_read, madvise_sequential, madvise_willneed, prefetch_l2,
 };
 pub(super) fn no_prefetch(_: &[u8]) {}
 
@@ -51,6 +51,7 @@ pub(super) fn get_memory_prefetch_func(verbose: bool) -> fn(&[u8]) -> () {
                 );
             }
         },
+        Some("force_populate_read") => force_populate_read,
         Some(v) => panic!("invalid value for POLARS_MEMORY_PREFETCH: {}", v),
     };
 
@@ -61,6 +62,7 @@ pub(super) fn get_memory_prefetch_func(verbose: bool) -> fn(&[u8]) -> () {
             v if v == madvise_sequential as usize => "madvise_sequential",
             v if v == madvise_willneed as usize => "madvise_willneed",
             v if v == madvise_populate_read as usize => "madvise_populate_read",
+            v if v == force_populate_read as usize => "force_populate_read",
             _ => unreachable!(),
         };
 

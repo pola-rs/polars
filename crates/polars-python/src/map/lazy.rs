@@ -51,7 +51,7 @@ impl ToSeries for PyObject {
             // Eventually we must use Polars' Series Export as that can deal with
             // multiple chunks
             Err(_) => {
-                use polars::export::arrow::ffi;
+                use arrow::ffi;
                 let kwargs = PyDict::new(py);
                 kwargs.set_item("in_place", true).unwrap();
                 py_pyseries

@@ -6,10 +6,12 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
+use polars_io::predicates::{ScanIOPredicate, SkipBatchPredicate};
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::RowIndex;
 
 use super::*;
+use crate::ScanPredicate;
 
 pub struct ParquetExec {
     sources: ScanSources,
@@ -17,7 +19,9 @@ pub struct ParquetExec {
 
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
 
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<ScanPredicate>,
+    skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
+
     pub(crate) options: ParquetOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
@@ -32,7 +36,7 @@ impl ParquetExec {
         sources: ScanSources,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
@@ -45,6 +49,8 @@ impl ParquetExec {
             hive_parts,
 
             predicate,
+            skip_batch_predicate: None,
+
             options,
             cloud_options,
             file_options,
@@ -75,7 +81,10 @@ impl ParquetExec {
                 None
             }
         };
-        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+        let predicate = self
+            .predicate
+            .as_ref()
+            .map(|p| p.to_io(self.skip_batch_predicate.as_ref(), &self.file_info.schema));
         let mut base_row_index = self.file_options.row_index.take();
 
         // (offset, end)
@@ -279,7 +288,14 @@ impl ParquetExec {
                 None
             }
         };
-        let predicate = self.predicate.clone().map(phys_expr_to_io_expr);
+        let predicate = self.predicate.as_ref().map(|p| ScanIOPredicate {
+            predicate: phys_expr_to_io_expr(p.predicate.clone()),
+            live_columns: p.live_columns.clone(),
+            skip_batch_predicate: self
+                .skip_batch_predicate
+                .clone()
+                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref())),
+        });
         let mut base_row_index = self.file_options.row_index.take();
 
         // Modified if we have a negative slice
@@ -487,7 +503,7 @@ impl ParquetExec {
             .row_index
             .as_ref()
             .and_then(|_| self.predicate.take())
-            .map(phys_expr_to_io_expr);
+            .map(|p| phys_expr_to_io_expr(p.predicate));
 
         let is_cloud = self.sources.is_cloud_url();
         let force_async = config::force_async();
@@ -560,12 +576,14 @@ impl ScanExec for ParquetExec {
         &mut self,
         with_columns: Option<Arc<[PlSmallStr]>>,
         slice: Option<(usize, usize)>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanPredicate>,
+        skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
         self.file_options.slice = slice.map(|(o, l)| (o as i64, l));
         self.predicate = predicate;
+        self.skip_batch_predicate = skip_batch_predicate;
         self.file_options.row_index = row_index;
 
         if self.file_info.reader_schema.is_none() {

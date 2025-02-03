@@ -20,6 +20,15 @@ pub fn _merge_sorted_dfs(
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
     );
 
+    if dtype_lhs.is_categorical() {
+        let rev_map_lhs = left_s.categorical().unwrap().get_rev_map();
+        let rev_map_rhs = right_s.categorical().unwrap().get_rev_map();
+        polars_ensure!(
+            rev_map_lhs.same_src(rev_map_rhs),
+            ComputeError: "can only merge-sort categoricals with the same categories"
+        );
+    }
+
     // If one frame is empty, we can return the other immediately.
     if right_s.is_empty() {
         return Ok(left.clone());
@@ -41,7 +50,7 @@ pub fn _merge_sorted_dfs(
                 rhs_phys.as_materialized_series(),
                 &merge_indicator,
             )?);
-            let mut out = out.cast(lhs.dtype()).unwrap();
+            let mut out = unsafe { out.from_physical_unchecked(lhs.dtype()) }.unwrap();
             out.rename(lhs.name().clone());
             Ok(out)
         })

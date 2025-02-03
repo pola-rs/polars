@@ -119,6 +119,7 @@ pub fn aexpr_output_name(node: Node, arena: &Arena<AExpr>) -> PolarsResult<PlSma
             AExpr::Alias(_, name) => return Ok(name.clone()),
             AExpr::Len => return Ok(get_len_name()),
             AExpr::Literal(val) => return Ok(val.output_column_name().clone()),
+            AExpr::Ternary { truthy, .. } => return aexpr_output_name(*truthy, arena),
             _ => {},
         }
     }

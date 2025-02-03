@@ -2,7 +2,6 @@ use std::future::Future;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::PlIndexSet;
 use polars_error::PolarsResult;
 use polars_io::prelude::ParallelStrategy;
 use polars_io::prelude::_internal::PrefilterMaskSetting;
@@ -84,8 +83,7 @@ impl ParquetSourceNode {
 
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
         let projection = self.file_options.with_columns.clone();
-        assert_eq!(self.physical_predicate.is_some(), self.predicate.is_some());
-        let predicate = self.physical_predicate.clone();
+        let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
         let mut row_group_data_fetcher = RowGroupDataFetcher {
@@ -160,15 +158,45 @@ impl ParquetSourceNode {
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
+        let last_morsel_min_split = self.config.num_pipelines;
         let distribute_task = async_executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
-            while let Some(decode_fut) = decode_recv.recv().await {
+
+            // Decode first non-empty morsel.
+            let mut next = None;
+            loop {
+                let Some(decode_fut) = decode_recv.recv().await else {
+                    break;
+                };
                 let df = decode_fut.await?;
                 if df.is_empty() {
                     continue;
                 }
+                next = Some(df);
+                break;
+            }
 
-                for df in split_to_morsels(&df, ideal_morsel_size) {
+            while let Some(df) = next.take() {
+                // Try to decode the next non-empty morsel first, so we know
+                // whether the df is the last morsel.
+                loop {
+                    let Some(decode_fut) = decode_recv.recv().await else {
+                        break;
+                    };
+                    let next_df = decode_fut.await?;
+                    if next_df.is_empty() {
+                        continue;
+                    }
+                    next = Some(next_df);
+                    break;
+                }
+
+                for df in split_to_morsels(
+                    &df,
+                    ideal_morsel_size,
+                    next.is_none(),
+                    last_morsel_min_split,
+                ) {
                     if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
                         return Ok(());
                     }
@@ -194,8 +222,6 @@ impl ParquetSourceNode {
     /// * `self.projected_arrow_schema`
     /// * `self.physical_predicate`
     pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
-        assert_eq!(self.predicate.is_some(), self.physical_predicate.is_some());
-
         let scan_sources = self.scan_sources.clone();
         let hive_partitions = self.hive_parts.clone();
         let hive_partitions_width = hive_partitions
@@ -205,24 +231,20 @@ impl ParquetSourceNode {
         let include_file_paths = self.file_options.include_file_paths.clone();
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
         let row_index = self.row_index.clone();
-        let physical_predicate = self.physical_predicate.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 
-        let mut use_prefiltered = physical_predicate.is_some()
+        let mut use_prefiltered = self.predicate.is_some()
             && matches!(
                 self.options.parallel,
                 ParallelStrategy::Auto | ParallelStrategy::Prefiltered
             );
 
         let predicate_arrow_field_indices = if use_prefiltered {
-            let mut live_columns = PlIndexSet::default();
-            physical_predicate
-                .as_ref()
-                .unwrap()
-                .collect_live_columns(&mut live_columns);
-            let v = (!live_columns.is_empty())
+            let predicate = self.predicate.as_ref().unwrap();
+            let v = (!predicate.live_columns.is_empty())
                 .then(|| {
-                    let mut out = live_columns
+                    let mut out = predicate
+                        .live_columns
                         .iter()
                         // Can be `None` - if the column is e.g. a hive column, or the row index column.
                         .filter_map(|x| projected_arrow_schema.index_of(x))
@@ -272,7 +294,7 @@ impl ParquetSourceNode {
             reader_schema: self.schema.clone().unwrap(),
             projected_arrow_schema,
             row_index,
-            physical_predicate,
+            predicate: self.predicate.clone(),
             use_prefiltered,
             predicate_arrow_field_indices,
             non_predicate_arrow_field_indices,
@@ -333,23 +355,29 @@ fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
         .collect()
 }
 
-/// Note: The 2nd return is an upper bound on the number of morsels rather than an exact count.
 fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
+    last_morsel: bool,
+    last_morsel_min_split: usize,
 ) -> impl Iterator<Item = DataFrame> + '_ {
-    let n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
+    let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
         (df.height() / ideal_morsel_size).max(2)
     } else {
         1
     };
 
-    let rows_per_morsel = 1 + df.height() / n_morsels;
+    if last_morsel {
+        n_morsels = n_morsels.max(last_morsel_min_split);
+    }
+
+    let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);
 
     (0..i64::try_from(df.height()).unwrap())
         .step_by(rows_per_morsel)
         .map(move |offset| df.slice(offset, rows_per_morsel))
+        .filter(|df| !df.is_empty())
 }
 
 mod tests {

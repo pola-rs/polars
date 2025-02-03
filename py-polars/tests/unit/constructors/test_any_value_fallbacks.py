@@ -399,6 +399,7 @@ def test_fallback_with_dtype_strict_failure_decimal_precision() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_lit_18874() -> None:
     assert_frame_equal(
         pl.DataFrame(

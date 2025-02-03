@@ -1,5 +1,5 @@
 use arrow::array::{BinaryViewArray, BooleanArray, PrimitiveArray, StaticArray, View};
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use polars_core::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
@@ -8,7 +8,7 @@ use polars_utils::total_ord::TotalOrd;
 
 fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {
     if num_valid < out_len {
-        let mut bm = MutableBitmap::with_capacity(out_len);
+        let mut bm = BitmapBuilder::with_capacity(out_len);
         bm.extend_constant(num_valid, true);
         bm.extend_constant(out_len - num_valid, false);
         Some(bm.freeze())
@@ -48,7 +48,7 @@ fn top_k_bool_impl(
         ]
     };
 
-    let mut bm = MutableBitmap::with_capacity(out_len);
+    let mut bm = BitmapBuilder::with_capacity(out_len);
     for (n, value) in sequence {
         if out_len == 0 {
             break;
@@ -58,7 +58,7 @@ fn top_k_bool_impl(
         out_len -= extra;
     }
 
-    let arr = BooleanArray::from_data_default(bm.into(), validity);
+    let arr = BooleanArray::from_data_default(bm.freeze(), validity);
     ChunkedArray::with_chunk_like(ca, arr)
 }
 
@@ -205,12 +205,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
         },
         DataType::Binary => Ok(top_k_binary_impl(s.binary().unwrap(), k, descending).into_column()),
         DataType::Null => Ok(src.slice(0, k)),
-        #[cfg(feature = "dtype-struct")]
-        DataType::Struct(_) => {
-            // Fallback to more generic impl.
-            top_k_by_impl(k, src, &[src.clone()], vec![descending])
-        },
-        _dt => {
+        dt if dt.is_primitive_numeric() => {
             macro_rules! dispatch {
                 ($ca:expr) => {{
                     top_k_num_impl($ca, k, descending).into_column()
@@ -219,6 +214,10 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
             unsafe {
                 downcast_as_macro_arg_physical!(&s, dispatch).from_physical_unchecked(origin_dtype)
             }
+        },
+        _ => {
+            // Fallback to more generic impl.
+            top_k_by_impl(k, src, &[src.clone()], vec![descending])
         },
     }
 }

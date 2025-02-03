@@ -1,5 +1,5 @@
 use arrow::temporal_conversions::{EPOCH_DAYS_FROM_CE, MILLISECONDS, SECONDS_IN_DAY};
-use polars_core::export::chrono::{Datelike, NaiveDate};
+use chrono::{Datelike, NaiveDate};
 use polars_core::utils::CustomIterTools;
 
 use super::*;

@@ -27,6 +27,8 @@ String
      - Returns a lowercased column.
    * - :ref:`LTRIM <ltrim>`
      - Strips whitespaces from the left.
+   * - :ref:`NORMALIZE <normalize>`
+     - Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
    * - :ref:`OCTET_LENGTH <octet_length>`
      - Returns the length of a given string in bytes.
    * - :ref:`REGEXP_LIKE <regexp_like>`
@@ -365,6 +367,39 @@ Strips whitespaces from the left.
     # │ CC    ┆ CC      │
     # │   DD  ┆ DD      │
     # └───────┴─────────┘
+
+.. _normalize:
+
+NORMALIZE
+---------
+Convert string to the specified Unicode normalization form (one of NFC, NFD, NFKC, NFKD).
+If the normalization form is not provided, NFC is used by default.
+
+**Example:**
+
+.. code-block:: python
+
+    df = pl.DataFrame({
+        "txt": [
+            "Ｔｅｓｔ",
+            "Ⓣⓔⓢⓣ",
+            "𝕿𝖊𝖘𝖙",
+            "𝕋𝕖𝕤𝕥",
+            "𝗧𝗲𝘀𝘁",
+        ],
+    })
+    df.sql("""
+      SELECT NORMALIZE(txt, NFKC) FROM self
+    """).to_series()
+    # shape: (5,)
+    # Series: 'txt' [str]
+    # [
+    #   "Test"
+    #   "Test"
+    #   "Test"
+    #   "Test"
+    #   "Test"
+    # ]
 
 .. _octet_length:
 

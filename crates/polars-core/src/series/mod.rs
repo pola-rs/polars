@@ -195,6 +195,22 @@ impl Series {
         Arc::get_mut(&mut self.0).expect("implementation error")
     }
 
+    /// Take or clone a owned copy of the inner [`ChunkedArray`].
+    pub fn take_inner<T>(self) -> ChunkedArray<T>
+    where
+        T: 'static + PolarsDataType<IsLogical = FalseT>,
+    {
+        let arc_any = self.0.as_arc_any();
+        let downcast = arc_any
+            .downcast::<implementations::SeriesWrap<ChunkedArray<T>>>()
+            .unwrap();
+
+        match Arc::try_unwrap(downcast) {
+            Ok(ca) => ca.0,
+            Err(ca) => ca.as_ref().as_ref().clone(),
+        }
+    }
+
     /// # Safety
     /// The caller must ensure the length and the data types of `ArrayRef` does not change.
     /// And that the null_count is updated (e.g. with a `compute_len()`)
@@ -291,9 +307,23 @@ impl Series {
         let must_cast = other.dtype().matches_schema_type(self.dtype())?;
         if must_cast {
             let other = other.cast(self.dtype())?;
-            self._get_inner_mut().append(&other)?;
+            self.append_owned(other)?;
         } else {
             self._get_inner_mut().append(other)?;
+        }
+        Ok(self)
+    }
+
+    /// Append in place. This is done by adding the chunks of `other` to this [`Series`].
+    ///
+    /// See [`ChunkedArray::append_owned`] and [`ChunkedArray::extend`].
+    pub fn append_owned(&mut self, other: Series) -> PolarsResult<&mut Self> {
+        let must_cast = other.dtype().matches_schema_type(self.dtype())?;
+        if must_cast {
+            let other = other.cast(self.dtype())?;
+            self._get_inner_mut().append_owned(other)?;
+        } else {
+            self._get_inner_mut().append_owned(other)?;
         }
         Ok(self)
     }
@@ -479,15 +509,26 @@ impl Series {
             },
 
             #[cfg(feature = "dtype-categorical")]
-            (D::UInt32, D::Categorical(revmap, ordering)) => Ok(unsafe {
-                CategoricalChunked::from_cats_and_rev_map_unchecked(
-                    self.u32().unwrap().clone(),
-                    revmap.as_ref().unwrap().clone(),
-                    false,
-                    *ordering,
-                )
-            }
-            .into_series()),
+            (D::UInt32, D::Categorical(revmap, ordering)) => match revmap {
+                Some(revmap) => Ok(unsafe {
+                    CategoricalChunked::from_cats_and_rev_map_unchecked(
+                        self.u32().unwrap().clone(),
+                        revmap.clone(),
+                        false,
+                        *ordering,
+                    )
+                }
+                .into_series()),
+                // In the streaming engine this is `None` and the global string cache is turned on
+                // for the duration of the query.
+                None => Ok(unsafe {
+                    CategoricalChunked::from_global_indices_unchecked(
+                        self.u32().unwrap().clone(),
+                        *ordering,
+                    )
+                    .into_series()
+                }),
+            },
             #[cfg(feature = "dtype-categorical")]
             (D::UInt32, D::Enum(revmap, ordering)) => Ok(unsafe {
                 CategoricalChunked::from_cats_and_rev_map_unchecked(

@@ -329,6 +329,11 @@ def test_array_missing_shape() -> None:
         pl.Array(pl.Int8)
 
 
+def test_array_invalid_shape_type() -> None:
+    with pytest.raises(TypeError, match="invalid input for shape"):
+        pl.Array(pl.Int8, shape=("x",))  # type: ignore[arg-type]
+
+
 def test_array_invalid_physical_type_18920() -> None:
     s1 = pl.Series("x", [[1000, 2000]], pl.List(pl.Datetime))
     s2 = pl.Series("x", [None], pl.List(pl.Datetime))

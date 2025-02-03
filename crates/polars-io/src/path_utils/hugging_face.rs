@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::path::PathBuf;
 
-use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_error::{polars_bail, to_compute_err, PolarsResult};
 
 use crate::cloud::{
     extract_prefix_expansion, try_build_http_header_map_from_items_slice, CloudConfig,
@@ -12,6 +12,7 @@ use crate::cloud::{
 use crate::path_utils::HiveIdxTracker;
 use crate::pl_async::with_concurrency_budget;
 use crate::prelude::URL_ENCODE_CHAR_SET;
+use crate::utils::decode_json_response;
 
 #[derive(Debug, PartialEq)]
 struct HFPathParts {
@@ -294,17 +295,12 @@ pub(super) async fn expand_paths_hf(
                 client,
             };
 
-            fn try_parse_api_response(bytes: &[u8]) -> PolarsResult<Vec<HFAPIResponse>> {
-                serde_json::from_slice::<Vec<HFAPIResponse>>(bytes).map_err(
-                    |e| polars_err!(ComputeError: "failed to parse API response as JSON: error: {}, value: {}", e, std::str::from_utf8(bytes).unwrap()),
-                )
-            }
-
             if let Some(matcher) = expansion_matcher {
                 while let Some(bytes) = gp.next().await {
                     let bytes = bytes?;
                     let bytes = bytes.as_ref();
-                    entries.extend(try_parse_api_response(bytes)?.into_iter().filter(|x| {
+                    let response: Vec<HFAPIResponse> = decode_json_response(bytes)?;
+                    entries.extend(response.into_iter().filter(|x| {
                         !x.is_file() || (x.size > 0 && matcher.is_matching(x.path.as_str()))
                     }));
                 }
@@ -312,11 +308,8 @@ pub(super) async fn expand_paths_hf(
                 while let Some(bytes) = gp.next().await {
                     let bytes = bytes?;
                     let bytes = bytes.as_ref();
-                    entries.extend(
-                        try_parse_api_response(bytes)?
-                            .into_iter()
-                            .filter(|x| !x.is_file() || x.size > 0),
-                    );
+                    let response: Vec<HFAPIResponse> = decode_json_response(bytes)?;
+                    entries.extend(response.into_iter().filter(|x| !x.is_file() || x.size > 0));
                 }
             }
 

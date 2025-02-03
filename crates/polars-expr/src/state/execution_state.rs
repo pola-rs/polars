@@ -149,6 +149,7 @@ impl ExecutionState {
 
     // This is wrong when the U64 overflows which will never happen.
     pub fn should_stop(&self) -> PolarsResult<()> {
+        try_raise_keyboard_interrupt();
         polars_ensure!(!self.stop.load(Ordering::Relaxed), ComputeError: "query interrupted");
         Ok(())
     }

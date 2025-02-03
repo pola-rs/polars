@@ -4,7 +4,7 @@ import contextlib
 import enum
 from collections import OrderedDict
 from collections.abc import Mapping
-from datetime import timezone
+from datetime import tzinfo
 from inspect import isclass
 from typing import TYPE_CHECKING, Any
 
@@ -448,6 +448,44 @@ class Time(TemporalType):
     The integer indicates the number of nanoseconds since midnight.
     """
 
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.max() == 86_399_999_999_999)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.min() == 0)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
+
 
 class Datetime(TemporalType):
     """
@@ -475,7 +513,7 @@ class Datetime(TemporalType):
     time_zone: str | None
 
     def __init__(
-        self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
+        self, time_unit: TimeUnit = "us", time_zone: str | tzinfo | None = None
     ) -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
@@ -484,7 +522,7 @@ class Datetime(TemporalType):
             )
             raise ValueError(msg)
 
-        if isinstance(time_zone, timezone):
+        if isinstance(time_zone, tzinfo):
             time_zone = str(time_zone)
 
         self.time_unit = time_unit
@@ -767,8 +805,13 @@ class Array(NestedType):
     ----------
     inner
         The `DataType` of the values within each array.
+    shape
+        The shape of the arrays.
     width
         The length of the arrays.
+
+        .. deprecated:: 0.20.31
+            The `width` parameter for `Array` is deprecated. Use `shape` instead.
 
     Examples
     --------
@@ -813,7 +856,7 @@ class Array(NestedType):
             self.size = shape
             self.shape = (shape,) + inner_shape
 
-        elif isinstance(shape, tuple):
+        elif isinstance(shape, tuple) and isinstance(shape[0], int):  # type: ignore[redundant-expr]
             if len(shape) > 1:
                 inner_parsed = Array(inner_parsed, shape[1:])
 

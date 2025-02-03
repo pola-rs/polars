@@ -3,13 +3,13 @@ pub mod join;
 pub mod pivot;
 
 pub use join::*;
-#[cfg(feature = "to_dummies")]
-use polars_core::export::rayon::prelude::*;
 use polars_core::prelude::*;
 #[cfg(feature = "to_dummies")]
 use polars_core::utils::accumulate_dataframes_horizontal;
 #[cfg(feature = "to_dummies")]
 use polars_core::POOL;
+#[cfg(feature = "to_dummies")]
+use rayon::prelude::*;
 
 pub trait IntoDf {
     fn to_df(&self) -> &DataFrame;

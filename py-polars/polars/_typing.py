@@ -6,6 +6,7 @@ from typing import (
     IO,
     TYPE_CHECKING,
     Any,
+    Callable,
     Literal,
     Protocol,
     TypedDict,
@@ -175,6 +176,10 @@ ConcatMethod = Literal[
     "diagonal_relaxed",
     "horizontal",
     "align",
+    "align_full",
+    "align_inner",
+    "align_left",
+    "align_right",
 ]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
@@ -310,3 +315,5 @@ FileSource: TypeAlias = Union[
     list[IO[bytes]],
     list[bytes],
 ]
+
+JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]

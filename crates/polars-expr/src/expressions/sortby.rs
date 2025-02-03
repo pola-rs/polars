@@ -400,11 +400,14 @@ impl PhysicalExpr for SortByExpr {
         Ok(ac_in)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.input.collect_live_columns(lv);
-        for i in &self.by {
-            i.collect_live_columns(lv);
-        }
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

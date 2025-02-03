@@ -8,6 +8,7 @@ use crate::conversion::any_value::py_object_to_any_value;
 use crate::conversion::{vec_extract_wrapped, Wrap};
 use crate::error::PyPolarsErr;
 use crate::interop;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {
@@ -21,7 +22,7 @@ impl PyDataFrame {
     ) -> PyResult<Self> {
         let data = vec_extract_wrapped(data);
         let schema = schema.map(|wrap| wrap.0);
-        py.allow_threads(move || finish_from_rows(data, schema, None, infer_schema_length))
+        py.enter_polars(move || finish_from_rows(data, schema, None, infer_schema_length))
     }
 
     #[staticmethod]
@@ -46,7 +47,7 @@ impl PyDataFrame {
             ))
         });
 
-        py.allow_threads(move || {
+        py.enter_polars(move || {
             finish_from_rows(rows, schema, schema_overrides, infer_schema_length)
         })
     }

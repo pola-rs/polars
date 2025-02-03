@@ -18,31 +18,64 @@ def test_concat_align() -> None:
     b = pl.DataFrame({"a": ["a", "b", "c"], "c": [5.5, 6.0, 7.5]})
     c = pl.DataFrame({"a": ["a", "b", "c", "d", "e"], "d": ["w", "x", "y", "z", None]})
 
-    result = pl.concat([a, b, c], how="align")
+    for align_full in ("align", "align_full"):
+        result = pl.concat([a, b, c], how=align_full)
+        expected = pl.DataFrame(
+            {
+                "a": ["a", "b", "c", "d", "e", "e"],
+                "b": [1, 2, None, 4, 5, 6],
+                "c": [5.5, 6.0, 7.5, None, None, None],
+                "d": ["w", "x", "y", "z", None, None],
+            }
+        )
+        assert_frame_equal(result, expected)
 
+    result = pl.concat([a, b, c], how="align_left")
     expected = pl.DataFrame(
         {
-            "a": ["a", "b", "c", "d", "e", "e"],
-            "b": [1, 2, None, 4, 5, 6],
-            "c": [5.5, 6.0, 7.5, None, None, None],
-            "d": ["w", "x", "y", "z", None, None],
+            "a": ["a", "b", "d", "e", "e"],
+            "b": [1, 2, 4, 5, 6],
+            "c": [5.5, 6.0, None, None, None],
+            "d": ["w", "x", "z", None, None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    result = pl.concat([a, b, c], how="align_right")
+    expected = pl.DataFrame(
+        {
+            "a": ["a", "b", "c", "d", "e"],
+            "b": [1, 2, None, None, None],
+            "c": [5.5, 6.0, 7.5, None, None],
+            "d": ["w", "x", "y", "z", None],
+        }
+    )
+    assert_frame_equal(result, expected)
+
+    result = pl.concat([a, b, c], how="align_inner")
+    expected = pl.DataFrame(
+        {
+            "a": ["a", "b"],
+            "b": [1, 2],
+            "c": [5.5, 6.0],
+            "d": ["w", "x"],
         }
     )
     assert_frame_equal(result, expected)
 
 
-def test_concat_align_no_common_cols() -> None:
+@pytest.mark.parametrize(
+    "strategy", ["align", "align_full", "align_left", "align_right"]
+)
+def test_concat_align_no_common_cols(strategy: ConcatMethod) -> None:
     df1 = pl.DataFrame({"a": [1, 2], "b": [1, 2]})
     df2 = pl.DataFrame({"c": [3, 4], "d": [3, 4]})
 
     with pytest.raises(
         InvalidOperationError,
-        match="'align' strategy requires at least one common column",
+        match=f"{strategy!r} strategy requires at least one common column",
     ):
-        pl.concat((df1, df2), how="align")
-
-
-data2 = pl.DataFrame({"field3": [3, 4], "field4": ["C", "D"]})
+        pl.concat((df1, df2), how=strategy)
 
 
 @pytest.mark.parametrize(

@@ -3,10 +3,13 @@ use polars_core::POOL;
 use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
+use polars_utils::format_pl_smallstr;
 
+use self::predicates::aexpr_to_skip_batch_predicate;
 use super::super::executors::{self, Executor};
 use super::*;
 use crate::utils::*;
+use crate::ScanPredicate;
 
 fn partitionable_gb(
     keys: &[ExprIR],
@@ -56,7 +59,7 @@ impl ConversionState {
 pub fn create_physical_plan(
     root: Node,
     lp_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Box<dyn Executor>> {
     let state = ConversionState::new()?;
     create_physical_plan_impl(root, lp_arena, expr_arena, &state)
@@ -65,7 +68,7 @@ pub fn create_physical_plan(
 fn create_physical_plan_impl(
     root: Node,
     lp_arena: &mut Arena<IR>,
-    expr_arena: &Arena<AExpr>,
+    expr_arena: &mut Arena<AExpr>,
     state: &ConversionState,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
@@ -203,22 +206,39 @@ fn create_physical_plan_impl(
             };
 
             let mut state = ExpressionConversionState::new(true, state.expr_depth);
+            let do_new_multifile = (sources.len() > 1 || hive_parts.is_some())
+                && !matches!(scan_type, FileScan::Anonymous { .. })
+                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1");
+
+            let mut create_skip_batch_predicate = false;
+            create_skip_batch_predicate |= do_new_multifile;
+            #[cfg(feature = "parquet")]
+            {
+                create_skip_batch_predicate |= matches!(
+                    scan_type,
+                    FileScan::Parquet {
+                        options: polars_io::prelude::ParquetOptions {
+                            use_statistics: true,
+                            ..
+                        },
+                        ..
+                    }
+                );
+            }
+
             let predicate = predicate
-                .map(|pred| {
-                    create_physical_expr(
-                        &pred,
-                        Context::Default,
+                .map(|predicate| {
+                    create_scan_predicate(
+                        &predicate,
                         expr_arena,
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut state,
+                        create_skip_batch_predicate,
                     )
                 })
-                .map_or(Ok(None), |v| v.map(Some))?;
+                .transpose()?;
 
-            if sources.len() > 1
-                && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1")
-                && !matches!(scan_type, FileScan::Anonymous { .. })
-            {
+            if do_new_multifile {
                 return Ok(Box::new(executors::MultiScanExec::new(
                     sources,
                     file_info,
@@ -607,6 +627,77 @@ fn create_physical_plan_impl(
             let exec = executors::ProjectionSimple { input, columns };
             Ok(Box::new(exec))
         },
+        #[cfg(feature = "merge_sorted")]
+        MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => {
+            let input_left = create_physical_plan_impl(input_left, lp_arena, expr_arena, state)?;
+            let input_right = create_physical_plan_impl(input_right, lp_arena, expr_arena, state)?;
+
+            let exec = executors::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            };
+            Ok(Box::new(exec))
+        },
         Invalid => unreachable!(),
     }
+}
+
+pub fn create_scan_predicate(
+    predicate: &ExprIR,
+    expr_arena: &mut Arena<AExpr>,
+    schema: &Arc<Schema>,
+    state: &mut ExpressionConversionState,
+    create_skip_batch_predicate: bool,
+) -> PolarsResult<ScanPredicate> {
+    let phys_predicate =
+        create_physical_expr(predicate, Context::Default, expr_arena, schema, state)?;
+    let live_columns = Arc::new(PlIndexSet::from_iter(aexpr_to_leaf_names_iter(
+        predicate.node(),
+        expr_arena,
+    )));
+
+    let mut skip_batch_predicate = None;
+
+    if create_skip_batch_predicate {
+        if let Some(node) = aexpr_to_skip_batch_predicate(predicate.node(), expr_arena, schema) {
+            let expr = ExprIR::new(node, predicate.output_name_inner().clone());
+
+            if std::env::var("POLARS_OUTPUT_SKIP_BATCH_PRED").as_deref() == Ok("1") {
+                eprintln!("predicate: {}", predicate.display(expr_arena));
+                eprintln!("skip_batch_predicate: {}", expr.display(expr_arena));
+            }
+
+            let mut skip_batch_schema = Schema::with_capacity(1 + live_columns.len());
+
+            skip_batch_schema.insert(PlSmallStr::from_static("len"), IDX_DTYPE);
+            for (col, dtype) in schema.iter() {
+                if !live_columns.contains(col) {
+                    continue;
+                }
+
+                skip_batch_schema.insert(format_pl_smallstr!("{col}_min"), dtype.clone());
+                skip_batch_schema.insert(format_pl_smallstr!("{col}_max"), dtype.clone());
+                skip_batch_schema.insert(format_pl_smallstr!("{col}_nc"), IDX_DTYPE);
+            }
+
+            skip_batch_predicate = Some(create_physical_expr(
+                &expr,
+                Context::Default,
+                expr_arena,
+                &Arc::new(skip_batch_schema),
+                state,
+            )?);
+        }
+    }
+
+    PolarsResult::Ok(ScanPredicate {
+        predicate: phys_predicate,
+        live_columns,
+        skip_batch_predicate,
+    })
 }

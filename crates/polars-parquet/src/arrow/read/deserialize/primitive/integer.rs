@@ -1,5 +1,5 @@
 use arrow::array::PrimitiveArray;
-use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::NativeType;
 
@@ -16,7 +16,7 @@ use crate::read::deserialize::dictionary_encoded;
 use crate::read::deserialize::utils::{
     dict_indices_decoder, freeze_validity, unspecialized_decode,
 };
-use crate::read::Filter;
+use crate::read::{Filter, PredicateFilter};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
@@ -66,6 +66,14 @@ where
                 ))
             },
             _ => Err(utils::not_implemented(page)),
+        }
+    }
+    fn num_rows(&self) -> usize {
+        match self {
+            Self::Plain(v) => v.len() / size_of::<P>(),
+            Self::Dictionary(i) => i.len(),
+            Self::ByteStreamSplit(i) => i.len(),
+            Self::DeltaBinaryPacked(i) => i.len(),
         }
     }
 }
@@ -147,14 +155,14 @@ where
     D: DecoderFunction<P, T>,
 {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = Vec<T>;
-    type DecodedState = (Vec<T>, MutableBitmap);
+    type Dict = PrimitiveArray<T>;
+    type DecodedState = (Vec<T>, BitmapBuilder);
     type Output = PrimitiveArray<T>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             Vec::<T>::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
     }
 
@@ -167,12 +175,35 @@ where
             false,
             None,
             None,
-            &mut MutableBitmap::new(),
+            &mut BitmapBuilder::new(),
             &mut self.0.intermediate,
             &mut target,
+            &mut BitmapBuilder::new(),
             self.0.decoder,
         )?;
-        Ok(target)
+        Ok(PrimitiveArray::new(
+            T::PRIMITIVE.into(),
+            target.into(),
+            None,
+        ))
+    }
+
+    fn has_predicate_specialization(
+        &self,
+        state: &utils::State<'_, Self>,
+        predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        let mut has_predicate_specialization = false;
+
+        has_predicate_specialization |=
+            matches!(state.translation, StateTranslation::Dictionary(_));
+        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
+            && predicate.predicate.to_equals_scalar().is_some();
+
+        // @TODO: This should be implemented
+        has_predicate_specialization &= state.page_validity.is_none();
+
+        Ok(has_predicate_specialization)
     }
 
     fn finalize(
@@ -185,10 +216,31 @@ where
         Ok(PrimitiveArray::try_new(dtype, values.into(), validity).unwrap())
     }
 
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional
+            .as_any()
+            .downcast_ref::<PrimitiveArray<T>>()
+            .unwrap();
+        decoded.0.extend(additional.values().iter().copied());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
+    }
+
     fn extend_filtered_with_state(
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
@@ -200,16 +252,19 @@ where
                 &mut decoded.1,
                 &mut self.0.intermediate,
                 &mut decoded.0,
+                pred_true_mask,
                 self.0.decoder,
             ),
             StateTranslation::Dictionary(ref mut indexes) => dictionary_encoded::decode_dict(
                 indexes.clone(),
-                state.dict.unwrap(),
+                state.dict.unwrap().values().as_slice(),
+                state.dict_mask,
                 state.is_optional,
                 state.page_validity.as_ref(),
                 filter,
                 &mut decoded.1,
                 &mut decoded.0,
+                pred_true_mask,
             ),
             StateTranslation::ByteStreamSplit(mut decoder) => {
                 let num_rows = decoder.len();

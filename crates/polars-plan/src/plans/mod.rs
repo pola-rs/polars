@@ -161,6 +161,12 @@ pub enum DslPlan {
         input: Arc<DslPlan>,
         payload: SinkType,
     },
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        input_left: Arc<DslPlan>,
+        input_right: Arc<DslPlan>,
+        key: PlSmallStr,
+    },
     IR {
         // Keep the original Dsl around as we need that for serialization.
         dsl: Arc<DslPlan>,
@@ -196,7 +202,9 @@ impl Clone for DslPlan {
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
             Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
-            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version}
+            #[cfg(feature = "merge_sorted")]
+            Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
+            Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},
         }
     }
 }

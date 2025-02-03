@@ -117,7 +117,7 @@ pub(super) fn run_conversion(
 ) -> PolarsResult<Node> {
     let lp_node = ctxt.lp_arena.add(lp);
     ctxt.conversion_optimizer
-        .coerce_types(ctxt.expr_arena, ctxt.lp_arena, lp_node)
+        .optimize_exprs(ctxt.expr_arena, ctxt.lp_arena, lp_node)
         .map_err(|e| e.context(format!("'{name}' failed").into()))?;
 
     Ok(lp_node)
@@ -903,6 +903,23 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
             IR::Sink { input, payload }
+        },
+        #[cfg(feature = "merge_sorted")]
+        DslPlan::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => {
+            let input_left = to_alp_impl(owned(input_left), ctxt)
+                .map_err(|e| e.context(failed_here!(merge_sorted)))?;
+            let input_right = to_alp_impl(owned(input_right), ctxt)
+                .map_err(|e| e.context(failed_here!(merge_sorted)))?;
+
+            IR::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            }
         },
         DslPlan::IR { node, dsl, version } => {
             return if node.is_some()

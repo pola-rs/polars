@@ -36,9 +36,7 @@ jobs:
   coverage-rust:
     # Running under ubuntu doesn't seem to work:
     # https://github.com/pola-rs/polars/issues/14255
-    # Pinned on macos-13 because latest does not work:
-    # https://github.com/pola-rs/polars/issues/15917
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -87,7 +85,7 @@ jobs:
   coverage-python:
     # Running under ubuntu doesn't seem to work:
     # https://github.com/pola-rs/polars/issues/14255
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
 

@@ -1,3 +1,7 @@
+import datetime
+
+import pytest
+
 import polars as pl
 from polars.testing import assert_series_equal
 
@@ -61,3 +65,22 @@ def test_fill_null_lit_() -> None:
         df.fill_null(pl.lit(0)).select(pl.all().null_count()).transpose().sum().item()
         == 0
     )
+
+
+def test_fill_null_decimal_with_int_14331() -> None:
+    s = pl.Series("a", ["1.1", None], dtype=pl.Decimal(precision=None, scale=5))
+    result = s.fill_null(0)
+    expected = pl.Series("a", ["1.1", "0.0"], dtype=pl.Decimal(precision=None, scale=5))
+    assert_series_equal(result, expected)
+
+
+def test_fill_null_date_with_int_11362() -> None:
+    match = "got invalid or ambiguous dtypes"
+
+    s = pl.Series([datetime.date(2000, 1, 1)])
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        s.fill_null(0)
+
+    s = pl.Series([None], dtype=pl.Date)
+    with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
+        s.fill_null(1)

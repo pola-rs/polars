@@ -40,6 +40,7 @@ def test_df_serde_roundtrip_json(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df, categorical_as_str=True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_df_serde(df: pl.DataFrame) -> None:
     serialized = df.serialize()
     assert isinstance(serialized, bytes)
@@ -47,6 +48,7 @@ def test_df_serde(df: pl.DataFrame) -> None:
     assert_frame_equal(result, df)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_df_serde_json_stringio(df: pl.DataFrame) -> None:
     serialized = df.serialize(format="json")
     assert isinstance(serialized, str)
@@ -202,3 +204,10 @@ def test_df_serialize_invalid_type() -> None:
         ComputeError, match="serializing data of type Object is not supported"
     ):
         df.serialize()
+
+
+def test_df_serde_list_of_null_17230() -> None:
+    df = pl.Series([[]], dtype=pl.List(pl.Null)).to_frame()
+    ser = df.serialize(format="json")
+    result = pl.DataFrame.deserialize(io.StringIO(ser), format="json")
+    assert_frame_equal(result, df)

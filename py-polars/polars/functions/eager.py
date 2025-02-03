@@ -37,8 +37,8 @@ def concat(
     ----------
     items
         DataFrames, LazyFrames, or Series to concatenate.
-    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}
-        Series only support the `vertical` strategy.
+    how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
+        Note that `Series` only support the `vertical` strategy.
 
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
@@ -49,10 +49,14 @@ def concat(
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
         * horizontal: Stacks Series from DataFrames horizontally and fills with `null`
           if the lengths don't match.
-        * align: Combines frames horizontally, auto-determining the common key columns
-          and aligning rows using the same logic as `align_frames`; this behaviour is
-          patterned after a full outer join, but does not handle column-name collision.
-          (If you need more control, you should use a suitable join method instead).
+        * align, align_full, align_left, align_right: Combines frames horizontally,
+          auto-determining the common key columns and aligning rows using the same
+          logic as `align_frames` (note that "align" is an alias for "align_full").
+          The "align" strategy determines the type of join used to align the frames,
+          equivalent to the "how" parameter on `align_frames`. Note that the common
+          join columns are automatically coalesced, but other column collisions
+          will raise an error (if you need more control over this you should use
+          a suitable `join` method directly).
     rechunk
         Make sure that the result data is in contiguous memory.
     parallel
@@ -100,6 +104,9 @@ def concat(
     │ 2   ┆ 4   ┆ 6   ┆ 8   ┆ 10  │
     └─────┴─────┴─────┴─────┴─────┘
 
+    The "diagonal" strategy allows for some frames to have missing columns,
+    the values for which are filled with `null`:
+
     >>> df_d1 = pl.DataFrame({"a": [1], "b": [3]})
     >>> df_d2 = pl.DataFrame({"a": [2], "c": [4]})
     >>> pl.concat([df_d1, df_d2], how="diagonal")
@@ -113,10 +120,12 @@ def concat(
     │ 2   ┆ null ┆ 4    │
     └─────┴──────┴──────┘
 
+    The "align" strategies require at least one common column to align on:
+
     >>> df_a1 = pl.DataFrame({"id": [1, 2], "x": [3, 4]})
     >>> df_a2 = pl.DataFrame({"id": [2, 3], "y": [5, 6]})
     >>> df_a3 = pl.DataFrame({"id": [1, 3], "z": [7, 8]})
-    >>> pl.concat([df_a1, df_a2, df_a3], how="align")
+    >>> pl.concat([df_a1, df_a2, df_a3], how="align")  # equivalent to "align_full"
     shape: (3, 4)
     ┌─────┬──────┬──────┬──────┐
     │ id  ┆ x    ┆ y    ┆ z    │
@@ -127,6 +136,34 @@ def concat(
     │ 2   ┆ 4    ┆ 5    ┆ null │
     │ 3   ┆ null ┆ 6    ┆ 8    │
     └─────┴──────┴──────┴──────┘
+    >>> pl.concat([df_a1, df_a2, df_a3], how="align_left")
+    shape: (2, 4)
+    ┌─────┬─────┬──────┬──────┐
+    │ id  ┆ x   ┆ y    ┆ z    │
+    │ --- ┆ --- ┆ ---  ┆ ---  │
+    │ i64 ┆ i64 ┆ i64  ┆ i64  │
+    ╞═════╪═════╪══════╪══════╡
+    │ 1   ┆ 3   ┆ null ┆ 7    │
+    │ 2   ┆ 4   ┆ 5    ┆ null │
+    └─────┴─────┴──────┴──────┘
+    >>> pl.concat([df_a1, df_a2, df_a3], how="align_right")
+    shape: (2, 4)
+    ┌─────┬──────┬──────┬─────┐
+    │ id  ┆ x    ┆ y    ┆ z   │
+    │ --- ┆ ---  ┆ ---  ┆ --- │
+    │ i64 ┆ i64  ┆ i64  ┆ i64 │
+    ╞═════╪══════╪══════╪═════╡
+    │ 1   ┆ null ┆ null ┆ 7   │
+    │ 3   ┆ null ┆ 6    ┆ 8   │
+    └─────┴──────┴──────┴─────┘
+    >>> pl.concat([df_a1, df_a2, df_a3], how="align_inner")
+    shape: (0, 4)
+    ┌─────┬─────┬─────┬─────┐
+    │ id  ┆ x   ┆ y   ┆ z   │
+    │ --- ┆ --- ┆ --- ┆ --- │
+    │ i64 ┆ i64 ┆ i64 ┆ i64 │
+    ╞═════╪═════╪═════╪═════╡
+    └─────┴─────┴─────┴─────┘
     """  # noqa: W505
     # unpack/standardise (handles generator input)
     elems = list(items)
@@ -139,14 +176,15 @@ def concat(
     ):
         return elems[0]
 
-    if how == "align":
+    if how.startswith("align"):
         if not isinstance(elems[0], (pl.DataFrame, pl.LazyFrame)):
-            msg = f"'align' strategy is not supported for {type(elems[0]).__name__!r}"
+            msg = f"{how!r} strategy is not supported for {type(elems[0]).__name__!r}"
             raise TypeError(msg)
 
         # establish common columns, maintaining the order in which they appear
         all_columns = list(chain.from_iterable(e.collect_schema() for e in elems))
         key = {v: k for k, v in enumerate(ordered_unique(all_columns))}
+        output_column_order = list(key)
         common_cols = sorted(
             reduce(
                 lambda x, y: set(x) & set(y),  # type: ignore[arg-type, return-value]
@@ -154,32 +192,32 @@ def concat(
             ),
             key=lambda k: key.get(k, 0),
         )
-        # we require at least one key column for 'align'
+        # we require at least one key column for 'align' strategies
         if not common_cols:
-            msg = "'align' strategy requires at least one common column"
+            msg = f"{how!r} strategy requires at least one common column"
             raise InvalidOperationError(msg)
 
-        # align the frame data using a full outer join with no suffix-resolution
-        # (so we raise an error in case of column collision, like "horizontal")
-        lf: LazyFrame = reduce(
-            lambda x, y: (
-                x.join(
-                    y,
-                    how="full",
-                    on=common_cols,
-                    suffix="_PL_CONCAT_RIGHT",
-                    maintain_order="right_left",
-                )
-                # Coalesce full outer join columns
-                .with_columns(
-                    F.coalesce([name, f"{name}_PL_CONCAT_RIGHT"])
-                    for name in common_cols
-                )
-                .drop([f"{name}_PL_CONCAT_RIGHT" for name in common_cols])
-            ),
-            [df.lazy() for df in elems],
-        ).sort(by=common_cols)
-
+        # align frame data using a join, with no suffix-resolution (will raise
+        # a DuplicateError in case of column collision, same as "horizontal")
+        join_method: JoinStrategy = (
+            "full" if how == "align" else how.removeprefix("align_")  # type: ignore[assignment]
+        )
+        lf: LazyFrame = (
+            reduce(
+                lambda x, y: (
+                    x.join(
+                        y,
+                        on=common_cols,
+                        how=join_method,
+                        maintain_order="right_left",
+                        coalesce=True,
+                    )
+                ),
+                [df.lazy() for df in elems],
+            )
+            .sort(by=common_cols)
+            .select(*output_column_order)
+        )
         eager = isinstance(elems[0], pl.DataFrame)
         return lf.collect() if eager else lf  # type: ignore[return-value]
 

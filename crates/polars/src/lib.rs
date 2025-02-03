@@ -414,8 +414,6 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![allow(ambiguous_glob_reexports)]
 pub mod docs;
-#[doc(hidden)]
-pub mod export;
 pub mod prelude;
 #[cfg(feature = "sql")]
 pub mod sql;

@@ -1501,7 +1501,6 @@ def test_csv_categorical_lifetime() -> None:
     assert (df["a"] == df["b"]).to_list() == [False, False, None]
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_csv_categorical_categorical_merge() -> None:
     N = 50
     f = io.BytesIO()
@@ -2500,4 +2499,11 @@ def test_trailing_separator_8240() -> None:
     assert_frame_equal(result, expected)
 
     result = pl.scan_csv(io.StringIO(csv), separator="|", has_header=False).collect()
+    assert_frame_equal(result, expected)
+
+
+def test_header_only_column_selection_17173() -> None:
+    csv = "A,B"
+    result = pl.read_csv(io.StringIO(csv), columns=["B"])
+    expected = pl.Series("B", [], pl.String()).to_frame()
     assert_frame_equal(result, expected)

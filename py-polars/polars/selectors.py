@@ -358,23 +358,20 @@ class _selector_proxy_(Expr):
                 return f"cs.{selector_name}({str_params})"
 
     @overload
-    def __sub__(self, other: SelectorType) -> SelectorType: ...
+    def __add__(self, other: SelectorType) -> SelectorType: ...
 
     @overload
-    def __sub__(self, other: Any) -> SelectorType | Expr: ...
+    def __add__(self, other: Any) -> Expr: ...
 
-    def __sub__(self, other: Any) -> Expr:
+    def __add__(self, other: Any) -> SelectorType | Expr:
         if is_selector(other):
-            return _selector_proxy_(
-                self.meta._as_selector().meta._selector_sub(other),
-                parameters={"self": self, "other": other},
-                name="sub",
-            )
+            msg = "unsupported operand type(s) for op: ('Selector' + 'Selector')"
+            raise TypeError(msg)
         else:
-            return self.as_expr().__sub__(other)
+            return self.as_expr().__add__(other)
 
-    def __rsub__(self, other: Any) -> NoReturn:
-        msg = "unsupported operand type(s) for op: ('Expr' - 'Selector')"
+    def __radd__(self, other: Any) -> Expr:
+        msg = "unsupported operand type(s) for op: ('Expr' + 'Selector')"
         raise TypeError(msg)
 
     @overload
@@ -424,6 +421,26 @@ class _selector_proxy_(Expr):
         if is_column(other):
             other = by_name(other.meta.output_name())
         return self.as_expr().__ror__(other)
+
+    @overload
+    def __sub__(self, other: SelectorType) -> SelectorType: ...
+
+    @overload
+    def __sub__(self, other: Any) -> SelectorType | Expr: ...
+
+    def __sub__(self, other: Any) -> Expr:
+        if is_selector(other):
+            return _selector_proxy_(
+                self.meta._as_selector().meta._selector_sub(other),
+                parameters={"self": self, "other": other},
+                name="sub",
+            )
+        else:
+            return self.as_expr().__sub__(other)
+
+    def __rsub__(self, other: Any) -> NoReturn:
+        msg = "unsupported operand type(s) for op: ('Expr' - 'Selector')"
+        raise TypeError(msg)
 
     @overload
     def __xor__(self, other: SelectorType) -> SelectorType: ...

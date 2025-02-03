@@ -328,10 +328,14 @@ impl PhysicalExpr for TernaryExpr {
         Some(self)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.predicate.collect_live_columns(lv);
-        self.truthy.collect_live_columns(lv);
-        self.falsy.collect_live_columns(lv);
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn is_scalar(&self) -> bool {

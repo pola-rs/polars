@@ -29,6 +29,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
+  "Typing :: Typed",
 ]
 dynamic = ["version"]
 
@@ -57,7 +58,7 @@ excel = ["polars[calamine,openpyxl,xlsx2csv,xlsxwriter]"]
 adbc = ["adbc-driver-manager[dbapi]", "adbc-driver-sqlite[dbapi]"]
 connectorx = ["connectorx >= 0.3.2"]
 sqlalchemy = ["sqlalchemy", "polars[pandas]"]
-database = ["polars[adbc,connectorx,sqlalchemy]", "nest-asyncio"]
+database = ["polars[adbc,connectorx,sqlalchemy]"]
 
 # Cloud
 fsspec = ["fsspec"]
@@ -114,7 +115,6 @@ module = [
   "kuzu",
   "matplotlib.*",
   "moto.server",
-  "nest_asyncio",
   "openpyxl",
   "polars.polars",
   "pyarrow.*",
@@ -261,6 +261,9 @@ filterwarnings = [
   "ignore:Deprecated API features detected.*:DeprecationWarning",
   # numpy import can generate this warning in Python 3.13 on certain runners
   "ignore:.*numpy\\.longdouble.*:UserWarning",
+  # The old streaming engine is deprecated, until the new streaming engine is
+  # done just ignore the deprecation warnings.
+  "ignore:The old streaming engine*:DeprecationWarning",
 ]
 xfail_strict = true
 

@@ -16,7 +16,6 @@ chrono = { workspace = true, optional = true }
 either = { workspace = true }
 fast-float2 = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
-itoap = { workspace = true, optional = true }
 num-traits = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
@@ -37,7 +36,6 @@ cast = [
   "dep:chrono",
   "dep:fast-float2",
   "dep:itoa",
-  "dep:itoap",
   "dep:ryu",
 ]
 gather = []

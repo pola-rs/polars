@@ -408,7 +408,11 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
-        elif not isinstance(data, Sized) and isinstance(data, (Generator, Iterable)):
+        elif (
+            not hasattr(data, "__arrow_c_stream__")
+            and not isinstance(data, Sized)
+            and isinstance(data, (Generator, Iterable))
+        ):
             self._df = iterable_to_pydf(
                 data,
                 schema=schema,
@@ -3473,6 +3477,12 @@ class DataFrame:
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
         df, is_empty = self, not len(self)
 
+        # The _xl_setup_table_columns function in the below section
+        # converts all collection types (e.g. List, Struct, Object) to strings
+        # Hence, we need to store the original schema so that it can be used
+        # when selecting columns using column selectors based on datatypes
+        df_original = df.clear()
+
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
         column_formats = column_formats or {}
@@ -3540,13 +3550,25 @@ class DataFrame:
         elif isinstance(hidden_columns, str):
             hidden = {hidden_columns}
         else:
-            hidden = set(_expand_selectors(df, hidden_columns))
+            hidden = set(_expand_selectors(df_original, hidden_columns))
+
+        # Autofit section needs to be present above column_widths section
+        # to ensure that parameters provided in the column_widths section
+        # are not overwritten by autofit
+        #
+        # table/rows all written; apply (optional) autofit
+        if autofit and not is_empty:
+            xlv = xlsxwriter.__version__
+            if parse_version(xlv) < (3, 0, 8):
+                msg = f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
+                raise ModuleUpgradeRequiredError(msg)
+            ws.autofit()
 
         if isinstance(column_widths, int):
             column_widths = dict.fromkeys(df.columns, column_widths)
         else:
             column_widths = _expand_selector_dicts(  # type: ignore[assignment]
-                df, column_widths, expand_keys=True, expand_values=False
+                df_original, column_widths, expand_keys=True, expand_values=False
             )
         column_widths = _unpack_multi_column_dict(column_widths or {})  # type: ignore[assignment]
 
@@ -3587,14 +3609,6 @@ class DataFrame:
             elif isinstance(row_heights, dict):
                 for idx, height in _unpack_multi_column_dict(row_heights).items():  # type: ignore[assignment]
                     ws.set_row_pixels(idx, height)
-
-        # table/rows all written; apply (optional) autofit
-        if autofit and not is_empty:
-            xlv = xlsxwriter.__version__
-            if parse_version(xlv) < (3, 0, 8):
-                msg = f"`autofit=True` requires xlsxwriter 3.0.8 or higher, found {xlv}"
-                raise ModuleUpgradeRequiredError(msg)
-            ws.autofit()
 
         if freeze_panes:
             if isinstance(freeze_panes, str):
@@ -4285,6 +4299,7 @@ class DataFrame:
         mode: Literal["error", "append", "overwrite", "ignore"] = ...,
         overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_write_options: dict[str, Any] | None = ...,
     ) -> None: ...
 
@@ -4296,6 +4311,7 @@ class DataFrame:
         mode: Literal["merge"],
         overwrite_schema: bool | None = ...,
         storage_options: dict[str, str] | None = ...,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None = ...,
         delta_merge_options: dict[str, Any],
     ) -> deltalake.table.TableMerger: ...
 
@@ -4306,6 +4322,9 @@ class DataFrame:
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool | None = None,
         storage_options: dict[str, str] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
     ) -> deltalake.table.TableMerger | None:
@@ -4338,6 +4357,14 @@ class DataFrame:
             - See a list of supported storage options for S3 `here <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants>`__.
             - See a list of supported storage options for GCS `here <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html#variants>`__.
             - See a list of supported storage options for Azure `here <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants>`__.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
         delta_write_options
             Additional keyword arguments while writing a Delta lake Table.
             See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
@@ -4420,6 +4447,21 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+        Write DataFrame as a Delta Lake table with zstd compression.
+        For all `delta_write_options` keyword arguments, check the deltalake docs
+        `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
+        and for Writer Properties in particular `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+
+        >>> import deltalake
+        >>> df.write_delta(
+        ...     table_path,
+        ...     delta_write_options={
+        ...         "writer_properties": deltalake.WriterProperties(compression="zstd"),
+        ...     },
+        ... )  # doctest: +SKIP
+
         Merge the DataFrame with an existing Delta Lake table.
         For all `TableMerger` methods, check the deltalake docs
         `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
@@ -4475,6 +4517,36 @@ class DataFrame:
             data = self.to_arrow(compat_level=CompatLevel.newest())
         else:
             data = self.to_arrow()
+
+        from polars.io.cloud.credential_provider import (
+            _get_credentials_from_provider_expiry_aware,
+            _maybe_init_credential_provider,
+        )
+
+        if not isinstance(target, DeltaTable):
+            credential_provider = _maybe_init_credential_provider(
+                credential_provider, target, storage_options, "write_delta"
+            )
+        elif credential_provider is not None and credential_provider != "auto":
+            msg = "cannot use credential_provider when passing a DeltaTable object"
+            raise ValueError(msg)
+        else:
+            credential_provider = None
+
+        credential_provider_creds = {}
+
+        if credential_provider is not None:
+            credential_provider_creds = _get_credentials_from_provider_expiry_aware(
+                credential_provider
+            )
+
+        # We aren't calling into polars-native write functions so we just update
+        # the storage_options here.
+        storage_options = (
+            {**(storage_options or {}), **credential_provider_creds}
+            if storage_options is not None or credential_provider is not None
+            else None
+        )
 
         if mode == "merge":
             if delta_merge_options is None:
@@ -6934,6 +7006,7 @@ class DataFrame:
         force_parallel: bool = False,
         coalesce: bool = True,
         allow_exact_matches: bool = True,
+        check_sortedness: bool = True,
     ) -> DataFrame:
         """
         Perform an asof join.
@@ -7026,6 +7099,10 @@ class DataFrame:
                 (i.e. less-than-or-equal-to / greater-than-or-equal-to)
             - If False, don't match the same ``on`` value
                 (i.e., strictly less-than / strictly greater-than).
+        check_sortedness
+            Check the sortedness of the asof keys. If the keys are not sorted Polars
+            will error, or in case of 'by' argument raise a warning. This might become
+            a hard error in the future.
 
         Examples
         --------
@@ -7259,6 +7336,7 @@ class DataFrame:
                 force_parallel=force_parallel,
                 coalesce=coalesce,
                 allow_exact_matches=allow_exact_matches,
+                check_sortedness=check_sortedness,
             )
             .collect(_eager=True)
         )
@@ -7285,7 +7363,8 @@ class DataFrame:
         other
             DataFrame to join with.
         on
-            Name(s) of the join columns in both DataFrames.
+            Name(s) of the join columns in both DataFrames. If set, `left_on` and
+            `right_on` should be None. This should not be specified if `how="cross"`.
         how : {'inner', 'left', 'right', 'full', 'semi', 'anti', 'cross'}
             Join strategy.
 
@@ -7446,6 +7525,24 @@ class DataFrame:
         ╞═════╪═════╪═════╡
         │ 3   ┆ 8.0 ┆ c   │
         └─────┴─────┴─────┘
+
+        >>> df.join(other_df, how="cross")
+        shape: (9, 5)
+        ┌─────┬─────┬─────┬───────┬───────────┐
+        │ foo ┆ bar ┆ ham ┆ apple ┆ ham_right │
+        │ --- ┆ --- ┆ --- ┆ ---   ┆ ---       │
+        │ i64 ┆ f64 ┆ str ┆ str   ┆ str       │
+        ╞═════╪═════╪═════╪═══════╪═══════════╡
+        │ 1   ┆ 6.0 ┆ a   ┆ x     ┆ a         │
+        │ 1   ┆ 6.0 ┆ a   ┆ y     ┆ b         │
+        │ 1   ┆ 6.0 ┆ a   ┆ z     ┆ d         │
+        │ 2   ┆ 7.0 ┆ b   ┆ x     ┆ a         │
+        │ 2   ┆ 7.0 ┆ b   ┆ y     ┆ b         │
+        │ 2   ┆ 7.0 ┆ b   ┆ z     ┆ d         │
+        │ 3   ┆ 8.0 ┆ c   ┆ x     ┆ a         │
+        │ 3   ┆ 8.0 ┆ c   ┆ y     ┆ b         │
+        │ 3   ┆ 8.0 ┆ c   ┆ z     ┆ d         │
+        └─────┴─────┴─────┴───────┴───────────┘
 
         Notes
         -----
@@ -8736,9 +8833,9 @@ class DataFrame:
 
         return self._from_pydf(self._df.unpivot(on, index, value_name, variable_name))
 
-    @unstable()
     def unstack(
         self,
+        *,
         step: int,
         how: UnstackDirection = "vertical",
         columns: ColumnNameOrSelector | Sequence[ColumnNameOrSelector] | None = None,
@@ -8746,10 +8843,6 @@ class DataFrame:
     ) -> DataFrame:
         """
         Unstack a long table to a wide form without doing an aggregation.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         This can be much faster than a pivot, because it can skip the grouping phase.
 
@@ -11242,8 +11335,7 @@ class DataFrame:
         │ bar    ┆ 2   ┆ b   ┆ null ┆ [3]       ┆ womp  │
         └────────┴─────┴─────┴──────┴───────────┴───────┘
         """
-        columns = _expand_selectors(self, columns, *more_columns)
-        return self._from_pydf(self._df.unnest(columns))
+        return self.lazy().unnest(columns, *more_columns).collect(_eager=True)
 
     def corr(self, **kwargs: Any) -> DataFrame:
         """
@@ -11344,6 +11436,11 @@ class DataFrame:
         │ steve  ┆ 42  │
         │ elise  ┆ 44  │
         └────────┴─────┘
+
+        Notes
+        -----
+        No guarantee is given over the output row order when the key is equal
+        between the both dataframes.
         """
         return self.lazy().merge_sorted(other.lazy(), key).collect(_eager=True)
 
@@ -11354,16 +11451,16 @@ class DataFrame:
         descending: bool = False,
     ) -> DataFrame:
         """
-        Indicate that one or multiple columns are sorted.
+        Flag a column as sorted.
 
         This can speed up future operations.
 
         Parameters
         ----------
         column
-            Column that are sorted
+            Column that is sorted
         descending
-            Whether the columns are sorted in descending order.
+            Whether the column is sorted in descending order.
 
         Warnings
         --------

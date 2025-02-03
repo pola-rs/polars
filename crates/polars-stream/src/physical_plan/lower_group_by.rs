@@ -12,6 +12,7 @@ use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use recursive::recursive;
 use slotmap::SlotMap;
 
 use super::lower_expr::lower_exprs;
@@ -19,6 +20,7 @@ use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
     build_select_stream, compute_output_schema, is_input_independent, unique_column_name,
 };
+use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
 #[allow(clippy::too_many_arguments)]
@@ -71,6 +73,7 @@ fn build_group_by_fallback(
 ///
 /// Such an expression is defined as the elementwise combination of scalar
 /// aggregations of elementwise combinations of the input columns / scalar literals.
+#[recursive]
 fn try_lower_elementwise_scalar_agg_expr(
     expr: Node,
     inside_agg: bool,
@@ -178,7 +181,10 @@ fn try_lower_elementwise_scalar_agg_expr(
         },
 
         AExpr::Agg(agg) => {
-            let orig_agg = agg.clone();
+            // Nested aggregates not supported.
+            if inside_agg {
+                return None;
+            }
             match agg {
                 IRAggExpr::Min { input, .. }
                 | IRAggExpr::Max { input, .. }
@@ -188,10 +194,7 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
                 | IRAggExpr::Std(input, ..) => {
-                    // Nested aggregates not supported.
-                    if inside_agg {
-                        return None;
-                    }
+                    let orig_agg = agg.clone();
                     // Lower and replace input.
                     let trans_input = lower_rec!(*input, true)?;
                     let mut trans_agg = orig_agg;
@@ -311,7 +314,8 @@ fn try_build_streaming_group_by(
             &mut trans_agg_exprs,
             &trans_input_cols,
         )?;
-        trans_output_exprs.push(ExprIR::new(trans_node, agg.output_name_inner().clone()));
+        let output_name = OutputName::Alias(agg.output_name().clone());
+        trans_output_exprs.push(ExprIR::new(trans_node, output_name));
     }
 
     let input_schema = &phys_sm[trans_input.node].output_schema;
@@ -337,7 +341,12 @@ fn try_build_streaming_group_by(
         phys_sm,
         expr_cache,
     );
-    Some(post_select)
+    let out = if let Some((offset, len)) = options.slice {
+        post_select.map(|s| build_slice_stream(s, offset, len, phys_sm))
+    } else {
+        post_select
+    };
+    Some(out)
 }
 
 #[allow(clippy::too_many_arguments)]

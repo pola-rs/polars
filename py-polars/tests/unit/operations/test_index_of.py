@@ -17,13 +17,21 @@ if TYPE_CHECKING:
 from polars.testing import assert_frame_equal
 
 
+def isnan(value: object) -> bool:
+    if isinstance(value, int):
+        return False
+    if not isinstance(value, (np.number, float)):
+        return False
+    return np.isnan(value)  # type: ignore[no-any-return]
+
+
 def assert_index_of(
     series: pl.Series,
     value: IntoExpr,
     convert_to_literal: bool = False,
 ) -> None:
     """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
-    if isinstance(value, (np.number, float, int)) and np.isnan(value):
+    if isnan(value):
         expected_index = None
         for i, o in enumerate(series.to_list()):
             if o is not None and np.isnan(o):
@@ -93,10 +101,27 @@ def test_empty() -> None:
 
 @pytest.mark.parametrize(
     "dtype",
-    [pl.Int8, pl.Int16, pl.Int32, pl.Int64, pl.UInt8, pl.UInt16, pl.UInt32, pl.UInt64],
+    [
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int128,
+    ],
 )
 def test_integer(dtype: pl.DataType) -> None:
-    values = [51, 3, None, 4]
+    values = [
+        51,
+        3,
+        None,
+        4,
+        pl.select(dtype.max()).item(),  # type: ignore[attr-defined]
+        pl.select(dtype.min()).item(),  # type: ignore[attr-defined]
+    ]
     series = pl.Series(values, dtype=dtype)
     sorted_series_asc = series.sort(descending=False)
     sorted_series_desc = series.sort(descending=True)
@@ -104,7 +129,7 @@ def test_integer(dtype: pl.DataType) -> None:
         [pl.Series([100, 7], dtype=dtype), series], rechunk=False
     )
 
-    extra_values = [pl.select(v).item() for v in [dtype.max(), dtype.min()]]  # type: ignore[attr-defined]
+    extra_values = [pl.select(v).item() for v in [dtype.max() - 1, dtype.min() + 1]]  # type: ignore[attr-defined]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:

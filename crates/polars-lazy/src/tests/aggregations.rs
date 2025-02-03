@@ -576,3 +576,42 @@ fn test_take_in_groups() -> PolarsResult<()> {
     );
     Ok(())
 }
+
+#[test]
+fn test_anonymous_function_returns_scalar_all_null_20679() {
+    use std::sync::Arc;
+
+    fn reduction_function(column: Column) -> PolarsResult<Option<Column>> {
+        let val = column.get(0)?.into_static();
+        let col = Column::new_scalar("".into(), Scalar::new(column.dtype().clone(), val), 1);
+        Ok(Some(col))
+    }
+
+    let a = Column::new("a".into(), &[0, 0, 1]);
+    let dtype = DataType::Null;
+    let b = Column::new_scalar("b".into(), Scalar::new(dtype, AnyValue::Null), 3);
+    let df = DataFrame::new(vec![a, b]).unwrap();
+
+    let f = move |c: &mut [Column]| reduction_function(std::mem::take(&mut c[0]));
+
+    let expr = Expr::AnonymousFunction {
+        input: vec![col("b")],
+        function: LazySerde::Deserialized(SpecialEq::new(Arc::new(f))),
+        output_type: Default::default(),
+        options: FunctionOptions {
+            collect_groups: ApplyOptions::GroupWise,
+            fmt_str: "",
+            flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
+            ..Default::default()
+        },
+    };
+
+    let grouped_df = df
+        .lazy()
+        .group_by([col("a")])
+        .agg([expr])
+        .collect()
+        .unwrap();
+
+    assert_eq!(grouped_df.get_columns()[1].dtype(), &DataType::Null);
+}

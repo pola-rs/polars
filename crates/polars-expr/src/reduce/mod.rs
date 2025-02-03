@@ -121,8 +121,9 @@ pub trait Reducer: Send + Sync + Clone + 'static {
         &self,
         a: &mut Self::Value,
         b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+        seq_id: u64,
     );
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>);
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, seq_id: u64);
     fn finish(
         &self,
         v: Vec<Self::Value>,
@@ -179,6 +180,7 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
         &self,
         a: &mut Self::Value,
         b: Option<<Self::Dtype as PolarsDataType>::Physical<'_>>,
+        _seq_id: u64,
     ) {
         if let Some(b) = b {
             *a = <R as NumericReduction>::combine(*a, b);
@@ -186,7 +188,7 @@ impl<R: NumericReduction> Reducer for NumReducer<R> {
     }
 
     #[inline(always)]
-    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>) {
+    fn reduce_ca(&self, v: &mut Self::Value, ca: &ChunkedArray<Self::Dtype>, _seq_id: u64) {
         if let Some(r) = <R as NumericReduction>::reduce_ca(ca) {
             *v = <R as NumericReduction>::combine(*v, r);
         }
@@ -243,13 +245,14 @@ where
         &mut self,
         values: &Series,
         group_idx: IdxSize,
-        _seq_id: u64,
+        seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
-            .reduce_ca(&mut self.values[group_idx as usize], ca);
+            .reduce_ca(&mut self.values[group_idx as usize], ca, seq_id);
         Ok(())
     }
 
@@ -257,10 +260,11 @@ where
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
-        _seq_id: u64,
+        seq_id: u64,
     ) -> PolarsResult<()> {
         assert!(values.dtype() == &self.in_dtype);
         assert!(values.len() == group_idxs.len());
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = self.reducer.cast_series(values);
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         unsafe {
@@ -268,7 +272,7 @@ where
             if values.has_nulls() {
                 for (g, ov) in group_idxs.iter().zip(ca.iter()) {
                     let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.reduce_one(grp, ov);
+                    self.reducer.reduce_one(grp, ov, seq_id);
                 }
             } else {
                 let mut offset = 0;
@@ -276,7 +280,7 @@ where
                     let subgroup = &group_idxs[offset..offset + arr.len()];
                     for (g, v) in subgroup.iter().zip(arr.values_iter()) {
                         let grp = self.values.get_unchecked_mut(*g as usize);
-                        self.reducer.reduce_one(grp, Some(v));
+                        self.reducer.reduce_one(grp, Some(v), seq_id);
                     }
                     offset += arr.len();
                 }
@@ -395,15 +399,16 @@ where
         &mut self,
         values: &Series,
         group_idx: IdxSize,
-        _seq_id: u64,
+        seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.to_physical_repr();
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         self.reducer
-            .reduce_ca(&mut self.values[group_idx as usize], ca);
+            .reduce_ca(&mut self.values[group_idx as usize], ca, seq_id);
         if ca.len() != ca.null_count() {
             self.mask.set(group_idx as usize, true);
         }
@@ -414,12 +419,13 @@ where
         &mut self,
         values: &Series,
         group_idxs: &[IdxSize],
-        _seq_id: u64,
+        seq_id: u64,
     ) -> PolarsResult<()> {
         // TODO: we should really implement a sum-as-other-type operation instead
         // of doing this materialized cast.
         assert!(values.dtype() == &self.in_dtype);
         assert!(values.len() == group_idxs.len());
+        let seq_id = seq_id + 1; // So we can use 0 for 'none yet'.
         let values = values.to_physical_repr();
         let ca: &ChunkedArray<R::Dtype> = values.as_ref().as_ref().as_ref();
         unsafe {
@@ -427,7 +433,7 @@ where
             for (g, ov) in group_idxs.iter().zip(ca.iter()) {
                 if let Some(v) = ov {
                     let grp = self.values.get_unchecked_mut(*g as usize);
-                    self.reducer.reduce_one(grp, Some(v));
+                    self.reducer.reduce_one(grp, Some(v), seq_id);
                     self.mask.set_unchecked(*g as usize, true);
                 }
             }

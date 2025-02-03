@@ -146,8 +146,7 @@ def test_cwc_with_internal_aliases() -> None:
     explain = df.explain()
 
     assert (
-        """[[(col("a")) == (2)].cast(Boolean).alias("c"), [(col("b")) * (3)].alias("d")]"""
-        in explain
+        """[[(col("a")) == (2)].alias("c"), [(col("b")) * (3)].alias("d")]""" in explain
     )
 
 

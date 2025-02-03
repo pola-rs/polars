@@ -8,7 +8,6 @@ from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
 from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
 from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
-from polars._utils.unstable import unstable
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
@@ -280,14 +279,9 @@ class ExprDateTimeNameSpace:
         every = parse_into_expression(every, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_truncate(every))
 
-    @unstable()
     def round(self, every: str | dt.timedelta | IntoExprColumn) -> Expr:
         """
         Divide the date/datetime range into buckets.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         - Each date/datetime in the first half of the interval
           is mapped to the start of its bucket.

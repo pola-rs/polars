@@ -60,7 +60,7 @@ impl FileInfo {
         let schema = Arc::make_mut(&mut self.schema);
 
         for field in hive_schema.iter_fields() {
-            if let Ok(existing) = schema.try_get_mut(&field.name) {
+            if let Some(existing) = schema.get_mut(&field.name) {
                 *existing = field.dtype().clone();
             } else {
                 schema

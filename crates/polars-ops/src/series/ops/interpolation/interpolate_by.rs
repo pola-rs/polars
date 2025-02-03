@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
-use polars_core::export::num::{NumCast, Zero};
+use num_traits::{NumCast, Zero};
 use polars_core::prelude::*;
 use polars_utils::slice::SliceAble;
 

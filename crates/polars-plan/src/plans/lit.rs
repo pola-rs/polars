@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
-use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::hashing::hash_to_partition;
@@ -233,6 +233,15 @@ impl LiteralValue {
             LiteralValue::UInt32(value)
         }
     }
+
+    pub fn is_null(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::OtherScalar(sc) => sc.is_null(),
+            Self::Series(s) => s.len() == 1 && s.null_count() == 1,
+            _ => false,
+        }
+    }
 }
 
 pub trait Literal {
@@ -310,6 +319,10 @@ impl From<AnyValue<'_>> for LiteralValue {
             AnyValue::Date(v) => LiteralValue::Date(v),
             #[cfg(feature = "dtype-datetime")]
             AnyValue::Datetime(value, tu, tz) => LiteralValue::DateTime(value, tu, tz.cloned()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(value, tu, tz) => {
+                LiteralValue::DateTime(value, tu, tz.as_ref().map(AsRef::as_ref).cloned())
+            },
             #[cfg(feature = "dtype-duration")]
             AnyValue::Duration(value, tu) => LiteralValue::Duration(value, tu),
             #[cfg(feature = "dtype-time")]
@@ -441,6 +454,11 @@ impl Literal for ChronoDuration {
 #[cfg(feature = "dtype-duration")]
 impl Literal for Duration {
     fn lit(self) -> Expr {
+        assert!(
+            self.months() == 0,
+            "Cannot create literal duration that is not of fixed length; found {}",
+            self
+        );
         let ns = self.duration_ns();
         Expr::Literal(LiteralValue::Duration(
             if self.negative() { -ns } else { ns },

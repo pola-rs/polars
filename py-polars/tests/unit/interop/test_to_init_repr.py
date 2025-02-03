@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import zoneinfo  # noqa: F401
 from datetime import date, datetime, time, timedelta, timezone
 
 import polars as pl
@@ -24,6 +25,11 @@ def test_to_init_repr() -> None:
                         datetime(2023, 10, 12, 20, 3, 8, 11),
                         None,
                     ],
+                    "i": [
+                        datetime(2022, 7, 5, 10, 30, 45, 4560),
+                        datetime(2023, 10, 12, 20, 3, 8, 11),
+                        None,
+                    ],
                     "null": [None, None, None],
                     "enum": ["a", "b", "c"],
                     "duration": [timedelta(days=1), timedelta(days=2), None],
@@ -34,6 +40,7 @@ def test_to_init_repr() -> None:
             .with_columns(
                 pl.col("c").cast(pl.Categorical),
                 pl.col("h").cast(pl.Datetime("ns")),
+                pl.col("i").dt.replace_time_zone("Australia/Melbourne"),
                 pl.col("enum").cast(pl.Enum(["a", "b", "c"])),
             )
             .collect()

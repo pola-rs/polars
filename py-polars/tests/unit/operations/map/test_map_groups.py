@@ -152,3 +152,16 @@ def test_map_groups_numpy_output_3057() -> None:
 
     expected = pl.DataFrame({"id": [0, 1], "result": [2.266666, 7.333333]})
     assert_frame_equal(result, expected)
+
+
+def test_map_groups_return_all_null_15260() -> None:
+    def foo(x: pl.Series) -> pl.Series:
+        return pl.Series([x[0][0]], dtype=x[0].dtype)
+
+    assert_frame_equal(
+        pl.DataFrame({"key": [0, 0, 1], "a": [None, None, None]})
+        .group_by("key")
+        .agg(pl.map_groups(exprs=["a"], function=foo))  # type: ignore[arg-type]
+        .sort("key"),
+        pl.DataFrame({"key": [0, 1], "a": [None, None]}),
+    )

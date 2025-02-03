@@ -1,5 +1,5 @@
 #[allow(unused_imports)]
-pub(crate) use {crate::series::*, polars_core::export::rayon::prelude::*};
+pub(crate) use {crate::series::*, rayon::prelude::*};
 
 pub use crate::chunked_array::*;
 #[cfg(feature = "merge_sorted")]
