@@ -152,15 +152,13 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         DataType::String => {
-            let lhs = lhs_s.str().unwrap();
-            let rhs = rhs_s.str().unwrap();
-
+            let lhs = lhs.str().unwrap().as_binary();
+            let rhs = rhs.str().unwrap().as_binary();
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         DataType::Binary => {
             let lhs = lhs_s.binary().unwrap();
             let rhs = rhs_s.binary().unwrap();
-
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         _ => {
