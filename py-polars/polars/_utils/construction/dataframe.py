@@ -1102,9 +1102,9 @@ def pandas_to_pydf(
                 length=length,
             )
 
-    for col in data.columns:
-        arrow_dict[str(col)] = plc.pandas_series_to_arrow(
-            data[col], nan_to_null=nan_to_null, length=length
+    for col_idx, col_data in data.items():
+        arrow_dict[str(col_idx)] = plc.pandas_series_to_arrow(
+            col_data, nan_to_null=nan_to_null, length=length
         )
 
     arrow_table = pa.table(arrow_dict)
