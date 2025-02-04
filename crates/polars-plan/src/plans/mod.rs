@@ -28,6 +28,8 @@ pub(crate) mod optimizer;
 pub(crate) mod options;
 #[cfg(feature = "python")]
 pub mod python;
+#[cfg(feature = "python")]
+pub use python::*;
 mod schema;
 pub mod visitor;
 
