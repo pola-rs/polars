@@ -1,3 +1,5 @@
+use arrow::compute::concatenate::concatenate_unchecked;
+
 use super::*;
 
 #[allow(clippy::all)]
@@ -20,7 +22,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 DataType::Categorical(None, _) | DataType::Enum(None, _)
             ) =>
         {
-            let array = concatenate_owned_unchecked(chunks).unwrap();
+            let array = concatenate_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {
@@ -52,7 +54,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 DataType::Categorical(None, _) | DataType::Enum(None, _)
             ) =>
         {
-            let array = concatenate_owned_unchecked(chunks).unwrap();
+            let array = concatenate_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {

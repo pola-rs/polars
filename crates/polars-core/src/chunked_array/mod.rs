@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
+use arrow::compute::concatenate::concatenate_unchecked;
 use polars_compute::filter::filter_with_bitmap;
 
 use crate::prelude::*;
@@ -50,7 +51,6 @@ mod trusted_len;
 use std::mem;
 use std::slice::Iter;
 
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
@@ -394,7 +394,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
+        self.chunks = vec![concatenate_unchecked(self.chunks.as_slice()).unwrap()];
     }
 
     pub fn clear(&self) -> Self {

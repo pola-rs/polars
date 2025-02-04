@@ -28,13 +28,13 @@ impl ValueSize for FixedSizeListArray {
     }
 }
 
-impl ValueSize for Utf8Array<i64> {
+impl<O: Offset> ValueSize for Utf8Array<O> {
     fn get_values_size(&self) -> usize {
         unsafe {
             // SAFETY:
             // invariant of the struct that offsets always has at least 2 members.
-            let start = *self.offsets().get_unchecked(0) as usize;
-            let end = *self.offsets().last() as usize;
+            let start = self.offsets().get_unchecked(0).to_usize();
+            let end = self.offsets().last().to_usize();
             end - start
         }
     }
