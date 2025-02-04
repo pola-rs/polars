@@ -13,6 +13,7 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
 
 use super::PyLazyFrame;
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
@@ -834,7 +835,7 @@ impl PyLazyFrame {
 
                         // Pass the node visitor which allows the python callback to replace parts of the query plan.
                         // Remove "cuda" or specify better once we have multiple post-opt callbacks.
-                        lambda.call1(py, (nt, options, cloud_options)).map_err(
+                        lambda.call1(py, (nt, Wrap(options.clone()), cloud_options.clone().map(|co| Wrap(co)))).map_err(
                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
                         )?;
                         // Unpack the arena's.
