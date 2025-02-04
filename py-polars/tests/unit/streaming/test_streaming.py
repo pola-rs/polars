@@ -391,7 +391,7 @@ def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
 
 def test_streaming_temporal_17669() -> None:
     df = (
-        pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime})
+        pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime("us")})
         .with_columns(
             b=pl.col("a").dt.date(),
             c=pl.col("a").dt.time(),
@@ -399,7 +399,7 @@ def test_streaming_temporal_17669() -> None:
         .collect(streaming=True)
     )
     assert df.schema == {
-        "a": pl.Datetime,
+        "a": pl.Datetime("us"),
         "b": pl.Date,
         "c": pl.Time,
     }
