@@ -78,6 +78,9 @@ fn remove_suffix<'a>(
     };
 
     for expr in exprs {
+        // Using AexprNode::rewrite() ensures we do not mutate any nodes in-place. The nodes may be
+        // used in other locations and mutating them will cause really confusing bugs, such as
+        // https://github.com/pola-rs/polars/issues/20831.
         match AexprNode::new(expr.node()).rewrite(&mut remover, expr_arena) {
             Ok(v) => {
                 expr.set_node(v.node());
