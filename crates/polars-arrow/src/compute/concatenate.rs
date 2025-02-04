@@ -1,8 +1,6 @@
 use std::sync::Arc;
 
-use hashbrown::hash_map::Entry;
 use polars_error::{polars_bail, PolarsResult};
-use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 
@@ -207,10 +205,10 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
     let validity = concatenate_validities_with_len_null_count(arrays, total_len, null_count);
 
     let first_arr: &BinaryViewArrayGeneric<V> = arrays[0].as_ref().as_any().downcast_ref().unwrap();
-    let mut total_nondedup_buffers = first_arr.data_buffers().len();
+    // let mut total_nondedup_buffers = first_arr.data_buffers().len();
     let all_same_bufs = arrays.iter().skip(1).all(|arr| {
         let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
-        total_nondedup_buffers += arr.data_buffers().len();
+        // total_nondedup_buffers += arr.data_buffers().len();
         // Fat pointer equality, checks both start and length.
         std::ptr::eq(
             Arc::as_ptr(arr.data_buffers()),
@@ -219,9 +217,12 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
     });
 
     let mut total_bytes_len = 0;
-    let mut total_buffer_len = 0;
     let mut views = Vec::with_capacity(total_len);
 
+    // Lazily copying only buffers caused problems for the new streaming engine,
+    // so for the moment we always ensure there is only one buffer.
+    /*
+    let mut total_buffer_len = 0;
     let buffers = if all_same_bufs {
         total_buffer_len = first_arr.total_buffer_len();
         for arr in arrays {
@@ -276,6 +277,46 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
         }
 
         dedup_buffers.into_iter().collect()
+    };
+    */
+
+    let mut total_buffer_len = 0;
+    let buffers = if all_same_bufs && first_arr.data_buffers().len() == 1 {
+        total_buffer_len = first_arr.total_buffer_len();
+        for arr in arrays {
+            let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
+            views.extend_from_slice(arr.views());
+            total_bytes_len += arr.total_bytes_len();
+        }
+        Arc::clone(first_arr.data_buffers())
+    } else {
+        for arr in arrays {
+            let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
+            total_buffer_len += arr
+                .len_iter()
+                .map(|l| if l > 12 { l as usize } else { 0 })
+                .sum::<usize>();
+        }
+        let mut new_buffer = Vec::with_capacity(total_buffer_len);
+        for arr in arrays {
+            let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
+            let buffers = arr.data_buffers();
+
+            unsafe {
+                for mut view in arr.views().iter().copied() {
+                    total_bytes_len += view.length as usize;
+                    if view.length > 12 {
+                        let new_offset = new_buffer.len().try_into().unwrap();
+                        new_buffer.extend_from_slice(view.get_slice_unchecked(buffers));
+                        view.offset = new_offset;
+                        view.buffer_idx = 0;
+                    }
+                    views.push_unchecked(view);
+                }
+            }
+        }
+
+        Arc::new([Buffer::from(new_buffer)])
     };
 
     unsafe {
