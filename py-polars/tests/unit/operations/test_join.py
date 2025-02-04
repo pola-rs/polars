@@ -1480,3 +1480,54 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     assert plan[1].strip().startswith("INNER JOIN")
 
     assert_frame_equal(q1.collect(), q2.collect())
+
+
+def test_join_where_nested_expr_21066() -> None:
+    left = pl.LazyFrame({"a": [1, 2]})
+    right = pl.LazyFrame({"a": [1]})
+
+    q = left.join_where(right, pl.col("a") == (pl.col("a_right") + 1))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 2, "a_right": 1}))
+
+
+def test_select_after_join_where_20831() -> None:
+    left = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 1, None],
+            "b": [1, 2, 3, 4, 5],
+            "c": [2, 3, 4, 5, 6],
+        }
+    )
+
+    right = pl.LazyFrame(
+        {
+            "a": [1, 4, 3, 7, None, None, 1],
+            "c": [2, 3, 4, 5, 6, 7, 8],
+            "d": [6, None, 7, 8, -1, 2, 4],
+        }
+    )
+
+    q = left.join_where(
+        right, pl.col("b") * 2 <= pl.col("a_right"), pl.col("a") < pl.col("c_right")
+    )
+
+    assert_frame_equal(
+        q.select("d").collect().sort("d"),
+        pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
+    )
+
+    assert q.select(pl.len()).collect().item() == 6
+
+    q = (
+        left.join(right, how="cross")
+        .filter(pl.col("b") * 2 <= pl.col("a_right"))
+        .filter(pl.col("a") < pl.col("c_right"))
+    )
+
+    assert_frame_equal(
+        q.select("d").collect().sort("d"),
+        pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
+    )
+
+    assert q.select(pl.len()).collect().item() == 6
