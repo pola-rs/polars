@@ -39,6 +39,7 @@ def concat(
         DataFrames, LazyFrames, Series, or Expr to concatenate.
     how : {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align', 'align_full', 'align_inner', 'align_left', 'align_right'}
         Series and Expr only support the `vertical` strategy.
+
         * vertical: Applies multiple `vstack` operations.
         * vertical_relaxed: Same as `vertical`, but additionally coerces columns to
           their common supertype *if* they are mismatched (eg: Int32 → Int64).
