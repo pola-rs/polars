@@ -16,48 +16,20 @@ use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
 use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
 
 impl ParquetSourceNode {
-    /// # Panics
-    /// Panics if called more than once.
-    async fn shutdown_impl(
-        async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
-        verbose: bool,
-    ) -> PolarsResult<()> {
-        if verbose {
-            eprintln!("[ParquetSource]: Shutting down");
-        }
-
-        let (raw_morsel_receivers, morsel_stream_task_handle) =
-            async_task_data.try_lock().unwrap().take().unwrap();
-
-        drop(raw_morsel_receivers);
-        // Join on the producer handle to catch errors/panics.
-        // Safety
-        // * We dropped the receivers on the line above
-        // * This function is only called once.
-        morsel_stream_task_handle.await.unwrap()
-    }
-
-    pub(super) fn shutdown(&self) -> impl Future<Output = PolarsResult<()>> {
-        if self.verbose {
-            eprintln!("[ParquetSource]: Shutdown via `shutdown()`");
-        }
-        Self::shutdown_impl(self.async_task_data.clone(), self.verbose)
-    }
-
-    /// Spawns a task to shut down the source node to avoid blocking the current thread. This is
-    /// usually called when data is no longer needed from the source node, as such it does not
-    /// propagate any (non-critical) errors. If on the other hand the source node does not provide
-    /// more data when requested, then it is more suitable to call [`Self::shutdown`], as it returns
-    /// a result that can be used to distinguish between whether the data stream stopped due to an
-    /// error or EOF.
-    pub(super) fn shutdown_in_background(&self) {
-        if self.verbose {
-            eprintln!("[ParquetSource]: Shutdown via `shutdown_in_background()`");
-        }
-        let async_task_data = self.async_task_data.clone();
-        polars_io::pl_async::get_runtime()
-            .spawn(Self::shutdown_impl(async_task_data, self.verbose));
-    }
+    // /// Spawns a task to shut down the source node to avoid blocking the current thread. This is
+    // /// usually called when data is no longer needed from the source node, as such it does not
+    // /// propagate any (non-critical) errors. If on the other hand the source node does not provide
+    // /// more data when requested, then it is more suitable to call [`Self::shutdown`], as it returns
+    // /// a result that can be used to distinguish between whether the data stream stopped due to an
+    // /// error or EOF.
+    // pub(super) fn shutdown_in_background(&self) {
+    //     if self.verbose {
+    //         eprintln!("[ParquetSource]: Shutdown via `shutdown_in_background()`");
+    //     }
+    //     let async_task_data = self.async_task_data.clone();
+    //     polars_io::pl_async::get_runtime()
+    //         .spawn(Self::shutdown_impl(async_task_data, self.verbose));
+    // }
 
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]

@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::cmp::Reverse;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Range;
@@ -11,39 +11,23 @@ use polars_expr::state::ExecutionState;
 use polars_mem_engine::ScanPredicate;
 use polars_plan::plans::{ScanSource, ScanSources};
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
 
-use super::SourceNode;
-use crate::async_executor::{spawn, task_scope};
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use super::{SourceNode, SourceOutput};
+use crate::async_executor::spawn;
+use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::linearizer::{self, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
-use crate::nodes::{
-    ComputeNode, JoinHandle, Morsel, MorselSeq, PortState, TaskPriority, TaskScope,
-};
-use crate::pipe::{RecvPort, SendPort};
+use crate::nodes::io_sources::PhaseResult;
+use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
+use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
+#[allow(unused)]
 pub enum RowRestrication {
     Slice(Range<usize>),
     Predicate(ScanPredicate),
-}
-
-pub struct RowGroup<T> {
-    pub data: T,
-    pub row_count: IdxSize,
-}
-
-impl RowGroup<Morsel> {
-    fn into_df(self) -> RowGroup<DataFrame> {
-        RowGroup {
-            data: self.data.into_df(),
-            row_count: self.row_count,
-        }
-    }
-}
-
-struct Scan<T: MultiScanable> {
-    node: T,
 }
 
 pub struct MultiScanNode<T: MultiScanable> {
@@ -66,216 +50,244 @@ impl<T: MultiScanable> MultiScanNode<T> {
     }
 }
 
-fn process_dataframe(df: RowGroup<DataFrame>) -> PolarsResult<DataFrame> {
-    Ok(df.data)
+fn process_dataframe(df: DataFrame) -> PolarsResult<DataFrame> {
+    Ok(df)
 }
 
 pub trait MultiScanable: SourceNode + Sized + Send + Sync {
-    fn new(
-        source: ScanSource,
-        projection: Option<&Bitmap>,
-        row_restriction: Option<RowRestrication>,
-        row_index: Option<PlSmallStr>,
-    ) -> impl Future<Output = PolarsResult<Self>> + Send;
+    const BASE_NAME: &'static str;
+
+    const DOES_PRED_PD: bool;
+    const DOES_SLICE_PD: bool;
+    const DOES_ROW_INDEX: bool;
+
+    fn new(source: ScanSource) -> impl Future<Output = PolarsResult<Self>> + Send;
+
+    fn with_projection(&mut self, projection: Option<&Bitmap>);
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>);
+    fn with_row_index(&mut self, row_index: Option<PlSmallStr>);
+
+    #[allow(unused)]
     fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send;
+    #[allow(unused)]
     fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send;
 }
 
+enum SourceInput {
+    Serial(Receiver<Morsel>),
+    Parallel(Vec<Receiver<Morsel>>),
+}
+
 impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
-    const BASE_NAME: &'static str = "multi-scan";
+    const EFFICIENT_PRED_PD: bool = T::EFFICIENT_PRED_PD;
+    const EFFICIENT_SLICE_PD: bool = true;
 
     fn name(&self) -> &str {
         &self.name
     }
 
-    fn source_start(
-        &self,
+    fn is_source_output_parallel(&self) -> bool {
+        false
+    }
+
+    fn spawn_source(
+        &mut self,
         num_pipelines: usize,
-        mut send_port_recv: Receiver<Sender<RowGroup<Morsel>>>,
+        mut send_port_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
+        unrestricted_row_count: Option<PlSmallStr>,
+    ) -> Receiver<PhaseResult> {
+        assert!(unrestricted_row_count.is_none());
+
+        let (mut phase_result_tx, phase_result_rx) = connector();
         let num_concurrent_scans = num_pipelines;
 
         let sources = &self.sources;
         let projection = &self.projection;
 
-        let (mut ch_send, ch_recv) = (0..num_concurrent_scans)
-            .map(|_| connector::<Sender<RowGroup<Morsel>>>())
+        let (si_send, mut si_recv) = (0..num_concurrent_scans)
+            .map(|_| connector::<SourceInput>())
             .collect::<(Vec<_>, Vec<_>)>();
 
-        let source_token = SourceToken::new();
-        let wait_group = WaitGroup::default();
-
-        join_handles.extend(ch_recv.into_iter().enumerate().map(|(mut i, mut ch_recv)| {
+        join_handles.extend(si_send.into_iter().enumerate().map(|(mut i, mut ch_send)| {
             let sources = sources.clone();
             let projection = projection.clone();
             spawn(TaskPriority::High, async move {
                 let state = ExecutionState::new();
                 let mut join_handles = Vec::new();
-                while let Ok(rg_send) = ch_recv.recv().await {
-                    assert!(i < sources.len());
+                while i < sources.len() {
                     join_handles.clear();
 
                     let source = sources.at(i).into_owned()?;
-                    let source = T::new(source, projection.as_ref(), None, None).await?;
+                    let (mut output_send, output_recv) = connector();
+                    let mut source = T::new(source).await?;
+                    source.with_projection(projection.as_ref());
+                    let mut phase_result_rx = source.spawn_source(
+                        num_pipelines,
+                        output_recv,
+                        &state,
+                        &mut join_handles,
+                        None,
+                    );
 
-                    let (mut tx, rx) = connector();
-                    if tx.send(rg_send).await.is_err() {
-                        return Ok(());
+                    // Loop until a phase result indicated that the source is empty.
+                    loop {
+                        let (tx, rx) = if source.is_source_output_parallel() {
+                            let (tx, rx) = (0..num_pipelines)
+                                .map(|_| connector())
+                                .collect::<(Vec<_>, Vec<_>)>();
+                            (SourceOutput::Parallel(tx), SourceInput::Parallel(rx))
+                        } else {
+                            let (tx, rx) = connector();
+                            (SourceOutput::Serial(tx), SourceInput::Serial(rx))
+                        };
+
+                        // Wait for the orchestrator task to actually be interested in the output
+                        // of this file.
+                        if ch_send.send(rx).await.is_err() {
+                            return Ok(());
+                        };
+                        // Start draining the source into the created channels.
+                        if output_send.send(tx).await.is_err() {
+                            return Ok(());
+                        };
+
+                        // Wait for the phase to end.
+                        let Ok(phase_result) = phase_result_rx.recv().await else {
+                            return Ok(());
+                        };
+                        if phase_result == PhaseResult::Finished {
+                            break;
+                        }
                     }
-                    source.source_start(num_pipelines, rx, &state, &mut join_handles);
 
                     for handle in join_handles.iter_mut() {
                         handle.await?;
                     }
-
                     i += num_concurrent_scans;
-
-                    if i >= sources.len() {
-                        break;
-                    }
                 }
-
-                dbg!(i % num_concurrent_scans);
 
                 PolarsResult::Ok(())
             })
         }));
 
-        let _source_token = source_token.clone();
-        let sources = sources.clone();
-        join_handles.push(spawn(TaskPriority::High, async move {
-            let source_token = _source_token;
-            let wait_group = wait_group;
-
-            let mut seq = MorselSeq::default();
-            let mut current_scan = 0;
-            let mut buffered = None;
-            while let Ok(mut send) = send_port_recv.recv().await {
-                if let Some(rg) = buffered.take() {
-                    if let Err(rg) = send.send(rg).await {
-                        buffered = Some(rg);
-                        continue;
+        let (mut pass_task_send, pass_task_recv) = (0..num_pipelines)
+            .map(|_| {
+                connector::<(
+                    Receiver<Morsel>,
+                    linearizer::Inserter<Priority<Reverse<MorselSeq>, Morsel>>,
+                )>()
+            })
+            .collect::<(Vec<_>, Vec<_>)>();
+        join_handles.extend(pass_task_recv.into_iter().map(|mut pass_task_recv| {
+            spawn(TaskPriority::High, async move {
+                while let Ok((mut recv, mut send)) = pass_task_recv.recv().await {
+                    while let Ok(v) = recv.recv().await {
+                        if send.insert(Priority(Reverse(v.seq()), v)).await.is_err() {
+                            break;
+                        }
                     }
                 }
 
-                'source_loop: while current_scan < sources.len() {
-                    let ch_send = &mut ch_send[current_scan % num_concurrent_scans];
+                Ok(())
+            })
+        }));
 
-                    let (tx, mut rx) = connector();
+        let sources = sources.clone();
+        join_handles.push(spawn(TaskPriority::High, async move {
+            let mut seq = MorselSeq::default();
+            let mut current_scan = 0;
 
-                    if ch_send.send(tx).await.is_err() {
-                        panic!();
-                    }
+            // Every phase we are given a new send channel.
+            'send_port_loop: while let Ok(send) = send_port_recv.recv().await {
+                // @TODO: Make this parallel compatible if there is no row count or slice.
+                let mut send = send.serial();
 
-                    while let Ok(rg) = rx.recv().await {
-                        let row_count = rg.row_count;
-                        let df = rg.into_df();
-                        let df = process_dataframe(df)?;
+                let source_token = SourceToken::new();
+                let wait_group = WaitGroup::default();
 
-                        let mut morsel = Morsel::new(df, seq, source_token.clone());
-                        morsel.set_consume_token(wait_group.token());
-                        seq = seq.successor();
+                while current_scan < sources.len() {
+                    let si_recv = &mut si_recv[current_scan % num_concurrent_scans];
+                    let Ok(rx) = si_recv.recv().await else {
+                        panic!()
+                    };
 
-                        let rg = RowGroup {
-                            data: morsel,
-                            row_count,
-                        };
-                        if let Err(rg) = send.send(rg).await {
-                            buffered = Some(rg);
-                            break 'source_loop;
-                        }
+                    match rx {
+                        SourceInput::Serial(mut rx) => {
+                            while let Ok(rg) = rx.recv().await {
+                                let original_source_token = rg.source_token().clone();
+
+                                let df = rg.into_df();
+                                let df = process_dataframe(df)?;
+
+                                let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
+                                seq = seq.successor();
+
+                                if send.send(morsel).await.is_err() {
+                                    break 'send_port_loop;
+                                }
+
+                                wait_group.wait().await;
+                                if source_token.stop_requested() {
+                                    original_source_token.stop();
+
+                                    _ = phase_result_tx.send(PhaseResult::Stopped).await;
+                                    continue 'send_port_loop;
+                                }
+                            }
+                        },
+                        SourceInput::Parallel(rxs) => {
+                            let (mut linearizer, inserters) =
+                                Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+                            for ((rx, pass_task_send), inserter) in rxs
+                                .into_iter()
+                                .zip(pass_task_send.iter_mut())
+                                .zip(inserters)
+                            {
+                                if pass_task_send.send((rx, inserter)).await.is_err() {
+                                    return Ok(());
+                                };
+                            }
+
+                            while let Some(rg) = linearizer.get().await {
+                                let rg = rg.1;
+
+                                let original_source_token = rg.source_token().clone();
+
+                                let df = rg.into_df();
+                                let df = process_dataframe(df)?;
+
+                                let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
+                                seq = seq.successor();
+
+                                if send.send(morsel).await.is_err() {
+                                    break 'send_port_loop;
+                                }
+
+                                wait_group.wait().await;
+                                if source_token.stop_requested() {
+                                    original_source_token.stop();
+
+                                    _ = phase_result_tx.send(PhaseResult::Stopped).await;
+                                    continue 'send_port_loop;
+                                }
+                            }
+                        },
                     }
 
                     current_scan += 1;
                 }
 
-                if current_scan >= sources.len() {
-                    break;
-                }
+                _ = phase_result_tx.send(PhaseResult::Finished).await;
+                break;
             }
-
-            dbg!("main");
 
             Ok(())
         }));
 
-        // Opener
-        // Decoders[n]
-        // Row Index, Predicate
-
-        // join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-        //     let source_token = SourceToken::new();
-        //     let wait_group = WaitGroup::default();
-        //
-        //     while scans.len() < self.num_concurrent_scans && *next_source < sources.len() {
-        //         scans.push_back(
-        //             <Scan<T>>::open(sources.at(*next_source), projection, None, None).await?,
-        //         );
-        //         *next_source += 1;
-        //     }
-        //
-        //     for scan in scans.iter_mut() {
-        //         scan.spawn(scope, state);
-        //     }
-        //
-        //     while let Some(mut scan) = scans.pop_front() {
-        //         while let Ok(rg) = scan.recv().await {
-        //             let df = process_dataframe(rg.data)?;
-        //             let mut m = Morsel::new(df, *seq, source_token.clone());
-        //             m.set_consume_token(wait_group.token());
-        //             *seq = seq.successor();
-        //
-        //             if send.send(m).await.is_err() {
-        //                 return Ok(());
-        //             };
-        //
-        //             wait_group.wait().await;
-        //             if source_token.stop_requested() {
-        //                 scan.request_stop().await;
-        //
-        //                 while let Ok(rg) = scan.recv().await {
-        //                     let df = process_dataframe(rg.data)?;
-        //                     let mut m = Morsel::new(df, *seq, source_token.clone());
-        //                     m.set_consume_token(wait_group.token());
-        //                     *seq = seq.successor();
-        //
-        //                     if send.send(m).await.is_err() {
-        //                         return Ok(());
-        //                     };
-        //                 }
-        //
-        //                 // Request stops from all sources and buffer the already creates morsels.
-        //                 for scan in scans.iter_mut() {
-        //                     if scan.phase.is_none() {
-        //                         continue;
-        //                     }
-        //
-        //                     scan.request_stop().await;
-        //                     scan.flush().await;
-        //                 }
-        //
-        //                 for scan in scans {
-        //                     if let Some(phase) = scan.phase {
-        //                         phase.shutdown().await?;
-        //                     }
-        //                 }
-        //
-        //                 return Ok(());
-        //             }
-        //         }
-        //
-        //         scan.phase.unwrap().shutdown().await?;
-        //         if *next_source < sources.len() {
-        //             scans.push_back(
-        //                 <Scan<T>>::open(sources.at(*next_source), projection, None, None).await?,
-        //             );
-        //             *next_source += 1;
-        //         }
-        //     }
-        //
-        //     Ok(())
-        // }));
+        phase_result_rx
     }
 }

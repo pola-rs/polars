@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::ops::Range;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -14,20 +13,20 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{try_set_sorted_flag, FileMetadata, ParallelStrategy, ParquetOptions};
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
+use polars_io::RowIndex;
+use polars_parquet::read::read_metadata;
+use polars_parquet::read::schema::{infer_schema_with_options, read_schema_from_metadata};
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{FileInfo, ScanSource, ScanSourceRef, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
-use tokio::sync::OnceCell;
 
-use self::metadata_utils::read_parquet_metadata_bytes;
-use self::row_group_data_fetch::{FetchedBytes, RowGroupData};
-use self::row_group_decode::RowGroupDecoder;
-use super::multi_scan::{MultiScanable, RowGroup, RowRestrication};
-use super::SourceNode;
-use crate::async_primitives::connector::{Receiver, Sender};
+use super::multi_scan::{MultiScanable, RowRestrication};
+use super::{PhaseResult, SourceNode, SourceOutput};
+use crate::async_executor::spawn;
+use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -151,7 +150,73 @@ impl ComputeNode for ParquetSourceNode {
         "parquet_source"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
+    fn initialize(&mut self, num_pipelines: usize) {}
+
+    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
+        use std::sync::atomic::Ordering;
+
+        assert!(recv.is_empty());
+        assert_eq!(send.len(), 1);
+
+        // if self.is_finished.load(Ordering::Relaxed) {
+        //     send[0] = PortState::Done;
+        //     assert!(
+        //         self.async_task_data.try_lock().unwrap().is_none(),
+        //         "should have already been shut down"
+        //     );
+        // } else if send[0] == PortState::Done {
+        //     {
+        //         // Early shutdown - our port state was set to `Done` by the downstream nodes.
+        //         self.shutdown_in_background();
+        //     };
+        //     self.is_finished.store(true, Ordering::Relaxed);
+        // } else {
+        //     send[0] = PortState::Ready
+        // }
+
+        Ok(())
+    }
+
+    fn spawn<'env, 's>(
+        &'env mut self,
+        scope: &'s TaskScope<'s, 'env>,
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
+        _state: &'s ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+    }
+}
+
+impl SourceNode for ParquetSourceNode {
+    const EFFICIENT_PRED_PD: bool = true;
+    const EFFICIENT_SLICE_PD: bool = true;
+
+    fn name(&self) -> &str {
+        "parquet_source"
+    }
+
+    fn is_source_output_parallel(&self) -> bool {
+        true
+    }
+
+    fn spawn_source(
+        &mut self,
+        num_pipelines: usize,
+        mut output_recv: Receiver<SourceOutput>,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+        _unresistricted_row_count: Option<PlSmallStr>,
+    ) -> Receiver<PhaseResult> {
+        let (mut phase_result_tx, phase_result_rx) = connector();
+
+        let (mut send_to, recv_from) = (0..num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+        let (result_send, mut result_recv) = (0..num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+
         self.config = {
             let metadata_prefetch_size = polars_core::config::get_file_prefetch_size();
             // Limit metadata decode to the number of threads.
@@ -178,146 +243,157 @@ impl ComputeNode for ParquetSourceNode {
         }
 
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
-
         self.init_projected_arrow_schema();
 
-        let (raw_morsel_receivers, raw_morsel_distributor_task_handle) =
-            self.init_raw_morsel_distributor();
+        let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
 
-        self.async_task_data
-            .try_lock()
-            .unwrap()
-            .replace((raw_morsel_receivers, raw_morsel_distributor_task_handle));
-    }
+        let morsel_stream_starter = self.morsel_stream_starter.take().unwrap();
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
-        use std::sync::atomic::Ordering;
+        join_handles.push(spawn(TaskPriority::High, async move {
+            morsel_stream_starter.send(()).unwrap();
 
-        assert!(recv.is_empty());
-        assert_eq!(send.len(), 1);
-
-        if self.is_finished.load(Ordering::Relaxed) {
-            send[0] = PortState::Done;
-            assert!(
-                self.async_task_data.try_lock().unwrap().is_none(),
-                "should have already been shut down"
-            );
-        } else if send[0] == PortState::Done {
-            {
-                // Early shutdown - our port state was set to `Done` by the downstream nodes.
-                self.shutdown_in_background();
-            };
-            self.is_finished.store(true, Ordering::Relaxed);
-        } else {
-            send[0] = PortState::Ready
-        }
-
-        Ok(())
-    }
-
-    fn spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        recv_ports: &mut [Option<RecvPort<'_>>],
-        send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        use std::sync::atomic::Ordering;
-
-        assert!(recv_ports.is_empty());
-        assert_eq!(send_ports.len(), 1);
-        assert!(!self.is_finished.load(Ordering::Relaxed));
-
-        let morsel_senders = send_ports[0].take().unwrap().parallel();
-
-        let mut async_task_data_guard = self.async_task_data.try_lock().unwrap();
-        let (raw_morsel_receivers, _) = async_task_data_guard.as_mut().unwrap();
-
-        assert_eq!(raw_morsel_receivers.len(), morsel_senders.len());
-
-        if let Some(v) = self.morsel_stream_starter.take() {
-            v.send(()).unwrap();
-        }
-        let is_finished = self.is_finished.clone();
-
-        let source_token = SourceToken::new();
-        let task_handles = raw_morsel_receivers
-            .drain(..)
-            .zip(morsel_senders)
-            .map(|(mut raw_morsel_rx, mut morsel_tx)| {
-                let is_finished = is_finished.clone();
-                let source_token = source_token.clone();
-                scope.spawn_task(TaskPriority::Low, async move {
-                    let wait_group = WaitGroup::default();
-                    loop {
-                        let Ok((df, seq)) = raw_morsel_rx.recv().await else {
-                            is_finished.store(true, Ordering::Relaxed);
-                            break;
-                        };
-
-                        let mut morsel = Morsel::new(df, seq, source_token.clone());
-                        morsel.set_consume_token(wait_group.token());
-                        if morsel_tx.send(morsel).await.is_err() {
-                            break;
-                        }
-
-                        wait_group.wait().await;
-                        if source_token.stop_requested() {
-                            break;
-                        }
+            // Every phase we are given a new send port.
+            while let Ok(morsel_senders) = output_recv.recv().await {
+                let morsel_senders = morsel_senders.parallel();
+                for (send_to, morsel_sender) in send_to.iter_mut().zip(morsel_senders) {
+                    if send_to.send(morsel_sender).await.is_err() {
+                        return Ok(());
                     }
-
-                    raw_morsel_rx
-                })
-            })
-            .collect::<Vec<_>>();
-
-        drop(async_task_data_guard);
-
-        let async_task_data = self.async_task_data.clone();
-
-        join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-            {
-                let mut async_task_data_guard = async_task_data.try_lock().unwrap();
-                let (raw_morsel_receivers, _) = async_task_data_guard.as_mut().unwrap();
-
-                for handle in task_handles {
-                    raw_morsel_receivers.push(handle.await);
                 }
+
+                let mut is_finished = true;
+                for result_recv in result_recv.iter_mut() {
+                    let Ok(result) = result_recv.recv().await else {
+                        return Ok(());
+                    };
+
+                    is_finished &= matches!(result, PhaseResult::Finished);
+                }
+
+                if is_finished {
+                    break;
+                }
+
+                if phase_result_tx.send(PhaseResult::Stopped).await.is_err() {
+                    return Ok(());
+                };
             }
 
-            if self.is_finished.load(Ordering::Relaxed) {
-                self.shutdown().await?;
-            }
-
+            // Join on the producer handle to catch errors/panics.
+            // Safety
+            // * We dropped the receivers on the line above
+            // * This function is only called once.
+            _ = morsel_stream_task_handle.await.unwrap();
+            _ = phase_result_tx.send(PhaseResult::Finished).await;
             Ok(())
-        }))
-    }
-}
+        }));
 
-impl SourceNode for ParquetSourceNode {
-    const BASE_NAME: &'static str = "parquet";
+        join_handles.extend(
+            recv_from
+                .into_iter()
+                .zip(result_send)
+                .zip(raw_morsel_receivers)
+                .map(|((mut recv_from, mut result_send), mut raw_morsel_rx)| {
+                    spawn(TaskPriority::Low, async move {
+                        'port_recv: while let Ok(mut morsel_tx) = recv_from.recv().await {
+                            let source_token = SourceToken::new();
+                            let wait_group = WaitGroup::default();
 
-    fn source_start(
-        &self,
-        num_pipelines: usize,
-        send_port_recv: Receiver<Sender<RowGroup<Morsel>>>,
-        state: &ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        todo!()
+                            while let Ok((df, seq)) = raw_morsel_rx.recv().await {
+                                let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                morsel.set_consume_token(wait_group.token());
+                                if morsel_tx.send(morsel).await.is_err() {
+                                    break;
+                                }
+
+                                wait_group.wait().await;
+                                if source_token.stop_requested() {
+                                    _ = result_send.send(PhaseResult::Stopped).await;
+                                    continue 'port_recv;
+                                }
+                            }
+
+                            break;
+                        }
+
+                        _ = result_send.send(PhaseResult::Finished).await;
+                        Ok(())
+                    })
+                }),
+        );
+
+        phase_result_rx
     }
 }
 
 impl MultiScanable for ParquetSourceNode {
-    fn new(
-        source: ScanSource,
-        projection: Option<&Bitmap>,
-        row_restriction: Option<RowRestrication>,
-        row_index: Option<PlSmallStr>,
-    ) -> impl Future<Output = PolarsResult<Self>> + Send {
-        async { todo!() }
+    const BASE_NAME: &'static str = "parquet";
+
+    const DOES_PRED_PD: bool = true;
+    const DOES_SLICE_PD: bool = true;
+    const DOES_ROW_INDEX: bool = true;
+
+    fn new(source: ScanSource) -> impl Future<Output = PolarsResult<Self>> + Send {
+        async move {
+            let source = source.into_sources();
+            let memslice = source.at(0).to_memslice()?;
+            let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
+
+            let arrow_schema = infer_schema_with_options(&file_metadata, &None)?;
+            let schema = Arc::new(Schema::from_arrow_schema(&arrow_schema));
+            let arrow_schema = Arc::new(arrow_schema);
+
+            let options = ParquetOptions {
+                schema: Some(schema.clone()),
+                parallel: ParallelStrategy::Auto,
+                low_memory: false,
+                use_statistics: true,
+            };
+
+            let file_options = FileScanOptions::default();
+            let file_info = FileInfo::new(
+                schema.clone(),
+                Some(rayon::iter::Either::Left(arrow_schema.clone())),
+                (None, usize::MAX),
+            );
+
+            Ok(ParquetSourceNode::new(
+                source,
+                file_info,
+                None,
+                options,
+                None,
+                file_options,
+                Some(Arc::new(file_metadata)),
+            ))
+        }
+    }
+
+    fn with_projection(&mut self, projection: Option<&Bitmap>) {
+        self.file_options.with_columns = projection.map(|p| {
+            p.true_idx_iter()
+                .map(|idx| self.file_info.schema.get_at_index(idx).unwrap().0.clone())
+                .collect()
+        });
+    }
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+        self.predicate = None;
+        self.file_options.slice = None;
+
+        if let Some(row_restriction) = row_restriction {
+            match row_restriction {
+                RowRestrication::Slice(slice) => {
+                    self.file_options.slice = Some((slice.start as i64, slice.len()))
+                },
+                // @TODO: Cache
+                RowRestrication::Predicate(scan_predicate) => {
+                    self.predicate = Some(scan_predicate.to_io(None, &self.file_info.schema))
+                },
+            }
+        }
+    }
+    fn with_row_index(&mut self, row_index: Option<PlSmallStr>) {
+        self.row_index = row_index.map(|name| Arc::new((name, AtomicIdxSize::new(0))));
     }
 
     fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
@@ -328,168 +404,3 @@ impl MultiScanable for ParquetSourceNode {
         async { todo!() }
     }
 }
-
-//     fn new(source: ScanSourceRef<'_>) -> impl Future<Output = PolarsResult<Self>> + Send {
-//         async move {
-//             let source = source.into_owned()?;
-//
-//             let options = ParquetOptions {
-//                 schema: None,
-//                 parallel: ParallelStrategy::Auto,
-//                 low_memory: false,
-//                 use_statistics: true,
-//             };
-//
-//             let io_runtime = polars_io::pl_async::get_runtime();
-//
-//             let source_2 = source.clone();
-//
-//             let byte_source = io_runtime
-//                 .spawn(async move {
-//                     source_2
-//                         .at(0)
-//                         .to_dyn_byte_source(&DynByteSourceBuilder::Mmap, None)
-//                         .await
-//                 })
-//                 .await
-//                 .unwrap()?;
-//             let (metadata_bytes, _maybe_full_bytes) =
-//                 read_parquet_metadata_bytes(&byte_source, false).await?;
-//             let metadata = polars_parquet::parquet::read::deserialize_metadata(
-//                 metadata_bytes.as_ref(),
-//                 metadata_bytes.len() * 2 + 1024,
-//             )?;
-//
-//             let arrow_schema = polars_parquet::arrow::read::infer_schema(&metadata)?;
-//             let schema = Schema::from_arrow_schema(&arrow_schema);
-//
-//             let row_count = metadata.num_rows;
-//
-//             let file_options = FileScanOptions::default();
-//             let file_info = FileInfo::new(
-//                 Arc::new(schema),
-//                 Some(rayon::iter::Either::Left(Arc::new(arrow_schema))),
-//                 (Some(row_count), row_count),
-//             );
-//
-//             Ok(ParquetSourceNode::new(
-//                 source,
-//                 file_info,
-//                 None,
-//                 options,
-//                 None,
-//                 file_options,
-//                 Some(Arc::new(metadata)),
-//             ))
-//         }
-//     }
-//
-//     fn num_row_groups(&mut self) -> impl Future<Output = PolarsResult<usize>> + Send {
-//         async { Ok(self.first_metadata.as_ref().unwrap().row_groups.len()) }
-//     }
-//     fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
-//         // @TODO: overflow
-//         async { Ok(self.file_info.row_estimation.1 as IdxSize) }
-//     }
-//     fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send {
-//         async { Ok(self.file_info.schema.clone()) }
-//     }
-//
-//     fn read_row_group(
-//         &self,
-//         idx: usize,
-//         projection: Option<&Bitmap>,
-//         row_restriction: Option<RowRestrication>,
-//         row_index: Option<PlSmallStr>,
-//     ) -> impl Future<Output = PolarsResult<RowGroup>> + Send {
-//         let rg = self
-//             .first_metadata
-//             .as_ref()
-//             .unwrap()
-//             .row_groups
-//             .get(idx)
-//             .cloned()
-//             .unwrap();
-//
-//         let mem_slice = self.scan_sources.at(0).to_memslice();
-//         async move {
-//             let mem_slice = mem_slice?;
-//             // @TODO: overflow
-//             let row_count = rg.num_rows() as IdxSize;
-//
-//             let slice: Option<Range<usize>> = None;
-//             let slice = slice.unwrap_or(0..rg.num_rows());
-//
-//             let arrow_schema = self
-//                 .file_info
-//                 .reader_schema
-//                 .as_ref()
-//                 .unwrap()
-//                 .as_ref()
-//                 .unwrap_left();
-//
-//             let decoded_cols = (0..rg.n_columns())
-//                 .map(|i| {
-//                     let (_, arrow_field) = arrow_schema.get_at_index(i).unwrap();
-//
-//                     let Some(iter) = rg.columns_under_root_iter(&arrow_field.name) else {
-//                         return Ok(Column::full_null(
-//                             arrow_field.name.clone(),
-//                             slice.len(),
-//                             &DataType::from_arrow_field(arrow_field),
-//                         ));
-//                     };
-//
-//                     let columns_to_deserialize = iter
-//                         .map(|col_md| {
-//                             let byte_range = col_md.byte_range();
-//                             (col_md, mem_slice.slice(byte_range.start as usize..byte_range.end as usize))
-//                         })
-//                         .collect::<Vec<_>>();
-//
-//                     let (array, _) = polars_io::prelude::_internal::to_deserializer(
-//                         columns_to_deserialize,
-//                         arrow_field.clone(),
-//                         None,
-//                     )?;
-//
-//                     assert_eq!(array.len(), slice.len());
-//
-//                     let mut series = Series::try_from((arrow_field, array))?;
-//
-//                     if let Some(col_idxs) = rg.columns_idxs_under_root_iter(&arrow_field.name) {
-//                         if col_idxs.len() == 1 {
-//                             try_set_sorted_flag(&mut series, col_idxs[0], &PlHashMap::default());
-//                         }
-//                     }
-//
-//                     // TODO: Also load in the metadata.
-//
-//                     Ok(series.into_column())
-//                 })
-//                 .collect::<PolarsResult<Vec<_>>>()?;
-//
-//             let df = unsafe { DataFrame::new_no_checks(slice.len(), decoded_cols) };
-//
-//             // let df = if let Some(predicate) = self.predicate.as_ref() {
-//             //     let mask = predicate.predicate.evaluate_io(&df)?;
-//             //     let mask = mask.bool().unwrap();
-//             //
-//             //     let filtered =
-//             //         unsafe { filter_cols(df.take_columns(), mask, self.min_values_per_thread) }.await?;
-//             //
-//             //     let height = if let Some(fst) = filtered.first() {
-//             //         fst.len()
-//             //     } else {
-//             //         mask.num_trues()
-//             //     };
-//             //
-//             //     unsafe { DataFrame::new_no_checks(height, filtered) }
-//             // } else {
-//             //     df
-//             // };
-//
-//             Ok(RowGroup { df, row_count })
-//         }
-//     }
-// }
