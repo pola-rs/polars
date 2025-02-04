@@ -28,7 +28,7 @@ mod meta;
 mod name;
 mod options;
 #[cfg(feature = "python")]
-pub mod python_udf;
+pub mod python_dsl;
 #[cfg(feature = "random")]
 mod random;
 mod selector;

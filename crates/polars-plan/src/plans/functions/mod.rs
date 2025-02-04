@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 #[cfg(feature = "python")]
-use crate::dsl::python_udf::PythonFunction;
+use crate::dsl::python_dsl::PythonFunction;
 use crate::plans::ir::ScanSourcesDisplay;
 use crate::prelude::*;
 

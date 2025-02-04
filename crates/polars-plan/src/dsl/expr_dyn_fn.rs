@@ -72,8 +72,8 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
         #[cfg(feature = "python")]
         {
             deserialize_map_bytes(deserializer, &mut |buf| {
-                if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                    let udf = python_udf::PythonUdfExpression::try_deserialize(&buf)
+                if buf.starts_with(crate::dsl::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
+                    let udf = crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(&buf)
                         .map_err(|e| D::Error::custom(format!("{e}")))?;
                     Ok(SpecialEq::new(udf))
                 } else {
@@ -406,8 +406,8 @@ impl<'a> Deserialize<'a> for GetOutput {
         #[cfg(feature = "python")]
         {
             deserialize_map_bytes(deserializer, &mut |buf| {
-                if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                    let get_output = python_udf::PythonGetOutput::try_deserialize(&buf)
+                if buf.starts_with(self::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
+                    let get_output = self::python_dsl::PythonGetOutput::try_deserialize(&buf)
                         .map_err(|e| D::Error::custom(format!("{e}")))?;
                     Ok(SpecialEq::new(get_output))
                 } else {

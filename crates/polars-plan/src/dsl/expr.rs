@@ -207,7 +207,7 @@ impl OpaqueColumnUdf {
             Self::Deserialized(t) => Ok(t),
             Self::Bytes(b) => {
                 feature_gated!("serde";"python", {
-                    python_udf::PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
+                    crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(b.as_ref()).map(SpecialEq::new)
                 })
             },
         }
