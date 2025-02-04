@@ -538,3 +538,10 @@ def test_read_ndjson_inner_list_types_18244() -> None:
     ).schema == (
         {"a": pl.List(pl.String), "b": pl.List(pl.Int32), "c": pl.List(pl.Float64)}
     )
+
+
+def test_read_json_utf_8_sig_encoding() -> None:
+    data = [{"a": [1, 2], "b": [1, 2]}]
+    result = pl.read_json(json.dumps(data).encode("utf-8-sig"))
+    expected = pl.DataFrame(data)
+    assert_frame_equal(result, expected)
