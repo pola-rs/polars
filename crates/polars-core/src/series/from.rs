@@ -1,6 +1,6 @@
-use arrow::datatypes::Metadata;
 #[cfg(feature = "dtype-categorical")]
 use arrow::compute::concatenate::concatenate_unchecked;
+use arrow::datatypes::Metadata;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
