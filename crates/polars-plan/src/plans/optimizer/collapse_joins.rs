@@ -14,7 +14,8 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
-use crate::plans::{node_to_expr, to_expr_ir, ExprIR, OutputName};
+use crate::plans::visitor::{AexprNode, RewritingVisitor, TreeWalker};
+use crate::plans::{ExprIR, OutputName};
 
 /// Join origin of an expression
 #[derive(Debug, Clone, Copy)]
@@ -65,45 +66,59 @@ fn get_origin(
     expr_origin
 }
 
-/// Remove the join suffixes from a list of expressions
-fn remove_suffix(
+fn remove_suffix<'a>(
     exprs: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
-    schema: &SchemaRef,
-    suffix: &str,
+    schema: &'a SchemaRef,
+    suffix: &'a str,
 ) {
-    let mut stack = Vec::new();
+    let mut remover = RemoveSuffix {
+        schema: schema.as_ref(),
+        suffix,
+    };
 
     for expr in exprs {
-        // We ensure we do not mutate any nodes in-place by deep cloning. The nodes may be used in
-        // other locations and mutating them will cause really confusing bugs, such as
-        // https://github.com/pola-rs/polars/issues/20831.
-        *expr = to_expr_ir(node_to_expr(expr.node(), expr_arena), expr_arena).unwrap();
+        match AexprNode::new(expr.node()).rewrite(&mut remover, expr_arena) {
+            Ok(v) => {
+                expr.set_node(v.node());
 
-        stack.clear();
-        stack.push(expr.node());
+                if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
+                    if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
+                        let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+                        expr.set_columnlhs(name);
+                    }
+                }
+            },
+            e @ Err(_) => debug_assert!(false, "should not have failed: {:?}", e),
+        }
+    }
+}
 
-        while let Some(node) = stack.pop() {
-            let expr = expr_arena.get_mut(node);
-            expr.inputs_rev(&mut stack);
+struct RemoveSuffix<'a> {
+    schema: &'a Schema,
+    suffix: &'a str,
+}
 
-            let AExpr::Column(colname) = expr else {
-                continue;
-            };
+impl RewritingVisitor for RemoveSuffix<'_> {
+    type Node = AexprNode;
+    type Arena = Arena<AExpr>;
 
-            if !colname.ends_with(suffix) || schema.contains(colname.as_str()) {
-                continue;
-            }
+    fn mutate(
+        &mut self,
+        node: Self::Node,
+        arena: &mut Self::Arena,
+    ) -> polars_core::prelude::PolarsResult<Self::Node> {
+        let AExpr::Column(colname) = arena.get(node.node()) else {
+            return Ok(node);
+        };
 
-            *colname = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+        if !colname.ends_with(self.suffix) || self.schema.contains(colname.as_str()) {
+            return Ok(node);
         }
 
-        if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
-            if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
-                let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
-                expr.set_columnlhs(name);
-            }
-        }
+        Ok(AexprNode::new(arena.add(AExpr::Column(PlSmallStr::from(
+            &colname[..colname.len() - self.suffix.len()],
+        )))))
     }
 }
 

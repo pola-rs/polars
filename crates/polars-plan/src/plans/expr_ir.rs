@@ -198,6 +198,10 @@ impl ExprIR {
     }
 
     pub(crate) fn set_columnlhs(&mut self, name: PlSmallStr) {
+        debug_assert!(matches!(
+            self.output_name,
+            OutputName::ColumnLhs(_) | OutputName::None
+        ));
         self.output_name = OutputName::ColumnLhs(name)
     }
 
