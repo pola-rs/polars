@@ -302,7 +302,7 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
         .head()
         .collect(streaming=True)
     )
-    assert len(df) == 0
+    assert df.height == 0
     assert df.schema == schema
 
 

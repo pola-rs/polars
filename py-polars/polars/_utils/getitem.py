@@ -291,9 +291,9 @@ def _select_rows(
 ) -> DataFrame | Series:
     """Select one or more rows from the DataFrame."""
     if isinstance(key, int):
-        num_rows = len(df)
+        num_rows = df.height
         if (key >= num_rows) or (key < -num_rows):
-            msg = f"index {key} is out of bounds for DataFrame of height {len(df)}"
+            msg = f"index {key} is out of bounds for DataFrame of height {num_rows}"
             raise IndexError(msg)
         return df.slice(key, 1)
 
