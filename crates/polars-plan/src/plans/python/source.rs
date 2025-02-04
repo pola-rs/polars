@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use polars_core::schema::SchemaRef;
+use polars_utils::python_function::PythonFunction;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::plans::{ExprIR, PlSmallStr};
-use crate::prelude::python_udf::PythonFunction;
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
