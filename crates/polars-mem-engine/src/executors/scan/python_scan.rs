@@ -5,6 +5,7 @@ use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyNone};
 use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
 
+use self::python_dsl::PythonScanSource;
 use super::*;
 
 pub(crate) struct PythonScanExec {

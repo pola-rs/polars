@@ -76,7 +76,9 @@ impl IR {
                 }
             },
             #[cfg(feature = "python")]
-            IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
+            IR::PythonScan { .. } => DslPlan::PythonScan {
+                options: Default::default(),
+            },
             IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()

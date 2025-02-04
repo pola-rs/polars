@@ -1,3 +1,4 @@
+use self::python_dsl::PythonScanSource;
 use super::*;
 
 pub struct FusedArithmetic {}

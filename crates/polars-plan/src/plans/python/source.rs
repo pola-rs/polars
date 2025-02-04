@@ -5,6 +5,7 @@ use polars_utils::python_function::PythonFunction;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::dsl::python_dsl::PythonScanSource;
 use crate::plans::{ExprIR, PlSmallStr};
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -25,15 +26,6 @@ pub struct PythonOptions {
     pub n_rows: Option<usize>,
     /// Optional predicate the reader must apply.
     pub predicate: PythonPredicate,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum PythonScanSource {
-    Pyarrow,
-    Cuda,
-    #[default]
-    IOPlugin,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

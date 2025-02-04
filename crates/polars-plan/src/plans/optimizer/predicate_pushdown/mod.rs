@@ -9,6 +9,7 @@ use polars_core::prelude::*;
 use recursive::recursive;
 use utils::*;
 
+use self::python_dsl::PythonScanSource;
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
 use crate::prelude::optimizer::predicate_pushdown::group_by::process_group_by;
