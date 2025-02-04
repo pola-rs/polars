@@ -161,6 +161,14 @@ def test_series_init_np_2d_zero_zero_shape() -> None:
     )
 
 
+def test_series_init_np_2d_empty() -> None:
+    arr = np.array([]).reshape(0, 2)
+    assert_series_equal(
+        pl.Series("a", arr),
+        pl.Series("a", [], pl.Array(pl.Float64, 2)),
+    )
+
+
 def test_list_null_constructor_schema() -> None:
     expected = pl.List(pl.Null)
     assert pl.Series([[]]).dtype == expected

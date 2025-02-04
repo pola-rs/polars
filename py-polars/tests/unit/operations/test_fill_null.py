@@ -3,7 +3,7 @@ import datetime
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_fill_null_minimal_upcast_4056() -> None:
@@ -84,3 +84,10 @@ def test_fill_null_date_with_int_11362() -> None:
     s = pl.Series([None], dtype=pl.Date)
     with pytest.raises(pl.exceptions.InvalidOperationError, match=match):
         s.fill_null(1)
+
+
+def test_fill_null_int_dtype_15546() -> None:
+    df = pl.Series("a", [1, 2, None], dtype=pl.Int8).to_frame().lazy()
+    result = df.fill_null(0).collect()
+    expected = pl.Series("a", [1, 2, 0], dtype=pl.Int8).to_frame()
+    assert_frame_equal(result, expected)

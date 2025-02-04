@@ -384,3 +384,14 @@ def test_map_elements_list_return_dtype() -> None:
     )
     expected = pl.Series([[2], [3, 4]], dtype=return_dtype)
     assert_series_equal(result, expected)
+
+
+def test_map_elements_null_with_nested_type() -> None:
+    df = pl.DataFrame({"a": [1, 2]})
+    result = df.with_columns(
+        pl.col("a").map_elements(
+            lambda x: None, #return_dtype=pl.List(pl.Int32)
+        )
+    )
+    expected = pl.DataFrame({"a": [None]}, schema={"a": pl.List(pl.Int32)})
+    assert_frame_equal(result, expected)

@@ -525,3 +525,16 @@ def test_read_json_struct_schema() -> None:
         ),
         pl.DataFrame({"a": [1, 2]}),
     )
+
+
+def test_read_ndjson_inner_list_types_18244() -> None:
+    assert pl.read_ndjson(
+        io.StringIO("""{"a":null,"b":null,"c":null}"""),
+        schema={
+            "a": pl.List(pl.String),
+            "b": pl.List(pl.Int32),
+            "c": pl.List(pl.Float64),
+        },
+    ).schema == (
+        {"a": pl.List(pl.String), "b": pl.List(pl.Int32), "c": pl.List(pl.Float64)}
+    )
