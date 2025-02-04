@@ -15,6 +15,8 @@ mod array;
 pub mod binary;
 #[cfg(feature = "bitwise")]
 mod bitwise;
+mod builder_dsl;
+pub use builder_dsl::*;
 #[cfg(feature = "temporal")]
 pub mod dt;
 mod expr;
