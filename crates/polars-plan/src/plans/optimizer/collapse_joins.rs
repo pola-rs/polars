@@ -92,7 +92,7 @@ fn remove_suffix<'a>(
                     }
                 }
             },
-            e @ Err(_) => assert!(false, "should not have failed: {:?}", e),
+            e @ Err(_) => panic!("should not have failed: {:?}", e),
         }
     }
 }
