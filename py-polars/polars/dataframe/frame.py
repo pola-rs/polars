@@ -2429,8 +2429,7 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        # Object columns must be handled separately as Arrow does not convert them
-        # correctly
+        # handle Object columns separately (Arrow does not convert them correctly)
         if Object in self.dtypes:
             return self._to_pandas_with_object_columns(
                 use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
@@ -2450,7 +2449,7 @@ class DataFrame:
         object_columns = []
         not_object_columns = []
         for i, dtype in enumerate(self.dtypes):
-            if dtype == Object:
+            if dtype.is_object():
                 object_columns.append(i)
             else:
                 not_object_columns.append(i)

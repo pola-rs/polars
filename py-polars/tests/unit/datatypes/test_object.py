@@ -260,4 +260,4 @@ def test_object_polars_dtypes_20572() -> None:
             "e": pl.String(),
         }
     )
-    assert all(dt == pl.Object() for dt in df.schema.dtypes())
+    assert all(dt.is_object() for dt in df.schema.dtypes())
