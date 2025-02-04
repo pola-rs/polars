@@ -406,22 +406,25 @@ impl ProbeState {
                         out_per_partition.push(out_df);
                     }
 
-                    let sort_options = SortMultipleOptions {
-                        descending: vec![false],
-                        nulls_last: vec![false],
-                        multithreaded: false,
-                        maintain_order: true,
-                        limit: None,
-                    };
-                    let mut out_df = accumulate_dataframes_vertical_unchecked(out_per_partition);
-                    out_df.sort_in_place([name.clone()], sort_options).unwrap();
-                    out_df.drop_in_place(&name).unwrap();
-                    out_df = postprocess_join(out_df, params);
+                    if !out_per_partition.is_empty() {
+                        let sort_options = SortMultipleOptions {
+                            descending: vec![false],
+                            nulls_last: vec![false],
+                            multithreaded: false,
+                            maintain_order: true,
+                            limit: None,
+                        };
+                        let mut out_df =
+                            accumulate_dataframes_vertical_unchecked(out_per_partition);
+                        out_df.sort_in_place([name.clone()], sort_options).unwrap();
+                        out_df.drop_in_place(&name).unwrap();
+                        out_df = postprocess_join(out_df, params);
 
-                    // TODO: break in smaller morsels.
-                    let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                    if send.send(out_morsel).await.is_err() {
-                        break;
+                        // TODO: break in smaller morsels.
+                        let out_morsel = Morsel::new(out_df, seq, src_token.clone());
+                        if send.send(out_morsel).await.is_err() {
+                            break;
+                        }
                     }
                 } else {
                     let mut out_frames = Vec::new();
