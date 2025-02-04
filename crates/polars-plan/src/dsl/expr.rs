@@ -371,24 +371,24 @@ impl Expr {
     }
 
     /// Extract a constant usize from an expression.
-    pub fn extract_usize(&self) -> PolarsResult<Option<usize>> {
+    pub fn extract_usize(&self) -> PolarsResult<usize> {
         match self {
             Expr::Literal(n) => Ok(match n {
-                LiteralValue::Int(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int(v) => usize::try_from(*v).unwrap(),
                 #[cfg(feature = "dtype-u8")]
-                LiteralValue::UInt8(v) => Some(*v as usize),
+                LiteralValue::UInt8(v) => *v as usize,
                 #[cfg(feature = "dtype-u16")]
-                LiteralValue::UInt16(v) => Some(*v as usize),
-                LiteralValue::UInt32(v) => Some(usize::try_from(*v).unwrap()),
-                LiteralValue::UInt64(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::UInt16(v) => *v as usize,
+                LiteralValue::UInt32(v) => usize::try_from(*v).unwrap(),
+                LiteralValue::UInt64(v) => usize::try_from(*v).unwrap(),
                 #[cfg(feature = "dtype-i8")]
-                LiteralValue::Int8(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int8(v) => usize::try_from(*v).unwrap(),
                 #[cfg(feature = "dtype-i16")]
-                LiteralValue::Int16(v) => Some(usize::try_from(*v).unwrap()),
-                LiteralValue::Int32(v) => Some(usize::try_from(*v).unwrap()),
-                LiteralValue::Int64(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int16(v) => usize::try_from(*v).unwrap(),
+                LiteralValue::Int32(v) => usize::try_from(*v).unwrap(),
+                LiteralValue::Int64(v) => usize::try_from(*v).unwrap(),
                 #[cfg(feature = "dtype-i128")]
-                LiteralValue::Int128(v) => Some(usize::try_from(*v).unwrap()),
+                LiteralValue::Int128(v) => usize::try_from(*v).unwrap(),
                 _ => {
                     polars_bail!(InvalidOperation: "expression must be constant literal to extract integer")
                 },

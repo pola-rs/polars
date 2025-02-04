@@ -188,9 +188,9 @@ pub fn linear_spaces(
     input.push(start);
     input.push(end);
     let array_width = if as_array {
-        num_samples.extract_usize().map_err(|_| {
+        Some(num_samples.extract_usize().map_err(|_| {
             polars_err!(InvalidOperation: "'as_array' is only valid when 'num_samples' is a constant integer")
-        })?
+        })?)
     } else {
         input.push(num_samples);
         None
