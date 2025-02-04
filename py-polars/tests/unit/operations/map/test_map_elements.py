@@ -390,7 +390,7 @@ def test_map_elements_null_with_nested_type() -> None:
     df = pl.DataFrame({"a": [1, 2]})
     result = df.with_columns(
         pl.col("a").map_elements(
-            lambda x: None, #return_dtype=pl.List(pl.Int32)
+            lambda x: None,  # return_dtype=pl.List(pl.Int32)
         )
     )
     expected = pl.DataFrame({"a": [None]}, schema={"a": pl.List(pl.Int32)})
