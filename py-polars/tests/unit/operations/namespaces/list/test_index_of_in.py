@@ -11,7 +11,7 @@ import polars as pl
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
-from tests.unit.conftest import INTEGER_DTYPES
+from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.operations.test_index_of import get_expected_index
 
 if TYPE_CHECKING:
@@ -76,6 +76,7 @@ def assert_index_of_in_from_series(
 # - nested lists
 # - something with hypothesis
 # - error case: non-matching lengths
+# - chunked needles series
 
 
 def test_index_of_in_from_scalar() -> None:
@@ -141,3 +142,22 @@ def test_no_lossy_numeric_casts() -> None:
     ]:
         with pytest.raises(InvalidOperationError, match="cannot cast lossless"):
             list_series.list.index_of_in(will_be_lossy)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("float_dtype", FLOAT_DTYPES)
+def test_float(float_dtype: pl.DataType) -> None:
+    lists = [
+        [1.5, np.nan, np.inf],
+        [3.0, None, -np.inf],
+        [0.0, -0.0, -np.nan],
+    ]
+    lists_series = pl.Series(lists, dtype=pl.List(float_dtype))
+
+    # Scalar
+    for value in sum(lists, []) + [3.5, np.float64(1.5), np.float32(3.0)]:
+        assert_index_of_in_from_scalar(lists_series, value)
+
+    # Series
+    assert_index_of_in_from_series(
+        lists_series, pl.Series([1.5, -np.inf, -np.nan], dtype=float_dtype)
+    )

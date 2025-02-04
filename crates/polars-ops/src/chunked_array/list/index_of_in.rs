@@ -22,7 +22,7 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
     check_if_cast_lossless(
         &needle_dtype,
         inner_dtype,
-        inner_dtype.leaf_dtype().is_float() == needle_dtype.is_float(),
+        (inner_dtype.leaf_dtype().is_float() == needle_dtype.is_float()) || needle_dtype.is_null(),
     )?;
     if needles.len() == 1 {
         let needle = needles.get(0).unwrap();
