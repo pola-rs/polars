@@ -344,7 +344,9 @@ impl ProbeState {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
             let hash_keys = select_keys(&df, key_selectors, params, state).await?;
-            let payload = select_payload(df, payload_selector);
+            let mut payload = select_payload(df, payload_selector);
+            let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
+
             max_seq = seq;
 
             unsafe {
@@ -371,11 +373,23 @@ impl ProbeState {
                             IdxSize::MAX,
                         );
 
+                        if table_match.is_empty() {
+                            continue;
+                        }
+
+                        // Gather output and add to buffer.
                         let mut build_df = if emit_unmatched {
                             p.df.take_opt_chunked_unchecked(&table_match)
                         } else {
                             p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
                         };
+
+                        if !payload_rechunked {
+                            // TODO: can avoid rechunk? We have to rechunk here or else we do it
+                            // multiple times during the gather.
+                            payload.rechunk_mut();
+                            payload_rechunked = true;
+                        }
                         let mut probe_df = payload.take_slice_unchecked_impl(&probe_match, false);
 
                         let mut out_df = if params.left_is_build {
@@ -435,6 +449,12 @@ impl ProbeState {
                             } else {
                                 p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
                             };
+                            if !payload_rechunked {
+                                // TODO: can avoid rechunk? We have to rechunk here or else we do it
+                                // multiple times during the gather.
+                                payload.rechunk_mut();
+                                payload_rechunked = true;
+                            }
                             let mut probe_df =
                                 payload.take_slice_unchecked_impl(&probe_match, false);
 
