@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
-from os import get_exec_path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
