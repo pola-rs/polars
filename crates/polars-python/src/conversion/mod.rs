@@ -1275,7 +1275,7 @@ impl<'py> IntoPyObject<'py> for Wrap<CloudOptions> {
     fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         let dict = PyDict::new(py);
         let _ = dict.set_item("max_retries", self.0.max_retries);
-        // TODO: Implement other attributes. Currently not supported by cudf.pandas
+        // TODO: Implement other attributes. Currently not supported by cudf_polars
         Ok(dict)
     }
 }
