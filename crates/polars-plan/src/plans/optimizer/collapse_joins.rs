@@ -14,7 +14,7 @@ use polars_utils::pl_str::PlSmallStr;
 
 use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
-use crate::plans::visitor::{AexprNode, RewritingVisitor, TreeWalker};
+use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::plans::{ExprIR, OutputName};
 
 /// Join origin of an expression
@@ -106,19 +106,32 @@ impl RewritingVisitor for RemoveSuffix<'_> {
     type Node = AexprNode;
     type Arena = Arena<AExpr>;
 
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> polars_core::prelude::PolarsResult<crate::prelude::visitor::RewriteRecursion> {
+        let AExpr::Column(colname) = arena.get(node.node()) else {
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        };
+
+        if !colname.ends_with(self.suffix) || self.schema.contains(colname.as_str()) {
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        }
+
+        Ok(RewriteRecursion::MutateAndContinue)
+    }
+
     fn mutate(
         &mut self,
         node: Self::Node,
         arena: &mut Self::Arena,
     ) -> polars_core::prelude::PolarsResult<Self::Node> {
         let AExpr::Column(colname) = arena.get(node.node()) else {
-            return Ok(node);
+            unreachable!();
         };
 
-        if !colname.ends_with(self.suffix) || self.schema.contains(colname.as_str()) {
-            return Ok(node);
-        }
-
+        // Safety: Checked in pre_visit()
         Ok(AexprNode::new(arena.add(AExpr::Column(PlSmallStr::from(
             &colname[..colname.len() - self.suffix.len()],
         )))))
