@@ -12,7 +12,6 @@ pub(crate) mod anonymous_scan;
 pub(crate) mod ir;
 
 mod apply;
-mod builder_dsl;
 mod builder_ir;
 pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
@@ -28,13 +27,14 @@ pub(crate) mod optimizer;
 pub(crate) mod options;
 #[cfg(feature = "python")]
 pub mod python;
+#[cfg(feature = "python")]
+pub use python::*;
 mod schema;
 pub mod visitor;
 
 pub use aexpr::*;
 pub use anonymous_scan::*;
 pub use apply::*;
-pub use builder_dsl::*;
 pub use builder_ir::*;
 pub use conversion::*;
 pub(crate) use expr_ir::*;

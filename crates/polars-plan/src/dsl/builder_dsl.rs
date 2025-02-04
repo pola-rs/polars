@@ -14,7 +14,7 @@ use polars_io::HiveOptions;
 use polars_io::RowIndex;
 
 #[cfg(feature = "python")]
-use crate::prelude::python_udf::PythonFunction;
+use crate::dsl::python_dsl::PythonFunction;
 use crate::prelude::*;
 
 pub struct DslBuilder(pub DslPlan);

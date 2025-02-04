@@ -1097,8 +1097,8 @@ class DataFrame:
             return self.select(F.all() / lit(other))
 
         elif not isinstance(other, DataFrame):
-            s = _prepare_other_arg(other, length=len(self))
-            other = DataFrame([s.alias(f"n{i}") for i in range(len(self.columns))])
+            s = _prepare_other_arg(other, length=self.height)
+            other = DataFrame([s.alias(f"n{i}") for i in range(self.width)])
 
         orig_dtypes = other.dtypes
         # TODO: Dispatch to a native floordiv
@@ -2429,8 +2429,7 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        # Object columns must be handled separately as Arrow does not convert them
-        # correctly
+        # handle Object columns separately (Arrow does not convert them correctly)
         if Object in self.dtypes:
             return self._to_pandas_with_object_columns(
                 use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
@@ -2450,7 +2449,7 @@ class DataFrame:
         object_columns = []
         not_object_columns = []
         for i, dtype in enumerate(self.dtypes):
-            if dtype == Object:
+            if dtype.is_object():
                 object_columns.append(i)
             else:
                 not_object_columns.append(i)
@@ -3316,7 +3315,7 @@ class DataFrame:
         ...     df.write_excel(
         ...         workbook=wb,
         ...         worksheet="data",
-        ...         position=(len(df) + 7, 1),
+        ...         position=(df.height + 7, 1),
         ...         table_style={
         ...             "style": "Table Style Light 4",
         ...             "first_column": True,
@@ -3352,7 +3351,9 @@ class DataFrame:
         ...         }
         ...     )
         ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
-        ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
+        ...     ws.write(
+        ...         df.height + 6, 1, "Customised conditional formatting", fmt_title
+        ...     )
 
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customized options (and positioning)
@@ -3475,13 +3476,12 @@ class DataFrame:
 
         # setup workbook/worksheet
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
-        df, is_empty = self, not len(self)
+        df, is_empty = self, self.is_empty()
 
-        # The _xl_setup_table_columns function in the below section
-        # converts all collection types (e.g. List, Struct, Object) to strings
-        # Hence, we need to store the original schema so that it can be used
-        # when selecting columns using column selectors based on datatypes
-        df_original = df.clear()
+        # note: `_xl_setup_table_columns` converts nested data (List, Struct, etc.) to
+        # string, so we keep a reference to the original so that column selection with
+        # selectors that target such types remains correct
+        df_original = df
 
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
@@ -3509,11 +3509,11 @@ class DataFrame:
         )
         table_finish = (
             table_start[0]
-            + len(df)
+            + df.height
             + int(is_empty)
             - int(not include_header)
             + int(bool(column_totals)),
-            table_start[1] + len(df.columns) - 1,
+            table_start[1] + df.width - 1,
         )
 
         # write table structure and formats into the target sheet
@@ -4864,12 +4864,12 @@ class DataFrame:
         └─────┴──────┴───────┴──────┘
         """
         if (original_index := index) < 0:
-            index = len(self.columns) + index
+            index = self.width + index
             if index < 0:
-                msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+                msg = f"column index {original_index} is out of range (frame has {self.width} columns)"
                 raise IndexError(msg)
-        elif index > len(self.columns):
-            msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+        elif index > self.width:
+            msg = f"column index {original_index} is out of range (frame has {self.width} columns)"
             raise IndexError(msg)
 
         if isinstance(column, pl.Series):
@@ -5316,7 +5316,7 @@ class DataFrame:
         └───────┴─────┴─────┘
         """
         if index < 0:
-            index = len(self.columns) + index
+            index = self.width + index
         self._df.replace_column(index, column._s)
         return self
 

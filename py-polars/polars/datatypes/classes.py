@@ -69,6 +69,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_object(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_signed_integer(cls) -> bool:  # noqa: D102
         ...
 
@@ -167,6 +171,11 @@ class DataType(metaclass=DataTypeClass):
     def is_integer(cls) -> bool:
         """Check whether the data type is an integer type."""
         return issubclass(cls, IntegerType)
+
+    @classmethod
+    def is_object(cls) -> bool:
+        """Check whether the data type is an object type."""
+        return issubclass(cls, ObjectType)
 
     @classmethod
     def is_signed_integer(cls) -> bool:
@@ -301,6 +310,10 @@ class TemporalType(DataType):
 
 class NestedType(DataType):
     """Base class for nested data types."""
+
+
+class ObjectType(DataType):
+    """Base class for object data types."""
 
 
 class Int8(SignedIntegerType):
@@ -728,7 +741,7 @@ class Enum(DataType):
     __or__ = union
 
 
-class Object(DataType):
+class Object(ObjectType):
     """Data type for wrapping arbitrary Python objects."""
 
 

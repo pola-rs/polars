@@ -12,7 +12,6 @@ from polars.datatypes import (
     Datetime,
     Float64,
     Int64,
-    Object,
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
@@ -318,7 +317,7 @@ def _xl_inject_sparklines(
         if "negative_points" not in options:
             options["negative_points"] = options.get("type") in ("column", "win_loss")
 
-    for _ in range(len(df)):
+    for _ in range(df.height):
         data_start = xl_rowcol_to_cell(spk_row, data_start_col)
         data_end = xl_rowcol_to_cell(spk_row, data_end_col)
         options["range"] = f"{data_start}:{data_end}"
@@ -356,7 +355,7 @@ def _xl_setup_table_columns(
     cast_cols = [
         F.col(col).map_batches(_map_str).alias(col)
         for col, tp in df.schema.items()
-        if (tp.is_nested() or tp == Object)
+        if tp.is_nested() or tp.is_object()
     ]
     if cast_cols:
         df = df.with_columns(cast_cols)
@@ -389,7 +388,7 @@ def _xl_setup_table_columns(
                 )
             )
             n_ucase = sum((c[0] if c else "").isupper() for c in df.columns)
-            total = f"{'T' if (n_ucase > len(df.columns) // 2) else 't'}otal"
+            total = f"{'T' if (n_ucase > df.width // 2) else 't'}otal"
             row_total_funcs = {total: _xl_table_formula(df, sum_cols, "sum")}
             row_totals = [total]
         else:

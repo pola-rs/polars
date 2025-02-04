@@ -13,22 +13,6 @@ pub(crate) struct PythonScanExec {
     pub(crate) predicate_serialized: Option<Vec<u8>>,
 }
 
-fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
-    let err = |_| polars_err!(ComputeError: "expected a polars.DataFrame; got {}", df);
-    let pydf = df.getattr(intern!(py, "_df")).map_err(err)?;
-    let raw_parts = pydf
-        .call_method0(intern!(py, "into_raw_parts"))
-        .map_err(err)?;
-    let raw_parts = raw_parts.extract::<(usize, usize, usize)>().unwrap();
-
-    let (ptr, len, cap) = raw_parts;
-    unsafe {
-        Ok(DataFrame::new_no_checks_height_from_first(
-            Vec::from_raw_parts(ptr as *mut Column, len, cap),
-        ))
-    }
-}
-
 impl Executor for PythonScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;

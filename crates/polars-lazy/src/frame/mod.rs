@@ -1757,7 +1757,7 @@ impl LazyFrame {
     #[cfg(feature = "python")]
     pub fn map_python(
         self,
-        function: polars_plan::prelude::python_udf::PythonFunction,
+        function: polars_utils::python_function::PythonFunction,
         optimizations: AllowedOptimizations,
         schema: Option<SchemaRef>,
         validate_output: bool,
