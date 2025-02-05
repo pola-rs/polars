@@ -838,11 +838,7 @@ impl PyLazyFrame {
                         lambda
                             .call1(
                                 py,
-                                (
-                                    nt,
-                                    Wrap(options.clone()),
-                                    cloud_options.clone().map(Wrap),
-                                ),
+                                (nt, Wrap(options.clone()), cloud_options.clone().map(Wrap)),
                             )
                             .map_err(
                                 |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
