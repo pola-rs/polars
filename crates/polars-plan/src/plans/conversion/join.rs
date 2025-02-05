@@ -479,13 +479,13 @@ fn resolve_join_where(
 /// pass with a hint of recursion to validate column-references.
 fn process_join_where_predicate(
     stack: &mut Vec<Node>,
-    binary_expr_stack_offset: usize,
+    comparison_expr_stack_offset: usize,
     schema_left: &Schema,
     schema_merged: &Schema,
     expr_arena: &mut Arena<AExpr>,
     column_origins: &mut ExprOrigin,
 ) -> PolarsResult<()> {
-    while stack.len() > binary_expr_stack_offset {
+    while stack.len() > comparison_expr_stack_offset {
         let ae_node = stack.pop().unwrap();
         let ae = expr_arena.get(ae_node).clone();
 
