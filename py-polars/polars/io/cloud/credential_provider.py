@@ -595,7 +595,7 @@ def _maybe_init_credential_provider(
     # CredentialProviderAWS raises an error in some cases when
     # `get_credentials()` returns None (e.g. the environment may not
     # have / require credentials). We check this here and avoid
-    # auto-initializing it if that is the case.
+    # using it if that is the case.
     try:
         provider()
     except Exception as e:
