@@ -625,6 +625,33 @@ def test_decimal_horizontal_20482() -> None:
     }
 
 
+def test_decimal_horizontal_different_scales_16296() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [D("1.111")],
+            "b": [D("2.22")],
+            "c": [D("3.3")],
+        },
+        schema={
+            "a": pl.Decimal(18, 3),
+            "b": pl.Decimal(18, 2),
+            "c": pl.Decimal(18, 1),
+        },
+    )
+
+    assert (
+        df.select(
+            min=pl.min_horizontal(pl.col("a", "b", "c")),
+            max=pl.max_horizontal(pl.col("a", "b", "c")),
+            sum=pl.sum_horizontal(pl.col("a", "b", "c")),
+        )
+    ).to_dict(as_series=False) == {
+        "min": [D("1.111")],
+        "max": [D("3.300")],
+        "sum": [D("6.631")],
+    }
+
+
 def test_shift_over_12957() -> None:
     df = pl.DataFrame(
         {
