@@ -71,7 +71,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
-    "POLARS_DEFAULT_ENGINE",
+    "POLARS_ENGINE_AFFINITY",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -141,7 +141,7 @@ class ConfigParameters(TypedDict, total=False):
     set_trim_decimal_zeros: bool | None
     set_verbose: bool | None
     set_expr_depth_warning: int
-    set_default_engine: Literal["cpu", "gpu"] | None
+    set_default_engine: Literal["cpu", "gpu", "streaming"] | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -1454,7 +1454,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_default_engine(cls, engine: Literal["cpu", "gpu"] | None) -> type[Config]:
+    def set_default_engine(cls, engine: Literal["cpu", "gpu", "streaming"] | None) -> type[Config]:
         """
         Set which engine to use by default.
 
@@ -1484,7 +1484,7 @@ class Config(contextlib.ContextDecorator):
         └─────┴─────┘
         """
         if engine is None:
-            os.environ.pop("POLARS_DEFAULT_ENGINE", None)
+            os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
-            os.environ["POLARS_DEFAULT_ENGINE"] = engine
+            os.environ["POLARS_ENGINE_AFFINITY"] = engine
         return cls

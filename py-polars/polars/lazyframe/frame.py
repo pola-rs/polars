@@ -85,7 +85,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame, get_default_engine
+    from polars.polars import PyLazyFrame, get_engine_affinity
 
 if TYPE_CHECKING:
     import sys
@@ -1996,15 +1996,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins = False
             _check_order = False
 
+        if get_engine_affinity() == "streaming":
+            new_streaming = True
+
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
-        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
+        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu" or get_engine_affinity() == "gpu"
         if not (is_config_obj or engine in ("cpu", "gpu")):
             msg = f"Invalid engine argument {engine=}"
             raise ValueError(msg)
-        if get_default_engine() == "gpu":  # pragma: no cover
-            is_gpu = True  # pragma: no cover
         if (streaming or background or new_streaming) and is_gpu:
             issue_warning(
                 "GPU engine does not support streaming or background collection, "
