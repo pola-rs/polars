@@ -367,6 +367,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 options: PythonOptions {
                     scan_fn,
                     schema,
+                    python_source: options.python_source,
                     ..Default::default()
                 },
             }
