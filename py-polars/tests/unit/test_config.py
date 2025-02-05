@@ -937,7 +937,7 @@ def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:
 @pytest.mark.parametrize(
     ("environment_variable", "config_setting", "value", "expected"),
     [
-        ("POLARS_DEFAULT_ENGINE", "set_default_engine", "gpu", "gpu"),
+        ("POLARS_ENGINE_AFFINITY", "set_engine_affinity", "gpu", "gpu"),
         ("POLARS_AUTO_STRUCTIFY", "set_auto_structify", True, "1"),
         ("POLARS_FMT_MAX_COLS", "set_tbl_cols", 12, "12"),
         ("POLARS_FMT_MAX_ROWS", "set_tbl_rows", 3, "3"),

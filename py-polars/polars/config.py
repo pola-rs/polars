@@ -141,7 +141,7 @@ class ConfigParameters(TypedDict, total=False):
     set_trim_decimal_zeros: bool | None
     set_verbose: bool | None
     set_expr_depth_warning: int
-    set_default_engine: Literal["cpu", "gpu", "streaming"] | None
+    set_engine_affinity: Literal["cpu", "gpu", "streaming"] | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -1454,7 +1454,7 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_default_engine(
+    def set_engine_affinity(
         cls, engine: Literal["cpu", "gpu", "streaming"] | None
     ) -> type[Config]:
         """
@@ -1462,14 +1462,35 @@ class Config(contextlib.ContextDecorator):
 
         Parameters
         ----------
-        engine : Literal["cpu", "gpu"]
+        engine : Literal["cpu", "gpu", "streaming"]
             The default engine to use on all .collect() calls
 
         Examples
         --------
-        >>> pl.Config.set_default_engine("gpu")  # doctest: +SKIP
         >>> pl.Config.set_verbose(True)  # doctest: +SKIP
-        >>> lf = pl.DataFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})  # doctest: +SKIP
+        >>> pl.Config.set_engine_affinity("streaming")  # doctest: +SKIP
+        >>> lf.max().collect()  # doctest: +SKIP
+        polars-stream: updating graph state
+        polars-stream: running in_memory_source in subgraph
+        polars-stream: running reduce in subgraph
+        async thread count: 4
+        polars-stream: done running graph phase
+        polars-stream: updating graph state
+        polars-stream: running in_memory_sink in subgraph
+        polars-stream: running select in subgraph
+        polars-stream: running reduce in subgraph
+        polars-stream: done running graph phase
+        polars-stream: updating graph state
+        shape: (1, 2)
+        ┌─────┬─────┐
+        │ v   ┆ v2  │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        >>> pl.Config.set_engine_affinity("gpu")  # doctest: +SKIP
+        >>> lf = pl.LazyFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})  # doctest: +SKIP
         >>> lf.max().collect()  # doctest: +SKIP
         run PythonScanExec
         run UdfExec
