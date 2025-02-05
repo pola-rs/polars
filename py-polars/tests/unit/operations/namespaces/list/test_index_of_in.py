@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, time, timedelta
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -70,7 +72,7 @@ def assert_index_of_in_from_series(
 
 # Testing plan:
 # D All integers
-# - Both floats, with nans
+# D Both floats, with nans
 # - Strings
 # - datetime, date, time, timedelta
 # - nested lists
@@ -161,3 +163,64 @@ def test_float(float_dtype: pl.DataType) -> None:
     assert_index_of_in_from_series(
         lists_series, pl.Series([1.5, -np.inf, -np.nan], dtype=float_dtype)
     )
+
+
+@pytest.mark.parametrize(
+    ("list_series", "extra_values"),
+    [
+        (pl.Series([["abc", "def"], ["ghi", "zzz", "X"], ["Y"]]), ["foo"]),
+        (pl.Series([[b"abc", b"def"], [b"ghi", b"zzz", b"X"], [b"Y"]]), [b"foo"]),
+        (pl.Series([[True, None, False], [True, False]]), []),
+        (
+            pl.Series(
+                [
+                    [datetime(1997, 12, 31), datetime(1996, 1, 1)],
+                    [datetime(1997, 12, 30), datetime(1996, 1, 2)],
+                ]
+            ),
+            [datetime(2003, 1, 1)],
+        ),
+        (
+            pl.Series(
+                [
+                    [date(1997, 12, 31), date(1996, 1, 1)],
+                    [date(1997, 12, 30), date(1996, 1, 2)],
+                ]
+            ),
+            [date(2003, 1, 1)],
+        ),
+        (
+            pl.Series(
+                [
+                    [time(16, 12, 31), None, time(11, 10, 53)],
+                    [time(16, 11, 31), time(11, 10, 54)],
+                ]
+            ),
+            [time(12, 6, 7)],
+        ),
+        (
+            pl.Series(
+                [
+                    [timedelta(hours=12), None, timedelta(minutes=3)],
+                    [timedelta(hours=3), None, timedelta(hours=1)],
+                ],
+            ),
+            [timedelta(minutes=7)],
+        ),
+        (
+            pl.Series(
+                [[Decimal(12), None, Decimal(3)], [Decimal(500), None, Decimal(16)]]
+            ),
+            [Decimal(4)],
+        ),
+        # TODO: nested lists, arrays, structs
+    ],
+)
+def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) -> None:
+    needles_series = pl.Series(
+        [sublist[i % len(sublist)] for (i, sublist) in enumerate(list_series)]
+    )
+    assert_index_of_in_from_series(list_series, needles_series)
+
+    for value in sum(list_series.to_list(), []) + extra_values + [None]:
+        assert_index_of_in_from_scalar(list_series, value)
