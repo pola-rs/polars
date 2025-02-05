@@ -588,7 +588,7 @@ def _maybe_init_credential_provider(
                 provider()
             except Exception as e:
                 provider = None
-                msg = f"error retrieving credentials: {e!r}"
+                msg = f"error retrieving credentials: {e}"
                 raise type(e)(msg) from e
 
         elif storage_options is not None and any(
