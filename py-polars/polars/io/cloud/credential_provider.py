@@ -480,6 +480,8 @@ def _maybe_init_credential_provider(
         CredentialProviderAWS | CredentialProviderAzure | CredentialProviderGCP | None
     ) = None
 
+    err_msg = None
+
     try:
         # For Azure we dispatch to `azure.identity` as much as possible
         if _is_azure_cloud(scheme):
@@ -577,19 +579,8 @@ def _maybe_init_credential_provider(
                     # Conservatively warn instead of hard error. It could just be
                     # set as a default environment flag.
                     issue_warning(msg, UserWarning)
-                # Note: Enclosing scope is also within a try-except.
+                # Note: Enclosing scope will catch ImportErrors
                 raise
-
-            # CredentialProviderAWS raises an error in some cases when
-            # `get_credentials()` returns None (e.g. the environment may not
-            # have / require credentials). We check this here and avoid
-            # auto-initializing it if that is the case.
-            try:
-                provider()
-            except Exception as e:
-                provider = None
-                msg = f"error retrieving credentials: {e}"
-                raise type(e)(msg) from e
 
         elif storage_options is not None and any(
             key.lower() not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
@@ -598,9 +589,22 @@ def _maybe_init_credential_provider(
         elif _is_gcp_cloud(scheme):
             provider = CredentialProviderGCP()
 
-    except Exception as e:
+    except ImportError as e:
         if verbose:
-            msg = f"Unable to auto-select credential provider: {e!r}"
+            msg = f"unable to auto-select credential provider: {e!r}"
+            print(msg, file=sys.stderr)
+
+    # CredentialProviderAWS raises an error in some cases when
+    # `get_credentials()` returns None (e.g. the environment may not
+    # have / require credentials). We check this here and avoid
+    # auto-initializing it if that is the case.
+    try:
+        provider()
+    except Exception as e:
+        provider = None
+
+        if verbose:
+            msg = f"unable to auto-select credential provider: {e!r}"
             print(msg, file=sys.stderr)
 
     if provider is not None and verbose:
