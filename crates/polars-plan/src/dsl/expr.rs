@@ -433,12 +433,17 @@ impl Operator {
                 | Self::LtEq
                 | Self::Gt
                 | Self::GtEq
-                | Self::And
-                | Self::Or
-                | Self::Xor
                 | Self::EqValidity
                 | Self::NotEqValidity
         )
+    }
+
+    pub fn is_bitwise(&self) -> bool {
+        matches!(self, Self::And | Self::Or | Self::Xor)
+    }
+
+    pub fn is_comparison_or_bitwise(&self) -> bool {
+        self.is_comparison() || self.is_bitwise()
     }
 
     pub fn swap_operands(self) -> Self {
@@ -465,6 +470,6 @@ impl Operator {
     }
 
     pub fn is_arithmetic(&self) -> bool {
-        !(self.is_comparison())
+        !(self.is_comparison_or_bitwise())
     }
 }
