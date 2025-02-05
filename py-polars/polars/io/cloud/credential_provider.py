@@ -580,6 +580,17 @@ def _maybe_init_credential_provider(
                 # Note: Enclosing scope is also within a try-except.
                 raise
 
+            # CredentialProviderAWS raises an error in some cases when
+            # `get_credentials()` returns None (e.g. the environment may not
+            # have / require credentials). We check this here and avoid
+            # auto-initializing it if that is the case.
+            try:
+                provider()
+            except Exception as e:
+                provider = None
+                msg = f"error retrieving credentials: {e}"
+                raise type(e)(msg) from e
+
         elif storage_options is not None and any(
             key.lower() not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
         ):
