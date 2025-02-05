@@ -1,3 +1,6 @@
+//! This module creates predicates that can skip record batches of rows based on statistics about
+//! that record batch.
+
 use std::borrow::Cow;
 
 use polars_core::prelude::AnyValue;
@@ -6,8 +9,8 @@ use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::evaluate::{constant_evaluate, into_column};
-use super::{AExpr, BooleanFunction, Operator, OutputName};
+use super::super::evaluate::{constant_evaluate, into_column};
+use super::super::{AExpr, BooleanFunction, Operator, OutputName};
 use crate::dsl::FunctionExpr;
 use crate::plans::{ExprIR, LiteralValue};
 use crate::prelude::FunctionOptions;

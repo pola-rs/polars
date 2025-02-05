@@ -386,6 +386,7 @@ fn to_graph_rec<'a>(
                     }
                 );
             }
+            let create_column_predicates = cfg!(feature = "parquet");
 
             let predicate = predicate
                 .map(|pred| {
@@ -395,6 +396,7 @@ fn to_graph_rec<'a>(
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut ctx.expr_conversion_state,
                         create_skip_batch_predicate,
+                        create_column_predicates,
                     )
                 })
                 .transpose()?;

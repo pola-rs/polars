@@ -20,6 +20,16 @@ pub struct ExprIRDisplay<'a> {
     pub(crate) expr_arena: &'a Arena<AExpr>,
 }
 
+impl<'a> ExprIRDisplay<'a> {
+    pub fn display_node(node: Node, expr_arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            node,
+            output_name: &OutputName::None,
+            expr_arena,
+        }
+    }
+}
+
 /// Utility structure to display several [`ExprIR`]'s in a nice way
 pub(crate) struct ExprIRSliceDisplay<'a, T: AsExpr> {
     pub(crate) exprs: &'a [T],

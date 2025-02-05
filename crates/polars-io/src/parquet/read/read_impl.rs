@@ -309,13 +309,13 @@ fn rg_to_dfs_prefiltered(
             .live_columns
             .iter()
             .map(|name| {
-                let (p, specialized) = predicate.predicate.isolate_column_expr(name.as_str())?;
+                let (p, specialized) = predicate.column_predicates.predicates.get(name)?;
 
                 let p = ColumnPredicateExpr::new(
                     name.clone(),
                     DataType::from_arrow_field(schema.get(name).unwrap()),
-                    p,
-                    specialized,
+                    p.clone(),
+                    specialized.clone(),
                 );
 
                 let eq_scalar = p.to_eq_scalar().cloned();
