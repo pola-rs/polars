@@ -18,10 +18,11 @@ if TYPE_CHECKING:
 
 @unstable()
 def register_io_source(
-    callable: Callable[
+    io_source: Callable[
         [list[str] | None, Expr | None, int | None, int | None], Iterator[DataFrame]
     ],
-    schema: SchemaDict,
+    *,
+    schema: Callable[[], SchemaDict] | SchemaDict,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -36,7 +37,7 @@ def register_io_source(
 
     Parameters
     ----------
-    callable
+    io_source
         Function that accepts the following arguments:
             with_columns
                 Columns that are projected. The reader must
@@ -51,10 +52,11 @@ def register_io_source(
                 A hint of the ideal batch size the reader's
                 generator must produce.
 
-        The function should return a DataFrame batch
-        (an iterator over individual DataFrames).
+        The function should return a an iterator/generator
+        that produces DataFrames.
     schema
-        Schema that the reader will produce before projection pushdown.
+        Schema or function that when called produces the schema that the reader
+        will produce before projection pushdown.
 
     Returns
     -------
@@ -80,7 +82,7 @@ def register_io_source(
                     )
                 parsed_predicate_success = False
 
-        return callable(
+        return io_source(
             with_columns, parsed_predicate, n_rows, batch_size
         ), parsed_predicate_success
 

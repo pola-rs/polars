@@ -61,7 +61,9 @@ pub enum Context {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DslPlan {
     #[cfg(feature = "python")]
-    PythonScan { options: PythonOptions },
+    PythonScan {
+        options: crate::dsl::python_dsl::PythonOptionsDsl,
+    },
     /// Filter on a boolean mask
     Filter {
         input: Arc<DslPlan>,

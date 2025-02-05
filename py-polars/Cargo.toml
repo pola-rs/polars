@@ -23,6 +23,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls", "backg
 
 [target.'cfg(all(target_family = "unix", target_os = "macos", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+either = { workspace = true }
 
 [features]
 # Features used in this crate
