@@ -690,3 +690,27 @@ def test_cast_integer_to_decimal() -> None:
         "", [Decimal("1.00"), Decimal("2.00"), Decimal("3.00")], pl.Decimal(10, 2)
     )
     assert_series_equal(result, expected)
+
+
+def test_cast_python_dtypes() -> None:
+    s = pl.Series([0, 1])
+    assert s.cast(int).dtype == pl.Int64
+    assert s.cast(float).dtype == pl.Float64
+    assert s.cast(bool).dtype == pl.Boolean
+    assert s.cast(str).dtype == pl.String
+
+
+def test_overflowing_cast_literals_21023() -> None:
+    for no_optimization in [True, False]:
+        assert_frame_equal(
+            (
+                pl.LazyFrame()
+                .select(
+                    pl.lit(pl.Series([128], dtype=pl.Int64)).cast(
+                        pl.Int8, wrap_numerical=True
+                    )
+                )
+                .collect(no_optimization=no_optimization)
+            ),
+            pl.Series([-128], dtype=pl.Int8).to_frame(),
+        )

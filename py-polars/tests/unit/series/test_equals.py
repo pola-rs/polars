@@ -297,3 +297,9 @@ def test_eq_missing_lists_arrays_19153(
         ),
         pl.Series([False, True, False]),
     )
+
+
+def test_equals_nested_null_categorical_14875() -> None:
+    dtype = pl.List(pl.Struct({"cat": pl.Categorical}))
+    s = pl.Series([[{"cat": None}]], dtype=dtype)
+    assert s.equals(s)

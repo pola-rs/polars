@@ -12,95 +12,80 @@ use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
+use super::{aexpr_to_leaf_names_iter, AExpr, ExprOrigin, JoinOptions, IR};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
+use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::plans::{ExprIR, OutputName};
 
-/// Join origin of an expression
-#[derive(Debug, Clone, Copy)]
-enum ExprOrigin {
-    /// Utilizes no columns
-    None,
-    /// Utilizes columns from the left side of the join
-    Left,
-    /// Utilizes columns from the right side of the join
-    Right,
-    /// Utilizes columns from both sides of the join
-    Both,
-}
-
-fn get_origin(
-    root: Node,
-    expr_arena: &Arena<AExpr>,
-    left_schema: &SchemaRef,
-    right_schema: &SchemaRef,
-    suffix: &str,
-) -> ExprOrigin {
-    let mut expr_origin = ExprOrigin::None;
-
-    for name in aexpr_to_leaf_names_iter(root, expr_arena) {
-        let in_left = left_schema.contains(name.as_str());
-        let in_right = right_schema.contains(name.as_str());
-        let has_suffix = name.as_str().ends_with(suffix);
-        let in_right = in_right
-            | (has_suffix && right_schema.contains(&name.as_str()[..name.len() - suffix.len()]));
-
-        let name_origin = match (in_left, in_right, has_suffix) {
-            (true, false, _) | (true, true, false) => ExprOrigin::Left,
-            (false, true, _) | (true, true, true) => ExprOrigin::Right,
-            (false, false, _) => {
-                unreachable!("Invalid filter column should have been filtered before")
-            },
-        };
-
-        use ExprOrigin as O;
-        expr_origin = match (expr_origin, name_origin) {
-            (O::None, other) | (other, O::None) => other,
-            (O::Left, O::Left) => O::Left,
-            (O::Right, O::Right) => O::Right,
-            _ => O::Both,
-        };
-    }
-
-    expr_origin
-}
-
-/// Remove the join suffixes from a list of expressions
-fn remove_suffix(
+fn remove_suffix<'a>(
     exprs: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
-    schema: &SchemaRef,
-    suffix: &str,
+    schema: &'a SchemaRef,
+    suffix: &'a str,
 ) {
-    let mut stack = Vec::new();
+    let mut remover = RemoveSuffix {
+        schema: schema.as_ref(),
+        suffix,
+    };
 
     for expr in exprs {
-        if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
-            if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
-                let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
-                *expr = ExprIR::new(
-                    expr_arena.add(AExpr::Column(name.clone())),
-                    OutputName::ColumnLhs(name),
-                );
-            }
+        // Using AexprNode::rewrite() ensures we do not mutate any nodes in-place. The nodes may be
+        // used in other locations and mutating them will cause really confusing bugs, such as
+        // https://github.com/pola-rs/polars/issues/20831.
+        match AexprNode::new(expr.node()).rewrite(&mut remover, expr_arena) {
+            Ok(v) => {
+                expr.set_node(v.node());
+
+                if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
+                    if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
+                        let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+                        expr.set_columnlhs(name);
+                    }
+                }
+            },
+            e @ Err(_) => panic!("should not have failed: {:?}", e),
+        }
+    }
+}
+
+struct RemoveSuffix<'a> {
+    schema: &'a Schema,
+    suffix: &'a str,
+}
+
+impl RewritingVisitor for RemoveSuffix<'_> {
+    type Node = AexprNode;
+    type Arena = Arena<AExpr>;
+
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> polars_core::prelude::PolarsResult<crate::prelude::visitor::RewriteRecursion> {
+        let AExpr::Column(colname) = arena.get(node.node()) else {
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        };
+
+        if !colname.ends_with(self.suffix) || self.schema.contains(colname.as_str()) {
+            return Ok(RewriteRecursion::NoMutateAndContinue);
         }
 
-        stack.clear();
-        stack.push(expr.node());
-        while let Some(node) = stack.pop() {
-            let expr = expr_arena.get_mut(node);
-            expr.inputs_rev(&mut stack);
+        Ok(RewriteRecursion::MutateAndContinue)
+    }
 
-            let AExpr::Column(colname) = expr else {
-                continue;
-            };
+    fn mutate(
+        &mut self,
+        node: Self::Node,
+        arena: &mut Self::Arena,
+    ) -> polars_core::prelude::PolarsResult<Self::Node> {
+        let AExpr::Column(colname) = arena.get(node.node()) else {
+            unreachable!();
+        };
 
-            if !colname.ends_with(suffix) || schema.contains(colname.as_str()) {
-                continue;
-            }
-
-            *colname = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
-        }
+        // Safety: Checked in pre_visit()
+        Ok(AexprNode::new(arena.add(AExpr::Column(PlSmallStr::from(
+            &colname[..colname.len() - self.suffix.len()],
+        )))))
     }
 }
 
@@ -245,7 +230,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                             continue;
                         };
 
-                        if !op.is_comparison() {
+                        if !op.is_comparison_or_bitwise() {
                             // @NOTE: This is not a valid predicate, but we should not handle that
                             // here.
                             remaining_predicates.push(node);
@@ -256,14 +241,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         let mut op = *op;
                         let mut right = *right;
 
-                        let left_origin = get_origin(
+                        let left_origin = ExprOrigin::get_expr_origin(
                             left,
                             expr_arena,
                             left_schema,
                             right_schema,
                             suffix.as_str(),
                         );
-                        let right_origin = get_origin(
+                        let right_origin = ExprOrigin::get_expr_origin(
                             right,
                             expr_arena,
                             left_schema,
@@ -490,6 +475,9 @@ fn insert_fitting_join(
             (Vec::new(), Vec::new(), remaining_predicates)
         },
     };
+
+    // Note: We expect key type upcasting / expression optimizations have already been done during
+    // DSL->IR conversion.
 
     let join_ir = IR::Join {
         input_left,

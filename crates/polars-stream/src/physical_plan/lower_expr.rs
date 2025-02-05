@@ -30,6 +30,7 @@ pub fn unique_column_name() -> PlSmallStr {
 pub(crate) struct ExprCache {
     is_elementwise: PlHashMap<Node, bool>,
     is_input_independent: PlHashMap<Node, bool>,
+    is_length_preserving: PlHashMap<Node, bool>,
 }
 
 impl ExprCache {
@@ -37,6 +38,7 @@ impl ExprCache {
         Self {
             is_elementwise: PlHashMap::with_capacity(capacity),
             is_input_independent: PlHashMap::with_capacity(capacity),
+            is_length_preserving: PlHashMap::with_capacity(capacity),
         }
     }
 }
@@ -234,6 +236,104 @@ fn build_input_independent_node_with_ctx(
             selectors: exprs.to_vec(),
         },
     )))
+}
+
+#[recursive::recursive]
+pub fn is_length_preserving_rec(
+    expr_key: ExprNodeKey,
+    arena: &Arena<AExpr>,
+    cache: &mut PlHashMap<ExprNodeKey, bool>,
+) -> bool {
+    if let Some(ret) = cache.get(&expr_key) {
+        return *ret;
+    }
+
+    let ret = match arena.get(expr_key) {
+        AExpr::Gather { .. }
+        | AExpr::Explode(_)
+        | AExpr::Filter { .. }
+        | AExpr::Agg(_)
+        | AExpr::Slice { .. }
+        | AExpr::Len
+        | AExpr::Literal(_) => false,
+
+        AExpr::Column(_) => true,
+
+        AExpr::Alias(inner, _)
+        | AExpr::Cast {
+            expr: inner,
+            dtype: _,
+            options: _,
+        }
+        | AExpr::Sort {
+            expr: inner,
+            options: _,
+        }
+        | AExpr::SortBy {
+            expr: inner,
+            by: _,
+            sort_options: _,
+        } => is_length_preserving_rec(*inner, arena, cache),
+
+        AExpr::BinaryExpr { left, op: _, right } => {
+            // As long as at least one input is length-preserving the other side
+            // should either broadcast or have the same length.
+            is_length_preserving_rec(*left, arena, cache)
+                || is_length_preserving_rec(*right, arena, cache)
+        },
+        AExpr::Ternary {
+            predicate,
+            truthy,
+            falsy,
+        } => {
+            is_length_preserving_rec(*predicate, arena, cache)
+                || is_length_preserving_rec(*truthy, arena, cache)
+                || is_length_preserving_rec(*falsy, arena, cache)
+        },
+        AExpr::AnonymousFunction {
+            input,
+            function: _,
+            output_type: _,
+            options,
+        }
+        | AExpr::Function {
+            input,
+            function: _,
+            options,
+        } => {
+            // FIXME: actually inspect the functions? This is overly conservative.
+            options.is_length_preserving()
+                && input
+                    .iter()
+                    .all(|expr| is_length_preserving_rec(expr.node(), arena, cache))
+        },
+        AExpr::Window {
+            function: _, // Actually shouldn't matter for window functions.
+            partition_by: _,
+            order_by: _,
+            options,
+        } => !matches!(options, WindowType::Over(WindowMapping::Explode)),
+    };
+
+    cache.insert(expr_key, ret);
+    ret
+}
+
+#[expect(dead_code)]
+pub fn is_length_preserving(
+    expr_key: ExprNodeKey,
+    expr_arena: &Arena<AExpr>,
+    cache: &mut ExprCache,
+) -> bool {
+    is_length_preserving_rec(expr_key, expr_arena, &mut cache.is_length_preserving)
+}
+
+fn is_length_preserving_ctx(expr_key: ExprNodeKey, ctx: &mut LowerExprContext) -> bool {
+    is_length_preserving_rec(
+        expr_key,
+        ctx.expr_arena,
+        &mut ctx.cache.is_length_preserving,
+    )
 }
 
 fn build_fallback_node_with_ctx(
@@ -720,6 +820,7 @@ fn build_select_stream_with_ctx(
         return Ok(PhysStream::first(node_key));
     }
 
+    // Actual lowering is needed.
     let node_exprs = exprs.iter().map(|e| e.node()).collect_vec();
     let (transformed_input, transformed_exprs) = lower_exprs_with_ctx(input, &node_exprs, ctx)?;
     let trans_expr_irs = exprs
@@ -780,4 +881,45 @@ pub fn build_select_stream(
         cache: expr_cache,
     };
     build_select_stream_with_ctx(input, exprs, &mut ctx)
+}
+
+/// Builds a new selection node given an input stream and the expressions to
+/// select for, if needed. Preserves the length of the input, like in with_columns.
+pub fn build_length_preserving_select_stream(
+    input: PhysStream,
+    exprs: &[ExprIR],
+    expr_arena: &mut Arena<AExpr>,
+    phys_sm: &mut SlotMap<PhysNodeKey, PhysNode>,
+    expr_cache: &mut ExprCache,
+) -> PolarsResult<PhysStream> {
+    let mut ctx = LowerExprContext {
+        expr_arena,
+        phys_sm,
+        cache: expr_cache,
+    };
+    let already_length_preserving = exprs
+        .iter()
+        .any(|expr| is_length_preserving_ctx(expr.node(), &mut ctx));
+    let input_schema = &ctx.phys_sm[input.node].output_schema;
+    if exprs.is_empty() || input_schema.is_empty() || already_length_preserving {
+        return build_select_stream_with_ctx(input, exprs, &mut ctx);
+    }
+
+    // Hacky work-around: append an input column with a temporary name, but
+    // remove it from the final selector. This should ensure scalars gets zipped
+    // back to the input to broadcast them.
+    let tmp_name = unique_column_name();
+    let first_col = ctx.expr_arena.add(AExpr::Column(
+        input_schema.iter_names_cloned().next().unwrap(),
+    ));
+    let mut tmp_exprs = Vec::with_capacity(exprs.len() + 1);
+    tmp_exprs.extend(exprs.iter().cloned());
+    tmp_exprs.push(ExprIR::new(first_col, OutputName::Alias(tmp_name.clone())));
+
+    let out_stream = build_select_stream_with_ctx(input, &tmp_exprs, &mut ctx)?;
+    let PhysNodeKind::Select { selectors, .. } = &mut ctx.phys_sm[out_stream.node].kind else {
+        unreachable!()
+    };
+    selectors.pop();
+    Ok(out_stream)
 }

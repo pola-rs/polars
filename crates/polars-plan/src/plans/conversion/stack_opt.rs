@@ -61,17 +61,19 @@ impl ConversionOptimizer {
         }
     }
 
-    pub(super) fn coerce_types(
+    /// Optimizes the expressions in the scratch space. This should be called after filling the
+    /// scratch space with the expressions that you want to optimize.
+    pub(super) fn optimize_exprs(
         &mut self,
         expr_arena: &mut Arena<AExpr>,
         ir_arena: &mut Arena<IR>,
-        current_node: Node,
+        current_ir_node: Node,
     ) -> PolarsResult<()> {
         // Different from the stack-opt in the optimizer phase, this does a single pass until fixed point per expression.
 
         if let Some(rule) = &mut self.check {
-            while let Some(x) = rule.optimize_plan(ir_arena, expr_arena, current_node)? {
-                ir_arena.replace(current_node, x);
+            while let Some(x) = rule.optimize_plan(ir_arena, expr_arena, current_ir_node)? {
+                ir_arena.replace(current_ir_node, x);
             }
         }
 
@@ -85,14 +87,14 @@ impl ConversionOptimizer {
 
             if let Some(rule) = &mut self.simplify {
                 while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, ir_arena, current_node)?
+                    rule.optimize_expr(expr_arena, current_expr_node, ir_arena, current_ir_node)?
                 {
                     expr_arena.replace(current_expr_node, x);
                 }
             }
             if let Some(rule) = &mut self.coerce {
                 while let Some(x) =
-                    rule.optimize_expr(expr_arena, current_expr_node, ir_arena, current_node)?
+                    rule.optimize_expr(expr_arena, current_expr_node, ir_arena, current_ir_node)?
                 {
                     expr_arena.replace(current_expr_node, x);
                 }

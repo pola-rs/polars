@@ -105,8 +105,7 @@ fn rank(s: &Series, method: RankMethod, descending: bool, seed: Option<u64>) -> 
         })
         .slice(0, len - null_count);
 
-    let chunk_refs: Vec<_> = s.chunks().iter().map(|c| &**c).collect();
-    let validity = concatenate_validities(&chunk_refs);
+    let validity = concatenate_validities(s.chunks());
 
     use RankMethod::*;
     if let Ordinal = method {

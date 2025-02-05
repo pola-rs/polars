@@ -1315,7 +1315,7 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         width : int
-            Maximum table width in characters.
+            Maximum table width in characters; if n < 0 (eg: -1), display full width.
 
         Examples
         --------

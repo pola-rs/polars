@@ -268,7 +268,7 @@ def test_invalid_concat_type_err() -> None:
     )
     with pytest.raises(
         ValueError,
-        match="DataFrame `how` must be one of {'vertical', 'vertical_relaxed', 'diagonal', 'diagonal_relaxed', 'horizontal', 'align'}, got 'sausage'",
+        match="DataFrame `how` must be one of {'vertical', '.+', 'align_right'}, got 'sausage'",
     ):
         pl.concat([df, df], how="sausage")  # type: ignore[arg-type]
 

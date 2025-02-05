@@ -11,9 +11,7 @@ pub(super) fn process_functions(
     proj_pd: &mut ProjectionPushDown,
     input: Node,
     function: FunctionIR,
-    mut acc_projections: Vec<ColumnNode>,
-    mut projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    mut ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<IR> {
@@ -25,23 +23,16 @@ pub(super) fn process_functions(
             swapping,
             schema: _,
         } => {
-            let clear = !acc_projections.is_empty();
+            let clear = ctx.has_pushed_down();
             process_rename(
-                &mut acc_projections,
-                &mut projected_names,
+                &mut ctx.acc_projections,
+                &mut ctx.projected_names,
                 expr_arena,
                 existing,
                 new,
                 swapping,
             )?;
-            proj_pd.pushdown_and_assign(
-                input,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            )?;
+            proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
 
             if clear {
                 function.clear_cached_schema()
@@ -54,19 +45,12 @@ pub(super) fn process_functions(
             columns.iter().for_each(|name| {
                 add_str_to_accumulated(
                     name.clone(),
-                    &mut acc_projections,
-                    &mut projected_names,
+                    &mut ctx.acc_projections,
+                    &mut ctx.projected_names,
                     expr_arena,
                 )
             });
-            proj_pd.pushdown_and_assign(
-                input,
-                acc_projections,
-                projected_names,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            )?;
+            proj_pd.pushdown_and_assign(input, ctx, lp_arena, expr_arena)?;
             Ok(IRBuilder::new(input, expr_arena, lp_arena)
                 .explode(columns.clone())
                 .build())
@@ -78,28 +62,19 @@ pub(super) fn process_functions(
                 function: function.clone(),
             };
 
-            process_unpivot(
-                proj_pd,
-                lp,
-                args,
-                input,
-                acc_projections,
-                projections_seen,
-                lp_arena,
-                expr_arena,
-            )
+            process_unpivot(proj_pd, lp, args, input, ctx, lp_arena, expr_arena)
         },
         _ => {
-            if function.allow_projection_pd() && !acc_projections.is_empty() {
-                let original_acc_projection_len = acc_projections.len();
+            if function.allow_projection_pd() && ctx.has_pushed_down() {
+                let original_acc_projection_len = ctx.acc_projections.len();
 
                 // add columns needed for the function.
                 for name in function.additional_projection_pd_columns().as_ref() {
                     let node = expr_arena.add(AExpr::Column(name.clone()));
                     add_expr_to_accumulated(
                         node,
-                        &mut acc_projections,
-                        &mut projected_names,
+                        &mut ctx.acc_projections,
+                        &mut ctx.projected_names,
                         expr_arena,
                     )
                 }
@@ -107,8 +82,7 @@ pub(super) fn process_functions(
 
                 let local_projections = proj_pd.pushdown_and_assign_check_schema(
                     input,
-                    acc_projections,
-                    projections_seen,
+                    ctx,
                     lp_arena,
                     expr_arena,
                     expands_schema,
@@ -143,13 +117,7 @@ pub(super) fn process_functions(
                     function: function.clone(),
                 };
                 // restart projection pushdown
-                proj_pd.no_pushdown_restart_opt(
-                    lp,
-                    acc_projections,
-                    projections_seen,
-                    lp_arena,
-                    expr_arena,
-                )
+                proj_pd.no_pushdown_restart_opt(lp, ctx, lp_arena, expr_arena)
             }
         },
     }

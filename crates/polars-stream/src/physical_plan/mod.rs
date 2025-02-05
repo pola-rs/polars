@@ -104,6 +104,12 @@ pub enum PhysNodeKind {
         length: usize,
     },
 
+    NegativeSlice {
+        input: PhysStream,
+        offset: i64,
+        length: usize,
+    },
+
     Filter {
         input: PhysStream,
         predicate: ExprIR,
@@ -196,6 +202,14 @@ pub enum PhysNodeKind {
         args: JoinArgs,
         options: Option<JoinTypeOptionsIR>,
     },
+
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        input_left: PhysStream,
+        input_right: PhysStream,
+
+        key: PlSmallStr,
+    },
 }
 
 fn visit_node_inputs_mut(
@@ -223,6 +237,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }
+            | PhysNodeKind::NegativeSlice { input, .. }
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }
@@ -242,6 +257,18 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::EquiJoin {
+                input_left,
+                input_right,
+                ..
+            } => {
+                rec!(input_left.node);
+                rec!(input_right.node);
+                visit(input_left);
+                visit(input_right);
+            },
+
+            #[cfg(feature = "merge_sorted")]
+            PhysNodeKind::MergeSorted {
                 input_left,
                 input_right,
                 ..

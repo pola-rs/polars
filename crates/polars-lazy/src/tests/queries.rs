@@ -419,7 +419,7 @@ fn test_lazy_query_9() -> PolarsResult<()> {
     feature = "dtype-duration"
 ))]
 fn test_lazy_query_10() {
-    use polars_core::export::chrono::Duration as ChronoDuration;
+    use chrono::Duration as ChronoDuration;
     let date = NaiveDate::from_ymd_opt(2021, 3, 5).unwrap();
     let x = DatetimeChunked::from_naive_datetime(
         "x".into(),

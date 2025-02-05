@@ -20,9 +20,7 @@ use polars_time::{DynamicGroupOptions, RollingGroupOptions};
 use serde::{Deserialize, Serialize};
 
 use crate::dsl::Selector;
-use crate::plans::{ExprIR, PlSmallStr};
-#[cfg(feature = "python")]
-use crate::prelude::python_udf::PythonFunction;
+use crate::plans::PlSmallStr;
 
 pub type FileCount = u32;
 
@@ -255,6 +253,10 @@ impl FunctionOptions {
         ) && !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
             && !self.flags.contains(FunctionFlags::RETURNS_SCALAR)
     }
+
+    pub fn is_length_preserving(&self) -> bool {
+        !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
+    }
 }
 
 impl Default for FunctionOptions {
@@ -277,47 +279,6 @@ pub struct LogicalPlanUdfOptions {
     pub projection_pd: bool,
     // used for formatting
     pub fmt_str: &'static str,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg(feature = "python")]
-pub struct PythonOptions {
-    /// A function that returns a Python Generator.
-    /// The generator should produce Polars DataFrame's.
-    pub scan_fn: Option<PythonFunction>,
-    /// Schema of the file.
-    pub schema: SchemaRef,
-    /// Schema the reader will produce when the file is read.
-    pub output_schema: Option<SchemaRef>,
-    // Projected column names.
-    pub with_columns: Option<Arc<[PlSmallStr]>>,
-    // Which interface is the python function.
-    pub python_source: PythonScanSource,
-    /// A `head` call passed to the reader.
-    pub n_rows: Option<usize>,
-    /// Optional predicate the reader must apply.
-    pub predicate: PythonPredicate,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum PythonScanSource {
-    Pyarrow,
-    Cuda,
-    #[default]
-    IOPlugin,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum PythonPredicate {
-    // A pyarrow predicate python expression
-    // can be evaluated with python.eval
-    PyArrow(String),
-    Polars(ExprIR),
-    #[default]
-    None,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]

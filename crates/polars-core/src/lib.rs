@@ -10,7 +10,6 @@ pub mod chunked_array;
 pub mod config;
 pub mod datatypes;
 pub mod error;
-pub mod export;
 pub mod fmt;
 pub mod frame;
 pub mod functions;

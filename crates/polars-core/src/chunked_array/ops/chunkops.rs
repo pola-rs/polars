@@ -1,7 +1,7 @@
 use std::cell::Cell;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
 use polars_error::constants::LENGTH_LIMIT_MSG;
 
 use super::*;
@@ -165,17 +165,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                 panic!("implementation error")
             },
             _ => {
-                fn inner_rechunk(chunks: &[ArrayRef]) -> Vec<ArrayRef> {
-                    vec![concatenate_owned_unchecked(chunks).unwrap()]
-                }
-
                 if self.chunks.len() == 1 {
                     self.clone()
                 } else {
-                    let chunks = inner_rechunk(&self.chunks);
+                    let chunks = vec![concatenate_unchecked(&self.chunks).unwrap()];
 
                     let mut ca = unsafe { self.copy_with_chunks(chunks) };
-
                     use StatisticsFlags as F;
                     ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
                     ca

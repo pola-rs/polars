@@ -625,6 +625,7 @@ def test_categorical_fill_null_existing_category() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_fill_null_stringcache() -> None:
     df = pl.LazyFrame(
         {"index": [1, 2, 3], "cat": ["a", "b", None]},
@@ -849,6 +850,7 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
 
 
 @pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
         pl.col("y").cast(pl.Categorical(ordering="lexical"))
@@ -865,6 +867,16 @@ def test_cat_append_lexical_sorted_flag() -> None:
     s1.append(s3)
 
     assert not (s1.is_sorted())
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cast_physical_lexical_sorted_flag_20864() -> None:
+    df = pl.DataFrame({"s": ["b", "a"], "v": [1, 2]})
+    sorted_physically = df.cast({"s": pl.Categorical("physical")}).sort("s")
+    sorted_lexically = sorted_physically.cast({"s": pl.Categorical("lexical")}).sort(
+        "s"
+    )
+    assert sorted_lexically["s"].to_list() == ["a", "b"]
 
 
 @pytest.mark.usefixtures("test_global_and_local")
@@ -932,7 +944,6 @@ def test_categorical_unique() -> None:
     assert s.unique().sort().to_list() == [None, "a", "b"]
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_unique_20539() -> None:
     df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})
@@ -953,7 +964,6 @@ def test_categorical_unique_20539() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 @pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_prefill() -> None:
     # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443

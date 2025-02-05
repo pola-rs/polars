@@ -78,6 +78,10 @@ impl RowEncodingOptions {
         Self::NO_ORDER
     }
 
+    pub fn is_ordered(self) -> bool {
+        !self.contains(Self::NO_ORDER)
+    }
+
     pub fn null_sentinel(self) -> u8 {
         if self.contains(Self::NULLS_LAST) {
             0xFF

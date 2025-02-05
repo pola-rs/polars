@@ -210,6 +210,17 @@ impl PartialEq for DataType {
 impl Eq for DataType {}
 
 impl DataType {
+    pub fn new_idxsize() -> Self {
+        #[cfg(feature = "bigidx")]
+        {
+            Self::UInt64
+        }
+        #[cfg(not(feature = "bigidx"))]
+        {
+            Self::UInt32
+        }
+    }
+
     /// Standardize timezones to consistent values.
     pub(crate) fn canonical_timezone(tz: &Option<PlSmallStr>) -> Option<TimeZone> {
         match tz.as_deref() {
@@ -730,6 +741,8 @@ impl DataType {
             UInt64 => Scalar::from(u64::MAX),
             Float32 => Scalar::from(f32::INFINITY),
             Float64 => Scalar::from(f64::INFINITY),
+            #[cfg(feature = "dtype-time")]
+            Time => Scalar::new(Time, AnyValue::Time(NS_IN_DAY - 1)),
             dt => polars_bail!(ComputeError: "cannot determine upper bound for dtype `{}`", dt),
         };
         Ok(v)
@@ -750,6 +763,8 @@ impl DataType {
             UInt64 => Scalar::from(u64::MIN),
             Float32 => Scalar::from(f32::NEG_INFINITY),
             Float64 => Scalar::from(f64::NEG_INFINITY),
+            #[cfg(feature = "dtype-time")]
+            Time => Scalar::new(Time, AnyValue::Time(0)),
             dt => polars_bail!(ComputeError: "cannot determine lower bound for dtype `{}`", dt),
         };
         Ok(v)

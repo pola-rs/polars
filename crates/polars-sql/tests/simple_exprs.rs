@@ -196,7 +196,7 @@ fn test_literal_exprs() {
             'foo' as string_lit,
             true as bool_lit,
             null as null_lit,
-            interval '1 quarter 2 weeks 1 day 50 seconds' as duration_lit
+            interval '2 weeks 1 day 50 seconds' as duration_lit
         FROM df"#;
     let df_sql = context.execute(sql).unwrap().collect().unwrap();
     let df_pl = df
@@ -208,7 +208,7 @@ fn test_literal_exprs() {
             lit("foo").alias("string_lit"),
             lit(true).alias("bool_lit"),
             lit(NULL).alias("null_lit"),
-            lit(Duration::parse("1q2w1d50s")).alias("duration_lit"),
+            lit(Duration::parse("2w1d50s")).alias("duration_lit"),
         ])
         .collect()
         .unwrap()

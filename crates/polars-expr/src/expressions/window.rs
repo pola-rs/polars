@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use arrow::array::PrimitiveArray;
-use polars_core::export::arrow::bitmap::Bitmap;
+use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
@@ -650,14 +650,14 @@ impl PhysicalExpr for WindowExpr {
         false
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        for i in &self.group_by {
-            i.collect_live_columns(lv);
-        }
-        if let Some((i, _)) = &self.order_by {
-            i.collect_live_columns(lv);
-        }
-        self.phys_function.collect_live_columns(lv);
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     #[allow(clippy::ptr_arg)]

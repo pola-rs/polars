@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetadata;
 
-use crate::predicates::{BatchStats, ColumnStats, PhysicalIoExpr};
+use crate::predicates::{BatchStats, ColumnStats, ScanIOPredicate};
 
 /// Collect the statistics in a row-group
 pub(crate) fn collect_statistics(
@@ -58,7 +58,7 @@ pub(crate) fn collect_statistics(
 }
 
 pub fn read_this_row_group(
-    predicate: Option<&dyn PhysicalIoExpr>,
+    predicate: Option<&ScanIOPredicate>,
     md: &RowGroupMetadata,
     schema: &ArrowSchema,
 ) -> PolarsResult<bool> {
@@ -69,7 +69,35 @@ pub fn read_this_row_group(
     let mut should_read = true;
 
     if let Some(pred) = predicate {
-        if let Some(pred) = pred.as_stats_evaluator() {
+        if let Some(pred) = &pred.skip_batch_predicate {
+            if let Some(stats) = collect_statistics(md, schema)? {
+                let stats = PlIndexMap::from_iter(stats.column_stats().iter().map(|col| {
+                    (
+                        col.field_name().clone(),
+                        crate::predicates::ColumnStatistics {
+                            dtype: stats.schema().get(col.field_name()).unwrap().clone(),
+                            min: col
+                                .to_min()
+                                .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
+                            max: col
+                                .to_max()
+                                .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
+                            null_count: col.null_count().map(|nc| nc as IdxSize),
+                        },
+                    )
+                }));
+                let pred_result = pred.can_skip_batch(md.num_rows() as IdxSize, stats);
+
+                // a parquet file may not have statistics of all columns
+                match pred_result {
+                    Err(PolarsError::ColumnNotFound(errstr)) => {
+                        return Err(PolarsError::ColumnNotFound(errstr))
+                    },
+                    Ok(true) => should_read = false,
+                    _ => {},
+                }
+            }
+        } else if let Some(pred) = pred.predicate.as_stats_evaluator() {
             if let Some(stats) = collect_statistics(md, schema)? {
                 let pred_result = pred.should_read(&stats);
 

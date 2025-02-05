@@ -20,11 +20,12 @@ use polars_parquet::write::{
 use polars_utils::priority::Priority;
 
 use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
+use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::nodes::{ComputeNode, JoinHandle, PortState, TaskPriority, TaskScope};
 use crate::pipe::{RecvPort, SendPort};
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
+type Linearized = Priority<Reverse<(usize, usize)>, Vec<Vec<CompressedPage>>>;
 pub struct ParquetSinkNode {
     path: PathBuf,
 
@@ -36,6 +37,10 @@ pub struct ParquetSinkNode {
     encodings: Vec<Vec<Encoding>>,
 
     num_encoders: usize,
+
+    // IO task related:
+    senders: Vec<Inserter<Linearized>>,
+    io_task: Option<tokio::task::JoinHandle<PolarsResult<()>>>,
 }
 
 impl ParquetSinkNode {
@@ -59,6 +64,8 @@ impl ParquetSinkNode {
             encodings,
 
             num_encoders: 1,
+            senders: Vec::new(),
+            io_task: None,
         })
     }
 }
@@ -73,6 +80,78 @@ impl ComputeNode for ParquetSinkNode {
 
     fn initialize(&mut self, num_pipelines: usize) {
         self.num_encoders = num_pipelines;
+
+        let io_runtime = polars_io::pl_async::get_runtime();
+
+        // Encode tasks -> IO task
+        let (mut linearizer, senders) =
+            Linearizer::<Linearized>::new(self.num_encoders, DEFAULT_LINEARIZER_BUFFER_SIZE);
+
+        let path = self.path.clone();
+        let write_options = self.write_options;
+        let input_schema = self.input_schema.clone();
+        let arrow_schema = self.arrow_schema.clone();
+        let parquet_schema = self.parquet_schema.clone();
+        let encodings = self.encodings.clone();
+
+        self.senders = senders;
+
+        // IO task.
+        //
+        // Task that will actually do write to the target file. It is important that this is only
+        // spawned once.
+        self.io_task = Some(io_runtime.spawn(async move {
+            use tokio::fs::OpenOptions;
+
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(path.as_path())
+                .await
+                .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
+            let file = file.into_std().await;
+            let writer = BufWriter::new(file);
+            let options = WriteOptions {
+                statistics: write_options.statistics,
+                compression: write_options.compression.into(),
+                version: Version::V1,
+                data_page_size: write_options.data_page_size,
+            };
+            let file_writer = Mutex::new(FileWriter::new_with_parquet_schema(
+                writer,
+                arrow_schema,
+                parquet_schema,
+                options,
+            ));
+            let mut writer = BatchedWriter::new(file_writer, encodings, options, false);
+
+            let num_parquet_columns = writer.parquet_schema().leaves().len();
+            let mut current_row_group = Vec::with_capacity(num_parquet_columns);
+
+            // Linearize from all the Encoder tasks.
+            while let Some(Priority(Reverse((_, col_idx)), compressed_pages)) =
+                linearizer.get().await
+            {
+                assert!(col_idx < input_schema.len());
+                current_row_group.extend(compressed_pages);
+
+                // Only if it is the last column of the row group, write the row group to the file.
+                if current_row_group.len() < num_parquet_columns {
+                    continue;
+                }
+
+                // @TODO: At the moment this is a sync write, this is not ideal because we can only
+                // have so many blocking threads in the tokio threadpool.
+                assert_eq!(current_row_group.len(), num_parquet_columns);
+                writer.write_row_group(&current_row_group)?;
+                current_row_group.clear();
+            }
+
+            writer.finish()?;
+
+            PolarsResult::Ok(())
+        }));
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
@@ -83,6 +162,13 @@ impl ComputeNode for ParquetSinkNode {
         // also done.
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
+        } else if let Some(io_task) = self.io_task.take() {
+            // Stop the IO task from waiting for more morsels.
+            self.senders.clear();
+
+            polars_io::pl_async::get_runtime()
+                .block_on(io_task)
+                .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))?;
         }
 
         Ok(())
@@ -104,20 +190,17 @@ impl ComputeNode for ParquetSinkNode {
         // Buffer task -> Encode tasks
         let (mut distribute, distribute_channels) =
             distributor_channel(self.num_encoders, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        // Encode tasks -> IO task
-        let (mut linearizer, senders) = Linearizer::<
-            Priority<Reverse<(usize, usize)>, Vec<Vec<CompressedPage>>>,
-        >::new(
-            self.num_encoders, DEFAULT_LINEARIZER_BUFFER_SIZE
-        );
 
-        let slf = &*self;
+        let input_schema = &self.input_schema;
+        let write_options = &self.write_options;
+        let parquet_schema = &self.parquet_schema;
+        let encodings = &self.encodings;
 
         let options = WriteOptions {
-            statistics: slf.write_options.statistics,
-            compression: slf.write_options.compression.into(),
+            statistics: write_options.statistics,
+            compression: write_options.compression.into(),
             version: Version::V1,
-            data_page_size: slf.write_options.data_page_size,
+            data_page_size: write_options.data_page_size,
         };
 
         // Buffer task.
@@ -125,9 +208,8 @@ impl ComputeNode for ParquetSinkNode {
         // This task linearizes and buffers morsels until a given a maximum chunk size is reached
         // and then sends the whole record batch to be encoded and written.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let mut buffer = DataFrame::empty_with_schema(slf.input_schema.as_ref());
-            let row_group_size = slf
-                .write_options
+            let mut buffer = DataFrame::empty_with_schema(input_schema.as_ref());
+            let row_group_size = write_options
                 .row_group_size
                 .unwrap_or(DEFAULT_ROW_GROUP_SIZE)
                 .max(1);
@@ -172,11 +254,11 @@ impl ComputeNode for ParquetSinkNode {
         // Encode task.
         //
         // Task encodes the columns into their corresponding Parquet encoding.
-        for (mut receiver, mut sender) in distribute_channels.into_iter().zip(senders) {
+        for (mut receiver, sender) in distribute_channels.into_iter().zip(self.senders.iter_mut()) {
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 while let Ok((rg_idx, col_idx, column)) = receiver.recv().await {
-                    let type_ = &slf.parquet_schema.fields()[col_idx];
-                    let encodings = &slf.encodings[col_idx];
+                    let type_ = &parquet_schema.fields()[col_idx];
+                    let encodings = &encodings[col_idx];
 
                     let array = column.as_materialized_series().rechunk();
                     let array = array.to_arrow(0, CompatLevel::newest());
@@ -219,66 +301,5 @@ impl ComputeNode for ParquetSinkNode {
                 PolarsResult::Ok(())
             }));
         }
-
-        // IO task.
-        //
-        // Task that will actually do write to the target file.
-        let io_runtime = polars_io::pl_async::get_runtime();
-
-        let path = slf.path.clone();
-        let input_schema = slf.input_schema.clone();
-        let arrow_schema = slf.arrow_schema.clone();
-        let parquet_schema = slf.parquet_schema.clone();
-        let encodings = slf.encodings.clone();
-
-        let io_task = io_runtime.spawn(async move {
-            use tokio::fs::OpenOptions;
-
-            let file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path.as_path())
-                .await
-                .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
-            let writer = BufWriter::new(file.into_std().await);
-            let mut writer = BatchedWriter::new(
-                Mutex::new(FileWriter::new_with_parquet_schema(
-                    writer,
-                    arrow_schema,
-                    parquet_schema,
-                    options,
-                )),
-                encodings,
-                options,
-                false,
-            );
-
-            let num_parquet_columns = writer.parquet_schema().leaves().len();
-            let mut current_row_group = Vec::with_capacity(num_parquet_columns);
-
-            // Linearize from all the Encoder tasks.
-            while let Some(Priority(Reverse((_, col_idx)), compressed_pages)) =
-                linearizer.get().await
-            {
-                assert!(col_idx < input_schema.len());
-                current_row_group.extend(compressed_pages);
-
-                // Only if it is the last column of the row group, write the row group to the file.
-                if current_row_group.len() < num_parquet_columns {
-                    continue;
-                }
-
-                assert_eq!(current_row_group.len(), num_parquet_columns);
-                writer.write_row_group(&current_row_group)?;
-                current_row_group.clear();
-            }
-
-            writer.finish()?;
-
-            PolarsResult::Ok(())
-        });
-        join_handles
-            .push(scope.spawn_task(TaskPriority::Low, async move { io_task.await.unwrap() }));
     }
 }

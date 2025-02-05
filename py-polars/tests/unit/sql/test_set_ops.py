@@ -161,8 +161,8 @@ def test_union(
         eager=True,
     ) as ctx:
         query = f"""
-            SELECT {', '.join(cols1)} FROM frame1
+            SELECT {", ".join(cols1)} FROM frame1
             UNION {union_subtype}
-            SELECT {', '.join(cols2)} FROM frame2
+            SELECT {", ".join(cols2)} FROM frame2
         """
         assert sorted(ctx.execute(query).rows()) == expected

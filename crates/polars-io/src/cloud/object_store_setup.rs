@@ -209,6 +209,10 @@ impl PolarsObjectStoreBuilder {
 
         Ok(store)
     }
+
+    pub(crate) fn is_azure(&self) -> bool {
+        matches!(&self.cloud_type, CloudType::Azure)
+    }
 }
 
 /// Build an [`ObjectStore`] based on the URL and passed in url. Return the cloud location and an implementation of the object store.

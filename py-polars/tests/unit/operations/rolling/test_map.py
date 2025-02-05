@@ -22,14 +22,14 @@ if TYPE_CHECKING:
 )
 def test_rolling_map_window_size_9160(input: list[int], output: list[int]) -> None:
     s = pl.Series(input)
-    result = s.rolling_map(lambda x: sum(x), window_size=2, min_periods=1)
+    result = s.rolling_map(lambda x: sum(x), window_size=2, min_samples=1)
     expected = pl.Series(output)
     assert_series_equal(result, expected)
 
 
 def testing_rolling_map_window_size_with_nulls() -> None:
     s = pl.Series([0, 1, None, 3, 4, 5])
-    result = s.rolling_map(lambda x: sum(x), window_size=3, min_periods=3)
+    result = s.rolling_map(lambda x: sum(x), window_size=3, min_samples=3)
     expected = pl.Series([None, None, None, None, None, 12])
     assert_series_equal(result, expected)
 
@@ -44,7 +44,7 @@ def test_rolling_map_clear_reuse_series_state_10681() -> None:
 
     result = df.select(
         pl.col("b")
-        .rolling_map(lambda s: s.min(), window_size=3, min_periods=2)
+        .rolling_map(lambda s: s.min(), window_size=3, min_samples=2)
         .over("a")
         .alias("min")
     )
@@ -112,12 +112,12 @@ def test_rolling_map_rolling_sum() -> None:
         function=lambda s: s.sum(),
         window_size=3,
         weights=[1.0, 2.1, 3.2],
-        min_periods=2,
+        min_samples=2,
         center=True,
     )
 
     expected = s.rolling_sum(
-        window_size=3, weights=[1.0, 2.1, 3.2], min_periods=2, center=True
+        window_size=3, weights=[1.0, 2.1, 3.2], min_samples=2, center=True
     )
     assert_series_equal(result, expected)
 
@@ -128,9 +128,9 @@ def test_rolling_map_rolling_std() -> None:
     result = s.rolling_map(
         function=lambda s: s.std(),
         window_size=4,
-        min_periods=3,
+        min_samples=3,
         center=False,
     )
 
-    expected = s.rolling_std(window_size=4, min_periods=3, center=False)
+    expected = s.rolling_std(window_size=4, min_samples=3, center=False)
     assert_series_equal(result, expected)

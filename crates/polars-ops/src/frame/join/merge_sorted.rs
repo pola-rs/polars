@@ -20,6 +20,15 @@ pub fn _merge_sorted_dfs(
         ComputeError: "merge-sort datatype mismatch: {} != {}", dtype_lhs, dtype_rhs
     );
 
+    if dtype_lhs.is_categorical() {
+        let rev_map_lhs = left_s.categorical().unwrap().get_rev_map();
+        let rev_map_rhs = right_s.categorical().unwrap().get_rev_map();
+        polars_ensure!(
+            rev_map_lhs.same_src(rev_map_rhs),
+            ComputeError: "can only merge-sort categoricals with the same categories"
+        );
+    }
+
     // If one frame is empty, we can return the other immediately.
     if right_s.is_empty() {
         return Ok(left.clone());
@@ -41,7 +50,7 @@ pub fn _merge_sorted_dfs(
                 rhs_phys.as_materialized_series(),
                 &merge_indicator,
             )?);
-            let mut out = out.cast(lhs.dtype()).unwrap();
+            let mut out = unsafe { out.from_physical_unchecked(lhs.dtype()) }.unwrap();
             out.rename(lhs.name().clone());
             Ok(out)
         })
@@ -61,12 +70,10 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
         },
         String => {
             // dispatch via binary
-            let lhs = lhs.cast(&Binary).unwrap();
-            let rhs = rhs.cast(&Binary).unwrap();
-            let lhs = lhs.binary().unwrap();
-            let rhs = rhs.binary().unwrap();
-            let out = merge_ca(lhs, rhs, merge_indicator);
-            unsafe { out.cast_unchecked(&String).unwrap() }
+            let lhs = lhs.str().unwrap().as_binary();
+            let rhs = rhs.str().unwrap().as_binary();
+            let out = merge_ca(&lhs, &rhs, merge_indicator);
+            unsafe { out.to_string_unchecked() }.into_series()
         },
         Binary => {
             let lhs = lhs.binary().unwrap();
@@ -143,9 +150,13 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         DataType::String => {
-            let lhs = lhs_s.str().unwrap();
-            let rhs = rhs_s.str().unwrap();
-
+            let lhs = lhs.str().unwrap().as_binary();
+            let rhs = rhs.str().unwrap().as_binary();
+            get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+        },
+        DataType::Binary => {
+            let lhs = lhs_s.binary().unwrap();
+            let rhs = rhs_s.binary().unwrap();
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         _ => {

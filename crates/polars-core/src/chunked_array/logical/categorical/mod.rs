@@ -415,8 +415,13 @@ impl LogicalType for CategoricalChunked {
                         return Ok(self.to_local().set_ordering(*ordering, true).into_series());
                     }
                 }
-                // Otherwise we do nothing
-                Ok(self.clone().set_ordering(*ordering, true).into_series())
+                // If casting to lexical categorical, set sorted flag as not set
+
+                let mut ca = self.clone().set_ordering(*ordering, true);
+                if ca.uses_lexical_ordering() {
+                    ca.physical.set_sorted_flag(IsSorted::Not);
+                }
+                Ok(ca.into_series())
             },
             dt if dt.is_primitive_numeric() => {
                 // Apply the cast to the categories and then index into the casted series.

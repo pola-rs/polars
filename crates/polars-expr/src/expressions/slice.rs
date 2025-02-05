@@ -269,10 +269,14 @@ impl PhysicalExpr for SliceExpr {
         Ok(ac)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.input.collect_live_columns(lv);
-        self.offset.collect_live_columns(lv);
-        self.length.collect_live_columns(lv);
+    fn isolate_column_expr(
+        &self,
+        _name: &str,
+    ) -> Option<(
+        Arc<dyn PhysicalExpr>,
+        Option<SpecializedColumnPredicateExpr>,
+    )> {
+        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

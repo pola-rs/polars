@@ -936,7 +936,7 @@ def test_init_1d_sequence() -> None:
         [datetime(2020, 1, 1, tzinfo=ZoneInfo("Asia/Kathmandu"))],
         schema={"ts": pl.Datetime("ms")},
     )
-    assert df.schema == {"ts": pl.Datetime("ms", "UTC")}
+    assert df.schema == {"ts": pl.Datetime("ms", "Asia/Kathmandu")}
 
 
 def test_init_pandas(monkeypatch: Any) -> None:
@@ -1616,7 +1616,7 @@ def test_df_init_dict_raise_on_expression_input() -> None:
 
     # Passing a list of expressions is allowed
     df = pl.DataFrame({"a": [pl.int_range(0, 3)]})
-    assert df.get_column("a").dtype == pl.Object
+    assert df.get_column("a").dtype.is_object()
 
 
 def test_df_schema_sequences() -> None:
@@ -1703,7 +1703,7 @@ class PyCapsuleStreamHolder:
     """
     Hold the Arrow C Stream pycapsule.
 
-    A class that exposes _only_ the Arrow C Stream interface via Arrow PyCapsules. This
+    A class that exposes the Arrow C Stream interface via Arrow PyCapsules. This
     ensures that the consumer is seeing _only_ the `__arrow_c_stream__` dunder, and that
     nothing else (e.g. the dataframe or array interface) is actually being used.
     """
@@ -1715,6 +1715,12 @@ class PyCapsuleStreamHolder:
 
     def __arrow_c_stream__(self, requested_schema: object = None) -> object:
         return self.arrow_obj.__arrow_c_stream__(requested_schema)
+
+    def __iter__(self) -> None:
+        return
+
+    def __next__(self) -> None:
+        return
 
 
 class PyCapsuleArrayHolder:
@@ -1735,6 +1741,7 @@ class PyCapsuleArrayHolder:
         return self.arrow_obj.__arrow_c_array__(requested_schema)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_pycapsule_interface(df: pl.DataFrame) -> None:
     df = df.rechunk()
     pyarrow_table = df.to_arrow()
@@ -1806,7 +1813,28 @@ def test_init_list_of_dicts_with_timezone(tz: Any) -> None:
     expected = pl.DataFrame({"dt": [dt, dt]})
     assert_frame_equal(df, expected)
 
-    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz and "UTC")}
+    assert df.schema == {"dt": pl.Datetime("us", time_zone=tz)}
+
+
+@pytest.mark.parametrize(
+    "tz",
+    [
+        None,
+        ZoneInfo("Asia/Tokyo"),
+        ZoneInfo("Europe/Amsterdam"),
+        ZoneInfo("UTC"),
+        timezone.utc,
+    ],
+)
+def test_init_list_of_nested_dicts_with_timezone(tz: Any) -> None:
+    dt = datetime(2021, 1, 1, 0, 0, 0, 0, tzinfo=tz)
+    data = [{"timestamp": {"content": datetime(2021, 1, 1, 0, 0, tzinfo=tz)}}]
+
+    df = pl.DataFrame(data).unnest("timestamp")
+    expected = pl.DataFrame({"content": [dt]})
+    assert_frame_equal(df, expected)
+
+    assert df.schema == {"content": pl.Datetime("us", time_zone=tz)}
 
 
 def test_init_from_subclassed_types() -> None:

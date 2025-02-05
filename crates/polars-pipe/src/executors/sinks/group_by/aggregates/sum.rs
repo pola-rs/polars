@@ -2,11 +2,9 @@ use std::any::Any;
 use std::ops::Add;
 
 use arrow::array::PrimitiveArray;
-use arrow::compute::aggregate::Sum;
-use arrow::types::simd::Simd;
-use polars_core::export::num::NumCast;
+use num_traits::NumCast;
+use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
 use polars_core::prelude::*;
-use polars_core::utils::arrow::compute::aggregate::sum_primitive;
 
 use super::*;
 
@@ -23,8 +21,7 @@ impl<K: NumericNative> SumAgg<K> {
 impl<K> AggregateFn for SumAgg<K>
 where
     K::PolarsType: PolarsNumericType,
-    K: NumericNative + Add<Output = K>,
-    <K as Simd>::Simd: Add<Output = <K as Simd>::Simd> + Sum<K>,
+    K: NumericNative + Add<Output = K> + WrappingSum,
 {
     fn has_physical_agg(&self) -> bool {
         true
@@ -61,14 +58,13 @@ where
                 .downcast_ref::<PrimitiveArray<K>>()
                 .unwrap_unchecked()
         };
-        match (sum_primitive(arr), self.sum) {
-            (Some(val), Some(sum)) => {
+        match (wrapping_sum_arr(arr), self.sum) {
+            (val, Some(sum)) => {
                 self.sum = Some(sum + val);
             },
-            (Some(val), None) => {
+            (val, None) => {
                 self.sum = Some(val);
             },
-            _ => {},
         }
     }
 

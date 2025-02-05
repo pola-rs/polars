@@ -4269,6 +4269,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         force_parallel: bool = False,
         coalesce: bool = True,
         allow_exact_matches: bool = True,
+        check_sortedness: bool = True,
     ) -> LazyFrame:
         """
         Perform an asof join.
@@ -4361,7 +4362,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 (i.e. less-than-or-equal-to / greater-than-or-equal-to)
             - If False, don't match the same ``on`` value
                 (i.e., strictly less-than / strictly greater-than).
-
+        check_sortedness
+            Check the sortedness of the asof keys. If the keys are not sorted Polars
+            will error, or in case of 'by' argument raise a warning. This might become
+            a hard error in the future.
 
 
         Examples
@@ -4618,6 +4622,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 tolerance_str,
                 coalesce=coalesce,
                 allow_eq=allow_exact_matches,
+                check_sortedness=check_sortedness,
             )
         )
 
@@ -6930,6 +6935,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ steve  ┆ 42  │
         │ elise  ┆ 44  │
         └────────┴─────┘
+
+        Notes
+        -----
+        No guarantee is given over the output row order when the key is equal
+        between the both dataframes.
         """
         return self._from_pyldf(self._ldf.merge_sorted(other._ldf, key))
 
@@ -6940,16 +6950,16 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         descending: bool = False,
     ) -> LazyFrame:
         """
-        Indicate that one or multiple columns are sorted.
+        Flag a column as sorted.
 
         This can speed up future operations.
 
         Parameters
         ----------
         column
-            Columns that are sorted
+            Column that is sorted
         descending
-            Whether the columns are sorted in descending order.
+            Whether the column is sorted in descending order.
 
         Warnings
         --------

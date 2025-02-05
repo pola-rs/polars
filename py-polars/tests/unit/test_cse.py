@@ -791,7 +791,7 @@ def test_eager_cse_during_struct_expansion_18411() -> None:
     )["foo"].all()
 
 
-def test_cse_skip_as_struct_19253() -> None:
+def test_cse_as_struct_19253() -> None:
     df = pl.LazyFrame({"x": [1, 2], "y": [4, 5]})
 
     assert (
@@ -804,6 +804,16 @@ def test_cse_skip_as_struct_19253() -> None:
         "y": [4, 5],
         "q1": [{"x": -3.5}, {"x": -2.5}],
         "q2": [{"x": -3.0}, {"x": -3.0}],
+    }
+
+
+@pytest.mark.may_fail_auto_streaming
+def test_cse_as_struct_value_counts_20927() -> None:
+    assert pl.DataFrame({"x": [i for i in range(1, 6) for _ in range(i)]}).select(
+        pl.struct("x").value_counts().struct.unnest()
+    ).sort("count").to_dict(as_series=False) == {
+        "x": [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}, {"x": 5}],
+        "count": [1, 2, 3, 4, 5],
     }
 
 

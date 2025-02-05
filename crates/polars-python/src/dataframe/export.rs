@@ -1,7 +1,7 @@
-use polars::export::arrow::record_batch::RecordBatch;
+use arrow::datatypes::IntegerType;
+use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
-use polars_core::export::arrow::datatypes::IntegerType;
-use polars_core::export::cast::CastOptionsImpl;
+use polars_compute::cast::CastOptionsImpl;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
 use pyo3::IntoPyObjectExt;
@@ -12,6 +12,7 @@ use crate::error::PyPolarsErr;
 use crate::interop;
 use crate::interop::arrow::to_py::dataframe_to_stream;
 use crate::prelude::PyCompatLevel;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PyDataFrame {
@@ -74,7 +75,7 @@ impl PyDataFrame {
 
     #[allow(clippy::wrong_self_convention)]
     pub fn to_arrow(&mut self, py: Python, compat_level: PyCompatLevel) -> PyResult<Vec<PyObject>> {
-        py.allow_threads(|| self.df.align_chunks_par());
+        py.enter_polars_ok(|| self.df.align_chunks_par())?;
         let pyarrow = py.import("pyarrow")?;
 
         let rbs = self
@@ -92,7 +93,7 @@ impl PyDataFrame {
     /// code should make sure these are not included.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_pandas(&mut self, py: Python) -> PyResult<Vec<PyObject>> {
-        py.allow_threads(|| self.df.as_single_chunk_par());
+        py.enter_polars_ok(|| self.df.as_single_chunk_par())?;
         Python::with_gil(|py| {
             let pyarrow = py.import("pyarrow")?;
             let cat_columns = self
@@ -136,7 +137,7 @@ impl PyDataFrame {
 
                     for i in &cat_columns {
                         let arr = arrays.get_mut(*i).unwrap();
-                        let out = polars_core::export::cast::cast(
+                        let out = polars_compute::cast::cast(
                             &**arr,
                             &enum_and_categorical_dtype,
                             CastOptionsImpl::default(),
@@ -163,7 +164,7 @@ impl PyDataFrame {
         py: Python<'py>,
         requested_schema: Option<PyObject>,
     ) -> PyResult<Bound<'py, PyCapsule>> {
-        py.allow_threads(|| self.df.align_chunks_par());
+        py.enter_polars_ok(|| self.df.align_chunks_par())?;
         dataframe_to_stream(&self.df, py)
     }
 }

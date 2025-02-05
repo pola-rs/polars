@@ -1,37 +1,34 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-
 use arrow::array::{Array, BinaryViewArray, MutableBinaryViewArray, Utf8ViewArray, View};
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::buffer::Buffer;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::{ArrowDataType, PhysicalType};
 
 use super::dictionary_encoded::{append_validity, constrain_page_validity};
 use super::utils::{
     dict_indices_decoder, filter_from_range, freeze_validity, unspecialized_decode,
 };
-use super::{dictionary_encoded, Filter};
+use super::{dictionary_encoded, Filter, PredicateFilter};
 use crate::parquet::encoding::{delta_byte_array, delta_length_byte_array, hybrid_rle, Encoding};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
 use crate::read::deserialize::utils::{self};
-use crate::read::PrimitiveLogicalType;
 
-type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, MutableBitmap);
+mod optional;
+mod optional_masked;
+mod predicate;
+mod required;
+mod required_masked;
+
+type DecodedStateTuple = (MutableBinaryViewArray<[u8]>, BitmapBuilder);
 
 impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
     type PlainDecoder = BinaryIter<'a>;
 
     fn new(
-        decoder: &BinViewDecoder,
+        _decoder: &BinViewDecoder,
         page: &'a DataPage,
         dict: Option<&'a <BinViewDecoder as utils::Decoder>::Dict>,
         page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
-        let is_string = matches!(
-            page.descriptor.primitive_type.logical_type,
-            Some(PrimitiveLogicalType::String)
-        );
-        decoder.check_utf8.store(is_string, Ordering::Relaxed);
         match (page.encoding(), dict) {
             (Encoding::Plain, _) => {
                 let values = split_buffer(page)?.values;
@@ -60,18 +57,24 @@ impl<'a> utils::StateTranslation<'a, BinViewDecoder> for StateTranslation<'a> {
             _ => Err(utils::not_implemented(page)),
         }
     }
+
+    fn num_rows(&self) -> usize {
+        match self {
+            StateTranslation::Plain(i) => i.max_num_values,
+            StateTranslation::Dictionary(i) => i.len(),
+            StateTranslation::DeltaLengthByteArray(i, _) => i.len(),
+            StateTranslation::DeltaBytes(i) => i.len(),
+        }
+    }
 }
 
-#[derive(Default)]
 pub(crate) struct BinViewDecoder {
-    check_utf8: AtomicBool,
+    pub is_string: bool,
 }
 
 impl BinViewDecoder {
-    pub fn new_check_utf8() -> Self {
-        Self {
-            check_utf8: AtomicBool::new(true),
-        }
+    pub fn new_string() -> Self {
+        Self { is_string: true }
     }
 }
 
@@ -84,15 +87,14 @@ pub(crate) enum StateTranslation<'a> {
     DeltaBytes(delta_byte_array::Decoder<'a>),
 }
 
-impl utils::ExactSize for DecodedStateTuple {
+impl utils::Decoded for DecodedStateTuple {
     fn len(&self) -> usize {
         self.0.len()
     }
-}
 
-impl utils::ExactSize for (Vec<View>, Vec<Buffer<u8>>) {
-    fn len(&self) -> usize {
-        self.0.len()
+    fn extend_nulls(&mut self, n: usize) {
+        self.0.extend_constant(n, Some(&[]));
+        self.1.extend_constant(n, false);
     }
 }
 
@@ -103,10 +105,12 @@ pub fn decode_plain(
     target: &mut MutableBinaryViewArray<[u8]>,
 
     is_optional: bool,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
 
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
+
+    pred_true_mask: &mut BitmapBuilder,
 
     verify_utf8: bool,
 ) -> ParquetResult<()> {
@@ -116,18 +120,18 @@ pub fn decode_plain(
     let page_validity = constrain_page_validity(max_num_values, page_validity, filter.as_ref());
 
     match (filter, page_validity) {
-        (None, None) => decode_required_plain(max_num_values, values, None, target, verify_utf8),
+        (None, None) => required::decode(max_num_values, values, None, target, verify_utf8),
         (Some(Filter::Range(rng)), None) if rng.start == 0 => {
-            decode_required_plain(max_num_values, values, Some(rng.end), target, verify_utf8)
+            required::decode(max_num_values, values, Some(rng.end), target, verify_utf8)
         },
-        (None, Some(page_validity)) => decode_optional_plain(
+        (None, Some(page_validity)) => optional::decode(
             page_validity.set_bits(),
             values,
             target,
             &page_validity,
             verify_utf8,
         ),
-        (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => decode_optional_plain(
+        (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => optional::decode(
             page_validity.set_bits(),
             values,
             target,
@@ -135,9 +139,9 @@ pub fn decode_plain(
             verify_utf8,
         ),
         (Some(Filter::Mask(mask)), None) => {
-            decode_masked_required_plain(max_num_values, values, target, &mask, verify_utf8)
+            required_masked::decode(max_num_values, values, target, &mask, verify_utf8)
         },
-        (Some(Filter::Mask(mask)), Some(page_validity)) => decode_masked_optional_plain(
+        (Some(Filter::Mask(mask)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
             target,
@@ -145,14 +149,14 @@ pub fn decode_plain(
             &mask,
             verify_utf8,
         ),
-        (Some(Filter::Range(rng)), None) => decode_masked_required_plain(
+        (Some(Filter::Range(rng)), None) => required_masked::decode(
             max_num_values,
             values,
             target,
             &filter_from_range(rng.clone()),
             verify_utf8,
         ),
-        (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_plain(
+        (Some(Filter::Range(rng)), Some(page_validity)) => optional_masked::decode(
             page_validity.set_bits(),
             values,
             target,
@@ -160,6 +164,46 @@ pub fn decode_plain(
             &filter_from_range(rng.clone()),
             verify_utf8,
         ),
+        (Some(Filter::Predicate(p)), page_validity) => {
+            let Some(needle) = p.predicate.to_equals_scalar() else {
+                unreachable!();
+            };
+
+            if needle.is_null() || page_validity.is_some() {
+                todo!();
+            }
+
+            let needle = if verify_utf8 {
+                needle.as_str().unwrap().as_bytes()
+            } else {
+                needle.as_binary().unwrap()
+            };
+
+            let start_pred_true_num = pred_true_mask.set_bits();
+            predicate::decode_equals(max_num_values, values, needle, pred_true_mask)?;
+
+            if p.include_values {
+                let pred_true_num = pred_true_mask.set_bits() - start_pred_true_num;
+
+                if pred_true_num > 0 {
+                    let new_target_len = target.len() + pred_true_num;
+                    let new_total_bytes_len =
+                        target.total_bytes_len() + pred_true_num * needle.len();
+
+                    target.push_value(needle);
+                    let view = *target.views().last().unwrap();
+
+                    // SAFETY: We know that the view is valid since we added it safely and we
+                    // update the total_bytes_len afterwards. The total_buffer_len is not affected.
+                    unsafe {
+                        target.views_mut().resize(new_target_len, view);
+                        target.set_total_bytes_len(new_total_bytes_len);
+                    }
+                }
+            }
+
+            Ok(())
+        },
     }?;
 
     Ok(())
@@ -173,133 +217,6 @@ fn invalid_input_err() -> ParquetError {
 #[cold]
 fn invalid_utf8_err() -> ParquetError {
     ParquetError::oos("String data contained invalid UTF-8")
-}
-
-fn decode_required_plain(
-    num_expected_values: usize,
-    values: &[u8],
-    limit: Option<usize>,
-    target: &mut MutableBinaryViewArray<[u8]>,
-
-    verify_utf8: bool,
-) -> ParquetResult<()> {
-    let limit = limit.unwrap_or(num_expected_values);
-
-    let mut idx = 0;
-    decode_plain_generic(
-        values,
-        target,
-        limit,
-        || {
-            if idx >= limit {
-                return None;
-            }
-
-            idx += 1;
-
-            Some((true, true))
-        },
-        verify_utf8,
-    )
-}
-
-fn decode_optional_plain(
-    num_expected_values: usize,
-    values: &[u8],
-    target: &mut MutableBinaryViewArray<[u8]>,
-    page_validity: &Bitmap,
-
-    verify_utf8: bool,
-) -> ParquetResult<()> {
-    if page_validity.unset_bits() == 0 {
-        return decode_required_plain(
-            num_expected_values,
-            values,
-            Some(page_validity.len()),
-            target,
-            verify_utf8,
-        );
-    }
-
-    let mut validity_iter = page_validity.iter();
-    decode_plain_generic(
-        values,
-        target,
-        page_validity.len(),
-        || Some((validity_iter.next()?, true)),
-        verify_utf8,
-    )
-}
-
-fn decode_masked_required_plain(
-    num_expected_values: usize,
-    values: &[u8],
-    target: &mut MutableBinaryViewArray<[u8]>,
-
-    mask: &Bitmap,
-
-    verify_utf8: bool,
-) -> ParquetResult<()> {
-    if mask.unset_bits() == 0 {
-        return decode_required_plain(
-            num_expected_values,
-            values,
-            Some(mask.len()),
-            target,
-            verify_utf8,
-        );
-    }
-
-    let mut mask_iter = mask.iter();
-    decode_plain_generic(
-        values,
-        target,
-        mask.set_bits(),
-        || Some((true, mask_iter.next()?)),
-        verify_utf8,
-    )
-}
-
-fn decode_masked_optional_plain(
-    num_expected_values: usize,
-    values: &[u8],
-    target: &mut MutableBinaryViewArray<[u8]>,
-
-    page_validity: &Bitmap,
-    mask: &Bitmap,
-
-    verify_utf8: bool,
-) -> ParquetResult<()> {
-    assert_eq!(page_validity.len(), mask.len());
-
-    if mask.unset_bits() == 0 {
-        return decode_optional_plain(
-            num_expected_values,
-            values,
-            target,
-            page_validity,
-            verify_utf8,
-        );
-    }
-    if page_validity.unset_bits() == 0 {
-        return decode_masked_required_plain(
-            num_expected_values,
-            values,
-            target,
-            mask,
-            verify_utf8,
-        );
-    }
-
-    let mut validity_iter = page_validity.iter();
-    let mut mask_iter = mask.iter();
-    decode_plain_generic(
-        values,
-        target,
-        mask.set_bits(),
-        || Some((validity_iter.next()?, mask_iter.next()?)),
-        verify_utf8,
-    )
 }
 
 pub fn decode_plain_generic(
@@ -459,15 +376,49 @@ pub fn decode_plain_generic(
 
 impl utils::Decoder for BinViewDecoder {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = (Vec<View>, Vec<Buffer<u8>>);
+    type Dict = BinaryViewArray;
     type DecodedState = DecodedStateTuple;
     type Output = Box<dyn Array>;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
             MutableBinaryViewArray::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
+    }
+
+    fn evaluate_dict_predicate(
+        &self,
+        dict: &Self::Dict,
+        predicate: &PredicateFilter,
+    ) -> ParquetResult<Bitmap> {
+        let utf8_array;
+        let mut dict_arr = dict as &dyn Array;
+
+        if self.is_string {
+            utf8_array = unsafe { dict.to_utf8view_unchecked() };
+            dict_arr = &utf8_array
+        }
+
+        Ok(predicate.predicate.evaluate(dict_arr))
+    }
+
+    fn has_predicate_specialization(
+        &self,
+        state: &utils::State<'_, Self>,
+        predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        let mut has_predicate_specialization = false;
+
+        has_predicate_specialization |=
+            matches!(state.translation, StateTranslation::Dictionary(_));
+        has_predicate_specialization |= matches!(state.translation, StateTranslation::Plain(_))
+            && predicate.predicate.to_equals_scalar().is_some();
+
+        // @TODO: This should be implemented
+        has_predicate_specialization &= state.page_validity.is_none();
+
+        Ok(has_predicate_specialization)
     }
 
     fn apply_dictionary(
@@ -475,13 +426,13 @@ impl utils::Decoder for BinViewDecoder {
         (values, _): &mut Self::DecodedState,
         dict: &Self::Dict,
     ) -> ParquetResult<()> {
-        if values.completed_buffers().len() < dict.1.len() {
-            for buffer in &dict.1 {
+        if values.completed_buffers().len() < dict.data_buffers().len() {
+            for buffer in dict.data_buffers().as_ref() {
                 values.push_buffer(buffer.clone());
             }
         }
 
-        assert!(values.completed_buffers().len() == dict.1.len());
+        assert!(values.completed_buffers().len() == dict.data_buffers().len());
 
         Ok(())
     }
@@ -491,23 +442,57 @@ impl utils::Decoder for BinViewDecoder {
         let num_values = page.num_values;
 
         let mut arr = MutableBinaryViewArray::new();
-        decode_required_plain(
-            num_values,
-            values,
-            None,
-            &mut arr,
-            self.check_utf8.load(Ordering::Relaxed),
-        )?;
+        required::decode(num_values, values, None, &mut arr, self.is_string)?;
 
-        let (views, buffers) = arr.take();
+        Ok(arr.freeze())
+    }
 
-        Ok((views, buffers))
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let is_utf8 = self.is_string;
+        if is_utf8 {
+            let array = additional.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            let mut array = array.to_binview();
+
+            if let Some(validity) = array.take_validity() {
+                decoded.0.extend_from_array(&array);
+                decoded.1.extend_from_bitmap(&validity);
+            } else {
+                decoded.0.extend_from_array(&array);
+                if is_optional {
+                    decoded.1.extend_constant(array.len(), true);
+                }
+            }
+        } else {
+            let array = additional
+                .as_any()
+                .downcast_ref::<BinaryViewArray>()
+                .unwrap();
+            let mut array = array.clone();
+
+            if let Some(validity) = array.take_validity() {
+                decoded.0.extend_from_array(&array);
+                decoded.1.extend_from_bitmap(&validity);
+            } else {
+                decoded.0.extend_from_array(&array);
+                if is_optional {
+                    decoded.1.extend_constant(array.len(), true);
+                }
+            }
+        }
+
+        Ok(())
     }
 
     fn extend_filtered_with_state(
         &mut self,
         mut state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        pred_true_mask: &mut BitmapBuilder,
         filter: Option<super::Filter>,
     ) -> ParquetResult<()> {
         match state.translation {
@@ -519,21 +504,24 @@ impl utils::Decoder for BinViewDecoder {
                 &mut decoded.1,
                 state.page_validity.as_ref(),
                 filter,
-                self.check_utf8.load(Ordering::Relaxed),
+                pred_true_mask,
+                self.is_string,
             ),
             StateTranslation::Dictionary(ref mut indexes) => {
-                let (dict, _) = state.dict.unwrap();
+                let dict = state.dict.unwrap();
 
                 let start_length = decoded.0.views().len();
 
                 dictionary_encoded::decode_dict(
                     indexes.clone(),
-                    dict,
+                    dict.views().as_slice(),
+                    state.dict_mask,
                     state.is_optional,
                     state.page_validity.as_ref(),
                     filter,
                     &mut decoded.1,
                     unsafe { decoded.0.views_mut() },
+                    pred_true_mask,
                 )?;
 
                 let total_length: usize = decoded
@@ -555,7 +543,7 @@ impl utils::Decoder for BinViewDecoder {
                 let values = decoder.values;
                 let lengths = decoder.lengths.collect::<Vec<i64>>()?;
 
-                if self.check_utf8.load(Ordering::Relaxed) {
+                if self.is_string {
                     let mut none_starting_with_continuation_byte = true;
                     let mut offset = 0;
                     for length in &lengths {
@@ -595,7 +583,7 @@ impl utils::Decoder for BinViewDecoder {
                 )
             },
             StateTranslation::DeltaBytes(mut decoder) => {
-                let check_utf8 = self.check_utf8.load(Ordering::Relaxed);
+                let check_utf8 = self.is_string;
 
                 unspecialized_decode(
                     decoder.len(),

@@ -72,20 +72,20 @@ However, the best way to select data in Polars is to use the expression API. For
 want to select a column in pandas, you can do one of the following:
 
 ```python
-df['a']
-df.loc[:,'a']
+df["a"]
+df.loc[:,"a"]
 ```
 
 but in Polars you would use the `.select` method:
 
 ```python
-df.select('a')
+df.select("a")
 ```
 
 If you want to select rows based on the values then in Polars you use the `.filter` method:
 
 ```python
-df.filter(pl.col('a') < 10)
+df.filter(pl.col("a") < 10)
 ```
 
 As noted in the section on expressions below, Polars can run operations in `.select` and `filter` in
@@ -104,8 +104,8 @@ has numerous columns but we just want to do a group by on one of the id columns 
 by a value column (`v1`). In pandas this would be:
 
 ```python
-df = pd.read_csv(csv_file, usecols=['id1','v1'])
-grouped_df = df.loc[:,['id1','v1']].groupby('id1').sum('v1')
+df = pd.read_csv(csv_file, usecols=["id1","v1"])
+grouped_df = df.loc[:,["id1","v1"]].groupby("id1").sum("v1")
 ```
 
 In Polars you can build this query in lazy mode with query optimization and evaluate it by replacing
@@ -113,7 +113,7 @@ the eager pandas function `read_csv` with the implicitly lazy Polars function `s
 
 ```python
 df = pl.scan_csv(csv_file)
-grouped_df = df.group_by('id1').agg(pl.col('v1').sum()).collect()
+grouped_df = df.group_by("id1").agg(pl.col("v1").sum()).collect()
 ```
 
 Polars optimizes this query by identifying that only the `id1` and `v1` columns are relevant and so
@@ -167,7 +167,7 @@ value in `a` with the value in `b`.
 In pandas this would be:
 
 ```python
-df.assign(a=lambda df_: df_.a.where(df_.c != 2, df_.b))
+df.assign(a=lambda df_: df_["a"].mask(df_["c"] == 2, df_["b"]))
 ```
 
 while in Polars this would be:

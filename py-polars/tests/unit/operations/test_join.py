@@ -64,6 +64,7 @@ def test_semi_anti_join() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_join_same_cat_src() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "a", "b"], "more": [1, 2, 3]},
@@ -298,7 +299,9 @@ def test_join_on_cast() -> None:
         check_dtypes=False,
     )
     assert df_a.lazy().join(
-        df_b.lazy(), on=pl.col("a").cast(pl.Int64)
+        df_b.lazy(),
+        on=pl.col("a").cast(pl.Int64),
+        maintain_order="left",
     ).collect().to_dict(as_series=False) == {
         "index": [1, 2, 3, 5],
         "a": [-2, 3, 3, 10],
@@ -1015,9 +1018,12 @@ def test_join_lit_panic_11410() -> None:
     dates = df.select("date").unique(maintain_order=True)
     symbols = df.select("symbol").unique(maintain_order=True)
 
-    assert symbols.join(dates, left_on=pl.lit(1), right_on=pl.lit(1)).collect().to_dict(
-        as_series=False
-    ) == {"symbol": [4, 4, 4, 5, 5, 5, 6, 6, 6], "date": [1, 2, 3, 1, 2, 3, 1, 2, 3]}
+    assert symbols.join(
+        dates, left_on=pl.lit(1), right_on=pl.lit(1), maintain_order="left_right"
+    ).collect().to_dict(as_series=False) == {
+        "symbol": [4, 4, 4, 5, 5, 5, 6, 6, 6],
+        "date": [1, 2, 3, 1, 2, 3, 1, 2, 3],
+    }
 
 
 def test_join_empty_literal_17027() -> None:
@@ -1368,7 +1374,7 @@ def test_join_preserve_order_full() -> None:
     ],
 )  # fmt: skip
 @pytest.mark.parametrize("swap", [True, False])
-def test_join_numeric_type_upcast_15338(
+def test_join_numeric_key_upcast_15338(
     dtypes: tuple[str, str, str], swap: bool
 ) -> None:
     supertype, ltype, rtype = (getattr(pl, x) for x in dtypes)
@@ -1409,16 +1415,111 @@ def test_join_numeric_type_upcast_15338(
         pl.select(a=pl.Series([1, 1]).cast(ltype)),
     )
 
+    # join_where
+    for no_optimization in [True, False]:
+        assert_frame_equal(
+            left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
+                no_optimization=no_optimization
+            ),
+            pl.select(
+                a=pl.Series([1, 1]).cast(ltype),
+                a_right=pl.lit(1, dtype=rtype),
+                b=pl.Series(["A", "A"]),
+            ),
+        )
 
-def test_join_numeric_type_upcast_forbid_float_int() -> None:
+
+def test_join_numeric_key_upcast_forbid_float_int() -> None:
     ltype = pl.Float64
-    rtype = pl.Int32
+    rtype = pl.Int128
 
-    left = pl.LazyFrame(schema={"a": ltype})
-    right = pl.LazyFrame(schema={"a": rtype})
+    left = pl.LazyFrame({"a": [1.0, 0.0]}, schema={"a": ltype})
+    right = pl.LazyFrame({"a": [1, 2]}, schema={"a": rtype})
+
+    # Establish baseline: In a non-join context, comparisons between ltype and
+    # rtype succeed even if the upcast is lossy.
+    assert_frame_equal(
+        left.with_columns(right.collect()["a"].alias("a_right"))
+        .select(pl.col("a") == pl.col("a_right"))
+        .collect(),
+        pl.DataFrame({"a": [True, False]}),
+    )
 
     with pytest.raises(SchemaError, match="datatypes of join keys don't match"):
         left.join(right, on="a", how="left").collect()
+
+    for no_optimization in [True, False]:
+        with pytest.raises(
+            SchemaError, match="datatypes of join_where comparison don't match"
+        ):
+            left.join_where(right, pl.col("a") == pl.col("a_right")).collect(
+                no_optimization=no_optimization
+            )
+
+        with pytest.raises(
+            SchemaError, match="datatypes of join_where comparison don't match"
+        ):
+            left.join_where(
+                right, pl.col("a") == (pl.col("a") == pl.col("a_right"))
+            ).collect(no_optimization=no_optimization)
+
+
+def test_join_numeric_key_upcast_order() -> None:
+    # E.g. when we are joining on this expression:
+    # * col('a') + 127
+    #
+    # and we want to upcast, ensure that we upcast like this:
+    # * ( col('a') + 127 ) .cast(<type>)
+    #
+    # and *not* like this:
+    # * ( col('a').cast(<type>) + lit(127).cast(<type>) )
+    #
+    # as otherwise the results would be different.
+
+    left = pl.select(pl.Series("a", [1], dtype=pl.Int8)).lazy()
+    right = pl.select(
+        pl.Series("a", [1, 128, -128], dtype=pl.Int64), b=pl.lit("A")
+    ).lazy()
+
+    # col('a') in `left` is Int8, the result will overflow to become -128
+    left_expr = pl.col("a") + 127
+
+    assert_frame_equal(
+        left.join(right, left_on=left_expr, right_on="a", how="inner").collect(),
+        pl.DataFrame(
+            {
+                "a": pl.Series([1], dtype=pl.Int8),
+                "a_right": pl.Series([-128], dtype=pl.Int64),
+                "b": "A",
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        left.join_where(right, left_expr == pl.col("a_right")).collect(),
+        pl.DataFrame(
+            {
+                "a": pl.Series([1], dtype=pl.Int8),
+                "a_right": pl.Series([-128], dtype=pl.Int64),
+                "b": "A",
+            }
+        ),
+    )
+
+    assert_frame_equal(
+        (
+            left.join(right, left_on=left_expr, right_on="a", how="full")
+            .collect()
+            .sort(pl.all())
+        ),
+        pl.DataFrame(
+            {
+                "a": pl.Series([1, None, None], dtype=pl.Int8),
+                "a_right": pl.Series([-128, 1, 128], dtype=pl.Int64),
+                "b": ["A", "A", "A"],
+            }
+        ).sort(pl.all()),
+    )
 
 
 def test_no_collapse_join_when_maintain_order_20725() -> None:
@@ -1434,3 +1535,94 @@ def test_no_collapse_join_when_maintain_order_20725() -> None:
     df_pl_eager = ldf.collect().filter(pl.col("Fraction_1") == 100)
 
     assert_frame_equal(df_pl_lazy, df_pl_eager)
+
+
+def test_join_where_predicate_type_coercion_21009() -> None:
+    left_frame = pl.LazyFrame(
+        {
+            "left_match": ["A", "B", "C", "D", "E", "F"],
+            "left_date_start": range(6),
+        }
+    )
+
+    right_frame = pl.LazyFrame(
+        {
+            "right_match": ["D", "E", "F", "G", "H", "I"],
+            "right_date": range(6),
+        }
+    )
+
+    # Note: Cannot eq the plans as the operand sides are non-deterministic
+
+    q1 = left_frame.join_where(
+        right_frame,
+        pl.col("left_match") == pl.col("right_match"),
+        pl.col("right_date") >= pl.col("left_date_start"),
+    )
+
+    plan = q1.explain().splitlines()
+    assert plan[0].strip().startswith("FILTER")
+    assert plan[1].strip().startswith("INNER JOIN")
+
+    q2 = left_frame.join_where(
+        right_frame,
+        pl.all_horizontal(pl.col("left_match") == pl.col("right_match")),
+        pl.col("right_date") >= pl.col("left_date_start"),
+    )
+
+    plan = q2.explain().splitlines()
+    assert plan[0].strip().startswith("FILTER")
+    assert plan[1].strip().startswith("INNER JOIN")
+
+    assert_frame_equal(q1.collect(), q2.collect())
+
+
+def test_join_where_nested_expr_21066() -> None:
+    left = pl.LazyFrame({"a": [1, 2]})
+    right = pl.LazyFrame({"a": [1]})
+
+    q = left.join_where(right, pl.col("a") == (pl.col("a_right") + 1))
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": 2, "a_right": 1}))
+
+
+def test_select_after_join_where_20831() -> None:
+    left = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 1, None],
+            "b": [1, 2, 3, 4, 5],
+            "c": [2, 3, 4, 5, 6],
+        }
+    )
+
+    right = pl.LazyFrame(
+        {
+            "a": [1, 4, 3, 7, None, None, 1],
+            "c": [2, 3, 4, 5, 6, 7, 8],
+            "d": [6, None, 7, 8, -1, 2, 4],
+        }
+    )
+
+    q = left.join_where(
+        right, pl.col("b") * 2 <= pl.col("a_right"), pl.col("a") < pl.col("c_right")
+    )
+
+    assert_frame_equal(
+        q.select("d").collect().sort("d"),
+        pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
+    )
+
+    assert q.select(pl.len()).collect().item() == 6
+
+    q = (
+        left.join(right, how="cross")
+        .filter(pl.col("b") * 2 <= pl.col("a_right"))
+        .filter(pl.col("a") < pl.col("c_right"))
+    )
+
+    assert_frame_equal(
+        q.select("d").collect().sort("d"),
+        pl.Series("d", [None, None, 7, 8, 8, 8]).to_frame(),
+    )
+
+    assert q.select(pl.len()).collect().item() == 6

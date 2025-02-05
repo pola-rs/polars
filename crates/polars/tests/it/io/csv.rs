@@ -42,7 +42,7 @@ fn write_csv() {
 #[test]
 #[cfg(feature = "timezones")]
 fn write_dates() {
-    use polars_core::export::chrono;
+    use chrono;
 
     let s0 = Column::new(
         "date".into(),

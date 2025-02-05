@@ -11,7 +11,7 @@ use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
 #[cfg(feature = "catalog")]
-use polars_python::catalog::PyCatalogClient;
+use polars_python::catalog::unity::PyCatalogClient;
 #[cfg(feature = "polars_cloud")]
 use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;
@@ -42,6 +42,7 @@ fn _ir_nodes(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_class::<Cache>().unwrap();
     m.add_class::<GroupBy>().unwrap();
     m.add_class::<Join>().unwrap();
+    m.add_class::<MergeSorted>().unwrap();
     m.add_class::<HStack>().unwrap();
     m.add_class::<Reduce>().unwrap();
     m.add_class::<Distinct>().unwrap();
@@ -123,6 +124,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::eager_int_range))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::int_ranges))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::linear_space))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::date_range))
         .unwrap();
