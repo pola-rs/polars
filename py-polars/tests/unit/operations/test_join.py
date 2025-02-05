@@ -1626,3 +1626,77 @@ def test_select_after_join_where_20831() -> None:
     )
 
     assert q.select(pl.len()).collect().item() == 6
+
+
+def test_join_on_struct() -> None:
+    lhs = pl.DataFrame(
+        {
+            "a": [{"x": 1}, {"x": 2}, {"x": 3}],
+            "b": [1, 2, 3],
+        }
+    )
+    rhs = pl.DataFrame(
+        {
+            "a": [{"x": 4}, {"x": 2}],
+            "c": [4, 2],
+        }
+    )
+
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="left", maintain_order="left"),
+        pl.select(
+            a=pl.Series([{"x": 1}, {"x": 2}, {"x": 3}]),
+            b=pl.Series([1, 2, 3]),
+            c=pl.Series([None, 2, None]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="right", maintain_order="right"),
+        pl.select(
+            b=pl.Series([None, 2]),
+            a=pl.Series([{"x": 4}, {"x": 2}]),
+            c=pl.Series([4, 2]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="inner"),
+        pl.select(
+            a=pl.Series([{"x": 2}]),
+            b=pl.Series([2]),
+            c=pl.Series([2]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="full", maintain_order="left_right"),
+        pl.select(
+            a=pl.Series([{"x": 1}, {"x": 2}, {"x": 3}, None]),
+            b=pl.Series([1, 2, 3, None]),
+            a_right=pl.Series([None, {"x": 2}, None, {"x": 4}]),
+            c=pl.Series([None, 2, None, 4]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="semi"),
+        pl.select(
+            a=pl.Series([{"x": 2}]),
+            b=pl.Series([2]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, on="a", how="anti", maintain_order="left"),
+        pl.select(
+            a=pl.Series([{"x": 1}, {"x": 3}]),
+            b=pl.Series([1, 3]),
+        ),
+    )
+    assert_frame_equal(
+        lhs.join(rhs, how="cross", maintain_order="left_right"),
+        pl.select(
+            a=pl.Series([{"x": 1}, {"x": 1}, {"x": 2}, {"x": 2}, {"x": 3}, {"x": 3}]),
+            b=pl.Series([1, 1, 2, 2, 3, 3]),
+            a_right=pl.Series(
+                [{"x": 4}, {"x": 2}, {"x": 4}, {"x": 2}, {"x": 4}, {"x": 2}]
+            ),
+            c=pl.Series([4, 2, 4, 2, 4, 2]),
+        ),
+    )
