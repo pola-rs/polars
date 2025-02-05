@@ -26,12 +26,18 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
     )?;
     if needles.len() == 1 {
         let needle = needles.get(0).unwrap();
-        let cast_needle = needle.cast(inner_dtype);
-        check_if_cast_lossless(&needle_dtype, inner_dtype, cast_needle.tot_eq(&needle))?;
-        let mut needle_dtype = cast_needle.dtype().clone();
-        if needle_dtype.is_null() {
-            needle_dtype = inner_dtype.clone();
-        }
+        let cast_needle = if needle_dtype.leaf_dtype().is_null() {
+            needle
+        } else {
+            let cast_needle = needle.cast(inner_dtype);
+            check_if_cast_lossless(
+                &needle_dtype,
+                inner_dtype,
+                needle_dtype.leaf_dtype().is_null() || cast_needle.tot_eq(&needle),
+            )?;
+            cast_needle
+        };
+        let needle_dtype = inner_dtype.clone();
         let needle = Scalar::new(needle_dtype, cast_needle.into_static());
         ca.amortized_iter().for_each(|opt_series| {
             if let Some(subseries) = opt_series {

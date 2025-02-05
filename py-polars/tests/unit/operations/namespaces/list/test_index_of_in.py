@@ -73,9 +73,10 @@ def assert_index_of_in_from_series(
 # Testing plan:
 # D All integers
 # D Both floats, with nans
-# - Strings
-# - datetime, date, time, timedelta
-# - nested lists
+# D Strings
+# D datetime, date, time, timedelta
+# - nested lists, arrays, structs
+# - categoricals, enums
 # - something with hypothesis
 # - error case: non-matching lengths
 # - chunked needles series
@@ -213,6 +214,7 @@ def test_float(float_dtype: pl.DataType) -> None:
             ),
             [Decimal(4)],
         ),
+        (pl.Series([[[1, 2], None], [[4, 5], [6]], [[None, 3, 5]]]), [[5, 7], []]),
         # TODO: nested lists, arrays, structs
     ],
 )

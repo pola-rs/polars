@@ -25,6 +25,13 @@ def isnan(value: object) -> bool:
     return np.isnan(value)  # type: ignore[no-any-return]
 
 
+def to_python(maybe_series: object) -> object:
+    if isinstance(maybe_series, pl.Series):
+        return [to_python(sub) for sub in maybe_series.to_list()]
+    else:
+        return maybe_series
+
+
 def get_expected_index(series: pl.Series, value: IntoExpr) -> int | None:
     if isnan(value):
         expected_index = None
@@ -34,7 +41,7 @@ def get_expected_index(series: pl.Series, value: IntoExpr) -> int | None:
                 break
     else:
         try:
-            expected_index = series.to_list().index(value)
+            expected_index = to_python(series).index(to_python(value))
         except ValueError:
             expected_index = None
     if expected_index == -1:
