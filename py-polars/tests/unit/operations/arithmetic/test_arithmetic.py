@@ -193,9 +193,9 @@ def test_fused_arithm() -> None:
         pl.col("c") - pl.col("c") * 2,
     ]:
         q = df.lazy().select(expr)
-        assert all(
-            el not in q.explain() for el in ["fms", "fsm", "fma"]
-        ), f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        assert all(el not in q.explain() for el in ["fms", "fsm", "fma"]), (
+            f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        )
 
 
 def test_literal_no_upcast() -> None:
@@ -210,9 +210,9 @@ def test_literal_no_upcast() -> None:
         )
         .collect()
     )
-    assert set(q.schema.values()) == {
-        pl.Float32
-    }, "Literal * Column (Float32) should not lead upcast"
+    assert set(q.schema.values()) == {pl.Float32}, (
+        "Literal * Column (Float32) should not lead upcast"
+    )
 
 
 def test_boolean_addition() -> None:

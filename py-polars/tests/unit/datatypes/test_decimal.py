@@ -548,7 +548,7 @@ def test_decimal_strict_scale_inference_17770() -> None:
 
 def test_decimal_round() -> None:
     dtype = pl.Decimal(3, 2)
-    values = [D(f"{float(v) / 100.:.02f}") for v in range(-150, 250, 1)]
+    values = [D(f"{float(v) / 100.0:.02f}") for v in range(-150, 250, 1)]
     i_s = pl.Series("a", values, dtype)
 
     floor_s = pl.Series("a", [floor(v) for v in values], dtype)
@@ -622,6 +622,33 @@ def test_decimal_horizontal_20482() -> None:
         "min": [D("123.000000"), D("234.000000")],
         "max": [D("123.000000"), D("234.000000")],
         "sum": [D("246.000000"), D("468.000000")],
+    }
+
+
+def test_decimal_horizontal_different_scales_16296() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [D("1.111")],
+            "b": [D("2.22")],
+            "c": [D("3.3")],
+        },
+        schema={
+            "a": pl.Decimal(18, 3),
+            "b": pl.Decimal(18, 2),
+            "c": pl.Decimal(18, 1),
+        },
+    )
+
+    assert (
+        df.select(
+            min=pl.min_horizontal(pl.col("a", "b", "c")),
+            max=pl.max_horizontal(pl.col("a", "b", "c")),
+            sum=pl.sum_horizontal(pl.col("a", "b", "c")),
+        )
+    ).to_dict(as_series=False) == {
+        "min": [D("1.111")],
+        "max": [D("3.300")],
+        "sum": [D("6.631")],
     }
 
 
