@@ -17,17 +17,6 @@ pub trait PhysicalIoExpr: Send + Sync {
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         None
     }
-
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalIoExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        _ = name;
-        None
-    }
 }
 
 #[derive(Debug, Clone)]

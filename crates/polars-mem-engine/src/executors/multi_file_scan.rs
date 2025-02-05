@@ -60,16 +60,6 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
         self.child.to_field(input_schema)
     }
 
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<polars_io::predicates::SpecializedColumnPredicateExpr>,
-    )> {
-        self.child.isolate_column_expr(name)
-    }
-
     fn is_scalar(&self) -> bool {
         self.child.is_scalar()
     }
