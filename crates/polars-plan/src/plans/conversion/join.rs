@@ -558,6 +558,9 @@ fn process_join_where_predicate(
                 let dtype_left = resolve_dtype(&left, left_node)?;
                 let dtype_right = resolve_dtype(&right, right_node)?;
 
+                // Note: We only upcast the sides if the expr output dtype is Boolean (i.e. `op` is
+                // a comparison), otherwise the output may change.
+
                 if let Some(dtype) =
                     get_numeric_upcast_supertype_lossless(&dtype_left, &dtype_right)
                         .filter(|_| op.is_comparison())
