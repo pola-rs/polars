@@ -598,9 +598,9 @@ def _maybe_init_credential_provider(
         elif _is_gcp_cloud(scheme):
             provider = CredentialProviderGCP()
 
-    except ImportError as e:
+    except Exception as e:
         if verbose:
-            msg = f"Unable to auto-select credential provider: {e}"
+            msg = f"Unable to auto-select credential provider: {e!r}"
             print(msg, file=sys.stderr)
 
     if provider is not None and verbose:
