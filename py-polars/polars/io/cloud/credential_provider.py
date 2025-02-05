@@ -480,8 +480,6 @@ def _maybe_init_credential_provider(
         CredentialProviderAWS | CredentialProviderAzure | CredentialProviderGCP | None
     ) = None
 
-    err_msg = None
-
     try:
         # For Azure we dispatch to `azure.identity` as much as possible
         if _is_azure_cloud(scheme):
