@@ -15,11 +15,11 @@ use polars::frame::row::Row;
 use polars::io::avro::AvroCompression;
 #[cfg(feature = "cloud")]
 use polars::io::cloud::CloudOptions;
-use polars_io::csv::write::{CsvWriterOptions, SerializeOptions, QuoteStyle};
 use polars::series::ops::NullBehavior;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::types::NativeType;
 use polars_core::utils::materialize_dyn_int;
+use polars_io::csv::write::{CsvWriterOptions, QuoteStyle, SerializeOptions};
 use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
@@ -540,7 +540,6 @@ impl<'py> IntoPyObject<'py> for Wrap<QuoteStyle> {
         .into_pyobject(py)
     }
 }
-
 
 #[cfg(feature = "parquet")]
 impl<'s> FromPyObject<'s> for Wrap<StatisticsOptions> {
