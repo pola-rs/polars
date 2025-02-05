@@ -1985,8 +1985,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise TypeError(error_msg)
 
         new_streaming = (
-            _kwargs.get("new_streaming", False)
-            or get_engine_affinity() == "streaming"
+            _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
         )
 
         if no_optimization or _eager:
