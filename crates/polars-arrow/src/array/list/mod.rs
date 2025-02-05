@@ -136,9 +136,11 @@ impl<O: Offset> ListArray<O> {
         let first_idx = *offsets.first();
         let len = offsets.range().to_usize();
 
-        if first_idx.to_usize() == 0 && values.len() == len {
-            return self.clone();
-        }
+        let values = if values.len() == len {
+            values.clone()
+        } else {
+            values.sliced(first_idx.to_usize(), len)
+        };
 
         let offsets = if first_idx.to_usize() == 0 {
             offsets.clone()
@@ -146,8 +148,6 @@ impl<O: Offset> ListArray<O> {
             let v = offsets.iter().map(|x| *x - first_idx).collect::<Vec<_>>();
             unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) }
         };
-
-        let values = values.sliced(first_idx.to_usize(), len);
 
         let values = match values.dtype() {
             ArrowDataType::List(_) => {
