@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
+use hashbrown::hash_map::Entry;
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
 
@@ -205,23 +207,23 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
     let validity = concatenate_validities_with_len_null_count(arrays, total_len, null_count);
 
     let first_arr: &BinaryViewArrayGeneric<V> = arrays[0].as_ref().as_any().downcast_ref().unwrap();
-    // let mut total_nondedup_buffers = first_arr.data_buffers().len();
-    let all_same_bufs = arrays.iter().skip(1).all(|arr| {
+    let mut total_nondedup_buffers = first_arr.data_buffers().len();
+    let mut max_arr_bufferset_len = 0;
+    let mut all_same_bufs = true;
+    for arr in arrays {
         let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
-        // total_nondedup_buffers += arr.data_buffers().len();
+        max_arr_bufferset_len = max_arr_bufferset_len.max(arr.data_buffers().len());
+        total_nondedup_buffers += arr.data_buffers().len();
         // Fat pointer equality, checks both start and length.
-        std::ptr::eq(
+        all_same_bufs &= std::ptr::eq(
             Arc::as_ptr(arr.data_buffers()),
             Arc::as_ptr(first_arr.data_buffers()),
-        )
-    });
+        );
+    }
 
     let mut total_bytes_len = 0;
     let mut views = Vec::with_capacity(total_len);
 
-    // Lazily copying only buffers caused problems for the new streaming engine,
-    // so for the moment we always ensure there is only one buffer.
-    /*
     let mut total_buffer_len = 0;
     let buffers = if all_same_bufs {
         total_buffer_len = first_arr.total_buffer_len();
@@ -231,65 +233,59 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
             total_bytes_len += arr.total_bytes_len();
         }
         Arc::clone(first_arr.data_buffers())
-    } else {
+
+    // There might be way more buffers than elements, so we only dedup if there
+    // is at least one element per buffer on average.
+    } else if total_len > total_nondedup_buffers {
+        assert!(arrays.len() < u32::MAX as usize);
+
         let mut dedup_buffers = Vec::with_capacity(total_nondedup_buffers);
-        let mut buffer_offset = PlHashMap::with_capacity(total_nondedup_buffers);
-        let mut cur_arr_buf_idx_mapping = Vec::new();
-        for arr in arrays {
+        let mut global_dedup_buffer_idx = PlHashMap::with_capacity(total_nondedup_buffers);
+        let mut local_dedup_buffer_idx = Vec::new();
+        local_dedup_buffer_idx.resize(max_arr_bufferset_len, (0, u32::MAX));
+
+        for (arr_idx, arr) in arrays.iter().enumerate() {
             let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
 
-            // Dedup the buffers and check if a translation is needed.
-            cur_arr_buf_idx_mapping.clear();
-            cur_arr_buf_idx_mapping.reserve(arr.data_buffers().len());
-            let mut needs_translation = false;
-            for (i, buffer) in arr.data_buffers().iter().enumerate_u32() {
-                let buf_id = (buffer.as_slice().as_ptr(), buffer.len());
-                let offset = match buffer_offset.entry(buf_id) {
-                    Entry::Occupied(o) => *o.get(),
-                    Entry::Vacant(v) => {
-                        let offset = dedup_buffers.len() as u32;
-                        dedup_buffers.push(buffer.clone());
-                        total_buffer_len += buffer.len();
-                        v.insert(offset);
-                        offset
-                    },
-                };
+            unsafe {
+                for mut view in arr.views().iter().copied() {
+                    if view.length > 12 {
+                        // Translate from old array-local buffer idx to global deduped buffer idx.
+                        let (mut new_buffer_idx, cache_tag) =
+                            *local_dedup_buffer_idx.get_unchecked(view.buffer_idx as usize);
+                        if cache_tag == arr_idx as u32 {
+                            // This buffer index wasn't seen before for this array, do a dedup lookup.
+                            let buffer = arr.data_buffers().get_unchecked(view.buffer_idx as usize);
+                            let buf_id = (buffer.as_slice().as_ptr(), buffer.len());
+                            let idx = match global_dedup_buffer_idx.entry(buf_id) {
+                                Entry::Occupied(o) => *o.get(),
+                                Entry::Vacant(v) => {
+                                    let idx = dedup_buffers.len() as u32;
+                                    dedup_buffers.push(buffer.clone());
+                                    total_buffer_len += buffer.len();
+                                    v.insert(idx);
+                                    idx
+                                },
+                            };
 
-                needs_translation |= offset != i;
-                cur_arr_buf_idx_mapping.push(offset);
-            }
-
-            if needs_translation {
-                unsafe {
-                    for mut view in arr.views().iter().copied() {
-                        total_bytes_len += view.length as usize;
-                        if view.length > 12 {
-                            view.buffer_idx =
-                                *cur_arr_buf_idx_mapping.get_unchecked(view.buffer_idx as usize);
+                            // Cache result for future lookups.
+                            *local_dedup_buffer_idx.get_unchecked_mut(view.buffer_idx as usize) =
+                                (idx, arr_idx as u32);
+                            new_buffer_idx = idx;
                         }
-                        views.push_unchecked(view);
+                        view.buffer_idx = new_buffer_idx;
                     }
+
+                    total_bytes_len += view.length as usize;
+                    views.push_unchecked(view);
                 }
-            } else {
-                total_bytes_len += arr.total_bytes_len();
-                views.extend_from_slice(arr.views());
             }
         }
 
         dedup_buffers.into_iter().collect()
-    };
-    */
-
-    let mut total_buffer_len = 0;
-    let buffers = if all_same_bufs && first_arr.data_buffers().len() == 1 {
-        total_buffer_len = first_arr.total_buffer_len();
-        for arr in arrays {
-            let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
-            views.extend_from_slice(arr.views());
-            total_bytes_len += arr.total_bytes_len();
-        }
-        Arc::clone(first_arr.data_buffers())
     } else {
+        // Only very few of the total number of buffers is referenced, simply
+        // create a new direct buffer.
         for arr in arrays {
             let arr: &BinaryViewArrayGeneric<V> = arr.as_ref().as_any().downcast_ref().unwrap();
             total_buffer_len += arr
@@ -316,7 +312,7 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
             }
         }
 
-        Arc::new([Buffer::from(new_buffer)])
+        Arc::new([Buffer::from(new_buffer)]) as Arc<[_]>
     };
 
     unsafe {
