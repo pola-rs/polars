@@ -1984,7 +1984,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        new_streaming = _kwargs.get("new_streaming", False)
+        new_streaming = (
+            _kwargs.get("new_streaming", False)
+            or get_engine_affinity() == "streaming"
+        )
 
         if no_optimization or _eager:
             predicate_pushdown = False
@@ -1995,9 +1998,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns = False
             collapse_joins = False
             _check_order = False
-
-        if get_engine_affinity() == "streaming":
-            new_streaming = True
 
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
