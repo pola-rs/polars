@@ -249,11 +249,11 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
 
             unsafe {
                 for mut view in arr.views().iter().copied() {
-                    if view.length > 12 {
+                    if view.length > View::MAX_INLINE_SIZE {
                         // Translate from old array-local buffer idx to global deduped buffer idx.
                         let (mut new_buffer_idx, cache_tag) =
                             *local_dedup_buffer_idx.get_unchecked(view.buffer_idx as usize);
-                        if cache_tag == arr_idx as u32 {
+                        if cache_tag != arr_idx as u32 {
                             // This buffer index wasn't seen before for this array, do a dedup lookup.
                             let buffer = arr.data_buffers().get_unchecked(view.buffer_idx as usize);
                             let buf_id = (buffer.as_slice().as_ptr(), buffer.len());
