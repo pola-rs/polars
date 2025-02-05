@@ -10,7 +10,7 @@ mod ir_to_dsl;
     feature = "json"
 ))]
 mod scans;
-mod stack_opt;
+pub(crate) mod stack_opt;
 
 use std::borrow::Cow;
 use std::sync::{Arc, Mutex};

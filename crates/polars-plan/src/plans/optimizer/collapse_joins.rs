@@ -12,59 +12,10 @@ use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
+use super::{aexpr_to_leaf_names_iter, AExpr, ExprOrigin, JoinOptions, IR};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
 use crate::plans::{ExprIR, OutputName};
-
-/// Join origin of an expression
-#[derive(Debug, Clone, Copy)]
-enum ExprOrigin {
-    /// Utilizes no columns
-    None,
-    /// Utilizes columns from the left side of the join
-    Left,
-    /// Utilizes columns from the right side of the join
-    Right,
-    /// Utilizes columns from both sides of the join
-    Both,
-}
-
-fn get_origin(
-    root: Node,
-    expr_arena: &Arena<AExpr>,
-    left_schema: &SchemaRef,
-    right_schema: &SchemaRef,
-    suffix: &str,
-) -> ExprOrigin {
-    let mut expr_origin = ExprOrigin::None;
-
-    for name in aexpr_to_leaf_names_iter(root, expr_arena) {
-        let in_left = left_schema.contains(name.as_str());
-        let in_right = right_schema.contains(name.as_str());
-        let has_suffix = name.as_str().ends_with(suffix);
-        let in_right = in_right
-            | (has_suffix && right_schema.contains(&name.as_str()[..name.len() - suffix.len()]));
-
-        let name_origin = match (in_left, in_right, has_suffix) {
-            (true, false, _) | (true, true, false) => ExprOrigin::Left,
-            (false, true, _) | (true, true, true) => ExprOrigin::Right,
-            (false, false, _) => {
-                unreachable!("Invalid filter column should have been filtered before")
-            },
-        };
-
-        use ExprOrigin as O;
-        expr_origin = match (expr_origin, name_origin) {
-            (O::None, other) | (other, O::None) => other,
-            (O::Left, O::Left) => O::Left,
-            (O::Right, O::Right) => O::Right,
-            _ => O::Both,
-        };
-    }
-
-    expr_origin
-}
 
 fn remove_suffix<'a>(
     exprs: &mut Vec<ExprIR>,
@@ -279,7 +230,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                             continue;
                         };
 
-                        if !op.is_comparison() {
+                        if !op.is_comparison_or_bitwise() {
                             // @NOTE: This is not a valid predicate, but we should not handle that
                             // here.
                             remaining_predicates.push(node);
@@ -290,14 +241,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         let mut op = *op;
                         let mut right = *right;
 
-                        let left_origin = get_origin(
+                        let left_origin = ExprOrigin::get_expr_origin(
                             left,
                             expr_arena,
                             left_schema,
                             right_schema,
                             suffix.as_str(),
                         );
-                        let right_origin = get_origin(
+                        let right_origin = ExprOrigin::get_expr_origin(
                             right,
                             expr_arena,
                             left_schema,
@@ -524,6 +475,9 @@ fn insert_fitting_join(
             (Vec::new(), Vec::new(), remaining_predicates)
         },
     };
+
+    // Note: We expect key type upcasting / expression optimizations have already been done during
+    // DSL->IR conversion.
 
     let join_ir = IR::Join {
         input_left,
