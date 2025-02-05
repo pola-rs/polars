@@ -306,7 +306,7 @@ def test_hist_more_bins_than_data() -> None:
     width = span / 8
     breaks = [-5 + width * i for i in range(8 + 1)]
     breaks[0] -= span * 0.001
-    categories = [f"({breaks[i]}, {breaks[i+1]}]" for i in range(8)]
+    categories = [f"({breaks[i]}, {breaks[i + 1]}]" for i in range(8)]
 
     expected = pl.DataFrame(
         {

@@ -548,7 +548,7 @@ def test_decimal_strict_scale_inference_17770() -> None:
 
 def test_decimal_round() -> None:
     dtype = pl.Decimal(3, 2)
-    values = [D(f"{float(v) / 100.:.02f}") for v in range(-150, 250, 1)]
+    values = [D(f"{float(v) / 100.0:.02f}") for v in range(-150, 250, 1)]
     i_s = pl.Series("a", values, dtype)
 
     floor_s = pl.Series("a", [floor(v) for v in values], dtype)

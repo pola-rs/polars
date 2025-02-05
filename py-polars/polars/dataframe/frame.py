@@ -5146,9 +5146,7 @@ class DataFrame:
         # print individual columns: one row per column
         for col_name, dtype_str, val_str in data:
             output.write(
-                f"$ {col_name:<{max_col_name}}"
-                f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str}\n"
+                f"$ {col_name:<{max_col_name}} {dtype_str:>{max_col_dtype}} {val_str}\n"
             )
 
         s = output.getvalue()
