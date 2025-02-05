@@ -214,15 +214,41 @@ def test_float(float_dtype: pl.DataType) -> None:
             ),
             [Decimal(4)],
         ),
-        (pl.Series([[[1, 2], None], [[4, 5], [6]], [[None, 3, 5]]]), [[5, 7], []]),
+        (
+            pl.Series([[[1, 2], None], [[4, 5], [6]], None, [[None, 3, 5]], [None]]),
+            [[5, 7], []],
+        ),
+        (
+            pl.Series(
+                [
+                    [[[1, 2], None], [[4, 5], [6]]],
+                    [[[None, 3, 5]]],
+                    None,
+                    [None],
+                    [[None]],
+                    [[[None]]],
+                ]
+            ),
+            [[[5, 7]], [[]], [None]],
+        ),
         # TODO: nested lists, arrays, structs
     ],
 )
 def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) -> None:
     needles_series = pl.Series(
-        [sublist[i % len(sublist)] for (i, sublist) in enumerate(list_series)]
+        [
+            None if sublist is None else sublist[i % len(sublist)]
+            for (i, sublist) in enumerate(list_series)
+        ],
+        dtype=list_series.dtype.inner,
     )
     assert_index_of_in_from_series(list_series, needles_series)
 
-    for value in sum(list_series.to_list(), []) + extra_values + [None]:
+    values = [None]
+    for subseries in list_series.to_list():
+        if subseries is not None:
+            values.extend(subseries)
+    values.extend(extra_values)
+    for value in values:
         assert_index_of_in_from_scalar(list_series, value)
+
