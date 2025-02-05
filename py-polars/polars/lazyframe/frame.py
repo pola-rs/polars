@@ -352,7 +352,7 @@ class LazyFrame:
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
                 list(schema.items()), scan_fn, pyarrow
             )
-        elif _PYARROW_AVAILABLE and isinstance(schema, pa.schema):
+        elif _PYARROW_AVAILABLE and isinstance(schema, pa.Schema):
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
                 list(schema), scan_fn, pyarrow
             )
