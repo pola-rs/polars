@@ -3194,6 +3194,7 @@ dependencies = [
  "ahash",
  "bitflags",
  "chrono",
+ "either",
  "futures",
  "memchr",
  "once_cell",
@@ -3633,6 +3634,7 @@ dependencies = [
 name = "py-polars"
 version = "1.21.0"
 dependencies = [
+ "either",
  "jemallocator",
  "libc",
  "mimalloc",
