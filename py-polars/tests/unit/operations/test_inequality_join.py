@@ -662,7 +662,7 @@ def test_join_where_literal_20061() -> None:
     assert df_left.join_where(
         df_right,
         pl.col("value_left") > pl.col("value_right"),
-        pl.col("flag_right").cast(pl.Int32) == 1,
+        pl.col("flag_right") == 1,
     ).sort("id").to_dict(as_series=False) == {
         "id": [1, 2, 3, 3],
         "value_left": [10, 20, 30, 30],
