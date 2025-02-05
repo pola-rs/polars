@@ -474,6 +474,9 @@ fn resolve_join_where(
 /// 1. They reference columns from both sides.
 /// 2. The dtypes of the LHS and RHS are match, or can be casted to a lossless
 ///    supertype (and inserts the necessary casting).
+///
+/// This function can be understood as a general iterative type check / coercion
+/// pass with a hint of recursion to validate column-references.
 fn process_join_where_predicate(
     stack: &mut Vec<Node>,
     binary_expr_stack_offset: usize,
