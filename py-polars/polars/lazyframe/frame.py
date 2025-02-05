@@ -2002,7 +2002,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
-        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu" or get_engine_affinity() == "gpu"
+        is_gpu = (
+            (is_config_obj := isinstance(engine, GPUEngine))
+            or engine == "gpu"
+            or get_engine_affinity() == "gpu"
+        )
         if not (is_config_obj or engine in ("cpu", "gpu")):
             msg = f"Invalid engine argument {engine=}"
             raise ValueError(msg)

@@ -1454,7 +1454,9 @@ class Config(contextlib.ContextDecorator):
         return cls
 
     @classmethod
-    def set_default_engine(cls, engine: Literal["cpu", "gpu", "streaming"] | None) -> type[Config]:
+    def set_default_engine(
+        cls, engine: Literal["cpu", "gpu", "streaming"] | None
+    ) -> type[Config]:
         """
         Set which engine to use by default.
 
