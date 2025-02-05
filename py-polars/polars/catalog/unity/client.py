@@ -75,7 +75,7 @@ class Catalog:
             * "databricks-sdk": Use the Databricks SDK to retrieve and use the
             bearer token from the environment.
         require_https
-            Require the `workspace_url` to be HTTPS.
+            Require the `workspace_url` to use HTTPS.
         """
         issue_unstable_warning("`Catalog` functionality is considered unstable.")
 
