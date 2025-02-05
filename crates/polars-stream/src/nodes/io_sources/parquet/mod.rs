@@ -1,23 +1,19 @@
-use std::future::Future;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
-use polars_core::prelude::{ArrowSchema, Column, DataType, IntoColumn, PlHashMap};
+use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
-use polars_core::series::Series;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::{try_set_sorted_flag, FileMetadata, ParallelStrategy, ParquetOptions};
-use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};
-use polars_io::RowIndex;
+use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
+use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_parquet::read::read_metadata;
-use polars_parquet::read::schema::{infer_schema_with_options, read_schema_from_metadata};
+use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{FileInfo, ScanSource, ScanSourceRef, ScanSources};
+use polars_plan::plans::{FileInfo, ScanSource, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -26,7 +22,7 @@ use polars_utils::IdxSize;
 use super::multi_scan::{MultiScanable, RowRestrication};
 use super::{PhaseResult, SourceNode, SourceOutput};
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -69,9 +65,6 @@ pub struct ParquetSourceNode {
     row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
     // This permit blocks execution until the first morsel is requested.
     morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
-    // This is behind a Mutex so that we can call `shutdown()` asynchronously.
-    async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
-    is_finished: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -139,59 +132,11 @@ impl ParquetSourceNode {
             row_index,
 
             morsel_stream_starter: None,
-            async_task_data: Arc::new(tokio::sync::Mutex::new(None)),
-            is_finished: Arc::new(AtomicBool::new(false)),
         }
     }
 }
 
-impl ComputeNode for ParquetSourceNode {
-    fn name(&self) -> &str {
-        "parquet_source"
-    }
-
-    fn initialize(&mut self, num_pipelines: usize) {}
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
-        use std::sync::atomic::Ordering;
-
-        assert!(recv.is_empty());
-        assert_eq!(send.len(), 1);
-
-        // if self.is_finished.load(Ordering::Relaxed) {
-        //     send[0] = PortState::Done;
-        //     assert!(
-        //         self.async_task_data.try_lock().unwrap().is_none(),
-        //         "should have already been shut down"
-        //     );
-        // } else if send[0] == PortState::Done {
-        //     {
-        //         // Early shutdown - our port state was set to `Done` by the downstream nodes.
-        //         self.shutdown_in_background();
-        //     };
-        //     self.is_finished.store(true, Ordering::Relaxed);
-        // } else {
-        //     send[0] = PortState::Ready
-        // }
-
-        Ok(())
-    }
-
-    fn spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        recv_ports: &mut [Option<RecvPort<'_>>],
-        send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-    }
-}
-
 impl SourceNode for ParquetSourceNode {
-    const EFFICIENT_PRED_PD: bool = true;
-    const EFFICIENT_SLICE_PD: bool = true;
-
     fn name(&self) -> &str {
         "parquet_source"
     }
@@ -333,40 +278,38 @@ impl MultiScanable for ParquetSourceNode {
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = true;
 
-    fn new(source: ScanSource) -> impl Future<Output = PolarsResult<Self>> + Send {
-        async move {
-            let source = source.into_sources();
-            let memslice = source.at(0).to_memslice()?;
-            let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
+    async fn new(source: ScanSource) -> PolarsResult<Self> {
+        let source = source.into_sources();
+        let memslice = source.at(0).to_memslice()?;
+        let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
 
-            let arrow_schema = infer_schema_with_options(&file_metadata, &None)?;
-            let schema = Arc::new(Schema::from_arrow_schema(&arrow_schema));
-            let arrow_schema = Arc::new(arrow_schema);
+        let arrow_schema = infer_schema_with_options(&file_metadata, &None)?;
+        let schema = Arc::new(Schema::from_arrow_schema(&arrow_schema));
+        let arrow_schema = Arc::new(arrow_schema);
 
-            let options = ParquetOptions {
-                schema: Some(schema.clone()),
-                parallel: ParallelStrategy::Auto,
-                low_memory: false,
-                use_statistics: true,
-            };
+        let options = ParquetOptions {
+            schema: Some(schema.clone()),
+            parallel: ParallelStrategy::Auto,
+            low_memory: false,
+            use_statistics: true,
+        };
 
-            let file_options = FileScanOptions::default();
-            let file_info = FileInfo::new(
-                schema.clone(),
-                Some(rayon::iter::Either::Left(arrow_schema.clone())),
-                (None, usize::MAX),
-            );
+        let file_options = FileScanOptions::default();
+        let file_info = FileInfo::new(
+            schema.clone(),
+            Some(rayon::iter::Either::Left(arrow_schema.clone())),
+            (None, usize::MAX),
+        );
 
-            Ok(ParquetSourceNode::new(
-                source,
-                file_info,
-                None,
-                options,
-                None,
-                file_options,
-                Some(Arc::new(file_metadata)),
-            ))
-        }
+        Ok(ParquetSourceNode::new(
+            source,
+            file_info,
+            None,
+            options,
+            None,
+            file_options,
+            Some(Arc::new(file_metadata)),
+        ))
     }
 
     fn with_projection(&mut self, projection: Option<&Bitmap>) {
@@ -396,11 +339,11 @@ impl MultiScanable for ParquetSourceNode {
         self.row_index = row_index.map(|name| Arc::new((name, AtomicIdxSize::new(0))));
     }
 
-    fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
-        async { todo!() }
+    async fn row_count(&mut self) -> PolarsResult<IdxSize> {
+        todo!()
     }
 
-    fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send {
-        async { todo!() }
+    async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+        Ok(self.file_info.schema.clone())
     }
 }

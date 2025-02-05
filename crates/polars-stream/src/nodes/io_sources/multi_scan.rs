@@ -2,13 +2,18 @@ use std::cmp::Reverse;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Range;
+use std::sync::Arc;
 
+use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
-use polars_core::schema::SchemaRef;
+use polars_core::prelude::{Column, IntoColumn};
+use polars_core::scalar::Scalar;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::ScanPredicate;
+use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{ScanSource, ScanSources};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
@@ -33,24 +38,84 @@ pub enum RowRestrication {
 pub struct MultiScanNode<T: MultiScanable> {
     name: String,
     sources: ScanSources,
-    projection: Option<Bitmap>,
+    hive_parts: Option<Arc<Vec<HivePartitions>>>,
+    output_schema: SchemaRef,
+    allow_missing_columns: bool,
     _pd: PhantomData<T>,
 }
 
 impl<T: MultiScanable> MultiScanNode<T> {
-    pub fn new(sources: ScanSources, projection: Option<Bitmap>) -> Self {
+    pub fn new(
+        sources: ScanSources,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        output_schema: SchemaRef,
+        allow_missing_columns: bool,
+    ) -> Self {
         Self {
             name: format!("multi-scan[{}]", T::BASE_NAME),
             sources,
-
-            projection,
+            hive_parts,
+            output_schema,
+            allow_missing_columns,
 
             _pd: PhantomData,
         }
     }
 }
 
-fn process_dataframe(df: DataFrame) -> PolarsResult<DataFrame> {
+fn process_dataframe(
+    mut df: DataFrame,
+    hive_part: Option<&HivePartitions>,
+    output_schema: &Schema,
+    allow_missing_columns: bool,
+) -> PolarsResult<DataFrame> {
+    if let Some(hive_part) = hive_part {
+        let height = df.height();
+        let mut columns = df.take_columns();
+
+        columns.extend(
+            hive_part
+                .get_statistics()
+                .column_stats()
+                .iter()
+                .map(|column_stat| {
+                    ScalarColumn::from_single_value_series(
+                        column_stat.get_min_state().unwrap().clone(),
+                        height,
+                    )
+                    .into_column()
+                }),
+        );
+
+        df = DataFrame::new_with_height(height, columns)?;
+    }
+
+    if allow_missing_columns {
+        // @TODO: Do this once per file.
+
+        let mut df_extra = Vec::new();
+        let mut output_extra = Vec::new();
+
+        df.schema()
+            .field_compare(output_schema, &mut df_extra, &mut output_extra);
+
+        if !df_extra.is_empty() {
+            // @TODO: Error message.
+            panic!();
+        }
+
+        for (_, (name, dtype)) in output_extra {
+            df.with_column(Column::new_scalar(
+                name.clone(),
+                Scalar::null(dtype.clone()),
+                df.height(),
+            ))
+            .unwrap();
+        }
+    }
+
+    df = df.select(output_schema.iter_names_cloned())?;
+
     Ok(df)
 }
 
@@ -64,12 +129,13 @@ pub trait MultiScanable: SourceNode + Sized + Send + Sync {
     fn new(source: ScanSource) -> impl Future<Output = PolarsResult<Self>> + Send;
 
     fn with_projection(&mut self, projection: Option<&Bitmap>);
+    #[allow(unused)]
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>);
+    #[allow(unused)]
     fn with_row_index(&mut self, row_index: Option<PlSmallStr>);
 
     #[allow(unused)]
     fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send;
-    #[allow(unused)]
     fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send;
 }
 
@@ -79,9 +145,6 @@ enum SourceInput {
 }
 
 impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
-    const EFFICIENT_PRED_PD: bool = T::EFFICIENT_PRED_PD;
-    const EFFICIENT_SLICE_PD: bool = true;
-
     fn name(&self) -> &str {
         &self.name
     }
@@ -104,7 +167,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         let num_concurrent_scans = num_pipelines;
 
         let sources = &self.sources;
-        let projection = &self.projection;
+        let hive_schema = self
+            .hive_parts
+            .as_ref()
+            .and_then(|p| Some(p.first()?.get_statistics().schema().clone()))
+            .unwrap_or_else(|| Arc::new(Schema::default()));
 
         let (si_send, mut si_recv) = (0..num_concurrent_scans)
             .map(|_| connector::<SourceInput>())
@@ -112,7 +179,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
         join_handles.extend(si_send.into_iter().enumerate().map(|(mut i, mut ch_send)| {
             let sources = sources.clone();
-            let projection = projection.clone();
+            let hive_schema = hive_schema.clone();
             spawn(TaskPriority::High, async move {
                 let state = ExecutionState::new();
                 let mut join_handles = Vec::new();
@@ -122,7 +189,13 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     let source = sources.at(i).into_owned()?;
                     let (mut output_send, output_recv) = connector();
                     let mut source = T::new(source).await?;
-                    source.with_projection(projection.as_ref());
+
+                    let source_schema = source.schema().await?;
+                    let projection = source_schema
+                        .iter_names()
+                        .map(|n| !hive_schema.contains(n))
+                        .collect::<Bitmap>();
+                    source.with_projection(Some(&projection));
                     let mut phase_result_rx = source.spawn_source(
                         num_pipelines,
                         output_recv,
@@ -194,6 +267,9 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             })
         }));
 
+        let hive_parts = self.hive_parts.clone();
+        let allow_missing_columns = self.allow_missing_columns;
+        let output_schema = self.output_schema.clone();
         let sources = sources.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             let mut seq = MorselSeq::default();
@@ -208,6 +284,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 let wait_group = WaitGroup::default();
 
                 while current_scan < sources.len() {
+                    let hive_part = hive_parts.as_deref().map(|parts| &parts[current_scan]);
                     let si_recv = &mut si_recv[current_scan % num_concurrent_scans];
                     let Ok(rx) = si_recv.recv().await else {
                         panic!()
@@ -219,7 +296,19 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 let original_source_token = rg.source_token().clone();
 
                                 let df = rg.into_df();
-                                let df = process_dataframe(df)?;
+                                let df = process_dataframe(
+                                    df,
+                                    hive_part,
+                                    output_schema.as_ref(),
+                                    allow_missing_columns,
+                                );
+                                let df = match df {
+                                    Ok(df) => df,
+                                    Err(err) => {
+                                        _ = phase_result_tx.send(PhaseResult::Finished).await;
+                                        return Err(err);
+                                    },
+                                };
 
                                 let mut morsel = Morsel::new(df, seq, source_token.clone());
                                 morsel.set_consume_token(wait_group.token());
@@ -257,7 +346,19 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 let original_source_token = rg.source_token().clone();
 
                                 let df = rg.into_df();
-                                let df = process_dataframe(df)?;
+                                let df = process_dataframe(
+                                    df,
+                                    hive_part,
+                                    output_schema.as_ref(),
+                                    allow_missing_columns,
+                                );
+                                let df = match df {
+                                    Ok(df) => df,
+                                    Err(err) => {
+                                        _ = phase_result_tx.send(PhaseResult::Finished).await;
+                                        return Err(err);
+                                    },
+                                };
 
                                 let mut morsel = Morsel::new(df, seq, source_token.clone());
                                 morsel.set_consume_token(wait_group.token());

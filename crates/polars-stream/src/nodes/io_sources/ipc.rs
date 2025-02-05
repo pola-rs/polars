@@ -1,5 +1,4 @@
 use std::cmp::Reverse;
-use std::future::Future;
 use std::io::Cursor;
 use std::ops::Range;
 use std::sync::Arc;
@@ -38,7 +37,6 @@ use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
-use crate::pipe::SendPort;
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
@@ -174,9 +172,6 @@ fn get_max_morsel_size() -> usize {
 }
 
 impl SourceNode for IpcSourceNode {
-    const EFFICIENT_PRED_PD: bool = false;
-    const EFFICIENT_SLICE_PD: bool = true;
-
     fn name(&self) -> &str {
         "ipc_source"
     }
@@ -513,28 +508,26 @@ impl MultiScanable for IpcSourceNode {
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = true;
 
-    fn new(source: ScanSource) -> impl Future<Output = PolarsResult<Self>> + Send {
-        async move {
-            let source = source.into_sources();
-            let options = IpcScanOptions;
+    async fn new(source: ScanSource) -> PolarsResult<Self> {
+        let source = source.into_sources();
+        let options = IpcScanOptions;
 
-            let memslice = source.at(0).to_memslice()?;
-            let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
-                memslice.as_ref(),
-            ))?);
+        let memslice = source.at(0).to_memslice()?;
+        let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
+            memslice.as_ref(),
+        ))?);
 
-            let arrow_schema = metadata.schema.clone();
-            let schema = Schema::from_arrow_schema(arrow_schema.as_ref());
+        let arrow_schema = metadata.schema.clone();
+        let schema = Schema::from_arrow_schema(arrow_schema.as_ref());
 
-            let file_options = FileScanOptions::default();
-            let file_info = FileInfo::new(
-                Arc::new(schema),
-                Some(rayon::iter::Either::Left(arrow_schema)),
-                (None, usize::MAX),
-            );
+        let file_options = FileScanOptions::default();
+        let file_info = FileInfo::new(
+            Arc::new(schema),
+            Some(rayon::iter::Either::Left(arrow_schema)),
+            (None, usize::MAX),
+        );
 
-            IpcSourceNode::new(source, file_info, options, None, file_options, None)
-        }
+        IpcSourceNode::new(source, file_info, options, None, file_options, None)
     }
 
     fn with_projection(&mut self, projection: Option<&Bitmap>) {
@@ -556,20 +549,16 @@ impl MultiScanable for IpcSourceNode {
         self.row_index = row_index.map(|name| RowIndex { name, offset: 0 });
     }
 
-    fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send {
-        async {
-            get_row_count_from_blocks(
-                &mut std::io::Cursor::new(self.source.memslice.as_ref()),
-                &self.source.metadata.blocks,
-            )
-            .map(|v| v as IdxSize)
-        }
+    async fn row_count(&mut self) -> PolarsResult<IdxSize> {
+        get_row_count_from_blocks(
+            &mut std::io::Cursor::new(self.source.memslice.as_ref()),
+            &self.source.metadata.blocks,
+        )
+        .map(|v| v as IdxSize)
     }
-    fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send {
-        async {
-            Ok(Arc::new(Schema::from_arrow_schema(
-                &self.source.metadata.schema,
-            )))
-        }
+    async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+        Ok(Arc::new(Schema::from_arrow_schema(
+            &self.source.metadata.schema,
+        )))
     }
 }

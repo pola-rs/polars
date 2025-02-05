@@ -281,8 +281,11 @@ impl DataFrame {
             });
         };
 
-        let height = fst.len();
-        for col in &columns[1..] {
+        Self::new_with_height(fst.len(), columns)
+    }
+
+    pub fn new_with_height(height: usize, columns: Vec<Column>) -> PolarsResult<Self> {
+        for col in &columns {
             polars_ensure!(
                 col.len() == height,
                 ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",

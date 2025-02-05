@@ -355,14 +355,18 @@ fn to_graph_rec<'a>(
 
         MultiScan {
             scan_sources,
-            projection,
+            hive_parts,
             scan_type,
+            output_schema,
+            allow_missing_columns,
         } => match scan_type {
             polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
                 nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
                         scan_sources.clone(),
-                        projection.clone(),
+                        hive_parts.clone(),
+                        output_schema.clone(),
+                        *allow_missing_columns,
                     ),
                 ),
                 [],
@@ -371,7 +375,12 @@ fn to_graph_rec<'a>(
                 nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<
                         nodes::io_sources::ipc::IpcSourceNode,
-                    >::new(scan_sources.clone(), projection.clone()),
+                    >::new(
+                        scan_sources.clone(),
+                        hive_parts.clone(),
+                        output_schema.clone(),
+                        *allow_missing_columns,
+                    ),
                 ),
                 [],
             ),
@@ -438,14 +447,16 @@ fn to_graph_rec<'a>(
                         cloud_options,
                         metadata: first_metadata,
                     } => ctx.graph.add_node(
-                        nodes::io_sources::parquet::ParquetSourceNode::new(
-                            scan_sources,
-                            file_info,
-                            predicate,
-                            options,
-                            cloud_options,
-                            file_options,
-                            first_metadata,
+                        nodes::io_sources::SourceComputeNode::new(
+                            nodes::io_sources::parquet::ParquetSourceNode::new(
+                                scan_sources,
+                                file_info,
+                                predicate,
+                                options,
+                                cloud_options,
+                                file_options,
+                                first_metadata,
+                            ),
                         ),
                         [],
                     ),

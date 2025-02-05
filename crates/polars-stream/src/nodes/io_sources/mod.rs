@@ -154,9 +154,6 @@ impl SourceOutput {
 ///
 /// These can be converting into [`ComputeNode`]s that will have non-scoped tasks.
 pub trait SourceNode: Sized + Send + Sync {
-    const EFFICIENT_PRED_PD: bool;
-    const EFFICIENT_SLICE_PD: bool;
-
     fn name(&self) -> &str;
 
     fn is_source_output_parallel(&self) -> bool {

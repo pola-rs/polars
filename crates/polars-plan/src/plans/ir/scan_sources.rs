@@ -61,7 +61,6 @@ impl ScanSource {
             ScanSource::File(f) => ScanSources::Files([f].into()),
             ScanSource::Buffer(m) => ScanSources::Buffers([m].into()),
         }
-
     }
 }
 

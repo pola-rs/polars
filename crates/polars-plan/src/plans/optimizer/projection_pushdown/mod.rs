@@ -497,28 +497,31 @@ impl ProjectionPushDown {
                             scan_type.sort_projection(&file_options),
                         )?;
 
-                        hive_parts = if let Some(hive_parts) = hive_parts {
-                            let (new_schema, projected_indices) = hive_parts[0]
-                                .get_projection_schema_and_indices(
-                                    &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
-                                );
+                        if !self.in_new_streaming_engine {
+                            // Cull the hive partitions that are not projected out.
+                            hive_parts = if let Some(hive_parts) = hive_parts {
+                                let (new_schema, projected_indices) = hive_parts[0]
+                                    .get_projection_schema_and_indices(
+                                        &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
+                                    );
 
-                            Some(Arc::new(
-                                hive_parts
-                                    .iter()
-                                    .cloned()
-                                    .map(|mut hp| {
-                                        hp.apply_projection(
-                                            new_schema.clone(),
-                                            projected_indices.as_ref(),
-                                        );
-                                        hp
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ))
-                        } else {
-                            None
-                        };
+                                Some(Arc::new(
+                                    hive_parts
+                                        .iter()
+                                        .cloned()
+                                        .map(|mut hp| {
+                                            hp.apply_projection(
+                                                new_schema.clone(),
+                                                projected_indices.as_ref(),
+                                            );
+                                            hp
+                                        })
+                                        .collect::<Vec<_>>(),
+                                ))
+                            } else {
+                                None
+                            };
+                        }
 
                         if let Some(ref hive_parts) = hive_parts {
                             // @TODO:
@@ -606,10 +609,12 @@ impl ProjectionPushDown {
 
                         Some(Arc::new(schema))
                     } else {
-                        file_options.with_columns = maybe_init_projection_excluding_hive(
-                            file_info.reader_schema.as_ref().unwrap(),
-                            hive_parts.as_ref().map(|x| &x[0]),
-                        );
+                        if !self.in_new_streaming_engine {
+                            file_options.with_columns = maybe_init_projection_excluding_hive(
+                                file_info.reader_schema.as_ref().unwrap(),
+                                hive_parts.as_ref().map(|x| &x[0]),
+                            );
+                        }
                         None
                     };
                 }
@@ -661,9 +666,13 @@ impl ProjectionPushDown {
                 // TODO: Our scans don't perfectly give the right projection order with combinations
                 // of hive columns that exist in the file, so we always add a `Select {}` node here.
 
-                let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
-                let builder = builder.project_simple_nodes(ctx.acc_projections)?;
-                Ok(builder.build())
+                if self.in_new_streaming_engine {
+                    Ok(lp)
+                } else {
+                    let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
+                    let builder = builder.project_simple_nodes(ctx.acc_projections)?;
+                    Ok(builder.build())
+                }
             },
             Sort {
                 input,

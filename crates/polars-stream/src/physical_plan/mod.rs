@@ -4,7 +4,6 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
@@ -170,8 +169,10 @@ pub enum PhysNodeKind {
 
     MultiScan {
         scan_sources: ScanSources,
-        projection: Option<Bitmap>,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         scan_type: FileScan,
+        output_schema: SchemaRef,
+        allow_missing_columns: bool,
     },
     FileScan {
         scan_sources: ScanSources,

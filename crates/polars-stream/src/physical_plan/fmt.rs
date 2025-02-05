@@ -144,11 +144,7 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
-        PhysNodeKind::MultiScan {
-            scan_sources: _,
-            projection: _,
-            scan_type: _,
-        } => ("multi-scan-source".to_string(), &[][..]),
+        PhysNodeKind::MultiScan { .. } => ("multi-scan-source".to_string(), &[][..]),
         PhysNodeKind::FileScan {
             scan_sources,
             file_info,
