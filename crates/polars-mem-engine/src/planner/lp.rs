@@ -6,6 +6,7 @@ use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
 
 use self::predicates::aexpr_to_skip_batch_predicate;
+#[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
 use super::super::executors::{self, Executor};
 use super::*;

@@ -1,3 +1,4 @@
+#[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
 use super::*;
 

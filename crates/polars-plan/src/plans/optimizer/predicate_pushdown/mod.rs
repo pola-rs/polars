@@ -9,6 +9,7 @@ use polars_core::prelude::*;
 use recursive::recursive;
 use utils::*;
 
+#[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
 use super::*;
 use crate::dsl::function_expr::FunctionExpr;
