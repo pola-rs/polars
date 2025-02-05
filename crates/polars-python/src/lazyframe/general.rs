@@ -451,6 +451,14 @@ impl PyLazyFrame {
         Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
     }
 
+    #[staticmethod]
+    fn scan_from_python_function_schema_function(
+        schema_fn: PyObject,
+        scan_fn: PyObject,
+    ) -> PyResult<Self> {
+        Ok(LazyFrame::scan_from_python_function(Either::Left(schema_fn), scan_fn, false).into())
+    }
+
     fn describe_plan(&self) -> PyResult<String> {
         self.ldf
             .describe_plan()

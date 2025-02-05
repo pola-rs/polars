@@ -76,7 +76,14 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.dependencies import import_optional, subprocess
+from polars.dependencies import (
+    _PYARROW_AVAILABLE,
+    import_optional,
+    subprocess,
+)
+from polars.dependencies import (
+    pyarrow as pa,
+)
 from polars.exceptions import PerformanceWarning
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -87,13 +94,12 @@ from polars.selectors import by_dtype, expand_selector
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame
 
+
 if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
     from typing import Literal
-
-    import pyarrow as pa
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -336,7 +342,7 @@ class LazyFrame:
     @classmethod
     def _scan_python_function(
         cls,
-        schema: pa.schema | Mapping[str, PolarsDataType],
+        schema: pa.schema | SchemaDict | Callable[[], SchemaDict],
         scan_fn: Any,
         *,
         pyarrow: bool = False,
@@ -346,9 +352,13 @@ class LazyFrame:
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
                 list(schema.items()), scan_fn, pyarrow
             )
-        else:
+        elif _PYARROW_AVAILABLE and isinstance(schema, pa.schema):
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
                 list(schema), scan_fn, pyarrow
+            )
+        else:
+            self._ldf = PyLazyFrame.scan_from_python_function_schema_function(
+                schema, scan_fn
             )
         return self
 
