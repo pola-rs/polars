@@ -360,6 +360,7 @@ fn to_graph_rec<'a>(
             output_schema,
             allow_missing_columns,
         } => match scan_type {
+            #[cfg(feature = "parquet")]
             polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
                 nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
@@ -371,6 +372,7 @@ fn to_graph_rec<'a>(
                 ),
                 [],
             ),
+            #[cfg(feature = "ipc")]
             polars_plan::plans::FileScan::Ipc { .. } => ctx.graph.add_node(
                 nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<
