@@ -1,5 +1,4 @@
 use polars_core::schema::*;
-#[cfg(feature = "iejoin")]
 use polars_utils::arena::{Arena, Node};
 
 use super::{aexpr_to_leaf_names_iter, AExpr};
