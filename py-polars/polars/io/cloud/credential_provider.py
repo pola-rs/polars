@@ -592,18 +592,19 @@ def _maybe_init_credential_provider(
             msg = f"unable to auto-select credential provider: {e!r}"
             print(msg, file=sys.stderr)
 
-    # CredentialProviderAWS raises an error in some cases when
-    # `get_credentials()` returns None (e.g. the environment may not
-    # have / require credentials). We check this here and avoid
-    # using it if that is the case.
-    try:
-        provider()
-    except Exception as e:
-        provider = None
+    if provider is not None:
+        # CredentialProviderAWS raises an error in some cases when
+        # `get_credentials()` returns None (e.g. the environment may not
+        # have / require credentials). We check this here and avoid
+        # using it if that is the case.
+        try:
+            provider()
+        except Exception as e:
+            provider = None
 
-        if verbose:
-            msg = f"unable to auto-select credential provider: {e!r}"
-            print(msg, file=sys.stderr)
+            if verbose:
+                msg = f"unable to auto-select credential provider: {e!r}"
+                print(msg, file=sys.stderr)
 
     if provider is not None and verbose:
         msg = f"auto-selected credential provider: {type(provider).__name__}"
