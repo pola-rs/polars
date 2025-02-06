@@ -101,7 +101,10 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         });
 
         let send = send_ports[0].take().unwrap();
-        let source_output = if self.source.is_source_output_parallel() {
+        let source_output = if self
+            .source
+            .is_source_output_parallel(send.is_receiver_serial())
+        {
             SourceOutput::Parallel(send.parallel())
         } else {
             SourceOutput::Serial(send.serial())
@@ -156,9 +159,7 @@ impl SourceOutput {
 pub trait SourceNode: Sized + Send + Sync {
     fn name(&self) -> &str;
 
-    fn is_source_output_parallel(&self) -> bool {
-        false
-    }
+    fn is_source_output_parallel(&self, is_receiver_serial: bool) -> bool;
 
     /// Start all the tasks for the [`SourceNode`].
     ///

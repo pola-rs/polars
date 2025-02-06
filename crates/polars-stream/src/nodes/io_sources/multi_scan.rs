@@ -149,7 +149,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         &self.name
     }
 
-    fn is_source_output_parallel(&self) -> bool {
+    fn is_source_output_parallel(&self, _is_receiver_serial: bool) -> bool {
         false
     }
 
@@ -206,7 +206,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                     // Loop until a phase result indicated that the source is empty.
                     loop {
-                        let (tx, rx) = if source.is_source_output_parallel() {
+                        let (tx, rx) = if source.is_source_output_parallel(true) {
                             let (tx, rx) = (0..num_pipelines)
                                 .map(|_| connector())
                                 .collect::<(Vec<_>, Vec<_>)>();

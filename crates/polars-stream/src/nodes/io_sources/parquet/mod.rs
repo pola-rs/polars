@@ -141,7 +141,7 @@ impl SourceNode for ParquetSourceNode {
         "parquet_source"
     }
 
-    fn is_source_output_parallel(&self) -> bool {
+    fn is_source_output_parallel(&self, _is_receiver_serial: bool) -> bool {
         true
     }
 
