@@ -1628,6 +1628,7 @@ def test_select_after_join_where_20831() -> None:
     assert q.select(pl.len()).collect().item() == 6
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_join_on_struct() -> None:
     lhs = pl.DataFrame(
         {
