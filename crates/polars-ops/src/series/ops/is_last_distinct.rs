@@ -120,6 +120,7 @@ fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
         .map(|opt_v| unique.insert(opt_v))
         .collect_reversed::<NoNull<BooleanChunked>>()
         .into_inner();
+    drop(unique);
     new_ca.rename(ca.name().clone());
     new_ca
 }
@@ -139,6 +140,7 @@ where
         .map(|opt_v| unique.insert(opt_v.to_total_ord()))
         .collect_reversed::<NoNull<BooleanChunked>>()
         .into_inner();
+    drop(unique);
     new_ca.rename(ca.name().clone());
     new_ca
 }
