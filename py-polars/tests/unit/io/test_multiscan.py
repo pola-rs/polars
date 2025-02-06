@@ -1,12 +1,13 @@
+from pathlib import Path
 from typing import Any
+
 import pytest
+
 import polars as pl
 from polars.testing import assert_frame_equal
 
-from pathlib import Path
 
-
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 @pytest.mark.parametrize(
     ("scan", "write"),
     [
