@@ -1,6 +1,7 @@
+use std::borrow::Cow;
+
 use super::*;
 use crate::chunked_array::cast::CastOptions;
-use std::borrow::Cow;
 
 pub fn _agg_helper_idx_bool<F>(groups: &GroupsIdx, f: F) -> Series
 where

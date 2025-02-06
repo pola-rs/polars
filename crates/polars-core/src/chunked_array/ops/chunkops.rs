@@ -181,7 +181,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             },
         }
     }
-    
+
     /// Rechunks this ChunkedArray in-place.
     pub fn rechunk_mut(&mut self) {
         if self.chunks.len() > 1 {
@@ -195,7 +195,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             }
         }
     }
-    
+
     pub fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks.len() == 1 {
             return self.chunks[0].validity().cloned();
