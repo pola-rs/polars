@@ -830,19 +830,19 @@ impl PyLazyFrame {
                             std::mem::take(expr_arena),
                         );
 
+                        let io_kwargs = PyDict::new(py);
+                        let _ = io_kwargs.set_item("to", "csv");
+                        let _ = io_kwargs.set_item("options", Wrap(options.clone()));
+                        let _ =
+                            io_kwargs.set_item("cloud_options", cloud_options.clone().map(Wrap));
                         // Get a copy of the arena's.
                         let arenas = nt.get_arenas();
 
                         // Pass the node visitor which allows the python callback to replace parts of the query plan.
                         // Remove "cuda" or specify better once we have multiple post-opt callbacks.
-                        lambda
-                            .call1(
-                                py,
-                                (nt, Wrap(options.clone()), cloud_options.clone().map(Wrap)),
-                            )
-                            .map_err(
-                                |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
-                            )?;
+                        lambda.call1(py, (nt, io_kwargs)).map_err(
+                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
+                        )?;
                         // Unpack the arena's.
                         // At this point the `nt` is useless.
 
