@@ -1,4 +1,5 @@
 use arrow::array::PrimitiveArray;
+use polars_core::chunked_array::ops::row_encode::encode_rows_unordered;
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
@@ -50,16 +51,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &lhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
-                let rhs = &rhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
                 lhs.hash_join_left(rhs, validate, join_nulls)
             },
             x if x.is_float() => {
@@ -142,16 +135,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &lhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
-                let rhs = &rhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
                 lhs.hash_join_semi_anti(rhs, anti, join_nulls)?
             },
             x if x.is_float() => {
@@ -257,16 +242,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &lhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
-                let rhs = &rhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
                 lhs.hash_join_inner(rhs, validate, join_nulls)
             },
             x if x.is_float() => {
@@ -341,16 +318,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
             },
             #[cfg(feature = "dtype-struct")]
             T::Struct(_) => {
-                let lhs = &lhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
-                let rhs = &rhs
-                    .struct_()
-                    .unwrap()
-                    .get_row_encoded(Default::default())?
-                    .into_series();
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
                 lhs.hash_join_outer(rhs, validate, join_nulls)
             },
             x if x.is_float() => {
