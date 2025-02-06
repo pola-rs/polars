@@ -113,8 +113,8 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
     let mut unique = PlHashSet::new();
     let ca = ca.rechunk();
-    let mut new_ca: BooleanChunked = ca
-        .downcast_as_array()
+    let arr = ca.downcast_as_array();
+    let mut new_ca: BooleanChunked = arr
         .iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v))
@@ -132,8 +132,8 @@ where
 {
     let mut unique = PlHashSet::new();
     let ca = ca.rechunk();
-    let mut new_ca: BooleanChunked = ca
-        .downcast_as_array()
+    let arr = ca.downcast_as_array();
+    let mut new_ca: BooleanChunked = arr
         .iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v.to_total_ord()))
