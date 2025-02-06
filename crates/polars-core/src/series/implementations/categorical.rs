@@ -223,7 +223,7 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.with_state(true, |ca| ca.rechunk()).into_series()
+        self.with_state(true, |ca| ca.rechunk().into_owned()).into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {

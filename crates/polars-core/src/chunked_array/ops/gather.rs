@@ -327,8 +327,8 @@ impl IdxCa {
 impl ChunkTakeUnchecked<IdxCa> for ArrayChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let chunks = vec![take_unchecked(
-            &self.rechunk().downcast_into_array(),
-            &indices.rechunk().downcast_into_array(),
+            self.rechunk().downcast_as_array(),
+            indices.rechunk().downcast_as_array(),
         )];
         self.copy_with_chunks(chunks)
     }
@@ -345,8 +345,8 @@ impl<I: AsRef<[IdxSize]> + ?Sized> ChunkTakeUnchecked<I> for ArrayChunked {
 impl ChunkTakeUnchecked<IdxCa> for ListChunked {
     unsafe fn take_unchecked(&self, indices: &IdxCa) -> Self {
         let chunks = vec![take_unchecked(
-            &self.rechunk().downcast_into_array(),
-            &indices.rechunk().downcast_into_array(),
+            self.rechunk().downcast_as_array(),
+            indices.rechunk().downcast_as_array(),
         )];
         self.copy_with_chunks(chunks)
     }

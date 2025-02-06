@@ -89,8 +89,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_iter().next().unwrap();
-    let right_val_arr = right_asof.downcast_iter().next().unwrap();
+    let left_val_arr = left_asof.downcast_as_array();
+    let right_val_arr = right_asof.downcast_as_array();
 
     let n_threads = POOL.current_num_threads();
     // `strict` is false so that we always flatten. Even if there are more chunks than threads.
@@ -173,8 +173,8 @@ where
     F: Sync + for<'a> Fn(T::Physical<'a>, T::Physical<'a>) -> bool,
 {
     let (left_asof, right_asof) = POOL.join(|| left_asof.rechunk(), || right_asof.rechunk());
-    let left_val_arr = left_asof.downcast_iter().next().unwrap();
-    let right_val_arr = right_asof.downcast_iter().next().unwrap();
+    let left_val_arr = left_asof.downcast_as_array();
+    let right_val_arr = right_asof.downcast_as_array();
 
     let (prep_by_left, prep_by_right, _, _) = prepare_binary::<B>(by_left, by_right, false);
     let offsets = compute_len_offsets(prep_by_left.iter().map(|s| s.len()));

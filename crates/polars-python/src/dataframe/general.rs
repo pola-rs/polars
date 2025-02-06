@@ -560,7 +560,7 @@ impl PyDataFrame {
         invalid_indices: Vec<usize>,
     ) -> PyResult<PySeries> {
         py.enter_polars_series(|| {
-            let ca = self.df.clone().into_struct(name.into());
+            let mut ca = self.df.clone().into_struct(name.into());
 
             if !invalid_indices.is_empty() {
                 let mut validity = MutableBitmap::with_capacity(ca.len());
@@ -568,7 +568,7 @@ impl PyDataFrame {
                 for i in invalid_indices {
                     validity.set(i, false);
                 }
-                let ca = ca.rechunk();
+                ca.rechunk_mut();
                 Ok(ca.with_outer_validity(Some(validity.freeze())))
             } else {
                 Ok(ca)

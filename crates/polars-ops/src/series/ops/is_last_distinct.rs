@@ -67,8 +67,8 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         let mut first_null_found = false;
         let mut all_found = false;
         let ca = ca.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
-        arr.into_iter()
+        ca.downcast_as_array()
+            .iter()
             .enumerate()
             .rev()
             .find_map(|(idx, val)| match val {
@@ -111,11 +111,11 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
 }
 
 fn is_last_distinct_bin(ca: &BinaryChunked) -> BooleanChunked {
-    let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
     let mut unique = PlHashSet::new();
-    let mut new_ca: BooleanChunked = arr
-        .into_iter()
+    let ca = ca.rechunk();
+    let mut new_ca: BooleanChunked = ca
+        .downcast_as_array()
+        .iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v))
         .collect_reversed::<NoNull<BooleanChunked>>()
@@ -130,11 +130,11 @@ where
     T::Native: TotalHash + TotalEq + ToTotalOrd,
     <T::Native as ToTotalOrd>::TotalOrdItem: Hash + Eq,
 {
-    let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
     let mut unique = PlHashSet::new();
-    let mut new_ca: BooleanChunked = arr
-        .into_iter()
+    let ca = ca.rechunk();
+    let mut new_ca: BooleanChunked = ca
+        .downcast_as_array()
+        .iter()
         .rev()
         .map(|opt_v| unique.insert(opt_v.to_total_ord()))
         .collect_reversed::<NoNull<BooleanChunked>>()

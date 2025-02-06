@@ -141,9 +141,10 @@ where
     let mut breaks_iter = breaks.iter().skip(1); // Skip the first lower bound
     let (min_break, max_break) = (breaks[0], breaks[breaks.len() - 1]);
     let mut upper_bound = *breaks_iter.next().unwrap();
-    let sorted = ca.sort(false).rechunk();
+    let mut sorted = ca.sort(false);
+    sorted.rechunk_mut();
     let mut current_count: IdxSize = 0;
-    let chunk = sorted.downcast_iter().next().unwrap();
+    let chunk = sorted.downcast_as_array();
     let mut count: Vec<IdxSize> = Vec::with_capacity(num_bins);
 
     'item: for item in chunk.non_null_values_iter() {

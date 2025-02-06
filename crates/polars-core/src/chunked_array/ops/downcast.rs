@@ -108,9 +108,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     }
 
     #[inline]
-    pub fn downcast_into_array(self) -> T::Array {
+    pub fn downcast_as_array(&self) -> &T::Array {
         assert_eq!(self.chunks.len(), 1);
-        self.downcast_get(0).unwrap().clone()
+        self.downcast_get(0).unwrap()
     }
 
     #[inline]

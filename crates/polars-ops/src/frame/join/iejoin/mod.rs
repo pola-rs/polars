@@ -444,9 +444,9 @@ fn iejoin_tuples(
         .slice(
             y_ordered_by_x.null_count() as i64,
             y_ordered_by_x.len() - y_ordered_by_x.null_count(),
-        )
-        .rechunk();
-    let l2_order = l2_order.downcast_get(0).unwrap().values().as_slice();
+        );
+    let l2_order = l2_order.rechunk();
+    let l2_order = l2_order.downcast_as_array().values().as_slice();
 
     let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
          ie_join_impl_t::<$T>(
@@ -528,13 +528,13 @@ fn piecewise_merge_join_tuples(
                 .with_order_descending(descending);
 
             // Get order and slice to ignore any null values, which cannot be match results
-            let order = series
+            let mut order = series
                 .arg_sort(sort_options)
                 .slice(
                     series.null_count() as i64,
                     series.len() - series.null_count(),
-                )
-                .rechunk();
+                );
+            order.rechunk_mut();
             let ordered = unsafe { series.take_unchecked(&order) };
             (ordered, Some(order))
         }

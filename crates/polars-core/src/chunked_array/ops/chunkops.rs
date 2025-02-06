@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::cell::Cell;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
@@ -158,7 +159,9 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             .sum::<usize>();
     }
 
-    pub fn rechunk(&self) -> Self {
+    /// Rechunks this ChunkedArray, returning a new Cow::Owned ChunkedArray if it was
+    /// rechunked or simply a Cow::Borrowed of itself if it was already a single chunk.
+    pub fn rechunk(&self) -> Cow<'_, Self> {
         match self.dtype() {
             #[cfg(feature = "object")]
             DataType::Object(_, _) => {
@@ -166,19 +169,33 @@ impl<T: PolarsDataType> ChunkedArray<T> {
             },
             _ => {
                 if self.chunks.len() == 1 {
-                    self.clone()
+                    Cow::Borrowed(self)
                 } else {
                     let chunks = vec![concatenate_unchecked(&self.chunks).unwrap()];
 
                     let mut ca = unsafe { self.copy_with_chunks(chunks) };
                     use StatisticsFlags as F;
                     ca.retain_flags_from(self, F::IS_SORTED_ANY | F::CAN_FAST_EXPLODE_LIST);
-                    ca
+                    Cow::Owned(ca)
                 }
             },
         }
     }
-
+    
+    /// Rechunks this ChunkedArray in-place.
+    pub fn rechunk_mut(&mut self) {
+        if self.chunks.len() > 1 {
+            let rechunked = concatenate_unchecked(&self.chunks).unwrap();
+            if self.chunks.capacity() <= 8 {
+                // Reuse chunk allocation if not excessive.
+                self.chunks.clear();
+                self.chunks.push(rechunked);
+            } else {
+                self.chunks = vec![rechunked];
+            }
+        }
+    }
+    
     pub fn rechunk_validity(&self) -> Option<Bitmap> {
         if self.chunks.len() == 1 {
             return self.chunks[0].validity().cloned();
