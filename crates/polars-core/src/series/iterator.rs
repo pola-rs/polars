@@ -75,9 +75,6 @@ pub type SeriesPhysIter<'a> = Box<dyn ExactSizeIterator<Item = AnyValue<'a>> + '
 
 impl Series {
     /// iterate over [`Series`] as [`AnyValue`].
-    ///
-    /// # Panics
-    /// This will panic if the array is not rechunked first.
     pub fn iter(&self) -> SeriesIter<'_> {
         let dtype = self.dtype();
         #[cfg(feature = "object")]
@@ -85,14 +82,18 @@ impl Series {
             !matches!(dtype, DataType::Object(_, _)),
             "object dtype not supported in Series.iter"
         );
-        assert_eq!(self.chunks().len(), 1, "impl error");
-        let arr = &*self.chunks()[0];
-        let len = arr.len();
         SeriesIter {
-            arr,
-            dtype,
-            idx: 0,
-            len,
+            inner_iter: Box::new(self.chunks().iter().flat_map(|arr| {
+                let arr = &(**arr);
+                let len = arr.len();
+                ArrayIter {
+                    arr,
+                    dtype,
+                    idx: 0,
+                    len,
+                }
+            })),
+            total_len: self.len(),
         }
     }
 
@@ -166,13 +167,33 @@ impl Series {
 }
 
 pub struct SeriesIter<'a> {
+    inner_iter: Box<dyn Iterator<Item = AnyValue<'a>> + 'a>,
+    total_len: usize,
+}
+
+impl<'a> Iterator for SeriesIter<'a> {
+    type Item = AnyValue<'a>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner_iter.next()
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.total_len, Some(self.total_len))
+    }
+}
+
+impl ExactSizeIterator for SeriesIter<'_> {}
+
+struct ArrayIter<'a> {
     arr: &'a dyn Array,
     dtype: &'a DataType,
     idx: usize,
     len: usize,
 }
 
-impl<'a> Iterator for SeriesIter<'a> {
+impl<'a> Iterator for ArrayIter<'a> {
     type Item = AnyValue<'a>;
 
     #[inline]
@@ -192,7 +213,7 @@ impl<'a> Iterator for SeriesIter<'a> {
     }
 }
 
-impl ExactSizeIterator for SeriesIter<'_> {}
+impl ExactSizeIterator for ArrayIter<'_> {}
 
 #[cfg(test)]
 mod test {
@@ -222,5 +243,16 @@ mod test {
         let a: Series = data.clone().into_iter().collect();
         let b = Series::new("".into(), data);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_iter_multiple_chunks() {
+        let mut a = Series::new("".into(), [23, 71, 9].as_ref());
+        a.append(&Series::new("".into(), [1, 2].as_ref())).unwrap();
+        assert_eq!(a.n_chunks(), 2);
+        assert_eq!(
+            a.iter().map(|av| av.extract::<i64>()).collect::<Vec<_>>(),
+            vec![Some(23), Some(71), Some(9), Some(1), Some(2)]
+        );
     }
 }
