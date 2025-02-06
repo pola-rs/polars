@@ -81,13 +81,13 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
             .boxed()
         },
         Utf8View => {
-            let array = array.as_any().downcast_ref::<Utf8View>().unwrap();
+            let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
             let views = array.views();
             let validity = array.validity();
             let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
             unsafe {
                 BinaryViewArray::new_unchecked_unknown_md(
-                    BinaryView,
+                    arrow::datatypes::ArrowDataType::BinaryView,
                     views.into(),
                     array.data_buffers().clone(),
                     validity,
