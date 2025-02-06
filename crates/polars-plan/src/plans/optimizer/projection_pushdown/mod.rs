@@ -606,10 +606,15 @@ impl ProjectionPushDown {
 
                         Some(Arc::new(schema))
                     } else {
-                        file_options.with_columns = maybe_init_projection_excluding_hive(
-                            file_info.reader_schema.as_ref().unwrap(),
-                            hive_parts.as_ref().map(|x| &x[0]),
-                        );
+                        file_options.with_columns =
+                            if let Some(schema) = file_info.reader_schema.as_ref() {
+                                maybe_init_projection_excluding_hive(
+                                    schema,
+                                    hive_parts.as_ref().map(|x| &x[0]),
+                                )
+                            } else {
+                                None
+                            };
                         None
                     };
                 }
