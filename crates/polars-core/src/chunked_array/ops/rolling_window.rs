@@ -95,7 +95,7 @@ mod inner_mod {
             options.window_size = std::cmp::min(self.len(), options.window_size);
 
             let len = self.len();
-            let arr = ca.downcast_iter().next().unwrap();
+            let arr = ca.downcast_as_array();
             let mut ca = ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut series_container = ca.into_series();
@@ -215,7 +215,7 @@ mod inner_mod {
                 return Ok(Self::full_null(self.name().clone(), self.len()));
             }
             let ca = self.rechunk();
-            let arr = ca.downcast_iter().next().unwrap();
+            let arr = ca.downcast_as_array();
 
             // We create a temporary dummy ChunkedArray. This will be a
             // container where we swap the window contents every iteration doing

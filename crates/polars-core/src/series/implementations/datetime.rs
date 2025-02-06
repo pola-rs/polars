@@ -260,6 +260,7 @@ impl SeriesTrait for SeriesWrap<DatetimeChunked> {
     fn rechunk(&self) -> Series {
         self.0
             .rechunk()
+            .into_owned()
             .into_datetime(self.0.time_unit(), self.0.time_zone().clone())
             .into_series()
     }
