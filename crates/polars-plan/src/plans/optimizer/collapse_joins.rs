@@ -15,7 +15,7 @@ use polars_utils::pl_str::PlSmallStr;
 use super::{aexpr_to_leaf_names_iter, AExpr, ExprOrigin, JoinOptions, IR};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
 use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
-use crate::plans::{ExprIR, OutputName};
+use crate::plans::{ExprIR, MintermIter, OutputName};
 
 fn remove_suffix<'a>(
     exprs: &mut Vec<ExprIR>,
@@ -86,58 +86,6 @@ impl RewritingVisitor for RemoveSuffix<'_> {
         Ok(AexprNode::new(arena.add(AExpr::Column(PlSmallStr::from(
             &colname[..colname.len() - self.suffix.len()],
         )))))
-    }
-}
-
-/// An iterator over all the minterms in a boolean expression boolean.
-///
-/// In other words, all the terms that can `AND` together to form this expression.
-///
-/// # Example
-///
-/// ```
-/// a & (b | c) & (b & (c | (a & c)))
-/// ```
-///
-/// Gives terms:
-///
-/// ```
-/// a
-/// b | c
-/// b
-/// c | (a & c)
-/// ```
-struct MintermIter<'a> {
-    stack: Vec<Node>,
-    expr_arena: &'a Arena<AExpr>,
-}
-
-impl Iterator for MintermIter<'_> {
-    type Item = Node;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut top = self.stack.pop()?;
-
-        while let AExpr::BinaryExpr {
-            left,
-            op: Operator::And,
-            right,
-        } = self.expr_arena.get(top)
-        {
-            self.stack.push(*right);
-            top = *left;
-        }
-
-        Some(top)
-    }
-}
-
-impl<'a> MintermIter<'a> {
-    fn new(root: Node, expr_arena: &'a Arena<AExpr>) -> Self {
-        Self {
-            stack: vec![root],
-            expr_arena,
-        }
     }
 }
 

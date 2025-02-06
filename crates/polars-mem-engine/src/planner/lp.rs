@@ -5,11 +5,13 @@ use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
 
-use self::predicates::aexpr_to_skip_batch_predicate;
+use self::expr_ir::OutputName;
+use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
 #[cfg(feature = "python")]
 use self::python_dsl::PythonScanSource;
 use super::super::executors::{self, Executor};
 use super::*;
+use crate::predicate::PhysicalColumnPredicates;
 use crate::utils::*;
 use crate::ScanPredicate;
 
@@ -236,6 +238,7 @@ fn create_physical_plan_impl(
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut state,
                         create_skip_batch_predicate,
+                        false,
                     )
                 })
                 .transpose()?;
@@ -655,6 +658,7 @@ pub fn create_scan_predicate(
     schema: &Arc<Schema>,
     state: &mut ExpressionConversionState,
     create_skip_batch_predicate: bool,
+    create_column_predicates: bool,
 ) -> PolarsResult<ScanPredicate> {
     let phys_predicate =
         create_physical_expr(predicate, Context::Default, expr_arena, schema, state)?;
@@ -697,9 +701,57 @@ pub fn create_scan_predicate(
         }
     }
 
+    let column_predicates = if create_column_predicates {
+        let column_predicates = aexpr_to_column_predicates(predicate.node(), expr_arena, schema);
+        if std::env::var("POLARS_OUTPUT_COLUMN_PREDS").as_deref() == Ok("1") {
+            eprintln!("column_predicates: {{");
+            eprintln!("  [");
+            for (pred, spec) in column_predicates.predicates.values() {
+                eprintln!(
+                    "    {} ({spec:?}),",
+                    ExprIRDisplay::display_node(*pred, expr_arena)
+                );
+            }
+            eprintln!("  ],");
+            eprintln!(
+                "  is_sumwise_complete: {}",
+                column_predicates.is_sumwise_complete
+            );
+            eprintln!("}}");
+        }
+        PhysicalColumnPredicates {
+            predicates: column_predicates
+                .predicates
+                .into_iter()
+                .map(|(n, (p, s))| {
+                    PolarsResult::Ok((
+                        n,
+                        (
+                            create_physical_expr(
+                                &ExprIR::new(p, OutputName::Alias(PlSmallStr::EMPTY)),
+                                Context::Default,
+                                expr_arena,
+                                schema,
+                                state,
+                            )?,
+                            s,
+                        ),
+                    ))
+                })
+                .collect::<PolarsResult<PlHashMap<_, _>>>()?,
+            is_sumwise_complete: column_predicates.is_sumwise_complete,
+        }
+    } else {
+        PhysicalColumnPredicates {
+            predicates: PlHashMap::default(),
+            is_sumwise_complete: false,
+        }
+    };
+
     PolarsResult::Ok(ScanPredicate {
         predicate: phys_predicate,
         live_columns,
         skip_batch_predicate,
+        column_predicates,
     })
 }

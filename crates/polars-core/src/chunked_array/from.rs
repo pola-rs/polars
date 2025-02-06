@@ -285,6 +285,13 @@ impl BooleanChunked {
         let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
         Self::with_chunk(name, arr)
     }
+
+    pub fn from_bitmap(name: PlSmallStr, bitmap: Bitmap) -> Self {
+        Self::with_chunk(
+            name,
+            BooleanArray::new(ArrowDataType::Boolean, bitmap, None),
+        )
+    }
 }
 
 impl<'a, T> From<&'a ChunkedArray<T>> for Vec<Option<T::Physical<'a>>>

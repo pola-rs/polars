@@ -78,7 +78,7 @@ pub fn decode_single_no_values(
                     debug_assert_eq!(n, size % 32);
 
                     let mut is_equal_mask = 0u64;
-                    for (i, &v) in unpacked.iter().enumerate() {
+                    for (i, &v) in unpacked[..n].iter().enumerate() {
                         is_equal_mask |= u64::from(v == needle) << i;
                     }
 

@@ -17,20 +17,9 @@ pub trait PhysicalIoExpr: Send + Sync {
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         None
     }
-
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalIoExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        _ = name;
-        None
-    }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicateExpr {
     Eq(Scalar),
     EqMissing(Scalar),
@@ -369,6 +358,28 @@ pub trait SkipBatchPredicate: Send + Sync {
     ) -> PolarsResult<bool>;
 }
 
+pub struct ColumnPredicates {
+    pub predicates: PlHashMap<
+        PlSmallStr,
+        (
+            Arc<dyn PhysicalIoExpr>,
+            Option<SpecializedColumnPredicateExpr>,
+        ),
+    >,
+    pub is_sumwise_complete: bool,
+}
+
+// I want to be explicit here.
+#[allow(clippy::derivable_impls)]
+impl Default for ColumnPredicates {
+    fn default() -> Self {
+        Self {
+            predicates: PlHashMap::default(),
+            is_sumwise_complete: false,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
@@ -378,6 +389,9 @@ pub struct ScanIOPredicate {
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
+
+    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
+    pub column_predicates: Arc<ColumnPredicates>,
 }
 
 /// A collection of column stats with a known schema.
