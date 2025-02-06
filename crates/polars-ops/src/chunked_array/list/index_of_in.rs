@@ -11,9 +11,13 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
         ca.amortized_iter().for_each(|opt_series| {
             if let Some(subseries) = opt_series {
                 builder.append_option(
-                    // TODO clone() sucks, maybe need to change the API for
-                    // index_of so it takes AnyValue<'_> instead of a Scalar
-                    // which implies AnyValue<'static>?
+                    // The clone() could perhaps be removed by refactoring
+                    // index_of() to take a (scalar) Column, and then we could
+                    // just pass through the Column as is. Still a bunch of
+                    // duplicate work even in that case though, so possibly the
+                    // real solution would be duplicating the code in
+                    // index_of(), or refactoring so its guts are more
+                    // available.
                     index_of(subseries.as_ref(), needle.clone())
                         .unwrap()
                         .map(|v| v.try_into().unwrap()),
