@@ -49,7 +49,13 @@ pub fn aexpr_to_column_predicates(
         // We really don't want to deal with these types.
         use DataType as D;
         match dtype {
-            D::Enum(_, _) | D::Categorical(_, _) | D::Decimal(_, _) => {
+            #[cfg(feature = "dtype-categorical")]
+            D::Enum(_, _) | D::Categorical(_, _) => {
+                is_sumwise_complete = false;
+                continue;
+            },
+            #[cfg(feature = "dtype-decimal")]
+            D::Decimal(_, _) => {
                 is_sumwise_complete = false;
                 continue;
             },
