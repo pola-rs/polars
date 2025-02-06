@@ -3450,6 +3450,7 @@ dependencies = [
 name = "polars-sql"
 version = "0.46.0"
 dependencies = [
+ "bitflags",
  "hex",
  "polars-core",
  "polars-error",

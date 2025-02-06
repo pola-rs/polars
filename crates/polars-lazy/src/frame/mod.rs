@@ -1353,7 +1353,8 @@ impl LazyFrame {
             .how(args.how)
             .validate(args.validation)
             .coalesce(args.coalesce)
-            .join_nulls(args.join_nulls);
+            .join_nulls(args.join_nulls)
+            .maintain_order(args.maintain_order);
 
         if let Some(suffix) = args.suffix {
             builder = builder.suffix(suffix);

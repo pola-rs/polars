@@ -724,7 +724,24 @@ impl SQLContext {
             let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
-            let mut all_literal = true;
+
+            bitflags::bitflags! {
+                pub struct ProjectionHeights: u8 {
+                    // Operations involving columns that don't change length
+                    const MaintainsHeight = 1 << 0;
+                    // Aggregations, and COUNT(*)
+                    const UnitAggregation = 1 << 1;
+                    // UNNEST(), slicing, filtering
+                    const DataDependent = 1 << 2;
+                    // SELECT 1 FROM
+                    // "inherits" the height of the context
+                    const InheritsHeight = 1 << 3;
+                }
+            }
+
+            // Initialize containing InheritsHeight to handle empty projection case.
+            let mut projection_heights =
+                ProjectionHeights::empty().union(ProjectionHeights::InheritsHeight);
 
             // Note: if there is an 'order by' then we project everything (original cols
             // and new projections) and *then* select the final cols; the retained cols
@@ -738,7 +755,56 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
-                    all_literal &= expr_to_leaf_column_names_iter(p).next().is_none();
+                    let mut has_column = false;
+                    let mut has_agg = false;
+                    let mut has_data_dependent = false;
+
+                    for e in p.into_iter() {
+                        use Expr::*;
+
+                        has_column |= matches!(
+                            e,
+                            Column(..) | Columns(..) | DtypeColumn(..) | IndexColumn(..)
+                        );
+
+                        // Some projections need to be done using a `with_columns` to get the correct output
+                        // height.
+                        //
+                        // We want to catch these (height is dependent):
+                        // * SELECT 1 FROM table;
+                        //
+                        // But not these (height is independent):
+                        // * SELECT COUNT(*) FROM table
+                        // * SELECT FIRST(1) FROM tables
+                        //
+                        // Notice if we only check that there are no column references we will mistakenly
+                        // catch `SELECT COUNT(*) FROM`.
+                        match e {
+                            Function { options, .. } | AnonymousFunction { options, .. } => {
+                                has_agg |= options.returns_scalar();
+                                has_data_dependent |=
+                                    !options.is_length_preserving() && !options.returns_scalar();
+                            },
+
+                            Literal(v) => has_data_dependent = !v.is_scalar(),
+
+                            Explode(_) | Filter { .. } | Gather { .. } | Slice { .. } => {
+                                has_data_dependent = true
+                            },
+
+                            Agg { .. } | Len => has_agg = true,
+                            _ => {},
+                        }
+                    }
+
+                    if has_data_dependent {
+                        projection_heights.insert(ProjectionHeights::DataDependent)
+                    } else if has_agg {
+                        projection_heights.insert(ProjectionHeights::UnitAggregation)
+                    } else if has_column {
+                        projection_heights.insert(ProjectionHeights::MaintainsHeight)
+                    }
+
                     retained_cols.push(if have_order_by {
                         col(name.as_str())
                     } else {
@@ -750,8 +816,40 @@ impl SQLContext {
 
             // Apply the remaining modifiers and establish the final projection
             if have_order_by {
-                lf = lf.with_columns(projections);
+                if projection_heights.contains(ProjectionHeights::MaintainsHeight)
+                    || projection_heights.bits() == ProjectionHeights::InheritsHeight.bits()
+                {
+                    lf = lf.with_columns(projections);
+                } else {
+                    // We hit this branch if e.g:
+                    // * SELECT 1 FROM df ORDER BY sort_key;
+                    // * SELECT COUNT(*) FROM df ORDER BY sort_key;
+                    // * SELECT UNNEST(list_col) FROM df ORDER BY sort_key;
+                    //
+                    // For these cases we truncate / extend the sorting columns with NULLs to match
+                    // the output height.
+                    const NAME: PlSmallStr = PlSmallStr::from_static("__PL_INDEX");
+                    lf = lf
+                        .clone()
+                        .select(projections)
+                        .with_row_index(NAME, None)
+                        .join(
+                            lf.with_row_index(NAME, None),
+                            [col(NAME)],
+                            [col(NAME)],
+                            JoinArgs {
+                                how: JoinType::Left,
+                                validation: Default::default(),
+                                suffix: None,
+                                slice: None,
+                                join_nulls: false,
+                                coalesce: Default::default(),
+                                maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
+                            },
+                        );
+                }
             }
+
             if !select_modifiers.replace.is_empty() {
                 lf = lf.with_columns(&select_modifiers.replace);
             }
@@ -761,7 +859,10 @@ impl SQLContext {
 
             lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
 
-            if all_literal && !have_order_by {
+            // If `have_order_by`, with_columns is already done above.
+            if projection_heights.bits() == ProjectionHeights::InheritsHeight.bits()
+                && !have_order_by
+            {
                 lf = lf.with_columns(retained_cols).select(retained_names);
             } else {
                 lf = lf.select(retained_cols);
