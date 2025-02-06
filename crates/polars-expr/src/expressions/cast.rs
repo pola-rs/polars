@@ -16,7 +16,6 @@ pub struct CastExpr {
 
 impl CastExpr {
     fn finish(&self, input: &Column) -> PolarsResult<Column> {
-        println!("CASTEXPR {input:?} to {}", self.dtype);
         input.cast_with_options(&self.dtype, self.options)
     }
 }
