@@ -41,6 +41,7 @@ pub struct MultiScanNode<T: MultiScanable> {
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     output_schema: SchemaRef,
     allow_missing_columns: bool,
+    include_file_paths: Option<PlSmallStr>,
     _pd: PhantomData<T>,
 }
 
@@ -50,6 +51,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         output_schema: SchemaRef,
         allow_missing_columns: bool,
+        include_file_paths: Option<PlSmallStr>,
     ) -> Self {
         Self {
             name: format!("multi-scan[{}]", T::BASE_NAME),
@@ -57,6 +59,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
             hive_parts,
             output_schema,
             allow_missing_columns,
+            include_file_paths,
 
             _pd: PhantomData,
         }
@@ -68,6 +71,7 @@ fn process_dataframe(
     hive_part: Option<&HivePartitions>,
     output_schema: &Schema,
     allow_missing_columns: bool,
+    include_file_paths: Option<(&PlSmallStr, PlSmallStr)>,
 ) -> PolarsResult<DataFrame> {
     if let Some(hive_part) = hive_part {
         let height = df.height();
@@ -88,6 +92,15 @@ fn process_dataframe(
         );
 
         df = DataFrame::new_with_height(height, columns)?;
+    }
+
+    if let Some((col_name, file_name)) = include_file_paths {
+        df.with_column(Column::new_scalar(
+            col_name.clone(),
+            file_name.into(),
+            df.height(),
+        ))
+        .unwrap();
     }
 
     if allow_missing_columns {
@@ -269,6 +282,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
         let hive_parts = self.hive_parts.clone();
         let allow_missing_columns = self.allow_missing_columns;
+        let include_file_paths = self.include_file_paths.clone();
         let output_schema = self.output_schema.clone();
         let sources = sources.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
@@ -301,6 +315,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     hive_part,
                                     output_schema.as_ref(),
                                     allow_missing_columns,
+                                    include_file_paths.as_ref().map(|i| {
+                                        (
+                                            i,
+                                            PlSmallStr::from_str(
+                                                sources.at(current_scan).to_include_path_name(),
+                                            ),
+                                        )
+                                    }),
                                 );
                                 let df = match df {
                                     Ok(df) => df,
@@ -349,6 +371,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     hive_part,
                                     output_schema.as_ref(),
                                     allow_missing_columns,
+                                    include_file_paths.as_ref().map(|i| {
+                                        (
+                                            i,
+                                            PlSmallStr::from_str(
+                                                sources.at(current_scan).to_include_path_name(),
+                                            ),
+                                        )
+                                    }),
                                 );
                                 let df = match df {
                                     Ok(df) => df,

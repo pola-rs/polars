@@ -359,6 +359,7 @@ fn to_graph_rec<'a>(
             scan_type,
             output_schema,
             allow_missing_columns,
+            include_file_paths,
         } => match scan_type {
             #[cfg(feature = "parquet")]
             polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
@@ -368,6 +369,7 @@ fn to_graph_rec<'a>(
                         hive_parts.clone(),
                         output_schema.clone(),
                         *allow_missing_columns,
+                        include_file_paths.clone(),
                     ),
                 ),
                 [],
@@ -382,6 +384,7 @@ fn to_graph_rec<'a>(
                         hive_parts.clone(),
                         output_schema.clone(),
                         *allow_missing_columns,
+                        include_file_paths.clone(),
                     ),
                 ),
                 [],

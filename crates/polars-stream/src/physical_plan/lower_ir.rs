@@ -437,6 +437,7 @@ pub fn lower_ir(
                     scan_type,
                     output_schema: schema.clone(),
                     allow_missing_columns: file_options.allow_missing_columns,
+                    include_file_paths: file_options.include_file_paths,
                 };
 
                 if let Some(row_index) = file_options.row_index {

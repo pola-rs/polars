@@ -173,6 +173,7 @@ pub enum PhysNodeKind {
         scan_type: FileScan,
         output_schema: SchemaRef,
         allow_missing_columns: bool,
+        include_file_paths: Option<PlSmallStr>,
     },
     FileScan {
         scan_sources: ScanSources,
