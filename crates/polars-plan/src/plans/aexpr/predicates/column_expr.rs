@@ -1,11 +1,14 @@
 //! This module creates predicates splits predicates into partial per-column predicates.
 
+use polars_core::datatypes::DataType;
+use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
 use polars_io::predicates::SpecializedColumnPredicateExpr;
 use polars_utils::aliases::PlHashMap;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
+use super::get_binary_expr_col_and_lv;
 use crate::dsl::Operator;
 use crate::plans::{aexpr_to_leaf_names_iter, AExpr, MintermIter};
 
@@ -19,7 +22,7 @@ pub struct ColumnPredicates {
 pub fn aexpr_to_column_predicates(
     root: Node,
     expr_arena: &mut Arena<AExpr>,
-    _schema: &Schema,
+    schema: &Schema,
 ) -> ColumnPredicates {
     let mut predicates =
         PlHashMap::<PlSmallStr, (Node, Option<SpecializedColumnPredicateExpr>)>::default();
@@ -38,6 +41,26 @@ pub fn aexpr_to_column_predicates(
         }
 
         let column = leaf_names.pop().unwrap();
+        let Some(dtype) = schema.get(&column) else {
+            is_sumwise_complete = false;
+            continue;
+        };
+
+        // We really don't want to deal with these types.
+        use DataType as D;
+        match dtype {
+            D::Enum(_, _) | D::Categorical(_, _) | D::Decimal(_, _) => {
+                is_sumwise_complete = false;
+                continue;
+            },
+            _ if dtype.is_nested() => {
+                is_sumwise_complete = false;
+                continue;
+            },
+            _ => {},
+        }
+
+        let dtype = dtype.clone();
         let entry = predicates.entry(column);
 
         entry
@@ -50,7 +73,36 @@ pub fn aexpr_to_column_predicates(
                 });
                 n.1 = None;
             })
-            .or_insert((minterm, None));
+            .or_insert_with(|| {
+                (
+                    minterm,
+                    Some(()).and_then(|_| {
+                        if std::env::var("POLARS_SPECIALIZED_COLUMN_PRED").as_deref() != Ok("1") {
+                            return None;
+                        }
+
+                        let aexpr = expr_arena.get(minterm);
+
+                        let AExpr::BinaryExpr { left, op, right } = aexpr else {
+                            return None;
+                        };
+                        let ((_, _), (lv, _)) =
+                            get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
+                        let av = lv.to_any_value()?;
+                        if av.dtype() != dtype {
+                            return None;
+                        }
+                        let scalar = Scalar::new(dtype, av.into_static());
+                        use Operator as O;
+                        match op {
+                            O::Eq | O::EqValidity => {
+                                Some(SpecializedColumnPredicateExpr::Eq(scalar))
+                            },
+                            _ => None,
+                        }
+                    }),
+                )
+            });
     }
 
     ColumnPredicates {

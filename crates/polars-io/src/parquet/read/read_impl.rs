@@ -1435,7 +1435,7 @@ impl PrefilterMaskSetting {
                 let is_nested = dtype.is_nested();
 
                 // We empirically selected these numbers.
-                is_nested && prefilter_cost <= 0.01
+                !is_nested && prefilter_cost <= 0.01
             },
             Self::Pre => true,
             Self::Post => false,
