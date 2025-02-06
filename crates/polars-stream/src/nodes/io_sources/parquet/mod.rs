@@ -20,12 +20,13 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
 use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{PhaseResult, SourceNode, SourceOutput};
+use super::{SourceNode, SourceOutput};
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{connector, Receiver};
-use crate::async_primitives::wait_group::WaitGroup;
+use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
+use crate::nodes::io_sources::PhaseOutcomeToken;
 use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
@@ -152,13 +153,8 @@ impl SourceNode for ParquetSourceNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         _unresistricted_row_count: Option<PlSmallStr>,
-    ) -> Receiver<PhaseResult> {
-        let (mut phase_result_tx, phase_result_rx) = connector();
-
+    ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
-            .map(|_| connector())
-            .collect::<(Vec<_>, Vec<_>)>();
-        let (result_send, mut result_recv) = (0..num_pipelines)
             .map(|_| connector())
             .collect::<(Vec<_>, Vec<_>)>();
 
@@ -190,6 +186,13 @@ impl SourceNode for ParquetSourceNode {
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
         self.init_projected_arrow_schema();
 
+        struct MorselOutput {
+            outcome: PhaseOutcomeToken,
+            #[allow(unused)]
+            wait_token: WaitToken,
+            port: Sender<Morsel>,
+        }
+
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
 
         let morsel_stream_starter = self.morsel_stream_starter.take().unwrap();
@@ -198,30 +201,34 @@ impl SourceNode for ParquetSourceNode {
             morsel_stream_starter.send(()).unwrap();
 
             // Every phase we are given a new send port.
-            while let Ok(morsel_senders) = output_recv.recv().await {
-                let morsel_senders = morsel_senders.parallel();
-                for (send_to, morsel_sender) in send_to.iter_mut().zip(morsel_senders) {
-                    if send_to.send(morsel_sender).await.is_err() {
-                        return Ok(());
-                    }
+            while let Ok(phase_output) = output_recv.recv().await {
+                let morsel_senders = phase_output.port.parallel();
+                let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
+                for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
+                    let outcome = PhaseOutcomeToken::new();
+                    let wait_group = WaitGroup::default();
+
+                    let morsel_output = MorselOutput {
+                        outcome: outcome.clone(),
+                        wait_token: wait_group.token(),
+                        port,
+                    };
+
+                    _ = send_to.send(morsel_output).await;
+                    morsel_outcomes.push((outcome, wait_group));
                 }
 
                 let mut is_finished = true;
-                for result_recv in result_recv.iter_mut() {
-                    let Ok(result) = result_recv.recv().await else {
-                        return Ok(());
-                    };
-
-                    is_finished &= matches!(result, PhaseResult::Finished);
+                for (outcome, wait_group) in morsel_outcomes.into_iter() {
+                    wait_group.wait().await;
+                    is_finished &= outcome.did_finish();
                 }
 
                 if is_finished {
                     break;
                 }
 
-                if phase_result_tx.send(PhaseResult::Stopped).await.is_err() {
-                    return Ok(());
-                };
+                phase_output.outcome.stop();
             }
 
             // Join on the producer handle to catch errors/panics.
@@ -229,45 +236,37 @@ impl SourceNode for ParquetSourceNode {
             // * We dropped the receivers on the line above
             // * This function is only called once.
             _ = morsel_stream_task_handle.await.unwrap();
-            _ = phase_result_tx.send(PhaseResult::Finished).await;
             Ok(())
         }));
 
-        join_handles.extend(
-            recv_from
-                .into_iter()
-                .zip(result_send)
-                .zip(raw_morsel_receivers)
-                .map(|((mut recv_from, mut result_send), mut raw_morsel_rx)| {
-                    spawn(TaskPriority::Low, async move {
-                        'port_recv: while let Ok(mut morsel_tx) = recv_from.recv().await {
-                            let source_token = SourceToken::new();
-                            let wait_group = WaitGroup::default();
+        join_handles.extend(recv_from.into_iter().zip(raw_morsel_receivers).map(
+            |(mut recv_from, mut raw_morsel_rx)| {
+                spawn(TaskPriority::Low, async move {
+                    'port_recv: while let Ok(mut morsel_output) = recv_from.recv().await {
+                        let source_token = SourceToken::new();
+                        let wait_group = WaitGroup::default();
 
-                            while let Ok((df, seq)) = raw_morsel_rx.recv().await {
-                                let mut morsel = Morsel::new(df, seq, source_token.clone());
-                                morsel.set_consume_token(wait_group.token());
-                                if morsel_tx.send(morsel).await.is_err() {
-                                    break;
-                                }
-
-                                wait_group.wait().await;
-                                if source_token.stop_requested() {
-                                    _ = result_send.send(PhaseResult::Stopped).await;
-                                    continue 'port_recv;
-                                }
+                        while let Ok((df, seq)) = raw_morsel_rx.recv().await {
+                            let mut morsel = Morsel::new(df, seq, source_token.clone());
+                            morsel.set_consume_token(wait_group.token());
+                            if morsel_output.port.send(morsel).await.is_err() {
+                                break;
                             }
 
-                            break;
+                            wait_group.wait().await;
+                            if source_token.stop_requested() {
+                                morsel_output.outcome.stop();
+                                continue 'port_recv;
+                            }
                         }
 
-                        _ = result_send.send(PhaseResult::Finished).await;
-                        Ok(())
-                    })
-                }),
-        );
+                        break;
+                    }
 
-        phase_result_rx
+                    Ok(())
+                })
+            },
+        ));
     }
 }
 

@@ -25,7 +25,7 @@ use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::linearizer::{self, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
-use crate::nodes::io_sources::PhaseResult;
+use crate::nodes::io_sources::SourceOutputPort;
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
@@ -160,10 +160,9 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<PlSmallStr>,
-    ) -> Receiver<PhaseResult> {
+    ) {
         assert!(unrestricted_row_count.is_none());
 
-        let (mut phase_result_tx, phase_result_rx) = connector();
         let num_concurrent_scans = num_pipelines;
 
         let sources = &self.sources;
@@ -196,7 +195,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         .map(|n| !hive_schema.contains(n))
                         .collect::<Bitmap>();
                     source.with_projection(Some(&projection));
-                    let mut phase_result_rx = source.spawn_source(
+                    source.spawn_source(
                         num_pipelines,
                         output_recv,
                         &state,
@@ -210,10 +209,10 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             let (tx, rx) = (0..num_pipelines)
                                 .map(|_| connector())
                                 .collect::<(Vec<_>, Vec<_>)>();
-                            (SourceOutput::Parallel(tx), SourceInput::Parallel(rx))
+                            (SourceOutputPort::Parallel(tx), SourceInput::Parallel(rx))
                         } else {
                             let (tx, rx) = connector();
-                            (SourceOutput::Serial(tx), SourceInput::Serial(rx))
+                            (SourceOutputPort::Serial(tx), SourceInput::Serial(rx))
                         };
 
                         // Wait for the orchestrator task to actually be interested in the output
@@ -221,16 +220,17 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         if ch_send.send(rx).await.is_err() {
                             return Ok(());
                         };
+
+                        let (outcome, wait_group, tx) = SourceOutput::from_port(tx);
+
                         // Start draining the source into the created channels.
                         if output_send.send(tx).await.is_err() {
                             return Ok(());
                         };
 
                         // Wait for the phase to end.
-                        let Ok(phase_result) = phase_result_rx.recv().await else {
-                            return Ok(());
-                        };
-                        if phase_result == PhaseResult::Finished {
+                        wait_group.wait().await;
+                        if outcome.did_finish() {
                             break;
                         }
                     }
@@ -276,9 +276,9 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             let mut current_scan = 0;
 
             // Every phase we are given a new send channel.
-            'send_port_loop: while let Ok(send) = send_port_recv.recv().await {
+            'phase_loop: while let Ok(phase_output) = send_port_recv.recv().await {
                 // @TODO: Make this parallel compatible if there is no row count or slice.
-                let mut send = send.serial();
+                let mut send = phase_output.port.serial();
 
                 let source_token = SourceToken::new();
                 let wait_group = WaitGroup::default();
@@ -305,7 +305,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 let df = match df {
                                     Ok(df) => df,
                                     Err(err) => {
-                                        _ = phase_result_tx.send(PhaseResult::Finished).await;
                                         return Err(err);
                                     },
                                 };
@@ -315,15 +314,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 seq = seq.successor();
 
                                 if send.send(morsel).await.is_err() {
-                                    break 'send_port_loop;
+                                    break 'phase_loop;
                                 }
 
                                 wait_group.wait().await;
                                 if source_token.stop_requested() {
                                     original_source_token.stop();
-
-                                    _ = phase_result_tx.send(PhaseResult::Stopped).await;
-                                    continue 'send_port_loop;
+                                    phase_output.outcome.stop();
+                                    continue 'phase_loop;
                                 }
                             }
                         },
@@ -355,7 +353,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 let df = match df {
                                     Ok(df) => df,
                                     Err(err) => {
-                                        _ = phase_result_tx.send(PhaseResult::Finished).await;
                                         return Err(err);
                                     },
                                 };
@@ -365,15 +362,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 seq = seq.successor();
 
                                 if send.send(morsel).await.is_err() {
-                                    break 'send_port_loop;
+                                    break 'phase_loop;
                                 }
 
                                 wait_group.wait().await;
                                 if source_token.stop_requested() {
                                     original_source_token.stop();
-
-                                    _ = phase_result_tx.send(PhaseResult::Stopped).await;
-                                    continue 'send_port_loop;
+                                    phase_output.outcome.stop();
+                                    continue 'phase_loop;
                                 }
                             }
                         },
@@ -381,14 +377,10 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                     current_scan += 1;
                 }
-
-                _ = phase_result_tx.send(PhaseResult::Finished).await;
                 break;
             }
 
             Ok(())
         }));
-
-        phase_result_rx
     }
 }

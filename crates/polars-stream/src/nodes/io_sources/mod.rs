@@ -1,9 +1,13 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
 use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 
 #[cfg(feature = "csv")]
 pub mod csv;
@@ -13,17 +17,10 @@ pub mod multi_scan;
 #[cfg(feature = "parquet")]
 pub mod parquet;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PhaseResult {
-    Stopped,
-    Finished,
-}
-
 /// The state needed to manage a spawned [`SourceNode`].
 struct StartedSourceComputeNode {
-    send_port_send: Sender<SourceOutput>,
+    output_send: Sender<SourceOutput>,
     join_handles: Vec<JoinHandle<PolarsResult<()>>>,
-    phase_result_rx: Receiver<PhaseResult>,
 }
 
 /// A [`ComputeNode`] to wrap a [`SourceNode`].
@@ -89,14 +86,13 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         let started = self.started.get_or_insert_with(|| {
             let (tx, rx) = connector();
             let mut join_handles = Vec::new();
-            let phase_result_rx =
-                self.source
-                    .spawn_source(self.num_pipelines, rx, state, &mut join_handles, None);
+
+            self.source
+                .spawn_source(self.num_pipelines, rx, state, &mut join_handles, None);
 
             StartedSourceComputeNode {
-                send_port_send: tx,
+                output_send: tx,
                 join_handles,
-                phase_result_rx,
             }
         });
 
@@ -105,20 +101,19 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
             .source
             .is_source_output_parallel(send.is_receiver_serial())
         {
-            SourceOutput::Parallel(send.parallel())
+            SourceOutputPort::Parallel(send.parallel())
         } else {
-            SourceOutput::Serial(send.serial())
+            SourceOutputPort::Serial(send.serial())
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            if started.send_port_send.send(source_output).await.is_err() {
+            let (outcome, wait_group, source_output) = SourceOutput::from_port(source_output);
+            if started.output_send.send(source_output).await.is_err() {
                 return Ok(());
             };
 
-            // Wait for an indication of whether we were stopped or whether we are finished.
-            let Ok(phase_result) = started.phase_result_rx.recv().await else {
-                return Ok(());
-            };
-            if matches!(phase_result, PhaseResult::Finished) {
+            // Wait for the phase to finish.
+            wait_group.wait().await;
+            if outcome.did_finish() {
                 for handle in std::mem::take(&mut started.join_handles) {
                     handle.await?;
                 }
@@ -129,15 +124,71 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
     }
 }
 
-/// The output of a [`SourceNode`].
+/// Token that contains the outcome of a phase.
+///
+/// Namely, this indicates whether a phase finished completely or whether it was stopped before
+/// that.
+#[derive(Clone)]
+pub struct PhaseOutcomeToken {
+    /// - `false` -> finished / panicked
+    /// - `true` -> stopped before finishing
+    stop: Arc<AtomicBool>,
+}
+
+impl PhaseOutcomeToken {
+    pub fn new() -> Self {
+        Self {
+            stop: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    /// Indicate that the phase was stopped before finishing.
+    fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+
+    /// Returns whether the phase was stopped before finishing.
+    fn was_stopped(&self) -> bool {
+        self.stop.load(Ordering::Relaxed)
+    }
+    /// Returns whether the phase was finished completely.
+    fn did_finish(&self) -> bool {
+        !self.was_stopped()
+    }
+}
+
+pub struct SourceOutput {
+    pub outcome: PhaseOutcomeToken,
+    pub port: SourceOutputPort,
+
+    #[allow(unused)]
+    /// Dropping this indicates that the phase is done.
+    wait_token: WaitToken,
+}
+
+impl SourceOutput {
+    pub fn from_port(port: SourceOutputPort) -> (PhaseOutcomeToken, WaitGroup, Self) {
+        let outcome = PhaseOutcomeToken::new();
+        let wait_group = WaitGroup::default();
+
+        let output = Self {
+            outcome: outcome.clone(),
+            wait_token: wait_group.token(),
+            port,
+        };
+        (outcome, wait_group, output)
+    }
+}
+
+/// The output port of a [`SourceNode`].
 ///
 /// This is essentially an owned [`SendPort`].
-pub enum SourceOutput {
+pub enum SourceOutputPort {
     Serial(Sender<Morsel>),
     Parallel(Vec<Sender<Morsel>>),
 }
 
-impl SourceOutput {
+impl SourceOutputPort {
     pub fn serial(self) -> Sender<Morsel> {
         match self {
             Self::Serial(s) => s,
@@ -164,16 +215,12 @@ pub trait SourceNode: Sized + Send + Sync {
     /// Start all the tasks for the [`SourceNode`].
     ///
     /// This should repeatedly take a [`SourceOutput`] from `output_recv` and output its
-    /// [`Morsel`] into that channel. When a stop is requested, the output should be dropped
-    /// and the task should wait for a new output to be provided. When the source is finished,
-    /// the output channel should also be dropped.
-    ///
-    /// This returns a channel that after each drop of the output gives the result of the phase. It
-    /// return [`PhaseResult::Stopped`] if the source is not yet finished (and it was thus stopped
-    /// due to a requested stop), or [`PhaseResult::Finished`] if the source is finished.
+    /// [`Morsel`] into the output's port. When a stop is requested, the output's outcome should be
+    /// set to stop, the output should be dropped and the task should wait for a new output to be
+    /// provided. When the source is finished, the output should also be dropped.
     ///
     /// It should produce at least one task that lives until the source is finished and all the
-    /// join handles for the source tasks should be directly or indirectly awaited by await all
+    /// join handles for the source tasks should be directly or indirectly awaited by awaiting all
     /// `join_handles`.
     ///
     /// If the `unfiltered_row_count` is given as `Some(..)` a scalar column is appended at the end
@@ -186,5 +233,5 @@ pub trait SourceNode: Sized + Send + Sync {
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<PlSmallStr>,
-    ) -> Receiver<PhaseResult>;
+    );
 }

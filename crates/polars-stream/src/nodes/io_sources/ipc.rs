@@ -29,9 +29,9 @@ use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
 
 use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{PhaseResult, SourceNode, SourceOutput};
+use super::{SourceNode, SourceOutput};
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
@@ -187,12 +187,11 @@ impl SourceNode for IpcSourceNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
         unrestricted_row_count: Option<PlSmallStr>,
-    ) -> Receiver<PhaseResult> {
+    ) {
         // Split size for morsels.
         let max_morsel_size = get_max_morsel_size();
         let source_token = SourceToken::new();
 
-        let (mut phase_result_tx, phase_result_rx) = connector();
         let Self {
             source,
             row_index,
@@ -230,8 +229,8 @@ impl SourceNode for IpcSourceNode {
         // available output pipelines.
         join_handles.push(spawn(TaskPriority::High, async move {
             // Every phase we are given a new send port.
-            'send_port_loop: while let Ok(sender) = output_recv.recv().await {
-                let mut sender = sender.serial();
+            'phase_loop: while let Ok(phase_output) = output_recv.recv().await {
+                let mut sender = phase_output.port.serial();
                 let source_token = SourceToken::new();
                 let wait_group = WaitGroup::default();
 
@@ -257,15 +256,13 @@ impl SourceNode for IpcSourceNode {
 
                     wait_group.wait().await;
                     if source_token.stop_requested() {
-                        _ = phase_result_tx.send(PhaseResult::Stopped).await;
-                        continue 'send_port_loop;
+                        phase_output.outcome.stop();
+                        continue 'phase_loop;
                     }
                 }
 
                 break;
             }
-
-            _ = phase_result_tx.send(PhaseResult::Finished).await;
             PolarsResult::Ok(())
         }));
 
@@ -496,8 +493,6 @@ impl SourceNode for IpcSourceNode {
 
             PolarsResult::Ok(())
         }));
-
-        phase_result_rx
     }
 }
 
