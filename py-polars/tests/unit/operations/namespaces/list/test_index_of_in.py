@@ -33,7 +33,6 @@ def assert_index_of_in_from_scalar(
     original_value = value
     del value
     for updated_value in (original_value, pl.lit(original_value)):
-        print("PYTHON WANTS TO LOOK UP", updated_value)
         # Eager API:
         assert_series_equal(
             list_series.list.index_of_in(updated_value),
@@ -69,18 +68,6 @@ def assert_index_of_in_from_series(
         .collect(),
         pl.DataFrame({"lists": expected_indexes}, schema={"lists": IdxType}),
     )
-
-
-# Testing plan:
-# D All integers
-# D Both floats, with nans
-# D Strings
-# D datetime, date, time, timedelta
-# - nested lists, arrays, structs
-# - categoricals, enums
-# - something with hypothesis
-# - error case: non-matching lengths
-# - chunked needles series
 
 
 def test_index_of_in_from_scalar() -> None:
@@ -143,6 +130,12 @@ def test_no_lossy_numeric_casts() -> None:
     for will_be_lossy in [300, -300, pl.lit(300, dtype=pl.Int16)]:
         with pytest.raises(InvalidOperationError, match="conversion from"):
             list_series.list.index_of_in(will_be_lossy)  # type: ignore[arg-type]
+
+
+def test_multichunk_needles() -> None:
+    series = pl.Series([[1, 3], [3, 2], [4, 5, 3]])
+    needles = pl.concat([pl.Series([3, 1]), pl.Series([3])])
+    assert series.list.index_of_in(needles).to_list() == [1, None, 2]
 
 
 @pytest.mark.parametrize("float_dtype", FLOAT_DTYPES)
@@ -229,7 +222,31 @@ def test_float(float_dtype: pl.DataType) -> None:
             ),
             [[[5, 7]], [[]], [None]],
         ),
-        # TODO: structs
+        (
+            pl.Series(
+                [[[1, 2]], [[4, 5]], [[None, 3]], [None], None],
+                dtype=pl.List(pl.Array(pl.Int64(), 2)),
+            ),
+            [[5, 7]],
+        ),
+        (
+            pl.Series(
+                [
+                    [{"a": 1, "b": 2}, None],
+                    [{"a": 3, "b": 4}, {"a": None, "b": 2}],
+                    None,
+                ],
+                dtype=pl.List(pl.Struct({"a": pl.Int64(), "b": pl.Int64()})),
+            ),
+            [{"a": 7, "b": None}, {"a": 6, "b": 4}],
+        ),
+        (
+            pl.Series(
+                [["a", "c"], [None, "b"], ["b", "a", "a", "c"], None, [None]],
+                dtype=pl.List(pl.Enum(["c", "b", "a"])),
+            ),
+            [],
+        ),
     ],
 )
 def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) -> None:
@@ -251,15 +268,11 @@ def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) 
         assert_index_of_in_from_scalar(list_series, value)
 
 
-def test_array() -> None:
-    array_dtype = pl.Array(pl.Int64(), 2)
-    list_series = pl.Series(
-        [[[1, 2]], [[4, 5]], [[None, 3]], [None], None],
-        dtype=pl.List(array_dtype),
+@pytest.mark.xfail(reason="Depends on Series.index_of supporting Categoricals")
+def test_categorical() -> None:
+    # When this starts passing, convert to test_other_types entry above.
+    series = pl.Series(
+        [["a", "c"], [None, "b"], ["b", "a", "a", "c"], None, [None]],
+        dtype=pl.List(pl.Categorical),
     )
-    values = [[1, 2], [4, 5], [None, 3], [5, 7], None]
-    for value in values:
-        assert_index_of_in_from_scalar(list_series, value)
-
-    needles = pl.Series(values[:5], dtype=array_dtype)
-    assert_index_of_in_from_series(list_series, needles)
+    assert series.list.index_of_in("b").to_list() == [None, 1, 0, None, None]

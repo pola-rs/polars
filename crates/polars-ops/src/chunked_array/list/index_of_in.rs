@@ -23,6 +23,7 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
             }
         });
     } else {
+        let needles = needles.rechunk();
         ca.amortized_iter()
             // TODO iter() assumes a single chunk. could continue to use this
             // and just rechunk(), or have needles also be a ChunkedArray, in
