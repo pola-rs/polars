@@ -262,6 +262,10 @@ impl ExprIR {
         }
     }
 
+    pub fn output_dtype(&self) -> &OnceLock<DataType> {
+        &self.output_dtype
+    }
+
     pub fn field(
         &self,
         schema: &Schema,

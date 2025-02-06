@@ -210,6 +210,9 @@ pub enum CastingRules {
     /// whereas int to int is considered lossless.
     /// Overflowing is not considered in this flag, that's handled in `strict` casting
     FirstArgLossless,
+    /// Cast (in a lossless way) to the inner dtype of the first argument,
+    /// presumably a list or array.
+    FirstArgInnerLossless,
     Supertype(SuperTypeOptions),
 }
 

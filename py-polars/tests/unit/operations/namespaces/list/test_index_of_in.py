@@ -33,6 +33,7 @@ def assert_index_of_in_from_scalar(
     original_value = value
     del value
     for updated_value in (original_value, pl.lit(original_value)):
+        print("PYTHON WANTS TO LOOK UP", updated_value)
         # Eager API:
         assert_series_equal(
             list_series.list.index_of_in(updated_value),
@@ -135,15 +136,12 @@ def test_integer(lists_dtype: pl.DataType, values_dtype: pl.DataType) -> None:
 
 def test_no_lossy_numeric_casts() -> None:
     list_series = pl.Series([[3]], dtype=pl.List(pl.Int8()))
-    for will_be_lossy in [
-        np.float32(3.1),
-        np.float64(3.1),
-        50.9,
-        300,
-        -300,
-        pl.lit(300, dtype=pl.Int16),
-    ]:
+    for will_be_lossy in [np.float32(3.1), np.float64(3.1), 50.9]:
         with pytest.raises(InvalidOperationError, match="cannot cast lossless"):
+            list_series.list.index_of_in(will_be_lossy)  # type: ignore[arg-type]
+
+    for will_be_lossy in [300, -300, pl.lit(300, dtype=pl.Int16)]:
+        with pytest.raises(InvalidOperationError, match="conversion from"):
             list_series.list.index_of_in(will_be_lossy)  # type: ignore[arg-type]
 
 
@@ -231,7 +229,7 @@ def test_float(float_dtype: pl.DataType) -> None:
             ),
             [[[5, 7]], [[]], [None]],
         ),
-        # TODO: nested lists, arrays, structs
+        # TODO: structs
     ],
 )
 def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) -> None:
@@ -252,3 +250,16 @@ def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) 
     for value in values:
         assert_index_of_in_from_scalar(list_series, value)
 
+
+def test_array() -> None:
+    array_dtype = pl.Array(pl.Int64(), 2)
+    list_series = pl.Series(
+        [[[1, 2]], [[4, 5]], [[None, 3]], [None], None],
+        dtype=pl.List(array_dtype),
+    )
+    values = [[1, 2], [4, 5], [None, 3], [5, 7], None]
+    for value in values:
+        assert_index_of_in_from_scalar(list_series, value)
+
+    needles = pl.Series(values[:5], dtype=array_dtype)
+    assert_index_of_in_from_series(list_series, needles)

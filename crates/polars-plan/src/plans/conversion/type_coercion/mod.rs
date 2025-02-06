@@ -295,6 +295,17 @@ impl OptimizationRule for TypeCoercionRule {
                                 }
                             }
                         },
+                        CastingRules::FirstArgInnerLossless => {
+                            if super_type.leaf_dtype().is_integer() {
+                                for other in &input[1..] {
+                                    let other_dtype =
+                                        other.dtype(&input_schema, Context::Default, expr_arena)?;
+                                    if other_dtype.leaf_dtype().is_float() {
+                                        polars_bail!(InvalidOperation: "cannot cast lossless between {} and {}", super_type, other_dtype)
+                                    }
+                                }
+                            }
+                        },
                     }
 
                     if matches!(super_type, DataType::Unknown(UnknownKind::Any)) {
@@ -310,7 +321,16 @@ impl OptimizationRule for TypeCoercionRule {
                         _ => {},
                     }
 
-                    for (e, dtype) in input.iter_mut().zip(dtypes) {
+                    for (i, (e, dtype)) in input.iter_mut().zip(dtypes).enumerate() {
+                        let new_super_type =
+                            if matches!(casting_rules, CastingRules::FirstArgInnerLossless)
+                                && (i > 0)
+                            {
+                                // TODO get rid of unwrap(), will fail if first item is not a list/array
+                                &super_type.inner_dtype().unwrap()
+                            } else {
+                                &super_type
+                            };
                         match super_type {
                             #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(_, _) if dtype.is_string() => {
@@ -319,7 +339,7 @@ impl OptimizationRule for TypeCoercionRule {
                             _ => cast_expr_ir(
                                 e,
                                 &dtype,
-                                &super_type,
+                                new_super_type,
                                 expr_arena,
                                 CastOptions::NonStrict,
                             )?,

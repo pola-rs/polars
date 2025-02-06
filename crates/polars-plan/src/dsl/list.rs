@@ -323,16 +323,18 @@ impl ListNameSpace {
     }
 
     #[cfg(feature = "list_index_of_in")]
-    /// Find the index of needle in the list.
+    /// Find the index of a needle in the list.
     pub fn index_of_in<N: Into<Expr>>(self, needle: N) -> Expr {
-        let other = needle.into();
-
-        self.0.map_many_private(
-            FunctionExpr::ListExpr(ListFunction::IndexOfIn),
-            &[other],
-            false,
-            None,
-        )
+        Expr::Function {
+            input: vec![self.0, needle.into()],
+            function: FunctionExpr::ListExpr(ListFunction::IndexOfIn),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                flags: FunctionFlags::default(),
+                cast_options: Some(CastingRules::FirstArgInnerLossless),
+                ..Default::default()
+            },
+        }
     }
 
     #[cfg(feature = "list_sets")]

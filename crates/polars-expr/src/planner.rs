@@ -430,6 +430,7 @@ fn create_physical_expr_inner(
             dtype,
             options,
         } => {
+            println!("AExpr::Cast HAD DTYPE {dtype}");
             let phys_expr = create_physical_expr_inner(*expr, ctxt, expr_arena, schema, state)?;
             Ok(Arc::new(CastExpr {
                 input: phys_expr,

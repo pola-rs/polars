@@ -1072,7 +1072,7 @@ class ExprListNameSpace:
         --------
         TODO
         """
-        element = parse_into_expression(element, str_as_lit=True)
+        element = parse_into_expression(element, str_as_lit=True, list_as_series=False)
         return wrap_expr(self._pyexpr.list_index_of_in(element))
 
     def to_array(self, width: int) -> Expr:
