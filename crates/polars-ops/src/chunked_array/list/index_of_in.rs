@@ -23,6 +23,12 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
             }
         });
     } else {
+        polars_ensure!(
+            ca.len() == needles.len(),
+            ComputeError: "shapes don't match: expected {} elements in 'index_of_in' comparison, got {}",
+            ca.len(),
+            needles.len()
+        );
         let needles = needles.rechunk();
         ca.amortized_iter()
             // TODO iter() assumes a single chunk. could continue to use this

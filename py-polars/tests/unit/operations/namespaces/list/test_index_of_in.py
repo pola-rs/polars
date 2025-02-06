@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError
+from polars.exceptions import InvalidOperationError, ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
@@ -136,6 +136,20 @@ def test_multichunk_needles() -> None:
     series = pl.Series([[1, 3], [3, 2], [4, 5, 3]])
     needles = pl.concat([pl.Series([3, 1]), pl.Series([3])])
     assert series.list.index_of_in(needles).to_list() == [1, None, 2]
+
+
+def test_mismatched_length() -> None:
+    """
+    Mismatched lengths result in an error.
+
+    Unfortunately a length 1 Series will be treated as a _scalar_, which seems
+    weird, but that's how e.g. list.contains() works so maybe that's
+    intentional.
+    """
+    series = pl.Series([[1, 3], [3, 2], [4, 5, 3]])
+    needles = pl.Series([3, 2])
+    with pytest.raises(ComputeError, match="shapes don't match"):
+        series.list.index_of_in(pl.Series(needles))
 
 
 @pytest.mark.parametrize("float_dtype", FLOAT_DTYPES)
