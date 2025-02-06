@@ -781,8 +781,8 @@ impl RowGroupDecoder {
 fn decode_column_prefiltered(
     arrow_field: &ArrowField,
     row_group_data: &RowGroupData,
-    prefilter_cost: f64,
-    prefilter_setting: &PrefilterMaskSetting,
+    _prefilter_cost: f64,
+    _prefilter_setting: &PrefilterMaskSetting,
     mask: &BooleanChunked,
     mask_bitmap: &Bitmap,
     expected_num_rows: usize,
@@ -811,7 +811,7 @@ fn decode_column_prefiltered(
         })
         .collect::<Vec<_>>();
 
-    let prefilter = prefilter_setting.should_prefilter(prefilter_cost, &arrow_field.dtype);
+    let prefilter = !arrow_field.dtype.is_nested();
 
     let deserialize_filter =
         prefilter.then(|| polars_parquet::read::Filter::Mask(mask_bitmap.clone()));

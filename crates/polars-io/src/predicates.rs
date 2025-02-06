@@ -65,18 +65,10 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     fn evaluate_mut(&self, values: &dyn Array, bm: &mut MutableBitmap) {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
-        assert_eq!(
-            &self.dtype.to_physical().to_arrow(CompatLevel::newest()),
-            values.dtype()
-        );
 
-        let series = unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                self.column_name.clone(),
-                vec![values.to_boxed()],
-                &self.dtype,
-            )
-        };
+        // @NOTE: This is okay because we don't have Enums, Categoricals, or Decimals
+        let series =
+            Series::from_arrow_chunks(self.column_name.clone(), vec![values.to_boxed()]).unwrap();
         let column = series.into_column();
         let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
 
