@@ -17,9 +17,11 @@ from polars._utils.construction.dataframe import (
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
 from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.various import _cast_repr_strings_with_schema
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
+from polars.dependencies import _check_for_pyarrow
 from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import NoDataError
@@ -28,7 +30,13 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from polars import DataFrame, Series
-    from polars._typing import Orientation, SchemaDefinition, SchemaDict
+    from polars._typing import (
+        ArrowArrayExportable,
+        ArrowStreamExportable,
+        Orientation,
+        SchemaDefinition,
+        SchemaDict,
+    )
     from polars.dependencies import numpy as np
     from polars.interchange.protocol import SupportsInterchange
 
@@ -364,6 +372,8 @@ def from_arrow(
         | pa.ChunkedArray
         | pa.RecordBatch
         | Iterable[pa.RecordBatch | pa.Table]
+        | ArrowArrayExportable
+        | ArrowStreamExportable
     ),
     schema: SchemaDefinition | None = None,
     *,
@@ -379,7 +389,8 @@ def from_arrow(
     Parameters
     ----------
     data : :class:`pyarrow.Table`, :class:`pyarrow.Array`, one or more :class:`pyarrow.RecordBatch`
-        Data representing an Arrow Table, Array, or sequence of RecordBatches or Tables.
+        Data representing an Arrow Table, Array, sequence of RecordBatches or Tables, or other
+        object that supports the Arrow PyCapsule interface.
     schema : Sequence of str, (str,DataType) pairs, or a {str:DataType,} dict
         The DataFrame schema may be declared in several ways:
 
@@ -431,7 +442,15 @@ def from_arrow(
         3
     ]
     """  # noqa: W505
-    if isinstance(data, (pa.Table, pa.RecordBatch)):
+    if is_pycapsule(data) and not _check_for_pyarrow(data):
+        return pycapsule_to_frame(
+            data,
+            schema=schema,
+            schema_overrides=schema_overrides,
+            rechunk=rechunk,
+        )
+
+    elif isinstance(data, (pa.Table, pa.RecordBatch)):
         return wrap_df(
             arrow_to_pydf(
                 data=data,
@@ -449,6 +468,7 @@ def from_arrow(
             schema_overrides=schema_overrides,
         ).to_series()
         return s if (name or schema or schema_overrides) else s.alias("")
+
     elif not data:
         return pl.DataFrame(
             schema=schema,
