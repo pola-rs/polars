@@ -600,7 +600,7 @@ impl DataFrame {
             *col = col.rechunk();
         }
     }
-    
+
     pub fn _deshare_views_mut(&mut self) {
         // SAFETY: We never adjust the length or names of the columns.
         unsafe {

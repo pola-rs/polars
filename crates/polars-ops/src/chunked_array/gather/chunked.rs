@@ -31,7 +31,9 @@ pub trait TakeChunked {
 
     /// # Safety
     /// This function doesn't do any bound checks.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>],
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
         avoid_sharing: bool,
     ) -> Self;
 }
@@ -59,7 +61,11 @@ impl TakeChunked for DataFrame {
     ///
     /// # Safety
     /// Does not do any bound checks.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, idx: &[ChunkId<B>], avoid_sharing: bool) -> DataFrame {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        idx: &[ChunkId<B>],
+        avoid_sharing: bool,
+    ) -> DataFrame {
         let cols = self
             .to_df()
             ._apply_columns(&|s| s.take_opt_chunked_unchecked(idx, avoid_sharing));
@@ -114,7 +120,11 @@ impl TakeChunked for Column {
         s.into_column()
     }
 
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>], avoid_sharing: bool) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        avoid_sharing: bool,
+    ) -> Self {
         // @scalar-opt
         let s = self.as_materialized_series();
         let s = unsafe { s.take_opt_chunked_unchecked(by, avoid_sharing) };
@@ -139,7 +149,8 @@ impl TakeChunked for Series {
             },
             Boolean => {
                 let ca = self.bool().unwrap();
-                ca.take_chunked_unchecked(by, sorted, avoid_sharing).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             Binary => {
                 let ca = self.binary().unwrap();
@@ -151,12 +162,14 @@ impl TakeChunked for Series {
             },
             List(_) => {
                 let ca = self.list().unwrap();
-                ca.take_chunked_unchecked(by, sorted, avoid_sharing).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
                 let ca = self.array().unwrap();
-                ca.take_chunked_unchecked(by, sorted, avoid_sharing).into_series()
+                ca.take_chunked_unchecked(by, sorted, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
@@ -209,7 +222,9 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-categorical")]
             Categorical(revmap, ord) | Enum(revmap, ord) => {
                 let ca = self.categorical().unwrap();
-                let t = ca.physical().take_chunked_unchecked(by, sorted, avoid_sharing);
+                let t = ca
+                    .physical()
+                    .take_chunked_unchecked(by, sorted, avoid_sharing);
                 CategoricalChunked::from_cats_and_rev_map_unchecked(
                     t,
                     revmap.as_ref().unwrap().clone(),
@@ -224,7 +239,11 @@ impl TakeChunked for Series {
     }
 
     /// Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>], avoid_sharing: bool) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        avoid_sharing: bool,
+    ) -> Self {
         use DataType::*;
         match self.dtype() {
             dt if dt.is_primitive_numeric() => {
@@ -235,7 +254,8 @@ impl TakeChunked for Series {
             },
             Boolean => {
                 let ca = self.bool().unwrap();
-                ca.take_opt_chunked_unchecked(by, avoid_sharing).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             Binary => {
                 let ca = self.binary().unwrap();
@@ -247,12 +267,14 @@ impl TakeChunked for Series {
             },
             List(_) => {
                 let ca = self.list().unwrap();
-                ca.take_opt_chunked_unchecked(by, avoid_sharing).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-array")]
             Array(_, _) => {
                 let ca = self.array().unwrap();
-                ca.take_opt_chunked_unchecked(by, avoid_sharing).into_series()
+                ca.take_opt_chunked_unchecked(by, avoid_sharing)
+                    .into_series()
             },
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
@@ -366,7 +388,11 @@ where
     }
 
     // Take function that checks of null state in `ChunkIdx`.
-    unsafe fn take_opt_chunked_unchecked<const B: u64>(&self, by: &[ChunkId<B>], _allow_sharing: bool) -> Self {
+    unsafe fn take_opt_chunked_unchecked<const B: u64>(
+        &self,
+        by: &[ChunkId<B>],
+        _allow_sharing: bool,
+    ) -> Self {
         let arrow_dtype = self.dtype().to_arrow(CompatLevel::newest());
 
         if !self.has_nulls() {
@@ -424,7 +450,11 @@ unsafe fn take_unchecked_object<const B: u64>(
 }
 
 #[cfg(feature = "object")]
-unsafe fn take_opt_unchecked_object<const B: u64>(s: &Series, by: &[ChunkId<B>], _allow_sharing: bool) -> Series {
+unsafe fn take_opt_unchecked_object<const B: u64>(
+    s: &Series,
+    by: &[ChunkId<B>],
+    _allow_sharing: bool,
+) -> Series {
     let DataType::Object(_, reg) = s.dtype() else {
         unreachable!()
     };

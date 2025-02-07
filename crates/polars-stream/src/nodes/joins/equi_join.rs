@@ -189,10 +189,7 @@ impl BuildState {
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
                     let payload_for_partition = payload.take_slice_unchecked_impl(idxs_in_p, false);
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
-                    p.frames.push((
-                        morsel.seq(),
-                        payload_for_partition,
-                    ));
+                    p.frames.push((morsel.seq(), payload_for_partition));
                 }
             }
         }
@@ -519,7 +516,8 @@ impl ProbeState {
                 p.table.unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
 
                 // Gather and create full-null counterpart.
-                let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
+                let mut build_df =
+                    p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                 let len = build_df.height();
                 let mut out_df = if params.left_is_build {
                     let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
@@ -617,7 +615,8 @@ impl EmitUnmatchedState {
 
                 // Gather and create full-null counterpart.
                 let out_df = unsafe {
-                    let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
+                    let mut build_df =
+                        p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                     let len = build_df.height();
                     if params.left_is_build {
                         let probe_df = DataFrame::full_null(&params.right_payload_schema, len);

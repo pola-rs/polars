@@ -450,9 +450,9 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     }
 
     pub fn deshare(&self) -> Self {
-        if Arc::strong_count(&self.buffers) == 1 && self.buffers.iter().all(|b| {
-            b.storage_refcount() == 1
-        }) {
+        if Arc::strong_count(&self.buffers) == 1
+            && self.buffers.iter().all(|b| b.storage_refcount() == 1)
+        {
             return self.clone();
         }
         self.clone().gc()
