@@ -389,6 +389,21 @@ fn to_graph_rec<'a>(
                 ),
                 [],
             ),
+            #[cfg(feature = "csv")]
+            polars_plan::plans::FileScan::Csv { .. } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
+                    nodes::io_sources::multi_scan::MultiScanNode::<
+                        nodes::io_sources::csv::CsvSourceNode,
+                    >::new(
+                        scan_sources.clone(),
+                        hive_parts.clone(),
+                        output_schema.clone(),
+                        *allow_missing_columns,
+                        include_file_paths.clone(),
+                    ),
+                ),
+                [],
+            ),
             _ => todo!(),
         },
 
@@ -499,11 +514,13 @@ fn to_graph_rec<'a>(
                         }
 
                         ctx.graph.add_node(
-                            nodes::io_sources::csv::CsvSourceNode::new(
-                                scan_sources,
-                                file_info,
-                                file_options,
-                                options,
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::csv::CsvSourceNode::new(
+                                    scan_sources,
+                                    file_info,
+                                    file_options,
+                                    options,
+                                ),
                             ),
                             [],
                         )

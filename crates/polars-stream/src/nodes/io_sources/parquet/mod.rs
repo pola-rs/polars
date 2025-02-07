@@ -20,13 +20,12 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
 use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{SourceNode, SourceOutput};
+use super::{MorselOutput, SourceNode, SourceOutput};
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{connector, Receiver, Sender};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
-use crate::nodes::io_sources::PhaseOutcomeToken;
 use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
@@ -186,18 +185,11 @@ impl SourceNode for ParquetSourceNode {
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
         self.init_projected_arrow_schema();
 
-        struct MorselOutput {
-            outcome: PhaseOutcomeToken,
-            #[allow(unused)]
-            wait_token: WaitToken,
-            port: Sender<Morsel>,
-        }
-
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
 
         let morsel_stream_starter = self.morsel_stream_starter.take().unwrap();
 
-        join_handles.push(spawn(TaskPriority::High, async move {
+        join_handles.push(spawn(TaskPriority::Low, async move {
             morsel_stream_starter.send(()).unwrap();
 
             // Every phase we are given a new send port.
@@ -205,15 +197,7 @@ impl SourceNode for ParquetSourceNode {
                 let morsel_senders = phase_output.port.parallel();
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
                 for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
-                    let outcome = PhaseOutcomeToken::new();
-                    let wait_group = WaitGroup::default();
-
-                    let morsel_output = MorselOutput {
-                        outcome: outcome.clone(),
-                        wait_token: wait_group.token(),
-                        port,
-                    };
-
+                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
                     _ = send_to.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }

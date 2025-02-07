@@ -23,6 +23,13 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "json"
+))]
+pub use scans::*;
 mod functions;
 mod join;
 pub(crate) mod type_check;
