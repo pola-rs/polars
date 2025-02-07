@@ -208,7 +208,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 .data
                 ._take_unchecked_slice_sorted(&self.join_tuples_b, false, IsSorted::Ascending)
         };
-        let right_df = unsafe { right_df.take_opt_chunked_unchecked(&self.join_tuples_a) };
+        let right_df = unsafe { right_df.take_opt_chunked_unchecked(&self.join_tuples_a, false) };
 
         let out = self.finish_join(left_df, right_df)?;
 
@@ -271,7 +271,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not)
+                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not, false)
         };
         let right_df = unsafe {
             let mut df = Cow::Borrowed(&chunk.data);

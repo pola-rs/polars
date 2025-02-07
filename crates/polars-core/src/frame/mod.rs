@@ -600,6 +600,24 @@ impl DataFrame {
             *col = col.rechunk();
         }
     }
+    
+    pub fn _deshare_views_mut(&mut self) {
+        // SAFETY: We never adjust the length or names of the columns.
+        unsafe {
+            let columns = self.get_columns_mut();
+            for col in columns {
+                let Column::Series(s) = col else { continue };
+
+                if let Ok(ca) = s.binary() {
+                    let gc_ca = ca.apply_kernel(&|a| a.deshare().into_boxed());
+                    *col = Column::from(gc_ca.into_series());
+                } else if let Ok(ca) = s.str() {
+                    let gc_ca = ca.apply_kernel(&|a| a.deshare().into_boxed());
+                    *col = Column::from(gc_ca.into_series());
+                }
+            }
+        }
+    }
 
     /// Rechunks all columns to only have a single chunk and turns it into a [`RecordBatchT`].
     pub fn rechunk_to_record_batch(
