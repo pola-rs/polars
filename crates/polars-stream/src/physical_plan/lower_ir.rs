@@ -3,7 +3,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, IDX_DTYPE};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
+use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
@@ -389,55 +390,52 @@ pub fn lower_ir(
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
-            } else if scan_sources.len() > 1 || hive_parts.is_some() {
-                // // @TODO: add row index and include_file_path
-                //
-                // // @TODO: This should be moved to the projection pushdown query optimization
-                // // step.
-                // let proj_info = file_options.with_columns.as_deref().map(|cs| {
-                //     let mut needs_separate_projection = false;
-                //     let mut projection = MutableBitmap::from_len_zeroed(unprojected_schema.len());
-                //     if let Some(fst) = cs.first() {
-                //         let mut prev_idx = unprojected_schema.try_index_of(fst)?;
-                //         projection.set(prev_idx, true);
-                //
-                //         for c in &cs[1..] {
-                //             let idx = unprojected_schema.try_index_of(c)?;
-                //             projection.set(idx, true);
-                //
-                //             needs_separate_projection |= idx <= prev_idx;
-                //             prev_idx = idx;
-                //         }
-                //     }
-                //
-                //     PolarsResult::Ok((projection.freeze(), needs_separate_projection))
-                // }).transpose()?;
-                //
-                // let needs_separate_projection = proj_info.as_ref().is_some_and(|(_, x)| *x);
-                // let projection = proj_info.map(|(x, _)| x);
-                //
-                // let multi_scan_output_schema = match &projection {
-                //     None => output_schema.clone(),
-                //     Some(_) if !needs_separate_projection => output_schema.clone(),
-                //     Some(p) => {
-                //         let indices = p.true_idx_iter().collect::<Vec<_>>();
-                //         Arc::new(unprojected_schema.try_project_indices(&indices).unwrap())
-                //     }
-                // };
-
-                let mut schema = file_info.schema.as_ref().clone();
+            } else if scan_sources.len() > 1
+                || hive_parts.is_some()
+                || file_options.include_file_paths.is_some()
+                || file_options.allow_missing_columns
+                || std::env::var("POLARS_FORCE_MULTISCAN").as_deref() == Ok("1")
+            {
+                let mut file_schema = file_info.schema.as_ref().clone();
                 if let Some(ri) = &file_options.row_index {
-                    schema.shift_remove(ri.name.as_str());
+                    // For now, we handle the row index separately.
+                    file_schema.shift_remove(ri.name.as_str());
                 }
 
-                let mut schema = Arc::new(schema);
+                // Create a mask of that indicates which columns are included in the projection.
+                let projection = file_options.with_columns.map(|with_columns| {
+                    let mut projection = MutableBitmap::from_len_zeroed(file_schema.len());
+                    for c in with_columns.as_ref() {
+                        let idx = file_schema
+                            .try_index_of(c)
+                            .expect("we should have the column here");
+                        projection.set(idx, true);
+                    }
+                    if let Some(c) = file_options.include_file_paths.as_ref() {
+                        let idx = file_schema
+                            .try_index_of(c)
+                            .expect("we should have the column here");
+                        projection.set(idx, true);
+                    }
+                    projection.freeze()
+                });
+
+                let file_schema = Arc::new(file_schema);
+
+                // The schema afterwards only includes the projected columns.
+                let mut schema = if let Some(projection) = projection.as_ref() {
+                    Arc::new(file_schema.as_ref().project_select(projection))
+                } else {
+                    file_schema.clone()
+                };
                 let mut node = PhysNodeKind::MultiScan {
                     scan_sources,
                     hive_parts,
                     scan_type,
-                    output_schema: schema.clone(),
+                    file_schema,
                     allow_missing_columns: file_options.allow_missing_columns,
                     include_file_paths: file_options.include_file_paths,
+                    projection,
                 };
 
                 if let Some(row_index) = file_options.row_index {
@@ -497,9 +495,7 @@ pub fn lower_ir(
                         kind: node,
                     });
                     let stream = PhysStream::first(source_node);
-                    let stream =
-                        build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache)?;
-                    return Ok(stream);
+                    return build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache);
                 }
 
                 node

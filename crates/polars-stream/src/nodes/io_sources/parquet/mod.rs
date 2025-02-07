@@ -325,7 +325,8 @@ impl MultiScanable for ParquetSourceNode {
     }
 
     async fn row_count(&mut self) -> PolarsResult<IdxSize> {
-        todo!()
+        // @TODO: Overflow
+        Ok(self.first_metadata.as_ref().unwrap().num_rows as IdxSize)
     }
 
     async fn schema(&mut self) -> PolarsResult<SchemaRef> {

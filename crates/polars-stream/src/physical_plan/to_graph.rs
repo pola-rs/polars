@@ -357,9 +357,10 @@ fn to_graph_rec<'a>(
             scan_sources,
             hive_parts,
             scan_type,
-            output_schema,
+            file_schema,
             allow_missing_columns,
             include_file_paths,
+            projection,
         } => match scan_type {
             #[cfg(feature = "parquet")]
             polars_plan::plans::FileScan::Parquet {
@@ -371,9 +372,10 @@ fn to_graph_rec<'a>(
                     nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
                         scan_sources.clone(),
                         hive_parts.clone(),
-                        output_schema.clone(),
                         *allow_missing_columns,
                         include_file_paths.clone(),
+                        file_schema.clone(),
+                        projection.clone(),
                         options.clone(),
                         cloud_options.clone(),
                     ),
@@ -392,9 +394,10 @@ fn to_graph_rec<'a>(
                     >::new(
                         scan_sources.clone(),
                         hive_parts.clone(),
-                        output_schema.clone(),
                         *allow_missing_columns,
                         include_file_paths.clone(),
+                        file_schema.clone(),
+                        projection.clone(),
                         options.clone(),
                         cloud_options.clone(),
                     ),
@@ -412,9 +415,10 @@ fn to_graph_rec<'a>(
                     >::new(
                         scan_sources.clone(),
                         hive_parts.clone(),
-                        output_schema.clone(),
                         *allow_missing_columns,
                         include_file_paths.clone(),
+                        file_schema.clone(),
+                        projection.clone(),
                         options.clone(),
                         cloud_options.clone(),
                     ),
