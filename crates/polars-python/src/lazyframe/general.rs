@@ -804,11 +804,13 @@ impl PyLazyFrame {
         };
 
         #[cfg(feature = "cloud")]
-        let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+        let parsed_cloud_options = {
+            let parsed_cloud_options = parse_cloud_options(
+                path.to_str().unwrap(),
+                cloud_options.clone().unwrap_or_default(),
+            )?;
             Some(
-                cloud_options
+                parsed_cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
                         credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
@@ -817,7 +819,7 @@ impl PyLazyFrame {
         };
 
         #[cfg(not(feature = "cloud"))]
-        let cloud_options = None;
+        let parsed_cloud_options = None;
 
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
@@ -832,9 +834,9 @@ impl PyLazyFrame {
 
                         let io_kwargs = PyDict::new(py);
                         let _ = io_kwargs.set_item("to", "csv");
+                        let _ = io_kwargs.set_item("path", path.to_str());
                         let _ = io_kwargs.set_item("options", Wrap(options.clone()));
-                        let _ =
-                            io_kwargs.set_item("cloud_options", cloud_options.clone().map(Wrap));
+                        let _ = io_kwargs.set_item("cloud_options", cloud_options.clone());
                         // Get a copy of the arena's.
                         let arenas = nt.get_arenas();
 
@@ -853,7 +855,7 @@ impl PyLazyFrame {
                     })
                 })
             } else {
-                ldf.sink_csv(path, options, cloud_options)
+                ldf.sink_csv(path, options, parsed_cloud_options)
             }
         })
     }

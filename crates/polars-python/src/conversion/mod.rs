@@ -1265,20 +1265,6 @@ pub(crate) fn parse_cloud_options(uri: &str, kv: Vec<(String, String)>) -> PyRes
     Ok(out)
 }
 
-#[cfg(feature = "cloud")]
-impl<'py> IntoPyObject<'py> for Wrap<CloudOptions> {
-    type Target = PyDict;
-    type Output = Bound<'py, Self::Target>;
-    type Error = PyErr;
-
-    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
-        let dict = PyDict::new(py);
-        let _ = dict.set_item("max_retries", self.0.max_retries);
-        // TODO: Implement other attributes. Currently not supported by cudf_polars
-        Ok(dict)
-    }
-}
-
 #[cfg(feature = "list_sets")]
 impl<'py> FromPyObject<'py> for Wrap<SetOperation> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
