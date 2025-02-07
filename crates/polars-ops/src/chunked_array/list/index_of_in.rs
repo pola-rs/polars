@@ -1,6 +1,48 @@
+use polars_core::match_arrow_dtype_apply_macro_ca;
+
 use super::*;
 use crate::series::{index_of, index_of_null};
 
+macro_rules! to_anyvalue_iterator {
+    ($ca:expr) => {{
+        use polars_core::prelude::AnyValue;
+        Box::new($ca.iter().map(AnyValue::from))
+    }};
+}
+
+fn series_to_anyvalue_iter(series: &Series) -> Box<dyn ExactSizeIterator<Item = AnyValue> + '_> {
+    let dtype = series.dtype();
+    match dtype {
+        DataType::Date => {
+            return to_anyvalue_iterator!(series.date().unwrap());
+        },
+        DataType::Datetime(_, _) => {
+            return to_anyvalue_iterator!(series.datetime().unwrap());
+        },
+        DataType::Time => {
+            return to_anyvalue_iterator!(series.time().unwrap());
+        },
+        DataType::Duration(_) => {
+            return to_anyvalue_iterator!(series.duration().unwrap());
+        },
+        DataType::Binary => {
+            return to_anyvalue_iterator!(series.binary().unwrap());
+        },
+        DataType::Decimal(_, _) => {
+            return to_anyvalue_iterator!(series.decimal().unwrap());
+        },
+        _ => (),
+    };
+    match_arrow_dtype_apply_macro_ca!(
+        series,
+        to_anyvalue_iterator,
+        to_anyvalue_iterator,
+        to_anyvalue_iterator
+    )
+}
+
+/// Given a needle, or needles, find the corresponding needle in each value of a
+/// ListChunked.
 pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Series> {
     // Handle scalar case separately, since we can do some optimizations given
     // the extra knowledge we have.
@@ -15,15 +57,24 @@ pub fn list_index_of_in(ca: &ListChunked, needles: &Series) -> PolarsResult<Seri
         ca.len(),
         needles.len()
     );
+    let dtype = needles.dtype();
+    let owned;
+    let needle_iter = if dtype.is_list()
+        || dtype.is_array()
+        || dtype.is_enum()
+        || dtype.is_categorical()
+        || dtype.is_struct()
+    {
+        owned = needles.rechunk();
+        Box::new(owned.iter())
+    } else {
+        // Optimized versions:
+        series_to_anyvalue_iter(needles)
+    };
+
     let mut builder = PrimitiveChunkedBuilder::<IdxType>::new(ca.name().clone(), ca.len());
-    let needles = needles.rechunk();
     ca.amortized_iter()
-        // TODO iter() assumes a single chunk. could continue to use this
-        // and just rechunk(), or have needles also be a ChunkedArray, in
-        // which case we'd need to have to use one of the
-        // dispatch-on-dtype-and-cast-to-relevant-chunkedarray-type macros
-        // to duplicate the implementation code per dtype.
-        .zip(needles.iter())
+        .zip(needle_iter)
         .for_each(|(opt_series, needle)| match (opt_series, needle) {
             (None, _) => builder.append_null(),
             (Some(subseries), needle) => {
