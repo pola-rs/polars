@@ -30,7 +30,8 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
                     }
                 })
                 .or_else(|_e| {
-                    // Fallback to hashing $HOME if blake3 is available (needs file_cache)
+                    // We shouldn't hit here, but we can fallback to hashing $HOME if blake3 is
+                    // available (it is available when file_cache is activated).
                     #[cfg(feature = "file_cache")]
                     {
                         std::env::var("HOME")
@@ -60,11 +61,13 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
             // the default temporary directory location is underneath the user profile, so we
             // shouldn't need to do anything.
             let tmp_dir = std::env::temp_dir();
+            let user_profile =
+                PathBuf::from(std::env::var("USERPROFILE").expect("failed to load USERPROFILE"));
 
             // Have this debug assert so it gets run by CI.
-            debug_assert!(tmp_dir.starts_with(PathBuf::from(
-                std::env::var("USERPROFILE").expect("failed to load USERPROFILE"),
-            )));
+            if cfg!(debug_assertions) && !tmp_dir.starts_with(&user_profile) {
+                panic!("{:?}, {:?}", tmp_dir, user_profile);
+            }
 
             tmp_dir.join("polars/")
         } else {
