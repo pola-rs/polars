@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Any, Callable
 
 import pytest
-import os
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -51,7 +50,7 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
 @pytest.mark.parametrize("include_file_paths", [False, True])
 @pytest.mark.parametrize("hive", [False, True])
 @pytest.mark.parametrize("col", [False, True])
-@pytest.mark.write_disk()
+@pytest.mark.write_disk
 def test_multiscan_projection(
     tmp_path: Path,
     scan: Callable[..., pl.LazyFrame],
@@ -76,9 +75,9 @@ def test_multiscan_projection(
     multiscan_path: Path
 
     if hive and supports_hive_partitioning:
-        os.mkdir(tmp_path / "hive_col=0")
+        (tmp_path / "hive_col=0").mkdir()
         a_path = tmp_path / "hive_col=0" / f"a.{ext}"
-        os.mkdir(tmp_path / "hive_col=1")
+        (tmp_path / "hive_col=1").mkdir()
         b_path = tmp_path / "hive_col=1" / f"b.{ext}"
 
         multiscan_path = tmp_path
@@ -107,12 +106,12 @@ def test_multiscan_projection(
     ifp = "file_path" if include_file_paths else None
     ri = "row_index" if row_index else None
 
-    args = dict(
-        allow_missing_columns=missing_column,
-        include_file_paths=ifp,
-        row_index_name=ri,
-        hive_partitioning=hive,
-    )
+    args = {
+        "allow_missing_columns": missing_column,
+        "include_file_paths": ifp,
+        "row_index_name": ri,
+        "hive_partitioning": hive,
+    }
 
     if not supports_missing_columns:
         del args["allow_missing_columns"]
