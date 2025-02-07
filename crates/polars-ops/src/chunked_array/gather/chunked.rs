@@ -154,11 +154,11 @@ impl TakeChunked for Series {
             },
             Binary => {
                 let ca = self.binary().unwrap();
-                take_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
+                take_chunked_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
             },
             String => {
                 let ca = self.str().unwrap();
-                take_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
+                take_chunked_unchecked_binview(ca, by, sorted, avoid_sharing).into_series()
             },
             List(_) => {
                 let ca = self.list().unwrap();
@@ -174,9 +174,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let ca = self.struct_().unwrap();
-                ca._apply_fields(|s| s.take_chunked_unchecked(by, sorted, avoid_sharing))
-                    .expect("infallible")
-                    .into_series()
+                take_chunked_unchecked_struct(ca, by, sorted, avoid_sharing).into_series()
             },
             #[cfg(feature = "object")]
             Object(_, _) => take_unchecked_object(self, by, sorted),
@@ -259,11 +257,11 @@ impl TakeChunked for Series {
             },
             Binary => {
                 let ca = self.binary().unwrap();
-                take_unchecked_binview_opt(ca, by, avoid_sharing).into_series()
+                take_opt_chunked_unchecked_binview(ca, by, avoid_sharing).into_series()
             },
             String => {
                 let ca = self.str().unwrap();
-                take_unchecked_binview_opt(ca, by, avoid_sharing).into_series()
+                take_opt_chunked_unchecked_binview(ca, by, avoid_sharing).into_series()
             },
             List(_) => {
                 let ca = self.list().unwrap();
@@ -279,9 +277,7 @@ impl TakeChunked for Series {
             #[cfg(feature = "dtype-struct")]
             Struct(_) => {
                 let ca = self.struct_().unwrap();
-                ca._apply_fields(|s| s.take_opt_chunked_unchecked(by, avoid_sharing))
-                    .expect("infallible")
-                    .into_series()
+                take_opt_chunked_unchecked_struct(ca, by, avoid_sharing).into_series()
             },
             #[cfg(feature = "object")]
             Object(_, _) => take_opt_unchecked_object(self, by, avoid_sharing),
@@ -473,7 +469,7 @@ unsafe fn take_opt_unchecked_object<const B: u64>(
     builder.to_series()
 }
 
-unsafe fn take_unchecked_binview<const B: u64, T, V>(
+unsafe fn take_chunked_unchecked_binview<const B: u64, T, V>(
     ca: &ChunkedArray<T>,
     by: &[ChunkId<B>],
     sorted: IsSorted,
@@ -678,7 +674,7 @@ where
     (buffers, buffer_offsets)
 }
 
-unsafe fn take_unchecked_binview_opt<const B: u64, T, V>(
+unsafe fn take_opt_chunked_unchecked_binview<const B: u64, T, V>(
     ca: &ChunkedArray<T>,
     by: &[ChunkId<B>],
     avoid_sharing: bool,
@@ -834,6 +830,108 @@ where
     );
 
     ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc())
+}
+
+#[cfg(feature = "dtype-struct")]
+unsafe fn take_chunked_unchecked_struct<const B: u64>(
+    ca: &StructChunked,
+    by: &[ChunkId<B>],
+    sorted: IsSorted,
+    avoid_sharing: bool,
+) -> StructChunked {
+    let fields = ca
+        .fields_as_series()
+        .iter()
+        .map(|s| s.take_chunked_unchecked(by, sorted, avoid_sharing))
+        .collect::<Vec<_>>();
+    let mut out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
+
+    if !ca.has_nulls() {
+        return out;
+    }
+
+    let mut validity = BitmapBuilder::with_capacity(by.len());
+    if ca.n_chunks() == 1 {
+        let arr = ca.downcast_as_array();
+        let bitmap = arr.validity().unwrap();
+        for id in by.iter() {
+            let (chunk_idx, array_idx) = id.extract();
+            debug_assert!(chunk_idx == 0);
+            validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+        }
+    } else {
+        for id in by.iter() {
+            let (chunk_idx, array_idx) = id.extract();
+            let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+            if let Some(bitmap) = arr.validity() {
+                validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+            } else {
+                validity.push_unchecked(true);
+            }
+        }
+    }
+
+    out.rechunk_mut(); // Should be a no-op.
+    out.downcast_iter_mut()
+        .next()
+        .unwrap()
+        .set_validity(validity.into_opt_validity());
+    out
+}
+
+#[cfg(feature = "dtype-struct")]
+unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
+    ca: &StructChunked,
+    by: &[ChunkId<B>],
+    avoid_sharing: bool,
+) -> StructChunked {
+    let fields = ca
+        .fields_as_series()
+        .iter()
+        .map(|s| s.take_opt_chunked_unchecked(by, avoid_sharing))
+        .collect::<Vec<_>>();
+    let mut out = StructChunked::from_series(ca.name().clone(), by.len(), fields.iter()).unwrap();
+
+    let mut validity = BitmapBuilder::with_capacity(by.len());
+    if ca.n_chunks() == 1 {
+        let arr = ca.downcast_as_array();
+        if let Some(bitmap) = arr.validity() {
+            for id in by.iter() {
+                if id.is_null() {
+                    validity.push_unchecked(false);
+                } else {
+                    let (chunk_idx, array_idx) = id.extract();
+                    debug_assert!(chunk_idx == 0);
+                    validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+                }
+            }
+        } else {
+            for id in by.iter() {
+                validity.push_unchecked(!id.is_null());
+            }
+        }
+    } else {
+        for id in by.iter() {
+            if id.is_null() {
+                validity.push_unchecked(false);
+            } else {
+                let (chunk_idx, array_idx) = id.extract();
+                let arr = ca.downcast_get_unchecked(chunk_idx as usize);
+                if let Some(bitmap) = arr.validity() {
+                    validity.push_unchecked(bitmap.get_bit_unchecked(array_idx as usize));
+                } else {
+                    validity.push_unchecked(true);
+                }
+            }
+        }
+    }
+
+    out.rechunk_mut(); // Should be a no-op.
+    out.downcast_iter_mut()
+        .next()
+        .unwrap()
+        .set_validity(validity.into_opt_validity());
+    out
 }
 
 #[cfg(test)]
