@@ -64,7 +64,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
             let users_dir = Path::new("/Users");
 
             // Have this debug assert so it gets run by CI.
-            if cfg!(debug_assertions) && !tmp_dir.starts_with(&users_dir) {
+            if cfg!(debug_assertions) && !tmp_dir.starts_with(users_dir) {
                 panic!(
                     "temporary directory {:?} not a subdirectory of: {:?}",
                     tmp_dir, users_dir
