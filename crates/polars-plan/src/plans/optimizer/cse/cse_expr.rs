@@ -721,18 +721,34 @@ impl CommonSubExprOptimizer {
                     out_e.set_node(out_node);
 
                     // Ensure the function ExprIR's have the proper names.
+                    // This is needed for structs to get the proper field
                     let mut scratch = vec![];
                     let mut stack = vec![(e.node(), out_node)];
                     while let Some((original, new)) = stack.pop() {
-                        let aes = expr_arena.get_many_mut([original, new]);
-
-                        aes[0].inputs_rev(&mut scratch);
-                        aes[1].inputs_rev(&mut scratch);
-
-                        for i in 0..scratch.len() / 2 {
-                            stack.push((scratch[i], scratch[i + 1]));
+                        // Don't follow identical nodes.
+                        if original == new {
+                            continue;
                         }
                         scratch.clear();
+                        let aes = expr_arena.get_many_mut([original, new]);
+
+                        // Only follow paths that are the same.
+                        if std::mem::discriminant(aes[0]) != std::mem::discriminant(aes[1]) {
+                            continue;
+                        }
+
+                        aes[0].inputs_rev(&mut scratch);
+                        let offset = scratch.len();
+                        aes[1].inputs_rev(&mut scratch);
+
+                        // If they have a different number of inputs, we don't follow the nodes.
+                        if scratch.len() != offset * 2 {
+                            continue;
+                        }
+
+                        for i in 0..scratch.len() / 2 {
+                            stack.push((scratch[i], scratch[i + offset]));
+                        }
 
                         match expr_arena.get_many_mut([original, new]) {
                             [AExpr::Function {
