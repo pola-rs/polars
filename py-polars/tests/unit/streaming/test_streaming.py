@@ -353,9 +353,9 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     # doesn't yet support streaming.
     for i, line in enumerate(plan_lines):
         if line.startswith("PLAN"):
-            assert plan_lines[i + 1].startswith("STREAMING"), (
-                f"{line} does not contain a streaming section"
-            )
+            assert plan_lines[i + 1].startswith(
+                "STREAMING"
+            ), f"{line} does not contain a streaming section"
 
     result = query.collect(streaming=True)
 
