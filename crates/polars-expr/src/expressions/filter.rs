@@ -97,7 +97,7 @@ impl PhysicalExpr for FilterExpr {
             // Filter the indexes that are true.
             else {
                 let predicate = predicate.rechunk();
-                let predicate = predicate.downcast_iter().next().unwrap();
+                let predicate = predicate.downcast_as_array();
                 POOL.install(|| {
                     match groups.as_ref().as_ref() {
                         GroupsType::Idx(groups) => {

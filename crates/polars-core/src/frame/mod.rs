@@ -3109,7 +3109,7 @@ impl DataFrame {
         for ca in iter {
             acc_ca.append(&ca)?;
         }
-        Ok(acc_ca.rechunk())
+        Ok(acc_ca.rechunk().into_owned())
     }
 
     /// Get the supertype of the columns in this DataFrame

@@ -184,7 +184,7 @@ pub(super) fn rolling_corr_cov(
     let count_x_y = if (x.null_count() + y.null_count()) > 0 {
         // mask out nulls on both sides before compute mean/var
         let valids = x.is_not_null().bitand(y.is_not_null());
-        let valids_arr = valids.clone().downcast_into_array();
+        let valids_arr = valids.downcast_as_array();
         let valids_bitmap = valids_arr.values();
 
         unsafe {

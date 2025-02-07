@@ -957,9 +957,9 @@ where
         {
             (left, right)
         },
-        (_, 1) => (left.rechunk(), right),
-        (1, _) => (left, right.rechunk()),
-        (_, _) => (left.rechunk(), right.rechunk()),
+        (_, 1) => (left.rechunk().into_owned(), right),
+        (1, _) => (left, right.rechunk().into_owned()),
+        (_, _) => (left.rechunk().into_owned(), right.rechunk().into_owned()),
     }
 }
 

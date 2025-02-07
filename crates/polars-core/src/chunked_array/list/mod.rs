@@ -135,7 +135,7 @@ impl ListChunked {
     ) -> PolarsResult<ListChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
+        let arr = ca.downcast_as_array();
 
         // SAFETY:
         // Inner dtype is passed correctly

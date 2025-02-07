@@ -27,7 +27,7 @@ impl CategoricalChunked {
             ArrowDataType::LargeUtf8
         };
         let keys = self.physical().rechunk();
-        let keys = keys.downcast_iter().next().unwrap();
+        let keys = keys.downcast_as_array();
         let map = &**self.get_rev_map();
         let dtype = ArrowDataType::Dictionary(IntegerType::UInt32, Box::new(values_dtype), false);
         match map {
@@ -40,7 +40,7 @@ impl CategoricalChunked {
             },
             RevMapping::Global(reverse_map, values, _uuid) => {
                 let iter = keys
-                    .into_iter()
+                    .iter()
                     .map(|opt_k| opt_k.map(|k| *reverse_map.get(k).unwrap()));
                 let keys = PrimitiveArray::from_trusted_len_iter(iter);
 
@@ -60,7 +60,7 @@ impl CategoricalChunked {
             ArrowDataType::LargeUtf8
         };
         let keys = self.physical().rechunk();
-        let keys = keys.downcast_iter().next().unwrap();
+        let keys = keys.downcast_as_array();
         let map = &**self.get_rev_map();
         let dtype = ArrowDataType::Dictionary(IntegerType::Int64, Box::new(values_dtype), false);
         match map {
@@ -85,7 +85,7 @@ impl CategoricalChunked {
             },
             RevMapping::Global(reverse_map, values, _uuid) => {
                 let iter = keys
-                    .into_iter()
+                    .iter()
                     .map(|opt_k| opt_k.map(|k| *reverse_map.get(k).unwrap() as i64));
                 let keys = PrimitiveArray::from_trusted_len_iter(iter);
 
