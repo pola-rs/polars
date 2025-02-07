@@ -10,14 +10,14 @@ use polars_core::prelude::{Column, IntoColumn};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
-use polars_error::PolarsResult;
+use polars_error::{polars_bail, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::ScanPredicate;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{ScanSource, ScanSources};
+use polars_plan::plans::{ScanSource, ScanSourceRef, ScanSources};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
-use polars_utils::IdxSize;
+use polars_utils::{format_pl_smallstr, IdxSize};
 
 use super::{SourceNode, SourceOutput};
 use crate::async_executor::spawn;
@@ -68,10 +68,11 @@ impl<T: MultiScanable> MultiScanNode<T> {
 
 fn process_dataframe(
     mut df: DataFrame,
+    source_name: &PlSmallStr,
     hive_part: Option<&HivePartitions>,
     output_schema: &Schema,
     allow_missing_columns: bool,
-    include_file_paths: Option<(&PlSmallStr, PlSmallStr)>,
+    include_file_paths: Option<&PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
     if let Some(hive_part) = hive_part {
         let height = df.height();
@@ -94,10 +95,10 @@ fn process_dataframe(
         df = DataFrame::new_with_height(height, columns)?;
     }
 
-    if let Some((col_name, file_name)) = include_file_paths {
+    if let Some(col_name) = include_file_paths {
         df.with_column(Column::new_scalar(
             col_name.clone(),
-            file_name.into(),
+            source_name.clone().into(),
             df.height(),
         ))
         .unwrap();
@@ -113,8 +114,15 @@ fn process_dataframe(
             .field_compare(output_schema, &mut df_extra, &mut output_extra);
 
         if !df_extra.is_empty() {
-            // @TODO: Error message.
-            panic!();
+            let columns = df_extra
+                .iter()
+                .map(|(_, (name, _))| format!("'{}'", name))
+                .collect::<Vec<_>>()
+                .join(", ");
+            polars_bail!(
+                SchemaMismatch:
+                "'{source_name}' contains column(s) {columns}, which are not present in the first scanned file"
+            );
         }
 
         for (_, (name, dtype)) in output_extra {
@@ -298,6 +306,17 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 let wait_group = WaitGroup::default();
 
                 while current_scan < sources.len() {
+                    let source_name = match sources.at(current_scan) {
+                        ScanSourceRef::Path(path) => {
+                            PlSmallStr::from(path.to_string_lossy().as_ref())
+                        },
+                        ScanSourceRef::File(_) => {
+                            format_pl_smallstr!("file descriptor #{}", current_scan + 1)
+                        },
+                        ScanSourceRef::Buffer(_) => {
+                            format_pl_smallstr!("in-memory buffer #{}", current_scan + 1)
+                        },
+                    };
                     let hive_part = hive_parts.as_deref().map(|parts| &parts[current_scan]);
                     let si_recv = &mut si_recv[current_scan % num_concurrent_scans];
                     let Ok(rx) = si_recv.recv().await else {
@@ -312,17 +331,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 let df = rg.into_df();
                                 let df = process_dataframe(
                                     df,
+                                    &source_name,
                                     hive_part,
                                     output_schema.as_ref(),
                                     allow_missing_columns,
-                                    include_file_paths.as_ref().map(|i| {
-                                        (
-                                            i,
-                                            PlSmallStr::from_str(
-                                                sources.at(current_scan).to_include_path_name(),
-                                            ),
-                                        )
-                                    }),
+                                    include_file_paths.as_ref(),
                                 );
                                 let df = match df {
                                     Ok(df) => df,
@@ -368,17 +381,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 let df = rg.into_df();
                                 let df = process_dataframe(
                                     df,
+                                    &source_name,
                                     hive_part,
                                     output_schema.as_ref(),
                                     allow_missing_columns,
-                                    include_file_paths.as_ref().map(|i| {
-                                        (
-                                            i,
-                                            PlSmallStr::from_str(
-                                                sources.at(current_scan).to_include_path_name(),
-                                            ),
-                                        )
-                                    }),
+                                    include_file_paths.as_ref(),
                                 );
                                 let df = match df {
                                     Ok(df) => df,

@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 import pytest
-import io, os
+import os
 
 import polars as pl
 from polars.testing import assert_frame_equal
@@ -15,7 +15,7 @@ from polars.testing import assert_frame_equal
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_csv, pl.DataFrame.write_csv),
-        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
     ],
 )
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -69,17 +69,17 @@ def test_multiscan_projection(
     b = pl.DataFrame({"col": [13, 37]})
 
     if missing_column and supports_missing_columns:
-        b = b.with_columns(missing=pl.Series([420, 2000]))
+        a = a.with_columns(missing=pl.Series([420, 2000, 9]))
 
     a_path: Path
     b_path: Path
     multiscan_path: Path
 
     if hive and supports_hive_partitioning:
-        os.mkdir(tmp_path / "hive_col=1")
-        a_path = tmp_path / "hive_col=1" / f"a.{ext}"
         os.mkdir(tmp_path / "hive_col=0")
-        b_path = tmp_path / "hive_col=0" / f"b.{ext}"
+        a_path = tmp_path / "hive_col=0" / f"a.{ext}"
+        os.mkdir(tmp_path / "hive_col=1")
+        b_path = tmp_path / "hive_col=1" / f"b.{ext}"
 
         multiscan_path = tmp_path
 
