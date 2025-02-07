@@ -157,6 +157,17 @@ enum SourceInput {
     Parallel(Vec<Receiver<Morsel>>),
 }
 
+const DEFAULT_MAX_CONCURRENT_SCANS: usize = 8;
+fn num_concurrent_scans(num_pipelines: usize) -> usize {
+    let max_num_concurrent_scans =
+        std::env::var("POLARS_MAX_CONCURRENT_SCANS").map_or(DEFAULT_MAX_CONCURRENT_SCANS, |v| {
+            v.parse::<usize>()
+                .expect("unable to parse POLARS_MAX_CONCURRENT_SCANS")
+                .max(1)
+        });
+    num_pipelines.min(max_num_concurrent_scans)
+}
+
 impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
     fn name(&self) -> &str {
         &self.name
@@ -176,8 +187,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
     ) {
         assert!(unrestricted_row_count.is_none());
 
-        let num_concurrent_scans = num_pipelines;
-
+        let num_concurrent_scans = num_concurrent_scans(num_pipelines);
         let sources = &self.sources;
         let hive_schema = self
             .hive_parts
