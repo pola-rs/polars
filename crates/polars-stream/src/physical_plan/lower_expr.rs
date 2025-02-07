@@ -668,7 +668,8 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Sum(ref mut inner)
                 | IRAggExpr::Mean(ref mut inner)
                 | IRAggExpr::Var(ref mut inner, _ /* ddof */)
-                | IRAggExpr::Std(ref mut inner, _ /* ddof */) => {
+                | IRAggExpr::Std(ref mut inner, _ /* ddof */)
+                | IRAggExpr::Count(ref mut inner, _ /* count_nulls */) => {
                     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[*inner], ctx)?;
                     *inner = trans_exprs[0];
 
@@ -688,7 +689,6 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::NUnique(_)
                 | IRAggExpr::Implode(_)
                 | IRAggExpr::Quantile { .. }
-                | IRAggExpr::Count(_, _)
                 | IRAggExpr::AggGroups(_) => {
                     let out_name = unique_column_name();
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));
