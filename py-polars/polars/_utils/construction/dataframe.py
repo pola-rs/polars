@@ -952,6 +952,7 @@ def iterable_to_pydf(
     orient: Orientation | None = None,
     chunk_size: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    rechunk: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an iterable/generator."""
     original_schema = schema
@@ -1028,7 +1029,7 @@ def iterable_to_pydf(
     if df is None:
         df = to_frame_chunk([], original_schema)
 
-    if n_chunks > 0:
+    if n_chunks > 0 and rechunk:
         df = df.rechunk()
 
     return df._df
