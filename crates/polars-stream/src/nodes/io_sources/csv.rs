@@ -10,6 +10,7 @@ use polars_core::utils::arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::StringCacheHolder;
 use polars_error::{polars_bail, PolarsResult};
+use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
     cast_columns, find_starting_point, prepare_csv_schema, read_chunk, CountLines,
     NullValuesCompiled,
@@ -605,11 +606,14 @@ impl MultiScanable for CsvSourceNode {
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = false;
 
-    async fn new(source: ScanSource, options: &Self::ReadOptions) -> PolarsResult<Self> {
+    async fn new(
+        source: ScanSource,
+        options: &Self::ReadOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
         let sources = source.into_sources();
 
         let file_options = FileScanOptions::default();
-        let cloud_options = None;
         let mut csv_options = options.clone();
 
         let file_info = csv_file_info(&sources, &file_options, &mut csv_options, cloud_options)?;

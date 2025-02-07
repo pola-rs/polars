@@ -505,7 +505,11 @@ impl MultiScanable for IpcSourceNode {
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = true;
 
-    async fn new(source: ScanSource, options: &Self::ReadOptions) -> PolarsResult<Self> {
+    async fn new(
+        source: ScanSource,
+        options: &Self::ReadOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
         let source = source.into_sources();
         let options = options.clone();
 
@@ -524,7 +528,14 @@ impl MultiScanable for IpcSourceNode {
             (None, usize::MAX),
         );
 
-        IpcSourceNode::new(source, file_info, options, None, file_options, None)
+        IpcSourceNode::new(
+            source,
+            file_info,
+            options,
+            cloud_options.cloned(),
+            file_options,
+            None,
+        )
     }
 
     fn with_projection(&mut self, projection: Option<&Bitmap>) {

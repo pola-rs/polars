@@ -263,7 +263,11 @@ impl MultiScanable for ParquetSourceNode {
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = true;
 
-    async fn new(source: ScanSource, options: &Self::ReadOptions) -> PolarsResult<Self> {
+    async fn new(
+        source: ScanSource,
+        options: &Self::ReadOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
         let source = source.into_sources();
         let memslice = source.at(0).to_memslice()?;
         let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
@@ -287,7 +291,7 @@ impl MultiScanable for ParquetSourceNode {
             file_info,
             None,
             options,
-            None,
+            cloud_options.cloned(),
             file_options,
             Some(Arc::new(file_metadata)),
         ))

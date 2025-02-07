@@ -12,6 +12,7 @@ use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::{polars_bail, PolarsResult};
 use polars_expr::state::ExecutionState;
+use polars_io::cloud::CloudOptions;
 use polars_mem_engine::ScanPredicate;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{ScanSource, ScanSourceRef, ScanSources};
@@ -45,6 +46,7 @@ pub struct MultiScanNode<T: MultiScanable> {
     include_file_paths: Option<PlSmallStr>,
 
     read_options: Arc<T::ReadOptions>,
+    cloud_options: Arc<Option<CloudOptions>>,
 
     _pd: PhantomData<T>,
 }
@@ -59,6 +61,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
         include_file_paths: Option<PlSmallStr>,
 
         read_options: T::ReadOptions,
+        cloud_options: Option<CloudOptions>,
     ) -> Self {
         Self {
             name: format!("multi-scan[{}]", T::BASE_NAME),
@@ -70,6 +73,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
             include_file_paths,
 
             read_options: Arc::new(read_options),
+            cloud_options: Arc::new(cloud_options),
 
             _pd: PhantomData,
         }
@@ -162,6 +166,7 @@ pub trait MultiScanable: SourceNode + Sized + Send + Sync {
     fn new(
         source: ScanSource,
         options: &Self::ReadOptions,
+        cloud_options: Option<&CloudOptions>,
     ) -> impl Future<Output = PolarsResult<Self>> + Send;
 
     fn with_projection(&mut self, projection: Option<&Bitmap>);
@@ -203,6 +208,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
         let sources = &self.sources;
         let read_options = &self.read_options;
+        let cloud_options = &self.cloud_options;
         let hive_schema = self
             .hive_parts
             .as_ref()
@@ -216,6 +222,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         join_handles.extend(si_send.into_iter().enumerate().map(|(mut i, mut ch_send)| {
             let sources = sources.clone();
             let read_options = read_options.clone();
+            let cloud_options = cloud_options.clone();
             let hive_schema = hive_schema.clone();
             spawn(TaskPriority::High, async move {
                 let state = ExecutionState::new();
@@ -225,7 +232,12 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                     let source = sources.at(i).into_owned()?;
                     let (mut output_send, output_recv) = connector();
-                    let mut source = T::new(source, read_options.as_ref()).await?;
+                    let mut source = T::new(
+                        source,
+                        read_options.as_ref(),
+                        cloud_options.as_ref().as_ref(),
+                    )
+                    .await?;
 
                     let source_schema = source.schema().await?;
                     let projection = source_schema
