@@ -76,7 +76,7 @@ pub(crate) fn index_of_null(series: &Series) -> Option<usize> {
             index += length;
         }
     }
-    return None;
+    None
 }
 
 /// Find the index of a given value (the first and only entry in `value_series`)

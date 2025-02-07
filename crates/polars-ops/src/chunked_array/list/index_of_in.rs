@@ -103,6 +103,7 @@ macro_rules! process_series_for_numeric_value {
     }};
 }
 
+#[allow(clippy::type_complexity)] // For the Box<dyn Fn()>
 fn list_index_of_in_for_scalar(ca: &ListChunked, needle: AnyValue<'_>) -> PolarsResult<Series> {
     let mut builder = PrimitiveChunkedBuilder::<IdxType>::new(ca.name().clone(), ca.len());
     let needle = needle.into_static();
@@ -110,7 +111,7 @@ fn list_index_of_in_for_scalar(ca: &ListChunked, needle: AnyValue<'_>) -> Polars
     let needle_dtype = needle.dtype();
 
     let process_series: Box<dyn Fn(&Series) -> Option<usize>> = match needle_dtype {
-        DataType::Null => Box::new(|subseries| index_of_null(subseries)),
+        DataType::Null => Box::new(index_of_null),
         #[cfg(feature = "dtype-u8")]
         DataType::UInt8 => process_series_for_numeric_value!(u8, needle),
         #[cfg(feature = "dtype-u16")]

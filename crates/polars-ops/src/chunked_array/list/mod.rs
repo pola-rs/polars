@@ -6,6 +6,8 @@ mod count;
 mod dispersion;
 #[cfg(feature = "hash")]
 pub(crate) mod hash;
+#[cfg(feature = "list_index_of_in")]
+mod index_of_in;
 mod min_max;
 mod namespace;
 #[cfg(feature = "list_sets")]
@@ -13,20 +15,18 @@ mod sets;
 mod sum_mean;
 #[cfg(feature = "list_to_struct")]
 mod to_struct;
-#[cfg(feature = "list_index_of_in")]
-mod index_of_in;
 
 #[cfg(feature = "list_count")]
 pub use count::*;
 #[cfg(not(feature = "list_count"))]
 use count::*;
+#[cfg(feature = "list_index_of_in")]
+pub use index_of_in::*;
 pub use namespace::*;
 #[cfg(feature = "list_sets")]
 pub use sets::*;
 #[cfg(feature = "list_to_struct")]
 pub use to_struct::*;
-#[cfg(feature = "list_index_of_in")]
-pub use index_of_in::*;
 
 pub trait AsList {
     fn as_list(&self) -> &ListChunked;

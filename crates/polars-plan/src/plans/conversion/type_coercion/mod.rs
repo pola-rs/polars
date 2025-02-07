@@ -322,15 +322,22 @@ impl OptimizationRule for TypeCoercionRule {
                     }
 
                     for (i, (e, dtype)) in input.iter_mut().zip(dtypes).enumerate() {
-                        let new_super_type =
-                            if matches!(casting_rules, CastingRules::FirstArgInnerLossless)
-                                && (i > 0)
-                            {
-                                // TODO get rid of unwrap(), will fail if first item is not a list/array
-                                &super_type.inner_dtype().unwrap()
+                        let new_super_type = if matches!(
+                            casting_rules,
+                            CastingRules::FirstArgInnerLossless
+                        ) && (i > 0)
+                        {
+                            if let Some(inner_type) = super_type.inner_dtype() {
+                                inner_type
                             } else {
-                                &super_type
-                            };
+                                polars_bail!(
+                                    InvalidOperation:
+                                    "FirstArgInnerLossless only makes sense for types like list or array"
+                                );
+                            }
+                        } else {
+                            &super_type
+                        };
                         match super_type {
                             #[cfg(feature = "dtype-categorical")]
                             DataType::Categorical(_, _) if dtype.is_string() => {
