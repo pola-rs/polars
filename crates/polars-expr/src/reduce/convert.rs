@@ -64,7 +64,7 @@ pub fn into_reduction(
                 expr_arena.add(AExpr::Literal(LiteralValue::Series(SpecialEq::new(dummy))))
             };
             (out, expr)
-        }
+        },
         _ => unreachable!(),
     };
     Ok(out)

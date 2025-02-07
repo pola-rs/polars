@@ -10,7 +10,10 @@ pub struct CountReduce {
 
 impl CountReduce {
     pub fn new(include_nulls: bool) -> Self {
-        Self { groups: Vec::new(), include_nulls }
+        Self {
+            groups: Vec::new(),
+            include_nulls,
+        }
     }
 }
 
@@ -55,7 +58,7 @@ impl GroupedReduction for CountReduce {
             // SAFETY: indices are in-bounds guaranteed by trait.
             let mut offset = 0;
             for chunk in values.chunks() {
-                let gs = &group_idxs[offset..offset+chunk.len()];
+                let gs = &group_idxs[offset..offset + chunk.len()];
                 offset += chunk.len();
 
                 if chunk.has_nulls() && !self.include_nulls {
@@ -123,7 +126,12 @@ impl GroupedReduction for CountReduce {
     ) -> Vec<Box<dyn GroupedReduction>> {
         partition_vec(self.groups, partition_sizes, partition_idxs)
             .into_iter()
-            .map(|groups| Box::new(Self { groups, include_nulls: self.include_nulls }) as _)
+            .map(|groups| {
+                Box::new(Self {
+                    groups,
+                    include_nulls: self.include_nulls,
+                }) as _
+            })
             .collect()
     }
 
