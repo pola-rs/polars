@@ -832,6 +832,7 @@ where
     ChunkedArray::with_chunk(ca.name().clone(), arr.maybe_gc())
 }
 
+#[cfg(feature = "dtype-struct")]
 unsafe fn take_chunked_unchecked_struct<const B: u64>(
     ca: &StructChunked,
     by: &[ChunkId<B>],
@@ -878,6 +879,7 @@ unsafe fn take_chunked_unchecked_struct<const B: u64>(
     out
 }
 
+#[cfg(feature = "dtype-struct")]
 unsafe fn take_opt_chunked_unchecked_struct<const B: u64>(
     ca: &StructChunked,
     by: &[ChunkId<B>],
