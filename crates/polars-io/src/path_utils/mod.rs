@@ -29,15 +29,22 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
                         eprintln!("init_temp_dir: sourced $USER")
                     }
                 })
-                .or_else(|_| {
-                    // Fallback to hashing $HOME
-                    std::env::var("HOME")
-                        .inspect(|_| {
-                            if verbose {
-                                eprintln!("init_temp_dir: sourced $HOME")
-                            }
-                        })
-                        .map(|x| blake3::hash(x.as_bytes()).to_hex()[..32].to_string())
+                .or_else(|_e| {
+                    // Fallback to hashing $HOME if blake3 is available (needs file_cache)
+                    #[cfg(feature = "file_cache")]
+                    {
+                        std::env::var("HOME")
+                            .inspect(|_| {
+                                if verbose {
+                                    eprintln!("init_temp_dir: sourced $HOME")
+                                }
+                            })
+                            .map(|x| blake3::hash(x.as_bytes()).to_hex()[..32].to_string())
+                    }
+                    #[cfg(not(feature = "file_cache"))]
+                    {
+                        Err(_e)
+                    }
                 });
 
             if let Ok(v) = id {
