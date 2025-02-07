@@ -61,12 +61,14 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
             // the default temporary directory location is underneath the user profile, so we
             // shouldn't need to do anything.
             let tmp_dir = std::env::temp_dir();
-            let user_profile =
-                PathBuf::from(std::env::var("USERPROFILE").expect("failed to load USERPROFILE"));
+            let users_dir = Path::new("/Users");
 
             // Have this debug assert so it gets run by CI.
-            if cfg!(debug_assertions) && !tmp_dir.starts_with(&user_profile) {
-                panic!("{:?}, {:?}", tmp_dir, user_profile);
+            if cfg!(debug_assertions) && !tmp_dir.starts_with(&users_dir) {
+                panic!(
+                    "temporary directory {:?} not a subdirectory of: {:?}",
+                    tmp_dir, users_dir
+                );
             }
 
             tmp_dir.join("polars/")
