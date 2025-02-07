@@ -157,6 +157,7 @@ impl PhaseOutcomeToken {
     }
 }
 
+/// Output for a phase.
 pub struct SourceOutput {
     pub outcome: PhaseOutcomeToken,
     pub port: SourceOutputPort,
@@ -166,8 +167,32 @@ pub struct SourceOutput {
     wait_token: WaitToken,
 }
 
+/// Output for a single morsel sender in a phase.
+pub struct MorselOutput {
+    pub outcome: PhaseOutcomeToken,
+    pub port: Sender<Morsel>,
+
+    #[allow(unused)]
+    /// Dropping this indicates that the morsel sender is done.
+    wait_token: WaitToken,
+}
+
 impl SourceOutput {
     pub fn from_port(port: SourceOutputPort) -> (PhaseOutcomeToken, WaitGroup, Self) {
+        let outcome = PhaseOutcomeToken::new();
+        let wait_group = WaitGroup::default();
+
+        let output = Self {
+            outcome: outcome.clone(),
+            wait_token: wait_group.token(),
+            port,
+        };
+        (outcome, wait_group, output)
+    }
+}
+
+impl MorselOutput {
+    pub fn from_port(port: Sender<Morsel>) -> (PhaseOutcomeToken, WaitGroup, Self) {
         let outcome = PhaseOutcomeToken::new();
         let wait_group = WaitGroup::default();
 

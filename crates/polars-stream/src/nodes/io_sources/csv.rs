@@ -1,5 +1,3 @@
-use std::future::Future;
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -8,9 +6,11 @@ use polars_core::config;
 use polars_core::prelude::{AnyValue, DataType, Field};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{SchemaExt, SchemaRef};
+use polars_core::utils::arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::StringCacheHolder;
 use polars_error::{polars_bail, PolarsResult};
+use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
     cast_columns, find_starting_point, prepare_csv_schema, read_chunk, CountLines,
     NullValuesCompiled,
@@ -20,17 +20,20 @@ use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_io::RowIndex;
-use polars_plan::plans::{FileInfo, ScanSources};
+use polars_plan::plans::{csv_file_info, FileInfo, ScanSource, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use crate::async_executor;
-use crate::async_primitives::connector::connector;
+use super::multi_scan::{MultiScanable, RowRestrication};
+use super::{SourceNode, SourceOutput};
+use crate::async_executor::{self, spawn};
+use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::wait_group::{IndexedWaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
+use crate::nodes::io_sources::MorselOutput;
 use crate::nodes::{MorselSeq, TaskPriority};
 
 struct LineBatch {
@@ -55,9 +58,6 @@ pub struct CsvSourceNode {
     file_options: FileScanOptions,
     options: CsvReadOptions,
     schema: Option<SchemaRef>,
-    num_pipelines: usize,
-    async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
-    is_finished: Arc<AtomicBool>,
     verbose: bool,
 }
 
@@ -76,102 +76,46 @@ impl CsvSourceNode {
             file_options,
             options,
             schema: None,
-            num_pipelines: 0,
-            async_task_data: Arc::new(tokio::sync::Mutex::new(None)),
-            is_finished: Arc::new(AtomicBool::new(false)),
             verbose,
         }
     }
 }
 
-impl ComputeNode for CsvSourceNode {
+impl SourceNode for CsvSourceNode {
     fn name(&self) -> &str {
         "csv_source"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
+    fn is_source_output_parallel(&self, _is_receiver_serial: bool) -> bool {
+        true
+    }
 
-        if self.verbose {
-            eprintln!("[CsvSource]: initialize");
-        }
+    fn spawn_source(
+        &mut self,
+        num_pipelines: usize,
+        mut output_recv: Receiver<SourceOutput>,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+        _unrestricted_row_count: Option<PlSmallStr>,
+    ) {
+        let (mut send_to, recv_from) = (0..num_pipelines)
+            .map(|_| connector::<MorselOutput>())
+            .collect::<(Vec<_>, Vec<_>)>();
 
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_right());
-    }
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
-        use std::sync::atomic::Ordering;
-
-        assert!(recv.is_empty());
-        assert_eq!(send.len(), 1);
-
-        if self.is_finished.load(Ordering::Relaxed) {
-            send[0] = PortState::Done;
-            assert!(
-                self.async_task_data.try_lock().unwrap().is_none(),
-                "should have already been shut down"
-            );
-        } else if send[0] == PortState::Done {
-            {
-                // Early shutdown - our port state was set to `Done` by the downstream nodes.
-                self.shutdown_in_background();
-            };
-            self.is_finished.store(true, Ordering::Relaxed);
-        } else {
-            send[0] = PortState::Ready
-        }
-
-        Ok(())
-    }
-
-    fn spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        recv_ports: &mut [Option<RecvPort<'_>>],
-        send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        use std::sync::atomic::Ordering;
-
-        assert!(recv_ports.is_empty());
-        assert_eq!(send_ports.len(), 1);
-        assert!(!self.is_finished.load(Ordering::Relaxed));
-
-        let morsel_senders = send_ports[0].take().unwrap().parallel();
-
-        let mut async_task_data_guard = {
-            let guard = self.async_task_data.try_lock().unwrap();
-
-            if guard.is_some() {
-                guard
-            } else {
-                drop(guard);
-                let v = self.init_line_batch_source();
-                let mut guard = self.async_task_data.try_lock().unwrap();
-                guard.replace(v);
-                guard
-            }
-        };
-
-        let (line_batch_receivers, chunk_reader, _) = async_task_data_guard.as_mut().unwrap();
-
-        assert_eq!(line_batch_receivers.len(), morsel_senders.len());
-
-        let is_finished = self.is_finished.clone();
         let source_token = SourceToken::new();
+        let (line_batch_receivers, chunk_reader, line_batch_source_task_handle) =
+            self.init_line_batch_source(num_pipelines);
 
-        let task_handles = line_batch_receivers
-            .drain(..)
-            .zip(morsel_senders)
-            .map(|(mut line_batch_rx, mut morsel_tx)| {
-                let is_finished = is_finished.clone();
+        join_handles.extend(line_batch_receivers.into_iter().zip(recv_from).map(
+            |(mut line_batch_rx, mut recv_from)| {
                 let chunk_reader = chunk_reader.clone();
                 let source_token = source_token.clone();
 
-                scope.spawn_task(TaskPriority::Low, async move {
-                    loop {
-                        let Ok(LineBatch {
+                spawn(TaskPriority::Low, async move {
+                    while let Ok(mut morsel_output) = recv_from.recv().await {
+                        while let Ok(LineBatch {
                             bytes,
                             n_lines,
                             slice: (offset, len),
@@ -180,76 +124,92 @@ impl ComputeNode for CsvSourceNode {
                             wait_token,
                             mut path_name,
                         }) = line_batch_rx.recv().await
-                        else {
-                            is_finished.store(true, Ordering::Relaxed);
-                            break;
-                        };
+                        {
+                            let mut df = chunk_reader.read_chunk(
+                                &bytes,
+                                n_lines,
+                                (offset, len),
+                                row_offset,
+                            )?;
 
-                        let mut df =
-                            chunk_reader.read_chunk(&bytes, n_lines, (offset, len), row_offset)?;
-
-                        if let Some(path_name) = path_name.take() {
-                            unsafe {
-                                df.with_column_unchecked(
-                                    Scalar::new(DataType::String, AnyValue::StringOwned(path_name))
+                            if let Some(path_name) = path_name.take() {
+                                unsafe {
+                                    df.with_column_unchecked(
+                                        Scalar::new(
+                                            DataType::String,
+                                            AnyValue::StringOwned(path_name),
+                                        )
                                         .into_column(
                                             chunk_reader.include_file_paths.clone().unwrap(),
                                         )
                                         .new_from_index(0, df.height()),
-                                )
-                            };
-                        }
+                                    )
+                                };
+                            }
 
-                        let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
-                        morsel.set_consume_token(wait_token);
+                            let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                            morsel.set_consume_token(wait_token);
 
-                        if morsel_tx.send(morsel).await.is_err() {
-                            break;
-                        }
+                            if morsel_output.port.send(morsel).await.is_err() {
+                                break;
+                            }
 
-                        if source_token.stop_requested() {
-                            break;
+                            if source_token.stop_requested() {
+                                morsel_output.outcome.stop();
+                                break;
+                            }
                         }
                     }
 
-                    PolarsResult::Ok(line_batch_rx)
+                    PolarsResult::Ok(())
                 })
-            })
-            .collect::<Vec<_>>();
+            },
+        ));
 
-        drop(async_task_data_guard);
+        join_handles.push(spawn(TaskPriority::Low, async move {
+            // Every phase we are given a new send port.
+            while let Ok(phase_output) = output_recv.recv().await {
+                let morsel_senders = phase_output.port.parallel();
+                let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
 
-        let async_task_data = self.async_task_data.clone();
-
-        join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-            {
-                let mut async_task_data_guard = async_task_data.try_lock().unwrap();
-                let (line_batch_receivers, ..) = async_task_data_guard.as_mut().unwrap();
-
-                for handle in task_handles {
-                    line_batch_receivers.push(handle.await?);
+                for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
+                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
+                    _ = send_to.send(morsel_output).await;
+                    morsel_outcomes.push((outcome, wait_group));
                 }
+
+                let mut is_finished = true;
+                for (outcome, wait_group) in morsel_outcomes.into_iter() {
+                    wait_group.wait().await;
+                    is_finished &= outcome.did_finish();
+                }
+
+                if is_finished {
+                    break;
+                }
+
+                phase_output.outcome.stop();
             }
 
-            if self.is_finished.load(Ordering::Relaxed) {
-                self.shutdown().await?;
-            }
-
-            Ok(())
+            drop(send_to);
+            // Join on the producer handle to catch errors/panics.
+            // Safety
+            // * We dropped the receivers on the line above
+            // * This function is only called once.
+            line_batch_source_task_handle.await
         }))
     }
 }
 
 impl CsvSourceNode {
-    fn init_line_batch_source(&mut self) -> AsyncTaskData {
+    fn init_line_batch_source(&mut self, num_pipelines: usize) -> AsyncTaskData {
         let verbose = self.verbose;
 
         let (mut line_batch_senders, line_batch_receivers): (Vec<_>, Vec<_>) =
-            (0..self.num_pipelines).map(|_| connector()).unzip();
+            (0..num_pipelines).map(|_| connector()).unzip();
 
         let scan_sources = self.scan_sources.clone();
         let run_async = scan_sources.is_cloud_url() || config::force_async();
-        let num_pipelines = self.num_pipelines;
 
         let schema_len = self.schema.as_ref().unwrap().len();
 
@@ -490,43 +450,6 @@ impl CsvSourceNode {
             self.file_options.include_file_paths.clone(),
         )
     }
-
-    /// # Panics
-    /// Panics if called more than once.
-    async fn shutdown_impl(
-        async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
-        verbose: bool,
-    ) -> PolarsResult<()> {
-        if verbose {
-            eprintln!("[CsvSource]: Shutting down");
-        }
-
-        let (line_batch_receivers, _chunk_reader, task_handle) =
-            async_task_data.try_lock().unwrap().take().unwrap();
-
-        drop(line_batch_receivers);
-        // Join on the producer handle to catch errors/panics.
-        // Safety
-        // * We dropped the receivers on the line above
-        // * This function is only called once.
-        task_handle.await
-    }
-
-    fn shutdown(&self) -> impl Future<Output = PolarsResult<()>> {
-        if self.verbose {
-            eprintln!("[CsvSource]: Shutdown via `shutdown()`");
-        }
-        Self::shutdown_impl(self.async_task_data.clone(), self.verbose)
-    }
-
-    fn shutdown_in_background(&self) {
-        if self.verbose {
-            eprintln!("[CsvSource]: Shutdown via `shutdown_in_background()`");
-        }
-        let async_task_data = self.async_task_data.clone();
-        polars_io::pl_async::get_runtime()
-            .spawn(Self::shutdown_impl(async_task_data, self.verbose));
-    }
 }
 
 #[derive(Default)]
@@ -671,5 +594,52 @@ impl ChunkReader {
 
             Ok(df)
         })
+    }
+}
+
+impl MultiScanable for CsvSourceNode {
+    type ReadOptions = CsvReadOptions;
+
+    const BASE_NAME: &'static str = "csv";
+
+    const DOES_PRED_PD: bool = false;
+    const DOES_SLICE_PD: bool = true;
+    const DOES_ROW_INDEX: bool = false;
+
+    async fn new(
+        source: ScanSource,
+        options: &Self::ReadOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
+        let sources = source.into_sources();
+
+        let file_options = FileScanOptions::default();
+        let mut csv_options = options.clone();
+
+        let file_info = csv_file_info(&sources, &file_options, &mut csv_options, cloud_options)?;
+        Ok(Self::new(sources, file_info, file_options, csv_options))
+    }
+
+    fn with_projection(&mut self, projection: Option<&Bitmap>) {
+        self.file_options.with_columns = projection.map(|p| {
+            p.true_idx_iter()
+                .map(|idx| self.file_info.schema.get_at_index(idx).unwrap().0.clone())
+                .collect()
+        });
+    }
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+        _ = row_restriction;
+        todo!()
+    }
+    fn with_row_index(&mut self, row_index: Option<PlSmallStr>) {
+        _ = row_index;
+        todo!()
+    }
+
+    async fn row_count(&mut self) -> PolarsResult<IdxSize> {
+        todo!()
+    }
+    async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+        Ok(self.file_info.schema.clone())
     }
 }
