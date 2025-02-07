@@ -124,8 +124,10 @@ class CredentialProviderAWS(CredentialProvider):
         """Fetch the credentials for the configured profile name."""
         import boto3
 
+        # Note: boto3 automatically sources the AWS_PROFILE env var
         session = boto3.Session(
-            profile_name=self.profile_name, region_name=self.region_name
+            profile_name=self.profile_name,
+            region_name=self.region_name,
         )
 
         if self.assume_role is not None:
@@ -186,7 +188,6 @@ class CredentialProviderAzure(CredentialProvider):
         tenant_id: str | None = None,
         credentials: Any | None = None,
         _storage_account: str | None = None,
-        _verbose: bool = False,
     ) -> None:
         """
         Initialize a credential provider for Microsoft Azure.
@@ -213,7 +214,6 @@ class CredentialProviderAzure(CredentialProvider):
         )
         self.tenant_id = tenant_id
         self.credentials = credentials
-        self._verbose = _verbose
 
         if credentials is not None:
             # If the user passes a credentials class, we just need to ensure it
@@ -230,7 +230,7 @@ class CredentialProviderAzure(CredentialProvider):
         elif self._try_get_azure_storage_account_credentials_if_permitted() is None:
             self._ensure_module_availability()
 
-        if self._verbose:
+        if os.getenv("POLARS_VERBOSE") == "1":
             print(
                 (
                     "[CredentialProviderAzure]: "
@@ -268,7 +268,9 @@ class CredentialProviderAzure(CredentialProvider):
             "POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY"
         )
 
-        if self._verbose:
+        verbose = os.getenv("POLARS_VERBOSE") == "1"
+
+        if verbose:
             print(
                 "[CredentialProviderAzure]: "
                 f"{self.account_name = } "
@@ -287,13 +289,13 @@ class CredentialProviderAzure(CredentialProvider):
                     )
                 }
 
-                if self._verbose:
+                if verbose:
                     print(
                         "[CredentialProviderAzure]: Retrieved account key from Azure CLI",
                         file=sys.stderr,
                     )
             except Exception as e:
-                if self._verbose:
+                if verbose:
                     print(
                         f"[CredentialProviderAzure]: Could not retrieve account key from Azure CLI: {e}",
                         file=sys.stderr,
@@ -519,12 +521,11 @@ def _maybe_init_credential_provider(
 
             provider = CredentialProviderAzure(
                 tenant_id=tenant_id,
-                _verbose=verbose,
                 _storage_account=storage_account,
             )
         elif _is_aws_cloud(scheme):
             region = None
-            profile = os.getenv("AWS_PROFILE")
+            profile = None
             default_region = None
             unhandled_key = None
 
@@ -547,8 +548,7 @@ def _maybe_init_credential_provider(
                         unhandled_key = k
 
             to_silence_this_warning = (
-                "To silence this warning, pass 'aws_profile': None in "
-                "storage_options, or unset the AWS_PROFILE environment flag."
+                "To silence this warning, pass 'aws_profile': None in storage_options."
             )
 
             if unhandled_key is not None:
