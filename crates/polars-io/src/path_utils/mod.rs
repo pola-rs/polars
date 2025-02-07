@@ -80,7 +80,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
         {
             use std::os::unix::fs::PermissionsExt;
 
-            (|| {
+            let result = (|| {
                 std::fs::set_permissions(path.as_ref(), std::fs::Permissions::from_mode(0o700))?;
                 let perms = std::fs::metadata(path.as_ref())?.permissions();
 
@@ -102,7 +102,11 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
                         path.as_ref()
                     ),
                 )
-            })?
+            });
+
+            if std::env::var("POLARS_ALLOW_UNSECURED_TEMP_DIR").as_deref() != Ok("1") {
+                result?;
+            }
         }
 
         std::io::Result::Ok(path)
@@ -112,7 +116,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
             e.kind(),
             format!(
                 "error initializing temporary directory: {} \
-                 consider explicitly setting POLARS_TEMP_DIR ",
+                 consider explicitly setting POLARS_TEMP_DIR",
                 e
             ),
         )
