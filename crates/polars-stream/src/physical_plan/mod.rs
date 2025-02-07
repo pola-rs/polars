@@ -167,6 +167,14 @@ pub enum PhysNodeKind {
         input: PhysStream,
     },
 
+    MultiScan {
+        scan_sources: ScanSources,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        scan_type: FileScan,
+        output_schema: SchemaRef,
+        allow_missing_columns: bool,
+        include_file_paths: Option<PlSmallStr>,
+    },
     FileScan {
         scan_sources: ScanSources,
         file_info: FileInfo,
@@ -231,6 +239,7 @@ fn visit_node_inputs_mut(
     while let Some(node) = to_visit.pop() {
         match &mut phys_sm[node].kind {
             PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::FileScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
             PhysNodeKind::Select { input, .. }

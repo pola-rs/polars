@@ -281,8 +281,11 @@ impl DataFrame {
             });
         };
 
-        let height = fst.len();
-        for col in &columns[1..] {
+        Self::new_with_height(fst.len(), columns)
+    }
+
+    pub fn new_with_height(height: usize, columns: Vec<Column>) -> PolarsResult<Self> {
+        for col in &columns {
             polars_ensure!(
                 col.len() == height,
                 ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
@@ -3295,6 +3298,7 @@ impl DataFrame {
         // - we don't adjust the names of the columns
         // - each column gets appended the same number of rows, which is an invariant of
         //   record_batch.
+        self.height += rb.height();
         let columns = unsafe { self.get_columns_mut() };
         for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
             let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();

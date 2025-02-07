@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
+use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, IDX_DTYPE};
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -390,28 +390,119 @@ pub fn lower_ir(
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
             } else if scan_sources.len() > 1 || hive_parts.is_some() {
-                // @TODO: At the moment, we materialize for Hive. I would also not like to do this,
-                // but at the moment it is this or panicking.
+                // // @TODO: add row index and include_file_path
                 //
-                // This is very much a hack, forgive me please.
-                let phys_node = phys_sm.insert(PhysNode {
-                    output_schema: Arc::new(Schema::default()),
-                    kind: PhysNodeKind::InputIndependentSelect {
-                        selectors: Vec::new(),
-                    },
-                });
-                let input = PhysStream::first(phys_node);
-                let in_memory_physical_plan = create_physical_plan(node, ir_arena, expr_arena)?;
-                let in_memory_physical_plan =
-                    Arc::new(std::sync::Mutex::new(in_memory_physical_plan));
+                // // @TODO: This should be moved to the projection pushdown query optimization
+                // // step.
+                // let proj_info = file_options.with_columns.as_deref().map(|cs| {
+                //     let mut needs_separate_projection = false;
+                //     let mut projection = MutableBitmap::from_len_zeroed(unprojected_schema.len());
+                //     if let Some(fst) = cs.first() {
+                //         let mut prev_idx = unprojected_schema.try_index_of(fst)?;
+                //         projection.set(prev_idx, true);
+                //
+                //         for c in &cs[1..] {
+                //             let idx = unprojected_schema.try_index_of(c)?;
+                //             projection.set(idx, true);
+                //
+                //             needs_separate_projection |= idx <= prev_idx;
+                //             prev_idx = idx;
+                //         }
+                //     }
+                //
+                //     PolarsResult::Ok((projection.freeze(), needs_separate_projection))
+                // }).transpose()?;
+                //
+                // let needs_separate_projection = proj_info.as_ref().is_some_and(|(_, x)| *x);
+                // let projection = proj_info.map(|(x, _)| x);
+                //
+                // let multi_scan_output_schema = match &projection {
+                //     None => output_schema.clone(),
+                //     Some(_) if !needs_separate_projection => output_schema.clone(),
+                //     Some(p) => {
+                //         let indices = p.true_idx_iter().collect::<Vec<_>>();
+                //         Arc::new(unprojected_schema.try_project_indices(&indices).unwrap())
+                //     }
+                // };
 
-                PhysNodeKind::InMemoryMap {
-                    input,
-                    map: Arc::new(move |_| {
-                        let mut in_memory_physical_plan = in_memory_physical_plan.lock().unwrap();
-                        in_memory_physical_plan.execute(&mut Default::default())
-                    }),
+                let mut schema = file_info.schema.as_ref().clone();
+                if let Some(ri) = &file_options.row_index {
+                    schema.shift_remove(ri.name.as_str());
                 }
+
+                let mut schema = Arc::new(schema);
+                let mut node = PhysNodeKind::MultiScan {
+                    scan_sources,
+                    hive_parts,
+                    scan_type,
+                    output_schema: schema.clone(),
+                    allow_missing_columns: file_options.allow_missing_columns,
+                    include_file_paths: file_options.include_file_paths,
+                };
+
+                if let Some(row_index) = file_options.row_index {
+                    let mut ri_schema = schema.as_ref().clone();
+                    ri_schema
+                        .insert_at_index(0, row_index.name.clone(), IDX_DTYPE)
+                        .unwrap();
+                    let source_node = phys_sm.insert(PhysNode {
+                        output_schema: schema,
+                        kind: node,
+                    });
+                    let stream = PhysStream::first(source_node);
+                    node = PhysNodeKind::WithRowIndex {
+                        input: stream,
+                        name: row_index.name,
+                        offset: Some(row_index.offset),
+                    };
+                    schema = Arc::new(ri_schema);
+                }
+
+                let proj_schema = Arc::new(schema.try_project(output_schema.iter_names_cloned())?);
+                let source_node = phys_sm.insert(PhysNode {
+                    output_schema: schema,
+                    kind: node,
+                });
+                let stream = PhysStream::first(source_node);
+                node = PhysNodeKind::SimpleProjection {
+                    input: stream,
+                    columns: output_schema.iter_names_cloned().collect(),
+                };
+                schema = proj_schema;
+
+                if let Some(slice) = file_options.slice {
+                    let source_node = phys_sm.insert(PhysNode {
+                        output_schema: schema.clone(),
+                        kind: node,
+                    });
+                    let stream = PhysStream::first(source_node);
+                    node = if slice.0 < 0 {
+                        PhysNodeKind::NegativeSlice {
+                            input: stream,
+                            offset: slice.0,
+                            length: slice.1,
+                        }
+                    } else {
+                        PhysNodeKind::StreamingSlice {
+                            input: stream,
+                            offset: slice.0 as usize,
+                            length: slice.1,
+                        }
+                    };
+                }
+
+                if let Some(predicate) = predicate {
+                    let source_node = phys_sm.insert(PhysNode {
+                        output_schema: schema,
+                        kind: node,
+                    });
+                    let stream = PhysStream::first(source_node);
+                    let stream =
+                        build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache)?;
+                    return Ok(stream);
+                }
+
+                node
             } else {
                 #[cfg(feature = "ipc")]
                 if matches!(scan_type, FileScan::Ipc { .. }) {

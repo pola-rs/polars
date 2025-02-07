@@ -14,7 +14,7 @@ use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
-pub use scan_sources::{ScanSourceIter, ScanSourceRef, ScanSources};
+pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;

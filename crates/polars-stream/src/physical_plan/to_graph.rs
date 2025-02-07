@@ -24,6 +24,7 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
+use crate::nodes::io_sources::parquet::ParquetSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -352,6 +353,45 @@ fn to_graph_rec<'a>(
             )
         },
 
+        MultiScan {
+            scan_sources,
+            hive_parts,
+            scan_type,
+            output_schema,
+            allow_missing_columns,
+            include_file_paths,
+        } => match scan_type {
+            #[cfg(feature = "parquet")]
+            polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
+                    nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
+                        scan_sources.clone(),
+                        hive_parts.clone(),
+                        output_schema.clone(),
+                        *allow_missing_columns,
+                        include_file_paths.clone(),
+                    ),
+                ),
+                [],
+            ),
+            #[cfg(feature = "ipc")]
+            polars_plan::plans::FileScan::Ipc { .. } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
+                    nodes::io_sources::multi_scan::MultiScanNode::<
+                        nodes::io_sources::ipc::IpcSourceNode,
+                    >::new(
+                        scan_sources.clone(),
+                        hive_parts.clone(),
+                        output_schema.clone(),
+                        *allow_missing_columns,
+                        include_file_paths.clone(),
+                    ),
+                ),
+                [],
+            ),
+            _ => todo!(),
+        },
+
         v @ FileScan { .. } => {
             let FileScan {
                 scan_sources,
@@ -412,14 +452,16 @@ fn to_graph_rec<'a>(
                         cloud_options,
                         metadata: first_metadata,
                     } => ctx.graph.add_node(
-                        nodes::io_sources::parquet::ParquetSourceNode::new(
-                            scan_sources,
-                            file_info,
-                            predicate,
-                            options,
-                            cloud_options,
-                            file_options,
-                            first_metadata,
+                        nodes::io_sources::SourceComputeNode::new(
+                            nodes::io_sources::parquet::ParquetSourceNode::new(
+                                scan_sources,
+                                file_info,
+                                predicate,
+                                options,
+                                cloud_options,
+                                file_options,
+                                first_metadata,
+                            ),
                         ),
                         [],
                     ),
@@ -433,14 +475,16 @@ fn to_graph_rec<'a>(
                         assert!(predicate.is_none());
 
                         ctx.graph.add_node(
-                            nodes::io_sources::ipc::IpcSourceNode::new(
-                                scan_sources,
-                                file_info,
-                                options,
-                                cloud_options,
-                                file_options,
-                                first_metadata,
-                            )?,
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::ipc::IpcSourceNode::new(
+                                    scan_sources,
+                                    file_info,
+                                    options,
+                                    cloud_options,
+                                    file_options,
+                                    first_metadata,
+                                )?,
+                            ),
                             [],
                         )
                     },
