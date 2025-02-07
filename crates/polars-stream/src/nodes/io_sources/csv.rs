@@ -597,18 +597,20 @@ impl ChunkReader {
 }
 
 impl MultiScanable for CsvSourceNode {
+    type ReadOptions = CsvReadOptions;
+
     const BASE_NAME: &'static str = "csv";
 
     const DOES_PRED_PD: bool = false;
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = false;
 
-    async fn new(source: ScanSource) -> PolarsResult<Self> {
+    async fn new(source: ScanSource, options: &Self::ReadOptions) -> PolarsResult<Self> {
         let sources = source.into_sources();
 
         let file_options = FileScanOptions::default();
         let cloud_options = None;
-        let mut csv_options = CsvReadOptions::default();
+        let mut csv_options = options.clone();
 
         let file_info = csv_file_info(&sources, &file_options, &mut csv_options, cloud_options)?;
         Ok(Self::new(sources, file_info, file_options, csv_options))

@@ -8,7 +8,7 @@ use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::{FileMetadata, ParallelStrategy, ParquetOptions};
+use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_parquet::read::read_metadata;
 use polars_parquet::read::schema::infer_schema_with_options;
@@ -255,13 +255,15 @@ impl SourceNode for ParquetSourceNode {
 }
 
 impl MultiScanable for ParquetSourceNode {
+    type ReadOptions = ParquetOptions;
+
     const BASE_NAME: &'static str = "parquet";
 
     const DOES_PRED_PD: bool = true;
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = true;
 
-    async fn new(source: ScanSource) -> PolarsResult<Self> {
+    async fn new(source: ScanSource, options: &Self::ReadOptions) -> PolarsResult<Self> {
         let source = source.into_sources();
         let memslice = source.at(0).to_memslice()?;
         let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
@@ -270,12 +272,8 @@ impl MultiScanable for ParquetSourceNode {
         let schema = Arc::new(Schema::from_arrow_schema(&arrow_schema));
         let arrow_schema = Arc::new(arrow_schema);
 
-        let options = ParquetOptions {
-            schema: Some(schema.clone()),
-            parallel: ParallelStrategy::Auto,
-            low_memory: false,
-            use_statistics: true,
-        };
+        let mut options = options.clone();
+        options.schema = Some(schema.clone());
 
         let file_options = FileScanOptions::default();
         let file_info = FileInfo::new(

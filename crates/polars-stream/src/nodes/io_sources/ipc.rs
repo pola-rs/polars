@@ -497,15 +497,17 @@ impl SourceNode for IpcSourceNode {
 }
 
 impl MultiScanable for IpcSourceNode {
+    type ReadOptions = IpcScanOptions;
+
     const BASE_NAME: &'static str = "ipc";
 
     const DOES_PRED_PD: bool = false;
     const DOES_SLICE_PD: bool = true;
     const DOES_ROW_INDEX: bool = true;
 
-    async fn new(source: ScanSource) -> PolarsResult<Self> {
+    async fn new(source: ScanSource, options: &Self::ReadOptions) -> PolarsResult<Self> {
         let source = source.into_sources();
-        let options = IpcScanOptions;
+        let options = options.clone();
 
         let memslice = source.at(0).to_memslice()?;
         let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(

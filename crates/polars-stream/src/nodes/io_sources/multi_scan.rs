@@ -38,28 +38,38 @@ pub enum RowRestrication {
 pub struct MultiScanNode<T: MultiScanable> {
     name: String,
     sources: ScanSources,
+
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     output_schema: SchemaRef,
     allow_missing_columns: bool,
     include_file_paths: Option<PlSmallStr>,
+
+    read_options: Arc<T::ReadOptions>,
+
     _pd: PhantomData<T>,
 }
 
 impl<T: MultiScanable> MultiScanNode<T> {
     pub fn new(
         sources: ScanSources,
+
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         output_schema: SchemaRef,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
+
+        read_options: T::ReadOptions,
     ) -> Self {
         Self {
             name: format!("multi-scan[{}]", T::BASE_NAME),
             sources,
+
             hive_parts,
             output_schema,
             allow_missing_columns,
             include_file_paths,
+
+            read_options: Arc::new(read_options),
 
             _pd: PhantomData,
         }
@@ -141,13 +151,18 @@ fn process_dataframe(
 }
 
 pub trait MultiScanable: SourceNode + Sized + Send + Sync {
+    type ReadOptions: Send + Sync + 'static;
+
     const BASE_NAME: &'static str;
 
     const DOES_PRED_PD: bool;
     const DOES_SLICE_PD: bool;
     const DOES_ROW_INDEX: bool;
 
-    fn new(source: ScanSource) -> impl Future<Output = PolarsResult<Self>> + Send;
+    fn new(
+        source: ScanSource,
+        options: &Self::ReadOptions,
+    ) -> impl Future<Output = PolarsResult<Self>> + Send;
 
     fn with_projection(&mut self, projection: Option<&Bitmap>);
     #[allow(unused)]
@@ -187,6 +202,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         let num_concurrent_scans = num_pipelines;
 
         let sources = &self.sources;
+        let read_options = &self.read_options;
         let hive_schema = self
             .hive_parts
             .as_ref()
@@ -199,6 +215,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
         join_handles.extend(si_send.into_iter().enumerate().map(|(mut i, mut ch_send)| {
             let sources = sources.clone();
+            let read_options = read_options.clone();
             let hive_schema = hive_schema.clone();
             spawn(TaskPriority::High, async move {
                 let state = ExecutionState::new();
@@ -208,7 +225,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                     let source = sources.at(i).into_owned()?;
                     let (mut output_send, output_recv) = connector();
-                    let mut source = T::new(source).await?;
+                    let mut source = T::new(source, read_options.as_ref()).await?;
 
                     let source_schema = source.schema().await?;
                     let projection = source_schema

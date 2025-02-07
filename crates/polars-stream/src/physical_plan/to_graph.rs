@@ -362,7 +362,7 @@ fn to_graph_rec<'a>(
             include_file_paths,
         } => match scan_type {
             #[cfg(feature = "parquet")]
-            polars_plan::plans::FileScan::Parquet { .. } => ctx.graph.add_node(
+            polars_plan::plans::FileScan::Parquet { options, .. } => ctx.graph.add_node(
                 nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
                         scan_sources.clone(),
@@ -370,12 +370,13 @@ fn to_graph_rec<'a>(
                         output_schema.clone(),
                         *allow_missing_columns,
                         include_file_paths.clone(),
+                        options.clone(),
                     ),
                 ),
                 [],
             ),
             #[cfg(feature = "ipc")]
-            polars_plan::plans::FileScan::Ipc { .. } => ctx.graph.add_node(
+            polars_plan::plans::FileScan::Ipc { options, .. } => ctx.graph.add_node(
                 nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<
                         nodes::io_sources::ipc::IpcSourceNode,
@@ -385,12 +386,13 @@ fn to_graph_rec<'a>(
                         output_schema.clone(),
                         *allow_missing_columns,
                         include_file_paths.clone(),
+                        options.clone(),
                     ),
                 ),
                 [],
             ),
             #[cfg(feature = "csv")]
-            polars_plan::plans::FileScan::Csv { .. } => ctx.graph.add_node(
+            polars_plan::plans::FileScan::Csv { options, .. } => ctx.graph.add_node(
                 nodes::io_sources::SourceComputeNode::new(
                     nodes::io_sources::multi_scan::MultiScanNode::<
                         nodes::io_sources::csv::CsvSourceNode,
@@ -400,6 +402,7 @@ fn to_graph_rec<'a>(
                         output_schema.clone(),
                         *allow_missing_columns,
                         include_file_paths.clone(),
+                        options.clone(),
                     ),
                 ),
                 [],
