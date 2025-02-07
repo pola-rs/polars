@@ -489,7 +489,7 @@ def test_select_unnest_height_filter_order_by() -> None:
         pl.Series("list", [3, 4, 5, 6, 2, 1]).to_frame(),
     )
 
-    # Note: Filter applies first in SQL
+    # Note: Filter applies before projections in SQL
     assert_frame_equal(
         df.sql(
             """\
