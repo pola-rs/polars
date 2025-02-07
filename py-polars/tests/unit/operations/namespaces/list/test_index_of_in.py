@@ -152,6 +152,14 @@ def test_mismatched_length() -> None:
         series.list.index_of_in(pl.Series(needles))
 
 
+def all_values(list_series: pl.Series) -> list:
+    values = []
+    for subseries in list_series.to_list():
+        if subseries is not None:
+            values.extend(subseries)
+    return values
+
+
 @pytest.mark.parametrize("float_dtype", FLOAT_DTYPES)
 def test_float(float_dtype: pl.DataType) -> None:
     lists = [
@@ -164,12 +172,17 @@ def test_float(float_dtype: pl.DataType) -> None:
     lists_series = pl.Series(lists, dtype=pl.List(float_dtype))
 
     # Scalar
-    for value in sum(lists, []) + [3.5, np.float64(1.5), np.float32(3.0)]:
+    for value in all_values(lists_series) + [
+        None,
+        3.5,
+        np.float64(1.5),
+        np.float32(3.0),
+    ]:
         assert_index_of_in_from_scalar(lists_series, value)
 
     # Series
     assert_index_of_in_from_series(
-        lists_series, pl.Series([1.5, -np.inf, -np.nan], dtype=float_dtype)
+        lists_series, pl.Series([1.5, -np.inf, -np.nan, 3, None], dtype=float_dtype)
     )
 
 
@@ -275,11 +288,7 @@ def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) 
     )
     assert_index_of_in_from_series(list_series, needles_series)
 
-    values = [None]
-    for subseries in list_series.to_list():
-        if subseries is not None:
-            values.extend(subseries)
-    values.extend(extra_values)
+    values = all_values(list_series) + extra_values + [None]
     for value in values:
         assert_index_of_in_from_scalar(list_series, value)
 
