@@ -107,6 +107,7 @@ module = [
   "arrow_odbc",
   "backports",
   "connectorx",
+  "dateutil.*",
   "deltalake.*",
   "fsspec.*",
   "gevent",
