@@ -5,7 +5,10 @@ use polars_utils::total_ord::TotalEq;
 use row_encode::encode_rows_unordered;
 
 /// Find the index of the value, or ``None`` if it can't be found.
-fn index_of_value<'a, DT, AR>(ca: &'a ChunkedArray<DT>, value: AR::ValueT<'a>) -> Option<usize>
+pub(crate) fn index_of_value<'a, DT, AR>(
+    ca: &'a ChunkedArray<DT>,
+    value: AR::ValueT<'a>,
+) -> Option<usize>
 where
     DT: PolarsDataType,
     AR: StaticArray,
@@ -51,12 +54,29 @@ macro_rules! try_index_of_numeric_ca {
     ($ca:expr, $value:expr) => {{
         let ca = $ca;
         let value = $value;
-        // extract() returns None if casting failed, so consider an extract()
-        // failure as not finding the value. Nulls should have been handled
-        // earlier.
+        // extract() returns None if casting failed, and by this point Nulls
+        // have been handled, and everything should have been cast to matching
+        // dtype otherwise.
         let value = value.value().extract().unwrap();
         index_of_numeric_value(ca, value)
     }};
+}
+
+/// Find the index of nulls within a Series.
+pub(crate) fn index_of_null(series: &Series) -> Option<usize> {
+    let mut index = 0;
+    for chunk in series.chunks() {
+        let length = chunk.len();
+        if let Some(bitmap) = chunk.validity() {
+            let leading_ones = bitmap.leading_ones();
+            if leading_ones < length {
+                return Some(index + leading_ones);
+            }
+        } else {
+            index += length;
+        }
+    }
+    return None;
 }
 
 /// Find the index of a given value (the first and only entry in `value_series`)
@@ -80,19 +100,7 @@ pub fn index_of(series: &Series, needle: Scalar) -> PolarsResult<Option<usize>> 
 
     // Series is not null, and the value is null:
     if needle.is_null() {
-        let mut index = 0;
-        for chunk in series.chunks() {
-            let length = chunk.len();
-            if let Some(bitmap) = chunk.validity() {
-                let leading_ones = bitmap.leading_ones();
-                if leading_ones < length {
-                    return Ok(Some(index + leading_ones));
-                }
-            } else {
-                index += length;
-            }
-        }
-        return Ok(None);
+        return Ok(index_of_null(series));
     }
 
     if series.dtype().is_primitive_numeric() {

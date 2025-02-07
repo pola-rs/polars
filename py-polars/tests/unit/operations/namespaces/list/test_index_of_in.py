@@ -158,6 +158,8 @@ def test_float(float_dtype: pl.DataType) -> None:
         [1.5, np.nan, np.inf],
         [3.0, None, -np.inf],
         [0.0, -0.0, -np.nan],
+        None,
+        [None, None],
     ]
     lists_series = pl.Series(lists, dtype=pl.List(float_dtype))
 
@@ -290,3 +292,12 @@ def test_categorical() -> None:
         dtype=pl.List(pl.Categorical),
     )
     assert series.list.index_of_in("b").to_list() == [None, 1, 0, None, None]
+
+
+def test_nulls() -> None:
+    series = pl.Series([[None, None], None], dtype=pl.List(pl.Null))
+    assert series.list.index_of_in(None).to_list() == [0, None]
+
+    series = pl.Series([None, [None, None]], dtype=pl.List(pl.Int64))
+    assert series.list.index_of_in(None).to_list() == [None, 0]
+    assert series.list.index_of_in(1).to_list() == [None, None]
