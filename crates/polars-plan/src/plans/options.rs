@@ -257,6 +257,10 @@ impl FunctionOptions {
     pub fn is_length_preserving(&self) -> bool {
         !self.flags.contains(FunctionFlags::CHANGES_LENGTH)
     }
+
+    pub fn returns_scalar(&self) -> bool {
+        self.flags.contains(FunctionFlags::RETURNS_SCALAR)
+    }
 }
 
 impl Default for FunctionOptions {
