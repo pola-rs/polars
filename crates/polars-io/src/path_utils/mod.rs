@@ -60,20 +60,9 @@ pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
             // Setting permissions on Windows is not as easy compared to Unix, but fortunately
             // the default temporary directory location is underneath the user profile, so we
             // shouldn't need to do anything.
-            let tmp_dir = std::env::temp_dir();
-            let users_dir = Path::new("/Users");
-
-            // Have this debug assert so it gets run by CI.
-            if cfg!(debug_assertions) && !tmp_dir.starts_with(users_dir) {
-                panic!(
-                    "temporary directory {:?} not a subdirectory of: {:?}",
-                    tmp_dir, users_dir
-                );
-            }
-
-            tmp_dir.join("polars/")
+            std::env::temp_dir().join("polars/")
         } else {
-            std::env::temp_dir().join("polars")
+            std::env::temp_dir().join("polars/")
         }
         .into_boxed_path();
 
