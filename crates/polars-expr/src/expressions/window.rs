@@ -699,7 +699,7 @@ fn set_by_groups(
             }};
         }
         downcast_as_macro_arg_physical!(&s, dispatch)
-            .map(|s| s.cast(dtype).unwrap())
+            .map(|s| unsafe { s.from_physical_unchecked(dtype) }.unwrap())
             .map(Column::from)
     } else {
         None
