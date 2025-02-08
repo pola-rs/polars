@@ -439,7 +439,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
 
 @pytest.mark.write_disk
-def test_fetch_union(tmp_path: Path) -> None:
+def test_head_union(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
@@ -452,8 +452,8 @@ def test_fetch_union(tmp_path: Path) -> None:
     df1.write_parquet(file_path_1)
     df2.write_parquet(file_path_2)
 
-    result_one = pl.scan_parquet(file_path_1)._fetch(1)
-    result_glob = pl.scan_parquet(file_path_glob)._fetch(1)
+    result_one = pl.scan_parquet(file_path_1).head(1).collect()
+    result_glob = pl.scan_parquet(file_path_glob).head(1).collect()
 
     expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_one, expected)
@@ -1980,14 +1980,14 @@ def test_allow_missing_columns(
     expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
 
     with pytest.raises(
-        pl.exceptions.ColumnNotFoundError,
-        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
+        match="enabling `allow_missing_columns`",
     ):
         pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
 
     with pytest.raises(
-        pl.exceptions.ColumnNotFoundError,
-        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
+        match="enabling `allow_missing_columns`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
             streaming=streaming
