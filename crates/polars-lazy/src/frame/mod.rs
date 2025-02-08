@@ -905,6 +905,7 @@ impl LazyFrame {
     fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
         #[cfg(feature = "new_streaming")]
         {
+            self.opt_state |= OptFlags::NEW_STREAMING;
             if self
                 .try_new_streaming_if_requested(payload.clone())
                 .is_some()
