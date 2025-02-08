@@ -5317,7 +5317,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         return self._from_pyldf(self._ldf.drop(drop_cols, strict=strict))
 
     def rename(
-        self, mapping: dict[str, str] | Callable[[str], str], *, strict: bool = True
+        self, mapping: Mapping[str, str] | Callable[[str], str], *, strict: bool = True
     ) -> LazyFrame:
         """
         Rename column names.
