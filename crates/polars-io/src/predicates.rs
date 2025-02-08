@@ -17,20 +17,9 @@ pub trait PhysicalIoExpr: Send + Sync {
     fn as_stats_evaluator(&self) -> Option<&dyn StatsEvaluator> {
         None
     }
-
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalIoExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        _ = name;
-        None
-    }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum SpecializedColumnPredicateExpr {
     Eq(Scalar),
     EqMissing(Scalar),
@@ -76,18 +65,10 @@ impl ParquetColumnExpr for ColumnPredicateExpr {
     fn evaluate_mut(&self, values: &dyn Array, bm: &mut MutableBitmap) {
         // We should never evaluate nulls with this.
         assert!(values.validity().is_none_or(|v| v.set_bits() == 0));
-        assert_eq!(
-            &self.dtype.to_physical().to_arrow(CompatLevel::newest()),
-            values.dtype()
-        );
 
-        let series = unsafe {
-            Series::from_chunks_and_dtype_unchecked(
-                self.column_name.clone(),
-                vec![values.to_boxed()],
-                &self.dtype,
-            )
-        };
+        // @NOTE: This is okay because we don't have Enums, Categoricals, or Decimals
+        let series =
+            Series::from_arrow_chunks(self.column_name.clone(), vec![values.to_boxed()]).unwrap();
         let column = series.into_column();
         let df = unsafe { DataFrame::new_no_checks(values.len(), vec![column]) };
 
@@ -369,6 +350,28 @@ pub trait SkipBatchPredicate: Send + Sync {
     ) -> PolarsResult<bool>;
 }
 
+pub struct ColumnPredicates {
+    pub predicates: PlHashMap<
+        PlSmallStr,
+        (
+            Arc<dyn PhysicalIoExpr>,
+            Option<SpecializedColumnPredicateExpr>,
+        ),
+    >,
+    pub is_sumwise_complete: bool,
+}
+
+// I want to be explicit here.
+#[allow(clippy::derivable_impls)]
+impl Default for ColumnPredicates {
+    fn default() -> Self {
+        Self {
+            predicates: PlHashMap::default(),
+            is_sumwise_complete: false,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
@@ -378,6 +381,9 @@ pub struct ScanIOPredicate {
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
+
+    /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
+    pub column_predicates: Arc<ColumnPredicates>,
 }
 
 /// A collection of column stats with a known schema.

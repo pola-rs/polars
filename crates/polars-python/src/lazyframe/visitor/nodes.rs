@@ -1,11 +1,10 @@
+use polars::prelude::python_dsl::PythonScanSource;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
-use polars_plan::prelude::{
-    FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate, PythonScanSource,
-};
+use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate};
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::IntoPyObjectExt;

@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
 use simd_json::BorrowedValue;
 
 use super::*;
@@ -73,6 +73,6 @@ pub fn deserialize_iter<'a>(
             dtype.clone(),
             allow_extra_fields_in_struct,
         )?);
-        concatenate_owned_unchecked(&arr)
+        concatenate_unchecked(&arr)
     }
 }

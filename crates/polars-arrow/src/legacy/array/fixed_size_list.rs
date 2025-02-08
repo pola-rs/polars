@@ -2,9 +2,9 @@ use polars_error::PolarsResult;
 
 use crate::array::{new_null_array, ArrayRef, FixedSizeListArray, NullArray};
 use crate::bitmap::BitmapBuilder;
+use crate::compute::concatenate::concatenate_unchecked;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::array::{convert_inner_type, is_nested_null};
-use crate::legacy::kernels::concatenate::concatenate_owned_unchecked;
 
 #[derive(Default)]
 pub struct AnonymousBuilder {
@@ -85,7 +85,7 @@ impl AnonymousBuilder {
             })
             .collect::<Vec<_>>();
 
-        let values = concatenate_owned_unchecked(&arrays)?;
+        let values = concatenate_unchecked(&arrays)?;
 
         let dtype = FixedSizeListArray::default_datatype(inner_dtype.clone(), self.width);
         Ok(FixedSizeListArray::new(

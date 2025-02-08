@@ -830,3 +830,14 @@ def test_cse_union_19227() -> None:
     assert out.collect().schema == pl.Schema(
         [("C", pl.Int64), ("A", pl.Int64), ("B", pl.Int64)]
     )
+
+
+def test_cse_21115() -> None:
+    lf = pl.LazyFrame({"x": 1, "y": 5})
+
+    assert lf.with_columns(
+        pl.all().exp() + pl.min_horizontal(pl.all().exp())
+    ).collect().to_dict(as_series=False) == {
+        "x": [5.43656365691809],
+        "y": [151.13144093103566],
+    }

@@ -1,9 +1,10 @@
 use std::sync::{Arc, Mutex};
 
+use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::PolarsError;
 use polars_plan::plans::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
+use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};

@@ -1059,7 +1059,7 @@ def _read_spreadsheet_calamine(
         if read_options.get("header_row", False) is None and not read_options.get(
             "column_names"
         ):
-            df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
+            df.columns = [f"column_{i}" for i in range(1, df.width + 1)]
 
     df = _drop_null_data(
         df,

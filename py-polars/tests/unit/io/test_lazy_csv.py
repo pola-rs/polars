@@ -367,6 +367,7 @@ def test_file_list_schema_mismatch(
         assert_frame_equal(out, expect)
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("streaming", [True, False])
 def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)

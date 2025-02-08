@@ -177,6 +177,7 @@ impl BuildState {
             let hash_keys = select_keys(morsel.df(), key_selectors, params, state).await?;
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
+            payload._deshare_views_mut();
 
             unsafe {
                 hash_keys.gen_partition_idxs(
@@ -186,11 +187,9 @@ impl BuildState {
                     track_unmatchable,
                 );
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
+                    let payload_for_partition = payload.take_slice_unchecked_impl(idxs_in_p, false);
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
-                    p.frames.push((
-                        morsel.seq(),
-                        payload.take_slice_unchecked_impl(idxs_in_p, false),
-                    ));
+                    p.frames.push((morsel.seq(), payload_for_partition));
                 }
             }
         }
@@ -344,7 +343,9 @@ impl ProbeState {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
             let hash_keys = select_keys(&df, key_selectors, params, state).await?;
-            let payload = select_payload(df, payload_selector);
+            let mut payload = select_payload(df, payload_selector);
+            let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
+
             max_seq = seq;
 
             unsafe {
@@ -371,11 +372,23 @@ impl ProbeState {
                             IdxSize::MAX,
                         );
 
+                        if table_match.is_empty() {
+                            continue;
+                        }
+
+                        // Gather output and add to buffer.
                         let mut build_df = if emit_unmatched {
-                            p.df.take_opt_chunked_unchecked(&table_match)
+                            p.df.take_opt_chunked_unchecked(&table_match, false)
                         } else {
-                            p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
+                            p.df.take_chunked_unchecked(&table_match, IsSorted::Not, false)
                         };
+
+                        if !payload_rechunked {
+                            // TODO: can avoid rechunk? We have to rechunk here or else we do it
+                            // multiple times during the gather.
+                            payload.rechunk_mut();
+                            payload_rechunked = true;
+                        }
                         let mut probe_df = payload.take_slice_unchecked_impl(&probe_match, false);
 
                         let mut out_df = if params.left_is_build {
@@ -392,22 +405,25 @@ impl ProbeState {
                         out_per_partition.push(out_df);
                     }
 
-                    let sort_options = SortMultipleOptions {
-                        descending: vec![false],
-                        nulls_last: vec![false],
-                        multithreaded: false,
-                        maintain_order: true,
-                        limit: None,
-                    };
-                    let mut out_df = accumulate_dataframes_vertical_unchecked(out_per_partition);
-                    out_df.sort_in_place([name.clone()], sort_options).unwrap();
-                    out_df.drop_in_place(&name).unwrap();
-                    out_df = postprocess_join(out_df, params);
+                    if !out_per_partition.is_empty() {
+                        let sort_options = SortMultipleOptions {
+                            descending: vec![false],
+                            nulls_last: vec![false],
+                            multithreaded: false,
+                            maintain_order: true,
+                            limit: None,
+                        };
+                        let mut out_df =
+                            accumulate_dataframes_vertical_unchecked(out_per_partition);
+                        out_df.sort_in_place([name.clone()], sort_options).unwrap();
+                        out_df.drop_in_place(&name).unwrap();
+                        out_df = postprocess_join(out_df, params);
 
-                    // TODO: break in smaller morsels.
-                    let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                    if send.send(out_morsel).await.is_err() {
-                        break;
+                        // TODO: break in smaller morsels.
+                        let out_morsel = Morsel::new(out_df, seq, src_token.clone());
+                        if send.send(out_morsel).await.is_err() {
+                            break;
+                        }
                     }
                 } else {
                     let mut out_frames = Vec::new();
@@ -431,10 +447,16 @@ impl ProbeState {
 
                             // Gather output and send.
                             let mut build_df = if emit_unmatched {
-                                p.df.take_opt_chunked_unchecked(&table_match)
+                                p.df.take_opt_chunked_unchecked(&table_match, false)
                             } else {
-                                p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
+                                p.df.take_chunked_unchecked(&table_match, IsSorted::Not, false)
                             };
+                            if !payload_rechunked {
+                                // TODO: can avoid rechunk? We have to rechunk here or else we do it
+                                // multiple times during the gather.
+                                payload.rechunk_mut();
+                                payload_rechunked = true;
+                            }
                             let mut probe_df =
                                 payload.take_slice_unchecked_impl(&probe_match, false);
 
@@ -494,7 +516,8 @@ impl ProbeState {
                 p.table.unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
 
                 // Gather and create full-null counterpart.
-                let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not);
+                let mut build_df =
+                    p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                 let len = build_df.height();
                 let mut out_df = if params.left_is_build {
                     let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
@@ -592,7 +615,8 @@ impl EmitUnmatchedState {
 
                 // Gather and create full-null counterpart.
                 let out_df = unsafe {
-                    let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not);
+                    let mut build_df =
+                        p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                     let len = build_df.height();
                     if params.left_is_build {
                         let probe_df = DataFrame::full_null(&params.right_payload_schema, len);

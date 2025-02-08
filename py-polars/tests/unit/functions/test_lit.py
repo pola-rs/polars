@@ -79,7 +79,7 @@ def test_lit_ambiguous_datetimes_11379() -> None:
             )
         }
     )
-    for i in range(len(df)):
+    for i in range(df.height):
         result = df.filter(pl.col("ts") >= df["ts"][i])
         expected = df[i:]
         assert_frame_equal(result, expected)

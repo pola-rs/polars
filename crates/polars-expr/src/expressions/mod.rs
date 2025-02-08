@@ -33,7 +33,7 @@ pub(crate) use filter::*;
 pub(crate) use gather::*;
 pub(crate) use literal::*;
 use polars_core::prelude::*;
-use polars_io::predicates::{PhysicalIoExpr, SpecializedColumnPredicateExpr};
+use polars_io::predicates::PhysicalIoExpr;
 use polars_plan::prelude::*;
 #[cfg(feature = "dynamic_group_by")]
 pub(crate) use rolling::RollingExpr;
@@ -602,17 +602,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )>;
-    fn to_column(&self) -> Option<&PlSmallStr> {
-        None
-    }
-
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
@@ -656,17 +645,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
     #[cfg(feature = "parquet")]
     fn as_stats_evaluator(&self) -> Option<&dyn polars_io::predicates::StatsEvaluator> {
         self.expr.as_stats_evaluator()
-    }
-
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalIoExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        let (expr, specialized) = self.expr.isolate_column_expr(name)?;
-        Some((phys_expr_to_io_expr(expr), specialized))
     }
 }
 

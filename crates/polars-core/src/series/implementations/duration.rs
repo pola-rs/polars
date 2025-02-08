@@ -383,6 +383,7 @@ impl SeriesTrait for SeriesWrap<DurationChunked> {
     fn rechunk(&self) -> Series {
         self.0
             .rechunk()
+            .into_owned()
             .into_duration(self.0.time_unit())
             .into_series()
     }

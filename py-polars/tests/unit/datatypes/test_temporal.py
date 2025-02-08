@@ -395,7 +395,7 @@ def test_to_dicts() -> None:
     df = pl.DataFrame(
         data, schema_overrides={"a": pl.Datetime("ns"), "d": pl.Duration("ns")}
     )
-    assert len(df) == 1
+    assert df.height == 1
 
     d = df.to_dicts()[0]
     for col in data:

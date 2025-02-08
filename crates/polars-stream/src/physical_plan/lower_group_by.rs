@@ -193,7 +193,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Mean(input)
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
-                | IRAggExpr::Std(input, ..) => {
+                | IRAggExpr::Std(input, ..)
+                | IRAggExpr::Count(input, ..) => {
                     let orig_agg = agg.clone();
                     // Lower and replace input.
                     let trans_input = lower_rec!(*input, true)?;
@@ -216,7 +217,6 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::NUnique(..)
                 | IRAggExpr::Implode(..)
                 | IRAggExpr::Quantile { .. }
-                | IRAggExpr::Count(..)
                 | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
             }
         },

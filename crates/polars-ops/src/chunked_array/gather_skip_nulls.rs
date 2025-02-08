@@ -144,8 +144,7 @@ where
         let mut arr =
             T::Array::from_zeroable_vec(gathered, self.dtype().to_arrow(CompatLevel::newest()));
         if indices.null_count() > 0 {
-            let array_refs: Vec<&dyn Array> = indices.chunks().iter().map(|x| &**x).collect();
-            arr = arr.with_validity_typed(concatenate_validities(&array_refs));
+            arr = arr.with_validity_typed(concatenate_validities(indices.chunks()));
         }
         Ok(ChunkedArray::from_chunk_iter_like(self, [arr]))
     }

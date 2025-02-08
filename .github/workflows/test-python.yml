@@ -104,7 +104,7 @@ jobs:
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest -m "not release and not benchmark and not docs" tests/unit/io/
+        run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Check import without optional dependencies
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
