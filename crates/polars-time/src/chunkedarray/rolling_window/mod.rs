@@ -2,7 +2,8 @@ mod dispatch;
 #[cfg(feature = "rolling_window_by")]
 mod rolling_kernels;
 
-use arrow::array::{ArrayRef, PrimitiveArray};
+use arrow::array::{ArrayRef, BooleanArray, PrimitiveArray};
+use arrow::bitmap::Bitmap;
 use arrow::legacy::kernels::rolling;
 pub use dispatch::*;
 use polars_core::prelude::*;
