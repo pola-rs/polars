@@ -41,6 +41,8 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
              config,
              #[cfg(feature = "cloud")]
              credential_provider,
+             #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+                 client_options: _,
          }| {
             CloudOptions2 {
                 max_retries: *max_retries,

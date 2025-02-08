@@ -3,6 +3,7 @@ use std::io::Read;
 #[cfg(feature = "aws")]
 use std::path::Path;
 use std::str::FromStr;
+use std::time::Duration;
 
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
@@ -16,10 +17,10 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use object_store::ClientOptions;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::{Certificate, ClientOptions};
 use once_cell::sync::Lazy;
 use polars_error::*;
 #[cfg(feature = "aws")]
@@ -82,6 +83,79 @@ pub struct CloudOptions {
     #[cfg(feature = "cloud")]
     #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_or_default"))]
     pub(crate) credential_provider: Option<PlCredentialProvider>,
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+    #[cfg_attr(feature = "serde", serde(skip))]
+    pub(crate) client_options: Option<PlClientOptions>,
+}
+
+#[derive(Clone, Debug)]
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+pub struct PlClientOptions {
+    timeout: Option<Duration>,
+    connect_timeout: Option<Duration>,
+    allow_http: bool,
+    root_certificates: Vec<Certificate>,
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+impl PartialEq for PlClientOptions {
+    fn eq(&self, other: &Self) -> bool {
+        self.timeout == other.timeout
+            && self.connect_timeout == other.connect_timeout
+            && self.allow_http == other.allow_http
+    }
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+impl Eq for PlClientOptions {}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+impl std::hash::Hash for PlClientOptions {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.timeout.hash(state);
+        self.connect_timeout.hash(state);
+        self.allow_http.hash(state);
+    }
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+impl Default for PlClientOptions {
+    fn default() -> Self {
+        Self {
+            // We set request timeout super high as the timeout isn't reset at ACK,
+            // but starts from the moment we start downloading a body.
+            // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
+            timeout: None,
+            // Concurrency can increase connection latency, so set to None, similar to default.
+            connect_timeout: None,
+            allow_http: true,
+            root_certificates: vec![],
+        }
+    }
+}
+
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+impl From<PlClientOptions> for ClientOptions {
+    fn from(pl_opts: PlClientOptions) -> Self {
+        let mut opts = ClientOptions::new();
+
+        if let Some(timeout) = pl_opts.timeout {
+            opts = opts.with_timeout(timeout);
+        } else {
+            opts = opts.with_timeout_disabled();
+        }
+        if let Some(connect_timeout) = pl_opts.connect_timeout {
+            opts = opts.with_connect_timeout(connect_timeout);
+        } else {
+            opts = opts.with_connect_timeout_disabled();
+        }
+        opts = opts.with_allow_http(pl_opts.allow_http);
+        for certificate in pl_opts.root_certificates {
+            opts = opts.with_root_certificate(certificate);
+        }
+
+        opts
+    }
 }
 
 #[cfg(all(feature = "serde", feature = "cloud"))]
@@ -108,6 +182,8 @@ impl CloudOptions {
             config: None,
             #[cfg(feature = "cloud")]
             credential_provider: None,
+            #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+            client_options: None,
         });
 
         &DEFAULT
@@ -221,18 +297,6 @@ fn get_retry_config(max_retries: usize) -> RetryConfig {
     }
 }
 
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-pub(super) fn get_client_options() -> ClientOptions {
-    ClientOptions::new()
-        // We set request timeout super high as the timeout isn't reset at ACK,
-        // but starts from the moment we start downloading a body.
-        // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-        .with_timeout_disabled()
-        // Concurrency can increase connection latency, so set to None, similar to default.
-        .with_connect_timeout_disabled()
-        .with_allow_http(true)
-}
-
 #[cfg(feature = "aws")]
 fn read_config(
     builder: &mut AmazonS3Builder,
@@ -282,6 +346,17 @@ impl CloudOptions {
         self
     }
 
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+    pub fn with_client_options(mut self, client_options: PlClientOptions) -> Self {
+        self.client_options = Some(client_options);
+        self
+    }
+
+    #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+    pub fn client_options(&self) -> PlClientOptions {
+        self.client_options.clone().unwrap_or_default()
+    }
+
     /// Set the configuration for AWS connections. This is the preferred API from rust.
     #[cfg(feature = "aws")]
     pub fn with_aws<I: IntoIterator<Item = (AmazonS3ConfigKey, impl Into<String>)>>(
@@ -300,7 +375,7 @@ impl CloudOptions {
         use super::credential_provider::IntoCredentialProvider;
 
         let mut builder = AmazonS3Builder::from_env()
-            .with_client_options(get_client_options())
+            .with_client_options(self.client_options().into())
             .with_url(url);
 
         read_config(
@@ -423,7 +498,7 @@ impl CloudOptions {
         // The credential provider `self.credentials` is prioritized if it is set. We also need
         // `from_env()` as it may source environment configured storage account name.
         let mut builder =
-            MicrosoftAzureBuilder::from_env().with_client_options(get_client_options());
+            MicrosoftAzureBuilder::from_env().with_client_options(self.client_options().into());
 
         if let Some(options) = &self.config {
             let CloudConfig::Azure(options) = options else {
@@ -476,7 +551,7 @@ impl CloudOptions {
             GoogleCloudStorageBuilder::new()
         };
 
-        let mut builder = builder.with_client_options(get_client_options());
+        let mut builder = builder.with_client_options(self.client_options().into());
 
         if let Some(options) = &self.config {
             let CloudConfig::Gcp(options) = options else {
@@ -505,7 +580,7 @@ impl CloudOptions {
         object_store::http::HttpBuilder::new()
             .with_url(url)
             .with_client_options({
-                let mut opts = super::get_client_options();
+                let mut opts: ClientOptions = self.client_options().into();
                 if let Some(CloudConfig::Http { headers }) = &self.config {
                     opts = opts.with_default_headers(try_build_http_header_map_from_items_slice(
                         headers.as_slice(),
