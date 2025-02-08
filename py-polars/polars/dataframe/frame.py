@@ -131,6 +131,7 @@ if TYPE_CHECKING:
         ComparisonOperator,
         ConditionalFormatDict,
         ConnectionOrCursor,
+        CorrelationMethod,
         CsvQuoteStyle,
         DbWriteEngine,
         FillNullStrategy,
@@ -11315,41 +11316,91 @@ class DataFrame:
         """
         return self.lazy().unnest(columns, *more_columns).collect(_eager=True)
 
-    def corr(self, **kwargs: Any) -> DataFrame:
+    def corr(
+        self,
+        *,
+        method: CorrelationMethod = "pearson",
+        propagate_nans: bool = False,
+        include_row_names: bool = False,
+    ) -> DataFrame:
         """
-        Return pairwise Pearson product-moment correlation coefficients between columns.
-
-        See numpy `corrcoef` for more information:
-        https://numpy.org/doc/stable/reference/generated/numpy.corrcoef.html
-
-        Notes
-        -----
-        This functionality requires numpy to be installed.
+        Compute the Pearson's or Spearman rank correlation between all columns.
 
         Parameters
         ----------
-        **kwargs
-            Keyword arguments are passed to numpy `corrcoef`.
+        method : {'pearson', 'spearman'}
+            Correlation method.
+        propagate_nans
+            If `True` any `NaN` encountered will lead to `NaN` in the output.
+            Defaults to `False` where `NaN` are regarded as larger than any finite
+            number and thus lead to the highest rank.
+        include_row_names
+            If `True` inserts a column on the left with the row names.
 
         Examples
         --------
-        >>> df = pl.DataFrame({"foo": [1, 2, 3], "bar": [3, 2, 1], "ham": [7, 8, 9]})
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [3, 2, 1],
+        ...         "ham": [5, 7, 9],
+        ...         "abc": [10, 0, 3],
+        ...     }
+        ... )
+
         >>> df.corr()
-        shape: (3, 3)
-        ┌──────┬──────┬──────┐
-        │ foo  ┆ bar  ┆ ham  │
-        │ ---  ┆ ---  ┆ ---  │
-        │ f64  ┆ f64  ┆ f64  │
-        ╞══════╪══════╪══════╡
-        │ 1.0  ┆ -1.0 ┆ 1.0  │
-        │ -1.0 ┆ 1.0  ┆ -1.0 │
-        │ 1.0  ┆ -1.0 ┆ 1.0  │
-        └──────┴──────┴──────┘
+        shape: (4, 4)
+        ┌───────────┬──────────┬───────────┬───────────┐
+        │ foo       ┆ bar      ┆ ham       ┆ abc       │
+        │ ---       ┆ ---      ┆ ---       ┆ ---       │
+        │ f64       ┆ f64      ┆ f64       ┆ f64       │
+        ╞═══════════╪══════════╪═══════════╪═══════════╡
+        │ 1.0       ┆ -1.0     ┆ 1.0       ┆ -0.682048 │
+        │ -1.0      ┆ 1.0      ┆ -1.0      ┆ 0.682048  │
+        │ 1.0       ┆ -1.0     ┆ 1.0       ┆ -0.682048 │
+        │ -0.682048 ┆ 0.682048 ┆ -0.682048 ┆ 1.0       │
+        └───────────┴──────────┴───────────┴───────────┘
+
+        >>> df.corr(
+        ...     method="spearman",
+        ...     include_row_names=True,
+        ... )
+        shape: (4, 5)
+        ┌───────┬──────┬──────┬──────┬──────┐
+        │ index ┆ foo  ┆ bar  ┆ ham  ┆ abc  │
+        │ ---   ┆ ---  ┆ ---  ┆ ---  ┆ ---  │
+        │ str   ┆ f64  ┆ f64  ┆ f64  ┆ f64  │
+        ╞═══════╪══════╪══════╪══════╪══════╡
+        │ foo   ┆ 1.0  ┆ -1.0 ┆ 1.0  ┆ -0.5 │
+        │ bar   ┆ -1.0 ┆ 1.0  ┆ -1.0 ┆ 0.5  │
+        │ ham   ┆ 1.0  ┆ -1.0 ┆ 1.0  ┆ -0.5 │
+        │ abc   ┆ -0.5 ┆ 0.5  ┆ -0.5 ┆ 1.0  │
+        └───────┴──────┴──────┴──────┴──────┘
         """
-        correlation_matrix = np.corrcoef(self.to_numpy(), rowvar=False, **kwargs)
-        if self.width == 1:
-            correlation_matrix = np.array([correlation_matrix])
-        return DataFrame(correlation_matrix, schema=self.columns)
+        df = pl.DataFrame(
+            {
+                col1: [
+                    self.select(
+                        F.corr(
+                            col1,
+                            col2,
+                            method=method,
+                            propagate_nans=propagate_nans,
+                        )
+                    ).item()
+                    for col2 in self.columns
+                ]
+                for col1 in self.columns
+            }
+        )
+
+        if include_row_names:
+            df.insert_column(
+                index=0,
+                column=pl.Series(name="index", values=df.columns),
+            )
+
+        return df
 
     def merge_sorted(self, other: DataFrame, key: str) -> DataFrame:
         """
