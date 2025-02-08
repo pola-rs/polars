@@ -9893,6 +9893,72 @@ class DataFrame:
             mean=F.mean_horizontal(F.all(), ignore_nulls=ignore_nulls)
         ).to_series()
 
+    def all_horizontal(self) -> Series:
+        """
+        Take the bitwise AND horizontally across columns.
+
+        Notes
+        -----
+        `Kleene logic`_ is used to deal with nulls: if the column contains any null
+        values and no `True` values, the output is null.
+
+        .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [False, False, True, True, False, None],
+        ...         "bar": [False, True, True, None, None, None],
+        ...     }
+        ... )
+        >>> df.all_horizontal()
+        shape: (6,)
+        Series: 'all' [bool]
+        [
+                false
+                false
+                true
+                null
+                false
+                null
+        ]
+        """
+        return self.select(all=F.all_horizontal(F.all())).to_series()
+
+    def any_horizontal(self) -> Series:
+        """
+        Take the bitwise OR horizontally across columns.
+
+        Notes
+        -----
+        `Kleene logic`_ is used to deal with nulls: if the column contains any null
+        values and no `True` values, the output is null.
+
+        .. _Kleene logic: https://en.wikipedia.org/wiki/Three-valued_logic
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [False, False, True, True, False, None],
+        ...         "bar": [False, True, True, None, None, None],
+        ...     }
+        ... )
+        >>> df.any_horizontal()
+        shape: (6,)
+        Series: 'any' [bool]
+        [
+                false
+                true
+                true
+                true
+                null
+                null
+        ]
+        """
+        return self.select(any=F.any_horizontal(F.all())).to_series()
+
     def std(self, ddof: int = 1) -> DataFrame:
         """
         Aggregate the columns of this DataFrame to their standard deviation value.
