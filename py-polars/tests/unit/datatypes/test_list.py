@@ -10,7 +10,7 @@ import pytest
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
-from tests.unit.conftest import NUMERIC_DTYPES
+from tests.unit.conftest import NUMERIC_DTYPES, TEMPORAL_DTYPES
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
@@ -864,3 +864,12 @@ def test_sort() -> None:
     tc([[1], []], [[], [1]])
     tc([[2, 1]], [[2, 1]])
     tc([[2, 1], [1, 2]], [[1, 2], [2, 1]])
+
+
+@pytest.mark.parametrize("inner_dtype", TEMPORAL_DTYPES)
+def test_list_agg_temporal(inner_dtype: PolarsDataType) -> None:
+    s = pl.Series([[1, 3]], dtype=pl.List(inner_dtype))
+    assert_series_equal(s.list.mean(), pl.Series([2], dtype=inner_dtype))
+    assert_series_equal(s.list.median(), pl.Series([2], dtype=inner_dtype))
+    assert_series_equal(s.list.min(), pl.Series([1], dtype=inner_dtype))
+    assert_series_equal(s.list.max(), pl.Series([3], dtype=inner_dtype))

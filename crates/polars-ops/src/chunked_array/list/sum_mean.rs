@@ -185,11 +185,15 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-        _ => {
+        dt => {
             let out: Float64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean()))
                 .with_name(ca.name().clone());
-            out.into_series()
+            if dt.is_temporal() {
+                out.cast(dt).unwrap()
+            } else {
+                out.into_series()
+            }
         },
     }
 }
