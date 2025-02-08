@@ -712,3 +712,9 @@ def test_cast_float_to_decimal_12775() -> None:
     # default scale = 0
     assert s.cast(pl.Decimal).to_list() == [D("1")]
     assert s.cast(pl.Decimal(scale=1)).to_list() == [D("1.5")]
+
+
+def test_decimal_min_over_21096() -> None:
+    df = pl.Series("x", [1, 2], pl.Decimal(scale=2)).to_frame()
+    result = df.select(pl.col("x").min().over("x"))
+    assert result["x"].to_list() == [D("1.00"), D("2.00")]
