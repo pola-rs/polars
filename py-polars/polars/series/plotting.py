@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
     from altair.typing import EncodeKwds
 
-    from polars.dataframe.plotting import Encodings
+    from polars.dataframe.plotting.plotting import Encodings
 
     if sys.version_info >= (3, 11):
         from typing import Unpack
