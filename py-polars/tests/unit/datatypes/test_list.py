@@ -867,9 +867,10 @@ def test_sort() -> None:
 
 
 @pytest.mark.parametrize("inner_dtype", TEMPORAL_DTYPES)
-def test_list_agg_temporal(inner_dtype: PolarsDataType) -> None:
-    s = pl.Series([[1, 3]], dtype=pl.List(inner_dtype))
-    assert_series_equal(s.list.mean(), pl.Series([2], dtype=inner_dtype))
-    assert_series_equal(s.list.median(), pl.Series([2], dtype=inner_dtype))
-    assert_series_equal(s.list.min(), pl.Series([1], dtype=inner_dtype))
-    assert_series_equal(s.list.max(), pl.Series([3], dtype=inner_dtype))
+@pytest.mark.parametrize("agg", ["min", "max", "mean", "median"])
+def test_list_agg_temporal(inner_dtype: PolarsDataType, agg: str) -> None:
+    lf = pl.LazyFrame({"a": [[1, 3]]}, schema={"a": pl.List(inner_dtype)})
+    result = lf.select(getattr(pl.col("a").list, agg)())
+    expected = lf.select(getattr(pl.col("a").explode(), agg)())
+    assert result.collect_schema() == expected.collect_schema()
+    assert_frame_equal(result.collect(), expected.collect())

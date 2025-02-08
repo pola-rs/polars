@@ -185,15 +185,27 @@ pub(super) fn mean_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
-        dt => {
+        DataType::Date => {
+            const MS_IN_DAY: i64 = 86_400_000;
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| {
+                    s.and_then(|s| s.as_ref().mean().map(|v| (v * (MS_IN_DAY as f64)) as i64))
+                })
+                .with_name(ca.name().clone());
+            out.into_datetime(TimeUnit::Milliseconds, None)
+                .into_series()
+        },
+        dt if dt.is_temporal() => {
+            let out: Int64Chunked = ca
+                .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean().map(|v| v as i64)))
+                .with_name(ca.name().clone());
+            out.cast(dt).unwrap()
+        },
+        _ => {
             let out: Float64Chunked = ca
                 .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().mean()))
                 .with_name(ca.name().clone());
-            if dt.is_temporal() {
-                out.cast(dt).unwrap()
-            } else {
-                out.into_series()
-            }
+            out.into_series()
         },
     }
 }
