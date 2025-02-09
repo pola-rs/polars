@@ -18,10 +18,26 @@ def test_lf_show_calls_df_show() -> None:
 
     df_show.assert_called_once_with(
         5,
+        ascii_tables=None,
+        auto_structify=None,
+        decimal_separator=None,
+        thousands_separator=None,
         float_precision=None,
+        fmt_float=None,
         fmt_str_lengths=None,
         fmt_table_cell_list_len=None,
+        tbl_cell_alignment=None,
+        tbl_cell_numeric_alignment=None,
         tbl_cols=None,
+        tbl_column_data_type_inline=None,
+        tbl_dataframe_shape_below=None,
+        tbl_formatting=None,
+        tbl_hide_column_data_types=None,
+        tbl_hide_column_names=None,
+        tbl_hide_dtype_separator=None,
+        tbl_hide_dataframe_shape=None,
+        tbl_width_chars=None,
+        trim_decimal_zeros=None,
     )
 
 
