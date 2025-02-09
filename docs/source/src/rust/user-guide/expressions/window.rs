@@ -43,11 +43,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:rank]
 
     // --8<-- [start:rank-multiple]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .select([
+            col("Name"),
+            col("Type 1"),
+            col("Type 2"),
+            col("Speed")
+                .rank(
+                    RankOptions {
+                        method: RankMethod::Dense,
+                        descending: true,
+                    },
+                    None,
+                )
+                .over(["Type 1", "Type 2"])
+                .alias("Speed Rank"),
+        ])
+        .collect()?;
+    println!("{}", result);
     // --8<-- [end:rank-multiple]
 
     // --8<-- [start:rank-explode]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .group_by([col("Type 1")])
+        .agg([
+            col("Name"),
+            col("Speed")
+                .rank(
+                    RankOptions {
+                        method: RankMethod::Dense,
+                        descending: true,
+                    },
+                    None,
+                )
+                .alias("Speed rank"),
+        ])
+        .select([col("Name"), col("Type 1"), col("Speed rank")])
+        .explode([col("Name"), col("Speed rank")])
+        .collect()?;
+    println!("{}", result);
     // --8<-- [end:rank-explode]
 
     // --8<-- [start:athletes]
@@ -55,15 +93,43 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // --8<-- [end:athletes]
 
     // --8<-- [start:athletes-sort-over-country]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .select([
+            cols(["athlete", "rank"])
+                .sort_by([col("rank")], SortMultipleOptions::default())
+                .over([col("country")]),
+            col("country"),
+        ])
+        .collect()?;
+    println!("{}", result);
     // --8<-- [end:athletes-sort-over-country]
 
     // --8<-- [start:athletes-explode]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .select([all().over_with_options(
+            [col("country")],
+            Some(([col("rank")], SortOptions::default())),
+            WindowMapping::Explode,
+        )])
+        .collect()?;
+    println!("{}", result);
     // --8<-- [end:athletes-explode]
 
     // --8<-- [start:athletes-join]
-    // Contribute the Rust translation of the Python example by opening a PR.
+    let result = df
+        .clone()
+        .lazy()
+        .with_column(col("rank").sort(SortOptions::default()).over_with_options(
+            [col("country")],
+            Some(([col("rank")], SortOptions::default())),
+            WindowMapping::Join,
+        ))
+        .collect()?;
+    println!("{}", result);
     // --8<-- [end:athletes-join]
 
     // --8<-- [start:pokemon-mean]
