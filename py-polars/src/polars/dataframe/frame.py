@@ -47,7 +47,12 @@ from polars._dependencies import (
 from polars._dependencies import numpy as np
 from polars._dependencies import pandas as pd
 from polars._dependencies import pyarrow as pa
-from polars._typing import DbWriteMode, JaxExportType, TorchExportType
+from polars._typing import (
+    DbWriteMode,
+    FloatFmt,
+    JaxExportType,
+    TorchExportType,
+)
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -12566,13 +12571,26 @@ class DataFrame:
         self,
         limit: int | None = 5,
         *,
+        ascii_tables: bool | None = None,
+        auto_structify: bool | None = None,
+        decimal_separator: str | None = None,
+        thousands_separator: str | bool | None = None,
         float_precision: int | None = None,
+        fmt_float: FloatFmt | None = None,
         fmt_str_lengths: int | None = None,
         fmt_table_cell_list_len: int | None = None,
         tbl_cell_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
         tbl_cell_numeric_alignment: Literal["LEFT", "CENTER", "RIGHT"] | None = None,
         tbl_cols: int | None = None,
+        tbl_column_data_type_inline: bool | None = None,
+        tbl_dataframe_shape_below: bool | None = None,
         tbl_formatting: TableFormatNames | None = None,
+        tbl_hide_column_data_types: bool | None = None,
+        tbl_hide_column_names: bool | None = None,
+        tbl_hide_dtype_separator: bool | None = None,
+        tbl_hide_dataframe_shape: bool | None = None,
+        tbl_width_chars: int | None = None,
+        trim_decimal_zeros: bool | None = None,
     ) -> None:
         """
         Show the first `n` rows.
@@ -12582,9 +12600,23 @@ class DataFrame:
         limit : int
             Numbers of rows to show. If a negative value is passed, return all rows
             except the last `abs(n)`. If None is passed, return all rows.
+        ascii_tables : bool
+            Use ASCII characters to display table outlines. Set False to revert to the
+            default UTF8_FULL_CONDENSED formatting style.
+        auto_structify : bool
+            Allow multi-output expressions to be automatically turned into Structs.
+        decimal_separator : str
+            Set the decimal separator character.
+        thousands_separator : str
+            Set the thousands grouping separator character.
         float_precision : int
             Number of decimal places to display for floating point values. See
             :func:`Config.set_float_precision` for more information.
+        fmt_float : {"mixed", "full"}
+            Control how floating point values are displayed. Supported options are:
+            * "mixed": Limit the number of decimal places and use scientific notation
+              for large/small values.
+            * "full": Print the full precision of the floating point number.
         fmt_str_lengths : int
             Number of characters to display for string values. See
             :func:`Config.set_fmt_str_lengths` for more information.
@@ -12604,6 +12636,11 @@ class DataFrame:
         tbl_cols : int
             Number of columns to display. See :func:`Config.set_tbl_cols` for more
             information.
+        tbl_column_data_type_inline : bool
+            Moves the data type inline with the column name (to the right, in
+            parentheses).
+        tbl_dataframe_shape_below : bool
+            Print the DataFrame shape information below the data when displaying tables.
         tbl_formatting : str
             Set table formatting style. Supported options are:
             * "ASCII_FULL": ASCII, with all borders and lines, including row dividers.
@@ -12620,6 +12657,18 @@ class DataFrame:
             * "UTF8_BORDERS_ONLY": UTF8, borders only.
             * "UTF8_HORIZONTAL_ONLY": UTF8, horizontal lines only.
             * "NOTHING": No borders or other lines.
+        tbl_hide_column_data_types : bool
+            Hide table column data types (i64, f64, str etc.).
+        tbl_hide_column_names : bool
+            Hide table column names.
+        tbl_hide_dtype_separator : bool
+            Hide the '---' separator between the column names and column types.
+        tbl_hide_dataframe_shape : bool
+            Hide the DataFrame shape information when displaying tables.
+        tbl_width_chars : int
+            Set the maximum width of a table in characters.
+        trim_decimal_zeros : bool
+            Strip trailing zeros from Decimal data type values.
 
         See Also
         --------
@@ -12670,14 +12719,27 @@ class DataFrame:
                 tbl_rows = limit
 
         with Config(
+            ascii_tables=ascii_tables,
+            auto_structify=auto_structify,
+            decimal_separator=decimal_separator,
+            thousands_separator=thousands_separator,
             float_precision=float_precision,
+            fmt_float=fmt_float,
             fmt_str_lengths=fmt_str_lengths,
             fmt_table_cell_list_len=fmt_table_cell_list_len,
             tbl_cell_alignment=tbl_cell_alignment,
             tbl_cell_numeric_alignment=tbl_cell_numeric_alignment,
             tbl_cols=tbl_cols,
+            tbl_column_data_type_inline=tbl_column_data_type_inline,
+            tbl_dataframe_shape_below=tbl_dataframe_shape_below,
             tbl_formatting=tbl_formatting,
+            tbl_hide_column_data_types=tbl_hide_column_data_types,
+            tbl_hide_column_names=tbl_hide_column_names,
+            tbl_hide_dtype_separator=tbl_hide_dtype_separator,
+            tbl_hide_dataframe_shape=tbl_hide_dataframe_shape,
             tbl_rows=tbl_rows,
+            tbl_width_chars=tbl_width_chars,
+            trim_decimal_zeros=trim_decimal_zeros,
         ):
             if _in_notebook():
                 print("In notebook")
