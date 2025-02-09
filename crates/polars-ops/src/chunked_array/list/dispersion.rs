@@ -8,6 +8,7 @@ pub(super) fn median_with_nulls(ca: &ListChunked) -> Series {
                 .with_name(ca.name().clone());
             out.into_series()
         },
+        #[cfg(feature = "dtype-datetime")]
         DataType::Date => {
             const MS_IN_DAY: i64 = 86_400_000;
             let out: Int64Chunked = ca

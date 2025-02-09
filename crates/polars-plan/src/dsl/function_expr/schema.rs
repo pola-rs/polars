@@ -573,6 +573,7 @@ impl<'a> FieldsMapper<'a> {
             .unwrap_or_else(|| Unknown(Default::default()));
 
         let new_dt = match dt {
+            #[cfg(feature = "dtype-datetime")]
             Date => Datetime(TimeUnit::Milliseconds, None),
             dt if dt.is_temporal() => dt,
             Float32 => Float32,
