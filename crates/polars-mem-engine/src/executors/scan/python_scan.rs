@@ -2,9 +2,10 @@ use polars_core::error::to_compute_err;
 use polars_core::utils::accumulate_dataframes_vertical;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyNone};
+use pyo3::types::{PyBytes, PyNone, PyTuple};
 use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
 use std::time::Duration;
+use polars_plan::utils::*;
 use polars_expr::state::node_timer::NodeTimer;
 
 use self::python_dsl::PythonScanSource;
@@ -23,14 +24,19 @@ pub struct PyNodeTimer {
 
 #[pymethods]
 impl PyNodeTimer {
-    pub fn store(&self, name: &str, start_ns: u64, end_ns: u64) -> PyResult<()> {
-        if let Some(timer) = &self.timer {
-            let query_start = timer.query_start;
-            let start = Duration::from_nanos(start_ns);
-            let end = Duration::from_nanos(end_ns);
-            timer.store(query_start+start, query_start+end, name.to_string())
+    pub fn record(&self, py: Python, name: &str, func: PyObject, args: &Bound<'_,PyTuple>) -> PyResult<PyObject> {
+        match &self.timer {
+            None => Ok(
+                func.call1(py, args)?
+            ),
+            Some(timer) => {
+                let start = std::time::Instant::now();
+                let result = func.call1(py, args)?;
+                let end = std::time::Instant::now();
+                timer.store(start, end, name.to_string());
+                Ok(result)
+            },
         }
-        Ok(())
     }
 }
 
@@ -40,21 +46,21 @@ impl PyNodeTimer {
     }
 }
 
-fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
-    let err = |_| polars_err!(ComputeError: "expected a polars.DataFrame; got {}", df);
-    let pydf = df.getattr(intern!(py, "_df")).map_err(err)?;
-    let raw_parts = pydf
-        .call_method0(intern!(py, "into_raw_parts"))
-        .map_err(err)?;
-    let raw_parts = raw_parts.extract::<(usize, usize, usize)>().unwrap();
+// fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
+//     let err = |_| polars_err!(ComputeError: "expected a polars.DataFrame; got {}", df);
+//     let pydf = df.getattr(intern!(py, "_df")).map_err(err)?;
+//     let raw_parts = pydf
+//         .call_method0(intern!(py, "into_raw_parts"))
+//         .map_err(err)?;
+//     let raw_parts = raw_parts.extract::<(usize, usize, usize)>().unwrap();
 
-    let (ptr, len, cap) = raw_parts;
-    unsafe {
-        Ok(DataFrame::new_no_checks_height_from_first(
-            Vec::from_raw_parts(ptr as *mut Column, len, cap),
-        ))
-    }
-}
+//     let (ptr, len, cap) = raw_parts;
+//     unsafe {
+//         Ok(DataFrame::new_no_checks_height_from_first(
+//             Vec::from_raw_parts(ptr as *mut Column, len, cap),
+//         ))
+//     }
+// }
 
 impl Executor for PythonScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
