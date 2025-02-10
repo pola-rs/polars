@@ -646,3 +646,16 @@ def test_filter_count_projection_20902() -> None:
         .select(pl.len())
         .explain()
     )
+
+
+def test_projection_count_21154() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+
+    assert lf.unique("a").select(pl.len()).collect().to_dict(as_series=False) == {
+        "len": [3]
+    }

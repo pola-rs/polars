@@ -172,14 +172,18 @@ fn add_expr_to_accumulated(
 
 fn add_str_to_accumulated(
     name: PlSmallStr,
-    acc_projections: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<PlSmallStr>,
+    ctx: &mut ProjectionContext,
     expr_arena: &mut Arena<AExpr>,
 ) {
-    // if empty: all columns are already projected.
-    if !acc_projections.is_empty() && !projected_names.contains(&name) {
+    // if not pushed down: all columns are already projected.
+    if ctx.has_pushed_down() && !ctx.projected_names.contains(&name) {
         let node = expr_arena.add(AExpr::Column(name));
-        add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
+        add_expr_to_accumulated(
+            node,
+            &mut ctx.acc_projections,
+            &mut ctx.projected_names,
+            expr_arena,
+        );
     }
 }
 
@@ -705,23 +709,13 @@ impl ProjectionPushDown {
                 if ctx.has_pushed_down() {
                     if let Some(subset) = options.subset.as_ref() {
                         subset.iter().for_each(|name| {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut ctx.acc_projections,
-                                &mut ctx.projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         })
                     } else {
                         // distinct needs all columns
                         let input_schema = lp_arena.get(input).schema(lp_arena);
                         for name in input_schema.iter_names() {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut ctx.acc_projections,
-                                &mut ctx.projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         }
                     }
                 }
@@ -867,12 +861,7 @@ impl ProjectionPushDown {
             } => {
                 if ctx.has_pushed_down() {
                     // make sure that the filter column is projected
-                    add_str_to_accumulated(
-                        key.clone(),
-                        &mut ctx.acc_projections,
-                        &mut ctx.projected_names,
-                        expr_arena,
-                    );
+                    add_str_to_accumulated(key.clone(), &mut ctx, expr_arena);
                 };
 
                 self.pushdown_and_assign(input_left, ctx.clone(), lp_arena, expr_arena)?;
