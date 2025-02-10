@@ -105,6 +105,13 @@ macro_rules! process_series_for_numeric_value {
 
 #[allow(clippy::type_complexity)] // For the Box<dyn Fn()>
 fn list_index_of_in_for_scalar(ca: &ListChunked, needle: AnyValue<'_>) -> PolarsResult<Series> {
+    polars_ensure!(
+        ca.dtype().inner_dtype().unwrap() == &needle.dtype() || needle.dtype().is_null(),
+        ComputeError: "dtypes did't match: series values have dtype {} and needle has dtype {}",
+        ca.dtype().inner_dtype().unwrap(),
+        needle.dtype()
+    );
+
     let mut builder = PrimitiveChunkedBuilder::<IdxType>::new(ca.name().clone(), ca.len());
     let needle = needle.into_static();
     let inner_dtype = ca.dtype().inner_dtype().unwrap();
