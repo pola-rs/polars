@@ -16,7 +16,6 @@ pub(crate) struct PythonScanExec {
     pub(crate) predicate_serialized: Option<Vec<u8>>,
 }
 
-<<<<<<< HEAD
 #[pyclass]
 pub struct PyNodeTimer {
     timer: Option<NodeTimer>,
@@ -57,8 +56,6 @@ fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
     }
 }
 
-=======
->>>>>>> 65848bc2ff4bda33809ed8be2517594df5b53d26
 impl Executor for PythonScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
