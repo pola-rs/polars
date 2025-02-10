@@ -90,7 +90,10 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
                 .fields_as_series()
                 .iter()
                 .zip(rhs.fields_as_series())
-                .map(|(lhs, rhs)| merge_series(lhs, &rhs, merge_indicator))
+                .map(|(lhs, rhs)| {
+                    merge_series(lhs, &rhs, merge_indicator)
+                        .map(|merged| merged.with_name(lhs.name().clone()))
+                })
                 .collect::<PolarsResult<Vec<_>>>()?;
             StructChunked::from_series(PlSmallStr::EMPTY, new_fields[0].len(), new_fields.iter())
                 .unwrap()
