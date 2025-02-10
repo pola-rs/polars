@@ -288,14 +288,7 @@ impl SourceNode for IpcSourceNode {
                     let pl_schema = schema
                         .iter()
                         .map(|(n, f)| (n.clone(), DataType::from_arrow_field(f)))
-                        .collect();
-
-                    let mut reader = FileReader::new_with_projection_info(
-                        Cursor::new(source.memslice.as_ref()),
-                        source.metadata.as_ref().clone(),
-                        projection_info.clone(),
-                        None,
-                    );
+                        .collect::<Schema>();
 
                     while let Ok(m) = rx.recv().await {
                         let BatchMessage {
@@ -305,22 +298,36 @@ impl SourceNode for IpcSourceNode {
                             block_range,
                         } = m;
 
-                        reader.set_current_block(block_range.start);
-                        reader.set_scratches((
-                            std::mem::take(&mut data_scratch),
-                            std::mem::take(&mut message_scratch),
-                        ));
+                        let mut df = if pl_schema.is_empty() {
+                            DataFrame::empty_with_height(slice.len())
+                        } else {
+                            let mut reader = FileReader::new_with_projection_info(
+                                Cursor::new(source.memslice.as_ref()),
+                                source.metadata.as_ref().clone(),
+                                projection_info.clone(),
+                                None,
+                            );
 
-                        // Create the DataFrame with the appropriate schema and append all the record
-                        // batches to it. This will perform schema validation as well.
-                        let mut df = DataFrame::empty_with_schema(&pl_schema);
-                        df.try_extend(reader.by_ref().take(block_range.len()))?;
+                            reader.set_current_block(block_range.start);
+                            reader.set_scratches((
+                                std::mem::take(&mut data_scratch),
+                                std::mem::take(&mut message_scratch),
+                            ));
 
-                        df = df.slice(slice.start as i64, slice.len());
+                            // Create the DataFrame with the appropriate schema and append all the record
+                            // batches to it. This will perform schema validation as well.
+                            let mut df = DataFrame::empty_with_schema(&pl_schema);
+                            df.try_extend(reader.by_ref().take(block_range.len()))?;
 
-                        if rechunk {
-                            df.rechunk_mut();
-                        }
+                            (data_scratch, message_scratch) = reader.take_scratches();
+
+                            df = df.slice(slice.start as i64, slice.len());
+
+                            if rechunk {
+                                df.rechunk_mut();
+                            }
+                            df
+                        };
 
                         if let Some(RowIndex { name, offset: _ }) = &row_index {
                             let offset = row_idx_offset + slice.start as IdxSize;
@@ -349,8 +356,6 @@ impl SourceNode for IpcSourceNode {
                                 break;
                             }
                         }
-
-                        (data_scratch, message_scratch) = reader.take_scratches();
                     }
 
                     PolarsResult::Ok(())
