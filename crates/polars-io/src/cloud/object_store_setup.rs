@@ -12,6 +12,8 @@ use tokio::sync::RwLock;
 use url::Url;
 
 use super::{parse_url, CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use crate::cloud::client_options::PlClientOptions;
 use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and
@@ -42,7 +44,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
              #[cfg(feature = "cloud")]
              credential_provider,
              #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-                 client_options: _,
+             client_options,
          }| {
             CloudOptions2 {
                 max_retries: *max_retries,
@@ -51,6 +53,8 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
                 config: config.clone(),
                 #[cfg(feature = "cloud")]
                 credential_provider: credential_provider.as_ref().map_or(0, |x| x.func_addr()),
+                #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+                client_options: client_options.clone(),
             }
         },
     );
@@ -85,6 +89,9 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
         config: Option<CloudConfig>,
         #[cfg(feature = "cloud")]
         credential_provider: usize,
+        #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+        #[cfg_attr(feature = "serde", serde(skip))]
+        client_options: Option<PlClientOptions>,
     }
 }
 

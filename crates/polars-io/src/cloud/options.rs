@@ -3,7 +3,6 @@ use std::io::Read;
 #[cfg(feature = "aws")]
 use std::path::Path;
 use std::str::FromStr;
-use std::time::Duration;
 
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
@@ -17,10 +16,10 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::ClientOptions;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use object_store::{Certificate, ClientOptions};
 use once_cell::sync::Lazy;
 use polars_error::*;
 #[cfg(feature = "aws")]
@@ -36,6 +35,8 @@ use serde::{Deserialize, Serialize};
 #[cfg(feature = "cloud")]
 use url::Url;
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use super::client_options::PlClientOptions;
 #[cfg(feature = "cloud")]
 use super::credential_provider::PlCredentialProvider;
 #[cfg(feature = "file_cache")]
@@ -85,77 +86,8 @@ pub struct CloudOptions {
     pub(crate) credential_provider: Option<PlCredentialProvider>,
     #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
     #[cfg_attr(feature = "serde", serde(skip))]
+    /// Note: This is mainly used by Rust users. Python client options go through `CloudConfig`
     pub(crate) client_options: Option<PlClientOptions>,
-}
-
-#[derive(Clone, Debug)]
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-pub struct PlClientOptions {
-    timeout: Option<Duration>,
-    connect_timeout: Option<Duration>,
-    allow_http: bool,
-    root_certificates: Vec<Certificate>,
-}
-
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-impl PartialEq for PlClientOptions {
-    fn eq(&self, other: &Self) -> bool {
-        self.timeout == other.timeout
-            && self.connect_timeout == other.connect_timeout
-            && self.allow_http == other.allow_http
-    }
-}
-
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-impl Eq for PlClientOptions {}
-
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-impl std::hash::Hash for PlClientOptions {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.timeout.hash(state);
-        self.connect_timeout.hash(state);
-        self.allow_http.hash(state);
-    }
-}
-
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-impl Default for PlClientOptions {
-    fn default() -> Self {
-        Self {
-            // We set request timeout super high as the timeout isn't reset at ACK,
-            // but starts from the moment we start downloading a body.
-            // https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.timeout
-            timeout: None,
-            // Concurrency can increase connection latency, so set to None, similar to default.
-            connect_timeout: None,
-            allow_http: true,
-            root_certificates: vec![],
-        }
-    }
-}
-
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-impl From<PlClientOptions> for ClientOptions {
-    fn from(pl_opts: PlClientOptions) -> Self {
-        let mut opts = ClientOptions::new();
-
-        if let Some(timeout) = pl_opts.timeout {
-            opts = opts.with_timeout(timeout);
-        } else {
-            opts = opts.with_timeout_disabled();
-        }
-        if let Some(connect_timeout) = pl_opts.connect_timeout {
-            opts = opts.with_connect_timeout(connect_timeout);
-        } else {
-            opts = opts.with_connect_timeout_disabled();
-        }
-        opts = opts.with_allow_http(pl_opts.allow_http);
-        for certificate in pl_opts.root_certificates {
-            opts = opts.with_root_certificate(certificate);
-        }
-
-        opts
-    }
 }
 
 #[cfg(all(feature = "serde", feature = "cloud"))]
