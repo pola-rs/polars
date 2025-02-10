@@ -10,9 +10,8 @@ import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import InvalidOperationError, ComputeError
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
-
 from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.operations.test_index_of import get_expected_index
 
