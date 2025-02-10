@@ -116,7 +116,7 @@ impl HashKeys {
             }
         }
     }
-
+    
     /// Generates indices for a chunked gather such that the ith key gathers
     /// the next gathers_per_key[i] elements from the partition[i]th chunk.
     pub fn gen_partitioned_gather_idxs(
@@ -141,6 +141,13 @@ impl HashKeys {
         match self {
             Self::RowEncoded(s) => Self::RowEncoded(s.gather(idxs)),
             Self::Single(s) => Self::Single(s.gather(idxs)),
+        }
+    }
+
+    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
+        match self {
+            HashKeys::RowEncoded(s) => s.sketch_cardinality(sketch),
+            HashKeys::Single(s) => s.sketch_cardinality(sketch),
         }
     }
 }
@@ -231,6 +238,21 @@ impl RowEncodedKeys {
             keys,
         }
     }
+
+
+    pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
+        if let Some(validity) = self.keys.validity() {
+            for (h, is_v) in self.hashes.values_iter().zip(validity) {
+                if is_v {
+                    sketch.insert(*h);
+                }
+            }
+        } else {
+            for h in self.hashes.values_iter() {
+                sketch.insert(*h);
+            }
+        }
+    }
 }
 
 /// Single keys. Does not pre-hash for boolean & integer types, only for strings
@@ -283,5 +305,9 @@ impl SingleKeys {
             hashes,
             keys: self.keys.take_slice_unchecked(idxs),
         }
+    }
+    
+    pub fn sketch_cardinality(&self, _sketch: &mut CardinalitySketch) {
+        todo!()
     }
 }
