@@ -234,7 +234,7 @@ impl CsvSourceNode {
         let include_file_paths = self.file_options.include_file_paths.is_some();
 
         // We don't deal with this yet for unrestricted_row_count.
-        assert!(global_slice.is_none());
+        assert!(unrestricted_row_count.is_none() || global_slice.is_none());
 
         if verbose {
             eprintln!(
