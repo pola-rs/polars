@@ -149,7 +149,6 @@ def test_multiscan_projection(
             )
 
 
-
 @pytest.mark.parametrize(
     ("scan", "write", "ext"),
     [
@@ -163,53 +162,59 @@ def test_multiscan_row_index(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, Path], Any],
     ext: str,
-        ) -> None:
-
-
+) -> None:
     a = pl.DataFrame({"col": [5, 10, 1996]})
     b = pl.DataFrame({"col": [42]})
     c = pl.DataFrame({"col": [13, 37]})
 
-    write(a, tmp_path / f'a.{ext}')
-    write(b, tmp_path / f'b.{ext}')
-    write(c, tmp_path / f'c.{ext}')
+    write(a, tmp_path / f"a.{ext}")
+    write(b, tmp_path / f"b.{ext}")
+    write(c, tmp_path / f"c.{ext}")
 
     col = pl.concat([a, b, c]).to_series()
-    g = tmp_path / f'*.{ext}'
+    g = tmp_path / f"*.{ext}"
 
     assert_frame_equal(
-        scan(g, row_index_name='ri').collect(),
-        pl.DataFrame([
-            pl.Series('ri', range(6), get_index_type()),
-            col,
-        ])
+        scan(g, row_index_name="ri").collect(),
+        pl.DataFrame(
+            [
+                pl.Series("ri", range(6), get_index_type()),
+                col,
+            ]
+        ),
     )
 
     start = 42
     assert_frame_equal(
-        scan(g, row_index_name='ri', row_index_offset=start).collect(),
-        pl.DataFrame([
-            pl.Series('ri', range(start, start + 6), get_index_type()),
-            col,
-        ])
+        scan(g, row_index_name="ri", row_index_offset=start).collect(),
+        pl.DataFrame(
+            [
+                pl.Series("ri", range(start, start + 6), get_index_type()),
+                col,
+            ]
+        ),
     )
 
     start = 42
     assert_frame_equal(
-        scan(g, row_index_name='ri', row_index_offset=start).slice(3, 3).collect(),
-        pl.DataFrame([
-            pl.Series('ri', range(start + 3, start + 6), get_index_type()),
-            col.slice(3, 3),
-        ])
+        scan(g, row_index_name="ri", row_index_offset=start).slice(3, 3).collect(),
+        pl.DataFrame(
+            [
+                pl.Series("ri", range(start + 3, start + 6), get_index_type()),
+                col.slice(3, 3),
+            ]
+        ),
     )
 
     start = 42
     assert_frame_equal(
-        scan(g, row_index_name='ri', row_index_offset=start).filter(pl.col('col') < 15).collect(),
-        pl.DataFrame([
-            pl.Series('ri', [start + 0, start + 1, start + 4], get_index_type()),
-            pl.Series('col', [5, 10, 13]),
-        ])
+        scan(g, row_index_name="ri", row_index_offset=start)
+        .filter(pl.col("col") < 15)
+        .collect(),
+        pl.DataFrame(
+            [
+                pl.Series("ri", [start + 0, start + 1, start + 4], get_index_type()),
+                pl.Series("col", [5, 10, 13]),
+            ]
+        ),
     )
-
-
