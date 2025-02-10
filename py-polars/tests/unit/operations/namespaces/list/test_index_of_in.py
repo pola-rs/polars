@@ -310,3 +310,13 @@ def test_nulls() -> None:
     series = pl.Series([None, [None, None]], dtype=pl.List(pl.Int64))
     assert series.list.index_of_in(None).to_list() == [None, 0]
     assert series.list.index_of_in(1).to_list() == [None, None]
+
+
+def test_wrong_type() -> None:
+    series = pl.Series([[1, 2, 3], [4, 5]])
+    with pytest.raises(
+        ComputeError,
+        match=r"dtypes didn't match: series values have dtype i64 and needle has dtype list\[i64\]",
+    ):
+        # Searching for a list won't work:
+        series.list.index_of_in([1, 2])

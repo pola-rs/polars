@@ -107,7 +107,7 @@ macro_rules! process_series_for_numeric_value {
 fn list_index_of_in_for_scalar(ca: &ListChunked, needle: AnyValue<'_>) -> PolarsResult<Series> {
     polars_ensure!(
         ca.dtype().inner_dtype().unwrap() == &needle.dtype() || needle.dtype().is_null(),
-        ComputeError: "dtypes did't match: series values have dtype {} and needle has dtype {}",
+        ComputeError: "dtypes didn't match: series values have dtype {} and needle has dtype {}",
         ca.dtype().inner_dtype().unwrap(),
         needle.dtype()
     );
