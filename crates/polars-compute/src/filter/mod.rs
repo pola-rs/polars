@@ -7,7 +7,9 @@ mod scalar;
 mod avx512;
 
 use arrow::array::growable::make_growable;
-use arrow::array::{new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray};
+use arrow::array::{
+    new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray,
+};
 use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::Bitmap;
 use arrow::with_match_primitive_type_full;
@@ -78,9 +80,22 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
             }
             .boxed()
         },
-        // Should go via BinaryView
         Utf8View => {
-            unreachable!()
+            let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            let views = array.views();
+            let validity = array.validity();
+            let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
+            unsafe {
+                BinaryViewArray::new_unchecked_unknown_md(
+                    arrow::datatypes::ArrowDataType::BinaryView,
+                    views.into(),
+                    array.data_buffers().clone(),
+                    validity,
+                    Some(array.total_buffer_len()),
+                )
+                .to_utf8view_unchecked()
+            }
+            .boxed()
         },
         _ => {
             let iter = SlicesIterator::new(mask);

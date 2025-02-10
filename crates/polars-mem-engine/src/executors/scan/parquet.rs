@@ -295,6 +295,7 @@ impl ParquetExec {
                 .skip_batch_predicate
                 .clone()
                 .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref())),
+            column_predicates: Arc::new(Default::default()),
         });
         let mut base_row_index = self.file_options.row_index.take();
 

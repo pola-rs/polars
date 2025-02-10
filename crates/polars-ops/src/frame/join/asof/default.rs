@@ -120,8 +120,8 @@ pub(crate) fn join_asof_numeric<T: PolarsNumericType>(
 
     let ca = input_ca.rechunk();
     let other = other.rechunk();
-    let left = ca.downcast_iter().next().unwrap();
-    let right = other.downcast_iter().next().unwrap();
+    let left = ca.downcast_as_array();
+    let right = other.downcast_as_array();
 
     let out = if let Some(t) = tolerance {
         let native_tolerance = t.try_extract::<T::Native>()?;

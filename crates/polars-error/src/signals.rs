@@ -30,7 +30,8 @@ pub fn register_polars_keyboard_interrupt_hook() {
         // Suppress output if there is an active catcher and the panic message
         // contains the keyboard interrupt string.
         let num_catchers = INTERRUPT_STATE.load(Ordering::Relaxed) >> 1;
-        if num_catchers > 0 && !is_keyboard_interrupt(p.payload()) {
+        let suppress = num_catchers > 0 && is_keyboard_interrupt(p.payload());
+        if !suppress {
             default_hook(p);
         }
     }));

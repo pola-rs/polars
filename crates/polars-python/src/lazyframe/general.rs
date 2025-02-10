@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
+use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
@@ -431,8 +432,9 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = pyarrow_schema_to_rust(schema)?;
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
+
+        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
     }
 
     #[staticmethod]
@@ -441,12 +443,20 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(
+        let schema = Arc::new(Schema::from_iter(
             schema
                 .into_iter()
                 .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
-        );
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        ));
+        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
+    }
+
+    #[staticmethod]
+    fn scan_from_python_function_schema_function(
+        schema_fn: PyObject,
+        scan_fn: PyObject,
+    ) -> PyResult<Self> {
+        Ok(LazyFrame::scan_from_python_function(Either::Left(schema_fn), scan_fn, false).into())
     }
 
     fn describe_plan(&self) -> PyResult<String> {

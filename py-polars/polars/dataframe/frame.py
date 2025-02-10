@@ -6,12 +6,7 @@ import contextlib
 import os
 import random
 from collections import defaultdict
-from collections.abc import (
-    Generator,
-    Iterable,
-    Sequence,
-    Sized,
-)
+from collections.abc import Generator, Iterable, Sequence, Sized
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -28,11 +23,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._typing import (
-    DbWriteMode,
-    JaxExportType,
-    TorchExportType,
-)
+from polars._typing import DbWriteMode, JaxExportType, TorchExportType
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -51,6 +42,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
+from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -108,17 +100,13 @@ from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import (
-        Collection,
-        Iterator,
-        Mapping,
-    )
+    from collections.abc import Collection, Iterator, Mapping
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -427,20 +415,12 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
-        elif hasattr(data, "__arrow_c_array__"):
-            # This uses the fact that PySeries.from_arrow_c_array will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_array(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
-        elif hasattr(data, "__arrow_c_stream__"):
-            # This uses the fact that PySeries.from_arrow_c_stream will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_stream(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
+        elif is_pycapsule(data):
+            self._df = pycapsule_to_frame(
+                data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+            )._df
         else:
             msg = (
                 f"DataFrame constructor called with unsupported type {type(data).__name__!r}"
@@ -5146,9 +5126,7 @@ class DataFrame:
         # print individual columns: one row per column
         for col_name, dtype_str, val_str in data:
             output.write(
-                f"$ {col_name:<{max_col_name}}"
-                f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str}\n"
+                f"$ {col_name:<{max_col_name}} {dtype_str:>{max_col_dtype}} {val_str}\n"
             )
 
         s = output.getvalue()

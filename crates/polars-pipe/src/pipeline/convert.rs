@@ -138,6 +138,7 @@ where
                                 predicate: Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>,
                                 live_columns,
                                 skip_batch_predicate: None,
+                                column_predicates: Arc::new(Default::default()),
                             })
                         })
                         .transpose()?;

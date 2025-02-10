@@ -353,9 +353,9 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     # doesn't yet support streaming.
     for i, line in enumerate(plan_lines):
         if line.startswith("PLAN"):
-            assert plan_lines[i + 1].startswith(
-                "STREAMING"
-            ), f"{line} does not contain a streaming section"
+            assert plan_lines[i + 1].startswith("STREAMING"), (
+                f"{line} does not contain a streaming section"
+            )
 
     result = query.collect(streaming=True)
 
@@ -387,3 +387,19 @@ def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
         )
         .sink_parquet(tmp_path / "1")
     )
+
+
+def test_streaming_temporal_17669() -> None:
+    df = (
+        pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime("us")})
+        .with_columns(
+            b=pl.col("a").dt.date(),
+            c=pl.col("a").dt.time(),
+        )
+        .collect(streaming=True)
+    )
+    assert df.schema == {
+        "a": pl.Datetime("us"),
+        "b": pl.Date,
+        "c": pl.Time,
+    }

@@ -411,7 +411,7 @@ impl StructChunked {
                 .zip(other.chunks())
                 .any(|(a, b)| a.len() != b.len())
         {
-            *self = self.rechunk();
+            self.rechunk_mut();
             let other = other.rechunk();
             return self.zip_outer_validity(&other);
         }

@@ -164,7 +164,7 @@ impl SeriesTrait for SeriesWrap<ArrayChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {

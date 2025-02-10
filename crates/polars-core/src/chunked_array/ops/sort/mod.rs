@@ -408,7 +408,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
         let ca = self.rechunk();
-        let arr = ca.downcast_into_array();
+        let arr = ca.downcast_as_array().clone();
 
         let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
         let mut views = views.make_mut();
@@ -590,7 +590,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     fn arg_sort(&self, mut options: SortOptions) -> IdxCa {
         options.multithreaded &= POOL.current_num_threads() > 1;
         let ca = self.rechunk();
-        let arr = ca.downcast_into_array();
+        let arr = ca.downcast_as_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
 
         let argsort = |args| {

@@ -1,5 +1,5 @@
 use arrow::array::{MutableArray, MutablePlString};
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
 use polars_core::datatypes::{DataType, PlSmallStr};
 use polars_core::frame::column::Column;
 use polars_core::frame::DataFrame;
@@ -170,7 +170,7 @@ pub trait UnpivotDF: IntoDf {
             )?;
             values.extend_from_slice(value_col.as_materialized_series().chunks())
         }
-        let values_arr = concatenate_owned_unchecked(&values)?;
+        let values_arr = concatenate_unchecked(&values)?;
         // SAFETY:
         // The give dtype is correct
         let values =
