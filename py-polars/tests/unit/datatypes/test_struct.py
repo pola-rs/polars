@@ -1226,3 +1226,9 @@ def test_nested_object_raises_15237() -> None:
         pl.exceptions.InvalidOperationError, match="nested objects are not allowed"
     ):
         df.select(pl.struct("a"))
+
+
+def test_unnest_with_invalid_input_raises_properly() -> None:
+    df = pl.DataFrame({"a": [1]})
+    with pytest.raises(pl.exceptions.SchemaError, match="invalid series dtype"):
+        df.lazy().unnest("a").unpivot().collect()

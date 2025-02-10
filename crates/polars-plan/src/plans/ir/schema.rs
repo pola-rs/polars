@@ -97,7 +97,7 @@ impl IR {
                     Cow::Owned(schema) => {
                         Cow::Owned(function.schema(&schema).unwrap().into_owned())
                     },
-                    Cow::Borrowed(schema) => function.schema(schema).unwrap(),
+                    Cow::Borrowed(schema) => function.schema(schema).unwrap_or(input_schema),
                 };
             },
             ExtContext { schema, .. } => schema,
