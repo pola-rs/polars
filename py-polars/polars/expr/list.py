@@ -1059,20 +1059,35 @@ class ExprListNameSpace:
         element = parse_into_expression(element, str_as_lit=True)
         return wrap_expr(self._pyexpr.list_count_matches(element))
 
-    def index_of_in(self, element: IntoExpr) -> Expr:
+    def index_of_in(self, needles: IntoExpr) -> Expr:
         """
-        TODO
+        For each List, return the index of the first value equal to a needle.
 
         Parameters
         ----------
         needles
-            TODO
+            The value(s) to search for.
 
         Examples
         --------
-        TODO
+        >>> df = pl.DataFrame({
+        ...     "lists": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+        ...             "needles": [3, 0, 3, 7],
+        ... })
+        >>> df.select(pl.col("lists").list.index_of_in(pl.col("needles")))
+        shape: (4, 1)
+        ┌───────┐
+        │ lists │
+        │ ---   │
+        │ u32   │
+        ╞═══════╡
+        │ 2     │
+        │ null  │
+        │ 1     │
+        │ 2     │
+        └───────┘
         """
-        element = parse_into_expression(element, str_as_lit=True, list_as_series=False)
+        element = parse_into_expression(needles, str_as_lit=True, list_as_series=False)
         return wrap_expr(self._pyexpr.list_index_of_in(element))
 
     def to_array(self, width: int) -> Expr:

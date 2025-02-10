@@ -1055,7 +1055,25 @@ class ListNameSpace:
         ]
         """  # noqa: W505
 
-    def index_of_in(self, element: IntoExpr) -> Series:
+    def index_of_in(self, needles: IntoExpr) -> Series:
         """
-        TODO
+        For each list in the series, return the index of the first value equal to the corresponding needle.
+
+        Parameters
+        ----------
+        needles
+            The value(s) to search for.
+
+        Examples
+        --------
+        >>> a = pl.Series([[1, 2, 3], [], [None, 3], [5, 6, 7]])
+        >>> a.list.index_of_in(pl.Series([3, 0, 3, 7]))
+        shape: (4,)
+        Series: '' [u32]
+        [
+                2
+                null
+                1
+                2
+        ]
         """  # noqa: W505
