@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
-use polars_utils::pl_str::PlSmallStr;
+use polars_utils::index::AtomicIdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
 use crate::async_primitives::connector::{connector, Receiver, Sender};
@@ -257,6 +257,6 @@ pub trait SourceNode: Sized + Send + Sync {
         output_recv: Receiver<SourceOutput>,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<PlSmallStr>,
+        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
     );
 }

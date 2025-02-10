@@ -6,6 +6,7 @@ use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
+use polars_io::RowIndex;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::plans::hive::HivePartitions;
@@ -177,7 +178,7 @@ pub enum PhysNodeKind {
 
         /// Schema that all files are coerced into.
         ///
-        /// - Does **not** include the `row_index`.
+        /// - Does include the `row_index`.
         /// - Does include `include_file_paths`.
         /// - Does include the hive columns.
         ///
@@ -189,6 +190,8 @@ pub enum PhysNodeKind {
 
         /// Selection of `file_schema` columns should to be included in the output morsels.
         projection: Option<Bitmap>,
+
+        row_index: Option<RowIndex>,
     },
     FileScan {
         scan_sources: ScanSources,

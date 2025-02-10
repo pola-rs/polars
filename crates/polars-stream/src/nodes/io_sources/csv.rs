@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use futures::stream::FuturesUnordered;
@@ -9,7 +10,7 @@ use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 #[cfg(feature = "dtype-categorical")]
 use polars_core::StringCacheHolder;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{polars_bail, polars_err, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
     cast_columns, find_starting_point, prepare_csv_schema, read_chunk, CountLines,
@@ -22,6 +23,7 @@ use polars_io::utils::slice::SplitSlicePosition;
 use polars_io::RowIndex;
 use polars_plan::plans::{csv_file_info, FileInfo, ScanSource, ScanSources};
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::index::AtomicIdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
@@ -96,7 +98,7 @@ impl SourceNode for CsvSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        _unrestricted_row_count: Option<PlSmallStr>,
+        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
     ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
             .map(|_| connector::<MorselOutput>())
@@ -106,7 +108,7 @@ impl SourceNode for CsvSourceNode {
 
         let source_token = SourceToken::new();
         let (line_batch_receivers, chunk_reader, line_batch_source_task_handle) =
-            self.init_line_batch_source(num_pipelines);
+            self.init_line_batch_source(num_pipelines, unrestricted_row_count);
 
         join_handles.extend(line_batch_receivers.into_iter().zip(recv_from).map(
             |(mut line_batch_rx, mut recv_from)| {
@@ -202,7 +204,11 @@ impl SourceNode for CsvSourceNode {
 }
 
 impl CsvSourceNode {
-    fn init_line_batch_source(&mut self, num_pipelines: usize) -> AsyncTaskData {
+    fn init_line_batch_source(
+        &mut self,
+        num_pipelines: usize,
+        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+    ) -> AsyncTaskData {
         let verbose = self.verbose;
 
         let (mut line_batch_senders, line_batch_receivers): (Vec<_>, Vec<_>) =
@@ -226,6 +232,9 @@ impl CsvSourceNode {
         let has_header = options.has_header;
         let global_slice = self.file_options.slice;
         let include_file_paths = self.file_options.include_file_paths.is_some();
+
+        // We don't deal with this yet for unrestricted_row_count.
+        assert!(global_slice.is_none());
 
         if verbose {
             eprintln!(
@@ -423,6 +432,13 @@ impl CsvSourceNode {
                     }
                 }
 
+                if let Some(unrestricted_row_count) = unrestricted_row_count.as_ref() {
+                    let num_rows = *current_row_offset_ref;
+                    let num_rows = IdxSize::try_from(num_rows)
+                        .map_err(|_| polars_err!(bigidx, ctx = "csv file", size = num_rows))?;
+                    unrestricted_row_count.store(num_rows, Ordering::Relaxed);
+                }
+
                 Ok(())
             }),
         );
@@ -604,16 +620,20 @@ impl MultiScanable for CsvSourceNode {
 
     const DOES_PRED_PD: bool = false;
     const DOES_SLICE_PD: bool = true;
-    const DOES_ROW_INDEX: bool = false;
 
     async fn new(
         source: ScanSource,
         options: &Self::ReadOptions,
         cloud_options: Option<&CloudOptions>,
+        row_index: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         let sources = source.into_sources();
 
-        let file_options = FileScanOptions::default();
+        let file_options = FileScanOptions {
+            row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
+            ..Default::default()
+        };
+
         let mut csv_options = options.clone();
 
         let file_info = csv_file_info(&sources, &file_options, &mut csv_options, cloud_options)?;
@@ -631,15 +651,38 @@ impl MultiScanable for CsvSourceNode {
         _ = row_restriction;
         todo!()
     }
-    fn with_row_index(&mut self, row_index: Option<PlSmallStr>) {
-        _ = row_index;
-        todo!()
-    }
 
-    async fn row_count(&mut self) -> PolarsResult<IdxSize> {
-        todo!()
+    async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
+        let parse_options = self.options.get_parse_options();
+        let source = self
+            .scan_sources
+            .at(0)
+            .to_memslice_async_assume_latest(true)?;
+
+        let mem_slice = {
+            let mut out = vec![];
+            maybe_decompress_bytes(&source, &mut out)?;
+
+            if out.is_empty() {
+                source
+            } else {
+                MemSlice::from_vec(out)
+            }
+        };
+
+        let num_rows = polars_io::csv::read::count_rows_from_slice(
+            &mem_slice[..],
+            parse_options.separator,
+            parse_options.quote_char,
+            parse_options.comment_prefix.as_ref(),
+            parse_options.eol_char,
+            self.options.has_header,
+        )?;
+        let num_rows = IdxSize::try_from(num_rows)
+            .map_err(|_| polars_err!(bigidx, ctx = "csv file", size = num_rows))?;
+        Ok(num_rows)
     }
-    async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+    async fn physical_schema(&mut self) -> PolarsResult<SchemaRef> {
         Ok(self.file_info.schema.clone())
     }
 }
