@@ -419,8 +419,8 @@ pub fn list_set_operation(
     let mut a = a.clone();
     let mut b = b.clone();
     if a.len() != b.len() {
-        a = a.rechunk();
-        b = b.rechunk();
+        a.rechunk_mut();
+        b.rechunk_mut();
     }
 
     // We will OOB in the kernel otherwise.

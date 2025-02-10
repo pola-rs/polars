@@ -440,8 +440,8 @@ pub(super) fn get(s: &mut [Column], null_on_oob: bool) -> PolarsResult<Option<Co
             }
         },
         len if len == ca.len() => {
-            let ca = ca.rechunk();
-            let arr = ca.downcast_iter().next().unwrap();
+            let tmp = ca.rechunk();
+            let arr = tmp.downcast_as_array();
             let offsets = arr.offsets().as_slice();
             let take_by = if ca.null_count() == 0 {
                 index

@@ -36,7 +36,7 @@ def register_plugin_function(
     """
     Register a plugin function.
 
-    See the `user guide <https://docs.pola.rs/user-guide/plugins/>`_
+    See the `user guide <https://docs.pola.rs/user-guide/plugins/expr_plugins>`_
     for more information about plugins.
 
     Parameters

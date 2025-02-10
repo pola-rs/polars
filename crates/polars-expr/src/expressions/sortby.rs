@@ -400,13 +400,6 @@ impl PhysicalExpr for SortByExpr {
         Ok(ac_in)
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.input.collect_live_columns(lv);
-        for i in &self.by {
-            i.collect_live_columns(lv);
-        }
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.input.to_field(input_schema)
     }

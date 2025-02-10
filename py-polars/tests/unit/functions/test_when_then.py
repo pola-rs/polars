@@ -232,6 +232,7 @@ def test_object_when_then_4702() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_comp_categorical_lit_dtype() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
@@ -736,3 +737,21 @@ def test_struct_when_then_broadcasting_combinations_19122(
             pl.when(pl.col.a.struct.field("x") != 0).then(rv).otherwise(None).alias("a")
         ),
     )
+
+
+def test_when_then_to_decimal_18375() -> None:
+    df = pl.DataFrame({"a": ["1.23", "4.56"]})
+
+    result = df.with_columns(
+        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal()),
+        c=pl.when(True).then(pl.col("a").str.to_decimal()),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": ["1.23", "4.56"],
+            "b": ["1.23", "4.56"],
+            "c": ["1.23", "4.56"],
+        },
+        schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
+    )
+    assert_frame_equal(result, expected)

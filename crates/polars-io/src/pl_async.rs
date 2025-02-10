@@ -282,7 +282,7 @@ impl RuntimeManager {
             .unwrap_or(POOL.current_num_threads().clamp(1, 4));
 
         if polars_core::config::verbose() {
-            eprintln!("Async thread count: {}", n_threads);
+            eprintln!("async thread count: {}", n_threads);
         }
 
         let rt = Builder::new_multi_thread()

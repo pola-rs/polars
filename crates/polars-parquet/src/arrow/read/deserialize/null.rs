@@ -2,43 +2,56 @@
 //! The implementation mostly stubs all the function and just keeps track of the length in the
 //! `DecodedState`.
 
-use arrow::array::{Array, NullArray};
-use arrow::bitmap::Bitmap;
+use arrow::array::NullArray;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 
-use super::utils;
 use super::utils::filter::Filter;
+use super::utils::{self};
+use super::PredicateFilter;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
 pub(crate) struct NullDecoder;
+pub(crate) struct NullTranslation {
+    num_rows: usize,
+}
+
 #[derive(Debug)]
 pub(crate) struct NullArrayLength {
     length: usize,
 }
 
-impl utils::ExactSize for NullArrayLength {
+impl utils::Decoded for NullArrayLength {
     fn len(&self) -> usize {
         self.length
     }
+    fn extend_nulls(&mut self, n: usize) {
+        self.length += n;
+    }
 }
 
-impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
+impl<'a> utils::StateTranslation<'a, NullDecoder> for NullTranslation {
     type PlainDecoder = ();
 
     fn new(
         _decoder: &NullDecoder,
-        _page: &'a DataPage,
+        page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
         _page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
-        Ok(())
+        Ok(NullTranslation {
+            num_rows: page.num_values(),
+        })
+    }
+    fn num_rows(&self) -> usize {
+        self.num_rows
     }
 }
 
 impl utils::Decoder for NullDecoder {
-    type Translation<'a> = ();
-    type Dict = ();
+    type Translation<'a> = NullTranslation;
+    type Dict = NullArray;
     type DecodedState = NullArrayLength;
     type Output = NullArray;
 
@@ -48,6 +61,27 @@ impl utils::Decoder for NullDecoder {
     }
 
     fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(NullArray::new_empty(ArrowDataType::Null))
+    }
+
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        // @TODO: This can be enabled for the fast paths
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        _is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional.as_any().downcast_ref::<NullArray>().unwrap();
+        decoded.length += additional.len();
+
         Ok(())
     }
 
@@ -62,52 +96,21 @@ impl utils::Decoder for NullDecoder {
 
     fn extend_filtered_with_state(
         &mut self,
-        _state: utils::State<'_, Self>,
+        state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
+        _pred_true_mask: &mut BitmapBuilder,
         filter: Option<Filter>,
     ) -> ParquetResult<()> {
-        // @NOTE: This is only used by nested decoders. Those will always supply a mask.
-        let filter = filter.unwrap();
-        decoded.length += filter.num_rows();
-        Ok(())
-    }
-}
-
-use super::BasicDecompressor;
-
-/// Converts [`PagesIter`] to an [`ArrayIter`]
-pub fn iter_to_arrays(
-    mut iter: BasicDecompressor,
-    dtype: ArrowDataType,
-    mut filter: Option<Filter>,
-) -> ParquetResult<Box<dyn Array>> {
-    _ = iter.read_dict_page()?;
-
-    let num_rows = Filter::opt_num_rows(&filter, iter.total_num_values());
-
-    let mut len = 0usize;
-
-    while len < num_rows {
-        let Some(page) = iter.next() else {
-            break;
-        };
-        let page = page?;
-
-        let state_filter;
-        (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
-
-        // Skip the whole page if we don't need any rows from it
-        if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
-            continue;
+        if matches!(filter, Some(Filter::Predicate(_))) {
+            todo!()
         }
 
-        let num_page_rows = match state_filter {
-            None => page.num_values(),
-            Some(filter) => filter.num_rows(),
+        let num_rows = match filter {
+            Some(f) => f.num_rows(0),
+            None => state.translation.num_rows,
         };
+        decoded.length += num_rows;
 
-        len = (len + num_page_rows).min(num_rows);
+        Ok(())
     }
-
-    Ok(Box::new(NullArray::new(dtype, len)))
 }

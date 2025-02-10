@@ -602,10 +602,6 @@ pub trait PhysicalExpr: Send + Sync {
         None
     }
 
-    /// Get the variables that are used in the expression i.e. live variables.
-    /// This can contain duplicates.
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>);
-
     /// Can take &dyn Statistics and determine of a file should be
     /// read -> `true`
     /// or not -> `false`
@@ -644,10 +640,6 @@ impl PhysicalIoExpr for PhysicalIoHelper {
         self.expr
             .evaluate(df, &state)
             .map(|c| c.take_materialized_series())
-    }
-
-    fn collect_live_columns(&self, live_columns: &mut PlIndexSet<PlSmallStr>) {
-        self.expr.collect_live_columns(live_columns);
     }
 
     #[cfg(feature = "parquet")]

@@ -3,6 +3,7 @@ mod boolean;
 mod dispatch;
 mod string;
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 
 pub use agg_list::*;
@@ -456,10 +457,11 @@ where
         ChunkTakeUnchecked<[IdxSize]> + ChunkBitwiseReduce<Physical = T::Native> + IntoSeries,
 {
     // Prevent a rechunk for every individual group.
+
     let s = if groups.len() > 1 {
         ca.rechunk()
     } else {
-        ca.clone()
+        Cow::Borrowed(ca)
     };
 
     match groups {

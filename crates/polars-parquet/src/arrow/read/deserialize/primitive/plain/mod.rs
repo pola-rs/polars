@@ -1,13 +1,17 @@
-use arrow::array::Splitable;
-use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::types::{AlignedBytes, NativeType};
+use arrow::array::{PrimitiveArray, Splitable};
+use arrow::bitmap::{Bitmap, BitmapBuilder};
+use arrow::types::{AlignedBytes, NativeType, PrimitiveType};
 
 use super::DecoderFunction;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::types::NativeType as ParquetNativeType;
 use crate::read::deserialize::dictionary_encoded::{append_validity, constrain_page_validity};
 use crate::read::deserialize::utils::array_chunks::ArrayChunks;
+use crate::read::deserialize::utils::freeze_validity;
 use crate::read::{Filter, ParquetError};
+
+mod predicate;
+mod required;
 
 #[allow(clippy::too_many_arguments)]
 pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
@@ -15,9 +19,97 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     intermediate: &mut Vec<P>,
     target: &mut Vec<T>,
+    pred_true_mask: &mut BitmapBuilder,
+    dfn: D,
+) -> ParquetResult<()> {
+    let can_filter_on_raw_data =
+        // Floats have different equality that just byte-wise comparison.
+        // @TODO: Maybe be smarter about this, because most predicates should not hit this problem.
+        !matches!(T::PRIMITIVE, PrimitiveType::Float16 | PrimitiveType::Float32 | PrimitiveType::Float64) &&
+        D::CAN_TRANSMUTE && !D::NEED_TO_DECODE;
+
+    match filter {
+        Some(Filter::Predicate(p))
+            if !can_filter_on_raw_data || p.predicate.to_equals_scalar().is_none() =>
+        {
+            let num_values = values.len() / size_of::<P::AlignedBytes>();
+
+            // @TODO: Do something smarter with the validity
+            let mut unfiltered_target = Vec::with_capacity(num_values);
+            let mut unfiltered_validity = page_validity
+                .is_some()
+                .then(|| BitmapBuilder::with_capacity(num_values))
+                .unwrap_or_default();
+
+            decode_no_incompact_predicates(
+                values,
+                is_optional,
+                page_validity,
+                None,
+                &mut unfiltered_validity,
+                intermediate,
+                &mut unfiltered_target,
+                &mut BitmapBuilder::new(),
+                dfn,
+            )?;
+
+            let unfiltered_validity = freeze_validity(unfiltered_validity);
+
+            let array = PrimitiveArray::new(
+                T::PRIMITIVE.into(),
+                unfiltered_target.into(),
+                unfiltered_validity,
+            );
+            let intermediate_pred_true_mask = p.predicate.evaluate(&array);
+
+            let array =
+                polars_compute::filter::filter_with_bitmap(&array, &intermediate_pred_true_mask);
+            let array = array.as_any().downcast_ref::<PrimitiveArray<T>>().unwrap();
+
+            pred_true_mask.extend_from_bitmap(&intermediate_pred_true_mask);
+            target.extend(array.values().iter().copied());
+            if is_optional {
+                match array.validity() {
+                    None => validity.extend_constant(array.len(), true),
+                    Some(v) => validity.extend_from_bitmap(v),
+                }
+            }
+        },
+        f => {
+            decode_no_incompact_predicates(
+                values,
+                is_optional,
+                page_validity,
+                f,
+                validity,
+                intermediate,
+                target,
+                pred_true_mask,
+                dfn,
+            )?;
+        },
+    }
+
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn decode_no_incompact_predicates<
+    P: ParquetNativeType,
+    T: NativeType,
+    D: DecoderFunction<P, T>,
+>(
+    values: &[u8],
+    is_optional: bool,
+    page_validity: Option<&Bitmap>,
+    filter: Option<Filter>,
+    validity: &mut BitmapBuilder,
+    intermediate: &mut Vec<P>,
+    target: &mut Vec<T>,
+    pred_true_mask: &mut BitmapBuilder,
     dfn: D,
 ) -> ParquetResult<()> {
     if cfg!(debug_assertions) && is_optional {
@@ -37,6 +129,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
             filter,
             validity,
             <T::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(target),
+            pred_true_mask,
         )?;
 
         if D::NEED_TO_DECODE {
@@ -59,6 +152,7 @@ pub fn decode<P: ParquetNativeType, T: NativeType, D: DecoderFunction<P, T>>(
             filter,
             validity,
             <P::AlignedBytes as AlignedBytes>::cast_vec_ref_mut(intermediate),
+            pred_true_mask,
         )?;
 
         target.extend(intermediate.iter().copied().map(|v| dfn.decode(v)));
@@ -77,8 +171,9 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     is_optional: bool,
     page_validity: Option<&Bitmap>,
     filter: Option<Filter>,
-    validity: &mut MutableBitmap,
+    validity: &mut BitmapBuilder,
     target: &mut Vec<B>,
+    pred_true_mask: &mut BitmapBuilder,
 ) -> ParquetResult<()> {
     if is_optional {
         append_validity(page_validity, filter.as_ref(), validity, values.len());
@@ -87,11 +182,11 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
     let page_validity = constrain_page_validity(values.len(), page_validity, filter.as_ref());
 
     match (filter, page_validity) {
-        (None, None) => decode_required(values, target),
+        (None, None) => required::decode(values, target),
         (None, Some(page_validity)) => decode_optional(values, page_validity, target),
 
         (Some(Filter::Range(rng)), None) => {
-            decode_required(values.slice(rng.start, rng.len()), target)
+            required::decode(values.slice(rng.start, rng.len()), target)
         },
         (Some(Filter::Range(rng)), Some(mut page_validity)) => {
             let mut values = values;
@@ -110,36 +205,25 @@ pub fn decode_aligned_bytes_dispatch<B: AlignedBytes>(
         (Some(Filter::Mask(filter)), Some(page_validity)) => {
             decode_masked_optional(values, page_validity, filter, target)
         },
+        (Some(Filter::Predicate(p)), None) => {
+            if let Some(needle) = p.predicate.to_equals_scalar() {
+                let needle = needle.to_aligned_bytes::<B>().unwrap();
+
+                let start_num_pred_true = pred_true_mask.set_bits();
+                predicate::decode_equals_no_values(values, needle, pred_true_mask);
+
+                if p.include_values {
+                    let num_pred_true = pred_true_mask.set_bits() - start_num_pred_true;
+                    target.resize(target.len() + num_pred_true, needle);
+                }
+            } else {
+                unreachable!()
+            }
+
+            Ok(())
+        },
+        (Some(Filter::Predicate(_)), Some(_)) => todo!(),
     }?;
-
-    Ok(())
-}
-
-#[inline(never)]
-fn decode_required<B: AlignedBytes>(
-    values: ArrayChunks<'_, B>,
-    target: &mut Vec<B>,
-) -> ParquetResult<()> {
-    if values.is_empty() {
-        return Ok(());
-    }
-
-    target.reserve(values.len());
-
-    // SAFETY: Vec guarantees if the `capacity != 0` the pointer to valid since we just reserve
-    // that pointer.
-    let dst = unsafe { target.as_mut_ptr().add(target.len()) };
-    let src = values.as_ptr();
-
-    // SAFETY:
-    // - `src` is valid for read of values.len() elements.
-    // - `dst` is valid for writes of values.len() elements, it was just reserved.
-    // - B::Unaligned is always aligned, since it has an alignment of 1
-    // - The ranges for src and dst do not overlap
-    unsafe {
-        std::ptr::copy_nonoverlapping::<B::Unaligned>(src.cast(), dst.cast(), values.len());
-        target.set_len(target.len() + values.len());
-    };
 
     Ok(())
 }
@@ -161,7 +245,7 @@ fn decode_optional<B: AlignedBytes>(
     // Dispatch to a faster kernel if possible.
     let num_values = validity.set_bits();
     if num_values == validity.len() {
-        decode_required(values.truncate(validity.len()), target)?;
+        required::decode(values.truncate(validity.len()), target)?;
         target.resize(target.len() + num_trailing_nulls, B::zeroed());
         return Ok(());
     }
@@ -245,7 +329,7 @@ fn decode_masked_required<B: AlignedBytes>(
     // Dispatch to a faster kernel if possible.
     let num_rows = mask.set_bits();
     if num_rows == mask.len() {
-        return decode_required(values.truncate(num_rows), target);
+        return required::decode(values.truncate(num_rows), target);
     }
 
     assert!(mask.len() <= values.len());

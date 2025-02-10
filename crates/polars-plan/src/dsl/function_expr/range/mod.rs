@@ -3,6 +3,7 @@ mod date_range;
 #[cfg(feature = "dtype-datetime")]
 mod datetime_range;
 mod int_range;
+mod linear_space;
 #[cfg(feature = "dtype-time")]
 mod time_range;
 mod utils;
@@ -10,6 +11,7 @@ mod utils;
 use std::fmt::{Display, Formatter};
 
 use polars_core::prelude::*;
+use polars_ops::series::ClosedInterval;
 #[cfg(feature = "temporal")]
 use polars_time::{ClosedWindow, Duration};
 #[cfg(feature = "serde")]
@@ -28,6 +30,13 @@ pub enum RangeFunction {
         dtype: DataType,
     },
     IntRanges,
+    LinearSpace {
+        closed: ClosedInterval,
+    },
+    LinearSpaces {
+        closed: ClosedInterval,
+        array_width: Option<usize>,
+    },
     #[cfg(feature = "dtype-date")]
     DateRange {
         interval: Duration,
@@ -64,12 +73,48 @@ pub enum RangeFunction {
     },
 }
 
+fn map_linspace_dtype(mapper: &FieldsMapper) -> PolarsResult<DataType> {
+    let fields = mapper.args();
+    let start_dtype = fields[0].dtype();
+    let end_dtype = fields[1].dtype();
+    Ok(match (start_dtype, end_dtype) {
+        (&DataType::Float32, &DataType::Float32) => DataType::Float32,
+        // A linear space of a Date produces a sequence of Datetimes
+        (dt1, dt2) if dt1.is_temporal() && dt1 == dt2 => {
+            if dt1 == &DataType::Date {
+                DataType::Datetime(TimeUnit::Milliseconds, None)
+            } else {
+                dt1.clone()
+            }
+        },
+        (dt1, dt2) if !dt1.is_primitive_numeric() || !dt2.is_primitive_numeric() => {
+            polars_bail!(ComputeError:
+                "'start' and 'end' have incompatible dtypes, got {:?} and {:?}",
+                dt1, dt2
+            )
+        },
+        _ => DataType::Float64,
+    })
+}
+
 impl RangeFunction {
     pub(super) fn get_field(&self, mapper: FieldsMapper) -> PolarsResult<Field> {
         use RangeFunction::*;
         match self {
             IntRange { dtype, .. } => mapper.with_dtype(dtype.clone()),
             IntRanges => mapper.with_dtype(DataType::List(Box::new(DataType::Int64))),
+            LinearSpace { .. } => mapper.with_dtype(map_linspace_dtype(&mapper)?),
+            LinearSpaces {
+                closed: _,
+                array_width,
+            } => {
+                let inner = Box::new(map_linspace_dtype(&mapper)?);
+                let dt = match array_width {
+                    Some(width) => DataType::Array(inner, *width),
+                    None => DataType::List(inner),
+                };
+                mapper.with_dtype(dt)
+            },
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => mapper.with_dtype(DataType::Date),
             #[cfg(feature = "dtype-date")]
@@ -112,6 +157,8 @@ impl Display for RangeFunction {
         let s = match self {
             IntRange { .. } => "int_range",
             IntRanges => "int_ranges",
+            LinearSpace { .. } => "linear_space",
+            LinearSpaces { .. } => "linear_spaces",
             #[cfg(feature = "dtype-date")]
             DateRange { .. } => "date_range",
             #[cfg(feature = "temporal")]
@@ -138,6 +185,15 @@ impl From<RangeFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             },
             IntRanges => {
                 map_as_slice!(int_range::int_ranges)
+            },
+            LinearSpace { closed } => {
+                map_as_slice!(linear_space::linear_space, closed)
+            },
+            LinearSpaces {
+                closed,
+                array_width,
+            } => {
+                map_as_slice!(linear_space::linear_spaces, closed, array_width)
             },
             #[cfg(feature = "dtype-date")]
             DateRange { interval, closed } => {

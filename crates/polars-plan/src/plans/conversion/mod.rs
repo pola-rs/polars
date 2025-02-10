@@ -23,6 +23,13 @@ use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
 use polars_utils::vec::ConvertVec;
 use recursive::recursive;
+#[cfg(any(
+    feature = "ipc",
+    feature = "parquet",
+    feature = "csv",
+    feature = "json"
+))]
+pub use scans::*;
 mod functions;
 mod join;
 pub(crate) mod type_check;
@@ -76,7 +83,9 @@ impl IR {
                 }
             },
             #[cfg(feature = "python")]
-            IR::PythonScan { options, .. } => DslPlan::PythonScan { options },
+            IR::PythonScan { .. } => DslPlan::PythonScan {
+                options: Default::default(),
+            },
             IR::Union { inputs, .. } => {
                 let inputs = inputs
                     .into_iter()
@@ -264,6 +273,21 @@ impl IR {
             IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
                 DslPlan::Sink { input, payload }
+            },
+            #[cfg(feature = "merge_sorted")]
+            IR::MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                let input_left = Arc::new(convert_to_lp(input_left, lp_arena));
+                let input_right = Arc::new(convert_to_lp(input_right, lp_arena));
+
+                DslPlan::MergeSorted {
+                    input_left,
+                    input_right,
+                    key,
+                }
             },
             IR::Invalid => unreachable!(),
         }

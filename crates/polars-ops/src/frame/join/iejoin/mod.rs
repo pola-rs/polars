@@ -12,7 +12,7 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, split};
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
-use polars_error::{check_signals, polars_err, PolarsResult};
+use polars_error::{polars_err, PolarsResult};
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::{TotalEq, TotalOrd};
@@ -362,7 +362,7 @@ unsafe fn materialize_join(
     right_row_idx: &IdxCa,
     suffix: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
-    check_signals()?;
+    try_raise_keyboard_interrupt();
     let (join_left, join_right) = {
         POOL.join(
             || left.take_unchecked(left_row_idx),
@@ -439,14 +439,12 @@ fn iejoin_tuples(
         .with_order_descending(l2_descending);
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
-    let l2_order = y_ordered_by_x
-        .arg_sort(l2_sort_options)
-        .slice(
-            y_ordered_by_x.null_count() as i64,
-            y_ordered_by_x.len() - y_ordered_by_x.null_count(),
-        )
-        .rechunk();
-    let l2_order = l2_order.downcast_get(0).unwrap().values().as_slice();
+    let l2_order = y_ordered_by_x.arg_sort(l2_sort_options).slice(
+        y_ordered_by_x.null_count() as i64,
+        y_ordered_by_x.len() - y_ordered_by_x.null_count(),
+    );
+    let l2_order = l2_order.rechunk();
+    let l2_order = l2_order.downcast_as_array().values().as_slice();
 
     let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
          ie_join_impl_t::<$T>(
@@ -528,13 +526,11 @@ fn piecewise_merge_join_tuples(
                 .with_order_descending(descending);
 
             // Get order and slice to ignore any null values, which cannot be match results
-            let order = series
-                .arg_sort(sort_options)
-                .slice(
-                    series.null_count() as i64,
-                    series.len() - series.null_count(),
-                )
-                .rechunk();
+            let mut order = series.arg_sort(sort_options).slice(
+                series.null_count() as i64,
+                series.len() - series.null_count(),
+            );
+            order.rechunk_mut();
             let ordered = unsafe { series.take_unchecked(&order) };
             (ordered, Some(order))
         }

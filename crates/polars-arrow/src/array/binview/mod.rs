@@ -449,6 +449,15 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         mutable.freeze().with_validity(self.validity)
     }
 
+    pub fn deshare(&self) -> Self {
+        if Arc::strong_count(&self.buffers) == 1
+            && self.buffers.iter().all(|b| b.storage_refcount() == 1)
+        {
+            return self.clone();
+        }
+        self.clone().gc()
+    }
+
     pub fn is_sliced(&self) -> bool {
         self.views.as_ptr() != self.views.storage_ptr()
     }

@@ -487,12 +487,14 @@ def test_window_order_by_8662() -> None:
     assert df.with_columns(
         x_lag0=pl.col("x").shift(1).over("g"),
         x_lag1=pl.col("x").shift(1).over("g", order_by="t"),
+        x_lag2=pl.col("x").shift(1).over("g", order_by="t", descending=True),
     ).to_dict(as_series=False) == {
         "g": [1, 1, 1, 1, 2, 2, 2, 2],
         "t": [1, 2, 3, 4, 4, 1, 2, 3],
         "x": [10, 20, 30, 40, 10, 20, 30, 40],
         "x_lag0": [None, 10, 20, 30, None, 10, 20, 30],
         "x_lag1": [None, 10, 20, 30, 40, None, 20, 30],
+        "x_lag2": [20, 30, 40, None, None, 30, 40, 10],
     }
 
 

@@ -57,26 +57,7 @@ impl ColumnExpr {
                 }
             }
 
-            // this path should not happen
-            #[cfg(feature = "panic_on_schema")]
-            {
-                if _state.ext_contexts.is_empty()
-                    && std::env::var("POLARS_NO_SCHEMA_CHECK").is_err()
-                {
-                    panic!(
-                        "got {} expected: {} from schema: {:?} and DataFrame: {:?}",
-                        out.name(),
-                        &*self.name,
-                        _schema,
-                        df
-                    )
-                }
-            }
-            // in release we fallback to linear search
-            #[allow(unreachable_code)]
-            {
-                df.column(&self.name).cloned()
-            }
+            df.column(&self.name).cloned()
         } else {
             Ok(out.clone())
         }
@@ -87,17 +68,6 @@ impl ColumnExpr {
         _state: &ExecutionState,
         _panic_during_test: bool,
     ) -> PolarsResult<Column> {
-        #[cfg(feature = "panic_on_schema")]
-        {
-            if _panic_during_test
-                && _state.ext_contexts.is_empty()
-                && std::env::var("POLARS_NO_SCHEMA_CHECK").is_err()
-            {
-                panic!("invalid schema: df {:?};\ncolumn: {}", df, &self.name)
-            }
-        }
-        // in release we fallback to linear search
-        #[allow(unreachable_code)]
         df.column(&self.name).cloned()
     }
 
@@ -177,10 +147,6 @@ impl PhysicalExpr for ColumnExpr {
 
     fn as_partitioned_aggregator(&self) -> Option<&dyn PartitionedAggregation> {
         Some(self)
-    }
-
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        lv.insert(self.name.clone());
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {

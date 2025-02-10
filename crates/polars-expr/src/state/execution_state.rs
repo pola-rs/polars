@@ -5,7 +5,6 @@ use std::sync::{Mutex, RwLock};
 use bitflags::bitflags;
 use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
-use polars_core::error::check_signals;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
 
@@ -150,7 +149,7 @@ impl ExecutionState {
 
     // This is wrong when the U64 overflows which will never happen.
     pub fn should_stop(&self) -> PolarsResult<()> {
-        check_signals()?;
+        try_raise_keyboard_interrupt();
         polars_ensure!(!self.stop.load(Ordering::Relaxed), ComputeError: "query interrupted");
         Ok(())
     }

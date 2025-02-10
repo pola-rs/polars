@@ -738,16 +738,8 @@ def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -
     ],
 )
 def test_read_database_cx_credentials(uri: str) -> None:
-    if sys.version_info > (3, 9, 4):
-        # slightly different error on more recent Python versions
-        with pytest.raises(RuntimeError, match=r"Source.*not supported"):
-            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
-    else:
-        # check that we masked the potential credentials leak; this isn't really
-        # our responsibility (ideally would be handled by connectorx), but we
-        # can reasonably mitigate the issue.
-        with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
-            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
+    with pytest.raises(RuntimeError, match=r"Source.*not supported"):
+        pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
 @pytest.mark.skipif(

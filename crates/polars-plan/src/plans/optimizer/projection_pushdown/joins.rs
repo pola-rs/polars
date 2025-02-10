@@ -40,15 +40,13 @@ pub(super) fn process_asof_join(
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     options: Arc<JoinOptions>,
-    acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     join_schema: &Schema,
 ) -> PolarsResult<IR> {
     // n = 0 if no projections, so we don't allocate unneeded
-    let n = acc_projections.len() * 2;
+    let n = ctx.acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
     let mut pushdown_right = Vec::with_capacity(n);
     let mut names_left = PlHashSet::with_capacity(n);
@@ -67,14 +65,14 @@ pub(super) fn process_asof_join(
     // left_on = "a", right_on = "b
     // will remove the name "b" (it is "a" now). That columns should therefore not
     // be added to a local projection.
-    if !acc_projections.is_empty() {
+    if ctx.has_pushed_down() {
         let schema_left = lp_arena.get(input_left).schema(lp_arena);
         let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
         // make sure that the asof join 'by' columns are projected
         if let (Some(left_by), Some(right_by)) = (&asof_options.left_by, &asof_options.right_by) {
             for name in left_by {
-                let add = projected_names.contains(name.as_str());
+                let add = ctx.projected_names.contains(name.as_str());
 
                 let node = expr_arena.add(AExpr::Column(name.clone()));
                 add_keys_to_accumulated_state(
@@ -136,7 +134,7 @@ pub(super) fn process_asof_join(
             };
         }
 
-        for proj in acc_projections {
+        for proj in ctx.acc_projections {
             let add_local = if local_projected_names.is_empty() {
                 true
             } else {
@@ -162,22 +160,11 @@ pub(super) fn process_asof_join(
         }
     }
 
-    proj_pd.pushdown_and_assign(
-        input_left,
-        pushdown_left,
-        names_left,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
-    proj_pd.pushdown_and_assign(
-        input_right,
-        pushdown_right,
-        names_right,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
+    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.inner);
+    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.inner);
+
+    proj_pd.pushdown_and_assign(input_left, ctx_left, lp_arena, expr_arena)?;
+    proj_pd.pushdown_and_assign(input_right, ctx_right, lp_arena, expr_arena)?;
 
     resolve_join_suffixes(
         input_left,
@@ -199,9 +186,7 @@ pub(super) fn process_join(
     left_on: Vec<ExprIR>,
     right_on: Vec<ExprIR>,
     mut options: Arc<JoinOptions>,
-    acc_projections: Vec<ColumnNode>,
-    projected_names: PlHashSet<PlSmallStr>,
-    projections_seen: usize,
+    ctx: ProjectionContext,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     join_schema: &Schema,
@@ -215,9 +200,7 @@ pub(super) fn process_join(
             left_on,
             right_on,
             options,
-            acc_projections,
-            projected_names,
-            projections_seen,
+            ctx,
             lp_arena,
             expr_arena,
             join_schema,
@@ -225,7 +208,7 @@ pub(super) fn process_join(
     }
 
     // n = 0 if no projections, so we don't allocate unneeded
-    let n = acc_projections.len() * 2;
+    let n = ctx.acc_projections.len() * 2;
     let mut pushdown_left = Vec::with_capacity(n);
     let mut pushdown_right = Vec::with_capacity(n);
     let mut names_left = PlHashSet::with_capacity(n);
@@ -240,7 +223,7 @@ pub(super) fn process_join(
     // left_on = "a", right_on = "b
     // will remove the name "b" (it is "a" now). That columns should therefore not
     // be added to a local projection.
-    if !acc_projections.is_empty() {
+    if ctx.has_pushed_down() {
         let schema_left = lp_arena.get(input_left).schema(lp_arena);
         let schema_right = lp_arena.get(input_right).schema(lp_arena);
 
@@ -295,7 +278,7 @@ pub(super) fn process_join(
                     Cow::Borrowed(key_name)
                 };
 
-                projected_names.contains(key_name_after_join.as_ref())
+                ctx.projected_names.contains(key_name_after_join.as_ref())
             });
 
             // If they key is not used, coalesce the columns as that is often cheaper.
@@ -330,7 +313,7 @@ pub(super) fn process_join(
             }
         }
 
-        for proj in acc_projections {
+        for proj in ctx.acc_projections {
             let add_local = if local_projected_names.is_empty() {
                 true
             } else {
@@ -356,22 +339,11 @@ pub(super) fn process_join(
         }
     }
 
-    proj_pd.pushdown_and_assign(
-        input_left,
-        pushdown_left,
-        names_left,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
-    proj_pd.pushdown_and_assign(
-        input_right,
-        pushdown_right,
-        names_right,
-        projections_seen,
-        lp_arena,
-        expr_arena,
-    )?;
+    let ctx_left = ProjectionContext::new(pushdown_left, names_left, ctx.inner);
+    let ctx_right = ProjectionContext::new(pushdown_right, names_right, ctx.inner);
+
+    proj_pd.pushdown_and_assign(input_left, ctx_left, lp_arena, expr_arena)?;
+    proj_pd.pushdown_and_assign(input_right, ctx_right, lp_arena, expr_arena)?;
 
     resolve_join_suffixes(
         input_left,

@@ -37,7 +37,7 @@ pub struct FileInfo {
     /// extra hive columns.
     pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
     /// - known size
-    /// - estimated size (set to unsize::max if unknown).
+    /// - estimated size (set to usize::max if unknown).
     pub row_estimation: (Option<usize>, usize),
 }
 
@@ -60,7 +60,7 @@ impl FileInfo {
         let schema = Arc::make_mut(&mut self.schema);
 
         for field in hive_schema.iter_fields() {
-            if let Ok(existing) = schema.try_get_mut(&field.name) {
+            if let Some(existing) = schema.get_mut(&field.name) {
                 *existing = field.dtype().clone();
             } else {
                 schema

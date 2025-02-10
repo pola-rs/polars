@@ -103,14 +103,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => {
                 let input = expr_arena.get(expr);
 
-                inline_or_prune_cast(
-                    input,
-                    dtype,
-                    options.strict(),
-                    lp_node,
-                    lp_arena,
-                    expr_arena,
-                )?
+                inline_or_prune_cast(input, dtype, options, lp_node, lp_arena, expr_arena)?
             },
             AExpr::Ternary {
                 truthy: truthy_node,
@@ -323,7 +316,13 @@ impl OptimizationRule for TypeCoercionRule {
                             DataType::Categorical(_, _) if dtype.is_string() => {
                                 // pass
                             },
-                            _ => cast_expr_ir(e, &dtype, &super_type, expr_arena, false)?,
+                            _ => cast_expr_ir(
+                                e,
+                                &dtype,
+                                &super_type,
+                                expr_arena,
+                                CastOptions::NonStrict,
+                            )?,
                         }
                     }
                 }
@@ -355,7 +354,7 @@ impl OptimizationRule for TypeCoercionRule {
 fn inline_or_prune_cast(
     aexpr: &AExpr,
     dtype: &DataType,
-    strict: bool,
+    options: CastOptions,
     lp_node: Node,
     lp_arena: &Arena<IR>,
     expr_arena: &Arena<AExpr>,
@@ -363,42 +362,49 @@ fn inline_or_prune_cast(
     if !dtype.is_known() {
         return Ok(None);
     }
-    let lv = match aexpr {
+
+    let out = match aexpr {
         // PRUNE
-        AExpr::BinaryExpr {
-            op: Operator::LogicalOr | Operator::LogicalAnd,
-            ..
-        } => {
-            if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
-                let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
-                if field.dtype == *dtype {
-                    return Ok(Some(aexpr.clone()));
-                }
+        AExpr::BinaryExpr { op, .. } => {
+            use Operator::*;
+
+            match op {
+                LogicalOr | LogicalAnd => {
+                    if let Some(schema) = lp_arena.get(lp_node).input_schema(lp_arena) {
+                        let field = aexpr.to_field(&schema, Context::Default, expr_arena)?;
+                        if field.dtype == *dtype {
+                            return Ok(Some(aexpr.clone()));
+                        }
+                    }
+
+                    None
+                },
+                Eq | EqValidity | NotEq | NotEqValidity | Lt | LtEq | Gt | GtEq => {
+                    if dtype.is_bool() {
+                        Some(aexpr.clone())
+                    } else {
+                        None
+                    }
+                },
+                _ => None,
             }
-            return Ok(None);
         },
         // INLINE
-        AExpr::Literal(lv) => match try_inline_literal_cast(lv, dtype, strict)? {
-            None => return Ok(None),
-            Some(lv) => lv,
-        },
-        _ => return Ok(None),
+        AExpr::Literal(lv) => try_inline_literal_cast(lv, dtype, options)?.map(AExpr::Literal),
+        _ => None,
     };
-    Ok(Some(AExpr::Literal(lv)))
+
+    Ok(out)
 }
 
 fn try_inline_literal_cast(
     lv: &LiteralValue,
     dtype: &DataType,
-    strict: bool,
+    options: CastOptions,
 ) -> PolarsResult<Option<LiteralValue>> {
     let lv = match lv {
         LiteralValue::Series(s) => {
-            let s = if strict {
-                s.strict_cast(dtype)
-            } else {
-                s.cast(dtype)
-            }?;
+            let s = s.cast_with_options(dtype, options)?;
             LiteralValue::Series(SpecialEq::new(s))
         },
         LiteralValue::StrCat(s) => {
@@ -477,7 +483,7 @@ fn cast_expr_ir(
     from_dtype: &DataType,
     to_dtype: &DataType,
     expr_arena: &mut Arena<AExpr>,
-    strict: bool,
+    options: CastOptions,
 ) -> PolarsResult<()> {
     if from_dtype == to_dtype {
         return Ok(());
@@ -486,7 +492,7 @@ fn cast_expr_ir(
     check_cast(from_dtype, to_dtype)?;
 
     if let AExpr::Literal(lv) = expr_arena.get(e.node()) {
-        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, strict)? {
+        if let Some(literal) = try_inline_literal_cast(lv, to_dtype, options)? {
             e.set_node(expr_arena.add(AExpr::Literal(literal)));
             e.set_dtype(to_dtype.clone());
             return Ok(());

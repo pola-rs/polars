@@ -22,8 +22,6 @@ use comfy_table::modifiers::*;
 use comfy_table::presets::*;
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use comfy_table::*;
-#[cfg(feature = "dtype-duration")]
-use itoa;
 use num_traits::{Num, NumCast};
 use polars_error::feature_gated;
 
@@ -724,10 +722,15 @@ impl Display for DataFrame {
             let tbl_fallback_width = 100;
             let tbl_width = std::env::var("POLARS_TABLE_WIDTH")
                 .map(|s| {
-                    Some(
-                        s.parse::<u16>()
-                            .expect("could not parse table width argument"),
-                    )
+                    let n = s
+                        .parse::<i64>()
+                        .expect("could not parse table width argument");
+                    let w = if n < 0 {
+                        u16::MAX
+                    } else {
+                        u16::try_from(n).expect("table width argument does not fit in u16")
+                    };
+                    Some(w)
                 })
                 .unwrap_or(None);
 
@@ -1295,11 +1298,9 @@ impl Series {
 #[inline]
 #[cfg(feature = "dtype-decimal")]
 fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
-    use arrow::compute::decimal::format_decimal;
-
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let trim_zeros = get_trim_decimal_zeros();
-    let repr = format_decimal(v, scale, trim_zeros);
-    f.write_str(fmt_float_string(repr.as_str()).as_str())
+    f.write_str(fmt_float_string(fmt_buf.format(v, scale, trim_zeros)).as_str())
 }
 
 #[cfg(all(

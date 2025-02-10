@@ -4,6 +4,7 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
@@ -104,6 +105,12 @@ pub enum PhysNodeKind {
         length: usize,
     },
 
+    NegativeSlice {
+        input: PhysStream,
+        offset: i64,
+        length: usize,
+    },
+
     Filter {
         input: PhysStream,
         predicate: ExprIR,
@@ -161,6 +168,28 @@ pub enum PhysNodeKind {
         input: PhysStream,
     },
 
+    MultiScan {
+        scan_sources: ScanSources,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        scan_type: FileScan,
+        allow_missing_columns: bool,
+        include_file_paths: Option<PlSmallStr>,
+
+        /// Schema that all files are coerced into.
+        ///
+        /// - Does **not** include the `row_index`.
+        /// - Does include `include_file_paths`.
+        /// - Does include the hive columns.
+        ///
+        /// Each file may never contain more column than are given in this schema.
+        ///
+        /// Each file should contain exactly all the columns ignoring the hive columns i.f.f.
+        /// `allow_missing_columns == false`.
+        file_schema: SchemaRef,
+
+        /// Selection of `file_schema` columns should to be included in the output morsels.
+        projection: Option<Bitmap>,
+    },
     FileScan {
         scan_sources: ScanSources,
         file_info: FileInfo,
@@ -196,6 +225,14 @@ pub enum PhysNodeKind {
         args: JoinArgs,
         options: Option<JoinTypeOptionsIR>,
     },
+
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        input_left: PhysStream,
+        input_right: PhysStream,
+
+        key: PlSmallStr,
+    },
 }
 
 fn visit_node_inputs_mut(
@@ -217,12 +254,14 @@ fn visit_node_inputs_mut(
     while let Some(node) = to_visit.pop() {
         match &mut phys_sm[node].kind {
             PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::FileScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
             PhysNodeKind::Select { input, .. }
             | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }
+            | PhysNodeKind::NegativeSlice { input, .. }
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }
@@ -242,6 +281,18 @@ fn visit_node_inputs_mut(
                 ..
             }
             | PhysNodeKind::EquiJoin {
+                input_left,
+                input_right,
+                ..
+            } => {
+                rec!(input_left.node);
+                rec!(input_right.node);
+                visit(input_left);
+                visit(input_right);
+            },
+
+            #[cfg(feature = "merge_sorted")]
+            PhysNodeKind::MergeSorted {
                 input_left,
                 input_right,
                 ..

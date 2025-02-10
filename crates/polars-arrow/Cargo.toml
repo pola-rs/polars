@@ -13,7 +13,6 @@ repository = { workspace = true }
 description = "Minimal implementation of the Arrow specification forked from arrow2"
 
 [dependencies]
-atoi = { workspace = true, optional = true }
 bytemuck = { workspace = true, features = ["must_cast"] }
 chrono = { workspace = true }
 # for timezone support
@@ -35,7 +34,6 @@ ethnum = { workspace = true }
 atoi_simd = { workspace = true, optional = true }
 fast-float2 = { workspace = true, optional = true }
 itoa = { workspace = true, optional = true }
-itoap = { workspace = true, optional = true }
 ryu = { workspace = true, optional = true }
 
 regex = { workspace = true, optional = true }
@@ -144,7 +142,7 @@ timezones = [
   "chrono-tz",
 ]
 dtype-array = []
-dtype-decimal = ["atoi", "itoap"]
+dtype-decimal = ["atoi_simd", "itoa"]
 bigidx = ["polars-utils/bigidx"]
 nightly = []
 performant = []

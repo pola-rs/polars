@@ -16,7 +16,7 @@ pub mod chunks;
 pub mod clmul;
 mod config;
 pub mod cpuid;
-mod error;
+pub mod error;
 pub mod floor_divmod;
 pub mod functions;
 pub mod hashing;

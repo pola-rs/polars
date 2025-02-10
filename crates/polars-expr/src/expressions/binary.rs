@@ -268,11 +268,6 @@ impl PhysicalExpr for BinaryExpr {
         }
     }
 
-    fn collect_live_columns(&self, lv: &mut PlIndexSet<PlSmallStr>) {
-        self.left.collect_live_columns(lv);
-        self.right.collect_live_columns(lv);
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }

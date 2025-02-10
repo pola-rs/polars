@@ -287,7 +287,7 @@ impl AggList for StructChunked {
             let out = ca.into_series().take_unchecked(&gather);
             out.struct_().unwrap().clone()
         } else {
-            ca.rechunk()
+            ca.rechunk().into_owned()
         };
 
         let arr = gathered.chunks()[0].clone();

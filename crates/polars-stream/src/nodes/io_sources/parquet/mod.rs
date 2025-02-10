@@ -1,21 +1,28 @@
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
 use polars_core::prelude::ArrowSchema;
+use polars_core::schema::{Schema, SchemaExt, SchemaRef};
+use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
-use polars_expr::prelude::{phys_expr_to_io_expr, PhysicalExpr};
 use polars_io::cloud::CloudOptions;
-use polars_io::predicates::PhysicalIoExpr;
+use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_parquet::read::read_metadata;
+use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{FileInfo, ScanSources};
+use polars_plan::plans::{FileInfo, ScanSource, ScanSources};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::IdxSize;
 
+use super::multi_scan::{MultiScanable, RowRestrication};
+use super::{MorselOutput, SourceNode, SourceOutput};
+use crate::async_executor::spawn;
+use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
@@ -39,7 +46,7 @@ pub struct ParquetSourceNode {
     scan_sources: ScanSources,
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
-    predicate: Option<Arc<dyn PhysicalExpr>>,
+    predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
@@ -47,7 +54,6 @@ pub struct ParquetSourceNode {
     // Run-time vars
     config: Config,
     verbose: bool,
-    physical_predicate: Option<Arc<dyn PhysicalIoExpr>>,
     schema: Option<Arc<ArrowSchema>>,
     projected_arrow_schema: Option<Arc<ArrowSchema>>,
     byte_source_builder: DynByteSourceBuilder,
@@ -59,9 +65,6 @@ pub struct ParquetSourceNode {
     row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
     // This permit blocks execution until the first morsel is requested.
     morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
-    // This is behind a Mutex so that we can call `shutdown()` asynchronously.
-    async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
-    is_finished: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
@@ -83,8 +86,7 @@ impl ParquetSourceNode {
     pub fn new(
         scan_sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
-        predicate: Option<Arc<dyn PhysicalExpr>>,
+        predicate: Option<ScanIOPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         mut file_options: FileScanOptions,
@@ -107,7 +109,7 @@ impl ParquetSourceNode {
         Self {
             scan_sources,
             file_info,
-            hive_parts,
+            hive_parts: None,
             predicate,
             options,
             cloud_options,
@@ -123,7 +125,6 @@ impl ParquetSourceNode {
                 min_values_per_thread: 0,
             },
             verbose,
-            physical_predicate: None,
             schema: None,
             projected_arrow_schema: None,
             byte_source_builder,
@@ -131,18 +132,31 @@ impl ParquetSourceNode {
             row_index,
 
             morsel_stream_starter: None,
-            async_task_data: Arc::new(tokio::sync::Mutex::new(None)),
-            is_finished: Arc::new(AtomicBool::new(false)),
         }
     }
 }
 
-impl ComputeNode for ParquetSourceNode {
+impl SourceNode for ParquetSourceNode {
     fn name(&self) -> &str {
         "parquet_source"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
+    fn is_source_output_parallel(&self, _is_receiver_serial: bool) -> bool {
+        true
+    }
+
+    fn spawn_source(
+        &mut self,
+        num_pipelines: usize,
+        mut output_recv: Receiver<SourceOutput>,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+        _unresistricted_row_count: Option<PlSmallStr>,
+    ) {
+        let (mut send_to, recv_from) = (0..num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+
         self.config = {
             let metadata_prefetch_size = polars_core::config::get_file_prefetch_size();
             // Limit metadata decode to the number of threads.
@@ -169,121 +183,153 @@ impl ComputeNode for ParquetSourceNode {
         }
 
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
-
         self.init_projected_arrow_schema();
-        self.physical_predicate = self.predicate.clone().map(phys_expr_to_io_expr);
 
-        let (raw_morsel_receivers, raw_morsel_distributor_task_handle) =
-            self.init_raw_morsel_distributor();
+        let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
 
-        self.async_task_data
-            .try_lock()
-            .unwrap()
-            .replace((raw_morsel_receivers, raw_morsel_distributor_task_handle));
-    }
+        let morsel_stream_starter = self.morsel_stream_starter.take().unwrap();
 
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
-        use std::sync::atomic::Ordering;
+        join_handles.push(spawn(TaskPriority::Low, async move {
+            morsel_stream_starter.send(()).unwrap();
 
-        assert!(recv.is_empty());
-        assert_eq!(send.len(), 1);
+            // Every phase we are given a new send port.
+            while let Ok(phase_output) = output_recv.recv().await {
+                let morsel_senders = phase_output.port.parallel();
+                let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
+                for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
+                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
+                    _ = send_to.send(morsel_output).await;
+                    morsel_outcomes.push((outcome, wait_group));
+                }
 
-        if self.is_finished.load(Ordering::Relaxed) {
-            send[0] = PortState::Done;
-            assert!(
-                self.async_task_data.try_lock().unwrap().is_none(),
-                "should have already been shut down"
-            );
-        } else if send[0] == PortState::Done {
-            {
-                // Early shutdown - our port state was set to `Done` by the downstream nodes.
-                self.shutdown_in_background();
-            };
-            self.is_finished.store(true, Ordering::Relaxed);
-        } else {
-            send[0] = PortState::Ready
-        }
+                let mut is_finished = true;
+                for (outcome, wait_group) in morsel_outcomes.into_iter() {
+                    wait_group.wait().await;
+                    is_finished &= outcome.did_finish();
+                }
 
-        Ok(())
-    }
+                if is_finished {
+                    break;
+                }
 
-    fn spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        recv_ports: &mut [Option<RecvPort<'_>>],
-        send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        use std::sync::atomic::Ordering;
+                phase_output.outcome.stop();
+            }
 
-        assert!(recv_ports.is_empty());
-        assert_eq!(send_ports.len(), 1);
-        assert!(!self.is_finished.load(Ordering::Relaxed));
+            // Join on the producer handle to catch errors/panics.
+            // Safety
+            // * We dropped the receivers on the line above
+            // * This function is only called once.
+            _ = morsel_stream_task_handle.await.unwrap();
+            Ok(())
+        }));
 
-        let morsel_senders = send_ports[0].take().unwrap().parallel();
+        join_handles.extend(recv_from.into_iter().zip(raw_morsel_receivers).map(
+            |(mut recv_from, mut raw_morsel_rx)| {
+                spawn(TaskPriority::Low, async move {
+                    'port_recv: while let Ok(mut morsel_output) = recv_from.recv().await {
+                        let source_token = SourceToken::new();
+                        let wait_group = WaitGroup::default();
 
-        let mut async_task_data_guard = self.async_task_data.try_lock().unwrap();
-        let (raw_morsel_receivers, _) = async_task_data_guard.as_mut().unwrap();
+                        while let Ok((df, seq)) = raw_morsel_rx.recv().await {
+                            let mut morsel = Morsel::new(df, seq, source_token.clone());
+                            morsel.set_consume_token(wait_group.token());
+                            if morsel_output.port.send(morsel).await.is_err() {
+                                break;
+                            }
 
-        assert_eq!(raw_morsel_receivers.len(), morsel_senders.len());
-
-        if let Some(v) = self.morsel_stream_starter.take() {
-            v.send(()).unwrap();
-        }
-        let is_finished = self.is_finished.clone();
-
-        let source_token = SourceToken::new();
-        let task_handles = raw_morsel_receivers
-            .drain(..)
-            .zip(morsel_senders)
-            .map(|(mut raw_morsel_rx, mut morsel_tx)| {
-                let is_finished = is_finished.clone();
-                let source_token = source_token.clone();
-                scope.spawn_task(TaskPriority::Low, async move {
-                    let wait_group = WaitGroup::default();
-                    loop {
-                        let Ok((df, seq)) = raw_morsel_rx.recv().await else {
-                            is_finished.store(true, Ordering::Relaxed);
-                            break;
-                        };
-
-                        let mut morsel = Morsel::new(df, seq, source_token.clone());
-                        morsel.set_consume_token(wait_group.token());
-                        if morsel_tx.send(morsel).await.is_err() {
-                            break;
+                            wait_group.wait().await;
+                            if source_token.stop_requested() {
+                                morsel_output.outcome.stop();
+                                continue 'port_recv;
+                            }
                         }
 
-                        wait_group.wait().await;
-                        if source_token.stop_requested() {
-                            break;
-                        }
+                        break;
                     }
 
-                    raw_morsel_rx
+                    Ok(())
                 })
-            })
-            .collect::<Vec<_>>();
+            },
+        ));
+    }
+}
 
-        drop(async_task_data_guard);
+impl MultiScanable for ParquetSourceNode {
+    type ReadOptions = ParquetOptions;
 
-        let async_task_data = self.async_task_data.clone();
+    const BASE_NAME: &'static str = "parquet";
 
-        join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
-            {
-                let mut async_task_data_guard = async_task_data.try_lock().unwrap();
-                let (raw_morsel_receivers, _) = async_task_data_guard.as_mut().unwrap();
+    const DOES_PRED_PD: bool = true;
+    const DOES_SLICE_PD: bool = true;
+    const DOES_ROW_INDEX: bool = true;
 
-                for handle in task_handles {
-                    raw_morsel_receivers.push(handle.await);
-                }
+    async fn new(
+        source: ScanSource,
+        options: &Self::ReadOptions,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<Self> {
+        let source = source.into_sources();
+        let memslice = source.at(0).to_memslice()?;
+        let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
+
+        let arrow_schema = infer_schema_with_options(&file_metadata, &None)?;
+        let schema = Arc::new(Schema::from_arrow_schema(&arrow_schema));
+        let arrow_schema = Arc::new(arrow_schema);
+
+        let mut options = options.clone();
+        options.schema = Some(schema.clone());
+
+        let file_options = FileScanOptions::default();
+        let file_info = FileInfo::new(
+            schema.clone(),
+            Some(rayon::iter::Either::Left(arrow_schema.clone())),
+            (None, usize::MAX),
+        );
+
+        Ok(ParquetSourceNode::new(
+            source,
+            file_info,
+            None,
+            options,
+            cloud_options.cloned(),
+            file_options,
+            Some(Arc::new(file_metadata)),
+        ))
+    }
+
+    fn with_projection(&mut self, projection: Option<&Bitmap>) {
+        self.file_options.with_columns = projection.map(|p| {
+            p.true_idx_iter()
+                .map(|idx| self.file_info.schema.get_at_index(idx).unwrap().0.clone())
+                .collect()
+        });
+    }
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+        self.predicate = None;
+        self.file_options.slice = None;
+
+        if let Some(row_restriction) = row_restriction {
+            match row_restriction {
+                RowRestrication::Slice(slice) => {
+                    self.file_options.slice = Some((slice.start as i64, slice.len()))
+                },
+                // @TODO: Cache
+                RowRestrication::Predicate(scan_predicate) => {
+                    self.predicate = Some(scan_predicate.to_io(None, &self.file_info.schema))
+                },
             }
+        }
+    }
+    fn with_row_index(&mut self, row_index: Option<PlSmallStr>) {
+        self.row_index = row_index.map(|name| Arc::new((name, AtomicIdxSize::new(0))));
+    }
 
-            if self.is_finished.load(Ordering::Relaxed) {
-                self.shutdown().await?;
-            }
+    async fn row_count(&mut self) -> PolarsResult<IdxSize> {
+        // @TODO: Overflow
+        Ok(self.first_metadata.as_ref().unwrap().num_rows as IdxSize)
+    }
 
-            Ok(())
-        }))
+    async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+        Ok(self.file_info.schema.clone())
     }
 }

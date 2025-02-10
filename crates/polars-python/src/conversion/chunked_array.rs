@@ -1,4 +1,4 @@
-use polars_core::export::chrono::NaiveTime;
+use chrono::NaiveTime;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};

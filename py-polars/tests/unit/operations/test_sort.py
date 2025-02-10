@@ -47,10 +47,6 @@ def test_df_sort_idempotent(df: pl.DataFrame) -> None:
     assert_frame_equal(result, result.sort(cols, maintain_order=True))
 
 
-def is_sorted_any(s: pl.Series) -> bool:
-    return s.flags["SORTED_ASC"] or s.flags["SORTED_DESC"]
-
-
 def test_sort_dates_multiples() -> None:
     df = pl.DataFrame(
         [
@@ -625,7 +621,6 @@ def test_sort_by_in_over_5499() -> None:
     }
 
 
-@pytest.mark.may_fail_auto_streaming
 def test_merge_sorted() -> None:
     df_a = (
         pl.datetime_range(

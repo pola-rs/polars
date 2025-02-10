@@ -65,7 +65,7 @@ pub fn concat_arr(args: &[Column], dtype: &DataType) -> PolarsResult<Column> {
                         validities.push(v)
                     }
 
-                    (arr.rechunk().downcast_into_array().values().clone(), *width)
+                    (arr.downcast_as_array().values().clone(), *width)
                 },
                 dtype => {
                     debug_assert_eq!(dtype, inner_dtype);

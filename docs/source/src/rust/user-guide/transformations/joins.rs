@@ -253,6 +253,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         AsofStrategy::Backward,
         None,
         true,
+        true,
     )?;
     println!("{}", result);
     // --8<-- [end:asof]
@@ -266,6 +267,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ["stock"],
         AsofStrategy::Backward,
         Some(AnyValue::Duration(60000, TimeUnit::Milliseconds)),
+        true,
         true,
     )?;
     println!("{}", result);

@@ -7,6 +7,7 @@ use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
 use std::time::Duration;
 use polars_expr::state::node_timer::NodeTimer;
 
+use self::python_dsl::PythonScanSource;
 use super::*;
 
 pub(crate) struct PythonScanExec {
@@ -15,6 +16,7 @@ pub(crate) struct PythonScanExec {
     pub(crate) predicate_serialized: Option<Vec<u8>>,
 }
 
+<<<<<<< HEAD
 #[pyclass]
 pub struct PyNodeTimer {
     timer: Option<NodeTimer>,
@@ -55,6 +57,8 @@ fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
     }
 }
 
+=======
+>>>>>>> 65848bc2ff4bda33809ed8be2517594df5b53d26
 impl Executor for PythonScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         state.should_stop()?;
@@ -74,6 +78,7 @@ impl Executor for PythonScanExec {
             let python_scan_function = self.options.scan_fn.take().unwrap().0;
 
             let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
+            let mut could_serialize_predicate = true;
 
             let predicate = match &self.options.predicate {
                 PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
@@ -82,7 +87,10 @@ impl Executor for PythonScanExec {
                     assert!(self.predicate.is_some(), "should be set");
 
                     match &self.predicate_serialized {
-                        None => PyNone::get(py).to_owned().into_any(),
+                        None => {
+                            could_serialize_predicate = false;
+                            PyNone::get(py).to_owned().into_any()
+                        },
                         Some(buf) => PyBytes::new(py, buf).into_any(),
                     }
                 },
@@ -140,7 +148,7 @@ impl Executor for PythonScanExec {
                 .map_err(|_| polars_err!(ComputeError: "expected tuple got {}", generator))?;
             let can_parse_predicate = can_parse_predicate.extract::<bool>().map_err(
                 |_| polars_err!(ComputeError: "expected bool got {}", can_parse_predicate),
-            )?;
+            )? && could_serialize_predicate;
 
             let mut chunks = vec![];
             loop {

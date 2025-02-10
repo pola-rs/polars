@@ -20,7 +20,7 @@ use super::utils::{ensure_matching_dtypes_if_found, projected_arrow_schema_to_pr
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::metadata::FileMetadataRef;
-use crate::predicates::PhysicalIoExpr;
+use crate::predicates::ScanIOPredicate;
 use crate::prelude::*;
 use crate::RowIndex;
 
@@ -37,7 +37,7 @@ pub struct ParquetReader<R: Read + Seek> {
     row_index: Option<RowIndex>,
     low_memory: bool,
     metadata: Option<FileMetadataRef>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
     hive_partition_columns: Option<Vec<Series>>,
     include_file_path: Option<(PlSmallStr, Arc<str>)>,
     use_statistics: bool,
@@ -189,7 +189,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         Ok(self.metadata.as_ref().unwrap())
     }
 
-    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+    pub fn with_predicate(mut self, predicate: Option<ScanIOPredicate>) -> Self {
         self.predicate = predicate;
         self
     }
@@ -261,7 +261,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.projection.as_deref(),
             &schema,
             Some(metadata),
-            self.predicate.as_deref(),
+            self.predicate.as_ref(),
             self.parallel,
             self.row_index,
             self.use_statistics,
@@ -297,7 +297,7 @@ pub struct ParquetAsyncReader {
     slice: (usize, usize),
     rechunk: bool,
     projection: Option<Vec<usize>>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
     row_index: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
@@ -423,7 +423,7 @@ impl ParquetAsyncReader {
         self
     }
 
-    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+    pub fn with_predicate(mut self, predicate: Option<ScanIOPredicate>) -> Self {
         self.predicate = predicate;
         self
     }

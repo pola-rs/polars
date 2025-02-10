@@ -15,7 +15,7 @@ pub type ChunkJoinOptIds = Vec<NullableIdxSize>;
 #[cfg(not(feature = "chunked_ids"))]
 pub type ChunkJoinIds = Vec<IdxSize>;
 
-use polars_core::export::once_cell::sync::Lazy;
+use once_cell::sync::Lazy;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;

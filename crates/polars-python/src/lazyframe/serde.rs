@@ -7,6 +7,7 @@ use super::PyLazyFrame;
 use crate::exceptions::ComputeError;
 use crate::file::get_file_like;
 use crate::prelude::*;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 #[allow(clippy::should_implement_trait)]
@@ -15,10 +16,9 @@ impl PyLazyFrame {
     fn serialize_binary(&self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             pl_serialize::SerializeOptions::default()
                 .serialize_into_writer(writer, &self.ldf.logical_plan)
-                .map_err(|err| ComputeError::new_err(err.to_string()))
         })
     }
 
@@ -27,7 +27,7 @@ impl PyLazyFrame {
     fn serialize_json(&self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             serde_json::to_writer(writer, &self.ldf.logical_plan)
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })
@@ -38,10 +38,8 @@ impl PyLazyFrame {
     fn deserialize_binary(py: Python, py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
-        let lp: DslPlan = py.allow_threads(|| {
-            pl_serialize::SerializeOptions::default()
-                .deserialize_from_reader(reader)
-                .map_err(|err| ComputeError::new_err(err.to_string()))
+        let lp: DslPlan = py.enter_polars(|| {
+            pl_serialize::SerializeOptions::default().deserialize_from_reader(reader)
         })?;
         Ok(LazyFrame::from(lp).into())
     }
@@ -65,7 +63,7 @@ impl PyLazyFrame {
         // in this scope.
         let json = unsafe { std::mem::transmute::<&'_ str, &'static str>(json.as_str()) };
 
-        let lp = py.allow_threads(|| {
+        let lp = py.enter_polars(|| {
             serde_json::from_str::<DslPlan>(json)
                 .map_err(|err| ComputeError::new_err(err.to_string()))
         })?;

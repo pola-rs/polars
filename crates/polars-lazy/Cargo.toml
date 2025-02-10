@@ -10,6 +10,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 
 [dependencies]
 arrow = { workspace = true }
+chrono = { workspace = true }
 futures = { workspace = true, optional = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
 polars-expr = { workspace = true }
@@ -25,6 +26,7 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 bitflags = { workspace = true }
+either = { workspace = true }
 memchr = { workspace = true }
 once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -251,7 +253,7 @@ string_to_integer = ["polars-plan/string_to_integer"]
 arg_where = ["polars-plan/arg_where"]
 index_of = ["polars-plan/index_of"]
 search_sorted = ["polars-plan/search_sorted"]
-merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted"]
+merge_sorted = ["polars-plan/merge_sorted", "polars-stream?/merge_sorted", "polars-mem-engine/merge_sorted"]
 meta = ["polars-plan/meta"]
 pivot = ["polars-core/rows", "polars-ops/pivot", "polars-plan/pivot"]
 top_k = ["polars-plan/top_k"]
@@ -289,11 +291,8 @@ string_encoding = ["polars-plan/string_encoding"]
 bigidx = ["polars-plan/bigidx", "polars-utils/bigidx"]
 polars_cloud = ["polars-plan/polars_cloud"]
 
-panic_on_schema = ["polars-plan/panic_on_schema", "polars-expr/panic_on_schema"]
-
 test = [
   "polars-plan/debugging",
-  "panic_on_schema",
   "rolling_window",
   "rank",
   "round_series",

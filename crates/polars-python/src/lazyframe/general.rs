@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
+use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
@@ -18,6 +19,7 @@ use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 
 fn pyobject_to_first_path_and_scan_sources(
@@ -430,8 +432,9 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = pyarrow_schema_to_rust(schema)?;
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
+
+        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
     }
 
     #[staticmethod]
@@ -440,12 +443,20 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(
+        let schema = Arc::new(Schema::from_iter(
             schema
                 .into_iter()
                 .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
-        );
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        ));
+        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
+    }
+
+    #[staticmethod]
+    fn scan_from_python_function_schema_function(
+        schema_fn: PyObject,
+        scan_fn: PyObject,
+    ) -> PyResult<Self> {
+        Ok(LazyFrame::scan_from_python_function(Either::Left(schema_fn), scan_fn, false).into())
     }
 
     fn describe_plan(&self) -> PyResult<String> {
@@ -644,9 +655,7 @@ impl PyLazyFrame {
 
     #[pyo3(signature = (lambda_post_opt=None))]
     fn collect(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        let df = py.allow_threads(|| {
+        py.enter_polars_df(|| {
             let ldf = self.ldf.clone();
             if let Some(lambda) = lambda_post_opt {
                 ldf._collect_post_opt(|root, lp_arena, expr_arena| {
@@ -678,9 +687,7 @@ impl PyLazyFrame {
             } else {
                 ldf.collect()
             }
-            .map_err(PyPolarsErr::from)
-        })?;
-        Ok(df.into())
+        })
     }
 
     #[pyo3(signature = (lambda,))]
@@ -748,14 +755,7 @@ impl PyLazyFrame {
             )
         };
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
-            let ldf = self.ldf.clone();
-            ldf.sink_parquet(&path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        py.enter_polars(|| self.ldf.clone().sink_parquet(&path, options, cloud_options))
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
@@ -791,14 +791,7 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
-            let ldf = self.ldf.clone();
-            ldf.sink_ipc(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        py.enter_polars(|| self.ldf.clone().sink_ipc(path, options, cloud_options))
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
@@ -869,14 +862,10 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
             ldf.sink_csv(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -905,20 +894,15 @@ impl PyLazyFrame {
             )
         };
 
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        py.allow_threads(|| {
+        py.enter_polars(|| {
             let ldf = self.ldf.clone();
             ldf.sink_json(path, options, cloud_options)
-                .map_err(PyPolarsErr::from)
-        })?;
-        Ok(())
+        })
     }
 
     fn fetch(&self, py: Python, n_rows: usize) -> PyResult<PyDataFrame> {
         let ldf = self.ldf.clone();
-        let df = py.allow_threads(|| ldf.fetch(n_rows).map_err(PyPolarsErr::from))?;
-        Ok(df.into())
+        py.enter_polars_df(|| ldf.fetch(n_rows))
     }
 
     fn filter(&mut self, predicate: PyExpr) -> Self {
@@ -1020,7 +1004,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "asof_join")]
-    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq))]
+    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness))]
     fn join_asof(
         &self,
         other: Self,
@@ -1036,6 +1020,7 @@ impl PyLazyFrame {
         tolerance_str: Option<String>,
         coalesce: bool,
         allow_eq: bool,
+        check_sortedness: bool,
     ) -> PyResult<Self> {
         let coalesce = if coalesce {
             JoinCoalesce::CoalesceColumns
@@ -1061,6 +1046,7 @@ impl PyLazyFrame {
                 tolerance: tolerance.map(|t| t.0.into_static()),
                 tolerance_str: tolerance_str.map(|s| s.into()),
                 allow_eq,
+                check_sortedness,
             }))
             .suffix(suffix)
             .finish()
@@ -1344,9 +1330,7 @@ impl PyLazyFrame {
     }
 
     fn collect_schema<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let schema = py
-            .allow_threads(|| self.ldf.collect_schema())
-            .map_err(PyPolarsErr::from)?;
+        let schema = py.enter_polars(|| self.ldf.collect_schema())?;
 
         let schema_dict = PyDict::new(py);
         schema.iter_fields().for_each(|fld| {

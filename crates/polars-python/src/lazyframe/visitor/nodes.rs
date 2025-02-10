@@ -1,11 +1,10 @@
+use polars::prelude::python_dsl::PythonScanSource;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
-use polars_plan::prelude::{
-    FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate, PythonScanSource,
-};
+use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate};
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::IntoPyObjectExt;
@@ -186,6 +185,17 @@ pub struct Join {
     right_on: Vec<PyExprIR>,
     #[pyo3(get)]
     options: PyObject,
+}
+
+#[pyclass]
+/// Merge sorted operation
+pub struct MergeSorted {
+    #[pyo3(get)]
+    input_left: usize,
+    #[pyo3(get)]
+    input_right: usize,
+    #[pyo3(get)]
+    key: String,
 }
 
 #[pyclass]
@@ -560,10 +570,6 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                 )
                     .into_py_any(py)?,
                 FunctionIR::Rechunk => ("rechunk",).into_py_any(py)?,
-                #[cfg(feature = "merge_sorted")]
-                FunctionIR::MergeSorted { column } => {
-                    ("merge_sorted", column.to_string()).into_py_any(py)?
-                },
                 FunctionIR::Rename {
                     existing,
                     new,
@@ -637,6 +643,17 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a Sink node",
         )),
+        #[cfg(feature = "merge_sorted")]
+        IR::MergeSorted {
+            input_left,
+            input_right,
+            key,
+        } => MergeSorted {
+            input_left: input_left.0,
+            input_right: input_right.0,
+            key: key.to_string(),
+        }
+        .into_py_any(py),
         IR::Invalid => Err(PyNotImplementedError::new_err("Invalid")),
     }
 }

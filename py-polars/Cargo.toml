@@ -1,6 +1,6 @@
 [package]
 name = "py-polars"
-version = "1.20.0"
+version = "1.22.0"
 edition = "2021"
 
 [lib]
@@ -23,6 +23,7 @@ jemallocator = { version = "0.5", features = ["disable_initial_exec_tls", "backg
 
 [target.'cfg(all(target_family = "unix", target_os = "macos", not(allocator = "mimalloc"), not(allocator = "default")))'.dependencies]
 jemallocator = { version = "0.5", features = ["disable_initial_exec_tls"] }
+either = { workspace = true }
 
 [features]
 # Features used in this crate

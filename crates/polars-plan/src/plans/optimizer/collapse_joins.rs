@@ -12,147 +12,80 @@ use polars_ops::frame::{JoinCoalesce, JoinType, MaintainOrderJoin};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::pl_str::PlSmallStr;
 
-use super::{aexpr_to_leaf_names_iter, AExpr, JoinOptions, IR};
+use super::{aexpr_to_leaf_names_iter, AExpr, ExprOrigin, JoinOptions, IR};
 use crate::dsl::{JoinTypeOptionsIR, Operator};
-use crate::plans::{ExprIR, OutputName};
+use crate::plans::visitor::{AexprNode, RewriteRecursion, RewritingVisitor, TreeWalker};
+use crate::plans::{ExprIR, MintermIter, OutputName};
 
-/// Join origin of an expression
-#[derive(Debug, Clone, Copy)]
-enum ExprOrigin {
-    /// Utilizes no columns
-    None,
-    /// Utilizes columns from the left side of the join
-    Left,
-    /// Utilizes columns from the right side of the join
-    Right,
-    /// Utilizes columns from both sides of the join
-    Both,
-}
-
-fn get_origin(
-    root: Node,
-    expr_arena: &Arena<AExpr>,
-    left_schema: &SchemaRef,
-    right_schema: &SchemaRef,
-    suffix: &str,
-) -> ExprOrigin {
-    let mut expr_origin = ExprOrigin::None;
-
-    for name in aexpr_to_leaf_names_iter(root, expr_arena) {
-        let in_left = left_schema.contains(name.as_str());
-        let in_right = right_schema.contains(name.as_str());
-        let has_suffix = name.as_str().ends_with(suffix);
-        let in_right = in_right
-            | (has_suffix && right_schema.contains(&name.as_str()[..name.len() - suffix.len()]));
-
-        let name_origin = match (in_left, in_right, has_suffix) {
-            (true, false, _) | (true, true, false) => ExprOrigin::Left,
-            (false, true, _) | (true, true, true) => ExprOrigin::Right,
-            (false, false, _) => {
-                unreachable!("Invalid filter column should have been filtered before")
-            },
-        };
-
-        use ExprOrigin as O;
-        expr_origin = match (expr_origin, name_origin) {
-            (O::None, other) | (other, O::None) => other,
-            (O::Left, O::Left) => O::Left,
-            (O::Right, O::Right) => O::Right,
-            _ => O::Both,
-        };
-    }
-
-    expr_origin
-}
-
-/// Remove the join suffixes from a list of expressions
-fn remove_suffix(
+fn remove_suffix<'a>(
     exprs: &mut Vec<ExprIR>,
     expr_arena: &mut Arena<AExpr>,
-    schema: &SchemaRef,
-    suffix: &str,
+    schema: &'a SchemaRef,
+    suffix: &'a str,
 ) {
-    let mut stack = Vec::new();
+    let mut remover = RemoveSuffix {
+        schema: schema.as_ref(),
+        suffix,
+    };
 
     for expr in exprs {
-        if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
-            if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
-                let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
-                *expr = ExprIR::new(
-                    expr_arena.add(AExpr::Column(name.clone())),
-                    OutputName::ColumnLhs(name),
-                );
-            }
-        }
+        // Using AexprNode::rewrite() ensures we do not mutate any nodes in-place. The nodes may be
+        // used in other locations and mutating them will cause really confusing bugs, such as
+        // https://github.com/pola-rs/polars/issues/20831.
+        match AexprNode::new(expr.node()).rewrite(&mut remover, expr_arena) {
+            Ok(v) => {
+                expr.set_node(v.node());
 
-        stack.clear();
-        stack.push(expr.node());
-        while let Some(node) = stack.pop() {
-            let expr = expr_arena.get_mut(node);
-            expr.inputs_rev(&mut stack);
-
-            let AExpr::Column(colname) = expr else {
-                continue;
-            };
-
-            if !colname.ends_with(suffix) || schema.contains(colname.as_str()) {
-                continue;
-            }
-
-            *colname = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+                if let OutputName::ColumnLhs(colname) = expr.output_name_inner() {
+                    if colname.ends_with(suffix) && !schema.contains(colname.as_str()) {
+                        let name = PlSmallStr::from(&colname[..colname.len() - suffix.len()]);
+                        expr.set_columnlhs(name);
+                    }
+                }
+            },
+            e @ Err(_) => panic!("should not have failed: {:?}", e),
         }
     }
 }
 
-/// An iterator over all the minterms in a boolean expression boolean.
-///
-/// In other words, all the terms that can `AND` together to form this expression.
-///
-/// # Example
-///
-/// ```
-/// a & (b | c) & (b & (c | (a & c)))
-/// ```
-///
-/// Gives terms:
-///
-/// ```
-/// a
-/// b | c
-/// b
-/// c | (a & c)
-/// ```
-struct MintermIter<'a> {
-    stack: Vec<Node>,
-    expr_arena: &'a Arena<AExpr>,
+struct RemoveSuffix<'a> {
+    schema: &'a Schema,
+    suffix: &'a str,
 }
 
-impl Iterator for MintermIter<'_> {
-    type Item = Node;
+impl RewritingVisitor for RemoveSuffix<'_> {
+    type Node = AexprNode;
+    type Arena = Arena<AExpr>;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let mut top = self.stack.pop()?;
+    fn pre_visit(
+        &mut self,
+        node: &Self::Node,
+        arena: &mut Self::Arena,
+    ) -> polars_core::prelude::PolarsResult<crate::prelude::visitor::RewriteRecursion> {
+        let AExpr::Column(colname) = arena.get(node.node()) else {
+            return Ok(RewriteRecursion::NoMutateAndContinue);
+        };
 
-        while let AExpr::BinaryExpr {
-            left,
-            op: Operator::And,
-            right,
-        } = self.expr_arena.get(top)
-        {
-            self.stack.push(*right);
-            top = *left;
+        if !colname.ends_with(self.suffix) || self.schema.contains(colname.as_str()) {
+            return Ok(RewriteRecursion::NoMutateAndContinue);
         }
 
-        Some(top)
+        Ok(RewriteRecursion::MutateAndContinue)
     }
-}
 
-impl<'a> MintermIter<'a> {
-    fn new(root: Node, expr_arena: &'a Arena<AExpr>) -> Self {
-        Self {
-            stack: vec![root],
-            expr_arena,
-        }
+    fn mutate(
+        &mut self,
+        node: Self::Node,
+        arena: &mut Self::Arena,
+    ) -> polars_core::prelude::PolarsResult<Self::Node> {
+        let AExpr::Column(colname) = arena.get(node.node()) else {
+            unreachable!();
+        };
+
+        // Safety: Checked in pre_visit()
+        Ok(AexprNode::new(arena.add(AExpr::Column(PlSmallStr::from(
+            &colname[..colname.len() - self.suffix.len()],
+        )))))
     }
 }
 
@@ -245,7 +178,7 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                             continue;
                         };
 
-                        if !op.is_comparison() {
+                        if !op.is_comparison_or_bitwise() {
                             // @NOTE: This is not a valid predicate, but we should not handle that
                             // here.
                             remaining_predicates.push(node);
@@ -256,14 +189,14 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &mut Arena<AEx
                         let mut op = *op;
                         let mut right = *right;
 
-                        let left_origin = get_origin(
+                        let left_origin = ExprOrigin::get_expr_origin(
                             left,
                             expr_arena,
                             left_schema,
                             right_schema,
                             suffix.as_str(),
                         );
-                        let right_origin = get_origin(
+                        let right_origin = ExprOrigin::get_expr_origin(
                             right,
                             expr_arena,
                             left_schema,
@@ -490,6 +423,9 @@ fn insert_fitting_join(
             (Vec::new(), Vec::new(), remaining_predicates)
         },
     };
+
+    // Note: We expect key type upcasting / expression optimizations have already been done during
+    // DSL->IR conversion.
 
     let join_ir = IR::Join {
         input_left,

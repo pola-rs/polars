@@ -3,6 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
+use polars_utils::format_list_truncated;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -18,6 +19,16 @@ pub struct ExprIRDisplay<'a> {
     pub(crate) node: Node,
     pub(crate) output_name: &'a OutputName,
     pub(crate) expr_arena: &'a Arena<AExpr>,
+}
+
+impl<'a> ExprIRDisplay<'a> {
+    pub fn display_node(node: Node, expr_arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            node,
+            output_name: &OutputName::None,
+            expr_arena,
+        }
+    }
 }
 
 /// Utility structure to display several [`ExprIR`]'s in a nice way
@@ -262,16 +273,20 @@ impl<'a> IRDisplay<'a> {
                 ..
             } => {
                 let total_columns = schema.len();
-                let n_columns = if let Some(columns) = output_schema {
-                    columns.len().to_string()
+                let (n_columns, projected) = if let Some(schema) = output_schema {
+                    (
+                        format!("{}", schema.len()),
+                        format_list_truncated!(schema.iter_names(), 4, '"'),
+                    )
                 } else {
-                    "*".to_string()
+                    ("*".to_string(), "".to_string())
                 };
                 write!(
                     f,
-                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS",
+                    "{:indent$}DF {}; PROJECT{} {}/{} COLUMNS",
                     "",
-                    schema.iter_names().take(4).collect::<Vec<_>>(),
+                    format_list_truncated!(schema.iter_names(), 4, '"'),
+                    projected,
                     n_columns,
                     total_columns,
                 )
@@ -393,6 +408,19 @@ impl<'a> IRDisplay<'a> {
                 )?;
 
                 self.with_root(*input)._format(f, sub_indent)
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                write!(f, "{:indent$}MERGE SORTED ON '{key}':", "")?;
+                write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                self.with_root(*input_left)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                self.with_root(*input_right)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}END MERGE_SORTED", "")
             },
             Invalid => write!(f, "{:indent$}INVALID", ""),
         }

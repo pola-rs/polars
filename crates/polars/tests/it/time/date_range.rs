@@ -1,4 +1,4 @@
-use polars::export::chrono::NaiveDate;
+use chrono::NaiveDate;
 use polars::prelude::*;
 #[allow(unused_imports)]
 use polars::time::date_range;

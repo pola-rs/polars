@@ -176,3 +176,12 @@ class TestIcebergExpressions:
 
         expr = _to_ast("(pa.compute.field('ts') <= '2023-08-08')")
         assert _convert_predicate(expr) == LessThanOrEqual("ts", "2023-08-08")
+
+    def test_compare_boolean(self) -> None:
+        from pyiceberg.expressions import EqualTo
+
+        expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(True))")
+        assert _convert_predicate(expr) == EqualTo("ts", True)
+
+        expr = _to_ast("(pa.compute.field('ts') == pa.compute.scalar(False))")
+        assert _convert_predicate(expr) == EqualTo("ts", False)

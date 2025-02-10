@@ -34,7 +34,6 @@ def test_struct_logical_is_in() -> None:
 
     s1 = df1.select(pl.struct(["x", "y"])).to_series()
     s2 = df2.select(pl.struct(["x", "y"])).to_series()
-
     assert s1.is_in(s2).to_list() == [False, False, True, True, True, True, True]
 
 
@@ -146,9 +145,11 @@ def test_is_in_series() -> None:
     # check we don't shallow-copy and accidentally modify 'a' (see: #10072)
     a = pl.Series("a", [1, 2])
     b = pl.Series("b", [1, 3]).is_in(a)
+    c = pl.Series("c", [1, 3]).is_in(a.to_frame())  # type: ignore[arg-type]
 
     assert a.name == "a"
     assert_series_equal(b, pl.Series("b", [True, False]))
+    assert_series_equal(c, pl.Series("c", [True, False]))
 
 
 def test_is_in_null() -> None:
@@ -322,6 +323,7 @@ def test_is_in_with_wildcard_13809() -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+@pytest.mark.may_fail_auto_streaming
 def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
     s = pl.Series(["c", "c", "b"], dtype=dtype)
 
@@ -333,6 +335,7 @@ def test_cat_is_in_from_str(dtype: pl.DataType) -> None:
 
 
 @pytest.mark.parametrize("dtype", [pl.Categorical, pl.Enum(["a", "b", "c", "d"])])
+@pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
     df = pl.DataFrame(
         [
@@ -358,6 +361,7 @@ def test_cat_list_is_in_from_cat(dtype: pl.DataType) -> None:
         ("e", [False, False, False, None, False]),
     ],
 )
+@pytest.mark.may_fail_auto_streaming
 def test_cat_list_is_in_from_cat_single(val: str | None, expected: list[bool]) -> None:
     df = pl.Series(
         "li",

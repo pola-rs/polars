@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::ops::Deref;
 
-use polars_core::export::regex;
 use polars_core::frame::row::Row;
 use polars_core::prelude::*;
 use polars_lazy::prelude::*;
@@ -725,7 +724,8 @@ impl SQLContext {
             let mut retained_cols = Vec::with_capacity(projections.len());
             let mut retained_names = Vec::with_capacity(projections.len());
             let have_order_by = query.order_by.is_some();
-            let mut all_literal = true;
+            // Initialize containing InheritsContext to handle empty projection case.
+            let mut projection_heights = ExprSqlProjectionHeightBehavior::InheritsContext;
 
             // Note: if there is an 'order by' then we project everything (original cols
             // and new projections) and *then* select the final cols; the retained cols
@@ -739,7 +739,8 @@ impl SQLContext {
                 if select_modifiers.matches_ilike(&name)
                     && !select_modifiers.exclude.contains(&name)
                 {
-                    all_literal &= expr_to_leaf_column_names_iter(p).next().is_none();
+                    projection_heights |= ExprSqlProjectionHeightBehavior::identify_from_expr(p);
+
                     retained_cols.push(if have_order_by {
                         col(name.as_str())
                     } else {
@@ -751,8 +752,46 @@ impl SQLContext {
 
             // Apply the remaining modifiers and establish the final projection
             if have_order_by {
-                lf = lf.with_columns(projections);
+                // We can safely use `with_columns()` and avoid a join if:
+                // * There is already a projection that projects to the table height.
+                // * All projection heights inherit from context (e.g. all scalar literals that
+                //   are to be broadcasted to table height).
+                if projection_heights.contains(ExprSqlProjectionHeightBehavior::MaintainsColumn)
+                    || projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
+                {
+                    lf = lf.with_columns(projections);
+                } else {
+                    // We hit this branch if the output height is not guaranteed to match the table
+                    // height. E.g.:
+                    //
+                    // * SELECT COUNT(*) FROM df ORDER BY sort_key;
+                    // * SELECT UNNEST(list_col) FROM df ORDER BY sort_key;
+                    //
+                    // For these cases we truncate / extend the sorting columns with NULLs to match
+                    // the output height. We do this by projecting independently and then joining
+                    // back the original frame on the row index.
+                    const NAME: PlSmallStr = PlSmallStr::from_static("__PL_INDEX");
+                    lf = lf
+                        .clone()
+                        .select(projections)
+                        .with_row_index(NAME, None)
+                        .join(
+                            lf.with_row_index(NAME, None),
+                            [col(NAME)],
+                            [col(NAME)],
+                            JoinArgs {
+                                how: JoinType::Left,
+                                validation: Default::default(),
+                                suffix: None,
+                                slice: None,
+                                join_nulls: false,
+                                coalesce: Default::default(),
+                                maintain_order: polars_ops::frame::MaintainOrderJoin::Left,
+                            },
+                        );
+                }
             }
+
             if !select_modifiers.replace.is_empty() {
                 lf = lf.with_columns(&select_modifiers.replace);
             }
@@ -762,7 +801,11 @@ impl SQLContext {
 
             lf = self.process_order_by(lf, &query.order_by, Some(&retained_cols))?;
 
-            if all_literal && !have_order_by {
+            // Note: If `have_order_by`, with_columns is already done above.
+            if projection_heights == ExprSqlProjectionHeightBehavior::InheritsContext
+                && !have_order_by
+            {
+                // All projections need to be broadcasted to table height, so evaluate in `with_columns()`
                 lf = lf.with_columns(retained_cols).select(retained_names);
             } else {
                 lf = lf.select(retained_cols);
@@ -1530,5 +1573,59 @@ fn process_join_constraint(
             Ok((on.clone(), on))
         },
         _ => polars_bail!(SQLInterface: "unsupported SQL join constraint:\n{:?}", constraint),
+    }
+}
+
+bitflags::bitflags! {
+    /// Bitfield indicating whether there exists a projection with the specified height behavior.
+    ///
+    /// Used to help determine whether to execute projections in `select()` or `with_columns()`
+    /// context.
+    #[derive(PartialEq)]
+    struct ExprSqlProjectionHeightBehavior: u8 {
+        /// Maintains the height of input column(s)
+        const MaintainsColumn = 1 << 0;
+        /// Height is independent of input, e.g.:
+        /// * expressions that change length: e.g. slice, explode, filter, gather etc.
+        /// * aggregations: count(*), first(), sum() etc.
+        const Independent = 1 << 1;
+        /// "Inherits" the height of the context, e.g.:
+        /// * Scalar literals
+        const InheritsContext = 1 << 2;
+    }
+}
+
+impl ExprSqlProjectionHeightBehavior {
+    fn identify_from_expr(expr: &Expr) -> Self {
+        let mut has_column = false;
+        let mut has_independent = false;
+
+        for e in expr.into_iter() {
+            use Expr::*;
+
+            has_column |= matches!(e, Column(_) | Columns(_) | DtypeColumn(_) | IndexColumn(_));
+
+            has_independent |= match e {
+                Function { options, .. } | AnonymousFunction { options, .. } => {
+                    options.returns_scalar() || !options.is_length_preserving()
+                },
+
+                Literal(v) => !v.is_scalar(),
+
+                Explode(_) | Filter { .. } | Gather { .. } | Slice { .. } => true,
+
+                Agg { .. } | Len => true,
+
+                _ => false,
+            }
+        }
+
+        if has_independent {
+            Self::Independent
+        } else if has_column {
+            Self::MaintainsColumn
+        } else {
+            Self::InheritsContext
+        }
     }
 }

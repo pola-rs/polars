@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use arrow::array::*;
 use arrow::bitmap::Bitmap;
+use arrow::compute::concatenate::concatenate_unchecked;
 use polars_compute::filter::filter_with_bitmap;
 
 use crate::prelude::*;
@@ -47,10 +48,8 @@ pub mod temporal;
 mod to_vec;
 mod trusted_len;
 
-use std::mem;
 use std::slice::Iter;
 
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
 use arrow::legacy::prelude::*;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::StructChunked;
@@ -154,13 +153,12 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.chunks.len() > 1 && self.chunks.len() > self.len() / 3
     }
 
-    fn optional_rechunk(self) -> Self {
+    fn optional_rechunk(mut self) -> Self {
         // Rechunk if we have many small chunks.
         if self.should_rechunk() {
-            self.rechunk()
-        } else {
-            self
+            self.rechunk_mut()
         }
+        self
     }
 
     pub(crate) fn as_any(&self) -> &dyn std::any::Any {
@@ -394,7 +392,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
 
     /// Shrink the capacity of this array to fit its length.
     pub fn shrink_to_fit(&mut self) {
-        self.chunks = vec![concatenate_owned_unchecked(self.chunks.as_slice()).unwrap()];
+        self.chunks = vec![concatenate_unchecked(self.chunks.as_slice()).unwrap()];
     }
 
     pub fn clear(&self) -> Self {
@@ -671,8 +669,7 @@ where
     T: PolarsNumericType,
 {
     fn as_single_ptr(&mut self) -> PolarsResult<usize> {
-        let mut ca = self.rechunk();
-        mem::swap(&mut ca, self);
+        self.rechunk_mut();
         let a = self.data_views().next().unwrap();
         let ptr = a.as_ptr();
         Ok(ptr as usize)
