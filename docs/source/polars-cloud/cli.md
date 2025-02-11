@@ -1,6 +1,7 @@
 # CLI
 
-Polars cloud comes with a command line interface (CLI) out of the box. This allows you to interact with polars cloud resources from the terminal. 
+Polars cloud comes with a command line interface (CLI) out of the box. This allows you to interact
+with polars cloud resources from the terminal.
 
 ```bash
 pc --help
@@ -24,6 +25,7 @@ options:
 ### Authentication
 
 You can authenticate with Polars Cloud from the CLI using
+
 ```bash
 pc login
 ```
@@ -39,6 +41,7 @@ pc workspace setup
 ```
 
 List all workspaces
+
 ```bash
 pc workspace list
 ```

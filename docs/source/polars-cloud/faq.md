@@ -6,7 +6,7 @@
 
 ### Can you run Polars Cloud on-premise?
 
-### What does Polars Cloud offer me beyond Polars? 
+### What does Polars Cloud offer me beyond Polars?
 
 ### Is Polars Cloud available for everyone?
 
