@@ -66,8 +66,18 @@ Running a query remotely is as simple as calling `remote` while passing the comp
 
 ### Interactive
 
-In Interactive mode you can 
+In interactive mode you can directly communicate to the compute context. The communication is securely encrypted using mTLS between your client and the compute server. Queries send to an interactive compute context return a `InteractiveQuery` which can be awaited or cancelled. Queries executed in interactive mode do not show up on the polars cloud dashboard.
+
+{{code_block('polars-cloud/concepts','interactive',['QueryResult','InteractiveQuery'])}}
+
+In this example we create a `LazyFrame` called `lf` and we execute it on Polars Cloud. We can continue on the result by calling `lazy()` on the result which leads to a `LazyFrame` .
+
+!!! info "Interactive mode"
+    If you want to coninue on a existing query / query result you must use `write_parquet` to S3 as an intermediate storage location. We are adding a `.execute` (or similar) to our API which allows you to skip specifying this location.
+
 
 ### Batch
 
+Running a query in batch mode gives a `BatchQuery` which has the same API as its interactive counterpart. The main differences are that queries go through the control plane and metadata on the query is stored in the dashboard for reporting purposes.
 
+{{code_block('polars-cloud/concepts','interactive',['QueryResult','BatchQuery'])}}
