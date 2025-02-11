@@ -94,9 +94,12 @@ executed in interactive mode do not show up on the polars cloud dashboard.
 In this example we create a `LazyFrame` called `lf` and we execute it on Polars Cloud. We can
 continue on the result by calling `lazy()` on the result which leads to a `LazyFrame` .
 
-!!! info "Interactive mode" If you want to continue on a existing query / query result you must use
-`write_parquet` to S3 as an intermediate storage location. We are adding a `.execute` (or similar)
-to our API which allows you to skip specifying this location.
+<!-- dprint-ignore-start -->
+!!! info "Interactive mode" 
+    If you want to continue on a existing query / query result you must use
+    `write_parquet` to S3 as an intermediate storage location. We are adding a `.execute` (or similar)
+    to our API which allows you to skip specifying this location.
+<!-- dprint-ignore-end-->
 
 ### Batch
 

@@ -1,8 +1,9 @@
 # Getting started
 
-!!! tip Polars Cloud alpha launch Polars cloud has recently been made available to a select group of
-individuals / companies for early alpha testing. You can read more about Polars Cloud and its
-ambitious goals in our blog post:
+<!-- dprint-ignore-start -->
+!!! tip "Polars Cloud alpha launch"
+    Polars cloud has recently been made available to a select group of individuals / companies for early alpha testing. You can read more about Polars Cloud and its ambitious goals in our blog post.
+<!-- dprint-ignore-end-->
 
 Polars Cloud is a managed compute platform for your Polars queries. It allows you to effortlessly
 run your local queries in your cloud environment, both in an interactive setting as well as for ETL
@@ -37,8 +38,7 @@ pc setup workspace -n <YOUR_WORKSPACE_NAME>
 ```
 
 This redirects you to the browser where you can connect Polars to your AWS environment.
-Alternatively, you can follow the steps in the browser on https://cloud.pola.rs and create the
-workspace there.
+Alternatively, you can follow the steps in the browser and create the workspace there.
 
 ## Run your queries
 
