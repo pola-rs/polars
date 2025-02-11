@@ -42,7 +42,7 @@ Below are the various options which you can specify
 | `storage`                        | number       | The amount of local disk space (in GB) each node in the compute cluster has access to. Defaults to `16` |
 | `cluster_size`                   | number       | The number of machines to spin up in the cluster. Defaults to `1`.                                      |
 | `interactive`                    | bool         | Activate interactive mode                                                                               |
-| `labels`                         | List[string] | Labels fo the compute context                                                                           |
+| `labels`                         | List[string] | Labels of the compute context                                                                           |
 | `log_level`                      | string       | Override the log level of the cluster for debug purposes. One of `"info", "debug", "trace"`.            |
 
 !!! warning "Distributed Engine" We are currently developing our distributed engine. This engine
@@ -94,7 +94,7 @@ executed in interactive mode do not show up on the polars cloud dashboard.
 In this example we create a `LazyFrame` called `lf` and we execute it on Polars Cloud. We can
 continue on the result by calling `lazy()` on the result which leads to a `LazyFrame` .
 
-!!! info "Interactive mode" If you want to coninue on a existing query / query result you must use
+!!! info "Interactive mode" If you want to continue on a existing query / query result you must use
 `write_parquet` to S3 as an intermediate storage location. We are adding a `.execute` (or similar)
 to our API which allows you to skip specifying this location.
 

@@ -1,5 +1,9 @@
 # Getting started
 
+!!! tip Polars Cloud alpha launch Polars cloud has recently been made available to a select group of
+individuals / companies for early alpha testing. You can read more about Polars Cloud and its
+ambitious goals in our blog post:
+
 Polars Cloud is a managed compute platform for your Polars queries. It allows you to effortlessly
 run your local queries in your cloud environment, both in an interactive setting as well as for ETL
 or batch jobs. By working in a 'Bring your own Cloud' model the data never leaves your environment.
