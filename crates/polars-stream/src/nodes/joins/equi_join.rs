@@ -839,7 +839,7 @@ impl EquiJoinNode {
 
 // Not ideal - doesn't support stop requests before all cached items are flushed.
 fn insert_cached_into_parallel_stream<'s, 'env>(
-    cached: &'s Vec<Morsel>,
+    cached: &'s [Morsel],
     cached_idx: &'s AtomicUsize,
     num_pipelines: usize,
     recv_port: Option<RecvPort<'_>>,
@@ -956,7 +956,7 @@ impl ComputeNode for EquiJoinNode {
                 };
 
                 // Simulate the sample build morsels flowing into the build side.
-                if sampled_build_morsels.len() > 0 {
+                if !sampled_build_morsels.is_empty() {
                     let state = ExecutionState::new();
                     let sampled_build_morsel_idx = AtomicUsize::new(0);
                     crate::async_executor::task_scope(|scope| {
