@@ -4275,6 +4275,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
+        join_nulls: bool = False,
         coalesce: bool = True,
         allow_exact_matches: bool = True,
         check_sortedness: bool = True,
@@ -4355,6 +4356,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
+        join_nulls
+            Join on null values in the "by" part.
+            By default null values will never produce matches.
         coalesce
             Coalescing behavior (merging of `on` / `left_on` / `right_on` columns):
 
@@ -4628,6 +4632,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 strategy,
                 tolerance_num,
                 tolerance_str,
+                join_nulls,
                 coalesce=coalesce,
                 allow_eq=allow_exact_matches,
                 check_sortedness=check_sortedness,

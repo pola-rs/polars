@@ -5,6 +5,7 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars._typing import PolarsDataType
 from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
@@ -132,7 +133,8 @@ def test_asof_join_schema_5684() -> None:
     )
 
 
-def test_join_asof_mismatched_dtypes() -> None:
+@pytest.mark.parametrize("join_nulls", [False, True])
+def test_join_asof_mismatched_dtypes(join_nulls: bool) -> None:
     # test 'on' dtype mismatch
     df1 = pl.DataFrame(
         {"a": pl.Series([1, 2, 3], dtype=pl.Int64), "b": ["a", "b", "c"]}
@@ -144,7 +146,7 @@ def test_join_asof_mismatched_dtypes() -> None:
     with pytest.raises(
         pl.exceptions.SchemaError, match="datatypes of join keys don't match"
     ):
-        df1.join_asof(df2, on="a", strategy="forward")
+        df1.join_asof(df2, on="a", strategy="forward", join_nulls=join_nulls)
 
     # test 'by' dtype mismatch
     df1 = pl.DataFrame(
@@ -165,14 +167,19 @@ def test_join_asof_mismatched_dtypes() -> None:
     with pytest.raises(
         pl.exceptions.ComputeError, match="mismatching dtypes in 'by' parameter"
     ):
-        df1.join_asof(df2, on="time", by="group", strategy="forward")
+        df1.join_asof(
+            df2, on="time", by="group", strategy="forward", join_nulls=join_nulls
+        )
 
 
-def test_join_asof_floats() -> None:
+@pytest.mark.parametrize("join_nulls", [False, True])
+def test_join_asof_floats(join_nulls: bool) -> None:
     df1 = pl.DataFrame({"a": [1.0, 2.0, 3.0], "b": ["lrow1", "lrow2", "lrow3"]})
     df2 = pl.DataFrame({"a": [0.59, 1.49, 2.89], "b": ["rrow1", "rrow2", "rrow3"]})
 
-    result = df1.join_asof(df2, on=pl.col("a").set_sorted(), strategy="backward")
+    result = df1.join_asof(
+        df2, on=pl.col("a").set_sorted(), strategy="backward", join_nulls=join_nulls
+    )
     expected = {
         "a": [1.0, 2.0, 3.0],
         "b": ["lrow1", "lrow2", "lrow3"],
@@ -192,9 +199,9 @@ def test_join_asof_floats() -> None:
             "c": ["x", "x", "x", "y", "y", "y", "y"],
         }
     ).with_columns(pl.col("val").alias("b").set_sorted())
-    assert df1.set_sorted("b").join_asof(df2, on=pl.col("b"), by="c").to_dict(
-        as_series=False
-    ) == {
+    assert df1.set_sorted("b").join_asof(
+        df2, on=pl.col("b"), by="c", join_nulls=join_nulls
+    ).to_dict(as_series=False) == {
         "b": [
             0.0,
             0.8333333333333334,
@@ -209,7 +216,191 @@ def test_join_asof_floats() -> None:
     }
 
 
-def test_join_asof_tolerance() -> None:
+@pytest.mark.parametrize(
+    "numeric_dtype",
+    [
+        pl.UInt8,
+        pl.UInt16,
+        pl.UInt32,
+        pl.UInt64,
+        pl.Int8,
+        pl.Int16,
+        pl.Int32,
+        pl.Int64,
+        pl.Float32,
+        pl.Float64,
+    ],
+)
+def test_join_asof_nulls_by_numeric(numeric_dtype: PolarsDataType) -> None:
+    df_expected_join_nulls = pl.DataFrame(
+        data=[
+            (None, datetime(2024, 1, 1, 0, 0, 0), 5),
+            (1, datetime(2024, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={"category": numeric_dtype, "timestamp": pl.Datetime, "value": pl.Int8},
+        orient="row",
+    )
+
+    df_left = df_expected_join_nulls.drop("value")
+
+    df_right = pl.DataFrame(
+        data=[
+            (None, datetime(2023, 1, 1, 0, 0, 0), 5),
+            (1, datetime(2023, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={"category": numeric_dtype, "timestamp": pl.Datetime, "value": pl.Int8},
+        orient="row",
+    )
+
+    df_actual_join_nulls = df_left.join_asof(
+        other=df_right,
+        on="timestamp",
+        by=["category"],
+        strategy="backward",
+        join_nulls=True,
+    )
+
+    assert_frame_equal(df_actual_join_nulls, df_expected_join_nulls)
+
+    df_expected_do_not_join_nulls = pl.DataFrame(
+        data=[
+            (None, datetime(2024, 1, 1, 0, 0, 0), None),
+            (1, datetime(2024, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={"category": numeric_dtype, "timestamp": pl.Datetime, "value": pl.Int8},
+        orient="row",
+    )
+
+    df_actual_do_not_join_nulls = df_left.join_asof(
+        other=df_right,
+        on="timestamp",
+        by=["category"],
+        strategy="backward",
+        join_nulls=False,
+    )
+
+    assert_frame_equal(df_actual_do_not_join_nulls, df_expected_do_not_join_nulls)
+
+
+def test_join_asof_nulls_by_multiple_keys() -> None:
+    df_expected_join_nulls = pl.DataFrame(
+        data=[
+            (None, None, datetime(2024, 1, 1, 0, 0, 0), 5),
+            ("a", 1, datetime(2024, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={
+            "category_1": pl.Utf8,
+            "category_2": pl.UInt32,
+            "timestamp": pl.Datetime,
+            "value": pl.Int8,
+        },
+        orient="row",
+    )
+
+    df_left = df_expected_join_nulls.drop("value")
+
+    df_right = pl.DataFrame(
+        data=[
+            (None, None, datetime(2023, 1, 1, 0, 0, 0), 5),
+            ("a", 1, datetime(2023, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={
+            "category_1": pl.Utf8,
+            "category_2": pl.UInt32,
+            "timestamp": pl.Datetime,
+            "value": pl.Int8,
+        },
+        orient="row",
+    )
+
+    df_actual_join_nulls = df_left.join_asof(
+        other=df_right,
+        on="timestamp",
+        by=["category_1", "category_2"],
+        strategy="backward",
+        join_nulls=True,
+    )
+
+    assert_frame_equal(df_actual_join_nulls, df_expected_join_nulls)
+
+    df_expected_do_not_join_nulls = pl.DataFrame(
+        data=[
+            (None, None, datetime(2024, 1, 1, 0, 0, 0), None),
+            ("a", 1, datetime(2024, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={
+            "category_1": pl.Utf8,
+            "category_2": pl.UInt32,
+            "timestamp": pl.Datetime,
+            "value": pl.Int8,
+        },
+        orient="row",
+    )
+
+    df_actual_do_not_join_nulls = df_left.join_asof(
+        other=df_right,
+        on="timestamp",
+        by=["category_1", "category_2"],
+        strategy="backward",
+        join_nulls=False,
+    )
+
+    assert_frame_equal(df_actual_do_not_join_nulls, df_expected_do_not_join_nulls)
+
+
+def test_join_asof_nulls_by_str() -> None:
+    df_expected_join_nulls = pl.DataFrame(
+        data=[
+            (None, datetime(2024, 1, 1, 0, 0, 0), 5),
+            ("a", datetime(2024, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={"category": pl.Utf8, "timestamp": pl.Datetime, "value": pl.Int8},
+        orient="row",
+    )
+
+    df_left = df_expected_join_nulls.drop("value")
+
+    df_right = pl.DataFrame(
+        data=[
+            (None, datetime(2023, 1, 1, 0, 0, 0), 5),
+            ("a", datetime(2023, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={"category": pl.Utf8, "timestamp": pl.Datetime, "value": pl.Int8},
+        orient="row",
+    )
+
+    df_actual_join_nulls = df_left.join_asof(
+        other=df_right,
+        on="timestamp",
+        by=["category"],
+        strategy="backward",
+        join_nulls=True,
+    )
+
+    assert_frame_equal(df_actual_join_nulls, df_expected_join_nulls)
+
+    df_expected_do_not_join_nulls = pl.DataFrame(
+        data=[
+            (None, datetime(2024, 1, 1, 0, 0, 0), None),
+            ("a", datetime(2024, 1, 1, 0, 0, 0), 5),
+        ],
+        schema={"category": pl.Utf8, "timestamp": pl.Datetime, "value": pl.Int8},
+        orient="row",
+    )
+
+    df_actual_do_not_join_nulls = df_left.join_asof(
+        other=df_right,
+        on="timestamp",
+        by=["category"],
+        strategy="backward",
+        join_nulls=False,
+    )
+
+    assert_frame_equal(df_actual_do_not_join_nulls, df_expected_do_not_join_nulls)
+
+
+@pytest.mark.parametrize("join_nulls", [False, True])
+def test_join_asof_tolerance(join_nulls: bool) -> None:
     df_trades = pl.DataFrame(
         {
             "time": [
@@ -237,7 +428,7 @@ def test_join_asof_tolerance() -> None:
     ).set_sorted("time")
 
     assert df_trades.join_asof(
-        df_quotes, on="time", by="stock", tolerance="2s"
+        df_quotes, on="time", by="stock", tolerance="2s", join_nulls=join_nulls
     ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 1),
@@ -251,7 +442,7 @@ def test_join_asof_tolerance() -> None:
     }
 
     assert df_trades.join_asof(
-        df_quotes, on="time", by="stock", tolerance="1s"
+        df_quotes, on="time", by="stock", tolerance="1s", join_nulls=join_nulls
     ).to_dict(as_series=False) == {
         "time": [
             datetime(2020, 1, 1, 9, 0, 1),
@@ -274,6 +465,7 @@ def test_join_asof_tolerance() -> None:
                 on="time",
                 by="stock",
                 tolerance=invalid_tolerance,  # type: ignore[arg-type]
+                join_nulls=join_nulls,
             )
 
 
