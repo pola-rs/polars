@@ -144,6 +144,8 @@ incremental = false
 # Optimize the code just a little, with the goal of trading compile time for
 # faster tests.
 optimize = 1
+# Speeds up compile given options above (default for dev is 256).
+codegen-units = 16
 
 [profile.mindebug-dev]
 inherits = "dev"
