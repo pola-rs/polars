@@ -14,37 +14,43 @@ pip install polars polars-cloud
 Create an account and login by running the command below. 
 
 ``` bash
-plc login
+pc login
 ```
 
 ## Connect your cloud
 
-Polars Cloud currently supports AWS as a cloud provider. If you are on Azure, GCP or prefer an on-premise solution please contact us directly. 
+Polars Cloud currently exclusively supports AWS as a cloud provider. 
 
-Polars Cloud needs permission to spin up & down hardware in your environment. This is done by deploying our cloudformation template. See our [infrastructure](providers/aws.md) section for more details.
+Polars Cloud needs permission to spin up & down hardware in your environment. This is done by deploying our cloudformation template. See our [infrastructure](providers/aws/infra.md) section for more details.
 
 To connect your cloud run:
 
 ``` bash
-plc setup workspace -n <YOUR_WORKSPACE_NAME>
+pc setup workspace -n <YOUR_WORKSPACE_NAME>
 ```
 
-This redirects you to the browser where you can connect Polars to your AWS environment.
+This redirects you to the browser where you can connect Polars to your AWS environment. Alternatively, you can follow the steps in the browser on https://cloud.pola.rs and create the workspace there.
 
 ## Run your queries
 
-Now that we are done with the setup, we can start running queries. The following example shows how to create a compute cluster and run a simple Polars query.
+Now that we are done with the setup, we can start running queries. The general principle here is writing Polars like you're always used to and calling `remote` on your `LazyFrame`. The following example shows how to create a compute cluster and run a simple Polars query.
 
-=== ":fontawesome-brands-python: Python"
+{{code_block('polars-cloud/quickstart','general',['ComputeContext','LazyFrameExt'])}}
 
-    ``` python
-    import polars_cloud as plc
-    import polars as pl
+Let us go through the code line by line. First we need to define the hardware the cluster will run on. This can be in terms of cpu & memory or the exact instance type in AWS. 
 
-    ctx = plc.ComputeContext(memory = 8, cpus = 2 , cluster_size = 1)
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 4, 5]})
-    lf = df.lazy().with_columns(pl.col("a").max().over("b").alias("c"))
-    lf.remote(context = ctx).write_parquet(uri="s3://my-bucket/result.parquet")
-    ```
+```python
+ctx = pc.ComputeContext(memory = 8, cpus = 2 , cluster_size = 1)
+```
 
+Then we write a regular lazy Polars query. In this simple example we compute the maximum of column `a` over column `b`.
 
+```python
+df = pl.DataFrame({
+    "a": [1, 2, 3],
+    "b": [4, 4, 5]
+})
+lf = df.lazy().with_columns(pl.col("a").max().over("b").alias("c"))
+```
+
+Then we are going to run our query on the compute cluster. We use `remote` to signify that we want to run the query remotely. This gives back a special version of the `LazyFrame` with extension methods. Up until this point nothing has executed yet, calling `write_parquet` sends the query to the compute context and writes the result to S3.

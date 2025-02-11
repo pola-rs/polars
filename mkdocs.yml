@@ -107,18 +107,18 @@ nav:
         - releases/upgrade/0.20.md
         - releases/upgrade/0.19.md
   - Polars Cloud:
-    - "": 
-      - polars-cloud/quickstart.md
-      - Providers:
-        - polars-cloud/providers/aws.md
-      - Working with Polars Cloud:
-        - polars-cloud/explain/workspace.md
-        - polars-cloud/explain/compute.md
-        - polars-cloud/explain/queries.md
-      - Integrations:
-        - polars-cloud/integrations/airflow.md
+    - polars-cloud/quickstart.md
+    - User Guide:
+      - polars-cloud/explain/concepts.md
+    - Providers:
+        - AWS:
+          - polars-cloud/providers/aws/infra.md
+          - polars-cloud/providers/aws/permissions.md
+    - Integrations:
+      - polars-cloud/integrations/airflow.md
+    - Misc:
       - polars-cloud/cli.md
-      - polars-cloud/api-reference.md
+      - API Reference: https://docs.cloud.pola.rs
       - polars-cloud/faq.md
 not_in_nav: |
   /_build/
