@@ -110,6 +110,7 @@ nav:
     - polars-cloud/quickstart.md
     - User Guide:
       - polars-cloud/explain/concepts.md
+      - polars-cloud/explain/authentication.md
     - Providers:
         - AWS:
           - polars-cloud/providers/aws/infra.md

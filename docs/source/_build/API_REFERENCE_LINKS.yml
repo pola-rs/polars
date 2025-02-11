@@ -187,6 +187,7 @@ python:
   QueryResult : https://docs.cloud.pola.rs/reference/query/query_result.html
   InteractiveQuery : https://docs.cloud.pola.rs/reference/query/interactive_query.html
   BatchQuery: https://docs.cloud.pola.rs/reference/query/batch_query.html
+  login: https://docs.cloud.pola.rs/reference/auth/api/polars_cloud.login.html
 
 rust:
   agg: https://docs.rs/polars/latest/polars/prelude/struct.LazyGroupBy.html#method.agg
