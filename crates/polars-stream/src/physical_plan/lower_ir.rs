@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
-use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap, IDX_DTYPE};
+use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_error::PolarsResult;
@@ -396,11 +396,7 @@ pub fn lower_ir(
                 || file_options.allow_missing_columns
                 || std::env::var("POLARS_FORCE_MULTISCAN").as_deref() == Ok("1")
             {
-                let mut file_schema = file_info.schema.as_ref().clone();
-                if let Some(ri) = &file_options.row_index {
-                    // For now, we handle the row index separately.
-                    file_schema.shift_remove(ri.name.as_str());
-                }
+                let file_schema = file_info.schema.clone();
 
                 // Create a mask of that indicates which columns are included in the projection.
                 let projection = file_options.with_columns.map(|with_columns| {
@@ -417,10 +413,14 @@ pub fn lower_ir(
                             .expect("we should have the column here");
                         projection.set(idx, true);
                     }
+                    if let Some(c) = file_options.row_index.as_ref() {
+                        let idx = file_schema
+                            .try_index_of(c.name.as_str())
+                            .expect("we should have the column here");
+                        projection.set(idx, true);
+                    }
                     projection.freeze()
                 });
-
-                let file_schema = Arc::new(file_schema);
 
                 // The schema afterwards only includes the projected columns.
                 let mut schema = if let Some(projection) = projection.as_ref() {
@@ -436,25 +436,8 @@ pub fn lower_ir(
                     allow_missing_columns: file_options.allow_missing_columns,
                     include_file_paths: file_options.include_file_paths,
                     projection,
+                    row_index: file_options.row_index,
                 };
-
-                if let Some(row_index) = file_options.row_index {
-                    let mut ri_schema = schema.as_ref().clone();
-                    ri_schema
-                        .insert_at_index(0, row_index.name.clone(), IDX_DTYPE)
-                        .unwrap();
-                    let source_node = phys_sm.insert(PhysNode {
-                        output_schema: schema,
-                        kind: node,
-                    });
-                    let stream = PhysStream::first(source_node);
-                    node = PhysNodeKind::WithRowIndex {
-                        input: stream,
-                        name: row_index.name,
-                        offset: Some(row_index.offset),
-                    };
-                    schema = Arc::new(ri_schema);
-                }
 
                 let proj_schema = Arc::new(schema.try_project(output_schema.iter_names_cloned())?);
                 let source_node = phys_sm.insert(PhysNode {
