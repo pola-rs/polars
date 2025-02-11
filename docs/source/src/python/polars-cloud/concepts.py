@@ -1,4 +1,4 @@
-
+# ruff: noqa
 # --8<-- [start:workspace]
 import polars_cloud as pc
 workspace = pc.Workspace(name="my-workspace")
