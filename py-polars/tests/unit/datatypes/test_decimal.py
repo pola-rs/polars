@@ -559,7 +559,11 @@ def test_decimal_round() -> None:
 
     for decimals in range(10):
         got_s = i_s.round(decimals)
-        expected_s = pl.Series("a", [round(v, decimals) for v in values], dtype)
+        expected_s = pl.Series(
+            "a",
+            [round(v, decimals) for v in values],
+            dtype=pl.Decimal(dtype.precision, min(dtype.scale, decimals)),
+        )
 
         assert_series_equal(got_s, expected_s)
 
