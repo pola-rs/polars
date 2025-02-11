@@ -13,21 +13,26 @@ macro_rules! to_anyvalue_iterator {
 fn series_to_anyvalue_iter(series: &Series) -> Box<dyn ExactSizeIterator<Item = AnyValue> + '_> {
     let dtype = series.dtype();
     match dtype {
+        #[cfg(feature = "dtype-date")]
         DataType::Date => {
             return to_anyvalue_iterator!(series.date().unwrap());
         },
+        #[cfg(feature = "dtype-datetime")]
         DataType::Datetime(_, _) => {
             return to_anyvalue_iterator!(series.datetime().unwrap());
         },
+        #[cfg(feature = "dtype-time")]
         DataType::Time => {
             return to_anyvalue_iterator!(series.time().unwrap());
         },
+        #[cfg(feature = "dtype-duration")]
         DataType::Duration(_) => {
             return to_anyvalue_iterator!(series.duration().unwrap());
         },
         DataType::Binary => {
             return to_anyvalue_iterator!(series.binary().unwrap());
         },
+        #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, _) => {
             return to_anyvalue_iterator!(series.decimal().unwrap());
         },
