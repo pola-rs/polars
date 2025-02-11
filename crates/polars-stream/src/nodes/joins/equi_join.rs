@@ -1,5 +1,5 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
@@ -25,6 +25,12 @@ use crate::expression::StreamExpr;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
+
+static SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
+        .map(|limit| limit.parse().unwrap())
+        .unwrap_or(1_000_000)
+});
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
@@ -140,8 +146,6 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
         .collect()
 }
 
-const SAMPLE_LIMIT: usize = 1_000_000;
-
 #[derive(Default)]
 struct SampleState {
     left: Vec<Morsel>,
@@ -158,7 +162,7 @@ impl SampleState {
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
-            if *len >= SAMPLE_LIMIT {
+            if *len >= *SAMPLE_LIMIT {
                 morsel.source_token().stop();
             }
 
@@ -195,8 +199,6 @@ struct BuildPartition {
 #[derive(Default)]
 struct BuildState {
     partitions_per_worker: Vec<Vec<BuildPartition>>,
-    sampled_build_morsels: Vec<Morsel>,
-    sampled_build_morsel_idx: AtomicUsize,
     sampled_probe_morsels: Vec<Morsel>,
 }
 
@@ -836,37 +838,50 @@ impl EquiJoinNode {
 }
 
 // Not ideal - doesn't support stop requests before all cached items are flushed.
-fn insert_cached_into_stream<'s, 'env>(
+fn insert_cached_into_parallel_stream<'s, 'env>(
     cached: &'s Vec<Morsel>,
     cached_idx: &'s AtomicUsize,
-    recv: &mut Receiver<Morsel>,
+    num_pipelines: usize,
+    recv_port: Option<RecvPort<'_>>,
     scope: &'s TaskScope<'s, 'env>,
     join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-) {
+) -> Option<Vec<Receiver<Morsel>>> {
     if cached_idx.load(Ordering::Relaxed) >= cached.len() {
-        return;
+        return recv_port.map(|p| p.parallel());
     }
 
-    let (mut new_send, mut new_recv) = connector();
-    core::mem::swap(&mut new_recv, recv);
-    join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-        loop {
-            let idx = cached_idx.fetch_add(1, Ordering::Relaxed);
-            if idx >= cached.len() {
-                break;
-            }
-            if new_send.send(cached[idx].clone()).await.is_err() {
-                break;
-            }
-        }
+    let receivers = if let Some(p) = recv_port {
+        p.parallel().into_iter().map(Some).collect_vec()
+    } else {
+        (0..num_pipelines).map(|_| None).collect_vec()
+    };
 
-        while let Ok(morsel) = new_recv.recv().await {
-            if new_send.send(morsel).await.is_err() {
-                break;
+    let mut out = Vec::new();
+    for orig_recv in receivers {
+        let (mut new_send, new_recv) = connector();
+        out.push(new_recv);
+        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+            loop {
+                let idx = cached_idx.fetch_add(1, Ordering::Relaxed);
+                if idx >= cached.len() {
+                    break;
+                }
+                if new_send.send(cached[idx].clone()).await.is_err() {
+                    break;
+                }
             }
-        }
-        Ok(())
-    }));
+
+            if let Some(mut recv) = orig_recv {
+                while let Ok(morsel) = recv.recv().await {
+                    if new_send.send(morsel).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }));
+    }
+    Some(out)
 }
 
 impl ComputeNode for EquiJoinNode {
@@ -888,8 +903,8 @@ impl ComputeNode for EquiJoinNode {
 
         // If we are sampling and both sides are done/filled, transition to building.
         if let EquiJoinState::Sample(sample_state) = &mut self.state {
-            let left_saturated = sample_state.left_len >= SAMPLE_LIMIT;
-            let right_saturated = sample_state.right_len >= SAMPLE_LIMIT;
+            let left_saturated = sample_state.left_len >= *SAMPLE_LIMIT;
+            let right_saturated = sample_state.right_len >= *SAMPLE_LIMIT;
             let left_done = recv[0] == PortState::Done || left_saturated;
             let right_done = recv[1] == PortState::Done || right_saturated;
             if left_done && right_done {
@@ -933,12 +948,54 @@ impl ComputeNode for EquiJoinNode {
                 if !left_is_build {
                     core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
                 }
-                self.state = EquiJoinState::Build(BuildState {
-                    partitions_per_worker: Vec::new(),
-                    sampled_build_morsels,
-                    sampled_build_morsel_idx: AtomicUsize::new(0),
+
+                let partitioner = HashPartitioner::new(self.num_pipelines, 0);
+                let mut build_state = BuildState {
+                    partitions_per_worker: (0..self.num_pipelines).map(|_| Vec::new()).collect(),
                     sampled_probe_morsels,
-                })
+                };
+
+                // Simulate the sample build morsels flowing into the build side.
+                if sampled_build_morsels.len() > 0 {
+                    let state = ExecutionState::new();
+                    let sampled_build_morsel_idx = AtomicUsize::new(0);
+                    crate::async_executor::task_scope(|scope| {
+                        let mut join_handles = Vec::new();
+                        let receivers = insert_cached_into_parallel_stream(
+                            &sampled_build_morsels,
+                            &sampled_build_morsel_idx,
+                            self.num_pipelines,
+                            None,
+                            scope,
+                            &mut join_handles,
+                        )
+                        .unwrap();
+
+                        for (worker_ps, recv) in
+                            build_state.partitions_per_worker.iter_mut().zip(receivers)
+                        {
+                            join_handles.push(scope.spawn_task(
+                                TaskPriority::High,
+                                BuildState::partition_and_sink(
+                                    recv,
+                                    worker_ps,
+                                    partitioner.clone(),
+                                    &self.params,
+                                    &state,
+                                ),
+                            ));
+                        }
+
+                        polars_io::pl_async::get_runtime().block_on(async move {
+                            for handle in join_handles {
+                                handle.await?;
+                            }
+                            PolarsResult::Ok(())
+                        })
+                    })?;
+                }
+
+                self.state = EquiJoinState::Build(build_state);
             }
         }
 
@@ -951,8 +1008,7 @@ impl ComputeNode for EquiJoinNode {
 
         // If we are building and the build input is done, transition to probing.
         if let EquiJoinState::Build(build_state) = &mut self.state {
-            let samples_consumed = build_state.sampled_build_morsel_idx.load(Ordering::Relaxed) >= build_state.sampled_build_morsels.len();
-            if samples_consumed && recv[build_idx] == PortState::Done {
+            if recv[build_idx] == PortState::Done {
                 self.state = EquiJoinState::Probe(
                     build_state.finalize(&self.params, self.table.as_deref().unwrap()),
                 );
@@ -962,7 +1018,8 @@ impl ComputeNode for EquiJoinNode {
         // If we are probing and the probe input is done, emit unmatched if
         // necessary, otherwise we're done.
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
-            let samples_consumed = probe_state.sampled_probe_morsel_idx.load(Ordering::Relaxed) >= probe_state.sampled_probe_morsels.len();
+            let samples_consumed = probe_state.sampled_probe_morsel_idx.load(Ordering::Relaxed)
+                >= probe_state.sampled_probe_morsels.len();
             if samples_consumed && recv[probe_idx] == PortState::Done {
                 if self.params.emit_unmatched_build() {
                     if self.params.preserve_order_build {
@@ -994,19 +1051,19 @@ impl ComputeNode for EquiJoinNode {
                 self.state = EquiJoinState::Done;
             }
         }
-        
+
         match &mut self.state {
             EquiJoinState::Sample(sample_state) => {
                 send[0] = PortState::Blocked;
                 if recv[0] != PortState::Done {
-                    recv[0] = if sample_state.left_len < SAMPLE_LIMIT {
+                    recv[0] = if sample_state.left_len < *SAMPLE_LIMIT {
                         PortState::Ready
                     } else {
                         PortState::Blocked
                     };
                 }
                 if recv[1] != PortState::Done {
-                    recv[1] = if sample_state.right_len < SAMPLE_LIMIT {
+                    recv[1] = if sample_state.right_len < *SAMPLE_LIMIT {
                         PortState::Ready
                     } else {
                         PortState::Blocked
@@ -1018,13 +1075,17 @@ impl ComputeNode for EquiJoinNode {
                 if recv[build_idx] != PortState::Done {
                     recv[build_idx] = PortState::Ready;
                 }
-                recv[probe_idx] = PortState::Blocked;
+                if recv[probe_idx] != PortState::Done {
+                    recv[probe_idx] = PortState::Blocked;
+                }
             },
             EquiJoinState::Probe(probe_state) => {
                 if recv[probe_idx] != PortState::Done {
                     core::mem::swap(&mut send[0], &mut recv[probe_idx]);
                 } else {
-                    send[0] = if probe_state.sampled_probe_morsel_idx.load(Ordering::Relaxed) < probe_state.sampled_probe_morsels.len() {
+                    send[0] = if probe_state.sampled_probe_morsel_idx.load(Ordering::Relaxed)
+                        < probe_state.sampled_probe_morsels.len()
+                    {
                         PortState::Ready
                     } else {
                         PortState::Done
@@ -1105,21 +1166,12 @@ impl ComputeNode for EquiJoinNode {
                 assert!(recv_ports[probe_idx].is_none());
                 let receivers = recv_ports[build_idx].take().unwrap().parallel();
 
-                dbg!(self.num_pipelines);
                 build_state
                     .partitions_per_worker
                     .resize_with(self.num_pipelines, Vec::new);
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
-                for (worker_ps, mut recv) in
-                    build_state.partitions_per_worker.iter_mut().zip(receivers)
+                for (worker_ps, recv) in build_state.partitions_per_worker.iter_mut().zip(receivers)
                 {
-                    insert_cached_into_stream(
-                        &build_state.sampled_build_morsels,
-                        &build_state.sampled_build_morsel_idx,
-                        &mut recv,
-                        scope,
-                        join_handles,
-                    );
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
                         BuildState::partition_and_sink(
@@ -1134,21 +1186,22 @@ impl ComputeNode for EquiJoinNode {
             },
             EquiJoinState::Probe(probe_state) => {
                 assert!(recv_ports[build_idx].is_none());
-                let receivers = recv_ports[probe_idx].take().unwrap().parallel();
                 let senders = send_ports[0].take().unwrap().parallel();
+                let receivers = insert_cached_into_parallel_stream(
+                    &probe_state.sampled_probe_morsels,
+                    &probe_state.sampled_probe_morsel_idx,
+                    self.num_pipelines,
+                    recv_ports[probe_idx].take(),
+                    scope,
+                    join_handles,
+                )
+                .unwrap();
 
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                 let probe_tasks = receivers
                     .into_iter()
                     .zip(senders)
-                    .map(|(mut recv, send)| {
-                        insert_cached_into_stream(
-                            &probe_state.sampled_probe_morsels,
-                            &probe_state.sampled_probe_morsel_idx,
-                            &mut recv,
-                            scope,
-                            join_handles,
-                        );
+                    .map(|(recv, send)| {
                         scope.spawn_task(
                             TaskPriority::High,
                             ProbeState::partition_and_probe(
