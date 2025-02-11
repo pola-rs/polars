@@ -141,9 +141,6 @@ inherits = "dev"
 debug = false
 # This speed up builds, and caching didn't seem to work in CI anyway.
 incremental = false
-# Default is 256 for dev builds, to enable incremental builds, but that slows
-# things down and we're not doing incremental builds.
-codegen-units = 16
 
 [profile.mindebug-dev]
 inherits = "dev"
