@@ -141,7 +141,9 @@ inherits = "dev"
 debug = false
 # This speed up builds, and caching didn't seem to work in CI anyway.
 incremental = false
-panic = "abort"
+# Optimize the code just a little, with the goal of trading compile time for
+# faster tests.
+optimize = 1
 
 [profile.mindebug-dev]
 inherits = "dev"
