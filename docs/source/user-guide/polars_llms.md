@@ -5,7 +5,7 @@ output. This guide presents approaches that help LLMs generate valid Polars code
 
 These approaches have been developed by the Polars community through testing model responses to
 various inputs. If you find additional effective approaches for generating Polars code from LLMs,
-please raise an [issue](https://github.com/pola-rs/polars/issues).
+please raise an [pull request](https://github.com/pola-rs/polars/pulls).
 
 ## System prompt
 
@@ -24,6 +24,9 @@ search allows an LLM to reference up-to-date Polars documentation for the curren
 
 However, web search is not a universal solution. If a model is confident in a result based on its
 pre-training data, it may not incorporate web search results in its output.
+
+## Reference documentation
+Some IDE-based LLMs can index the Polars API documentation and reference this when generating code. For example, in Cursor you can add Polars as a custom docs source.
 
 ## Provide examples
 
