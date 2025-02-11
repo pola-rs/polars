@@ -5,7 +5,7 @@ output. This guide presents approaches that help LLMs generate valid Polars code
 
 These approaches have been developed by the Polars community through testing model responses to
 various inputs. If you find additional effective approaches for generating Polars code from LLMs,
-please raise an [pull request](https://github.com/pola-rs/polars/pulls).
+please raise a [pull request](https://github.com/pola-rs/polars/pulls).
 
 ## System prompt
 
