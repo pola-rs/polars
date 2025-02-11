@@ -360,7 +360,18 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             cached_ir.clone().unwrap()
         },
         #[cfg(feature = "python")]
-        DslPlan::PythonScan { options } => IR::PythonScan { options },
+        DslPlan::PythonScan { mut options } => {
+            let scan_fn = options.scan_fn.take();
+            let schema = options.get_schema()?;
+            IR::PythonScan {
+                options: PythonOptions {
+                    scan_fn,
+                    schema,
+                    python_source: options.python_source,
+                    ..Default::default()
+                },
+            }
+        },
         DslPlan::Union { inputs, args } => {
             let mut inputs = inputs
                 .into_iter()

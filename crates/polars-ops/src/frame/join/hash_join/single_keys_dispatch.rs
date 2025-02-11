@@ -1,4 +1,5 @@
 use arrow::array::PrimitiveArray;
+use polars_core::chunked_array::ops::row_encode::encode_rows_unordered;
 use polars_core::series::BitRepr;
 use polars_core::utils::split;
 use polars_core::with_match_physical_float_polars_type;
@@ -47,6 +48,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let build_null_count = other.null_count();
                 hash_join_tuples_left(lhs, rhs, None, None, validate, join_nulls, build_null_count)
+            },
+            #[cfg(feature = "dtype-struct")]
+            T::Struct(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_left(rhs, validate, join_nulls)
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
@@ -125,6 +132,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 } else {
                     hash_join_tuples_left_semi(lhs, rhs, join_nulls)
                 }
+            },
+            #[cfg(feature = "dtype-struct")]
+            T::Struct(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_semi_anti(rhs, anti, join_nulls)?
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
@@ -227,6 +240,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     !swapped,
                 ))
             },
+            #[cfg(feature = "dtype-struct")]
+            T::Struct(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_inner(rhs, validate, join_nulls)
+            },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {
                     let lhs: &ChunkedArray<$T> = lhs.as_ref().as_ref().as_ref();
@@ -296,6 +315,12 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                 let lhs = lhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 let rhs = rhs.iter().map(|k| k.as_slice()).collect::<Vec<_>>();
                 hash_join_tuples_outer(lhs, rhs, swapped, validate, join_nulls)
+            },
+            #[cfg(feature = "dtype-struct")]
+            T::Struct(_) => {
+                let lhs = &encode_rows_unordered(&[lhs.into_owned().into()])?.into_series();
+                let rhs = &encode_rows_unordered(&[rhs.into_owned().into()])?.into_series();
+                lhs.hash_join_outer(rhs, validate, join_nulls)
             },
             x if x.is_float() => {
                 with_match_physical_float_polars_type!(lhs.dtype(), |$T| {

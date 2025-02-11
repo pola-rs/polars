@@ -936,7 +936,7 @@ def test_offset_by_expressions() -> None:
     }
 
     # Check single-row cases
-    for i in range(len(df)):
+    for i in range(df.height):
         df_slice = df[i : i + 1]
         result = df_slice.select(
             c=pl.col("a").dt.offset_by(pl.col("b")),

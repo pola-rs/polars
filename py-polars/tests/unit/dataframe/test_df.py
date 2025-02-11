@@ -71,7 +71,7 @@ def test_special_char_colname_init() -> None:
     cols = [(c, pl.Int8) for c in punctuation]
     df = pl.DataFrame(schema=cols)
 
-    assert len(cols) == len(df.columns)
+    assert len(cols) == df.width
     assert len(df.rows()) == 0
     assert df.is_empty()
 
@@ -226,7 +226,7 @@ def test_from_arrow(monkeypatch: Any) -> None:
         override_schema = expected_schema.copy()
         override_schema["e"] = pl.Int8
         assert df.schema == override_schema
-        assert df.rows() == expected_data[: (len(df))]
+        assert df.rows() == expected_data[: (df.height)]
 
     # init from record batches with overrides
     df = pl.DataFrame(
@@ -1471,7 +1471,7 @@ def test_join_dates() -> None:
         }
     )
     out = df.join(df, on="datetime")
-    assert len(out) == len(df)
+    assert out.height == df.height
 
 
 def test_asof_cross_join() -> None:

@@ -144,13 +144,13 @@ fn find_mergeable(
         } else if left_key_last.lt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
-            let gt_mask = right_key.gt(&left_key_last)?.downcast_into_array();
-            right_cutoff = gt_mask.values().leading_zeros();
+            let gt_mask = right_key.gt(&left_key_last)?;
+            right_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
         } else if left_key_last.gt(&right_key_last)?.all() {
             // @TODO: This is essentially search sorted, but that does not
             // support categoricals at moment.
-            let gt_mask = left_key.gt(&right_key_last)?.downcast_into_array();
-            left_cutoff = gt_mask.values().leading_zeros();
+            let gt_mask = left_key.gt(&right_key_last)?;
+            left_cutoff = gt_mask.downcast_as_array().values().leading_zeros();
         }
 
         let left_mergeable: DataFrame;

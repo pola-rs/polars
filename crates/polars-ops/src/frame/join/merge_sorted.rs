@@ -70,12 +70,10 @@ fn merge_series(lhs: &Series, rhs: &Series, merge_indicator: &[bool]) -> PolarsR
         },
         String => {
             // dispatch via binary
-            let lhs = lhs.cast(&Binary).unwrap();
-            let rhs = rhs.cast(&Binary).unwrap();
-            let lhs = lhs.binary().unwrap();
-            let rhs = rhs.binary().unwrap();
-            let out = merge_ca(lhs, rhs, merge_indicator);
-            unsafe { out.cast_unchecked(&String).unwrap() }
+            let lhs = lhs.str().unwrap().as_binary();
+            let rhs = rhs.str().unwrap().as_binary();
+            let out = merge_ca(&lhs, &rhs, merge_indicator);
+            unsafe { out.to_string_unchecked() }.into_series()
         },
         Binary => {
             let lhs = lhs.binary().unwrap();
@@ -152,9 +150,13 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         DataType::String => {
-            let lhs = lhs_s.str().unwrap();
-            let rhs = rhs_s.str().unwrap();
-
+            let lhs = lhs.str().unwrap().as_binary();
+            let rhs = rhs.str().unwrap().as_binary();
+            get_merge_indicator(lhs.into_iter(), rhs.into_iter())
+        },
+        DataType::Binary => {
+            let lhs = lhs_s.binary().unwrap();
+            let rhs = rhs_s.binary().unwrap();
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         _ => {

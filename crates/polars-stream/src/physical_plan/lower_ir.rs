@@ -3,7 +3,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use polars_core::frame::{DataFrame, UniqueKeepStrategy};
 use polars_core::prelude::{DataType, InitHashMaps, PlHashMap, PlHashSet, PlIndexMap};
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaExt};
+use polars_core::utils::arrow::bitmap::MutableBitmap;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
@@ -389,29 +390,98 @@ pub fn lower_ir(
                 PhysNodeKind::InMemorySource {
                     df: Arc::new(DataFrame::empty_with_schema(output_schema.as_ref())),
                 }
-            } else if scan_sources.len() > 1 || hive_parts.is_some() {
-                // @TODO: At the moment, we materialize for Hive. I would also not like to do this,
-                // but at the moment it is this or panicking.
-                //
-                // This is very much a hack, forgive me please.
-                let phys_node = phys_sm.insert(PhysNode {
-                    output_schema: Arc::new(Schema::default()),
-                    kind: PhysNodeKind::InputIndependentSelect {
-                        selectors: Vec::new(),
-                    },
-                });
-                let input = PhysStream::first(phys_node);
-                let in_memory_physical_plan = create_physical_plan(node, ir_arena, expr_arena)?;
-                let in_memory_physical_plan =
-                    Arc::new(std::sync::Mutex::new(in_memory_physical_plan));
+            } else if scan_sources.len() > 1
+                || hive_parts.is_some()
+                || file_options.include_file_paths.is_some()
+                || file_options.allow_missing_columns
+                || std::env::var("POLARS_FORCE_MULTISCAN").as_deref() == Ok("1")
+            {
+                let file_schema = file_info.schema.clone();
 
-                PhysNodeKind::InMemoryMap {
-                    input,
-                    map: Arc::new(move |_| {
-                        let mut in_memory_physical_plan = in_memory_physical_plan.lock().unwrap();
-                        in_memory_physical_plan.execute(&mut Default::default())
-                    }),
+                // Create a mask of that indicates which columns are included in the projection.
+                let projection = file_options.with_columns.map(|with_columns| {
+                    let mut projection = MutableBitmap::from_len_zeroed(file_schema.len());
+                    for c in with_columns.as_ref() {
+                        let idx = file_schema
+                            .try_index_of(c)
+                            .expect("we should have the column here");
+                        projection.set(idx, true);
+                    }
+                    if let Some(c) = file_options.include_file_paths.as_ref() {
+                        let idx = file_schema
+                            .try_index_of(c)
+                            .expect("we should have the column here");
+                        projection.set(idx, true);
+                    }
+                    if let Some(c) = file_options.row_index.as_ref() {
+                        let idx = file_schema
+                            .try_index_of(c.name.as_str())
+                            .expect("we should have the column here");
+                        projection.set(idx, true);
+                    }
+                    projection.freeze()
+                });
+
+                // The schema afterwards only includes the projected columns.
+                let mut schema = if let Some(projection) = projection.as_ref() {
+                    Arc::new(file_schema.as_ref().project_select(projection))
+                } else {
+                    file_schema.clone()
+                };
+                let mut node = PhysNodeKind::MultiScan {
+                    scan_sources,
+                    hive_parts,
+                    scan_type,
+                    file_schema,
+                    allow_missing_columns: file_options.allow_missing_columns,
+                    include_file_paths: file_options.include_file_paths,
+                    projection,
+                    row_index: file_options.row_index,
+                };
+
+                let proj_schema = Arc::new(schema.try_project(output_schema.iter_names_cloned())?);
+                let source_node = phys_sm.insert(PhysNode {
+                    output_schema: schema,
+                    kind: node,
+                });
+                let stream = PhysStream::first(source_node);
+                node = PhysNodeKind::SimpleProjection {
+                    input: stream,
+                    columns: output_schema.iter_names_cloned().collect(),
+                };
+                schema = proj_schema;
+
+                if let Some(slice) = file_options.slice {
+                    let source_node = phys_sm.insert(PhysNode {
+                        output_schema: schema.clone(),
+                        kind: node,
+                    });
+                    let stream = PhysStream::first(source_node);
+                    node = if slice.0 < 0 {
+                        PhysNodeKind::NegativeSlice {
+                            input: stream,
+                            offset: slice.0,
+                            length: slice.1,
+                        }
+                    } else {
+                        PhysNodeKind::StreamingSlice {
+                            input: stream,
+                            offset: slice.0 as usize,
+                            length: slice.1,
+                        }
+                    };
                 }
+
+                if let Some(predicate) = predicate {
+                    let source_node = phys_sm.insert(PhysNode {
+                        output_schema: schema,
+                        kind: node,
+                    });
+                    let stream = PhysStream::first(source_node);
+                    return build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache);
+                }
+
+                node
             } else {
                 #[cfg(feature = "ipc")]
                 if matches!(scan_type, FileScan::Ipc { .. }) {

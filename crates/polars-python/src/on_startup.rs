@@ -103,9 +103,9 @@ pub unsafe fn register_startup_deps(catch_keyboard_interrupt: bool) {
         let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
         registry::register_object_builder(object_builder, object_converter, physical_dtype);
         // Register SERIES UDF.
-        python_udf::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
+        python_dsl::CALL_COLUMNS_UDF_PYTHON = Some(python_function_caller_series);
         // Register DATAFRAME UDF.
-        python_udf::CALL_DF_UDF_PYTHON = Some(python_function_caller_df);
+        python_dsl::CALL_DF_UDF_PYTHON = Some(python_function_caller_df);
         // Register warning function for `polars_warn!`.
         polars_error::set_warning_function(warning_function);
 

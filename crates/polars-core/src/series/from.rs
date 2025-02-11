@@ -1,6 +1,6 @@
-use arrow::datatypes::Metadata;
 #[cfg(feature = "dtype-categorical")]
-use arrow::legacy::kernels::concatenate::concatenate_owned_unchecked;
+use arrow::compute::concatenate::concatenate_unchecked;
+use arrow::datatypes::Metadata;
 #[cfg(any(
     feature = "dtype-date",
     feature = "dtype-datetime",
@@ -327,7 +327,7 @@ impl Series {
                 use arrow::datatypes::IntegerType;
                 // don't spuriously call this; triggers a read on mmapped data
                 let arr = if chunks.len() > 1 {
-                    concatenate_owned_unchecked(&chunks)?
+                    concatenate_unchecked(&chunks)?
                 } else {
                     chunks[0].clone()
                 };

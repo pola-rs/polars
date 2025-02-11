@@ -1767,7 +1767,7 @@ A,B
     }
 
     df = pl.read_csv(io.StringIO(csv), comment_prefix="#", schema=schema)
-    assert len(df) == 2
+    assert df.height == 2
     assert df.schema == schema
 
 

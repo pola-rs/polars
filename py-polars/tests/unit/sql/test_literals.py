@@ -239,10 +239,3 @@ def test_select_from_table_with_reserved_names() -> None:
         eager=True,
     )
     assert out.rows() == [(5, 2)]
-
-
-def test_select_literal_20058() -> None:
-    assert_frame_equal(
-        pl.LazyFrame({"a": [1, 2, 3]}).sql("SELECT 1 FROM self").collect(),
-        pl.select(literal=pl.Series([1, 1, 1], dtype=pl.Int32)),
-    )

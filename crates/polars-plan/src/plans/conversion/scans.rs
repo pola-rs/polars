@@ -132,7 +132,7 @@ pub(super) fn ipc_file_info(
 }
 
 #[cfg(feature = "csv")]
-pub(super) fn csv_file_info(
+pub fn csv_file_info(
     sources: &ScanSources,
     file_options: &FileScanOptions,
     csv_options: &mut CsvReadOptions,

@@ -338,6 +338,14 @@ macro_rules! polars_err {
     (opq = $op:ident, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(op = stringify!($op), $lhs, $rhs)
     };
+    (bigidx, ctx = $ctx:expr, size = $size:expr) => {
+        polars_err!(ComputeError: "\
+{} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
+consider compiling with bigidx feature (polars-u64-idx package on python)",
+            $ctx,
+            $size,
+        )
+    };
     (append) => {
         polars_err!(SchemaMismatch: "cannot append series, data types don't match")
     };

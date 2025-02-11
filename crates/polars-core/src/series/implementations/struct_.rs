@@ -149,8 +149,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        let ca = self.0.rechunk();
-        ca.into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {

@@ -24,6 +24,7 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
+use crate::nodes::io_sources::parquet::ParquetSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -352,6 +353,85 @@ fn to_graph_rec<'a>(
             )
         },
 
+        MultiScan {
+            scan_sources,
+            hive_parts,
+            scan_type,
+            file_schema,
+            allow_missing_columns,
+            include_file_paths,
+            projection,
+            row_index,
+        } => match scan_type {
+            #[cfg(feature = "parquet")]
+            polars_plan::plans::FileScan::Parquet {
+                options,
+                cloud_options,
+                ..
+            } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
+                    nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
+                        scan_sources.clone(),
+                        hive_parts.clone(),
+                        *allow_missing_columns,
+                        include_file_paths.clone(),
+                        file_schema.clone(),
+                        projection.clone(),
+                        row_index.clone(),
+                        options.clone(),
+                        cloud_options.clone(),
+                    ),
+                ),
+                [],
+            ),
+            #[cfg(feature = "ipc")]
+            polars_plan::plans::FileScan::Ipc {
+                options,
+                cloud_options,
+                ..
+            } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
+                    nodes::io_sources::multi_scan::MultiScanNode::<
+                        nodes::io_sources::ipc::IpcSourceNode,
+                    >::new(
+                        scan_sources.clone(),
+                        hive_parts.clone(),
+                        *allow_missing_columns,
+                        include_file_paths.clone(),
+                        file_schema.clone(),
+                        projection.clone(),
+                        row_index.clone(),
+                        options.clone(),
+                        cloud_options.clone(),
+                    ),
+                ),
+                [],
+            ),
+            #[cfg(feature = "csv")]
+            polars_plan::plans::FileScan::Csv {
+                options,
+                cloud_options,
+            } => ctx.graph.add_node(
+                nodes::io_sources::SourceComputeNode::new(
+                    nodes::io_sources::multi_scan::MultiScanNode::<
+                        nodes::io_sources::csv::CsvSourceNode,
+                    >::new(
+                        scan_sources.clone(),
+                        hive_parts.clone(),
+                        *allow_missing_columns,
+                        include_file_paths.clone(),
+                        file_schema.clone(),
+                        projection.clone(),
+                        row_index.clone(),
+                        options.clone(),
+                        cloud_options.clone(),
+                    ),
+                ),
+                [],
+            ),
+            _ => todo!(),
+        },
+
         v @ FileScan { .. } => {
             let FileScan {
                 scan_sources,
@@ -386,6 +466,7 @@ fn to_graph_rec<'a>(
                     }
                 );
             }
+            let create_column_predicates = cfg!(feature = "parquet");
 
             let predicate = predicate
                 .map(|pred| {
@@ -395,6 +476,7 @@ fn to_graph_rec<'a>(
                         output_schema.as_ref().unwrap_or(&file_info.schema),
                         &mut ctx.expr_conversion_state,
                         create_skip_batch_predicate,
+                        create_column_predicates,
                     )
                 })
                 .transpose()?;
@@ -410,14 +492,16 @@ fn to_graph_rec<'a>(
                         cloud_options,
                         metadata: first_metadata,
                     } => ctx.graph.add_node(
-                        nodes::io_sources::parquet::ParquetSourceNode::new(
-                            scan_sources,
-                            file_info,
-                            predicate,
-                            options,
-                            cloud_options,
-                            file_options,
-                            first_metadata,
+                        nodes::io_sources::SourceComputeNode::new(
+                            nodes::io_sources::parquet::ParquetSourceNode::new(
+                                scan_sources,
+                                file_info,
+                                predicate,
+                                options,
+                                cloud_options,
+                                file_options,
+                                first_metadata,
+                            ),
                         ),
                         [],
                     ),
@@ -431,14 +515,16 @@ fn to_graph_rec<'a>(
                         assert!(predicate.is_none());
 
                         ctx.graph.add_node(
-                            nodes::io_sources::ipc::IpcSourceNode::new(
-                                scan_sources,
-                                file_info,
-                                options,
-                                cloud_options,
-                                file_options,
-                                first_metadata,
-                            )?,
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::ipc::IpcSourceNode::new(
+                                    scan_sources,
+                                    file_info,
+                                    options,
+                                    cloud_options,
+                                    file_options,
+                                    first_metadata,
+                                )?,
+                            ),
                             [],
                         )
                     },
@@ -453,11 +539,13 @@ fn to_graph_rec<'a>(
                         }
 
                         ctx.graph.add_node(
-                            nodes::io_sources::csv::CsvSourceNode::new(
-                                scan_sources,
-                                file_info,
-                                file_options,
-                                options,
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::csv::CsvSourceNode::new(
+                                    scan_sources,
+                                    file_info,
+                                    file_options,
+                                    options,
+                                ),
                             ),
                             [],
                         )

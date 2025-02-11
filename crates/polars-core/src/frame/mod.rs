@@ -281,8 +281,11 @@ impl DataFrame {
             });
         };
 
-        let height = fst.len();
-        for col in &columns[1..] {
+        Self::new_with_height(fst.len(), columns)
+    }
+
+    pub fn new_with_height(height: usize, columns: Vec<Column>) -> PolarsResult<Self> {
+        for col in &columns {
             polars_ensure!(
                 col.len() == height,
                 ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
@@ -365,8 +368,13 @@ impl DataFrame {
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
+        Self::empty_with_height(0)
+    }
+
+    /// Creates an empty `DataFrame` with a specific `height`.
+    pub const fn empty_with_height(height: usize) -> Self {
         DataFrame {
-            height: 0,
+            height,
             columns: vec![],
             cached_schema: OnceLock::new(),
         }
@@ -595,6 +603,24 @@ impl DataFrame {
 
         for col in columns.iter_mut().filter(|c| c.n_chunks() > 1) {
             *col = col.rechunk();
+        }
+    }
+
+    pub fn _deshare_views_mut(&mut self) {
+        // SAFETY: We never adjust the length or names of the columns.
+        unsafe {
+            let columns = self.get_columns_mut();
+            for col in columns {
+                let Column::Series(s) = col else { continue };
+
+                if let Ok(ca) = s.binary() {
+                    let gc_ca = ca.apply_kernel(&|a| a.deshare().into_boxed());
+                    *col = Column::from(gc_ca.into_series());
+                } else if let Ok(ca) = s.str() {
+                    let gc_ca = ca.apply_kernel(&|a| a.deshare().into_boxed());
+                    *col = Column::from(gc_ca.into_series());
+                }
+            }
         }
     }
 
@@ -3109,7 +3135,7 @@ impl DataFrame {
         for ca in iter {
             acc_ca.append(&ca)?;
         }
-        Ok(acc_ca.rechunk())
+        Ok(acc_ca.rechunk().into_owned())
     }
 
     /// Get the supertype of the columns in this DataFrame
@@ -3295,6 +3321,7 @@ impl DataFrame {
         // - we don't adjust the names of the columns
         // - each column gets appended the same number of rows, which is an invariant of
         //   record_batch.
+        self.height += rb.height();
         let columns = unsafe { self.get_columns_mut() };
         for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
             let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();

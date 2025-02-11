@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import decimal
+import functools
 import io
-from datetime import datetime, time, timezone
+from datetime import date, datetime, time, timezone
 from decimal import Decimal
 from itertools import chain
 from typing import TYPE_CHECKING, Any, Callable, Literal, cast
@@ -26,7 +27,7 @@ from polars.testing.parametric.strategies.core import series
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from polars._typing import ParquetCompression
+    from polars._typing import ParallelStrategy, ParquetCompression
     from tests.unit.conftest import MemoryUsage
 
 
@@ -438,7 +439,7 @@ def test_parquet_nested_dictionaries_6217() -> None:
 
 
 @pytest.mark.write_disk
-def test_fetch_union(tmp_path: Path) -> None:
+def test_head_union(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     df1 = pl.DataFrame({"a": [0, 1, 2], "b": [1, 2, 3]})
@@ -451,8 +452,8 @@ def test_fetch_union(tmp_path: Path) -> None:
     df1.write_parquet(file_path_1)
     df2.write_parquet(file_path_2)
 
-    result_one = pl.scan_parquet(file_path_1)._fetch(1)
-    result_glob = pl.scan_parquet(file_path_glob)._fetch(1)
+    result_one = pl.scan_parquet(file_path_1).head(1).collect()
+    result_glob = pl.scan_parquet(file_path_glob).head(1).collect()
 
     expected = pl.DataFrame({"a": [0], "b": [1]})
     assert_frame_equal(result_one, expected)
@@ -1979,14 +1980,14 @@ def test_allow_missing_columns(
     expected = pl.DataFrame({"a": [1, 2], "b": [1, None]}).select(projection)
 
     with pytest.raises(
-        pl.exceptions.ColumnNotFoundError,
-        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
+        match="enabling `allow_missing_columns`",
     ):
         pl.read_parquet(paths, parallel=parallel)  # type: ignore[arg-type]
 
     with pytest.raises(
-        pl.exceptions.ColumnNotFoundError,
-        match="error with column selection, consider enabling `allow_missing_columns`: did not find column in file: b",
+        (pl.exceptions.ColumnNotFoundError, pl.exceptions.SchemaError),
+        match="enabling `allow_missing_columns`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
             streaming=streaming
@@ -2777,3 +2778,74 @@ def test_required_masked_skip_values_20809(monkeypatch: Any) -> None:
     df2 = pl.read_parquet(f, parallel="columns").filter(pl.col.b.is_in(needle))
 
     assert_frame_equal(df1, df2)
+
+
+def get_tests_from_dtype(
+    dtype: pl.DataType, f: Callable[[int], Any]
+) -> list[tuple[pl.DataType, list[Any], list[Any]]]:
+    return [
+        (dtype, [f(i) for i in range(10)], [f(i) for i in range(11)]),
+        (
+            dtype,
+            [f(i) for i in range(1337)],
+            [f(i) for i in [0, 1, 5, 7, 101, 1023, 1336, 1337, 1338]],
+        ),
+        (
+            dtype,
+            list(
+                functools.reduce(
+                    lambda x, y: list(x) + y,
+                    ([f(i)] * (i % 13) for i in range(1337)),
+                    [],
+                )
+            ),
+            [f(i) for i in [0, 1, 5, 7, 101, 1023, 1336, 1337, 1338]],
+        ),
+        (
+            dtype,
+            [f(5)] * 37 + [f(10)] * 61 + [f(1996)] * 21,
+            [f(i) for i in [1, 5, 10, 1996]],
+        ),
+    ]
+
+
+@pytest.mark.parametrize("strategy", ["columns", "prefiltered"])
+@pytest.mark.parametrize(
+    ("dtype", "values", "needles"),
+    get_tests_from_dtype(pl.Int8(), lambda x: (x % 256) - 128)
+    + get_tests_from_dtype(pl.Int32(), lambda x: x % 256)
+    + get_tests_from_dtype(pl.Date(), lambda x: date(year=1 + x, month=10, day=5))
+    + get_tests_from_dtype(pl.String(), lambda x: str(x))
+    + get_tests_from_dtype(pl.String(), lambda x: "i" * x)
+    + get_tests_from_dtype(pl.String(), lambda x: f"long_strings_with_the_number_{x}"),
+)
+def test_equality_filter(
+    strategy: ParallelStrategy,
+    dtype: pl.DataType,
+    values: list[Any],
+    needles: list[Any],
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", values, dtype),
+        ]
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f)
+
+    for needle in needles:
+        f.seek(0)
+        scan = pl.scan_parquet(f, parallel=strategy)
+        try:
+            assert_frame_equal(
+                df.filter(pl.col.a == pl.lit(needle, dtype)),
+                scan.filter(pl.col.a == pl.lit(needle, dtype)).collect(),
+            )
+        except:
+            import sys
+
+            print(f"needle: {needle}", file=sys.stderr)
+            raise
+
+    pl.read_parquet(f)

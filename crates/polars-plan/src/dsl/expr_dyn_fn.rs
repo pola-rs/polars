@@ -72,8 +72,8 @@ impl<'a> Deserialize<'a> for SpecialEq<Arc<dyn ColumnsUdf>> {
         #[cfg(feature = "python")]
         {
             deserialize_map_bytes(deserializer, &mut |buf| {
-                if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                    let udf = python_udf::PythonUdfExpression::try_deserialize(&buf)
+                if buf.starts_with(crate::dsl::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
+                    let udf = crate::dsl::python_dsl::PythonUdfExpression::try_deserialize(&buf)
                         .map_err(|e| D::Error::custom(format!("{e}")))?;
                     Ok(SpecialEq::new(udf))
                 } else {
@@ -192,7 +192,7 @@ impl<'a> Deserialize<'a> for SpecialEq<Series> {
 }
 
 #[cfg(feature = "serde")]
-impl Serialize for SpecialEq<Arc<DslPlan>> {
+impl<T: Serialize> Serialize for SpecialEq<Arc<T>> {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -202,12 +202,12 @@ impl Serialize for SpecialEq<Arc<DslPlan>> {
 }
 
 #[cfg(feature = "serde")]
-impl<'a> Deserialize<'a> for SpecialEq<Arc<DslPlan>> {
+impl<'a, T: Deserialize<'a>> Deserialize<'a> for SpecialEq<Arc<T>> {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'a>,
     {
-        let t = DslPlan::deserialize(deserializer)?;
+        let t = T::deserialize(deserializer)?;
         Ok(SpecialEq(Arc::new(t)))
     }
 }
@@ -223,6 +223,8 @@ impl<T: ?Sized> PartialEq for SpecialEq<Arc<T>> {
         Arc::ptr_eq(&self.0, &other.0)
     }
 }
+
+impl<T> Eq for SpecialEq<Arc<T>> {}
 
 impl PartialEq for SpecialEq<Series> {
     fn eq(&self, other: &Self) -> bool {
@@ -406,8 +408,8 @@ impl<'a> Deserialize<'a> for GetOutput {
         #[cfg(feature = "python")]
         {
             deserialize_map_bytes(deserializer, &mut |buf| {
-                if buf.starts_with(python_udf::PYTHON_SERDE_MAGIC_BYTE_MARK) {
-                    let get_output = python_udf::PythonGetOutput::try_deserialize(&buf)
+                if buf.starts_with(self::python_dsl::PYTHON_SERDE_MAGIC_BYTE_MARK) {
+                    let get_output = self::python_dsl::PythonGetOutput::try_deserialize(&buf)
                         .map_err(|e| D::Error::custom(format!("{e}")))?;
                     Ok(SpecialEq::new(get_output))
                 } else {

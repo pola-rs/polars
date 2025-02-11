@@ -366,7 +366,7 @@ def _expand_dict_values(
                 if isinstance(val, dict) and dtype != Struct:
                     vdf = pl.DataFrame(val, strict=strict)
                     if (
-                        len(vdf) == 1
+                        vdf.height == 1
                         and array_len > 1
                         and all(not d.is_nested() for d in vdf.schema.values())
                     ):
@@ -952,6 +952,7 @@ def iterable_to_pydf(
     orient: Orientation | None = None,
     chunk_size: int | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    rechunk: bool = True,
 ) -> PyDataFrame:
     """Construct a PyDataFrame from an iterable/generator."""
     original_schema = schema
@@ -1019,7 +1020,7 @@ def iterable_to_pydf(
             if not original_schema:
                 original_schema = list(df.schema.items())
             if chunk_size != adaptive_chunk_size:
-                if (n_columns := len(df.columns)) > 0:
+                if (n_columns := df.width) > 0:
                     chunk_size = adaptive_chunk_size = n_chunk_elems // n_columns
         else:
             df.vstack(frame_chunk, in_place=True)
@@ -1028,7 +1029,7 @@ def iterable_to_pydf(
     if df is None:
         df = to_frame_chunk([], original_schema)
 
-    if n_chunks > 0:
+    if n_chunks > 0 and rechunk:
         df = df.rechunk()
 
     return df._df
@@ -1102,9 +1103,9 @@ def pandas_to_pydf(
                 length=length,
             )
 
-    for col in data.columns:
-        arrow_dict[str(col)] = plc.pandas_series_to_arrow(
-            data[col], nan_to_null=nan_to_null, length=length
+    for col_idx, col_data in data.items():
+        arrow_dict[str(col_idx)] = plc.pandas_series_to_arrow(
+            col_data, nan_to_null=nan_to_null, length=length
         )
 
     arrow_table = pa.table(arrow_dict)
