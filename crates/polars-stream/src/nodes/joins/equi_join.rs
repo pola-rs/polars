@@ -5,7 +5,7 @@ use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_core::POOL;
+use polars_core::{config, POOL};
 use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
 use polars_expr::hash_keys::HashKeys;
 use polars_io::pl_async::get_runtime;
@@ -29,8 +29,12 @@ use crate::nodes::in_memory_source::InMemorySourceNode;
 static SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
         .map(|limit| limit.parse().unwrap())
-        .unwrap_or(1_000_000)
+        .unwrap_or(10_000_000)
 });
+
+// If one side is this much bigger than the other side we'll always use the
+// smaller side as the build side without checking cardinalities.
+const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
@@ -159,16 +163,24 @@ impl SampleState {
         mut recv: Receiver<Morsel>,
         morsels: &mut Vec<Morsel>,
         len: &mut usize,
+        this_final_len: Arc<AtomicUsize>,
+        other_final_len: Arc<AtomicUsize>,
     ) -> PolarsResult<()> {
         while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
-            if *len >= *SAMPLE_LIMIT {
+            if *len >= *SAMPLE_LIMIT
+                || *len
+                    >= other_final_len
+                        .load(Ordering::Relaxed)
+                        .saturating_mul(LOPSIDED_SAMPLE_FACTOR)
+            {
                 morsel.source_token().stop();
             }
 
             drop(morsel.take_consume_token());
             morsels.push(morsel);
         }
+        this_final_len.store(*len, Ordering::Relaxed);
         Ok(())
     }
 }
@@ -628,6 +640,7 @@ impl Drop for ProbeState {
         POOL.install(|| {
             // Parallel drop as the state might be quite big.
             self.table_per_partition.par_drain(..).for_each(drop);
+            self.sampled_probe_morsels.par_drain(..).for_each(drop);
         })
     }
 }
@@ -772,7 +785,13 @@ impl EquiJoinNode {
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         let left_is_build = match args.maintain_order {
-            MaintainOrderJoin::None => None,
+            MaintainOrderJoin::None => {
+                if *SAMPLE_LIMIT == 0 {
+                    Some(true)
+                } else {
+                    None
+                }
+            },
             MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => Some(false),
             MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => Some(true),
         };
@@ -838,6 +857,7 @@ impl EquiJoinNode {
 }
 
 // Not ideal - doesn't support stop requests before all cached items are flushed.
+#[expect(clippy::needless_lifetimes)]
 fn insert_cached_into_parallel_stream<'s, 'env>(
     cached: &'s [Morsel],
     cached_idx: &'s AtomicUsize,
@@ -907,10 +927,70 @@ impl ComputeNode for EquiJoinNode {
             let right_saturated = sample_state.right_len >= *SAMPLE_LIMIT;
             let left_done = recv[0] == PortState::Done || left_saturated;
             let right_done = recv[1] == PortState::Done || right_saturated;
-            if left_done && right_done {
+            #[expect(clippy::nonminimal_bool)]
+            let stop_sampling = (left_done && right_done)
+                || (left_done
+                    && sample_state.right_len >= LOPSIDED_SAMPLE_FACTOR * sample_state.left_len)
+                || (right_done
+                    && sample_state.left_len >= LOPSIDED_SAMPLE_FACTOR * sample_state.right_len);
+            if stop_sampling {
+                if config::verbose() {
+                    eprintln!(
+                        "choosing equi-join build side, sample lengths are: {} vs. {}",
+                        sample_state.left_len, sample_state.right_len
+                    );
+                }
+
+                let estimate_cardinalities = || {
+                    let execution_state = ExecutionState::new();
+                    let left_cardinality = estimate_cardinality(
+                        &sample_state.left,
+                        &self.params.left_key_selectors,
+                        &self.params,
+                        &execution_state,
+                    )?;
+                    let right_cardinality = estimate_cardinality(
+                        &sample_state.right,
+                        &self.params.right_key_selectors,
+                        &self.params,
+                        &execution_state,
+                    )?;
+                    let norm_left_factor = sample_state.left_len.min(*SAMPLE_LIMIT) as f64
+                        / sample_state.left_len as f64;
+                    let norm_right_factor = sample_state.right_len.min(*SAMPLE_LIMIT) as f64
+                        / sample_state.right_len as f64;
+                    let norm_left_cardinality =
+                        (left_cardinality as f64 * norm_left_factor) as usize;
+                    let norm_right_cardinality =
+                        (right_cardinality as f64 * norm_right_factor) as usize;
+                    if config::verbose() {
+                        eprintln!("estimated cardinalities are: {norm_left_cardinality} vs. {norm_right_cardinality}");
+                    }
+                    PolarsResult::Ok((norm_left_cardinality, norm_right_cardinality))
+                };
+
                 let left_is_build = match (left_saturated, right_saturated) {
-                    // Don't bother estimating cardinality, just choose smaller.
-                    (false, false) => sample_state.left_len < sample_state.right_len,
+                    (false, false) => {
+                        if sample_state.left_len * LOPSIDED_SAMPLE_FACTOR < sample_state.right_len
+                            || sample_state.left_len
+                                > sample_state.right_len * LOPSIDED_SAMPLE_FACTOR
+                        {
+                            // Don't bother estimating cardinality, just choose smaller as it's highly
+                            // imbalanced.
+                            sample_state.left_len < sample_state.right_len
+                        } else {
+                            let (lc, rc) = estimate_cardinalities()?;
+                            // Let's assume for now that per element building a
+                            // table is 3x more expensive than a probe, with
+                            // unique keys getting an additional 3x factor for
+                            // having to update the hash table in addition to the probe.
+                            let left_build_cost = sample_state.left_len * 3 + 3 * lc;
+                            let left_probe_cost = sample_state.left_len;
+                            let right_build_cost = sample_state.right_len * 3 + 3 * rc;
+                            let right_probe_cost = sample_state.right_len;
+                            left_build_cost + right_probe_cost < left_probe_cost + right_build_cost
+                        }
+                    },
 
                     // Choose the unsaturated side, the saturated side could be
                     // arbitrarily big.
@@ -919,22 +999,16 @@ impl ComputeNode for EquiJoinNode {
 
                     // Estimate cardinality and choose smaller.
                     (true, true) => {
-                        let execution_state = ExecutionState::new();
-                        let left_cardinality = estimate_cardinality(
-                            &sample_state.left,
-                            &self.params.left_key_selectors,
-                            &self.params,
-                            &execution_state,
-                        )?;
-                        let right_cardinality = estimate_cardinality(
-                            &sample_state.right,
-                            &self.params.right_key_selectors,
-                            &self.params,
-                            &execution_state,
-                        )?;
-                        left_cardinality < right_cardinality
+                        let (lc, rc) = estimate_cardinalities()?;
+                        lc < rc
                     },
                 };
+                if config::verbose() {
+                    eprintln!(
+                        "build side chosen: {}",
+                        if left_is_build { "left" } else { "right" }
+                    );
+                }
 
                 // Transition to building state.
                 self.params.left_is_build = Some(left_is_build);
@@ -994,6 +1068,11 @@ impl ComputeNode for EquiJoinNode {
                         })
                     })?;
                 }
+
+                POOL.install(|| {
+                    // Parallel drop as the state might be quite big.
+                    sampled_build_morsels.into_par_iter().for_each(drop);
+                });
 
                 self.state = EquiJoinState::Build(build_state);
             }
@@ -1140,6 +1219,17 @@ impl ComputeNode for EquiJoinNode {
         match &mut self.state {
             EquiJoinState::Sample(sample_state) => {
                 assert!(send_ports[0].is_none());
+                let left_final_len = Arc::new(AtomicUsize::new(if recv_ports[0].is_none() {
+                    sample_state.left_len
+                } else {
+                    usize::MAX
+                }));
+                let right_final_len = Arc::new(AtomicUsize::new(if recv_ports[1].is_none() {
+                    sample_state.right_len
+                } else {
+                    usize::MAX
+                }));
+
                 if let Some(left_recv) = recv_ports[0].take() {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
@@ -1147,6 +1237,8 @@ impl ComputeNode for EquiJoinNode {
                             left_recv.serial(),
                             &mut sample_state.left,
                             &mut sample_state.left_len,
+                            left_final_len.clone(),
+                            right_final_len.clone(),
                         ),
                     ));
                 }
@@ -1157,6 +1249,8 @@ impl ComputeNode for EquiJoinNode {
                             right_recv.serial(),
                             &mut sample_state.right,
                             &mut sample_state.right_len,
+                            right_final_len,
+                            left_final_len,
                         ),
                     ));
                 }
