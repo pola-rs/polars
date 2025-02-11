@@ -1,4 +1,4 @@
-# AWS
+# Infrastructure
 
 Polars Cloud manages the hardware for you by spinning up and down raw EC2 instances. In order to do this it needs permissions in your own cloud environment. None of the resources below have costs associated with them. While no compute clusters are running Polars Cloud will not create any AWS costs. The recommended way of doing this is running `plc workspace setup`.
 
@@ -7,7 +7,7 @@ Polars Cloud manages the hardware for you by spinning up and down raw EC2 instan
 When you deploy Polars Cloud the following infrastructure is setup. 
 
 <figure markdown="span">
-![AWS infrastructure](../assets/aws-infra.png)
+![AWS infrastructure](../../assets/aws-infra.png)
 </figure>
 
 1. A `VPC` and `subnet` in which Polars EC2 workers can run.
@@ -15,6 +15,10 @@ When you deploy Polars Cloud the following infrastructure is setup.
 1. `PolarsWorker` IAM role. Polars EC2 workers run under this IAM role. 
 1. `UserInitiated` & `Unattended` IAM role. The `UserInitiated` role has the permissions to start Polars EC2 workers in your environment. The `Unattended` role can terminate unused compute clusters that you might have forgot about.
 
+
+## Security
+
+By design Polars Cloud never has access to the data inside your cloud environment. The data never leaves your environment.
 
 ### IAM permissions
 
