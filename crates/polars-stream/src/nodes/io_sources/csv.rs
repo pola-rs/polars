@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use futures::stream::FuturesUnordered;
-use futures::StreamExt;
 use polars_core::config;
 use polars_core::prelude::{AnyValue, DataType, Field};
 use polars_core::scalar::Scalar;
@@ -30,11 +28,13 @@ use super::multi_scan::{MultiScanable, RowRestrication};
 use super::{SourceNode, SourceOutput};
 use crate::async_executor::{self, spawn};
 use crate::async_primitives::connector::{connector, Receiver};
-use crate::async_primitives::wait_group::{IndexedWaitGroup, WaitToken};
+use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::MorselOutput;
 use crate::nodes::{MorselSeq, TaskPriority};
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 struct LineBatch {
     bytes: MemSlice,
@@ -42,12 +42,11 @@ struct LineBatch {
     slice: (usize, usize),
     row_offset: usize,
     morsel_seq: MorselSeq,
-    wait_token: WaitToken,
     path_name: Option<PlSmallStr>,
 }
 
 type AsyncTaskData = (
-    Vec<crate::async_primitives::connector::Receiver<LineBatch>>,
+    Vec<crate::async_primitives::distributor_channel::Receiver<LineBatch>>,
     Arc<ChunkReader>,
     async_executor::AbortOnDropHandle<PolarsResult<()>>,
 );
@@ -112,6 +111,7 @@ impl SourceNode for CsvSourceNode {
             |(mut line_batch_rx, mut recv_from)| {
                 let chunk_reader = chunk_reader.clone();
                 let source_token = source_token.clone();
+                let wait_group = WaitGroup::default();
 
                 spawn(TaskPriority::Low, async move {
                     while let Ok(mut morsel_output) = recv_from.recv().await {
@@ -121,7 +121,6 @@ impl SourceNode for CsvSourceNode {
                             slice: (offset, len),
                             row_offset,
                             morsel_seq,
-                            wait_token,
                             mut path_name,
                         }) = line_batch_rx.recv().await
                         {
@@ -148,11 +147,12 @@ impl SourceNode for CsvSourceNode {
                             }
 
                             let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
-                            morsel.set_consume_token(wait_token);
+                            morsel.set_consume_token(wait_group.token());
 
                             if morsel_output.port.send(morsel).await.is_err() {
                                 break;
                             }
+                            wait_group.wait().await;
 
                             if source_token.stop_requested() {
                                 morsel_output.outcome.stop();
@@ -205,8 +205,8 @@ impl CsvSourceNode {
     fn init_line_batch_source(&mut self, num_pipelines: usize) -> AsyncTaskData {
         let verbose = self.verbose;
 
-        let (mut line_batch_senders, line_batch_receivers): (Vec<_>, Vec<_>) =
-            (0..num_pipelines).map(|_| connector()).unzip();
+        let (mut line_batch_sender, line_batch_receivers) =
+            distributor_channel(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
 
         let scan_sources = self.scan_sources.clone();
         let run_async = scan_sources.is_cloud_url() || config::force_async();
@@ -265,29 +265,19 @@ impl CsvSourceNode {
                     return Err(err);
                 }
 
-                let mut wait_groups = (0..num_pipelines)
-                    .map(|index| IndexedWaitGroup::new(index).wait())
-                    .collect::<FuturesUnordered<_>>();
-                let morsel_seq_ref = &mut MorselSeq::default();
-                let current_row_offset_ref = &mut 0usize;
-
-                let n_parts_hint = num_pipelines * 16;
-
                 let line_counter = CountLines::new(quote_char, eol_char);
 
-                let comment_prefix = comment_prefix.as_ref();
+                let morsel_seq_ref = &mut MorselSeq::default();
+                let current_row_offset_ref = &mut 0usize;
+                let memslice_sources = scan_sources.iter().map(|x| {
+                    let bytes = x.to_memslice_async_assume_latest(run_async)?;
+                    PolarsResult::Ok((
+                        bytes,
+                        include_file_paths.then(|| x.to_include_path_name().into()),
+                    ))
+                });
 
-                'main: for (i, v) in scan_sources
-                    .iter()
-                    .map(|x| {
-                        let bytes = x.to_memslice_async_assume_latest(run_async)?;
-                        PolarsResult::Ok((
-                            bytes,
-                            include_file_paths.then(|| x.to_include_path_name().into()),
-                        ))
-                    })
-                    .enumerate()
-                {
+                'main: for (i, v) in memslice_sources.enumerate() {
                     if verbose {
                         eprintln!(
                             "[CsvSource]: Start line splitting for file {} / {}",
@@ -317,7 +307,7 @@ impl CsvSourceNode {
                         skip_lines,
                         skip_rows_before_header,
                         skip_rows_after_header,
-                        comment_prefix,
+                        comment_prefix.as_ref(),
                         has_header,
                     )?;
 
@@ -328,7 +318,7 @@ impl CsvSourceNode {
                         let chunk_size = if global_slice.is_some() {
                             max_chunk_size
                         } else {
-                            std::cmp::min(bytes.len() / n_parts_hint, max_chunk_size)
+                            std::cmp::min(bytes.len() / (16 * num_pipelines), max_chunk_size)
                         };
 
                         // Use a small min chunk size to catch failures in tests.
@@ -376,49 +366,24 @@ impl CsvSourceNode {
                             (0, 0)
                         };
 
-                        let mut mem_slice_this_chunk =
+                        let mem_slice_this_chunk =
                             mem_slice.slice(slice_start..slice_start + position);
 
                         let morsel_seq = *morsel_seq_ref;
                         *morsel_seq_ref = morsel_seq.successor();
 
-                        let Some(mut indexed_wait_group) = wait_groups.next().await else {
-                            break;
+                        let path_name = path_name.clone();
+
+                        let batch = LineBatch {
+                            bytes: mem_slice_this_chunk,
+                            n_lines: count,
+                            slice,
+                            row_offset: current_row_offset,
+                            morsel_seq,
+                            path_name,
                         };
-
-                        let mut path_name = path_name.clone();
-
-                        loop {
-                            use crate::async_primitives::connector::SendError;
-
-                            let channel_index = indexed_wait_group.index();
-                            let wait_token = indexed_wait_group.token();
-
-                            match line_batch_senders[channel_index].try_send(LineBatch {
-                                bytes: mem_slice_this_chunk,
-                                n_lines: count,
-                                slice,
-                                row_offset: current_row_offset,
-                                morsel_seq,
-                                wait_token,
-                                path_name,
-                            }) {
-                                Ok(_) => {
-                                    wait_groups.push(indexed_wait_group.wait());
-                                    break;
-                                },
-                                Err(SendError::Closed(v)) => {
-                                    mem_slice_this_chunk = v.bytes;
-                                    path_name = v.path_name;
-                                },
-                                Err(SendError::Full(_)) => unreachable!(),
-                            }
-
-                            let Some(v) = wait_groups.next().await else {
-                                break 'main; // All channels closed
-                            };
-
-                            indexed_wait_group = v;
+                        if line_batch_sender.send(batch).await.is_err() {
+                            break;
                         }
                     }
                 }
