@@ -26,7 +26,9 @@ However, web search is not a universal solution. If a model is confident in a re
 pre-training data, it may not incorporate web search results in its output.
 
 ## Reference documentation
-Some IDE-based LLMs can index the Polars API documentation and reference this when generating code. For example, in Cursor you can add Polars as a custom docs source.
+
+Some IDE-based LLMs can index the Polars API documentation and reference this when generating code.
+For example, in Cursor you can add Polars as a custom docs source.
 
 ## Provide examples
 
