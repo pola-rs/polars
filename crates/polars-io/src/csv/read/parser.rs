@@ -681,7 +681,8 @@ impl CountLines {
                     states[0].newline_count += start_outside_string_eol_mask.count_ones() as usize;
                     states[0].last_newline_offset = select_unpredictable(
                         start_outside_string_eol_mask != 0,
-                        (scan_offset + 63).wrapping_sub(start_outside_string_eol_mask.leading_zeros() as usize),
+                        (scan_offset + 63)
+                            .wrapping_sub(start_outside_string_eol_mask.leading_zeros() as usize),
                         states[0].last_newline_offset,
                     );
 
@@ -689,7 +690,8 @@ impl CountLines {
                     states[1].newline_count += start_inside_string_eol_mask.count_ones() as usize;
                     states[1].last_newline_offset = select_unpredictable(
                         start_inside_string_eol_mask != 0,
-                        (scan_offset + 63).wrapping_sub(start_inside_string_eol_mask.leading_zeros() as usize),
+                        (scan_offset + 63)
+                            .wrapping_sub(start_inside_string_eol_mask.leading_zeros() as usize),
                         states[1].last_newline_offset,
                     );
                 } else {
@@ -713,7 +715,8 @@ impl CountLines {
 
             let state = &mut states[global_quote_parity as usize];
             state.newline_count += (c == self.eol_char) as usize;
-            state.last_newline_offset = select_unpredictable(c == self.eol_char, scan_offset, state.last_newline_offset);
+            state.last_newline_offset =
+                select_unpredictable(c == self.eol_char, scan_offset, state.last_newline_offset);
 
             scan_offset += 1;
         }
