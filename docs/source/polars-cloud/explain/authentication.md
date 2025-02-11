@@ -30,4 +30,4 @@ Both methods redirect you to the browser where you can provide your login creden
 Both flows described above are for interactive logins where a person is present in the process. For non-interactive workflows such as orchestration tools there are service accounts.
 These allow you to login programmatically.
 
-To create a service account go to the Polars Cloud dashboard under Settings and service accounts. Here you can create a new service account for your workspace. To authenticate set the `POLARS_CLOUD_CLIENT_ID` and `POLARS_CLOUD_CLIENT_SECRET` environment variables.
+To create a service account go to the Polars Cloud dashboard under Settings and service accounts. Here you can create a new service account for your workspace. To authenticate set the `POLARS_CLOUD_CLIENT_ID` and `POLARS_CLOUD_CLIENT_SECRET` environment variables. Polars Cloud will automatically pick these up if there are no access tokens present in the path.
