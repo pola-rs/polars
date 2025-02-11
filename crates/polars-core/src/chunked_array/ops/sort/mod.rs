@@ -19,7 +19,6 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
-use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
@@ -642,20 +641,6 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         }
 
         arg_sort_multiple_impl(vals, by, options)
-    }
-}
-
-#[cfg(feature = "dtype-struct")]
-impl StructChunked {
-    pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        let bin = _get_rows_encoded_ca(
-            self.name().clone(),
-            &[self.clone().into_column()],
-            &[options.descending],
-            &[options.nulls_last],
-        )
-        .unwrap();
-        bin.arg_sort(Default::default())
     }
 }
 
