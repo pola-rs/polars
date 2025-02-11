@@ -23,7 +23,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
   PYTHONUTF8: 1
 
@@ -82,7 +81,7 @@ jobs:
           save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars
-        run: maturin develop
+        run: maturin develop --profile ci-test-python
 
       - name: Run doctests
         if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
