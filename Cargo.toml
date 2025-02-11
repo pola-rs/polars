@@ -141,6 +141,7 @@ inherits = "dev"
 debug = false
 # This speed up builds, and caching didn't seem to work in CI anyway.
 incremental = false
+panic = "abort"
 
 [profile.mindebug-dev]
 inherits = "dev"
