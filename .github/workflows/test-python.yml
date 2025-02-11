@@ -78,7 +78,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: py-polars
-          save-if: ${{ github.ref_name == 'main' }}
+          #save-if: ${{ github.ref_name == 'main' }}
 
       - name: Install Polars
         run: maturin develop --profile ci-test-python
