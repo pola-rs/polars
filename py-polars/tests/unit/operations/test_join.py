@@ -1700,3 +1700,16 @@ def test_join_on_struct() -> None:
             c=pl.Series([4, 2, 4, 2, 4, 2]),
         ),
     )
+
+
+def test_empty_join_result_with_array_15474() -> None:
+    lhs = pl.DataFrame(
+        {
+            "x": [1, 2],
+            "y": pl.Series([[1, 2, 3], [4, 5, 6]], dtype=pl.Array(pl.Int64, 3)),
+        }
+    )
+    rhs = pl.DataFrame({"x": [0]})
+    result = lhs.join(rhs, on="x")
+    expected = pl.DataFrame(schema={"x": pl.Int64, "y": pl.Array(pl.Int64, 3)})
+    assert_frame_equal(result, expected)
