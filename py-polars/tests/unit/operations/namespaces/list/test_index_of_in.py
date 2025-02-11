@@ -16,13 +16,13 @@ from tests.unit.conftest import FLOAT_DTYPES, INTEGER_DTYPES
 from tests.unit.operations.test_index_of import get_expected_index
 
 if TYPE_CHECKING:
-    from polars._typing import IntoExpr, PythonLiteral
+    from polars._typing import PythonLiteral
 
 IdxType = pl.get_index_type()
 
 
 def assert_index_of_in_from_scalar(
-    list_series: pl.Series, value: PythonLiteral
+    list_series: pl.Series, value: PythonLiteral | None
 ) -> None:
     expected_indexes = [
         None if sub_series is None else get_expected_index(sub_series, value)
@@ -80,36 +80,34 @@ def test_index_of_in_from_series() -> None:
     assert_index_of_in_from_series(list_series, values)
 
 
-def to_int(expr: pl.Expr) -> int:
-    return pl.select(expr).item()
-
-
 @pytest.mark.parametrize("lists_dtype", INTEGER_DTYPES)
 @pytest.mark.parametrize("values_dtype", INTEGER_DTYPES)
-def test_integer(lists_dtype: pl.DataType, values_dtype: pl.DataType) -> None:
+def test_integer(lists_dtype: pl.NumericType, values_dtype: pl.NumericType) -> None:
+    def to_int(expr: pl.Expr) -> int:
+        return pl.select(expr).item()  # type: ignore[no-any-return]
+
     lists = [
         [51, 3],
         [None, 4],
         None,
-        [to_int(lists_dtype.max()), 3],  # type: ignore[attr-defined]
-        [6, to_int(lists_dtype.min())],  # type: ignore[attr-defined]
+        [to_int(lists_dtype.max()), 3],
+        [6, to_int(lists_dtype.min())],
     ]
     lists_series = pl.Series(lists, dtype=pl.List(lists_dtype))
     chunked_series = pl.concat(
         [pl.Series([[100, 7]], dtype=pl.List(lists_dtype)), lists_series], rechunk=False
     )
-    values = [
+    values: list[None | PythonLiteral] = [
         to_int(v) for v in [lists_dtype.max() - 1, lists_dtype.min() + 1]
-    ]  # type: ignore[attr-defined]
+    ]
     for sublist in lists:
         if sublist is None:
             values.append(None)
         else:
-            values.extend(sublist)
+            values.extend(sublist)  # type: ignore[arg-type]
 
     # Scalars:
     for s in [lists_series, chunked_series]:
-        value: IntoExpr
         for value in values:
             assert_index_of_in_from_scalar(s, value)
 
@@ -151,7 +149,7 @@ def test_mismatched_length() -> None:
         series.list.index_of_in(pl.Series(needles))
 
 
-def all_values(list_series: pl.Series) -> list:
+def all_values(list_series: pl.Series) -> list[object]:
     values = []
     for subseries in list_series.to_list():
         if subseries is not None:
@@ -177,7 +175,7 @@ def test_float(float_dtype: pl.DataType) -> None:
         np.float64(1.5),
         np.float32(3.0),
     ]:
-        assert_index_of_in_from_scalar(lists_series, value)
+        assert_index_of_in_from_scalar(lists_series, value)  # type: ignore[arg-type]
 
     # Series
     assert_index_of_in_from_series(
@@ -283,13 +281,13 @@ def test_other_types(list_series: pl.Series, extra_values: list[PythonLiteral]) 
             None if sublist is None else sublist[i % len(sublist)]
             for (i, sublist) in enumerate(list_series)
         ],
-        dtype=list_series.dtype.inner,
+        dtype=list_series.dtype.inner,  # type: ignore[attr-defined]
     )
     assert_index_of_in_from_series(list_series, needles_series)
 
     values = all_values(list_series) + extra_values + [None]
     for value in values:
-        assert_index_of_in_from_scalar(list_series, value)
+        assert_index_of_in_from_scalar(list_series, value)  # type: ignore [arg-type]
 
 
 @pytest.mark.xfail(reason="Depends on Series.index_of supporting Categoricals")
