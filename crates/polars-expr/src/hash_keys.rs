@@ -116,7 +116,7 @@ impl HashKeys {
             }
         }
     }
-    
+
     /// Generates indices for a chunked gather such that the ith key gathers
     /// the next gathers_per_key[i] elements from the partition[i]th chunk.
     pub fn gen_partitioned_gather_idxs(
@@ -239,7 +239,6 @@ impl RowEncodedKeys {
         }
     }
 
-
     pub fn sketch_cardinality(&self, sketch: &mut CardinalitySketch) {
         if let Some(validity) = self.keys.validity() {
             for (h, is_v) in self.hashes.values_iter().zip(validity) {
@@ -306,7 +305,7 @@ impl SingleKeys {
             keys: self.keys.take_slice_unchecked(idxs),
         }
     }
-    
+
     pub fn sketch_cardinality(&self, _sketch: &mut CardinalitySketch) {
         todo!()
     }
