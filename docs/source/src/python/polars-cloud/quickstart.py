@@ -1,3 +1,4 @@
+# ruff: noqa
 # --8<-- [start:general]
 import polars_cloud as pc
 import polars as pl
