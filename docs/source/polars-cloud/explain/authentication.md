@@ -6,7 +6,7 @@ can obtain an access token:
 - command line interface
 - python client
 
-After a successfull `login` Polars Cloud stores the token in `{$HOME}/.polars`. You can alter this
+After a successful `login` Polars Cloud stores the token in `{$HOME}/.polars`. You can alter this
 path by setting the environment variable `POLARS_CLOUD_ACCESS_TOKEN_PATH`.
 
 ### Command Line Interface (CLI)
