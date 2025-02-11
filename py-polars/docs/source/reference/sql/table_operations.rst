@@ -39,7 +39,7 @@ Create a new table and its columns from a SQL query executed against an existing
 .. _delete_from_table:
 
 DELETE
---------
+------
 Remove specific rows from a table using an (optional) constraint.
 Omitting the constraint deletes all rows, equivalent to TRUNCATE.
 
