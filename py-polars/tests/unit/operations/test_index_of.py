@@ -41,7 +41,9 @@ def get_expected_index(series: pl.Series, value: IntoExpr) -> int | None:
                 break
     else:
         try:
-            expected_index = to_python(series).index(to_python(value))
+            expected_index = to_python(series).index(  # type: ignore[attr-defined]
+                to_python(value)
+            )
         except ValueError:
             expected_index = None
     if expected_index == -1:

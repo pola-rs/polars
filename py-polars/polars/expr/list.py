@@ -1070,10 +1070,12 @@ class ExprListNameSpace:
 
         Examples
         --------
-        >>> df = pl.DataFrame({
-        ...     "lists": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
-        ...             "needles": [3, 0, 3, 7],
-        ... })
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lists": [[1, 2, 3], [], [None, 3], [5, 6, 7]],
+        ...         "needles": [3, 0, 3, 7],
+        ...     }
+        ... )
         >>> df.select(pl.col("lists").list.index_of_in(pl.col("needles")))
         shape: (4, 1)
         ┌───────┐
