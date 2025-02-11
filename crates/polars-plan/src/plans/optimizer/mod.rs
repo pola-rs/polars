@@ -71,6 +71,7 @@ pub fn optimize(
     #[allow(dead_code)]
     let verbose = verbose();
 
+    #[cfg(feature = "python")]
     if opt_flags.streaming() {
         polars_warn!(
             Deprecation,
