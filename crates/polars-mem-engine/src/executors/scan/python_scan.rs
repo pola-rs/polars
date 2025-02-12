@@ -85,21 +85,22 @@ impl Executor for PythonScanExec {
                 },
             };
 
-            let generator_init = if matches!(
-                self.options.python_source,
-                PythonScanSource::Pyarrow | PythonScanSource::Cuda
-            ) {
+            let generator_init = if matches!(self.options.python_source, PythonScanSource::Cuda) {
                 let py_node_timer = PyNodeTimer::new(state.node_timer.clone());
                 let args = (
                     python_scan_function,
                     with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                     predicate,
                     n_rows,
-                    if matches!(self.options.python_source, PythonScanSource::Cuda) {
-                        Some(Py::new(py, py_node_timer).unwrap())
-                    } else {
-                        None
-                    },
+                    Py::new(py, py_node_timer).unwrap(),
+                );
+                callable.call1(args).map_err(to_compute_err)
+            } else if matches!(self.options.python_source, PythonScanSource::Pyarrow) {
+                let args = (
+                    python_scan_function,
+                    with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
+                    predicate,
+                    n_rows,
                 );
                 callable.call1(args).map_err(to_compute_err)
             } else {

@@ -63,3 +63,9 @@ impl NodeTimer {
         df.sort(vec!["start"], SortMultipleOptions::default())
     }
 }
+
+impl Default for NodeTimer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
