@@ -218,3 +218,94 @@ def test_multiscan_row_index(
             ]
         ),
     )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+        pytest.param(
+            pl.scan_csv,
+            pl.DataFrame.write_csv,
+            "csv",
+            marks=pytest.mark.xfail(
+                reason="See https://github.com/pola-rs/polars/issues/21211"
+            ),
+        ),
+        pytest.param(
+            pl.scan_ndjson,
+            pl.DataFrame.write_ndjson,
+            "ndjson",
+            marks=pytest.mark.xfail(reason="NYI"),
+        ),
+    ],
+)
+def test_schema_mismatch_type_mismatch(
+    tmp_path: Path,
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, Path], Any],
+    ext: str,
+) -> None:
+    a = pl.DataFrame({"xyz_col": [5, 10, 1996]})
+    b = pl.DataFrame({"xyz_col": ["a", "b", "c"]})
+
+    a_path = tmp_path / f"a.{ext}"
+    b_path = tmp_path / f"b.{ext}"
+
+    multiscan_path = tmp_path / f"*.{ext}"
+
+    write(a, a_path)
+    write(b, b_path)
+
+    q = scan(multiscan_path)
+
+    with pytest.raises(
+        pl.exceptions.SchemaError,
+        match="data type mismatch for column xyz_col: expected: i64, found: str",
+    ):
+        q.collect(new_streaming=True)  # type: ignore[call-overload]
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+        pytest.param(
+            pl.scan_csv,
+            pl.DataFrame.write_csv,
+            "csv",
+            marks=pytest.mark.xfail(
+                reason="See https://github.com/pola-rs/polars/issues/21211"
+            ),
+        ),
+        pytest.param(
+            pl.scan_ndjson,
+            pl.DataFrame.write_ndjson,
+            "ndjson",
+            marks=pytest.mark.xfail(reason="NYI"),
+        ),
+    ],
+)
+def test_schema_mismatch_order_mismatch(
+    tmp_path: Path,
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, Path], Any],
+    ext: str,
+) -> None:
+    a = pl.DataFrame({"x": [5, 10, 1996], "y": ["a", "b", "c"]})
+    b = pl.DataFrame({"y": ["x", "y"], "x": [1, 2]})
+
+    a_path = tmp_path / f"a.{ext}"
+    b_path = tmp_path / f"b.{ext}"
+
+    multiscan_path = tmp_path / f"*.{ext}"
+
+    write(a, a_path)
+    write(b, b_path)
+
+    q = scan(multiscan_path)
+
+    with pytest.raises(pl.exceptions.SchemaError):
+        q.collect(new_streaming=True)  # type: ignore[call-overload]

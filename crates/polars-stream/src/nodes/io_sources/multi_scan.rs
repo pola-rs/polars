@@ -5,6 +5,9 @@ use std::ops::Range;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, IntoColumn};
@@ -24,7 +27,7 @@ use polars_utils::priority::Priority;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
 use super::{SourceNode, SourceOutput};
-use crate::async_executor::spawn;
+use crate::async_executor::{spawn, AbortOnDropHandle};
 use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::linearizer::{self, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
@@ -260,7 +263,7 @@ fn resolve_source_projection(
     let mut source_projection = MutableBitmap::from_len_zeroed(source_schema.len());
 
     let mut j = 0;
-    for (i, source_col_name) in source_schema.iter_names().enumerate() {
+    for (i, (source_col_name, source_dtype)) in source_schema.iter().enumerate() {
         while let Some((file_col_name, _)) = file_schema.get_at_index(j) {
             if source_col_name == file_col_name {
                 break;
@@ -268,11 +271,20 @@ fn resolve_source_projection(
             j += 1;
         }
 
-        if j >= file_schema.len() {
+        let Some((_, file_dtype)) = file_schema.get_at_index(j) else {
             let source_name = source_name(source, source_idx);
             polars_bail!(
                 SchemaMismatch:
                 "the column order of '{source_name}' does not match the column order of the first scanned file"
+            );
+        };
+
+        if file_dtype != source_dtype {
+            polars_bail!(
+                mismatch,
+                col = source_col_name,
+                expected = file_dtype,
+                found = source_dtype
             );
         }
 
@@ -403,9 +415,12 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             spawn(TaskPriority::High, async move {
                 let state = ExecutionState::new();
                 let mut join_handles = Vec::new();
+                let verbose = config::verbose();
+
                 while i < sources.len() {
                     join_handles.clear();
 
+                    let source_name = source_name(sources.at(i), i);
                     let source = sources.at(i).into_owned()?;
                     let (mut output_send, output_recv) = connector();
                     let mut source = T::new(
@@ -496,7 +511,17 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         // Wait for the phase to end.
                         wait_group.wait().await;
                         if outcome.did_finish() {
-                            break;
+                            if verbose {
+                                eprintln!("[MultiScan]: Last data received from '{source_name}'.",);
+                            }
+
+                            // One of the tasks might throw an error. In which case, we need to cancel all
+                            // handles and find the error.
+                            let mut join_handles: FuturesUnordered<_> =
+                                join_handles.drain(..).map(AbortOnDropHandle::new).collect();
+                            while let Some(ret) = join_handles.next().await {
+                                ret?;
+                            }
                         }
                     }
 
