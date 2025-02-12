@@ -154,7 +154,7 @@ pub fn dyn_struct_array_push_field(
             let src = scalar.as_any().downcast_ref::<StructScalar>().unwrap();
             let value = if src.is_valid() {
                 // NOTE: We have to clone here as we require ownership of the values
-                Some(src.values().iter().cloned().collect::<Vec<_>>())
+                Some(src.values().to_vec())
             } else {
                 None
             };
