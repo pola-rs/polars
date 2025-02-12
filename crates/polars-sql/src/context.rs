@@ -9,10 +9,10 @@ use polars_plan::dsl::function_expr::StructFunction;
 use polars_plan::prelude::*;
 use polars_utils::format_pl_smallstr;
 use sqlparser::ast::{
-    BinaryOperator, CreateTable, Distinct, ExcludeSelectItem, Expr as SQLExpr, FunctionArg,
-    GroupByExpr, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset, OrderBy,
-    Query, RenameSelectItem, Select, SelectItem, SetExpr, SetOperator, SetQuantifier, Statement,
-    TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value as SQLValue, Values,
+    BinaryOperator, CreateTable, Delete, Distinct, ExcludeSelectItem, Expr as SQLExpr, FromTable,
+    FunctionArg, GroupByExpr, Ident, JoinConstraint, JoinOperator, ObjectName, ObjectType, Offset,
+    OrderBy, Query, RenameSelectItem, Select, SelectItem, SetExpr, SetOperator, SetQuantifier,
+    Statement, TableAlias, TableFactor, TableWithJoins, UnaryOperator, Value as SQLValue, Values,
     WildcardAdditionalOptions,
 };
 use sqlparser::dialect::GenericDialect;
@@ -201,8 +201,9 @@ impl SQLContext {
             } => self.execute_drop_table(stmt)?,
             stmt @ Statement::Explain { .. } => self.execute_explain(stmt)?,
             stmt @ Statement::Truncate { .. } => self.execute_truncate_table(stmt)?,
+            stmt @ Statement::Delete { .. } => self.execute_delete_from_table(stmt)?,
             _ => polars_bail!(
-                SQLInterface: "statement type {:?} is not supported", ast,
+                SQLInterface: "statement type is not supported:\n{:?}", ast,
             ),
         })
     }
@@ -471,7 +472,7 @@ impl SQLContext {
                 let df = DataFrame::new(vec![plan])?;
                 Ok(df.lazy())
             },
-            _ => unreachable!(),
+            _ => polars_bail!(SQLInterface: "unexpected statement type; expected EXPLAIN"),
         }
     }
 
@@ -482,6 +483,7 @@ impl SQLContext {
         Ok(df.lazy())
     }
 
+    // DROP TABLE <tbl>
     fn execute_drop_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         match stmt {
             Statement::Drop { names, .. } => {
@@ -490,10 +492,68 @@ impl SQLContext {
                 });
                 Ok(DataFrame::empty().lazy())
             },
-            _ => unreachable!(),
+            _ => polars_bail!(SQLInterface: "unexpected statement type; expected DROP"),
         }
     }
 
+    // DELETE FROM <tbl> [WHERE ...]
+    fn execute_delete_from_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
+        if let Statement::Delete(Delete {
+            tables,
+            from,
+            using,
+            selection,
+            returning,
+            order_by,
+            limit,
+        }) = stmt
+        {
+            if !tables.is_empty()
+                || using.is_some()
+                || returning.is_some()
+                || limit.is_some()
+                || !order_by.is_empty()
+            {
+                let error_message = match () {
+                    _ if !tables.is_empty() => "DELETE expects exactly one table name",
+                    _ if using.is_some() => "DELETE does not support the USING clause",
+                    _ if returning.is_some() => "DELETE does not support the RETURNING clause",
+                    _ if limit.is_some() => "DELETE does not support the LIMIT clause",
+                    _ if !order_by.is_empty() => "DELETE does not support the ORDER BY clause",
+                    _ => unreachable!(),
+                };
+                polars_bail!(SQLInterface: error_message);
+            }
+            let from_tables = match &from {
+                FromTable::WithFromKeyword(from) => from,
+                FromTable::WithoutKeyword(from) => from,
+            };
+            if from_tables.len() > 1 {
+                polars_bail!(SQLInterface: "cannot have multiple tables in DELETE FROM (found {})", from_tables.len())
+            }
+            let tbl_expr = from_tables.first().unwrap();
+            if !tbl_expr.joins.is_empty() {
+                polars_bail!(SQLInterface: "DELETE does not support table JOINs")
+            }
+            let (_, mut lf) = self.get_table(&tbl_expr.relation)?;
+            if selection.is_none() {
+                // no WHERE clause; equivalent to TRUNCATE (drop all rows)
+                Ok(DataFrame::empty_with_schema(
+                    lf.schema_with_arenas(&mut self.lp_arena, &mut self.expr_arena)
+                        .unwrap()
+                        .as_ref(),
+                )
+                .lazy())
+            } else {
+                // apply constraint as inverted filter (drops rows matching the selection)
+                Ok(self.process_where(lf.clone(), selection, true)?)
+            }
+        } else {
+            polars_bail!(SQLInterface: "unexpected statement type; expected DELETE")
+        }
+    }
+
+    // TRUNCATE <tbl>
     fn execute_truncate_table(&mut self, stmt: &Statement) -> PolarsResult<LazyFrame> {
         if let Statement::Truncate {
             table_names,
@@ -524,7 +584,7 @@ impl SQLContext {
                 },
             }
         } else {
-            unreachable!()
+            polars_bail!(SQLInterface: "unexpected statement type; expected TRUNCATE")
         }
     }
 
@@ -645,7 +705,7 @@ impl SQLContext {
 
         // Filter expression (WHERE clause)
         let schema = self.get_frame_schema(&mut lf)?;
-        lf = self.process_where(lf, &select_stmt.selection)?;
+        lf = self.process_where(lf, &select_stmt.selection, false)?;
 
         // 'SELECT *' modifiers
         let mut select_modifiers = SelectModifiers {
@@ -907,6 +967,7 @@ impl SQLContext {
         &mut self,
         mut lf: LazyFrame,
         expr: &Option<SQLExpr>,
+        invert_filter: bool,
     ) -> PolarsResult<LazyFrame> {
         if let Some(expr) = expr {
             let schema = self.get_frame_schema(&mut lf)?;
@@ -923,9 +984,9 @@ impl SQLContext {
                 },
                 _ => (false, false),
             };
-            if all_true {
+            if (all_true && !invert_filter) || (all_false && invert_filter) {
                 return Ok(lf);
-            } else if all_false {
+            } else if (all_false && !invert_filter) || (all_true && invert_filter) {
                 return Ok(DataFrame::empty_with_schema(schema.as_ref()).lazy());
             }
 
@@ -935,6 +996,10 @@ impl SQLContext {
                 filter_expression = all_horizontal([filter_expression])?;
             }
             lf = self.process_subqueries(lf, vec![&mut filter_expression]);
+            if invert_filter {
+                // negate the filter (being careful about null values)
+                filter_expression = filter_expression.neq_missing(lit(true))
+            }
             lf = lf.filter(filter_expression);
         }
         Ok(lf)
