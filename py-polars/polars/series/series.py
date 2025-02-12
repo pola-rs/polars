@@ -1565,6 +1565,11 @@ class Series:
 
         FFI buffers are included in this estimation.
 
+        Notes
+        -----
+        For data with Object dtype, the estimated size only reports the pointer
+        size, which is a huge underestimation.
+
         Parameters
         ----------
         unit : {'b', 'kb', 'mb', 'gb', 'tb'}
