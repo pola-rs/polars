@@ -90,7 +90,6 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
         #[cfg(feature = "cloud")]
         credential_provider: usize,
         #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-        #[cfg_attr(feature = "serde", serde(skip))]
         client_options: Option<PlClientOptions>,
     }
 }

@@ -85,7 +85,6 @@ pub struct CloudOptions {
     #[cfg_attr(feature = "serde", serde(deserialize_with = "deserialize_or_default"))]
     pub(crate) credential_provider: Option<PlCredentialProvider>,
     #[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-    #[cfg_attr(feature = "serde", serde(skip))]
     /// Note: This is mainly used by Rust users. Python client options go through `CloudConfig`
     pub(crate) client_options: Option<PlClientOptions>,
 }

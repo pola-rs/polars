@@ -2,8 +2,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use object_store::{Certificate, ClientOptions};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct PlClientOptions {
     timeout: Option<Duration>,
     connect_timeout: Option<Duration>,
@@ -31,6 +33,32 @@ impl Eq for RootCertificates {}
 impl std::hash::Hash for RootCertificates {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         state.write_usize(Arc::as_ptr(&self.0) as *const () as usize)
+    }
+}
+
+// Implement basic Serialize and Deserialize methods for RootCertificates
+// by simply serializing and deserializing an empty RootCertificates object
+#[cfg(feature = "serde")]
+impl Serialize for RootCertificates {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if !self.0.is_empty() {
+            panic!("RootCertificates cannot be serialized if it contains certificates");
+        }
+        serializer.serialize_none()
+    }
+}
+
+#[cfg(feature = "serde")]
+impl<'de> Deserialize<'de> for RootCertificates {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        // we simply return an empty RootCertificates
+        Ok(RootCertificates::new())
     }
 }
 
