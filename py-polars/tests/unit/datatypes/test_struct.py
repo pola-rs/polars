@@ -1230,5 +1230,9 @@ def test_nested_object_raises_15237() -> None:
 
 
 def test_cast_to_struct_needs_field_14083() -> None:
-    with pytest.raises(InvalidOperationError, match="must specify a field in the struct"):
+    with pytest.raises(InvalidOperationError, match="must specify one field in the struct"):
         pl.Series([1], dtype=pl.Int32).cast(pl.Struct)
+
+    with pytest.raises(InvalidOperationError, match="must specify one field in the struct"):
+        pl.Series([1], dtype=pl.Int32).cast(pl.Struct({"a": pl.UInt8, "b": pl.UInt8}))
+
