@@ -389,6 +389,7 @@ def test_schema_full_outer_join_projection_pd_13287() -> None:
         how="full",
         left_on="a",
         right_on="c",
+        maintain_order="right_left",
     ).with_columns(
         pl.col("a").fill_null(pl.col("c")),
     ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
@@ -646,3 +647,16 @@ def test_filter_count_projection_20902() -> None:
         .select(pl.len())
         .explain()
     )
+
+
+def test_projection_count_21154() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+
+    assert lf.unique("a").select(pl.len()).collect().to_dict(as_series=False) == {
+        "len": [3]
+    }

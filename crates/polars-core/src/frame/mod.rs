@@ -368,8 +368,13 @@ impl DataFrame {
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
+        Self::empty_with_height(0)
+    }
+
+    /// Creates an empty `DataFrame` with a specific `height`.
+    pub const fn empty_with_height(height: usize) -> Self {
         DataFrame {
-            height: 0,
+            height,
             columns: vec![],
             cached_schema: OnceLock::new(),
         }
