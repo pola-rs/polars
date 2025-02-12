@@ -66,7 +66,7 @@ def test_categorical_full_outer_join() -> None:
         ]
     )
 
-    df = dfa.join(dfb, on="key", how="full")
+    df = dfa.join(dfb, on="key", how="full", maintain_order="right_left")
     # the cast is important to test the rev map
     assert df["key"].cast(pl.String).to_list() == ["bar", None, "foo"]
     assert df["key_right"].cast(pl.String).to_list() == ["bar", "baz", None]

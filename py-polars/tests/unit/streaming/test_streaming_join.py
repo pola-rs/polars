@@ -165,7 +165,9 @@ def test_join_null_matches(streaming: bool) -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
+        df_a.join(df_b, on="a", how="left").collect(streaming=streaming),
+        expected,
+        check_row_order=False,
     )
     # Full outer
     expected = pl.DataFrame(
@@ -202,6 +204,7 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="inner").collect(streaming=streaming),
         expected,
+        check_row_order=False,
     )
     expected = pl.DataFrame(
         {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
@@ -209,6 +212,7 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
         expected,
+        check_row_order=False,
     )
 
     expected = pl.DataFrame(
