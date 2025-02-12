@@ -175,12 +175,16 @@ def test_merge_sorted_parametric_string(lhs: pl.Series, rhs: pl.Series) -> None:
 @given(
     lhs=series(
         name="a",
-        allowed_dtypes=[pl.Struct({"x": pl.Int32, "y": pl.Int8})],
+        allowed_dtypes=[
+            pl.Struct({"x": pl.Int32, "y": pl.Struct({"x": pl.Int8, "y": pl.Int8})})
+        ],
         allow_null=False,
     ),  # Nulls see: https://github.com/pola-rs/polars/issues/20991
     rhs=series(
         name="a",
-        allowed_dtypes=[pl.Struct({"x": pl.Int32, "y": pl.Int8})],
+        allowed_dtypes=[
+            pl.Struct({"x": pl.Int32, "y": pl.Struct({"x": pl.Int8, "y": pl.Int8})})
+        ],
         allow_null=False,
     ),  # Nulls see: https://github.com/pola-rs/polars/issues/20991
 )
