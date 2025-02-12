@@ -1,15 +1,40 @@
 # FAQ
 
-### Who is behind Polars cloud?
+On this page you can find answers to some frequently asked questions around Polars Cloud.
 
-### Where does the compute run?
+## Who is behind Polars Cloud?
 
-### Can you run Polars Cloud on-premise?
+Polars Cloud is built by the organization behind the open source Polars project. Polars has grown to 10M+ monthly downloads and more than 125M+ total downloads since the first commit in 2020. We are building Polars Cloud, on top of the open source Polars project, to offer a service that is more aligned with the needs of organizations that use or are looking to use Polars.
 
-### What does Polars Cloud offer me beyond Polars?
+By offering our managed service we get to drive even greater adoption and invest more resources into the open source Polars project, supporting further improvements and long term development.
 
-### Is Polars Cloud available for everyone?
+## Where does the compute run?
 
-### Does Polars Cloud integrate with my toolstack?
+All compute runs in your own cloud environment. The main reason is that this ensures that your data never leaves your environment and that the compute is always close to your data.
 
-### What does Polars Cloud cost?
+## Can you run Polars Cloud on-premise?
+
+Currently, Polars Cloud is only available to organizations that are on AWS. Support for on-premise infrastructure is on our roadmap and will become available soon.
+
+## What does Polars Cloud offer me beyond Polars?
+
+Polars Cloud offers a managed service that enables scalable data processing with the flexibility and expressiveness of the Polars API. It extends the open source Polars project with the following capabilities:
+
+- Distributed engine to efficiently handle terabyte to petabyte scale workloads through parallel processing across multiple nodes
+- Cost-optimized serverless architecture that automatically scales compute resources
+- Built-in fault tolerance mechanisms ensuring query completion even during hardware failures or system interruptions
+- Comprehensive monitoring and analytics tools providing detailed insights into query performance and resource utilization.
+
+## What are the main use cases for Polars Cloud?
+
+Polars Cloud offers both a batch as an interactive mode to users. Batch mode can be used for ETL workloads or one-off large scale analytic jobs. Interactive mode is for users that are looking to do data exploration on a larger scale data processing that requires more compute than their own machine can offer.
+
+## How can Polars Cloud integrate with my workflow?
+
+One of our key priorities is ensuring that running remote queries feels as native and seamless as running them locally. Every user should be able to scale their queries effortlessly.
+
+Polars Cloud is completely environment agnostic. This allows you to run your queries from anywhere such as your own machine, Jupyter/Marimo notebooks, Airflow DAGs, AWS Lambda functions, or your servers. By not tying you to a specific platform, Polars Cloud gives you the flexibility to execute your queries wherever it best fits your workflow.
+
+## What is the pricing model of Polars Cloud?
+
+Polars Cloud is available at no additional cost in this early stage. You only pay for the resources you use in your own cloud environment. We are exploring different usage based pricing models that are geared towards running queries as fast and efficient as possible.
