@@ -92,7 +92,7 @@ jobs:
 
       - name: Run tests
         if: github.ref_name != 'main'
-        run: pytest -n auto --dist loadgroup -m "not release and not benchmark and not docs"
+        run: pytest -v -s -m "not release and not benchmark and not docs"
 
       - name: Run tests with new streaming engine
         if: github.ref_name != 'main'
