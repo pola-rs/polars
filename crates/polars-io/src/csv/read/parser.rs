@@ -6,6 +6,7 @@ use polars_core::prelude::*;
 use polars_core::{config, POOL};
 use polars_error::feature_gated;
 use polars_utils::index::Bounded;
+use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
 use super::buffer::Buffer;
@@ -607,6 +608,13 @@ pub struct CountLines {
     quoting: bool,
 }
 
+#[derive(Copy, Clone, Debug)]
+pub struct LineStats {
+    newline_count: usize,
+    last_newline_offset: usize,
+    end_inside_string: bool,
+}
+
 impl CountLines {
     pub fn new(quote_char: Option<u8>, eol_char: u8) -> Self {
         let quoting = quote_char.is_some();
@@ -624,6 +632,98 @@ impl CountLines {
             simd_quote_char,
             quoting,
         }
+    }
+
+    /// Analyzes a chunk of CSV data.
+    ///
+    /// Returns (newline_count, last_newline_offset, end_inside_string) twice,
+    /// the first is assuming the start of the chunk is *not* inside a string,
+    /// the second assuming the start is inside a string.
+    pub fn analyze_chunk(&self, bytes: &[u8]) -> [LineStats; 2] {
+        let mut scan_offset = 0;
+        let mut states = [
+            LineStats {
+                newline_count: 0,
+                last_newline_offset: 0,
+                end_inside_string: false,
+            },
+            LineStats {
+                newline_count: 0,
+                last_newline_offset: 0,
+                end_inside_string: false,
+            },
+        ];
+
+        // false if even number of quotes seen so far, true otherwise.
+        #[allow(unused_assignments)]
+        let mut global_quote_parity = false;
+
+        #[cfg(feature = "simd")]
+        {
+            // 0 if even number of quotes seen so far, u64::MAX otherwise.
+            let mut global_quote_parity_mask = 0;
+            while scan_offset + 64 <= bytes.len() {
+                let block: [u8; 64] = unsafe {
+                    bytes
+                        .get_unchecked(scan_offset..scan_offset + 64)
+                        .try_into()
+                        .unwrap_unchecked()
+                };
+                let simd_bytes = SimdVec::from(block);
+                let eol_mask = simd_bytes.simd_eq(self.simd_eol_char).to_bitmask();
+                if self.quoting {
+                    let quote_mask = simd_bytes.simd_eq(self.simd_quote_char).to_bitmask();
+                    let quote_parity =
+                        prefix_xorsum_inclusive(quote_mask) ^ global_quote_parity_mask;
+                    global_quote_parity_mask = ((quote_parity as i64) >> 63) as u64;
+
+                    let start_outside_string_eol_mask = eol_mask & !quote_parity;
+                    states[0].newline_count += start_outside_string_eol_mask.count_ones() as usize;
+                    states[0].last_newline_offset = select_unpredictable(
+                        start_outside_string_eol_mask != 0,
+                        (scan_offset + 63)
+                            .wrapping_sub(start_outside_string_eol_mask.leading_zeros() as usize),
+                        states[0].last_newline_offset,
+                    );
+
+                    let start_inside_string_eol_mask = eol_mask & quote_parity;
+                    states[1].newline_count += start_inside_string_eol_mask.count_ones() as usize;
+                    states[1].last_newline_offset = select_unpredictable(
+                        start_inside_string_eol_mask != 0,
+                        (scan_offset + 63)
+                            .wrapping_sub(start_inside_string_eol_mask.leading_zeros() as usize),
+                        states[1].last_newline_offset,
+                    );
+                } else {
+                    states[0].newline_count += eol_mask.count_ones() as usize;
+                    states[0].last_newline_offset = select_unpredictable(
+                        eol_mask != 0,
+                        (scan_offset + 63).wrapping_sub(eol_mask.leading_zeros() as usize),
+                        states[0].last_newline_offset,
+                    );
+                }
+
+                scan_offset += 64;
+            }
+
+            global_quote_parity = global_quote_parity_mask > 0;
+        }
+
+        while scan_offset < bytes.len() {
+            let c = unsafe { *bytes.get_unchecked(scan_offset) };
+            global_quote_parity ^= (c == self.quote_char) & self.quoting;
+
+            let state = &mut states[global_quote_parity as usize];
+            state.newline_count += (c == self.eol_char) as usize;
+            state.last_newline_offset =
+                select_unpredictable(c == self.eol_char, scan_offset, state.last_newline_offset);
+
+            scan_offset += 1;
+        }
+
+        states[0].end_inside_string = global_quote_parity;
+        states[1].end_inside_string = !global_quote_parity;
+        states
     }
 
     pub fn find_next(&self, bytes: &[u8], chunk_size: &mut usize) -> (usize, usize) {
