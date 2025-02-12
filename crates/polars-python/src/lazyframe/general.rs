@@ -834,7 +834,8 @@ impl PyLazyFrame {
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
             if let Some(lambda) = lambda_post_opt {
-                ldf._sink_post_opt(|root, lp_arena, expr_arena| {
+                let no_stream = ldf.with_streaming(false);
+                no_stream._sink_post_opt(|root, lp_arena, expr_arena| {
                     Python::with_gil(|py| {
                         let nt = NodeTraverser::new(
                             root,
