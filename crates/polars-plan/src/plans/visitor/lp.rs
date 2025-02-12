@@ -74,7 +74,7 @@ impl TreeWalker for IRNode {
         let mut inputs = vec![];
         let mut exprs = vec![];
 
-        let lp = arena.0.take(self.node);
+        let lp = arena.0.get(self.node);
         lp.copy_inputs(&mut inputs);
         lp.copy_exprs(&mut exprs);
 
@@ -83,7 +83,7 @@ impl TreeWalker for IRNode {
             let lp_node = IRNode::new(*node);
             *node = op(lp_node, arena)?.node;
         }
-
+        let lp = arena.0.get(self.node);
         let lp = lp.with_exprs_and_input(exprs, inputs);
         arena.0.replace(self.node, lp);
         Ok(self)
