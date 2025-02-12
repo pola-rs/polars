@@ -62,7 +62,7 @@ macro_rules! dyn_struct_scalar_push_list {
 }
 
 pub fn dyn_struct_array_push<T: Any>(arr: &mut dyn MutableArray, value: &T) -> PolarsResult<()> {
-    let mut arr = arr
+    let arr = arr
         .as_mut_any()
         .downcast_mut::<DynMutableStructArray>()
         .unwrap();
@@ -71,7 +71,7 @@ pub fn dyn_struct_array_push<T: Any>(arr: &mut dyn MutableArray, value: &T) -> P
         .unwrap();
 
     for (idx, scalar) in values.iter().enumerate() {
-        dyn_struct_array_push_field(&mut arr, idx, scalar)?;
+        dyn_struct_array_push_field(arr, idx, scalar)?;
     }
 
     arr.try_push_valid()
@@ -154,7 +154,7 @@ pub fn dyn_struct_array_push_field(
             let src = scalar.as_any().downcast_ref::<StructScalar>().unwrap();
             let value = if src.is_valid() {
                 // NOTE: We have to clone here as we require ownership of the values
-                Some(src.values().iter().map(|x| x.clone()).collect::<Vec<_>>())
+                Some(src.values().iter().cloned().collect::<Vec<_>>())
             } else {
                 None
             };
