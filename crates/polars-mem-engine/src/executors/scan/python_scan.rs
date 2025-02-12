@@ -1,12 +1,10 @@
 use polars_core::error::to_compute_err;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_expr::state::node_timer::NodeTimer;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyNone, PyTuple};
 use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
-use std::time::Duration;
-use polars_plan::utils::*;
-use polars_expr::state::node_timer::NodeTimer;
 
 use self::python_dsl::PythonScanSource;
 use super::*;
@@ -24,11 +22,15 @@ pub struct PyNodeTimer {
 
 #[pymethods]
 impl PyNodeTimer {
-    pub fn record(&self, py: Python, name: &str, func: PyObject, args: &Bound<'_,PyTuple>) -> PyResult<PyObject> {
+    pub fn record(
+        &self,
+        py: Python,
+        name: &str,
+        func: PyObject,
+        args: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyObject> {
         match &self.timer {
-            None => Ok(
-                func.call1(py, args)?
-            ),
+            None => Ok(func.call1(py, args)?),
             Some(timer) => {
                 let start = std::time::Instant::now();
                 let result = func.call1(py, args)?;
@@ -93,7 +95,11 @@ impl Executor for PythonScanExec {
                     with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                     predicate,
                     n_rows,
-                    Py::new(py, py_node_timer).unwrap(),
+                    if matches!(self.options.python_source, PythonScanSource::Cuda) {
+                        Some(Py::new(py, py_node_timer).unwrap())
+                    } else {
+                        None
+                    },
                 );
                 callable.call1(args).map_err(to_compute_err)
             } else {

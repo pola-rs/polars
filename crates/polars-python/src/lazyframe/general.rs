@@ -614,7 +614,11 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (lambda_post_opt=None))]
-    fn profile(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<(PyDataFrame, PyDataFrame)> {
+    fn profile(
+        &self,
+        py: Python,
+        lambda_post_opt: Option<PyObject>,
+    ) -> PyResult<(PyDataFrame, PyDataFrame)> {
         // if we don't allow threads and we have udfs trying to acquire the gil from different
         // threads we deadlock.
         let (df, time_df) = py.allow_threads(|| {
