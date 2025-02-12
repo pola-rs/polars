@@ -427,6 +427,24 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                 for i in 0..sources.len() {
                     if slice.is_empty() {
+                        if verbose {
+                            let source_name = source_name(sources.at(i), i);
+                            eprintln!("[MultiScan]: Slice is at '{source_name}' but no more data is needed. Stopping.");
+                        }
+
+                        // Flush all remaining workers waiting for their slice.
+                        for mut rx in slice_rx {
+                            let Ok((_, slice_range, wait_token)) = rx.recv().await else {
+                                continue;
+                            };
+
+                            // The order here is necessary to avoid race-conditions.
+                            drop(rx);
+                            slice_range.0.store(0, Ordering::Relaxed);
+                            slice_range.1.store(0, Ordering::Relaxed);
+                            drop(wait_token);
+                        }
+
                         break;
                     }
 
@@ -446,8 +464,16 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         slice_range.0.store(0, Ordering::Relaxed);
                         slice_range.1.store(0, Ordering::Relaxed);
                     } else {
-                        let offset = slice.start.saturating_sub(num_rows);
+                        let offset = slice.start;
                         let length = (num_rows - slice.start).min(slice.len());
+
+                        // Only print something if it is actually interesting.
+                        if verbose && length < num_rows {
+                            let source_name = source_name(sources.at(i), i);
+                            eprintln!(
+                                "[MultiScan]: Slice for '{source_name}' is ({offset}, {length})."
+                            );
+                        }
 
                         slice_range.0.store(offset, Ordering::Relaxed);
                         slice_range.1.store(length, Ordering::Relaxed);
@@ -485,12 +511,12 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     let slice_range = Arc::new((AtomicUsize::default(), AtomicUsize::default()));
                     let slice_wg = WaitGroup::default();
 
+                    let mut stop = false;
                     let verbose = config::verbose();
 
-                    while i < sources.len() {
+                    while i < sources.len() && !stop {
                         join_handles.clear();
 
-                        let source_name = source_name(sources.at(i), i);
                         let source = sources.at(i).into_owned()?;
                         let (mut output_send, output_recv) = connector();
                         let mut source = T::new(
@@ -527,6 +553,8 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             let start = start.load(Ordering::Relaxed);
                             let length = length.load(Ordering::Relaxed);
 
+                            // If nothing needs to be loaded from this source, continue to the next
+                            // file. This is also the case when we overshoot the slices.
                             if length == 0 {
                                 let mut df = DataFrame::empty_with_schema(&source_schema);
                                 if let Some(name) = &row_index_name {
@@ -549,9 +577,17 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 continue;
                             }
 
-                            source.with_row_restriction(Some(RowRestrication::Slice(
-                                start..start + length,
-                            )));
+                            // If we are stopping before the end, this means that we don't have to
+                            // go any further. This saves one count rows.
+                            stop |= start + length < row_count as usize;
+
+                            // A slice might cause the source to need to linearize. So if we have a
+                            // slice that scans everything. Don't do anything.
+                            if length < row_count as usize {
+                                source.with_row_restriction(Some(RowRestrication::Slice(
+                                    start..start + length,
+                                )));
+                            }
                         }
 
                         let unrestricted_row_count = row_index_name
@@ -603,25 +639,23 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             // Wait for the phase to end.
                             wait_group.wait().await;
                             if outcome.did_finish() {
-                                if verbose {
-                                    eprintln!(
-                                        "[MultiScan]: Last data received from '{source_name}'.",
-                                    );
-                                }
-
-                                // One of the tasks might throw an error. In which case, we need to cancel all
-                                // handles and find the error.
-                                let mut join_handles: FuturesUnordered<_> =
-                                    join_handles.drain(..).map(AbortOnDropHandle::new).collect();
-                                while let Some(ret) = join_handles.next().await {
-                                    ret?;
-                                }
+                                break;
                             }
                         }
 
-                        for handle in join_handles.iter_mut() {
-                            handle.await?;
+                        if verbose {
+                            let source_name = source_name(sources.at(i), i);
+                            eprintln!("[MultiScan]: Last data received from '{source_name}'.",);
                         }
+
+                        // One of the tasks might throw an error. In which case, we need to cancel all
+                        // handles and find the error.
+                        let mut join_handles: FuturesUnordered<_> =
+                            join_handles.drain(..).map(AbortOnDropHandle::new).collect();
+                        while let Some(ret) = join_handles.next().await {
+                            ret?;
+                        }
+
                         i += num_concurrent_scans;
                     }
 
