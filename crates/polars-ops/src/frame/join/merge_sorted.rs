@@ -36,7 +36,7 @@ pub fn _merge_sorted_dfs(
         return Ok(right.clone());
     }
 
-    let merge_indicator = series_to_merge_indicator(left_s, right_s);
+    let merge_indicator = series_to_merge_indicator(left_s, right_s)?;
     let new_columns = left
         .get_columns()
         .iter()
@@ -142,11 +142,11 @@ where
     unsafe { iter.trust_my_length(total_len).collect_trusted() }
 }
 
-fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
+fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
     let lhs_s = lhs.to_physical_repr().into_owned();
     let rhs_s = rhs.to_physical_repr().into_owned();
 
-    match lhs_s.dtype() {
+    let out = match lhs_s.dtype() {
         DataType::Boolean => {
             let lhs = lhs_s.bool().unwrap();
             let rhs = rhs_s.bool().unwrap();
@@ -165,8 +165,8 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
         #[cfg(feature = "dtype-struct")]
         DataType::Struct(_) => {
             let options = SortOptions::default();
-            let lhs = lhs_s.struct_().unwrap().get_row_encoded(options).unwrap();
-            let rhs = rhs_s.struct_().unwrap().get_row_encoded(options).unwrap();
+            let lhs = lhs_s.struct_().unwrap().get_row_encoded(options)?;
+            let rhs = rhs_s.struct_().unwrap().get_row_encoded(options)?;
             get_merge_indicator(lhs.into_iter(), rhs.into_iter())
         },
         _ => {
@@ -178,7 +178,8 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> Vec<bool> {
 
             })
         },
-    }
+    };
+    Ok(out)
 }
 
 // get a boolean values, left: true, right: false
