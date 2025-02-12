@@ -4,68 +4,11 @@ use avro_schema::file::Block;
 use avro_schema::schema::{Enum, Field as AvroField, Record, Schema as AvroSchema};
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
-use super::nested::*;
 use super::util;
 use crate::array::*;
 use crate::datatypes::*;
 use crate::record_batch::RecordBatchT;
 use crate::types::months_days_ns;
-use crate::with_match_primitive_type_full;
-
-fn make_mutable(
-    dtype: &ArrowDataType,
-    avro_field: Option<&AvroSchema>,
-    capacity: usize,
-) -> PolarsResult<Box<dyn MutableArray>> {
-    Ok(match dtype.to_physical_type() {
-        PhysicalType::Boolean => {
-            Box::new(MutableBooleanArray::with_capacity(capacity)) as Box<dyn MutableArray>
-        },
-        PhysicalType::Primitive(primitive) => with_match_primitive_type_full!(primitive, |$T| {
-            Box::new(MutablePrimitiveArray::<$T>::with_capacity(capacity).to(dtype.clone()))
-                as Box<dyn MutableArray>
-        }),
-        PhysicalType::Binary => {
-            Box::new(MutableBinaryArray::<i32>::with_capacity(capacity)) as Box<dyn MutableArray>
-        },
-        PhysicalType::Utf8 => {
-            Box::new(MutableUtf8Array::<i32>::with_capacity(capacity)) as Box<dyn MutableArray>
-        },
-        PhysicalType::Dictionary(_) => {
-            if let Some(AvroSchema::Enum(Enum { symbols, .. })) = avro_field {
-                let values = Utf8Array::<i32>::from_slice(symbols);
-                Box::new(FixedItemsUtf8Dictionary::with_capacity(values, capacity))
-                    as Box<dyn MutableArray>
-            } else {
-                unreachable!()
-            }
-        },
-        _ => match dtype {
-            ArrowDataType::List(inner) => {
-                let values = make_mutable(inner.dtype(), None, 0)?;
-                Box::new(DynMutableListArray::<i32>::new_from(
-                    values,
-                    dtype.clone(),
-                    capacity,
-                )) as Box<dyn MutableArray>
-            },
-            ArrowDataType::FixedSizeBinary(size) => {
-                Box::new(MutableFixedSizeBinaryArray::with_capacity(*size, capacity))
-                    as Box<dyn MutableArray>
-            },
-            ArrowDataType::Struct(fields) => {
-                let values = fields
-                    .iter()
-                    .map(|field| make_mutable(field.dtype(), None, capacity))
-                    .collect::<PolarsResult<Vec<_>>>()?;
-                Box::new(DynMutableStructArray::new(values, dtype.clone())) as Box<dyn MutableArray>
-            },
-            other => {
-                polars_bail!(nyi = "Deserializing type {other:#?} is still not implemented")
-            },
-        },
-    })
-}
 
 fn is_union_null_first(avro_field: &AvroSchema) -> bool {
     if let AvroSchema::Union(schemas) = avro_field {
@@ -308,7 +251,7 @@ fn deserialize_value<'a>(
                 let index = util::zigzag_i64(&mut block)? as i32;
                 let array = array
                     .as_mut_any()
-                    .downcast_mut::<FixedItemsUtf8Dictionary>()
+                    .downcast_mut::<FixedItemsUtf8Dictionary<i32>>()
                     .unwrap();
                 array.push_valid(index);
             },
@@ -483,10 +426,16 @@ pub fn deserialize(
         .zip(projection.iter())
         .map(|((field, avro_field), projection)| {
             if *projection {
-                make_mutable(&field.dtype, Some(&avro_field.schema), rows)
+                let dictionary_keys: Option<&Vec<String>> =
+                    if let AvroSchema::Enum(Enum { symbols, .. }) = &avro_field.schema {
+                        Some(symbols)
+                    } else {
+                        None
+                    };
+                make_mutable_array_dyn(&field.dtype, rows, dictionary_keys)
             } else {
                 // just something; we are not going to use it
-                make_mutable(&ArrowDataType::Int32, None, 0)
+                make_mutable_array_dyn(&ArrowDataType::Int32, 0, None)
             }
         })
         .collect::<PolarsResult<_>>()?;
