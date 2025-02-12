@@ -29,8 +29,8 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
 
-use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{SourceNode, SourceOutput};
+use super::multi_scan::MultiScanable;
+use super::{RowRestriction, SourceNode, SourceOutput};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -535,12 +535,12 @@ impl MultiScanable for IpcSourceNode {
             prepare_projection(&self.metadata.schema, p)
         });
     }
-    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
         self.slice = 0..usize::MAX;
         if let Some(row_restriction) = row_restriction {
             match row_restriction {
-                RowRestrication::Slice(slice) => self.slice = slice,
-                RowRestrication::Predicate(_) => unreachable!(),
+                RowRestriction::Slice(slice) => self.slice = slice,
+                RowRestriction::Predicate(_) => unreachable!(),
             }
         }
     }

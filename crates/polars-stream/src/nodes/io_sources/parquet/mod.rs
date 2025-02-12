@@ -21,8 +21,8 @@ use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{MorselOutput, SourceNode, SourceOutput};
+use super::multi_scan::MultiScanable;
+use super::{MorselOutput, RowRestriction, SourceNode, SourceOutput};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::wait_group::WaitGroup;
@@ -330,17 +330,17 @@ impl MultiScanable for ParquetSourceNode {
             self.file_options.with_columns = Some(with_columns.into());
         }
     }
-    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
         self.predicate = None;
         self.file_options.slice = None;
 
         if let Some(row_restriction) = row_restriction {
             match row_restriction {
-                RowRestrication::Slice(slice) => {
+                RowRestriction::Slice(slice) => {
                     self.file_options.slice = Some((slice.start as i64, slice.len()))
                 },
                 // @TODO: Cache
-                RowRestrication::Predicate(scan_predicate) => {
+                RowRestriction::Predicate(scan_predicate) => {
                     self.predicate = Some(scan_predicate.to_io(None, &self.file_info.schema))
                 },
             }

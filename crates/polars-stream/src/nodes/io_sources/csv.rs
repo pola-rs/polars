@@ -25,8 +25,8 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{SourceNode, SourceOutput};
+use super::multi_scan::MultiScanable;
+use super::{RowRestriction, SourceNode, SourceOutput};
 use crate::async_executor::{self, spawn};
 use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -590,14 +590,14 @@ impl MultiScanable for CsvSourceNode {
                 .collect()
         });
     }
-    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
         self.file_options.slice = None;
         match row_restriction {
             None => {},
-            Some(RowRestrication::Slice(rng)) => {
+            Some(RowRestriction::Slice(rng)) => {
                 self.file_options.slice = Some((rng.start as i64, rng.end - rng.start))
             },
-            Some(RowRestrication::Predicate(_)) => unreachable!(),
+            Some(RowRestriction::Predicate(_)) => unreachable!(),
         }
     }
 

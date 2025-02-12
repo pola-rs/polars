@@ -398,6 +398,8 @@ def test_multiscan_tail(
     )
 
 
+@pytest.mark.parametrize("neg_slice", [False, True])
+@pytest.mark.parametrize("row_index", [False, True])
 @pytest.mark.parametrize(
     ("scan", "write", "ext"),
     [
@@ -417,6 +419,8 @@ def test_multiscan_tail(
     ],
 )
 def test_multiscan_slice_middle(
+    neg_slice: bool,
+    row_index: bool,
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     ext: str,
@@ -430,13 +434,25 @@ def test_multiscan_slice_middle(
         write(pl.Series("c1", range(7)).to_frame(), f)
         f.seek(0)
 
+    offset = 5 * 7 - 5
     expected = (
         list(range(2, 7))  # fs[4]
         + list(range(7))  # fs[5]
         + list(range(5))  # fs[6]
     )
+    expected_series = []
+    if row_index:
+        expected_series += [
+            pl.Series("ri", range(offset, offset + 17), get_index_type())
+        ]
+    expected_series += [pl.Series("c1", expected)]
+
+    if neg_slice:
+        offset = -(13 * 7 - offset)
 
     assert_frame_equal(
-        scan(fs).slice(5 * 7 - 5, 17).collect(new_streaming=True),  # type: ignore[call-overload]
-        pl.Series("c1", expected).to_frame(),
+        scan(fs, row_index_name="ri" if row_index else None)
+        .slice(offset, 17)
+        .collect(new_streaming=True),  # type: ignore[call-overload]
+        pl.DataFrame(expected_series),
     )
