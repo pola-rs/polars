@@ -1,4 +1,4 @@
-use polars_core::prelude::*;
+use polars_core::{config, prelude::*};
 use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetadata;
 
@@ -111,15 +111,15 @@ pub fn read_this_row_group(
             }
         }
 
-        // if config::verbose() {
-        //     if should_read {
-        //         eprintln!(
-        //             "parquet row group must be read, statistics not sufficient for predicate."
-        //         );
-        //     } else {
-        //         eprintln!("parquet row group can be skipped, the statistics were sufficient to apply the predicate.");
-        //     }
-        // }
+        if config::verbose() {
+            if should_read {
+                eprintln!(
+                    "parquet row group must be read, statistics not sufficient for predicate."
+                );
+            } else {
+                eprintln!("parquet row group can be skipped, the statistics were sufficient to apply the predicate.");
+            }
+        }
     }
 
     Ok(should_read)
