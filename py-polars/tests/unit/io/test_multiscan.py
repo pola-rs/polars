@@ -343,7 +343,7 @@ def test_multiscan_head(
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     ext: str,
 ) -> None:
-    if ext == 'ndjson' and os.environ['POLARS_AUTO_NEW_STREAMING'] == '1':
+    if ext == "ndjson" and os.environ["POLARS_AUTO_NEW_STREAMING"] == "1":
         msg = "NYI"
         raise Exception(msg)  # noqa: TRY002
 
@@ -382,7 +382,7 @@ def test_multiscan_tail(
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     ext: str,
 ) -> None:
-    if ext == 'ndjson' and os.environ['POLARS_AUTO_NEW_STREAMING'] == '1':
+    if ext == "ndjson" and os.environ["POLARS_AUTO_NEW_STREAMING"] == "1":
         msg = "NYI"
         raise Exception(msg)  # noqa: TRY002
 
@@ -421,7 +421,7 @@ def test_multiscan_slice_middle(
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     ext: str,
 ) -> None:
-    if ext == 'ndjson' and os.environ['POLARS_AUTO_NEW_STREAMING'] == '1':
+    if ext == "ndjson" and os.environ["POLARS_AUTO_NEW_STREAMING"] == "1":
         msg = "NYI"
         raise Exception(msg)  # noqa: TRY002
 
@@ -440,4 +440,3 @@ def test_multiscan_slice_middle(
         scan(fs).slice(5 * 7 - 5, 17).collect(new_streaming=True),  # type: ignore[call-overload]
         pl.Series("c1", expected).to_frame(),
     )
-
