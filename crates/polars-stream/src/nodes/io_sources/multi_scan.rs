@@ -2,6 +2,7 @@ use std::cmp::Reverse;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Range;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use polars_core::frame::column::ScalarColumn;
@@ -13,9 +14,11 @@ use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{polars_bail, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
+use polars_io::RowIndex;
 use polars_mem_engine::ScanPredicate;
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{ScanSource, ScanSourceRef, ScanSources};
+use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 use polars_utils::{format_pl_smallstr, IdxSize};
@@ -58,6 +61,7 @@ pub struct MultiScanNode<T: MultiScanable> {
 
     file_schema: SchemaRef,
     projection: Option<Bitmap>,
+    row_index: Option<RowIndex>,
 
     read_options: Arc<T::ReadOptions>,
     cloud_options: Arc<Option<CloudOptions>>,
@@ -76,6 +80,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
 
         file_schema: SchemaRef,
         projection: Option<Bitmap>,
+        row_index: Option<RowIndex>,
 
         read_options: T::ReadOptions,
         cloud_options: Option<CloudOptions>,
@@ -90,6 +95,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
 
             file_schema,
             projection,
+            row_index,
 
             read_options: Arc::new(read_options),
             cloud_options: Arc::new(cloud_options),
@@ -99,6 +105,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn process_dataframe(
     mut df: DataFrame,
     source_name: &PlSmallStr,
@@ -108,13 +115,27 @@ fn process_dataframe(
 
     file_schema: &Schema,
     projection: Option<&Bitmap>,
+    row_index: Option<&RowIndex>,
 ) -> PolarsResult<DataFrame> {
+    _ = df.schema();
+
+    if let Some(ri) = row_index {
+        let ri_column = df
+            .get_column_index(ri.name.as_str())
+            .expect("should have row index column here");
+
+        let columns = unsafe { df.get_columns_mut() };
+        columns[ri_column] = (std::mem::take(&mut columns[ri_column]).take_materialized_series()
+            + Scalar::from(ri.offset).into_series(PlSmallStr::EMPTY))?
+        .into_column();
+    }
+
     if let Some(hive_part) = hive_part {
         let height = df.height();
 
         if cfg!(debug_assertions) {
-            // We should have projected the hive column out when we read the file.
             let schema = df.schema();
+            // We should have projected the hive column out when we read the file.
             for column in hive_part.get_statistics().column_stats().iter() {
                 assert!(!schema.contains(column.field_name()));
             }
@@ -237,6 +258,7 @@ fn resolve_source_projection(
     });
 
     let mut source_projection = MutableBitmap::from_len_zeroed(source_schema.len());
+
     let mut j = 0;
     for (i, source_col_name) in source_schema.iter_names().enumerate() {
         while let Some((file_col_name, _)) = file_schema.get_at_index(j) {
@@ -271,23 +293,29 @@ pub trait MultiScanable: SourceNode + Sized + Send + Sync {
 
     const DOES_PRED_PD: bool;
     const DOES_SLICE_PD: bool;
-    const DOES_ROW_INDEX: bool;
 
     fn new(
         source: ScanSource,
         options: &Self::ReadOptions,
         cloud_options: Option<&CloudOptions>,
+        row_index: Option<PlSmallStr>,
     ) -> impl Future<Output = PolarsResult<Self>> + Send;
 
+    /// Provide a selection of physical columns to be loaded.
+    ///
+    /// The provided bitmap should have the same length as a schema given by
+    /// [`MultiScanable::physical_schema`].
     fn with_projection(&mut self, projection: Option<&Bitmap>);
-    #[allow(unused)]
+    #[expect(unused)]
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>);
-    #[allow(unused)]
-    fn with_row_index(&mut self, row_index: Option<PlSmallStr>);
 
-    #[allow(unused)]
-    fn row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send;
-    fn schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send;
+    /// Get the number of physical rows in this source.
+    fn unrestricted_row_count(&mut self) -> impl Future<Output = PolarsResult<IdxSize>> + Send;
+
+    /// Schema inferred from of the source.
+    ///
+    /// This should **NOT** include any logical columns (e.g. file path, row index, hive columns).
+    fn physical_schema(&mut self) -> impl Future<Output = PolarsResult<SchemaRef>> + Send;
 }
 
 enum SourceInput {
@@ -306,6 +334,18 @@ fn num_concurrent_scans(num_pipelines: usize) -> usize {
     num_pipelines.min(max_num_concurrent_scans)
 }
 
+enum SourcePhaseContent {
+    /// 1+ columns
+    NonEmpty(SourceInput),
+    /// 0 columns
+    Empty(IdxSize),
+}
+struct SourcePhase {
+    content: SourcePhaseContent,
+    unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+    missing_columns: Option<Bitmap>,
+}
+
 impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
     fn name(&self) -> &str {
         &self.name
@@ -321,7 +361,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         mut send_port_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<PlSmallStr>,
+        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
     ) {
         assert!(unrestricted_row_count.is_none());
 
@@ -331,21 +371,24 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         let cloud_options = &self.cloud_options;
         let file_schema = &self.file_schema;
         let projection = &self.projection;
+        let row_index_name = self.row_index.as_ref().map(|ri| &ri.name);
         let allow_missing_columns = self.allow_missing_columns;
         let hive_schema = self
             .hive_parts
             .as_ref()
             .and_then(|p| Some(p.first()?.get_statistics().schema().clone()))
             .unwrap_or_else(|| Arc::new(Schema::default()));
-        let physical_columns: Bitmap = file_schema
+        let source_provided_columns: Bitmap = file_schema
             .iter_names()
             .map(|n| {
-                !hive_schema.contains(n) && self.include_file_paths.as_ref().is_none_or(|c| c != n)
+                !hive_schema.contains(n)
+                    && self.include_file_paths.as_ref().is_none_or(|c| c != n)
+                    && self.row_index.as_ref().is_none_or(|c| c.name != n)
             })
             .collect();
 
         let (si_send, mut si_recv) = (0..num_concurrent_scans)
-            .map(|_| connector::<(Result<SourceInput, IdxSize>, Option<Bitmap>)>())
+            .map(|_| connector::<SourcePhase>())
             .collect::<(Vec<_>, Vec<_>)>();
 
         join_handles.extend(si_send.into_iter().enumerate().map(|(mut i, mut si_send)| {
@@ -354,7 +397,8 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             let cloud_options = cloud_options.clone();
             let file_schema = file_schema.clone();
             let projection = projection.clone();
-            let physical_columns = physical_columns.clone();
+            let row_index_name = row_index_name.cloned();
+            let physical_columns = source_provided_columns.clone();
 
             spawn(TaskPriority::High, async move {
                 let state = ExecutionState::new();
@@ -368,10 +412,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         source,
                         read_options.as_ref(),
                         cloud_options.as_ref().as_ref(),
+                        row_index_name.clone(),
                     )
                     .await?;
 
-                    let source_schema = source.schema().await?;
+                    let source_schema = source.physical_schema().await?;
                     let (source_projection, missing_columns) = resolve_source_projection(
                         file_schema.as_ref(),
                         source_schema.as_ref(),
@@ -384,29 +429,37 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                     // If we are not interested in any column, just count the rows and send that
                     // back.
-                    if source_projection.set_bits() == 0 {
-                        let row_count = source.row_count().await?;
+                    if row_index_name.is_none() && source_projection.set_bits() == 0 {
+                        let row_count = source.unrestricted_row_count().await?;
+                        let phase = SourcePhase {
+                            content: SourcePhaseContent::Empty(row_count),
+                            missing_columns: missing_columns.clone(),
+                            unrestricted_row_count: row_index_name
+                                .is_some()
+                                .then(|| Arc::new(AtomicIdxSize::new(row_count))),
+                        };
 
                         // Wait for the orchestrator task to actually be interested in the output
                         // of this file.
-                        if si_send
-                            .send((Err(row_count), missing_columns.clone()))
-                            .await
-                            .is_err()
-                        {
+                        if si_send.send(phase).await.is_err() {
                             break;
                         };
                         i += num_concurrent_scans;
                         continue;
                     }
 
+                    let unrestricted_row_count = row_index_name
+                        .is_some()
+                        .then(|| Arc::new(AtomicIdxSize::new(0)));
+
                     source.with_projection(Some(&source_projection));
+
                     source.spawn_source(
                         num_pipelines,
                         output_recv,
                         &state,
                         &mut join_handles,
-                        None,
+                        unrestricted_row_count.clone(),
                     );
 
                     // Loop until a phase result indicated that the source is empty.
@@ -421,13 +474,15 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             (SourceOutputPort::Serial(tx), SourceInput::Serial(rx))
                         };
 
+                        let phase = SourcePhase {
+                            content: SourcePhaseContent::NonEmpty(rx),
+                            missing_columns: missing_columns.clone(),
+                            unrestricted_row_count: unrestricted_row_count.clone(),
+                        };
+
                         // Wait for the orchestrator task to actually be interested in the output
                         // of this file.
-                        if si_send
-                            .send((Ok(rx), missing_columns.clone()))
-                            .await
-                            .is_err()
-                        {
+                        if si_send.send(phase).await.is_err() {
                             break;
                         };
 
@@ -481,6 +536,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         let include_file_paths = self.include_file_paths.clone();
         let file_schema = self.file_schema.clone();
         let projection = self.projection.clone();
+        let mut row_index = self.row_index.clone();
         let sources = sources.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             let mut seq = MorselSeq::default();
@@ -498,24 +554,25 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     let source_name = source_name(sources.at(current_scan), current_scan);
                     let hive_part = hive_parts.as_deref().map(|parts| &parts[current_scan]);
                     let si_recv = &mut si_recv[current_scan % num_concurrent_scans];
-                    let Ok((rx, missing_columns)) = si_recv.recv().await else {
+                    let Ok(phase) = si_recv.recv().await else {
                         return Ok(());
                     };
 
-                    match rx {
+                    match phase.content {
                         // In certain cases, we don't actually need to read physical data from the
                         // file so we get back a row count.
-                        Err(row_count) => {
+                        SourcePhaseContent::Empty(row_count) => {
                             let df =
                                 DataFrame::new_with_height(row_count as usize, Vec::new()).unwrap();
                             let df = process_dataframe(
                                 df,
                                 &source_name,
                                 hive_part,
-                                missing_columns.as_ref(),
+                                phase.missing_columns.as_ref(),
                                 include_file_paths.as_ref(),
                                 file_schema.as_ref(),
                                 projection.as_ref(),
+                                row_index.as_ref(),
                             );
                             let df = match df {
                                 Ok(df) => df,
@@ -538,8 +595,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 continue 'phase_loop;
                             }
                         },
-
-                        Ok(rx) => match rx {
+                        SourcePhaseContent::NonEmpty(rx) => match rx {
                             SourceInput::Serial(mut rx) => {
                                 while let Ok(rg) = rx.recv().await {
                                     let original_source_token = rg.source_token().clone();
@@ -549,10 +605,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                         df,
                                         &source_name,
                                         hive_part,
-                                        missing_columns.as_ref(),
+                                        phase.missing_columns.as_ref(),
                                         include_file_paths.as_ref(),
                                         file_schema.as_ref(),
                                         projection.as_ref(),
+                                        row_index.as_ref(),
                                     );
                                     let df = match df {
                                         Ok(df) => df,
@@ -600,10 +657,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                         df,
                                         &source_name,
                                         hive_part,
-                                        missing_columns.as_ref(),
+                                        phase.missing_columns.as_ref(),
                                         include_file_paths.as_ref(),
                                         file_schema.as_ref(),
                                         projection.as_ref(),
+                                        row_index.as_ref(),
                                     );
                                     let df = match df {
                                         Ok(df) => df,
@@ -629,8 +687,15 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 }
                             },
                         },
-                    };
+                    }
 
+                    if let Some(ri) = row_index.as_mut() {
+                        let source_num_rows = phase
+                            .unrestricted_row_count
+                            .unwrap()
+                            .load(Ordering::Relaxed);
+                        ri.offset += source_num_rows;
+                    }
                     current_scan += 1;
                 }
                 break;

@@ -4574,10 +4574,10 @@ class DataFrame:
 
         FFI buffers are included in this estimation.
 
-        Note
-        ----
-        For objects, the estimated size only reports the pointer size, which is
-        a huge underestimation.
+        Notes
+        -----
+        For data with Object dtype, the estimated size only reports the pointer
+        size, which is a huge underestimation.
 
         Parameters
         ----------
@@ -10741,6 +10741,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[Any]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10750,6 +10751,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, Any]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10759,6 +10761,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[dict[str, Any]]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10768,6 +10771,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, dict[str, Any]]: ...
+
     def rows_by_key(
         self,
         key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
