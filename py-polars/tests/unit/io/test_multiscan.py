@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import os
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
@@ -342,6 +343,10 @@ def test_multiscan_head(
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     ext: str,
 ) -> None:
+    if ext == 'ndjson' and os.environ['POLARS_AUTO_NEW_STREAMING'] == '1':
+        msg = "NYI"
+        raise Exception(msg)  # noqa: TRY002
+
     a = io.BytesIO()
     b = io.BytesIO()
     for f in [a, b]:
@@ -377,6 +382,10 @@ def test_multiscan_tail(
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     ext: str,
 ) -> None:
+    if ext == 'ndjson' and os.environ['POLARS_AUTO_NEW_STREAMING'] == '1':
+        msg = "NYI"
+        raise Exception(msg)  # noqa: TRY002
+
     a = io.BytesIO()
     b = io.BytesIO()
     for f in [a, b]:
@@ -412,6 +421,10 @@ def test_multiscan_slice_middle(
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
     ext: str,
 ) -> None:
+    if ext == 'ndjson' and os.environ['POLARS_AUTO_NEW_STREAMING'] == '1':
+        msg = "NYI"
+        raise Exception(msg)  # noqa: TRY002
+
     fs = [io.BytesIO() for _ in range(13)]
     for f in fs:
         write(pl.Series("c1", range(7)).to_frame(), f)
@@ -427,3 +440,4 @@ def test_multiscan_slice_middle(
         scan(fs).slice(5 * 7 - 5, 17).collect(new_streaming=True),  # type: ignore[call-overload]
         pl.Series("c1", expected).to_frame(),
     )
+
