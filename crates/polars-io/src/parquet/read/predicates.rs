@@ -1,4 +1,5 @@
-use polars_core::{config, prelude::*};
+use polars_core::config;
+use polars_core::prelude::*;
 use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetadata;
 
