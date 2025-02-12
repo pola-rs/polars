@@ -12,6 +12,8 @@ By offering our managed service we get to drive even greater adoption and invest
 
 All compute runs in your own cloud environment. The main reason is that this ensures that your data never leaves your environment and that the compute is always close to your data.
 
+You can learn more about how this setup in [the infrastructure section of the documentation](providers/aws/infra.md).
+
 ## Can you run Polars Cloud on-premise?
 
 Currently, Polars Cloud is only available to organizations that are on AWS. Support for on-premise infrastructure is on our roadmap and will become available soon.
