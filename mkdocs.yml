@@ -81,6 +81,7 @@ nav:
       - user-guide/migration/pandas.md
       - user-guide/migration/spark.md
     - user-guide/ecosystem.md
+    - user-guide/polars_llms.md
     - Misc:
       - user-guide/misc/multiprocessing.md
       - user-guide/misc/visualization.md
