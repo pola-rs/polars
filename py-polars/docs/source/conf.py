@@ -145,9 +145,9 @@ html_theme_options = {
             "icon": "fa-brands fa-discord",
         },
         {
-            "name": "Twitter",
-            "url": "https://twitter.com/DataPolars",
-            "icon": "fa-brands fa-twitter",
+            "name": "X/Twitter",
+            "url": "https://x.com/datapolars",
+            "icon": "fa-brands fa-x-twitter",
         },
     ],
     "logo": {
