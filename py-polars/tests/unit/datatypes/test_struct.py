@@ -11,6 +11,7 @@ import pytest
 
 import polars as pl
 import polars.selectors as cs
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -923,7 +924,7 @@ def test_struct_wildcard_expansion_and_exclude() -> None:
         ),
     ]
 
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         df.lazy().select(
             pl.col("meta_data").struct.with_fields(pl.field("*").exclude("user_data"))
         ).collect()
@@ -1223,6 +1224,11 @@ def test_nested_object_raises_15237() -> None:
     obj = object()
     df = pl.DataFrame({"a": [obj]})
     with pytest.raises(
-        pl.exceptions.InvalidOperationError, match="nested objects are not allowed"
+        InvalidOperationError, match="nested objects are not allowed"
     ):
         df.select(pl.struct("a"))
+
+
+def test_cast_to_struct_needs_field_14083() -> None:
+    with pytest.raises(InvalidOperationError, match="must specify a field in the struct"):
+        pl.Series([1], dtype=pl.Int32).cast(pl.Struct)
