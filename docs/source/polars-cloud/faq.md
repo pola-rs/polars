@@ -40,3 +40,7 @@ Polars Cloud is completely environment agnostic. This allows you to run your que
 ## What is the pricing model of Polars Cloud?
 
 Polars Cloud is available at no additional cost in this early stage. You only pay for the resources you use in your own cloud environment. We are exploring different usage based pricing models that are geared towards running queries as fast and efficient as possible.
+
+## Will the distributed engine be available in open source?
+
+The distributed engine is only available in Polars Cloud. There are no plans to make it available in the open source project. Polars is focused on single machines, as it makes efficient use of the available resources. Users already report utilizing Polars to process hundres of gigabytes of data on single (large) compute instance. The distributed engine is gear towards teams and organizations that are I/O bound or want to scale their Polars queries beyond single machines and required a solution process workloads at terabyte and even petabyte scale.
