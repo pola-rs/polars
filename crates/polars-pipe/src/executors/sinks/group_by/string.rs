@@ -198,7 +198,7 @@ impl StringGroupbySink {
                                     unsafe {
                                         let agg_fn = aggregators.get_unchecked_mut(i);
                                         let av = agg_fn.finalize();
-                                        buffer.add(av);
+                                        buffer.add(av).ok();
                                     }
                                 }
                             },
@@ -234,7 +234,7 @@ impl StringGroupbySink {
             let s = s.to_physical_repr();
             self.aggregation_series.push(s.rechunk());
         }
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb.clone(), &mut self.hashes)?;
         Ok(s)
     }
     #[inline]
@@ -267,7 +267,7 @@ impl StringGroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.str().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.str()?.downcast_iter().next().unwrap().clone();
 
         // set all bits to false
         self.ooc_state.reset_ooc_filter_rows(chunk.data.height());
@@ -345,7 +345,7 @@ impl Sink for StringGroupbySink {
         // already read/taken. So we write on the slots we just read
         let agg_idx_ptr = hashes.as_ptr() as *mut u64 as *mut IdxSize;
         // array of the keys
-        let keys_arr = s.str().unwrap().downcast_iter().next().unwrap().clone();
+        let keys_arr = s.str()?.downcast_iter().next().unwrap().clone();
 
         for (iteration_idx, (key_val, &h)) in keys_arr.iter().zip(&hashes).enumerate() {
             let current_partition = self.get_partitions(h);
