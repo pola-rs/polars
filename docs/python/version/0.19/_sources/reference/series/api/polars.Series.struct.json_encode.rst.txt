@@ -1,0 +1,6 @@
+﻿polars.Series.struct.json_encode
+================================
+
+.. currentmodule:: polars
+
+.. autoaccessorattribute:: Series.struct.json_encode

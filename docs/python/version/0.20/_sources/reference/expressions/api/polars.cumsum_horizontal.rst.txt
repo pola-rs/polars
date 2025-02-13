@@ -1,0 +1,6 @@
+﻿polars.cumsum\_horizontal
+=========================
+
+.. currentmodule:: polars
+
+.. autofunction:: cumsum_horizontal

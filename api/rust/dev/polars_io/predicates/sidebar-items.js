@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["SpecializedColumnPredicateExpr"],"fn":["apply_predicate"],"struct":["BatchStats","ColumnPredicateExpr","ColumnPredicates","ColumnStatistics","ColumnStats","ScanIOPredicate"],"trait":["PhysicalIoExpr","SkipBatchPredicate","StatsEvaluator"]};
