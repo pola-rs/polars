@@ -57,7 +57,6 @@ impl PartialEq for PythonObject {
 }
 
 #[cfg(feature = "serde")]
-#[cfg(feature = "serde")]
 mod _serde_impls {
     use super::{serde_wrap, PySerializeWrap, PythonObject, TrySerializeToBytes};
     use crate::pl_serialize::deserialize_map_bytes;
