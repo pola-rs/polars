@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from polars._utils.parse import parse_into_expression
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
     from polars import Expr
+    from polars._typing import IntoExpr
 
 
 class ExprCatNameSpace:
@@ -237,3 +239,139 @@ class ExprCatNameSpace:
             msg = f"'suffix' must be a string; found {type(suffix)!r}"
             raise TypeError(msg)
         return wrap_expr(self._pyexpr.cat_ends_with(suffix))
+
+    def contains(
+        self, pattern: str, *, literal: bool = False, strict: bool = True
+    ) -> Expr:
+        """
+        Check if the string representation contains a substring that matches a pattern.
+
+        Parameters
+        ----------
+        pattern
+            A valid regular expression pattern, compatible with the `regex crate
+            <https://docs.rs/regex/latest/regex/>`_.
+        literal
+            Treat `pattern` as a literal string, not as a regular expression.
+        strict
+            Raise an error if the underlying pattern is not a valid regex,
+            otherwise mask out with a null value.
+
+        Notes
+        -----
+        To modify regular expression behaviour (such as case-sensitivity) with
+        flags, use the inline `(?iLmsuxU)` syntax. For example:
+
+        >>> pl.DataFrame({"s": ["AAA", "aAa", "aaa"]}).with_columns(
+        ...     pl.col("s").cast(pl.Categorical)
+        ... ).with_columns(
+        ...     default_match=pl.col("s").cat.contains("AA"),
+        ...     insensitive_match=pl.col("s").cat.contains("(?i)AA"),
+        ... )
+        shape: (3, 3)
+        ┌─────┬───────────────┬───────────────────┐
+        │ s   ┆ default_match ┆ insensitive_match │
+        │ --- ┆ ---           ┆ ---               │
+        │ cat ┆ bool          ┆ bool              │
+        ╞═════╪═══════════════╪═══════════════════╡
+        │ AAA ┆ true          ┆ true              │
+        │ aAa ┆ false         ┆ true              │
+        │ aaa ┆ false         ┆ true              │
+        └─────┴───────────────┴───────────────────┘
+
+        See the regex crate's section on `grouping and flags
+        <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_ for
+        additional information about the use of inline expression modifiers.
+
+        See Also
+        --------
+        starts_with : Check if string values start with a substring.
+        ends_with : Check if string values end with a substring.
+        find: Return the index of the first substring matching a pattern.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "txt": pl.Series(
+        ...             ["Crab", "cat and dog", "rab$bit", None],
+        ...             dtype=pl.Categorical,
+        ...         )
+        ...     }
+        ... )
+        >>> df.select(
+        ...     pl.col("txt"),
+        ...     pl.col("txt").cat.contains("cat|bit").alias("regex"),
+        ...     pl.col("txt").cat.contains("rab$", literal=True).alias("literal"),
+        ... )
+        shape: (4, 3)
+        ┌─────────────┬───────┬─────────┐
+        │ txt         ┆ regex ┆ literal │
+        │ ---         ┆ ---   ┆ ---     │
+        │ cat         ┆ bool  ┆ bool    │
+        ╞═════════════╪═══════╪═════════╡
+        │ Crab        ┆ false ┆ false   │
+        │ cat and dog ┆ true  ┆ false   │
+        │ rab$bit     ┆ true  ┆ true    │
+        │ null        ┆ null  ┆ null    │
+        └─────────────┴───────┴─────────┘
+        """
+        return wrap_expr(self._pyexpr.cat_contains(pattern, literal, strict))
+
+    def contains_any(
+        self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
+    ) -> Expr:
+        """
+        Use the Aho-Corasick algorithm to find matches.
+
+        Determines if any of the patterns are contained in the string representation.
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case-insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "lyrics": pl.Series(
+        ...             [
+        ...                 "Everybody wants to rule the world",
+        ...                 "Tell me what you want, what you really really want",
+        ...                 "Can you feel the love tonight",
+        ...             ],
+        ...             dtype=pl.Categorical,
+        ...         )
+        ...     }
+        ... )
+        >>> df.with_columns(
+        ...     pl.col("lyrics").cat.contains_any(["you", "me"]).alias("contains_any")
+        ... )
+        shape: (3, 2)
+        ┌────────────────────────────────────────────────────┬──────────────┐
+        │ lyrics                                             ┆ contains_any │
+        │ ---                                                ┆ ---          │
+        │ cat                                                ┆ bool         │
+        ╞════════════════════════════════════════════════════╪══════════════╡
+        │ Everybody wants to rule the world                  ┆ false        │
+        │ Tell me what you want, what you really really want ┆ true         │
+        │ Can you feel the love tonight                      ┆ true         │
+        └────────────────────────────────────────────────────┴──────────────┘
+        """
+        patterns = parse_into_expression(
+            patterns, str_as_lit=False, list_as_series=True
+        )
+        return wrap_expr(
+            self._pyexpr.cat_contains_any(patterns, ascii_case_insensitive)
+        )
