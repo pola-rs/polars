@@ -60,9 +60,9 @@ pub trait RoundSeries: SeriesSealed {
                         0
                     };
                     let round_offset = if v < 0 { -round_offset } else { round_offset };
-                    v - rem + round_offset
+                    (v - rem + round_offset) / multiplier
                 })
-                .into_decimal_unchecked(precision, scale as usize);
+                .into_decimal_unchecked(precision, decimals as usize);
 
             return Ok(ca.into_series());
         }
