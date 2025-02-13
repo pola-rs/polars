@@ -55,6 +55,7 @@ default_role = "code"
 
 maximum_signature_line_length = 88
 
+
 # Below setting is used by
 # sphinx-autosummary-accessors - build docs for namespace accessors like `Series.str`
 # https://sphinx-autosummary-accessors.readthedocs.io/en/stable/
