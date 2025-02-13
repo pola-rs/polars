@@ -1,8 +1,10 @@
 # Getting started
 
 <!-- dprint-ignore-start -->
+
 !!! tip "Polars Cloud alpha launch"
-    Polars cloud has recently been made available to a select group of individuals / companies for early alpha testing. You can read more about Polars Cloud and its ambitious goals in our blog post.
+Polars cloud has recently been made available to a select group of individuals / companies for early alpha testing. You can read more about Polars Cloud and its ambitious goals in our blog post.
+
 <!-- dprint-ignore-end-->
 
 Polars Cloud is a managed compute platform for your Polars queries. It allows you to effortlessly
@@ -28,7 +30,7 @@ pc login
 Polars Cloud currently exclusively supports AWS as a cloud provider.
 
 Polars Cloud needs permission to spin up & down hardware in your environment. This is done by
-deploying our cloudformation template. See our [infrastructure](providers/aws/infra.md) section for
+deploying our cloudformation template. See our [infrastructure](providers/aws/infrastructure.md) section for
 more details.
 
 To connect your cloud run:
