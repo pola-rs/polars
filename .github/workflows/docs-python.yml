@@ -16,6 +16,7 @@ on:
   repository_dispatch:
     types:
       - python-release
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -70,16 +71,24 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Python docs for latest release version - versioned
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' 
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
           target-folder: api/python/version/${{ steps.version.outputs.version }}
           single-commit: true
 
-      - name: Deploy Python docs for latest release version - stable
-        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false'
+      - name: Deploy Python docs for latest release version - versioned
+        if:  github.event_name == 'workflow_dispatch'
         uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: py-polars/docs/build/html
+          target-folder: api/python/version/1
+          single-commit: true
+
+      - name: Deploy Python docs for latest release version - stable
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false' || github.event_name == 'workflow_dispatch'
+        uses: JamesIves/github-pages-deploy-action@v4 
         with:
           folder: py-polars/docs/build/html
           target-folder: api/python/stable
