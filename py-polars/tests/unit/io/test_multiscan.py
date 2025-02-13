@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import io
-import os
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.meta.index_type import get_index_type
@@ -478,7 +478,7 @@ def test_multiscan_slice_parametric(
         f.seek(0)
         try:
             scan(f).slice(-1, 1).collect(new_streaming=True)  # type: ignore[call-overload]
-            assert False
+            pytest.fail("This should crash")
         except pl.exceptions.ComputeError:
             pass
 
