@@ -823,6 +823,98 @@ def test_rolling_std_nulls_min_samples_1_20076() -> None:
     assert_series_equal(result, expected)
 
 
+def test_rolling_min_max_sum_bool() -> None:
+    s = pl.Series("a", [True, True, False, False, True, None])
+    assert_series_equal(
+        s.rolling_min(2), pl.Series("a", [None, True, False, False, False, None])
+    )
+    assert_series_equal(
+        s.rolling_max(2), pl.Series("a", [None, True, True, False, True, None])
+    )
+    assert_series_equal(
+        s.rolling_sum(2), pl.Series("a", [None, 2, 1, 0, 1, None], dtype=pl.UInt32)
+    )
+
+
+def test_rolling_min_max_numeric_bool() -> None:
+    s1 = pl.Series("a", [1, 0, 0, 1, 1, 1, 0, 0, 1, 0])
+    s2 = pl.Series(
+        "a", [True, False, False, True, True, True, False, False, True, False]
+    )
+
+    assert_series_equal(s1.rolling_min(2).cast(pl.Boolean), s2.rolling_min(2))
+    assert_series_equal(
+        s1.rolling_min(2, min_periods=1).cast(pl.Boolean),
+        s2.rolling_min(2, min_periods=1),
+    )
+
+    assert_series_equal(s1.rolling_max(2).cast(pl.Boolean), s2.rolling_max(2))
+    assert_series_equal(
+        s1.rolling_max(2, min_periods=1).cast(pl.Boolean),
+        s2.rolling_max(2, min_periods=1),
+    )
+
+    assert_series_equal(s1.rolling_min(3).cast(pl.Boolean), s2.rolling_min(3))
+    assert_series_equal(
+        s1.rolling_min(3, min_periods=1).cast(pl.Boolean),
+        s2.rolling_min(3, min_periods=1),
+    )
+    assert_series_equal(
+        s1.rolling_min(3, min_periods=2).cast(pl.Boolean),
+        s2.rolling_min(3, min_periods=2),
+    )
+
+    assert_series_equal(s1.rolling_max(3).cast(pl.Boolean), s2.rolling_max(3))
+    assert_series_equal(
+        s1.rolling_max(3, min_periods=1).cast(pl.Boolean),
+        s2.rolling_max(3, min_periods=1),
+    )
+    assert_series_equal(
+        s1.rolling_max(3, min_periods=2).cast(pl.Boolean),
+        s2.rolling_max(3, min_periods=2),
+    )
+
+    assert_series_equal(
+        s1.rolling_min(2, center=True).cast(pl.Boolean), s2.rolling_min(2, center=True)
+    )
+    assert_series_equal(
+        s1.rolling_min(2, min_periods=1, center=True).cast(pl.Boolean),
+        s2.rolling_min(2, min_periods=1, center=True),
+    )
+
+    assert_series_equal(
+        s1.rolling_max(2, center=True).cast(pl.Boolean), s2.rolling_max(2, center=True)
+    )
+    assert_series_equal(
+        s1.rolling_max(2, min_periods=1, center=True).cast(pl.Boolean),
+        s2.rolling_max(2, min_periods=1, center=True),
+    )
+
+    assert_series_equal(
+        s1.rolling_min(3, center=True).cast(pl.Boolean), s2.rolling_min(3, center=True)
+    )
+    assert_series_equal(
+        s1.rolling_min(3, min_periods=1, center=True).cast(pl.Boolean),
+        s2.rolling_min(3, min_periods=1, center=True),
+    )
+    assert_series_equal(
+        s1.rolling_min(3, min_periods=2, center=True).cast(pl.Boolean),
+        s2.rolling_min(3, min_periods=2, center=True),
+    )
+
+    assert_series_equal(
+        s1.rolling_max(3, center=True).cast(pl.Boolean), s2.rolling_max(3, center=True)
+    )
+    assert_series_equal(
+        s1.rolling_max(3, min_periods=1, center=True).cast(pl.Boolean),
+        s2.rolling_max(3, min_periods=1, center=True),
+    )
+    assert_series_equal(
+        s1.rolling_max(3, min_periods=2, center=True).cast(pl.Boolean),
+        s2.rolling_max(3, min_periods=2, center=True),
+    )
+
+
 def test_rolling_by_date() -> None:
     df = pl.DataFrame(
         {
@@ -834,6 +926,34 @@ def test_rolling_by_date() -> None:
     result = df.with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)
+
+
+def test_rolling_min_max_sum_bool_by_date_bool() -> None:
+    df = pl.DataFrame(
+        {
+            "dt": [
+                date(2020, 1, 1),
+                date(2020, 1, 2),
+                date(2020, 1, 3),
+                date(2020, 1, 4),
+                date(2020, 1, 5),
+            ],
+            "val": [True, True, False, False, True],
+        }
+    ).sort("dt")
+
+    assert_frame_equal(
+        df.with_columns(roll=pl.col("val").rolling_min_by("dt", "2d")),
+        df.with_columns(pl.Series("roll", [True, True, False, False, False])),
+    )
+    assert_frame_equal(
+        df.with_columns(roll=pl.col("val").rolling_max_by("dt", "2d")),
+        df.with_columns(pl.Series("roll", [True, True, True, False, True])),
+    )
+    assert_frame_equal(
+        df.with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d")),
+        df.with_columns(pl.Series("roll", [1, 2, 1, 0, 1], dtype=pl.UInt32)),
+    )
 
 
 @pytest.mark.parametrize("dtype", [pl.Int64, pl.Int32, pl.UInt64, pl.UInt32])
