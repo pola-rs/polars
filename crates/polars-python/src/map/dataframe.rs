@@ -1,3 +1,4 @@
+use either::Either;
 use polars::prelude::*;
 use polars_core::frame::row::{rows_to_schema_first_non_null, Row};
 use polars_core::series::SeriesIter;
@@ -98,8 +99,8 @@ pub fn apply_lambda_unknown<'a>(
                 false,
             ));
         } else if out.hasattr("_s")? {
-            let py_pyseries = out.getattr("_s").unwrap();
-            let series = py_pyseries.extract::<PySeries>().unwrap().series;
+            let py_series = out.getattr("_s")?;
+            let series = py_series.extract::<PySeries>()?.series;
             let dt = series.dtype();
             return Ok((
                 PySeries::new(
@@ -110,7 +111,7 @@ pub fn apply_lambda_unknown<'a>(
                 false,
             ));
         } else if out.extract::<Wrap<Row<'a>>>().is_ok() {
-            let first_value = out.extract::<Wrap<Row<'a>>>().unwrap().0;
+            let first_value = out.extract::<Wrap<Row<'a>>>()?.0;
             return Ok((
                 PyDataFrame::from(
                     apply_lambda_with_rows_output(
@@ -294,41 +295,26 @@ pub fn apply_lambda_with_rows_output<'a>(
     inference_size: usize,
 ) -> PolarsResult<DataFrame> {
     let width = first_value.0.len();
-    let null_row = Row::new(vec![AnyValue::Null; width]);
-
-    let mut row_buf = Row::default();
-
+    let null_row = || std::iter::repeat_n(AnyValue::Null, width);
     let skip = 1;
     let mut iters = get_iters_skip(df, init_null_count + skip);
-    let mut row_iter = ((init_null_count + skip)..df.height()).map(|_| {
+    let mut row_iter = ((init_null_count + skip)..df.height()).map(|_| ->PolarsResult<_> {
         let iter = iters.iter_mut().map(|it| Wrap(it.next().unwrap()));
         let tpl = (PyTuple::new(py, iter).unwrap(),);
-
         let return_val = lambda.call1(tpl).map_err(|e| polars_err!(ComputeError: format!("{e}")))?;
         if return_val.is_none() {
-            Ok(&null_row)
+            Ok(Either::Left(null_row()))
         } else {
             let tuple = return_val.downcast::<PyTuple>().map_err(|_| polars_err!(ComputeError: format!("expected tuple, got {}", return_val.get_type().qualname().unwrap())))?;
-            row_buf.0.clear();
-            for v in tuple {
-                let v = v.extract::<Wrap<AnyValue>>().unwrap().0;
-                row_buf.0.push(v);
-            }
-            let ptr = &row_buf as *const Row;
-            // SAFETY:
-            // we know that row constructor of polars dataframe does not keep a reference
-            // to the row. Before we mutate the row buf again, the reference is dropped.
-            // we only cannot prove it to the compiler.
-            // we still to this because it save a Vec allocation in a hot loop.
-            Ok(unsafe { &*ptr })
+            Ok(Either::Right(tuple.into_iter().map(|v| v.extract::<Wrap<AnyValue>>().unwrap().0)))
         }
     });
 
     // first rows for schema inference
     let mut buf = Vec::with_capacity(inference_size);
     buf.push(first_value);
-    for v in (&mut row_iter).take(inference_size) {
-        buf.push(v?.clone());
+    for row in (&mut row_iter).take(inference_size) {
+        buf.push(Row(row?.collect()));
     }
 
     let schema = rows_to_schema_first_non_null(&buf, Some(50))?;
@@ -337,18 +323,21 @@ pub fn apply_lambda_with_rows_output<'a>(
         // SAFETY: we know the iterators size
         let iter = unsafe {
             (0..init_null_count)
-                .map(|_| Ok(&null_row))
-                .chain(buf.iter().map(Ok))
-                .chain(row_iter)
+                .map(|_| Ok(Either::Left(null_row())))
+                .chain(
+                    buf.into_iter()
+                        .map(|r| Ok(Either::Right(Either::Left(r.into_iter())))),
+                )
+                .chain(row_iter.map(|r| Ok(Either::Right(Either::Right(r?)))))
                 .trust_my_length(df.height())
         };
         DataFrame::try_from_rows_iter_and_schema(iter, &schema)
     } else {
         // SAFETY: we know the iterators size
         let iter = unsafe {
-            buf.iter()
-                .map(Ok)
-                .chain(row_iter)
+            buf.into_iter()
+                .map(|r| Ok(Either::Left(r.into_iter())))
+                .chain(row_iter.map(|r| Ok(Either::Right(r?))))
                 .trust_my_length(df.height())
         };
         DataFrame::try_from_rows_iter_and_schema(iter, &schema)
