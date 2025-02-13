@@ -46,21 +46,16 @@ impl PlCredentialProvider {
     pub fn from_python_builder(func: pyo3::PyObject) -> Self {
         use polars_utils::python_function::PythonObject;
 
-        Self::Python(python_impl::PythonCredentialProvider::from_builder(
-            Arc::new(PythonObject(func)),
-        ))
+        Self::Python(python_impl::PythonCredentialProvider::Builder(Arc::new(
+            PythonObject(func),
+        )))
     }
 
     pub(super) fn func_addr(&self) -> usize {
         match self {
             Self::Function(CredentialProviderFunction(v)) => Arc::as_ptr(v) as *const () as usize,
             #[cfg(feature = "python")]
-            Self::Python(PythonCredentialProvider {
-                // We know this is only used for hashing, it is safe to ignore `is_builder`, since we
-                // don't expect that the same py_object can be both a builder and provider.
-                py_object,
-                is_builder: _,
-            }) => Arc::as_ptr(py_object) as *const () as usize,
+            Self::Python(v) => v.func_addr(),
         }
     }
 
@@ -474,62 +469,70 @@ mod python_impl {
 
     #[derive(Clone, Debug)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-    pub struct PythonCredentialProvider {
-        pub(super) py_object: Arc<PythonObject>,
+    pub enum PythonCredentialProvider {
         /// Indicates `py_object` is a `CredentialProviderBuilder`.
-        pub(super) is_builder: bool,
+        Builder(Arc<PythonObject>),
+        /// Indicates `py_object` is an instantiated credential provider
+        Provider(Arc<PythonObject>),
     }
 
     impl PythonCredentialProvider {
-        pub(crate) fn from_builder(py_object: Arc<PythonObject>) -> Self {
-            if cfg!(debug_assertions) {
-                Python::with_gil(|py| {
-                    let cls_name = py_object
-                        .getattr(py, "__class__")
-                        .unwrap()
-                        .getattr(py, "__name__")
-                        .unwrap()
-                        .extract::<pyo3::pybacked::PyBackedStr>(py)
-                        .unwrap();
-
-                    assert_eq!(&cls_name, "CredentialProviderBuilder");
-                });
-            }
-
-            Self {
-                py_object,
-                is_builder: true,
-            }
-        }
-
-        pub(crate) fn from_provider(py_object: Arc<PythonObject>) -> Self {
-            Self {
-                py_object,
-                is_builder: false,
-            }
-        }
-
-        /// Performs initialization if necessary
+        /// Performs initialization if necessary.
+        ///
+        /// This exists as a separate step that must be called beforehand. This approach is easier
+        /// as the alternative is to refactor the `IntoCredentialProvider` trait to return
+        /// `PolarsResult<Option<T>>` for every single function.
         pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
-            if self.is_builder {
-                let opt_initialized_py_object = Python::with_gil(|py| {
-                    let build_fn = self.py_object.getattr(py, "build_credential_provider")?;
+            match self {
+                Self::Builder(py_object) => {
+                    if cfg!(debug_assertions) {
+                        Python::with_gil(|py| {
+                            let cls_name = py_object
+                                .getattr(py, "__class__")
+                                .unwrap()
+                                .getattr(py, "__name__")
+                                .unwrap()
+                                .extract::<pyo3::pybacked::PyBackedStr>(py)
+                                .unwrap();
 
-                    let v = build_fn.call0(py)?;
-                    let v = (!v.is_none(py)).then_some(v);
+                            assert_eq!(&cls_name, "CredentialProviderBuilder");
+                        });
+                    }
 
-                    pyo3::PyResult::Ok(v)
-                })
-                .map_err(to_compute_err)?;
+                    let opt_initialized_py_object = Python::with_gil(|py| {
+                        let build_fn = py_object.getattr(py, "build_credential_provider")?;
 
-                Ok(opt_initialized_py_object
-                    .map(PythonObject)
-                    .map(Arc::new)
-                    .map(Self::from_provider))
-            } else {
-                // Note: We don't expect to hit here.
-                Ok(Some(self))
+                        let v = build_fn.call0(py)?;
+                        let v = (!v.is_none(py)).then_some(v);
+
+                        pyo3::PyResult::Ok(v)
+                    })
+                    .map_err(to_compute_err)?;
+
+                    Ok(opt_initialized_py_object
+                        .map(PythonObject)
+                        .map(Arc::new)
+                        .map(Self::Provider))
+                },
+                Self::Provider(_) => {
+                    // Note: We don't expect to hit here.
+                    Ok(Some(self))
+                },
             }
+        }
+
+        fn unwrap_as_provider(self) -> Arc<PythonObject> {
+            match self {
+                Self::Builder(_) => panic!(),
+                Self::Provider(v) => v,
+            }
+        }
+
+        pub(crate) fn func_addr(&self) -> usize {
+            (match self {
+                Self::Builder(v) => Arc::as_ptr(v),
+                Self::Provider(v) => Arc::as_ptr(v),
+            }) as *const () as usize
         }
     }
 
@@ -542,9 +545,7 @@ mod python_impl {
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
-            assert!(!self.is_builder); // should not be a builder at this point.
-
-            let func = self.py_object;
+            let func = self.unwrap_as_provider();
 
             CredentialProviderFunction(Arc::new(move || {
                 let func = func.clone();
@@ -621,9 +622,7 @@ mod python_impl {
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
-            assert!(!self.is_builder); // should not be a builder at this point.
-
-            let func = self.py_object;
+            let func = self.unwrap_as_provider();
 
             CredentialProviderFunction(Arc::new(move || {
                 let func = func.clone();
@@ -692,9 +691,8 @@ mod python_impl {
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
-            assert!(!self.is_builder); // should not be a builder at this point.
+            let func = self.unwrap_as_provider();
 
-            let func = self.py_object;
             CredentialProviderFunction(Arc::new(move || {
                 let func = func.clone();
                 Box::pin(async move {
@@ -747,7 +745,7 @@ mod python_impl {
 
     impl PartialEq for PythonCredentialProvider {
         fn eq(&self, other: &Self) -> bool {
-            Arc::ptr_eq(&self.py_object, &other.py_object)
+            self.func_addr() == other.func_addr()
         }
     }
 
@@ -757,7 +755,7 @@ mod python_impl {
             // * Inner is an `Arc`
             // * Visibility is limited to super
             // * No code in `mod python_impl` or `super` mutates the Arc inner.
-            state.write_usize(Arc::as_ptr(&self.py_object) as *const () as usize)
+            state.write_usize(self.func_addr())
         }
     }
 }
