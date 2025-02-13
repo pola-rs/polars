@@ -16,6 +16,7 @@ on:
   repository_dispatch:
     types:
       - python-release
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
