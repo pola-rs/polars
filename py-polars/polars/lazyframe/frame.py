@@ -2438,11 +2438,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "null_count": True,
             }
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_parquet"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2459,7 +2462,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             data_page_size=data_page_size,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -2562,11 +2565,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ipc"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2579,7 +2585,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             compression=compression,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -2749,11 +2755,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_csv"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2778,7 +2787,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             quote_style=quote_style,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -2877,11 +2886,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ndjson"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2893,7 +2905,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             path=path,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 

@@ -86,7 +86,7 @@ impl PyLazyFrame {
             cloud_options = cloud_options
                 .with_max_retries(retries)
                 .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
                 );
 
             if let Some(file_cache_ttl) = file_cache_ttl {
@@ -206,7 +206,7 @@ impl PyLazyFrame {
             cloud_options = cloud_options
                 .with_max_retries(retries)
                 .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
                 );
             r = r.with_cloud_options(Some(cloud_options));
         }
@@ -341,7 +341,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             );
         }
@@ -417,7 +417,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             );
         }
@@ -715,7 +715,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -748,7 +748,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -819,7 +819,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -854,7 +854,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };

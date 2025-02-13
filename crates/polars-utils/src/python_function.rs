@@ -10,24 +10,42 @@ pub use serde_wrap::{
 
 use crate::pl_serialize::deserialize_map_bytes;
 
+/// Wrapper around PyObject from pyo3 with additional trait impls.
 #[derive(Debug)]
-pub struct PythonFunction(pub PyObject);
+pub struct PythonObject(pub PyObject);
+// Note: We have this because the struct itself used to be called `PythonFunction`, so it's
+// referred to as such from a lot of places.
+pub type PythonFunction = PythonObject;
 
-impl Clone for PythonFunction {
+impl std::ops::Deref for PythonObject {
+    type Target = PyObject;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for PythonObject {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Clone for PythonObject {
     fn clone(&self) -> Self {
         Python::with_gil(|py| Self(self.0.clone_ref(py)))
     }
 }
 
-impl From<PyObject> for PythonFunction {
+impl From<PyObject> for PythonObject {
     fn from(value: PyObject) -> Self {
         Self(value)
     }
 }
 
-impl Eq for PythonFunction {}
+impl Eq for PythonObject {}
 
-impl PartialEq for PythonFunction {
+impl PartialEq for PythonObject {
     fn eq(&self, other: &Self) -> bool {
         Python::with_gil(|py| {
             let eq = self.0.getattr(py, "__eq__").unwrap();
@@ -41,7 +59,7 @@ impl PartialEq for PythonFunction {
 }
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for PythonFunction {
+impl serde::Serialize for PythonObject {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -56,20 +74,20 @@ impl serde::Serialize for PythonFunction {
 }
 
 #[cfg(feature = "serde")]
-impl<'a> serde::Deserialize<'a> for PythonFunction {
+impl<'a> serde::Deserialize<'a> for PythonObject {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'a>,
     {
         use serde::de::Error;
-        deserialize_map_bytes(deserializer, &mut |bytes| {
+        deserialize_map_bytes(deserializer, |bytes| {
             Self::try_deserialize_bytes(&bytes).map_err(|e| D::Error::custom(e.to_string()))
         })?
     }
 }
 
 #[cfg(feature = "serde")]
-impl TrySerializeToBytes for PythonFunction {
+impl TrySerializeToBytes for PythonObject {
     fn try_serialize_to_bytes(&self) -> polars_error::PolarsResult<Vec<u8>> {
         serde_wrap::serialize_pyobject_with_cloudpickle_fallback(&self.0)
     }
@@ -85,6 +103,7 @@ mod serde_wrap {
     use polars_error::PolarsResult;
 
     use super::*;
+    use crate::config;
     use crate::pl_serialize::deserialize_map_bytes;
 
     pub const SERDE_MAGIC_BYTE_MARK: &[u8] = "PLPYFN".as_bytes();
@@ -126,7 +145,7 @@ mod serde_wrap {
         {
             use serde::de::Error;
 
-            deserialize_map_bytes(deserializer, &mut |bytes| {
+            deserialize_map_bytes(deserializer, |bytes| {
                 let Some((magic, rem)) = bytes.split_at_checked(SERDE_MAGIC_BYTE_MARK.len()) else {
                     return Err(D::Error::custom(
                         "unexpected EOF when reading serialized pyobject version",
@@ -182,23 +201,30 @@ mod serde_wrap {
 
             let dumped = pickle.call1((py_object.clone_ref(py),));
 
-            let (dumped, used_cloudpickle) = if let Ok(v) = dumped {
-                (v, false)
-            } else {
-                let cloudpickle = PyModule::import(py, "cloudpickle")
-                    .map_err(from_pyerr)?
-                    .getattr("dumps")
-                    .unwrap();
-                let dumped = cloudpickle
-                    .call1((py_object.clone_ref(py),))
-                    .map_err(from_pyerr)?;
-                (dumped, true)
+            let (dumped, used_cloudpickle) = match dumped {
+                Ok(v) => (v, false),
+                Err(e) => {
+                    if config::verbose() {
+                        eprintln!(
+                            "serialize_pyobject_with_cloudpickle_fallback(): \
+                            retrying with cloudpickle due to error: {:?}",
+                            e
+                        );
+                    }
+
+                    let cloudpickle = PyModule::import(py, "cloudpickle")?
+                        .getattr("dumps")
+                        .unwrap();
+                    let dumped = cloudpickle.call1((py_object.clone_ref(py),))?;
+                    (dumped, true)
+                },
             };
 
-            let py_bytes = dumped.extract::<PyBackedBytes>().map_err(from_pyerr)?;
+            let py_bytes = dumped.extract::<PyBackedBytes>()?;
 
             Ok([&[used_cloudpickle as u8, b'C'][..], py_bytes.as_ref()].concat())
         })
+        .map_err(from_pyerr)
     }
 
     pub fn deserialize_pyobject_bytes_maybe_cloudpickle<T: for<'a> From<PyObject>>(
@@ -223,9 +249,10 @@ mod serde_wrap {
                 .getattr("loads")
                 .unwrap();
             let arg = (PyBytes::new(py, bytes),);
-            let pyany_bound = pickle.call1(arg).map_err(from_pyerr)?;
+            let pyany_bound = pickle.call1(arg)?;
             Ok(PyObject::from(pyany_bound).into())
         })
+        .map_err(from_pyerr)
     }
 }
 

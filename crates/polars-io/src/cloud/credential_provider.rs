@@ -15,8 +15,6 @@ pub use object_store::gcp::GcpCredential;
 use polars_core::config;
 use polars_error::{polars_bail, PolarsResult};
 #[cfg(feature = "python")]
-use polars_utils::python_function::PythonFunction;
-#[cfg(feature = "python")]
 use python_impl::PythonCredentialProvider;
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
@@ -43,23 +41,36 @@ impl PlCredentialProvider {
         Self::Function(CredentialProviderFunction(Arc::new(func)))
     }
 
+    /// Intended to be called with an internal `CredentialProviderBuilder`.
     #[cfg(feature = "python")]
-    pub fn from_python_func(func: PythonFunction) -> Self {
-        Self::Python(python_impl::PythonCredentialProvider(Arc::new(func)))
-    }
+    pub fn from_python_builder(func: pyo3::PyObject) -> Self {
+        use polars_utils::python_function::PythonObject;
 
-    #[cfg(feature = "python")]
-    pub fn from_python_func_object(func: pyo3::PyObject) -> Self {
-        Self::Python(python_impl::PythonCredentialProvider(Arc::new(
-            PythonFunction(func),
-        )))
+        Self::Python(python_impl::PythonCredentialProvider::from_builder(
+            Arc::new(PythonObject(func)),
+        ))
     }
 
     pub(super) fn func_addr(&self) -> usize {
         match self {
             Self::Function(CredentialProviderFunction(v)) => Arc::as_ptr(v) as *const () as usize,
             #[cfg(feature = "python")]
-            Self::Python(PythonCredentialProvider(v)) => Arc::as_ptr(v) as *const () as usize,
+            Self::Python(PythonCredentialProvider {
+                // We know this is only used for hashing, it is safe to ignore `is_builder`, since we
+                // don't expect that the same py_object can be both a builder and provider.
+                py_object,
+                is_builder: _,
+            }) => Arc::as_ptr(py_object) as *const () as usize,
+        }
+    }
+
+    /// Python passes a `CredentialProviderBuilder`, this calls the builder to
+    /// build the final credential provider.
+    pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+        match self {
+            Self::Function(_) => Ok(Some(self)),
+            #[cfg(feature = "python")]
+            Self::Python(v) => Ok(v.try_into_initialized()?.map(Self::Python)),
         }
     }
 }
@@ -452,8 +463,8 @@ mod python_impl {
     use std::hash::Hash;
     use std::sync::Arc;
 
-    use polars_error::PolarsError;
-    use polars_utils::python_function::PythonFunction;
+    use polars_error::{to_compute_err, PolarsError, PolarsResult};
+    use polars_utils::python_function::PythonObject;
     use pyo3::exceptions::PyValueError;
     use pyo3::pybacked::PyBackedStr;
     use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
@@ -462,11 +473,63 @@ mod python_impl {
     use super::IntoCredentialProvider;
 
     #[derive(Clone, Debug)]
-    pub struct PythonCredentialProvider(pub(super) Arc<PythonFunction>);
+    #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
+    pub struct PythonCredentialProvider {
+        pub(super) py_object: Arc<PythonObject>,
+        /// Indicates `py_object` is a `CredentialProviderBuilder`.
+        pub(super) is_builder: bool,
+    }
 
-    impl From<PythonFunction> for PythonCredentialProvider {
-        fn from(value: PythonFunction) -> Self {
-            Self(Arc::new(value))
+    impl PythonCredentialProvider {
+        pub(crate) fn from_builder(py_object: Arc<PythonObject>) -> Self {
+            if cfg!(debug_assertions) {
+                Python::with_gil(|py| {
+                    let cls_name = py_object
+                        .getattr(py, "__class__")
+                        .unwrap()
+                        .getattr(py, "__name__")
+                        .unwrap()
+                        .extract::<pyo3::pybacked::PyBackedStr>(py)
+                        .unwrap();
+
+                    assert_eq!(&cls_name, "CredentialProviderBuilder");
+                });
+            }
+
+            Self {
+                py_object,
+                is_builder: true,
+            }
+        }
+
+        pub(crate) fn from_provider(py_object: Arc<PythonObject>) -> Self {
+            Self {
+                py_object,
+                is_builder: false,
+            }
+        }
+
+        /// Performs initialization if necessary
+        pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+            if self.is_builder {
+                let opt_initialized_py_object = Python::with_gil(|py| {
+                    let build_fn = self.py_object.getattr(py, "build_credential_provider")?;
+
+                    let v = build_fn.call0(py)?;
+                    let v = (!v.is_none(py)).then_some(v);
+
+                    pyo3::PyResult::Ok(v)
+                })
+                .map_err(to_compute_err)?;
+
+                Ok(opt_initialized_py_object
+                    .map(PythonObject)
+                    .map(Arc::new)
+                    .map(Self::from_provider))
+            } else {
+                // Note: We don't expect to hit here.
+                Ok(Some(self))
+            }
         }
     }
 
@@ -479,8 +542,12 @@ mod python_impl {
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
+            assert!(!self.is_builder); // should not be a builder at this point.
+
+            let func = self.py_object;
+
             CredentialProviderFunction(Arc::new(move || {
-                let func = self.0.clone();
+                let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = object_store::aws::AwsCredential {
                         key_id: String::new(),
@@ -554,8 +621,12 @@ mod python_impl {
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
+            assert!(!self.is_builder); // should not be a builder at this point.
+
+            let func = self.py_object;
+
             CredentialProviderFunction(Arc::new(move || {
-                let func = self.0.clone();
+                let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = None;
 
@@ -621,8 +692,11 @@ mod python_impl {
                 CredentialProviderFunction, ObjectStoreCredential,
             };
 
+            assert!(!self.is_builder); // should not be a builder at this point.
+
+            let func = self.py_object;
             CredentialProviderFunction(Arc::new(move || {
-                let func = self.0.clone();
+                let func = func.clone();
                 Box::pin(async move {
                     let mut credentials = object_store::gcp::GcpCredential {
                         bearer: String::new(),
@@ -666,11 +740,14 @@ mod python_impl {
         }
     }
 
+    // Note: We don't consider `is_builder` for hash/eq - we don't expect the same Arc<PythonObject>
+    // to be referenced as both true and false from the `is_builder` field.
+
     impl Eq for PythonCredentialProvider {}
 
     impl PartialEq for PythonCredentialProvider {
         fn eq(&self, other: &Self) -> bool {
-            Arc::ptr_eq(&self.0, &other.0)
+            Arc::ptr_eq(&self.py_object, &other.py_object)
         }
     }
 
@@ -680,33 +757,7 @@ mod python_impl {
             // * Inner is an `Arc`
             // * Visibility is limited to super
             // * No code in `mod python_impl` or `super` mutates the Arc inner.
-            state.write_usize(Arc::as_ptr(&self.0) as *const () as usize)
-        }
-    }
-
-    #[cfg(feature = "serde")]
-    mod _serde_impl {
-        use polars_utils::python_function::PySerializeWrap;
-
-        use super::PythonCredentialProvider;
-
-        impl serde::Serialize for PythonCredentialProvider {
-            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-            where
-                S: serde::Serializer,
-            {
-                PySerializeWrap(self.0.as_ref()).serialize(serializer)
-            }
-        }
-
-        impl<'a> serde::Deserialize<'a> for PythonCredentialProvider {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'a>,
-            {
-                PySerializeWrap::<super::PythonFunction>::deserialize(deserializer)
-                    .map(|x| x.0.into())
-            }
+            state.write_usize(Arc::as_ptr(&self.py_object) as *const () as usize)
         }
     }
 }
