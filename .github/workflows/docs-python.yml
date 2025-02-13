@@ -78,7 +78,7 @@ jobs:
           target-folder: api/python/version/${{ steps.version.outputs.version }}
           single-commit: true
 
-      - name: Deploy Python docs for latest release version - versioned
+      - name: Deploy Python docs for latest release version - manual
         if:  github.event_name == 'workflow_dispatch'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
