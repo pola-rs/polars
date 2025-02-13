@@ -1,3 +1,4 @@
+use core::fmt;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -34,6 +35,12 @@ pub struct ScanPredicate {
 
     /// Partial predicates for each column for filter when loading columnar formats.
     pub column_predicates: PhysicalColumnPredicates,
+}
+
+impl fmt::Debug for ScanPredicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("scan_predicate")
+    }
 }
 
 #[derive(Clone)]
