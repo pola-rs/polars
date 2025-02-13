@@ -483,7 +483,7 @@ mod python_impl {
         /// This exists as a separate step that must be called beforehand. This approach is easier
         /// as the alternative is to refactor the `IntoCredentialProvider` trait to return
         /// `PolarsResult<Option<T>>` for every single function.
-        pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
+        pub(super) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
             match self {
                 Self::Builder(py_object) => {
                     let opt_initialized_py_object = Python::with_gil(|py| {
@@ -515,7 +515,7 @@ mod python_impl {
             }
         }
 
-        pub(crate) fn func_addr(&self) -> usize {
+        pub(super) fn func_addr(&self) -> usize {
             (match self {
                 Self::Builder(v) => Arc::as_ptr(v),
                 Self::Provider(v) => Arc::as_ptr(v),
