@@ -15,6 +15,8 @@ pub use object_store::gcp::GcpCredential;
 use polars_core::config;
 use polars_error::{polars_bail, PolarsResult};
 #[cfg(feature = "python")]
+use polars_utils::python_function::PythonObject;
+#[cfg(feature = "python")]
 use python_impl::PythonCredentialProvider;
 
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
@@ -45,8 +47,6 @@ impl PlCredentialProvider {
     /// py-polars.
     #[cfg(feature = "python")]
     pub fn from_python_builder(func: pyo3::PyObject) -> Self {
-        use polars_utils::python_function::PythonObject;
-
         Self::Python(python_impl::PythonCredentialProvider::Builder(Arc::new(
             PythonObject(func),
         )))
@@ -471,8 +471,22 @@ mod python_impl {
     #[derive(Clone, Debug)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     pub enum PythonCredentialProvider {
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                serialize_with = "PythonObject::serialize_with_pyversion",
+                deserialize_with = "PythonObject::deserialize_with_pyversion"
+            )
+        )]
         /// Indicates `py_object` is a `CredentialProviderBuilder`.
         Builder(Arc<PythonObject>),
+        #[cfg_attr(
+            feature = "serde",
+            serde(
+                serialize_with = "PythonObject::serialize_with_pyversion",
+                deserialize_with = "PythonObject::deserialize_with_pyversion"
+            )
+        )]
         /// Indicates `py_object` is an instantiated credential provider
         Provider(Arc<PythonObject>),
     }

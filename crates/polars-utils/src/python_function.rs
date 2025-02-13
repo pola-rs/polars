@@ -8,8 +8,6 @@ pub use serde_wrap::{
     SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
 };
 
-use crate::pl_serialize::deserialize_map_bytes;
-
 /// Wrapper around PyObject from pyo3 with additional trait impls.
 #[derive(Debug)]
 pub struct PythonObject(pub PyObject);
@@ -59,41 +57,70 @@ impl PartialEq for PythonObject {
 }
 
 #[cfg(feature = "serde")]
-impl serde::Serialize for PythonObject {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        use serde::ser::Error;
-        let bytes = self
-            .try_serialize_to_bytes()
-            .map_err(|e| S::Error::custom(e.to_string()))?;
-
-        Vec::<u8>::serialize(&bytes, serializer)
-    }
-}
-
 #[cfg(feature = "serde")]
-impl<'a> serde::Deserialize<'a> for PythonObject {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'a>,
-    {
-        use serde::de::Error;
-        deserialize_map_bytes(deserializer, |bytes| {
-            Self::try_deserialize_bytes(&bytes).map_err(|e| D::Error::custom(e.to_string()))
-        })?
-    }
-}
+mod _serde_impls {
+    use super::{serde_wrap, PySerializeWrap, PythonObject, TrySerializeToBytes};
+    use crate::pl_serialize::deserialize_map_bytes;
 
-#[cfg(feature = "serde")]
-impl TrySerializeToBytes for PythonObject {
-    fn try_serialize_to_bytes(&self) -> polars_error::PolarsResult<Vec<u8>> {
-        serde_wrap::serialize_pyobject_with_cloudpickle_fallback(&self.0)
+    impl PythonObject {
+        pub fn serialize_with_pyversion<T, S>(
+            value: &T,
+            serializer: S,
+        ) -> std::result::Result<S::Ok, S::Error>
+        where
+            T: AsRef<PythonObject>,
+            S: serde::ser::Serializer,
+        {
+            use serde::Serialize;
+            PySerializeWrap(value.as_ref()).serialize(serializer)
+        }
+
+        pub fn deserialize_with_pyversion<'de, T, D>(d: D) -> Result<T, D::Error>
+        where
+            T: From<PythonObject>,
+            D: serde::de::Deserializer<'de>,
+        {
+            use serde::Deserialize;
+            let v: PySerializeWrap<PythonObject> = PySerializeWrap::deserialize(d)?;
+
+            Ok(v.0.into())
+        }
     }
 
-    fn try_deserialize_bytes(bytes: &[u8]) -> polars_error::PolarsResult<Self> {
-        serde_wrap::deserialize_pyobject_bytes_maybe_cloudpickle(bytes)
+    impl TrySerializeToBytes for PythonObject {
+        fn try_serialize_to_bytes(&self) -> polars_error::PolarsResult<Vec<u8>> {
+            serde_wrap::serialize_pyobject_with_cloudpickle_fallback(&self.0)
+        }
+
+        fn try_deserialize_bytes(bytes: &[u8]) -> polars_error::PolarsResult<Self> {
+            serde_wrap::deserialize_pyobject_bytes_maybe_cloudpickle(bytes)
+        }
+    }
+
+    impl serde::Serialize for PythonObject {
+        fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            use serde::ser::Error;
+            let bytes = self
+                .try_serialize_to_bytes()
+                .map_err(|e| S::Error::custom(e.to_string()))?;
+
+            Vec::<u8>::serialize(&bytes, serializer)
+        }
+    }
+
+    impl<'a> serde::Deserialize<'a> for PythonObject {
+        fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'a>,
+        {
+            use serde::de::Error;
+            deserialize_map_bytes(deserializer, |bytes| {
+                Self::try_deserialize_bytes(&bytes).map_err(|e| D::Error::custom(e.to_string()))
+            })?
+        }
     }
 }
 
