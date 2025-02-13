@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
@@ -24,6 +25,7 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
+use crate::nodes::io_sources::multi_scan::RowRestrication;
 use crate::nodes::io_sources::parquet::ParquetSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -361,86 +363,122 @@ fn to_graph_rec<'a>(
             allow_missing_columns,
             include_file_paths,
             projection,
-            row_restriction,
             row_index,
-        } => match scan_type {
-            #[cfg(feature = "parquet")]
-            polars_plan::plans::FileScan::Parquet {
-                options,
-                cloud_options,
-                ..
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+            predicate: scan_predicate,
+            slice,
+        } => {
+            let hive_parts = hive_parts.as_ref().map_or_else(
+                || DataFrame::empty_with_height(scan_sources.len()),
+                |df| df.clone(),
+            );
+
+            let mut predicate = None;
+            if let Some(scan_predicate) = scan_predicate {
+                let mut create_skip_batch_predicate = hive_parts.get_columns().iter().any(|c| predicate.live_columns.contains(c.name()));
+                #[cfg(feature = "parquet")]
+                {
+                    create_skip_batch_predicate |= matches!(
+                        scan_type,
+                        polars_plan::prelude::FileScan::Parquet {
+                            options: polars_io::prelude::ParquetOptions {
+                                use_statistics: true,
+                                ..
+                            },
+                            ..
+                        }
+                    );
+                }
+                let create_column_predicates = cfg!(feature = "parquet");
+
+                let p = create_scan_predicate(
+                    &predicate,
+                    ctx.expr_arena,
+                    output_schema,
+                    &mut ctx.expr_conversion_state,
+                    create_skip_batch_predicate,
+                    create_column_predicates,
+                )?;
+                predicate = Some(p.to_io(None, &output_schema)?);
+            }
+
+            match scan_type {
+                #[cfg(feature = "parquet")]
+                polars_plan::plans::FileScan::Parquet {
+                    options,
+                    cloud_options,
+                    ..
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
+                            scan_sources.clone(),
+                            hive_parts,
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            #[cfg(feature = "ipc")]
-            polars_plan::plans::FileScan::Ipc {
-                options,
-                cloud_options,
-                ..
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<
-                        nodes::io_sources::ipc::IpcSourceNode,
-                    >::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+                #[cfg(feature = "ipc")]
+                polars_plan::plans::FileScan::Ipc {
+                    options,
+                    cloud_options,
+                    ..
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::ipc::IpcSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts,
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            #[cfg(feature = "csv")]
-            polars_plan::plans::FileScan::Csv {
-                options,
-                cloud_options,
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<
-                        nodes::io_sources::csv::CsvSourceNode,
-                    >::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+                #[cfg(feature = "csv")]
+                polars_plan::plans::FileScan::Csv {
+                    options,
+                    cloud_options,
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::csv::CsvSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts,
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            _ => todo!(),
+                _ => todo!(),
+            }
         },
 
         v @ FileScan { .. } => {
             let FileScan {
                 scan_sources,
                 file_info,
-                hive_parts: _,
                 output_schema,
                 scan_type,
                 predicate,

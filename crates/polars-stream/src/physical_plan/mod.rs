@@ -9,7 +9,6 @@ use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
-use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
@@ -172,7 +171,7 @@ pub enum PhysNodeKind {
 
     MultiScan {
         scan_sources: ScanSources,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<DataFrame>,
         scan_type: FileScan,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
@@ -192,13 +191,14 @@ pub enum PhysNodeKind {
         /// Selection of `file_schema` columns should to be included in the output morsels.
         projection: Option<Bitmap>,
 
-        row_restriction: Option<RowRestrication>,
         row_index: Option<RowIndex>,
+
+        predicate: Option<ExprIR>,
+        slice: Option<(i64, usize)>,
     },
     FileScan {
         scan_sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
         output_schema: Option<SchemaRef>,
         scan_type: FileScan,

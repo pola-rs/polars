@@ -31,7 +31,6 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
 use polars_mem_engine::{create_physical_plan, Executor};
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
@@ -621,25 +620,7 @@ impl LazyFrame {
             opt_state &= !OptFlags::COMM_SUBEXPR_ELIM;
         }
 
-        let lp_top = optimize(
-            self.logical_plan,
-            opt_state,
-            lp_arena,
-            expr_arena,
-            scratch,
-            Some(&|expr, expr_arena, schema| {
-                let phys_expr = create_physical_expr(
-                    expr,
-                    Context::Default,
-                    expr_arena,
-                    schema,
-                    &mut ExpressionConversionState::new(true, 0),
-                )
-                .ok()?;
-                let io_expr = phys_expr_to_io_expr(phys_expr);
-                Some(io_expr)
-            }),
-        )?;
+        let lp_top = optimize(self.logical_plan, opt_state, lp_arena, expr_arena, scratch)?;
 
         if streaming {
             #[cfg(feature = "streaming")]

@@ -67,7 +67,7 @@ pub fn hive_partitions_from_paths(
     schema: Option<SchemaRef>,
     reader_schema: &Schema,
     try_parse_dates: bool,
-) -> PolarsResult<Option<Arc<Vec<HivePartitions>>>> {
+) -> PolarsResult<Option<(DataFrame, Arc<Vec<HivePartitions>>)>> {
     let Some(path) = paths.first() else {
         return Ok(None);
     };
@@ -202,7 +202,7 @@ pub fn hive_partitions_from_paths(
     let mut hive_partitions = Vec::with_capacity(paths.len());
     let mut buffers = buffers
         .into_iter()
-        .map(|x| x.into_series())
+        .map(|x| Ok(x.into_series()?.into_column()))
         .collect::<PolarsResult<Vec<_>>>()?;
 
     buffers.sort_by_key(|s| reader_schema.index_of(s.name()).unwrap_or(usize::MAX));
@@ -212,7 +212,10 @@ pub fn hive_partitions_from_paths(
         let column_stats = buffers
             .iter()
             .map(|x| {
-                ColumnStats::from_column_literal(unsafe { x.take_slice_unchecked(&[i as IdxSize]) })
+                ColumnStats::from_column_literal(unsafe {
+                    x.as_materialized_series()
+                        .take_slice_unchecked(&[i as IdxSize])
+                })
             })
             .collect::<Vec<_>>();
 
@@ -228,7 +231,9 @@ pub fn hive_partitions_from_paths(
         hive_partitions.push(HivePartitions { stats });
     }
 
-    Ok(Some(Arc::from(hive_partitions)))
+    let df = DataFrame::new_with_height(paths.len(), buffers)?;
+
+    Ok(Some((df, Arc::from(hive_partitions))))
 }
 
 /// Determine the path separator for identifying Hive partitions.

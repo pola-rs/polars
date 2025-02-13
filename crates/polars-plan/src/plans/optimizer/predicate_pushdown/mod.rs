@@ -18,30 +18,20 @@ use crate::prelude::optimizer::predicate_pushdown::join::process_join;
 use crate::prelude::optimizer::predicate_pushdown::rename::process_rename;
 use crate::utils::{check_input_node, has_aexpr};
 
-pub type ExprEval<'a> =
-    Option<&'a dyn Fn(&ExprIR, &Arena<AExpr>, &SchemaRef) -> Option<Arc<dyn PhysicalIoExpr>>>;
-
 /// The struct is wrapped in a mod to prevent direct member access of `nodes_scratch`
 mod inner {
-    use polars_core::config::verbose;
     use polars_utils::arena::Node;
     use polars_utils::idx_vec::UnitVec;
     use polars_utils::unitvec;
 
-    use super::ExprEval;
-
-    pub struct PredicatePushDown<'a> {
-        pub(super) expr_eval: ExprEval<'a>,
-        pub(super) verbose: bool,
+    pub struct PredicatePushDown {
         pub(super) block_at_cache: bool,
         nodes_scratch: UnitVec<Node>,
     }
 
-    impl<'a> PredicatePushDown<'a> {
-        pub fn new(expr_eval: ExprEval<'a>) -> Self {
+    impl PredicatePushDown {
+        pub fn new() -> Self {
             Self {
-                expr_eval,
-                verbose: verbose(),
                 block_at_cache: true,
                 nodes_scratch: unitvec![],
             }
@@ -57,7 +47,7 @@ mod inner {
 
 pub use inner::PredicatePushDown;
 
-impl PredicatePushDown<'_> {
+impl PredicatePushDown {
     pub(crate) fn block_at_cache(mut self, toggle: bool) -> Self {
         self.block_at_cache = toggle;
         self
@@ -362,11 +352,11 @@ impl PredicatePushDown<'_> {
                 Ok(lp)
             },
             Scan {
-                mut sources,
+                sources,
                 file_info,
-                hive_parts: mut scan_hive_parts,
+                hive_parts: scan_hive_parts,
                 ref predicate,
-                mut scan_type,
+                scan_type,
                 file_options: options,
                 output_schema,
             } => {
@@ -399,54 +389,6 @@ impl PredicatePushDown<'_> {
                     })
                 };
                 let predicate = predicate_at_scan(acc_predicates, predicate.clone(), expr_arena);
-
-                if let (Some(hive_parts), Some(predicate)) = (&scan_hive_parts, &predicate) {
-                    if let Some(io_expr) =
-                        self.expr_eval.unwrap()(predicate, expr_arena, &file_info.schema)
-                    {
-                        if let Some(stats_evaluator) = io_expr.as_stats_evaluator() {
-                            let paths = sources.as_paths().ok_or_else(|| {
-                                polars_err!(nyi = "Hive partitioning of in-memory buffers")
-                            })?;
-                            let mut new_paths = Vec::with_capacity(paths.len());
-                            let mut new_hive_parts = Vec::with_capacity(paths.len());
-
-                            for i in 0..paths.len() {
-                                let path = &paths[i];
-                                let hive_parts = &hive_parts[i];
-
-                                if stats_evaluator.should_read(hive_parts.get_statistics())? {
-                                    new_paths.push(path.clone());
-                                    new_hive_parts.push(hive_parts.clone());
-                                }
-                            }
-
-                            if paths.len() != new_paths.len() {
-                                if self.verbose {
-                                    eprintln!(
-                                        "hive partitioning: skipped {} files, first file : {}",
-                                        paths.len() - new_paths.len(),
-                                        paths[0].display()
-                                    )
-                                }
-                                scan_type.remove_metadata();
-                            }
-                            if new_paths.is_empty() {
-                                let schema = output_schema.as_ref().unwrap_or(&file_info.schema);
-                                let df = DataFrame::empty_with_schema(schema);
-
-                                return Ok(DataFrameScan {
-                                    df: Arc::new(df),
-                                    schema: schema.clone(),
-                                    output_schema: None,
-                                });
-                            } else {
-                                sources = ScanSources::Paths(new_paths.into());
-                                scan_hive_parts = Some(Arc::from(new_hive_parts));
-                            }
-                        }
-                    }
-                }
 
                 let mut do_optimization = match &scan_type {
                     #[cfg(feature = "csv")]

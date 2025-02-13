@@ -280,7 +280,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     None
                 };
 
-                if let Some(ref hive_parts) = hive_parts {
+                if let Some((_, ref hive_parts)) = hive_parts {
                     let hive_schema = hive_parts[0].schema();
                     file_info.update_schema_with_hive_schema(hive_schema.clone());
                 } else if let Some(hive_schema) = file_options.hive_options.schema.clone() {
@@ -323,7 +323,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 file_options.with_columns = if file_info.reader_schema.is_some() {
                     maybe_init_projection_excluding_hive(
                         file_info.reader_schema.as_ref().unwrap(),
-                        hive_parts.as_ref().map(|x| &x[0]),
+                        hive_parts.as_ref().map(|(_, x)| &x[0]),
                     )
                 } else {
                     None

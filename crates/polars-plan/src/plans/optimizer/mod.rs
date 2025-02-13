@@ -28,7 +28,6 @@ mod stack_opt;
 use collapse_and_project::SimpleProjectionAndCollapse;
 use delay_rechunk::DelayRechunk;
 use polars_core::config::verbose;
-use polars_io::predicates::PhysicalIoExpr;
 pub use predicate_pushdown::PredicatePushDown;
 pub use projection_pushdown::ProjectionPushDown;
 pub use simplify_expr::{SimplifyBooleanRule, SimplifyExprRule};
@@ -44,7 +43,6 @@ use crate::plans::optimizer::count_star::CountStar;
 use crate::plans::optimizer::cse::prune_unused_caches;
 #[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
-use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
 use crate::prelude::optimizer::collect_members::MemberCollector;
@@ -66,7 +64,6 @@ pub fn optimize(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     scratch: &mut Vec<Node>,
-    expr_eval: ExprEval<'_>,
 ) -> PolarsResult<Node> {
     #[allow(dead_code)]
     let verbose = verbose();
@@ -170,7 +167,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
+        let mut predicate_pushdown_opt = PredicatePushDown::new();
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);
@@ -226,7 +223,6 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
             lp_arena,
             expr_arena,
             scratch,
-            expr_eval,
             verbose,
             opt_flags.new_streaming(),
         )?;
