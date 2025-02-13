@@ -112,15 +112,10 @@ class CredentialProviderBuilder:
         return state
 
     def __setstate__(self, state: Any) -> None:
-        verbose = polars._utils.logging.verbose()
-
-        if verbose:
-            eprint(f"[CredentialProviderBuilder]: __setstate__(): begin: {state = !r}")
-
         self.credential_provider_init = state
 
-        if verbose:
-            eprint(f"[CredentialProviderBuilder]: __setstate__(): finish: {self = !r}")
+        if verbose():
+            eprint(f"[CredentialProviderBuilder]: __setstate__(): {self = !r}")
 
     def __repr__(self) -> str:
         return f"CredentialProviderBuilder({self.credential_provider_init!r})"
