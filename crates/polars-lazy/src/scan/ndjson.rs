@@ -17,6 +17,7 @@ use crate::scan::file_list_reader::LazyFileListReader;
 #[derive(Clone)]
 pub struct LazyJsonLineReader {
     pub(crate) sources: ScanSources,
+    pub(crate) sub_json_path: Option<Arc<[String]>>,
     pub(crate) batch_size: Option<NonZeroUsize>,
     pub(crate) low_memory: bool,
     pub(crate) rechunk: bool,
@@ -38,6 +39,7 @@ impl LazyJsonLineReader {
     pub fn new_with_sources(sources: ScanSources) -> Self {
         LazyJsonLineReader {
             sources,
+            sub_json_path: None,
             batch_size: None,
             low_memory: false,
             rechunk: false,
@@ -54,6 +56,19 @@ impl LazyJsonLineReader {
 
     pub fn new(path: PlPath) -> Self {
         Self::new_with_sources(ScanSources::Paths([path].into()))
+    }
+
+    /// Set the path to the JSON line subdirectory.
+    ///
+    /// Use this when you only need to access a specific portion of the JSON line.
+    #[must_use]
+    pub fn with_sub_json_path(mut self, sub_json_path: Vec<String>) -> Self {
+        self.sub_json_path = if sub_json_path.is_empty() {
+            None
+        } else {
+            Some(Arc::from(sub_json_path))
+        };
+        self
     }
 
     /// Add a row index column.
@@ -150,6 +165,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             ignore_errors: self.ignore_errors,
             schema: self.schema,
             schema_overwrite: self.schema_overwrite,
+            sub_json_path: self.sub_json_path,
         };
 
         let scan_type = Box::new(FileScanDsl::NDJson { options });
