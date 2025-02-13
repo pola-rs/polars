@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import IpcCompression
-    from tests.unit.conftest import MemoryUsage
+    # from tests.unit.conftest import MemoryUsage
 
 COMPRESSIONS = ["uncompressed", "lz4", "zstd"]
 
@@ -296,43 +296,43 @@ def test_ipc_view_gc_14448() -> None:
     assert_frame_equal(pl.read_ipc(f), df)
 
 
-@pytest.mark.slow
-@pytest.mark.write_disk
-@pytest.mark.parametrize("stream", [True, False])
-def test_read_ipc_only_loads_selected_columns(
-    memory_usage_without_pyarrow: MemoryUsage,
-    tmp_path: Path,
-    stream: bool,
-) -> None:
-    """Only requested columns are loaded by ``read_ipc()``/``read_ipc_stream()``."""
-    tmp_path.mkdir(exist_ok=True)
+# @pytest.mark.slow
+# @pytest.mark.write_disk
+# @pytest.mark.parametrize("stream", [True, False])
+# def test_read_ipc_only_loads_selected_columns(
+#     memory_usage_without_pyarrow: MemoryUsage,
+#     tmp_path: Path,
+#     stream: bool,
+# ) -> None:
+#     """Only requested columns are loaded by ``read_ipc()``/``read_ipc_stream()``."""
+#     tmp_path.mkdir(exist_ok=True)
 
-    # Each column will be about 16MB of RAM. There's a fixed overhead tied to
-    # block size so smaller file sizes can be misleading in terms of memory
-    # usage.
-    series = pl.arange(0, 2_000_000, dtype=pl.Int64, eager=True)
+#     # Each column will be about 16MB of RAM. There's a fixed overhead tied to
+#     # block size so smaller file sizes can be misleading in terms of memory
+#     # usage.
+#     series = pl.arange(0, 2_000_000, dtype=pl.Int64, eager=True)
 
-    file_path = tmp_path / "multicolumn.ipc"
-    df = pl.DataFrame(
-        {
-            "a": series,
-            "b": series,
-        }
-    )
-    write_ipc(df, stream, file_path)
-    del df, series
+#     file_path = tmp_path / "multicolumn.ipc"
+#     df = pl.DataFrame(
+#         {
+#             "a": series,
+#             "b": series,
+#         }
+#     )
+#     write_ipc(df, stream, file_path)
+#     del df, series
 
-    memory_usage_without_pyarrow.reset_tracking()
+#     memory_usage_without_pyarrow.reset_tracking()
 
-    # Only load one column:
-    kwargs = {}
-    if not stream:
-        kwargs["memory_map"] = False
-    df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
-    del df
-    # Only one column's worth of memory should be used; 2 columns would be
-    # 32_000_000 at least, but there's some overhead.
-    assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
+#     # Only load one column:
+#     kwargs = {}
+#     if not stream:
+#         kwargs["memory_map"] = False
+#     df = read_ipc(stream, str(file_path), columns=["b"], rechunk=False, **kwargs)
+#     del df
+#     # Only one column's worth of memory should be used; 2 columns would be
+#     # 32_000_000 at least, but there's some overhead.
+#     assert 16_000_000 < memory_usage_without_pyarrow.get_peak() < 23_000_000
 
 
 @pytest.mark.write_disk

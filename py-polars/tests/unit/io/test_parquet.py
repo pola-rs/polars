@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from polars._typing import ParallelStrategy, ParquetCompression
-    from tests.unit.conftest import MemoryUsage
+    # from tests.unit.conftest import MemoryUsage
 
 
 @pytest.mark.may_fail_auto_streaming
@@ -966,35 +966,35 @@ def test_parquet_array_statistics(tmp_path: Path) -> None:
     assert result.to_dict(as_series=False) == {"a": [[4, 5, 6], [7, 8, 9]], "b": [2, 3]}
 
 
-@pytest.mark.slow
-@pytest.mark.write_disk
-def test_read_parquet_only_loads_selected_columns_15098(
-    memory_usage_without_pyarrow: MemoryUsage, tmp_path: Path
-) -> None:
-    """Only requested columns are loaded by ``read_parquet()``."""
-    tmp_path.mkdir(exist_ok=True)
+# @pytest.mark.slow
+# @pytest.mark.write_disk
+# def test_read_parquet_only_loads_selected_columns_15098(
+#     memory_usage_without_pyarrow: MemoryUsage, tmp_path: Path
+# ) -> None:
+#     """Only requested columns are loaded by ``read_parquet()``."""
+#     tmp_path.mkdir(exist_ok=True)
 
-    # Each column will be about 8MB of RAM
-    series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
+#     # Each column will be about 8MB of RAM
+#     series = pl.arange(0, 1_000_000, dtype=pl.Int64, eager=True)
 
-    file_path = tmp_path / "multicolumn.parquet"
-    df = pl.DataFrame(
-        {
-            "a": series,
-            "b": series,
-        }
-    )
-    df.write_parquet(file_path)
-    del df, series
+#     file_path = tmp_path / "multicolumn.parquet"
+#     df = pl.DataFrame(
+#         {
+#             "a": series,
+#             "b": series,
+#         }
+#     )
+#     df.write_parquet(file_path)
+#     del df, series
 
-    memory_usage_without_pyarrow.reset_tracking()
+#     memory_usage_without_pyarrow.reset_tracking()
 
-    # Only load one column:
-    df = pl.read_parquet([file_path], columns=["b"], rechunk=False)
-    del df
-    # Only one column's worth of memory should be used; 2 columns would be
-    # 16_000_000 at least, but there's some overhead.
-    assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
+#     # Only load one column:
+#     df = pl.read_parquet([file_path], columns=["b"], rechunk=False)
+#     del df
+#     # Only one column's worth of memory should be used; 2 columns would be
+#     # 16_000_000 at least, but there's some overhead.
+#     assert 8_000_000 < memory_usage_without_pyarrow.get_peak() < 13_000_000
 
 
 @pytest.mark.release

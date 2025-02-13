@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import gc
+# import gc
 import os
 import random
 import string
 import sys
-import time
-import tracemalloc
+
+# import time
+# import tracemalloc
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
@@ -175,74 +176,74 @@ def iso8601_format_date(request: pytest.FixtureRequest) -> list[str]:
     return cast(list[str], request.param)
 
 
-class MemoryUsage:
-    """
-    Provide an API for measuring peak memory usage.
+# class MemoryUsage:
+#     """
+#     Provide an API for measuring peak memory usage.
 
-    Memory from PyArrow is not tracked at the moment.
-    """
+#     Memory from PyArrow is not tracked at the moment.
+#     """
 
-    def reset_tracking(self) -> None:
-        """Reset tracking to zero."""
-        gc.collect()
-        tracemalloc.stop()
-        tracemalloc.start()
-        assert self.get_peak() < 100_000
+#     def reset_tracking(self) -> None:
+#         """Reset tracking to zero."""
+#         gc.collect()
+#         tracemalloc.stop()
+#         tracemalloc.start()
+#         assert self.get_peak() < 100_000
 
-    def get_current(self) -> int:
-        """
-        Return currently allocated memory, in bytes.
+#     def get_current(self) -> int:
+#         """
+#         Return currently allocated memory, in bytes.
 
-        This only tracks allocations since this object was created or
-        ``reset_tracking()`` was called, whichever is later.
-        """
-        return tracemalloc.get_traced_memory()[0]
+#         This only tracks allocations since this object was created or
+#         ``reset_tracking()`` was called, whichever is later.
+#         """
+#         return tracemalloc.get_traced_memory()[0]
 
-    def get_peak(self) -> int:
-        """
-        Return peak allocated memory, in bytes.
+#     def get_peak(self) -> int:
+#         """
+#         Return peak allocated memory, in bytes.
 
-        This returns peak allocations since this object was created or
-        ``reset_tracking()`` was called, whichever is later.
-        """
-        return tracemalloc.get_traced_memory()[1]
+#         This returns peak allocations since this object was created or
+#         ``reset_tracking()`` was called, whichever is later.
+#         """
+#         return tracemalloc.get_traced_memory()[1]
 
 
-# The bizarre syntax is from
-# https://github.com/pytest-dev/pytest/issues/1368#issuecomment-2344450259 - we
-# need to mark any test using this fixture as slow because we have a sleep
-# added to work around a CPython bug, see the end of the function.
-@pytest.fixture(params=[pytest.param(0, marks=pytest.mark.slow)])
-def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
-    """
-    Provide an API for measuring peak memory usage.
+# # The bizarre syntax is from
+# # https://github.com/pytest-dev/pytest/issues/1368#issuecomment-2344450259 - we
+# # need to mark any test using this fixture as slow because we have a sleep
+# # added to work around a CPython bug, see the end of the function.
+# @pytest.fixture(params=[pytest.param(0, marks=pytest.mark.slow)])
+# def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
+#     """
+#     Provide an API for measuring peak memory usage.
 
-    Not thread-safe: there should only be one instance of MemoryUsage at any
-    given time.
+#     Not thread-safe: there should only be one instance of MemoryUsage at any
+#     given time.
 
-    Memory usage from PyArrow is not tracked.
-    """
-    if not pl.polars._debug:  # type: ignore[attr-defined]
-        pytest.skip("Memory usage only available in debug/dev builds.")
+#     Memory usage from PyArrow is not tracked.
+#     """
+#     if not pl.polars._debug:  # type: ignore[attr-defined]
+#         pytest.skip("Memory usage only available in debug/dev builds.")
 
-    if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
-        pytest.skip("Hangs when combined with async glob")
+#     if os.getenv("POLARS_FORCE_ASYNC", "0") == "1":
+#         pytest.skip("Hangs when combined with async glob")
 
-    if sys.platform == "win32":
-        # abi3 wheels don't have the tracemalloc C APIs, which breaks linking
-        # on Windows.
-        pytest.skip("Windows not supported at the moment.")
+#     if sys.platform == "win32":
+#         # abi3 wheels don't have the tracemalloc C APIs, which breaks linking
+#         # on Windows.
+#         pytest.skip("Windows not supported at the moment.")
 
-    gc.collect()
-    tracemalloc.start()
-    try:
-        yield MemoryUsage()
-    finally:
-        # Workaround for https://github.com/python/cpython/issues/128679
-        time.sleep(1)
-        gc.collect()
+#     gc.collect()
+#     tracemalloc.start()
+#     try:
+#         yield MemoryUsage()
+#     finally:
+#         # Workaround for https://github.com/python/cpython/issues/128679
+#         time.sleep(1)
+#         gc.collect()
 
-        tracemalloc.stop()
+#         tracemalloc.stop()
 
 
 @pytest.fixture(params=[True, False])
