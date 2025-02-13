@@ -41,7 +41,8 @@ impl PlCredentialProvider {
         Self::Function(CredentialProviderFunction(Arc::new(func)))
     }
 
-    /// Intended to be called with an internal `CredentialProviderBuilder` class.
+    /// Intended to be called with an internal `CredentialProviderBuilder` from
+    /// py-polars.
     #[cfg(feature = "python")]
     pub fn from_python_builder(func: pyo3::PyObject) -> Self {
         use polars_utils::python_function::PythonObject;
