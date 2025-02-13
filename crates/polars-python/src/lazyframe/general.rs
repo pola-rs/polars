@@ -14,6 +14,7 @@ use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
 
 use super::PyLazyFrame;
+use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
@@ -763,7 +764,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (
         path, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
-        quote_style, maintain_order, cloud_options, credential_provider, retries
+        quote_style, maintain_order, cloud_options, credential_provider, retries, lambda_post_opt=None
     ))]
     fn sink_csv(
         &self,
@@ -786,6 +787,7 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
+        lambda_post_opt: Option<PyObject>,
     ) -> PyResult<()> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
         let null_value = null_value.unwrap_or(SerializeOptions::default().null);
@@ -812,11 +814,13 @@ impl PyLazyFrame {
         };
 
         #[cfg(feature = "cloud")]
-        let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+        let parsed_cloud_options = {
+            let parsed_cloud_options = parse_cloud_options(
+                path.to_str().unwrap(),
+                cloud_options.clone().unwrap_or_default(),
+            )?;
             Some(
-                cloud_options
+                parsed_cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
                         credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
@@ -825,11 +829,45 @@ impl PyLazyFrame {
         };
 
         #[cfg(not(feature = "cloud"))]
-        let cloud_options = None;
+        let parsed_cloud_options = None;
 
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_csv(path, options, cloud_options)
+            if let Some(lambda) = lambda_post_opt {
+                let no_stream = ldf.with_streaming(false);
+                no_stream._sink_post_opt(|root, lp_arena, expr_arena| {
+                    Python::with_gil(|py| {
+                        let nt = NodeTraverser::new(
+                            root,
+                            std::mem::take(lp_arena),
+                            std::mem::take(expr_arena),
+                        );
+
+                        let io_kwargs = PyDict::new(py);
+                        let _ = io_kwargs.set_item("to", "csv");
+                        let _ = io_kwargs.set_item("path", path.to_str());
+                        let _ = io_kwargs.set_item("options", Wrap(options.clone()));
+                        let _ = io_kwargs.set_item("cloud_options", cloud_options.clone());
+                        // Get a copy of the arena's.
+                        let arenas = nt.get_arenas();
+
+                        // Pass the node visitor which allows the python callback to replace parts of the query plan.
+                        // Remove "cuda" or specify better once we have multiple post-opt callbacks.
+                        lambda.call1(py, (nt, io_kwargs)).map_err(
+                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
+                        )?;
+                        // Unpack the arena's.
+                        // At this point the `nt` is useless.
+
+                        std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
+                        std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
+
+                        Ok(())
+                    })
+                })
+            } else {
+                ldf.sink_csv(path, options, parsed_cloud_options)
+            }
         })
     }
 
