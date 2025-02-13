@@ -145,17 +145,19 @@ class CredentialProviderBuilderImpl(abc.ABC):
 
     @property
     @abc.abstractmethod
-    def provider_class_name(self) -> str:
-        """The class name of the provider that is built by this builder."""
+    def provider_name(self) -> str:
+        """
+        Name of the provider that is built by this builder.
+
+        This can be class name, or function name.
+        """
 
     def __repr__(self) -> str:
-        provider_class_name = self.provider_class_name
-        provider_class_name = (
-            "None" if provider_class_name == "NoneType" else provider_class_name
-        )
+        provider_name = self.provider_name
+        provider_name = "None" if provider_name == "NoneType" else provider_name
         builder_name = type(self).__name__
 
-        return f"{provider_class_name} @ {builder_name}"
+        return f"{provider_name} @ {builder_name}"
 
 
 # Wraps an already ininitialized credential provider into the builder interface.
@@ -170,8 +172,8 @@ class InitializedCredentialProvider(CredentialProviderBuilderImpl):
         return self.credential_provider
 
     @property
-    def provider_class_name(self) -> str:
-        return type(self.credential_provider).__name__
+    def provider_name(self) -> str:
+        return repr(self.credential_provider)
 
 
 # Represents an automatic initialization configuration. This is created for
@@ -188,12 +190,12 @@ class AutoInit(CredentialProviderBuilderImpl):
             return self.cls(**self.kw)
         except ImportError as e:
             if verbose():
-                eprint(f"failed to auto-initialize {self.provider_class_name}: {e!r}")
+                eprint(f"failed to auto-initialize {self.provider_name}: {e!r}")
 
         return None
 
     @property
-    def provider_class_name(self) -> str:
+    def provider_name(self) -> str:
         return self.cls.__name__
 
 
@@ -222,7 +224,7 @@ class AutoInitAWS(CredentialProviderBuilderImpl):
                 raise polars.exceptions.ComputeError(msg) from e
 
             if verbose():
-                eprint(f"failed to auto-initialize {self.provider_class_name}: {e!r}")
+                eprint(f"failed to auto-initialize {self.provider_name}: {e!r}")
 
         else:
             return provider
@@ -230,7 +232,7 @@ class AutoInitAWS(CredentialProviderBuilderImpl):
         return None
 
     @property
-    def provider_class_name(self) -> str:
+    def provider_name(self) -> str:
         return "CredentialProviderAWS"
 
 
