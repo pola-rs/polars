@@ -83,7 +83,7 @@ def test_credential_provider_serialization_auto_init(
     monkeypatch.setattr(provider_class, "__init__", raises_1)
 
     # If this is not set we will get an error before hitting the credential
-    # provider logic when polars attempts to retreive the region from AWS.
+    # provider logic when polars attempts to retrieve the region from AWS.
     monkeypatch.setenv("AWS_REGION", "eu-west-1")
 
     # Credential provider should not be initialized during query plan construction.
