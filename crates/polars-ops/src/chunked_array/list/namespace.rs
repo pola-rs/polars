@@ -223,6 +223,11 @@ pub trait ListNameSpaceImpl: AsList {
         dispersion::median_with_nulls(ca)
     }
 
+    fn lst_quantile(&self, quantile: f64, method: QuantileMethod) -> Series {
+        let ca = self.as_list();
+        dispersion::quantile_with_nulls(ca, quantile, method)
+    }
+
     fn lst_std(&self, ddof: u8) -> Series {
         let ca = self.as_list();
         dispersion::std_with_nulls(ca, ddof)
