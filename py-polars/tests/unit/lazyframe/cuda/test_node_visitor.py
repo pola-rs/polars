@@ -66,7 +66,7 @@ def test_run_on_pandas() -> None:
         callback = get_input(node_traverser)
 
         def run_callback(
-            columns: list[str] | None, _: Any, n_rows: int | None
+            columns: list[str] | None, _: Any, n_rows: int | None, node_timer: Any
         ) -> pl.DataFrame:
             assert n_rows is None
             assert columns is None

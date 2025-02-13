@@ -11,20 +11,20 @@ type Nodes = Vec<String>;
 type Ticks = Vec<(StartInstant, EndInstant)>;
 
 #[derive(Clone)]
-pub(super) struct NodeTimer {
-    query_start: Instant,
+pub struct NodeTimer {
+    pub query_start: Instant,
     data: Arc<Mutex<(Nodes, Ticks)>>,
 }
 
 impl NodeTimer {
-    pub(super) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             query_start: Instant::now(),
             data: Arc::new(Mutex::new((Vec::with_capacity(16), Vec::with_capacity(16)))),
         }
     }
 
-    pub(super) fn store(&self, start: StartInstant, end: EndInstant, name: String) {
+    pub fn store(&self, start: StartInstant, end: EndInstant, name: String) {
         let mut data = self.data.lock().unwrap();
         let nodes = &mut data.0;
         nodes.push(name);
@@ -32,7 +32,7 @@ impl NodeTimer {
         ticks.push((start, end))
     }
 
-    pub(super) fn finish(self) -> PolarsResult<DataFrame> {
+    pub fn finish(self) -> PolarsResult<DataFrame> {
         let mut data = self.data.lock().unwrap();
         let mut nodes = std::mem::take(&mut data.0);
         nodes.push("optimization".to_string());
@@ -61,5 +61,11 @@ impl NodeTimer {
         let columns = vec![nodes_s, start.into_column(), end.into_column()];
         let df = unsafe { DataFrame::new_no_checks(height, columns) };
         df.sort(vec!["start"], SortMultipleOptions::default())
+    }
+}
+
+impl Default for NodeTimer {
+    fn default() -> Self {
+        Self::new()
     }
 }
