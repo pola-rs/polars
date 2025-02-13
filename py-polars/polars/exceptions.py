@@ -72,13 +72,43 @@ except ImportError:
         """Exception raised when an unexpected state causes a panic in the underlying Rust library."""  # noqa: W505
 
     class SchemaError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when an unexpected schema mismatch causes an error."""
+        """
+        Exception raised when an unexpected schema mismatch causes an error.
+
+        Examples
+        --------
+        Joining two `Series` each containing one `struct` with mismatched key order.
+
+        >>> housing1 = pl.Series([{"city": "Chicago", "address": "100 Main St"}])
+        >>> housing2 = pl.Series(
+        ...     [{"address": "303 Mockingbird Lane", "city": "Los Angeles"}]
+        ... )
+        >>> housing1.append(housing2)
+        polars.exceptions.SchemaError: cannot append field with name "address" to struct
+        with field name "city"
+        """
 
     class SchemaFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when a specified schema field is not found."""
+        """
+        Exception raised when a specified schema field is not found.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"exists": [1, 2, 3]})
+        >>> df.rename({"does_not_exist": "exists"})
+        polars.exceptions.SchemaFieldNotFoundError: does_not_exist
+        """
 
     class ShapeError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when trying to perform operations on data structures with incompatible shapes."""  # noqa: W505
+        """
+        Exception raised when trying to perform operations on data structures with incompatible shapes.
+
+        Examples
+        --------
+        >>> pl.DataFrame({"a": [1, 2], "b": [1.0, 2.0, 3.0]})
+        polars.exceptions.ShapeError: could not create a new DataFrame: series "a" has
+        length 2 while series "b" has length 3
+        """  # noqa: W505
 
     class SQLInterfaceError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when an error occurs in the SQL interface."""
@@ -87,7 +117,41 @@ except ImportError:
         """Exception raised from the SQL interface when encountering invalid syntax."""
 
     class StringCacheMismatchError(PolarsError):  # type: ignore[no-redef, misc]
-        """Exception raised when string caches come from different sources."""
+        """
+        Exception raised when string caches come from different sources.
+
+        Examples
+        --------
+        >>> pl.DataFrame(
+        ...     [
+        ...         pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+        ...         pl.Series(["c", "b", "b"], dtype=pl.Categorical),
+        ...     ]
+        ... ).transpose()
+        polars.exceptions.StringCacheMismatchError: cannot compare categoricals coming
+        from different sources, consider setting a global StringCache.
+
+        >>> with pl.StringCache():
+        ...     pl.DataFrame(
+        ...         [
+        ...             pl.Series(["a", "b", "c"], dtype=pl.Categorical),
+        ...             pl.Series(["c", "b", "b"], dtype=pl.Categorical),
+        ...         ]
+        ...     ).transpose()
+        shape: (2, 3)
+        ┌──────────┬──────────┬──────────┐
+        │ column_0 ┆ column_1 ┆ column_2 │
+        │ ---      ┆ ---      ┆ ---      │
+        │ cat      ┆ cat      ┆ cat      │
+        ╞══════════╪══════════╪══════════╡
+        │ a        ┆ b        ┆ c        │
+        │ c        ┆ b        ┆ b        │
+        └──────────┴──────────┴──────────┘
+
+        Alternatively, if the performance cost is acceptable, you could just set:
+        `pl.enable_string_cache()`
+        on startup.
+        """
 
     class StructFieldNotFoundError(PolarsError):  # type: ignore[no-redef, misc]
         """Exception raised when a specified Struct field is not found."""
