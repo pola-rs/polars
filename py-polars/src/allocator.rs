@@ -16,14 +16,14 @@ use jemallocator::Jemalloc;
 ))]
 use mimalloc::MiMalloc;
 
-#[cfg(all(
-    debug_assertions,
-    target_family = "unix",
-    not(target_os = "emscripten"),
-    not(allocator = "default"),
-    not(allocator = "mimalloc"),
-))]
-use crate::memory::TracemallocAllocator;
+// #[cfg(all(
+//     debug_assertions,
+//     target_family = "unix",
+//     not(target_os = "emscripten"),
+//     not(allocator = "default"),
+//     not(allocator = "mimalloc"),
+// ))]
+// use crate::memory::TracemallocAllocator;
 
 #[global_allocator]
 #[cfg(all(
@@ -59,7 +59,7 @@ static ALLOC: MiMalloc = MiMalloc;
     not(allocator = "default"),
     not(allocator = "mimalloc"),
 ))]
-static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
+static ALLOC: Jemalloc = Jemalloc;
 
 use std::alloc::Layout;
 use std::ffi::{c_char, c_void};
