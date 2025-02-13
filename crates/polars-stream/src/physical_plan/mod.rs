@@ -191,8 +191,10 @@ pub enum PhysNodeKind {
         /// Selection of `file_schema` columns should to be included in the output morsels.
         projection: Option<Bitmap>,
 
-        row_restriction: Option<RowRestrication>,
         row_index: Option<RowIndex>,
+
+        predicate: Option<ExprIR>,
+        slice: Option<(i64, usize)>,
     },
     FileScan {
         scan_sources: ScanSources,

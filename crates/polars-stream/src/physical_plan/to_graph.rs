@@ -25,6 +25,7 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
+use crate::nodes::io_sources::multi_scan::RowRestrication;
 use crate::nodes::io_sources::parquet::ParquetSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -362,13 +363,44 @@ fn to_graph_rec<'a>(
             allow_missing_columns,
             include_file_paths,
             projection,
-            row_restriction,
             row_index,
+            predicate: scan_predicate,
+            slice,
         } => {
             let hive_parts = hive_parts.as_ref().map_or_else(
                 || DataFrame::empty_with_height(scan_sources.len()),
                 |df| df.clone(),
             );
+
+            let mut predicate = None;
+            if let Some(scan_predicate) = scan_predicate {
+                let mut create_skip_batch_predicate = hive_parts.get_columns().iter().any(|c| predicate.live_columns.contains(c.name()));
+                #[cfg(feature = "parquet")]
+                {
+                    create_skip_batch_predicate |= matches!(
+                        scan_type,
+                        polars_plan::prelude::FileScan::Parquet {
+                            options: polars_io::prelude::ParquetOptions {
+                                use_statistics: true,
+                                ..
+                            },
+                            ..
+                        }
+                    );
+                }
+                let create_column_predicates = cfg!(feature = "parquet");
+
+                let p = create_scan_predicate(
+                    &predicate,
+                    ctx.expr_arena,
+                    output_schema,
+                    &mut ctx.expr_conversion_state,
+                    create_skip_batch_predicate,
+                    create_column_predicates,
+                )?;
+                predicate = Some(p.to_io(None, &output_schema)?);
+            }
+
             match scan_type {
                 #[cfg(feature = "parquet")]
                 polars_plan::plans::FileScan::Parquet {
