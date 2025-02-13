@@ -43,24 +43,14 @@ OBJECT_STORE_CLIENT_OPTIONS: frozenset[str] = frozenset(
 )
 
 
-# Note: The rust-side expects this exact class name.
 class CredentialProviderBuilder:
     """
     Builds credential providers.
 
-    This allows for credential provider resolution to be deferred, so that it
-    takes place when a query is executed, rather than during the construction of
-    the query.
-
-    For example, a query plan may be constructed on a local machine and then sent
-    to a remote machine for execution. It is possible that only the remote machine
-    has sufficient permissions to access the required cloud resources. In this
-    case, credential provider resolution must be deferred to take place on the
-    remote machine (where the query is executed).
-
-    If it instead occurs eagerly on the local machine, it may capture and use
-    local credentials that lack the required permissions to access the resources,
-    leading to a query error.
+    This is used to defer credential provider initialization to happen at
+    `collect()` rather than immediately during query construction. This makes
+    the behavior predictable when queries are sent to another environment for
+    execution.
     """
 
     def __init__(
