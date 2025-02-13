@@ -1054,3 +1054,29 @@ class ListNameSpace:
             [5, 7, 8]
         ]
         """  # noqa: W505
+
+    def pad_start(self, fill_value: IntoExpr, *, length: IntoExpr) -> Expr:
+        """
+        Pad the start of a sub-list until it reaches the given length.
+
+        Parameters
+        ----------
+        fill_value
+            Add this value at the left of the sub-list.
+        length
+            Length to which sub-lists will be padded to. If a sub-list has more
+            than `length` elements, then it is not modified. If it has less than
+            `length` elements, `fill_value` is added on the left until `length`
+            is reached.
+
+        Examples
+        --------
+        >>> pl.Series([[1], [], [1, 2, 3]]).list.pad_start(0, length=3)
+        shape: (3,)
+        Series: '' [list[i64]]
+        [
+                [0, 0, 1]
+                [0, 0, 0]
+                [1, 2, 3]
+        ]
+        """
