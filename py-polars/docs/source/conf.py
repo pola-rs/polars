@@ -149,6 +149,11 @@ html_theme_options = {
             "url": "https://x.com/datapolars",
             "icon": "fa-brands fa-x-twitter",
         },
+        {
+            "name": "Bluesky",
+            "url": "https://bsky.app/profile/pola.rs",
+            "icon": "fa-brands fa-bluesky",
+        },
     ],
     "logo": {
         "image_light": f"{static_assets_root}/logos/polars-logo-dark-medium.png",
