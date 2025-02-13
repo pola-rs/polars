@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -6,6 +7,7 @@ use futures::StreamExt;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_mem_engine::ScanPredicate;
 use polars_utils::index::AtomicIdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
@@ -20,6 +22,13 @@ pub mod ipc;
 pub mod multi_scan;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+
+#[derive(Clone, Debug)]
+pub enum RowRestriction {
+    Slice(Range<usize>),
+    #[expect(dead_code)]
+    Predicate(ScanPredicate),
+}
 
 /// The state needed to manage a spawned [`SourceNode`].
 struct StartedSourceComputeNode {
