@@ -8,6 +8,7 @@ use polars::io::avro::AvroCompression;
 use polars::prelude::*;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
+use smallvec::SmallVec;
 
 use super::PyDataFrame;
 use crate::conversion::Wrap;
@@ -181,15 +182,16 @@ impl PyDataFrame {
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    #[pyo3(signature = (py_f, infer_schema_length, schema, schema_overrides))]
+    #[pyo3(signature = (py_f, infer_schema_length, schema, schema_overrides, sub_json_path))]
     pub fn read_json(
         py: Python<'_>,
         py_f: Bound<PyAny>,
         infer_schema_length: Option<usize>,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
+        sub_json_path: Option<&str>,
     ) -> PyResult<Self> {
-        assert!(infer_schema_length != Some(0));
+        assert_ne!(infer_schema_length, Some(0));
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
         py.enter_polars_df(move || {
@@ -205,19 +207,26 @@ impl PyDataFrame {
                 builder = builder.with_schema_overwrite(&schema.0);
             }
 
+            let sub_json_path_vec: SmallVec<[&str; 8]>;
+            if let Some(sub_json_path) = sub_json_path {
+                sub_json_path_vec = sub_json_path.split('/').collect::<SmallVec<[&str; 8]>>();
+                builder = builder.with_sub_json_path(&sub_json_path_vec);
+            }
+
             builder.finish()
         })
     }
 
     #[staticmethod]
     #[cfg(feature = "json")]
-    #[pyo3(signature = (py_f, ignore_errors, schema, schema_overrides))]
+    #[pyo3(signature = (py_f, ignore_errors, schema, schema_overrides, sub_json_path))]
     pub fn read_ndjson(
         py: Python<'_>,
         py_f: Bound<PyAny>,
         ignore_errors: bool,
         schema: Option<Wrap<Schema>>,
         schema_overrides: Option<Wrap<Schema>>,
+        sub_json_path: Option<&str>,
     ) -> PyResult<Self> {
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
 
@@ -231,6 +240,11 @@ impl PyDataFrame {
 
         if let Some(schema) = schema_overrides.as_ref() {
             builder = builder.with_schema_overwrite(&schema.0);
+        }
+        let sub_json_path_vec: SmallVec<[&str; 8]>;
+        if let Some(sub_json_path) = sub_json_path {
+            sub_json_path_vec = sub_json_path.split('/').collect::<SmallVec<[&str; 8]>>();
+            builder = builder.with_sub_json_path(&sub_json_path_vec);
         }
 
         py.enter_polars_df(move || builder.finish())

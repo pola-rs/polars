@@ -21,6 +21,7 @@ arange = "arange"
 ser = "ser"
 splitted = "splitted"
 strat = "strat"
+smallvec = "smallvec"
 
 [type.py.extend-identifiers]
 ba = "ba"

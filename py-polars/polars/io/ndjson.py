@@ -48,6 +48,7 @@ def read_ndjson(
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
+    sub_json_path: str | None = None,
 ) -> DataFrame:
     r"""
     Read into a DataFrame from a newline delimited JSON file.
@@ -171,6 +172,7 @@ def read_ndjson(
         storage_options=storage_options,
         credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         file_cache_ttl=file_cache_ttl,
+        sub_json_path=sub_json_path,
     ).collect()
 
 
@@ -204,6 +206,7 @@ def scan_ndjson(
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,
+    sub_json_path: str | None = None,
 ) -> LazyFrame:
     """
     Lazily read from a newline delimited JSON file or multiple files via glob patterns.
@@ -280,6 +283,8 @@ def scan_ndjson(
         (which defaults to 1 hour) if not given.
     include_file_paths
         Include the path of the source file(s) as a column with this name.
+    sub_json_path
+        Path to the JSON subdirectory.
     """
     sources: list[str] | list[Path] | list[IO[str]] | list[IO[bytes]] = []
     if isinstance(source, (str, Path)):
@@ -328,5 +333,6 @@ def scan_ndjson(
         cloud_options=storage_options,
         credential_provider=credential_provider_builder,
         file_cache_ttl=file_cache_ttl,
+        sub_json_path=sub_json_path,
     )
     return wrap_ldf(pylf)
