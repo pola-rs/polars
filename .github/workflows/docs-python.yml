@@ -65,10 +65,10 @@ jobs:
 
       - name: Parse the tag to find the major version of Polars
         id: version
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          tag="${{ github.event.client_payload.tag }}"
+          tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
           regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
           [[ $tag =~ $regex ]]
           version=${BASH_REMATCH[1]}
@@ -100,7 +100,7 @@ jobs:
 
       # Build global docs _after_ this workflow to avoid contention on the gh-pages branch
       - name: Trigger global docs workflow
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         uses: peter-evans/repository-dispatch@v3
         with:
           event-type: python-release-docs
