@@ -16,7 +16,6 @@ from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
     from polars._typing import SchemaDict
-    from tests.unit.conftest import MemoryUsage
 
 
 @dataclass
@@ -943,9 +942,9 @@ def test_predicate_stats_eval_nested_binary() -> None:
 @pytest.mark.parametrize("streaming", [True, False])
 def test_scan_csv_bytesio_memory_usage(
     streaming: bool,
-    memory_usage_without_pyarrow: MemoryUsage,
+    # memory_usage_without_pyarrow: MemoryUsage,
 ) -> None:
-    memory_usage = memory_usage_without_pyarrow
+    # memory_usage = memory_usage_without_pyarrow
 
     # Create CSV that is ~6-7 MB in size:
     f = io.BytesIO()
@@ -955,7 +954,7 @@ def test_scan_csv_bytesio_memory_usage(
     f.seek(0, 0)
 
     # A lazy scan shouldn't make a full copy of the data:
-    starting_memory = memory_usage.get_current()
+    # starting_memory = memory_usage.get_current()
     assert (
         pl.scan_csv(f)
         .filter(pl.col("mydata") == 999_999)

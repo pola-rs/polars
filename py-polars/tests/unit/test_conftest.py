@@ -5,7 +5,7 @@ import pytest
 
 @pytest.mark.xfail
 def test_memory_usage() -> None:
-    pytest.fail(reason = "Disabled for now")
+    pytest.fail(reason="Disabled for now")
     # """The ``memory_usage`` fixture gives somewhat accurate results."""
     # memory_usage = memory_usage_without_pyarrow
     # assert memory_usage.get_current() < 100_000

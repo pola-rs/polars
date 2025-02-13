@@ -5,8 +5,6 @@ import os
 import random
 import string
 import sys
-import time
-import tracemalloc
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any, cast
 
@@ -197,7 +195,7 @@ class MemoryUsage:
         ``reset_tracking()`` was called, whichever is later.
         """
         return 0
-        #tracemalloc.get_traced_memory()[0]
+        # tracemalloc.get_traced_memory()[0]
 
     def get_peak(self) -> int:
         """
@@ -207,7 +205,7 @@ class MemoryUsage:
         ``reset_tracking()`` was called, whichever is later.
         """
         return 0
-        #tracemalloc.get_traced_memory()[1]
+        # tracemalloc.get_traced_memory()[1]
 
 
 # The bizarre syntax is from
@@ -235,10 +233,11 @@ def memory_usage_without_pyarrow() -> Generator[MemoryUsage, Any, Any]:
         # on Windows.
         pytest.skip("Windows not supported at the moment.")
 
+    gc.collect()
     try:
         yield MemoryUsage()
-    except:
-        pass
+    finally:
+        gc.collect()
     # gc.collect()
     # tracemalloc.start()
     # try:
