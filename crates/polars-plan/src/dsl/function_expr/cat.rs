@@ -22,7 +22,7 @@ pub enum CategoricalFunction {
         strict: bool,
     },
     #[cfg(all(feature = "strings", feature = "find_many"))]
-    ContainsMany {
+    ContainsAny {
         ascii_case_insensitive: bool,
     },
 }
@@ -43,7 +43,7 @@ impl CategoricalFunction {
             #[cfg(all(feature = "strings", feature = "regex"))]
             Contains { .. } => mapper.with_dtype(DataType::Boolean),
             #[cfg(all(feature = "strings", feature = "find_many"))]
-            ContainsMany { .. } => mapper.with_dtype(DataType::Boolean),
+            ContainsAny { .. } => mapper.with_dtype(DataType::Boolean),
         }
     }
 }
@@ -64,7 +64,7 @@ impl Display for CategoricalFunction {
             #[cfg(all(feature = "strings", feature = "regex"))]
             Contains { .. } => "contains",
             #[cfg(all(feature = "strings", feature = "find_many"))]
-            ContainsMany { .. } => "contains_many",
+            ContainsAny { .. } => "contains_many",
         };
         write!(f, "cat.{s}")
     }
@@ -90,7 +90,7 @@ impl From<CategoricalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
                 strict,
             } => map!(contains, pat.as_str(), literal, strict),
             #[cfg(all(feature = "strings", feature = "find_many"))]
-            ContainsMany {
+            ContainsAny {
                 ascii_case_insensitive,
             } => {
                 map_as_slice!(contains_many, ascii_case_insensitive)

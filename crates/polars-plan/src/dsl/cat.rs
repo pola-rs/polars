@@ -58,7 +58,7 @@ impl CategoricalNameSpace {
     #[cfg(feature = "find_many")]
     pub fn contains_any(self, patterns: Expr, ascii_case_insensitive: bool) -> Expr {
         self.0.map_many_private(
-            FunctionExpr::Categorical(CategoricalFunction::ContainsMany {
+            FunctionExpr::Categorical(CategoricalFunction::ContainsAny {
                 ascii_case_insensitive,
             }),
             &[patterns],
