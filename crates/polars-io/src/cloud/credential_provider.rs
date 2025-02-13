@@ -60,8 +60,10 @@ impl PlCredentialProvider {
         }
     }
 
-    /// Python passes a `CredentialProviderBuilder`, this calls the builder to
-    /// build the final credential provider.
+    /// Python passes a `CredentialProviderBuilder`, this calls the builder to build the final
+    /// credential provider.
+    ///
+    /// This returns `Option` as the auto-initialization case is fallible and falls back to None.
     pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
         match self {
             Self::Function(_) => Ok(Some(self)),
