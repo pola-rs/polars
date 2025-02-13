@@ -17,6 +17,10 @@ on:
     types:
       - python-release
   workflow_dispatch:
+    inputs:
+      polars_version:
+        description: 'Specify Polars version (e.g., py-0.20.1)'
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -48,7 +52,7 @@ jobs:
       - name: Build Python documentation
         working-directory: py-polars/docs
         env:
-          POLARS_VERSION: ${{ github.event.client_payload.tag || 'main' }}
+          POLARS_VERSION: ${{ github.event.inputs.polars_version || github.event.client_payload.tag || 'main' }}
         run: make html
 
       - name: Deploy Python docs for latest development version
