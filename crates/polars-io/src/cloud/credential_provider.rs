@@ -486,20 +486,6 @@ mod python_impl {
         pub(crate) fn try_into_initialized(self) -> PolarsResult<Option<Self>> {
             match self {
                 Self::Builder(py_object) => {
-                    if cfg!(debug_assertions) {
-                        Python::with_gil(|py| {
-                            let cls_name = py_object
-                                .getattr(py, "__class__")
-                                .unwrap()
-                                .getattr(py, "__name__")
-                                .unwrap()
-                                .extract::<pyo3::pybacked::PyBackedStr>(py)
-                                .unwrap();
-
-                            assert_eq!(&cls_name, "CredentialProviderBuilder");
-                        });
-                    }
-
                     let opt_initialized_py_object = Python::with_gil(|py| {
                         let build_fn = py_object.getattr(py, "build_credential_provider")?;
 
