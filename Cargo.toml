@@ -83,6 +83,7 @@ simd-json = { version = "0.14", features = ["known-key"] }
 simdutf8 = "0.1.4"
 skiplist = "0.5.1"
 slotmap = "1"
+smallvec = { version = "1", features = ["union", "const_generics", "const_new"] }
 sqlparser = "0.53"
 stacker = "0.1"
 streaming-iterator = "0.1.9"

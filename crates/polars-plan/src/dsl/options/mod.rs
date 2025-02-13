@@ -435,4 +435,6 @@ pub struct NDJsonReadOptions {
     pub ignore_errors: bool,
     pub schema: Option<SchemaRef>,
     pub schema_overwrite: Option<SchemaRef>,
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sub_json_path: Option<Arc<[String]>>,
 }

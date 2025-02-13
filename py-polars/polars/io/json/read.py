@@ -25,6 +25,7 @@ def read_json(
     schema: SchemaDefinition | None = None,
     schema_overrides: SchemaDefinition | None = None,
     infer_schema_length: int | None = N_INFER_DEFAULT,
+    sub_json_path: str | None = None,
 ) -> DataFrame:
     """
     Read into a DataFrame from a JSON file.
@@ -97,5 +98,6 @@ def read_json(
         infer_schema_length=infer_schema_length,
         schema=schema,
         schema_overrides=schema_overrides,
+        sub_json_path=sub_json_path,
     )
     return wrap_df(pydf)

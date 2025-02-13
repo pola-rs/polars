@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_io::ndjson;
@@ -10,6 +12,7 @@ use crate::nodes::compute_node_prelude::*;
 #[derive(Default)]
 pub(super) struct ChunkReader {
     projected_schema: SchemaRef,
+    sub_json_path: Option<Arc<[String]>>,
     ignore_errors: bool,
 }
 
@@ -22,6 +25,7 @@ impl ChunkReader {
 
         Ok(Self {
             projected_schema,
+            sub_json_path: options.sub_json_path.clone(),
             ignore_errors: options.ignore_errors,
         })
     }
@@ -30,7 +34,15 @@ impl ChunkReader {
         if self.projected_schema.is_empty() {
             Ok(DataFrame::empty_with_height(ndjson::count_rows(chunk)))
         } else {
-            parse_ndjson(chunk, None, &self.projected_schema, self.ignore_errors)
+            parse_ndjson(
+                chunk,
+                None,
+                &self.projected_schema,
+                self.sub_json_path
+                    .as_ref()
+                    .map_or(&[] as &[String], |p| &**p),
+                self.ignore_errors,
+            )
         }
     }
 }
