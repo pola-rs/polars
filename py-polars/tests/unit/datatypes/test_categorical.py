@@ -979,6 +979,7 @@ def test_categorical_prefill() -> None:
     assert s.n_unique() == 2
 
 
+@pytest.mark.may_fail_auto_streaming  # not implemented
 def test_categorical_min_max() -> None:
     lf = pl.LazyFrame(
         {
