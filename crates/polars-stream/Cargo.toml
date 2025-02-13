@@ -12,6 +12,7 @@ description = "Private crate for the streaming execution engine for the Polars D
 atomic-waker = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-utils = { workspace = true }
+crossbeam-queue = { workspace = true }
 futures = { workspace = true }
 memmap = { workspace = true }
 parking_lot = { workspace = true }
