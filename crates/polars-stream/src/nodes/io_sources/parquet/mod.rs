@@ -189,8 +189,7 @@ impl SourceNode for ParquetSourceNode {
         self.init_projected_arrow_schema();
 
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
-
-        let morsel_stream_starter = self.morsel_stream_starter.take().unwrap();
+        let mut morsel_stream_starter = self.morsel_stream_starter.take();
 
         join_handles.push(spawn(TaskPriority::Low, async move {
             if let Some(rc) = unresistricted_row_count {
@@ -199,7 +198,11 @@ impl SourceNode for ParquetSourceNode {
                 rc.store(num_rows, Ordering::Relaxed);
             }
 
-            morsel_stream_starter.send(()).unwrap();
+            if let Some(v) = morsel_stream_starter.take() {
+                if v.send(()).is_err() {
+                    return Ok(());
+                }
+            }
 
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {

@@ -428,7 +428,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     loop {
                         if i == 0 {
                             start_index = 0;
-                            positive_slice = 0..length.min(source_length_sum);
+                            positive_slice = 0..(length.saturating_sub(offset)).min(source_length_sum);
                             break;
                         }
 
