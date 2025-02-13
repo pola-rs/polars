@@ -969,7 +969,7 @@ impl PyLazyFrame {
     }
 
     #[cfg(feature = "asof_join")]
-    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, coalesce, allow_eq, check_sortedness))]
+    #[pyo3(signature = (other, left_on, right_on, left_by, right_by, allow_parallel, force_parallel, suffix, strategy, tolerance, tolerance_str, join_nulls, coalesce, allow_eq, check_sortedness))]
     fn join_asof(
         &self,
         other: Self,
@@ -983,6 +983,7 @@ impl PyLazyFrame {
         strategy: Wrap<AsofStrategy>,
         tolerance: Option<Wrap<AnyValue<'_>>>,
         tolerance_str: Option<String>,
+        join_nulls: bool,
         coalesce: bool,
         allow_eq: bool,
         check_sortedness: bool,
@@ -1004,6 +1005,7 @@ impl PyLazyFrame {
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
             .coalesce(coalesce)
+            .join_nulls(join_nulls)
             .how(JoinType::AsOf(AsOfOptions {
                 strategy: strategy.0,
                 left_by: left_by.map(strings_to_pl_smallstr),
