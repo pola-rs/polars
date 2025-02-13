@@ -108,13 +108,15 @@ def test_struct_unique_df() -> None:
 
 
 def test_sorted_unique_dates() -> None:
-    assert (
+    out = (
         pl.DataFrame(
             [pl.Series("dt", [date(2015, 6, 24), date(2015, 6, 23)], dtype=pl.Date)]
         )
         .sort("dt")
         .unique(maintain_order=False)
-    ).to_dict(as_series=False) == {"dt": [date(2015, 6, 23), date(2015, 6, 24)]}
+    )
+    expected = pl.DataFrame({"dt": [date(2015, 6, 23), date(2015, 6, 24)]})
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 @pytest.mark.parametrize("maintain_order", [True, False])

@@ -26,6 +26,7 @@ use polars_utils::pl_str::PlSmallStr;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
+use crate::nodes::io_sources::multi_scan::RowRestrication;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -191,6 +192,7 @@ pub enum PhysNodeKind {
         /// Selection of `file_schema` columns should to be included in the output morsels.
         projection: Option<Bitmap>,
 
+        row_restriction: Option<RowRestrication>,
         row_index: Option<RowIndex>,
     },
     FileScan {

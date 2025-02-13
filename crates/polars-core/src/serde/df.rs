@@ -166,7 +166,7 @@ impl<'de> Deserialize<'de> for DataFrame {
     where
         D: Deserializer<'de>,
     {
-        deserialize_map_bytes(deserializer, &mut |b| {
+        deserialize_map_bytes(deserializer, |b| {
             let v = &mut b.as_ref();
             Self::deserialize_from_reader(v)
         })?

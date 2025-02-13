@@ -4,8 +4,6 @@
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 
 mod allocator;
-#[cfg(debug_assertions)]
-mod memory;
 
 use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
