@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::frame::DataFrame;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
@@ -363,84 +364,89 @@ fn to_graph_rec<'a>(
             projection,
             row_restriction,
             row_index,
-        } => match scan_type {
-            #[cfg(feature = "parquet")]
-            polars_plan::plans::FileScan::Parquet {
-                options,
-                cloud_options,
-                ..
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+        } => {
+            let hive_parts = hive_parts.as_ref().map_or_else(
+                || DataFrame::empty_with_height(scan_sources.len()),
+                |df| df.clone(),
+            );
+            match scan_type {
+                #[cfg(feature = "parquet")]
+                polars_plan::plans::FileScan::Parquet {
+                    options,
+                    cloud_options,
+                    ..
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
+                            scan_sources.clone(),
+                            hive_parts,
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            #[cfg(feature = "ipc")]
-            polars_plan::plans::FileScan::Ipc {
-                options,
-                cloud_options,
-                ..
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<
-                        nodes::io_sources::ipc::IpcSourceNode,
-                    >::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+                #[cfg(feature = "ipc")]
+                polars_plan::plans::FileScan::Ipc {
+                    options,
+                    cloud_options,
+                    ..
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::ipc::IpcSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts,
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            #[cfg(feature = "csv")]
-            polars_plan::plans::FileScan::Csv {
-                options,
-                cloud_options,
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<
-                        nodes::io_sources::csv::CsvSourceNode,
-                    >::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+                #[cfg(feature = "csv")]
+                polars_plan::plans::FileScan::Csv {
+                    options,
+                    cloud_options,
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::csv::CsvSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts,
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            _ => todo!(),
+                _ => todo!(),
+            }
         },
 
         v @ FileScan { .. } => {
             let FileScan {
                 scan_sources,
                 file_info,
-                hive_parts: _,
                 output_schema,
                 scan_type,
                 predicate,

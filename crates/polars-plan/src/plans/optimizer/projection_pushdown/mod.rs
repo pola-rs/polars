@@ -503,13 +503,14 @@ impl ProjectionPushDown {
 
                         if !self.in_new_streaming_engine {
                             // Cull the hive partitions that are not projected out.
-                            hive_parts = if let Some(hive_parts) = hive_parts {
+                            hive_parts = if let Some((_, hive_parts)) = hive_parts {
                                 let (new_schema, projected_indices) = hive_parts[0]
                                     .get_projection_schema_and_indices(
                                         &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
                                     );
 
-                                Some(Arc::new(
+                                // The DF is only interesting for the new streaming engine
+                                Some((DataFrame::empty(), Arc::new(
                                     hive_parts
                                         .iter()
                                         .cloned()
@@ -521,13 +522,13 @@ impl ProjectionPushDown {
                                             hp
                                         })
                                         .collect::<Vec<_>>(),
-                                ))
+                                )))
                             } else {
                                 None
                             };
                         }
 
-                        if let Some(ref hive_parts) = hive_parts {
+                        if let Some((ref hive_parts, _)) = hive_parts {
                             // @TODO:
                             // This is a hack to support both pre-NEW_MULTIFILE and
                             // post-NEW_MULTIFILE.
@@ -535,7 +536,7 @@ impl ProjectionPushDown {
                                 && std::env::var("POLARS_NEW_MULTIFILE").as_deref() != Ok("1")
                             {
                                 // Skip reading hive columns from the file.
-                                let partition_schema = hive_parts.first().unwrap().schema();
+                                let partition_schema = hive_parts.schema();
                                 file_options.with_columns = file_options.with_columns.map(|x| {
                                     x.iter()
                                         .filter(|x| !partition_schema.contains(x))
@@ -616,7 +617,7 @@ impl ProjectionPushDown {
                         if !self.in_new_streaming_engine {
                             file_options.with_columns = maybe_init_projection_excluding_hive(
                                 file_info.reader_schema.as_ref().unwrap(),
-                                hive_parts.as_ref().map(|x| &x[0]),
+                                hive_parts.as_ref().map(|(_, x)| &x[0]),
                             );
                         }
                         None

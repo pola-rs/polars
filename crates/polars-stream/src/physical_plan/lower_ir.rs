@@ -437,7 +437,7 @@ pub fn lower_ir(
                 };
                 let mut node = PhysNodeKind::MultiScan {
                     scan_sources,
-                    hive_parts,
+                    hive_parts: hive_parts.map(|(df, _)| df),
                     scan_type,
                     file_schema,
                     allow_missing_columns: file_options.allow_missing_columns,
@@ -526,7 +526,6 @@ pub fn lower_ir(
                 let node_kind = PhysNodeKind::FileScan {
                     scan_sources,
                     file_info,
-                    hive_parts,
                     output_schema: scan_output_schema,
                     scan_type,
                     predicate,

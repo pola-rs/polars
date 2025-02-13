@@ -1746,6 +1746,20 @@ impl Column {
         // @scalar-opt
         self.as_materialized_series().into_total_eq_inner()
     }
+
+    pub fn into_scalar_column(self) -> Option<ScalarColumn> {
+        if self.len() > 1 {
+            return None;
+        }
+
+        match self {
+            Column::Scalar(s) => Some(s),
+            _ => Some(ScalarColumn::from_single_value_series(
+                self.take_materialized_series(),
+                1,
+            )),
+        }
+    }
 }
 
 impl Default for Column {

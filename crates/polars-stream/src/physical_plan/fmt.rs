@@ -144,11 +144,19 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
-        PhysNodeKind::MultiScan { .. } => ("multi-scan-source".to_string(), &[][..]),
+        PhysNodeKind::MultiScan { hive_parts, .. } => {
+            let mut out = "multi-scan-source".to_string();
+            let mut f = EscapeLabel(&mut out);
+
+            if let Some(hive_parts) = hive_parts {
+                write!(f, "\nhive: {} columns", hive_parts.width()).unwrap();
+            }
+
+            (out, &[][..])
+        },
         PhysNodeKind::FileScan {
             scan_sources,
             file_info,
-            hive_parts,
             output_schema: _,
             scan_type,
             predicate,
@@ -200,13 +208,6 @@ fn visualize_plan_rec(
 
             if let Some(predicate) = predicate.as_ref() {
                 write!(f, "\nfilter: {}", predicate.display(expr_arena)).unwrap();
-            }
-
-            if let Some(v) = hive_parts
-                .as_deref()
-                .map(|x| x[0].get_statistics().column_stats().len())
-            {
-                write!(f, "\nhive: {} columns", v).unwrap();
             }
 
             (out, &[][..])
