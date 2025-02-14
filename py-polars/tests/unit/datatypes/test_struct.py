@@ -1241,8 +1241,8 @@ def test_cast_to_struct_needs_field_14083() -> None:
 
 @pytest.mark.filterwarnings("ignore:Comparisons with None always result in null.")
 def test_zip_outer_validity_infinite_recursion_21267() -> None:
-    s = pl.Series('x', [None, None], pl.Struct({ "f": pl.Null }))
+    s = pl.Series("x", [None, None], pl.Struct({"f": pl.Null}))
     assert_series_equal(
         s.to_frame().select(pl.col.x.__eq__(None)).to_series(),
-        pl.Series('x', [None, None], pl.Boolean),
+        pl.Series("x", [None, None], pl.Boolean),
     )
