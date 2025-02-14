@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
@@ -75,15 +76,6 @@ def test_equality() -> None:
         ],
     )
 
-    assert_skp_series(
-        "a",
-        pl.Struct(),
-        pl.col("a") != 0,
-        [
-            {"min": None, "max": None, "null_count": 6, "len": 7, "can_skip": False},
-        ],
-    )
-
 
 def test_datetimes() -> None:
     d = datetime.datetime(2023, 4, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
@@ -94,54 +86,57 @@ def test_datetimes() -> None:
         pl.Datetime(time_zone=datetime.timezone.utc),
         pl.col("a") == d,
         [
-            {"min": d - td(days=2), "max": d - td(days=1), "null_count": 0, "len": 42, "can_skip": True},
-            {"min": d + td(days=1), "max": d - td(days=2), "null_count": 0, "len": 42, "can_skip": True},
+            {
+                "min": d - td(days=2),
+                "max": d - td(days=1),
+                "null_count": 0,
+                "len": 42,
+                "can_skip": True,
+            },
+            {
+                "min": d + td(days=1),
+                "max": d - td(days=2),
+                "null_count": 0,
+                "len": 42,
+                "can_skip": True,
+            },
             {"min": d, "max": d, "null_count": 42, "len": 42, "can_skip": True},
-
             {"min": d, "max": d, "null_count": 0, "len": 42, "can_skip": False},
-            {"min": d - td(days=2), "max": d + td(days=2), "null_count": 0, "len": 42, "can_skip": False},
-
-            {"min": d + td(days=1), "max": None, "null_count": None, "len": None, "can_skip": True},
+            {
+                "min": d - td(days=2),
+                "max": d + td(days=2),
+                "null_count": 0,
+                "len": 42,
+                "can_skip": False,
+            },
+            {
+                "min": d + td(days=1),
+                "max": None,
+                "null_count": None,
+                "len": None,
+                "can_skip": True,
+            },
         ],
     )
-
-
-CHUNK_SIZE = 7
-NUM_CHUNKS = 13
-TOTAL_SIZE = CHUNK_SIZE * NUM_CHUNKS
 
 
 @given(
     s=series(
         name="x",
-        min_size=TOTAL_SIZE,
-        max_size=TOTAL_SIZE,
-        # allowed_dtypes=[
-        #     pl.Int64,
-        #     pl.String,
-        #     pl.Date,
-        #     pl.Datetime(time_zone=datetime.timezone.utc),
-        #     pl.Time,
-        # ],
+        min_size=1,
     ),
-    index_a=st.integers(0, TOTAL_SIZE - 1),
-    index_b=st.integers(0, TOTAL_SIZE - 1),
 )
 @settings(
     report_multiple_bugs=False,
     phases=(Phase.explicit, Phase.reuse, Phase.generate, Phase.target, Phase.explain),
 )
-def test_skip_batch_predicate_parametric(
-    s: pl.Series, index_a: int, index_b: int
-) -> None:
+def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
     name = "x"
     dtype = s.dtype
 
-    value_a = s.slice(index_a, 1)
-    value_b = s.slice(index_b, 1)
+    value_a = s.slice(0, 1)
 
     lit_a = pl.lit(value_a[0], dtype)
-    lit_b = pl.lit(value_b[0], dtype)
 
     exprs = [
         pl.col.x == lit_a,
@@ -159,33 +154,36 @@ def test_skip_batch_predicate_parametric(
             pl.col.x >= lit_a,
             pl.col.x < lit_a,
             pl.col.x <= lit_a,
-            pl.col.x.is_between(lit_a, lit_b),
-            pl.col.x.is_in(pl.Series([value_a[0], value_b[0]], dtype=dtype)),
             pl.col.x.is_in(pl.Series([None, value_a[0]], dtype=dtype)),
         ]
+
+        if s.len() > 1:
+            value_b = s.slice(1, 1)
+            lit_b = pl.lit(value_b[0], dtype)
+
+            exprs += [
+                pl.col.x.is_between(lit_a, lit_b),
+                pl.col.x.is_in(pl.Series([value_a[0], value_b[0]], dtype=dtype)),
+            ]
     except Exception as _:
         pass
 
     for expr in exprs:
         sbp = expr._skip_batch_predicate({name: dtype})
 
-        mins = [None] * NUM_CHUNKS
-        try:
-            mins = [
-                s.slice(i * CHUNK_SIZE, CHUNK_SIZE).min() for i in range(NUM_CHUNKS)
-            ]
-        except Exception as _:
-            mins = [None] * NUM_CHUNKS
-        try:
-            maxs = [
-                s.slice(i * CHUNK_SIZE, CHUNK_SIZE).max() for i in range(NUM_CHUNKS)
-            ]
-        except Exception as _:
-            maxs = [None] * NUM_CHUNKS
-        null_counts = [
-            s.slice(i * CHUNK_SIZE, CHUNK_SIZE).null_count() for i in range(NUM_CHUNKS)
-        ]
-        lengths = [CHUNK_SIZE] * NUM_CHUNKS
+        if sbp is None:
+            continue
+
+        mins = [None]
+        with contextlib.suppress(Exception):
+            mins = [s.min()]
+
+        maxs = [None]
+        with contextlib.suppress(Exception):
+            maxs = [s.max()]
+
+        null_counts = [s.null_count()]
+        lengths = [s.len()]
 
         df = pl.DataFrame(
             [
@@ -196,25 +194,14 @@ def test_skip_batch_predicate_parametric(
             ]
         )
 
-        out = df.select(can_skip=sbp).fill_null(False).to_series()
+        can_skip = df.select(can_skip=sbp).fill_null(False).to_series()[0]
+        if can_skip:
+            try:
+                assert s.to_frame().filter(expr).height == 0
+            except Exception as _:
+                print(expr)
+                print(sbp)
+                print(df)
+                print(s.to_frame().filter(expr))
 
-        included = []
-        for i, can_skip in enumerate(out):
-            if not can_skip:
-                included += [s.slice(i * CHUNK_SIZE, CHUNK_SIZE).to_frame()]
-
-        skipped_batches_df: pl.DataFrame
-        if len(included) == 0:
-            skipped_batches_df = s.head(0).to_frame()
-        else:
-            skipped_batches_df = pl.concat(included)
-
-        try:
-            assert_frame_equal(
-                s.to_frame().filter(expr),
-                skipped_batches_df.filter(expr),
-            )
-        except Exception as _:
-            print(expr)
-            print(sbp)
-            raise
+                raise

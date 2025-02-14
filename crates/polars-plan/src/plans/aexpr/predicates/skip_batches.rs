@@ -1,7 +1,7 @@
 //! This module creates predicates that can skip record batches of rows based on statistics about
 //! that record batch.
 
-use polars_core::prelude::{AnyValue, Scalar};
+use polars_core::prelude::{AnyValue, DataType, Scalar};
 use polars_core::schema::Schema;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::format_pl_smallstr;
@@ -28,6 +28,11 @@ pub fn aexpr_to_skip_batch_predicate(
     schema: &Schema,
 ) -> Option<Node> {
     aexpr_to_skip_batch_predicate_rec(e, expr_arena, schema, 0)
+}
+
+fn does_dtype_have_sufficient_order(dtype: &DataType) -> bool {
+    // Rules surrounding floats are really complicated. I should get around to that.
+    !dtype.is_nested() && !dtype.is_float() && !dtype.is_null() && !dtype.is_categorical()
 }
 
 #[recursive::recursive]
@@ -90,28 +95,9 @@ fn aexpr_to_skip_batch_predicate_rec(
             binexpr!(Gt, $l, $r)
         }};
     }
-    macro_rules! le {
-        ($l:expr, $r:expr) => {{
-            binexpr!(LtEq, $l, $r)
-        }};
-    }
-    macro_rules! ge {
-        ($l:expr, $r:expr) => {{
-            binexpr!(GtEq, $l, $r)
-        }};
-    }
     macro_rules! eq_missing {
         ($l:expr, $r:expr) => {{
             binexpr!(EqValidity, $l, $r)
-        }};
-    }
-    macro_rules! all {
-        ($i:expr) => {{
-            expr_arena.add(AExpr::Function {
-                input: vec![ExprIR::new($i, OutputName::Alias(PlSmallStr::EMPTY))],
-                function: FunctionExpr::Boolean(BooleanFunction::All { ignore_nulls: true }),
-                options: FunctionOptions::default(),
-            })
         }};
     }
     macro_rules! null_count {
@@ -234,6 +220,11 @@ fn aexpr_to_skip_batch_predicate_rec(
                 O::Eq | O::EqValidity => {
                     let ((col, _), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
+                    let dtype = schema.get(&col)?;
+
+                    if !does_dtype_have_sufficient_order(dtype) {
+                        return None;
+                    }
 
                     let op = *op;
                     let col = col.clone();
@@ -258,7 +249,6 @@ fn aexpr_to_skip_batch_predicate_rec(
                             let col_min = col!(min: col);
                             let col_max = col!(max: col);
 
-                            let dtype = schema.get(&col)?;
                             let min_is_defined = is_stat_defined!(col_min, dtype);
                             let max_is_defined = is_stat_defined!(col_max, dtype);
 
@@ -279,6 +269,11 @@ fn aexpr_to_skip_batch_predicate_rec(
                 O::NotEq | O::NotEqValidity => {
                     let ((col, _), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
+                    let dtype = schema.get(&col)?;
+
+                    if !does_dtype_have_sufficient_order(dtype) {
+                        return None;
+                    }
 
                     let op = *op;
                     let col = col.clone();
@@ -316,13 +311,17 @@ fn aexpr_to_skip_batch_predicate_rec(
                 O::Lt | O::Gt | O::LtEq | O::GtEq => {
                     let ((col, col_node), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
+                    let dtype = schema.get(&col)?;
+
+                    if !does_dtype_have_sufficient_order(dtype) {
+                        return None;
+                    }
 
                     let col_is_left = col_node == left;
 
                     let op = *op;
                     let col = col.clone();
                     let lv_may_be_null = lv.is_none_or(|lv| lv.is_null());
-                    let dtype = schema.get(&col)?;
 
                     // If B is null, this is always true.
                     //
@@ -354,7 +353,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     };
 
                     let stat_is_defined = is_stat_defined!(stat, dtype);
-                    let cmp_op = binexpr!(op: cmp_op, stat_is_defined, lv_node);
+                    let cmp_op = binexpr!(op: cmp_op, stat, lv_node);
                     let mut expr = and!(stat_is_defined, cmp_op);
 
                     if lv_may_be_null {
@@ -414,6 +413,10 @@ fn aexpr_to_skip_batch_predicate_rec(
                             let col = col.clone();
                             let dtype = schema.get(&col)?;
 
+                            if !does_dtype_have_sufficient_order(dtype) {
+                                return None;
+                            }
+
                             let lv_min = expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
                                 input: lv_node,
                                 propagate_nans: true,
@@ -452,7 +455,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 BooleanFunction::IsNull => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
 
-                    // col(A).is_null() --> NULL_COUNT(A) == 0
+                    // col(A).is_null() -> null_count(A) == 0
                     let col_nc = col!(null_count: col);
                     let idx_zero = lv!(idx: 0);
                     Some(eq_missing!(col_nc, idx_zero))
@@ -460,7 +463,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 BooleanFunction::IsNotNull => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
 
-                    // col(A).is_not_null() --> NULL_COUNT(A) == LEN
+                    // col(A).is_not_null() -> null_count(A) == LEN
                     let col_nc = col!(null_count: col);
                     let len = col!(len);
                     Some(eq_missing!(col_nc, len))
@@ -468,6 +471,11 @@ fn aexpr_to_skip_batch_predicate_rec(
                 #[cfg(feature = "is_between")]
                 BooleanFunction::IsBetween { closed } => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
+                    let dtype = schema.get(&col)?;
+
+                    if !does_dtype_have_sufficient_order(dtype) {
+                        return None;
+                    }
 
                     // col(A).is_between(X, Y) ->
                     //     null_count(A) == LEN ||
@@ -482,7 +490,6 @@ fn aexpr_to_skip_batch_predicate_rec(
 
                     let col = col.clone();
                     let closed = *closed;
-                    let dtype = schema.get(&col)?;
 
                     let lhs_no_nulls = has_no_nulls!(left_node);
                     let rhs_no_nulls = has_no_nulls!(right_node);
