@@ -1,4 +1,3 @@
-use std::future::Future;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -16,48 +15,20 @@ use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
 use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
 
 impl ParquetSourceNode {
-    /// # Panics
-    /// Panics if called more than once.
-    async fn shutdown_impl(
-        async_task_data: Arc<tokio::sync::Mutex<Option<AsyncTaskData>>>,
-        verbose: bool,
-    ) -> PolarsResult<()> {
-        if verbose {
-            eprintln!("[ParquetSource]: Shutting down");
-        }
-
-        let (raw_morsel_receivers, morsel_stream_task_handle) =
-            async_task_data.try_lock().unwrap().take().unwrap();
-
-        drop(raw_morsel_receivers);
-        // Join on the producer handle to catch errors/panics.
-        // Safety
-        // * We dropped the receivers on the line above
-        // * This function is only called once.
-        morsel_stream_task_handle.await.unwrap()
-    }
-
-    pub(super) fn shutdown(&self) -> impl Future<Output = PolarsResult<()>> {
-        if self.verbose {
-            eprintln!("[ParquetSource]: Shutdown via `shutdown()`");
-        }
-        Self::shutdown_impl(self.async_task_data.clone(), self.verbose)
-    }
-
-    /// Spawns a task to shut down the source node to avoid blocking the current thread. This is
-    /// usually called when data is no longer needed from the source node, as such it does not
-    /// propagate any (non-critical) errors. If on the other hand the source node does not provide
-    /// more data when requested, then it is more suitable to call [`Self::shutdown`], as it returns
-    /// a result that can be used to distinguish between whether the data stream stopped due to an
-    /// error or EOF.
-    pub(super) fn shutdown_in_background(&self) {
-        if self.verbose {
-            eprintln!("[ParquetSource]: Shutdown via `shutdown_in_background()`");
-        }
-        let async_task_data = self.async_task_data.clone();
-        polars_io::pl_async::get_runtime()
-            .spawn(Self::shutdown_impl(async_task_data, self.verbose));
-    }
+    // /// Spawns a task to shut down the source node to avoid blocking the current thread. This is
+    // /// usually called when data is no longer needed from the source node, as such it does not
+    // /// propagate any (non-critical) errors. If on the other hand the source node does not provide
+    // /// more data when requested, then it is more suitable to call [`Self::shutdown`], as it returns
+    // /// a result that can be used to distinguish between whether the data stream stopped due to an
+    // /// error or EOF.
+    // pub(super) fn shutdown_in_background(&self) {
+    //     if self.verbose {
+    //         eprintln!("[ParquetSource]: Shutdown via `shutdown_in_background()`");
+    //     }
+    //     let async_task_data = self.async_task_data.clone();
+    //     polars_io::pl_async::get_runtime()
+    //         .spawn(Self::shutdown_impl(async_task_data, self.verbose));
+    // }
 
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
@@ -158,15 +129,45 @@ impl ParquetSourceNode {
 
         // Distributes morsels across pipelines. This does not perform any CPU or I/O bound work -
         // it is purely a dispatch loop. Run on the computational executor to reduce context switches.
+        let last_morsel_min_split = self.config.num_pipelines;
         let distribute_task = async_executor::spawn(TaskPriority::High, async move {
             let mut morsel_seq = MorselSeq::default();
-            while let Some(decode_fut) = decode_recv.recv().await {
+
+            // Decode first non-empty morsel.
+            let mut next = None;
+            loop {
+                let Some(decode_fut) = decode_recv.recv().await else {
+                    break;
+                };
                 let df = decode_fut.await?;
-                if df.is_empty() {
+                if df.height() == 0 {
                     continue;
                 }
+                next = Some(df);
+                break;
+            }
 
-                for df in split_to_morsels(&df, ideal_morsel_size) {
+            while let Some(df) = next.take() {
+                // Try to decode the next non-empty morsel first, so we know
+                // whether the df is the last morsel.
+                loop {
+                    let Some(decode_fut) = decode_recv.recv().await else {
+                        break;
+                    };
+                    let next_df = decode_fut.await?;
+                    if next_df.height() == 0 {
+                        continue;
+                    }
+                    next = Some(next_df);
+                    break;
+                }
+
+                for df in split_to_morsels(
+                    &df,
+                    ideal_morsel_size,
+                    next.is_none(),
+                    last_morsel_min_split,
+                ) {
                     if raw_morsel_sender.send((df, morsel_seq)).await.is_err() {
                         return Ok(());
                     }
@@ -325,23 +326,29 @@ fn filtered_range(exclude: &[usize], len: usize) -> Vec<usize> {
         .collect()
 }
 
-/// Note: The 2nd return is an upper bound on the number of morsels rather than an exact count.
 fn split_to_morsels(
     df: &DataFrame,
     ideal_morsel_size: usize,
+    last_morsel: bool,
+    last_morsel_min_split: usize,
 ) -> impl Iterator<Item = DataFrame> + '_ {
-    let n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
+    let mut n_morsels = if df.height() > 3 * ideal_morsel_size / 2 {
         // num_rows > (1.5 * ideal_morsel_size)
         (df.height() / ideal_morsel_size).max(2)
     } else {
         1
     };
 
-    let rows_per_morsel = 1 + df.height() / n_morsels;
+    if last_morsel {
+        n_morsels = n_morsels.max(last_morsel_min_split);
+    }
+
+    let rows_per_morsel = df.height().div_ceil(n_morsels).max(1);
 
     (0..i64::try_from(df.height()).unwrap())
         .step_by(rows_per_morsel)
         .map(move |offset| df.slice(offset, rows_per_morsel))
+        .filter(|df| df.height() > 0)
 }
 
 mod tests {

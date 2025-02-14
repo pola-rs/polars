@@ -1,15 +1,19 @@
+use core::fmt;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    AnyValue, Column, Field, GroupPositions, PlIndexMap, PlIndexSet, IDX_DTYPE,
+    AnyValue, Column, Field, GroupPositions, PlHashMap, PlIndexMap, PlIndexSet, IDX_DTYPE,
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_expr::prelude::{phys_expr_to_io_expr, AggregationContext, PhysicalExpr};
 use polars_expr::state::ExecutionState;
-use polars_io::predicates::{ColumnStatistics, ScanIOPredicate, SkipBatchPredicate};
+use polars_io::predicates::{
+    ColumnPredicates, ColumnStatistics, ScanIOPredicate, SkipBatchPredicate,
+    SpecializedColumnPredicateExpr,
+};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
@@ -28,6 +32,27 @@ pub struct ScanPredicate {
     /// `true` if the whole batch can for sure be skipped. This may be conservative and evaluate to
     /// `false` even when the batch could theoretically be skipped.
     pub skip_batch_predicate: Option<Arc<dyn PhysicalExpr>>,
+
+    /// Partial predicates for each column for filter when loading columnar formats.
+    pub column_predicates: PhysicalColumnPredicates,
+}
+
+impl fmt::Debug for ScanPredicate {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("scan_predicate")
+    }
+}
+
+#[derive(Clone)]
+pub struct PhysicalColumnPredicates {
+    pub predicates: PlHashMap<
+        PlSmallStr,
+        (
+            Arc<dyn PhysicalExpr>,
+            Option<SpecializedColumnPredicateExpr>,
+        ),
+    >,
+    pub is_sumwise_complete: bool,
 }
 
 /// Helper to implement [`SkipBatchPredicate`].
@@ -75,16 +100,6 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
         }
 
         self.child.evaluate_on_groups(&df, groups, state)
-    }
-
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<polars_io::predicates::SpecializedColumnPredicateExpr>,
-    )> {
-        None
     }
 
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
@@ -151,6 +166,8 @@ impl ScanPredicate {
             predicate,
             live_columns: Arc::new(live_columns),
             skip_batch_predicate,
+            column_predicates: self.column_predicates.clone(), // Q? Maybe this should cull
+                                                               // predicates.
         }
     }
 
@@ -208,6 +225,15 @@ impl ScanPredicate {
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
                 .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
+            column_predicates: Arc::new(ColumnPredicates {
+                predicates: self
+                    .column_predicates
+                    .predicates
+                    .iter()
+                    .map(|(n, (p, s))| (n.clone(), (phys_expr_to_io_expr(p.clone()), s.clone())))
+                    .collect(),
+                is_sumwise_complete: self.column_predicates.is_sumwise_complete,
+            }),
         }
     }
 }

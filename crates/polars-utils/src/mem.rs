@@ -71,8 +71,20 @@ pub fn madvise_populate_read(#[allow(unused)] slice: &[u8]) {
     madvise(slice, libc::MADV_POPULATE_READ);
 }
 
+/// Forcibly reads at least one byte each page.
+pub fn force_populate_read(slice: &[u8]) {
+    for i in (0..slice.len()).step_by(*PAGE_SIZE) {
+        std::hint::black_box(slice[i]);
+    }
+
+    std::hint::black_box(slice.last().copied());
+}
+
 #[cfg(target_family = "unix")]
 fn madvise(slice: &[u8], advice: libc::c_int) {
+    if slice.is_empty() {
+        return;
+    }
     let ptr = slice.as_ptr();
 
     let align = ptr as usize % *PAGE_SIZE;

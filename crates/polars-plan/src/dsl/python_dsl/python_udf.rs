@@ -10,7 +10,6 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 
-use super::expr_dyn_fn::*;
 use crate::constants::MAP_LIST_NAME;
 use crate::prelude::*;
 

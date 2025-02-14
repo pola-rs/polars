@@ -3194,6 +3194,7 @@ dependencies = [
  "ahash",
  "bitflags",
  "chrono",
+ "either",
  "futures",
  "memchr",
  "once_cell",
@@ -3449,6 +3450,7 @@ dependencies = [
 name = "polars-sql"
 version = "0.46.0"
 dependencies = [
+ "bitflags",
  "hex",
  "polars-core",
  "polars-error",
@@ -3469,6 +3471,7 @@ version = "0.46.0"
 dependencies = [
  "atomic-waker",
  "crossbeam-deque",
+ "crossbeam-queue",
  "crossbeam-utils",
  "futures",
  "memmap2",
@@ -3631,8 +3634,9 @@ dependencies = [
 
 [[package]]
 name = "py-polars"
-version = "1.21.0"
+version = "1.22.0"
 dependencies = [
+ "either",
  "jemallocator",
  "libc",
  "mimalloc",

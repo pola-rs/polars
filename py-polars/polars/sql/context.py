@@ -203,7 +203,6 @@ class SQLContext(Generic[FrameType]):
         if register_globals:
             for name, obj in _get_frame_locals(
                 all_compatible=False,
-                n_objects=None if (register_globals is True) else None,
             ).items():
                 if name not in frames and name not in named_frames:
                     named_frames[name] = obj

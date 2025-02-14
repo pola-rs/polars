@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::panic::{catch_unwind, UnwindSafe};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -6,15 +7,31 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Python so that the Python exception can be generated.
 pub struct KeyboardInterrupt;
 
+// We use a unique string so we can detect it in backtraces.
+static POLARS_KEYBOARD_INTERRUPT_STRING: &str = "__POLARS_KEYBOARD_INTERRUPT";
+
 // Bottom bit: interrupt flag.
 // Top 63 bits: number of alive interrupt catchers.
 static INTERRUPT_STATE: AtomicU64 = AtomicU64::new(0);
 
+fn is_keyboard_interrupt(p: &dyn Any) -> bool {
+    if let Some(s) = p.downcast_ref::<&str>() {
+        s.contains(POLARS_KEYBOARD_INTERRUPT_STRING)
+    } else if let Some(s) = p.downcast_ref::<String>() {
+        s.contains(POLARS_KEYBOARD_INTERRUPT_STRING)
+    } else {
+        false
+    }
+}
+
 pub fn register_polars_keyboard_interrupt_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |p| {
-        // Suppress panic output on KeyboardInterrupt.
-        if p.payload().downcast_ref::<KeyboardInterrupt>().is_none() {
+        // Suppress output if there is an active catcher and the panic message
+        // contains the keyboard interrupt string.
+        let num_catchers = INTERRUPT_STATE.load(Ordering::Relaxed) >> 1;
+        let suppress = num_catchers > 0 && is_keyboard_interrupt(p.payload());
+        if !suppress {
             default_hook(p);
         }
     }));
@@ -40,8 +57,8 @@ pub fn register_polars_keyboard_interrupt_hook() {
     }
 }
 
-/// Checks if the keyboard interrupt flag is set, and if yes panics with a
-/// KeyboardInterrupt. This function is very cheap.
+/// Checks if the keyboard interrupt flag is set, and if yes panics as a
+/// keyboard interrupt. This function is very cheap.
 #[inline(always)]
 pub fn try_raise_keyboard_interrupt() {
     if INTERRUPT_STATE.load(Ordering::Relaxed) & 1 != 0 {
@@ -52,7 +69,7 @@ pub fn try_raise_keyboard_interrupt() {
 #[inline(never)]
 #[cold]
 fn try_raise_keyboard_interrupt_slow() {
-    std::panic::panic_any(KeyboardInterrupt);
+    std::panic::panic_any(POLARS_KEYBOARD_INTERRUPT_STRING);
 }
 
 /// Runs the passed function, catching any KeyboardInterrupts if they occur
@@ -65,9 +82,12 @@ pub fn catch_keyboard_interrupt<R, F: FnOnce() -> R + UnwindSafe>(
     try_register_catcher()?;
     let ret = catch_unwind(try_fn);
     unregister_catcher();
-    ret.map_err(|p| match p.downcast::<KeyboardInterrupt>() {
-        Ok(_) => KeyboardInterrupt,
-        Err(p) => std::panic::resume_unwind(p),
+    ret.map_err(|p| {
+        if is_keyboard_interrupt(&*p) {
+            KeyboardInterrupt
+        } else {
+            std::panic::resume_unwind(p)
+        }
     })
 }
 

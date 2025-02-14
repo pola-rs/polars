@@ -484,7 +484,9 @@ impl PySeries {
 
             let dicts = dtypes
                 .iter()
-                .map(|(_, dtype)| get_row_encoding_context(&dtype.0))
+                .map(|(_, dt)| dt)
+                .zip(opts.iter())
+                .map(|(dtype, opts)| get_row_encoding_context(&dtype.0, opts.is_ordered()))
                 .collect::<Vec<_>>();
 
             // Get the BinaryOffset array.

@@ -957,9 +957,9 @@ where
         {
             (left, right)
         },
-        (_, 1) => (left.rechunk(), right),
-        (1, _) => (left, right.rechunk()),
-        (_, _) => (left.rechunk(), right.rechunk()),
+        (_, 1) => (left.rechunk().into_owned(), right),
+        (1, _) => (left, right.rechunk().into_owned()),
+        (_, _) => (left.rechunk().into_owned(), right.rechunk().into_owned()),
     }
 }
 
@@ -1061,10 +1061,8 @@ where
     T: PolarsDataType,
 {
     let (left, right) = align_chunks_binary(left, right);
-    let left_chunk_refs: Vec<_> = left.chunks().iter().map(|c| &**c).collect();
-    let left_validity = concatenate_validities(&left_chunk_refs);
-    let right_chunk_refs: Vec<_> = right.chunks().iter().map(|c| &**c).collect();
-    let right_validity = concatenate_validities(&right_chunk_refs);
+    let left_validity = concatenate_validities(left.chunks());
+    let right_validity = concatenate_validities(right.chunks());
     combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
 }
 

@@ -425,16 +425,6 @@ impl PhysicalExpr for ApplyExpr {
         }
     }
 
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
-    }
-
     fn to_field(&self, input_schema: &Schema) -> PolarsResult<Field> {
         self.expr.to_field(input_schema, Context::Default)
     }

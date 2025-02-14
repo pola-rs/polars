@@ -525,3 +525,11 @@ def test_sorted_top_k_duplicates(
         .pipe(func, 2, by="a", reverse=reverse),
         expect,
     )
+
+
+def test_top_k_list_dtype() -> None:
+    s = pl.Series([[1, 2], [3, 4], [], [0]], dtype=pl.List(pl.Int64))
+    assert s.top_k(2).to_list() == [[3, 4], [1, 2]]
+
+    s = pl.Series([[[1, 2], [3]], [[4], []], [[0]]], dtype=pl.List(pl.List(pl.Int64)))
+    assert s.top_k(2).to_list() == [[[4], []], [[1, 2], [3]]]

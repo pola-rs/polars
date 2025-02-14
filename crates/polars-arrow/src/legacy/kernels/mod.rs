@@ -2,7 +2,6 @@ use std::iter::Enumerate;
 
 use crate::array::BooleanArray;
 use crate::bitmap::utils::BitChunks;
-pub mod concatenate;
 pub mod ewm;
 pub mod rolling;
 pub mod set;

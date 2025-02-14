@@ -1,11 +1,15 @@
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, LazyLock};
 
+use crossbeam_queue::ArrayQueue;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
+use polars_core::{config, POOL};
 use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
 use polars_expr::hash_keys::HashKeys;
+use polars_io::pl_async::get_runtime;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_ops::prelude::TakeChunked;
 use polars_ops::series::coalesce_columns;
@@ -16,12 +20,22 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 use rayon::prelude::*;
 
-use crate::async_primitives::connector::{Receiver, Sender};
+use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
+
+static SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
+        .map(|limit| limit.parse().unwrap())
+        .unwrap_or(10_000_000)
+});
+
+// If one side is this much bigger than the other side we'll always use the
+// smaller side as the build side without checking cardinalities.
+const LOPSIDED_SAMPLE_FACTOR: usize = 10;
 
 /// A payload selector contains for each column whether that column should be
 /// included in the payload, and if yes with what name.
@@ -64,6 +78,7 @@ fn compute_payload_selector(
         .collect()
 }
 
+/// Fixes names and does coalescing of columns post-join.
 fn postprocess_join(df: DataFrame, params: &EquiJoinParams) -> DataFrame {
     if params.args.how == JoinType::Full && params.args.should_coalesce() {
         // TODO: don't do string-based column lookups for each dataframe, pre-compute coalesce indices.
@@ -137,6 +152,275 @@ fn select_payload(df: DataFrame, selector: &[Option<PlSmallStr>]) -> DataFrame {
         .collect()
 }
 
+fn estimate_cardinality(
+    morsels: &[Morsel],
+    key_selectors: &[StreamExpr],
+    params: &EquiJoinParams,
+    state: &ExecutionState,
+) -> PolarsResult<usize> {
+    // TODO: parallelize.
+    let mut sketch = CardinalitySketch::new();
+    for morsel in morsels {
+        let hash_keys =
+            get_runtime().block_on(select_keys(morsel.df(), key_selectors, params, state))?;
+        hash_keys.sketch_cardinality(&mut sketch);
+    }
+    Ok(sketch.estimate())
+}
+
+#[expect(clippy::needless_lifetimes)]
+fn insert_cached_into_parallel_stream<'s, 'env>(
+    cached: &'s Option<ArrayQueue<Morsel>>,
+    num_pipelines: usize,
+    recv_port: Option<RecvPort<'_>>,
+    scope: &'s TaskScope<'s, 'env>,
+    join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+) -> Option<Vec<Receiver<Morsel>>> {
+    let Some(cached) = cached.as_ref().filter(|c| !c.is_empty()) else {
+        return recv_port.map(|p| p.parallel());
+    };
+
+    let receivers = if let Some(p) = recv_port {
+        p.parallel().into_iter().map(Some).collect_vec()
+    } else {
+        (0..num_pipelines).map(|_| None).collect_vec()
+    };
+
+    let source_token = SourceToken::new();
+    let mut out = Vec::new();
+    for orig_recv in receivers {
+        let (mut new_send, new_recv) = connector();
+        out.push(new_recv);
+        let source_token = source_token.clone();
+        join_handles.push(scope.spawn_task(TaskPriority::High, async move {
+            // Act like an InMemorySource node until cached morsels are consumed.
+            let wait_group = WaitGroup::default();
+            loop {
+                let Some(mut morsel) = cached.pop() else {
+                    break;
+                };
+                morsel.replace_source_token(source_token.clone());
+                morsel.set_consume_token(wait_group.token());
+                if new_send.send(morsel).await.is_err() {
+                    return Ok(());
+                }
+                wait_group.wait().await;
+                if source_token.stop_requested() {
+                    return Ok(());
+                }
+            }
+
+            if let Some(mut recv) = orig_recv {
+                while let Ok(morsel) = recv.recv().await {
+                    if new_send.send(morsel).await.is_err() {
+                        break;
+                    }
+                }
+            }
+            Ok(())
+        }));
+    }
+    Some(out)
+}
+
+#[derive(Default)]
+struct SampleState {
+    left: Vec<Morsel>,
+    left_len: usize,
+    right: Vec<Morsel>,
+    right_len: usize,
+}
+
+impl SampleState {
+    async fn sink(
+        mut recv: Receiver<Morsel>,
+        morsels: &mut Vec<Morsel>,
+        len: &mut usize,
+        this_final_len: Arc<AtomicUsize>,
+        other_final_len: Arc<AtomicUsize>,
+    ) -> PolarsResult<()> {
+        while let Ok(mut morsel) = recv.recv().await {
+            *len += morsel.df().height();
+            if *len >= *SAMPLE_LIMIT
+                || *len
+                    >= other_final_len
+                        .load(Ordering::Relaxed)
+                        .saturating_mul(LOPSIDED_SAMPLE_FACTOR)
+            {
+                morsel.source_token().stop();
+            }
+
+            drop(morsel.take_consume_token());
+            morsels.push(morsel);
+        }
+        this_final_len.store(*len, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn try_transition_to_build(
+        &mut self,
+        recv: &[PortState],
+        num_pipelines: usize,
+        params: &mut EquiJoinParams,
+        table: &mut Option<Box<dyn ChunkedIdxTable>>,
+    ) -> PolarsResult<Option<BuildState>> {
+        let left_saturated = self.left_len >= *SAMPLE_LIMIT;
+        let right_saturated = self.right_len >= *SAMPLE_LIMIT;
+        let left_done = recv[0] == PortState::Done || left_saturated;
+        let right_done = recv[1] == PortState::Done || right_saturated;
+        #[expect(clippy::nonminimal_bool)]
+        let stop_sampling = (left_done && right_done)
+            || (left_done && self.right_len >= LOPSIDED_SAMPLE_FACTOR * self.left_len)
+            || (right_done && self.left_len >= LOPSIDED_SAMPLE_FACTOR * self.right_len);
+        if !stop_sampling {
+            return Ok(None);
+        }
+
+        if config::verbose() {
+            eprintln!(
+                "choosing equi-join build side, sample lengths are: {} vs. {}",
+                self.left_len, self.right_len
+            );
+        }
+
+        let estimate_cardinalities = || {
+            let execution_state = ExecutionState::new();
+            let left_cardinality = estimate_cardinality(
+                &self.left,
+                &params.left_key_selectors,
+                params,
+                &execution_state,
+            )?;
+            let right_cardinality = estimate_cardinality(
+                &self.right,
+                &params.right_key_selectors,
+                params,
+                &execution_state,
+            )?;
+            let norm_left_factor = self.left_len.min(*SAMPLE_LIMIT) as f64 / self.left_len as f64;
+            let norm_right_factor =
+                self.right_len.min(*SAMPLE_LIMIT) as f64 / self.right_len as f64;
+            let norm_left_cardinality = (left_cardinality as f64 * norm_left_factor) as usize;
+            let norm_right_cardinality = (right_cardinality as f64 * norm_right_factor) as usize;
+            if config::verbose() {
+                eprintln!("estimated cardinalities are: {norm_left_cardinality} vs. {norm_right_cardinality}");
+            }
+            PolarsResult::Ok((norm_left_cardinality, norm_right_cardinality))
+        };
+
+        let left_is_build = match (left_saturated, right_saturated) {
+            (false, false) => {
+                if self.left_len * LOPSIDED_SAMPLE_FACTOR < self.right_len
+                    || self.left_len > self.right_len * LOPSIDED_SAMPLE_FACTOR
+                {
+                    // Don't bother estimating cardinality, just choose smaller as it's highly
+                    // imbalanced.
+                    self.left_len < self.right_len
+                } else {
+                    let (lc, rc) = estimate_cardinalities()?;
+                    // Let's assume for now that per element building a
+                    // table is 3x more expensive than a probe, with
+                    // unique keys getting an additional 3x factor for
+                    // having to update the hash table in addition to the probe.
+                    let left_build_cost = self.left_len * 3 + 3 * lc;
+                    let left_probe_cost = self.left_len;
+                    let right_build_cost = self.right_len * 3 + 3 * rc;
+                    let right_probe_cost = self.right_len;
+                    left_build_cost + right_probe_cost < left_probe_cost + right_build_cost
+                }
+            },
+
+            // Choose the unsaturated side, the saturated side could be
+            // arbitrarily big.
+            (false, true) => true,
+            (true, false) => false,
+
+            // Estimate cardinality and choose smaller.
+            (true, true) => {
+                let (lc, rc) = estimate_cardinalities()?;
+                lc < rc
+            },
+        };
+
+        if config::verbose() {
+            eprintln!(
+                "build side chosen: {}",
+                if left_is_build { "left" } else { "right" }
+            );
+        }
+
+        // Transition to building state.
+        params.left_is_build = Some(left_is_build);
+        *table = Some(if left_is_build {
+            new_chunked_idx_table(params.left_key_schema.clone())
+        } else {
+            new_chunked_idx_table(params.right_key_schema.clone())
+        });
+
+        fn make_queue(v: Vec<Morsel>) -> Option<ArrayQueue<Morsel>> {
+            if v.is_empty() {
+                return None;
+            }
+            let queue = ArrayQueue::new(v.len());
+            for morsel in v {
+                queue.push(morsel).unwrap();
+            }
+            Some(queue)
+        }
+
+        let mut sampled_build_morsels = make_queue(core::mem::take(&mut self.left));
+        let mut sampled_probe_morsels = make_queue(core::mem::take(&mut self.right));
+        if !left_is_build {
+            core::mem::swap(&mut sampled_build_morsels, &mut sampled_probe_morsels);
+        }
+
+        let partitioner = HashPartitioner::new(num_pipelines, 0);
+        let mut build_state = BuildState {
+            partitions_per_worker: (0..num_pipelines).map(|_| Vec::new()).collect(),
+            sampled_probe_morsels,
+        };
+
+        // Simulate the sample build morsels flowing into the build side.
+        if sampled_build_morsels.is_some() {
+            let state = ExecutionState::new();
+            crate::async_executor::task_scope(|scope| {
+                let mut join_handles = Vec::new();
+                let receivers = insert_cached_into_parallel_stream(
+                    &sampled_build_morsels,
+                    num_pipelines,
+                    None,
+                    scope,
+                    &mut join_handles,
+                )
+                .unwrap();
+
+                for (worker_ps, recv) in build_state.partitions_per_worker.iter_mut().zip(receivers)
+                {
+                    join_handles.push(scope.spawn_task(
+                        TaskPriority::High,
+                        BuildState::partition_and_sink(
+                            recv,
+                            worker_ps,
+                            partitioner.clone(),
+                            params,
+                            &state,
+                        ),
+                    ));
+                }
+
+                polars_io::pl_async::get_runtime().block_on(async move {
+                    for handle in join_handles {
+                        handle.await?;
+                    }
+                    PolarsResult::Ok(())
+                })
+            })?;
+        }
+
+        Ok(Some(build_state))
+    }
+}
+
 #[derive(Default)]
 struct BuildPartition {
     hash_keys: Vec<HashKeys>,
@@ -144,8 +428,10 @@ struct BuildPartition {
     sketch: Option<CardinalitySketch>,
 }
 
+#[derive(Default)]
 struct BuildState {
     partitions_per_worker: Vec<Vec<BuildPartition>>,
+    sampled_probe_morsels: Option<ArrayQueue<Morsel>>,
 }
 
 impl BuildState {
@@ -162,7 +448,7 @@ impl BuildState {
         let mut sketches = vec![CardinalitySketch::default(); partitioner.num_partitions()];
 
         let (key_selectors, payload_selector);
-        if params.left_is_build {
+        if params.left_is_build.unwrap() {
             payload_selector = &params.left_payload_select;
             key_selectors = &params.left_key_selectors;
         } else {
@@ -176,6 +462,7 @@ impl BuildState {
             let hash_keys = select_keys(morsel.df(), key_selectors, params, state).await?;
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
+            payload._deshare_views_mut();
 
             unsafe {
                 hash_keys.gen_partition_idxs(
@@ -185,11 +472,9 @@ impl BuildState {
                     track_unmatchable,
                 );
                 for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
+                    let payload_for_partition = payload.take_slice_unchecked_impl(idxs_in_p, false);
                     p.hash_keys.push(hash_keys.gather(idxs_in_p));
-                    p.frames.push((
-                        morsel.seq(),
-                        payload.take_slice_unchecked_impl(idxs_in_p, false),
-                    ));
+                    p.frames.push((morsel.seq(), payload_for_partition));
                 }
             }
         }
@@ -214,51 +499,37 @@ impl BuildState {
             }
         }
 
-        let track_unmatchable = params.emit_unmatched_build();
-        let table_per_partition: Vec<_> = results_per_partition
-            .into_par_iter()
-            .with_max_len(1)
-            .map(|results| {
-                // Estimate sizes and cardinality.
-                let mut sketch = CardinalitySketch::new();
-                let mut num_frames = 0;
-                for result in &results {
-                    sketch.combine(result.sketch.as_ref().unwrap());
-                    num_frames += result.frames.len();
-                }
-
-                // Build table for this partition.
-                let mut combined_frames = Vec::with_capacity(num_frames);
-                let mut chunk_seq_ids = Vec::with_capacity(num_frames);
-                let mut table = table.new_empty();
-                table.reserve(sketch.estimate() * 5 / 4);
-                if params.preserve_order_build {
-                    let mut combined = Vec::with_capacity(num_frames);
-                    for result in results {
-                        for (hash_keys, (seq, frame)) in
-                            result.hash_keys.into_iter().zip(result.frames)
-                        {
-                            combined.push((seq, hash_keys, frame));
-                        }
+        POOL.install(|| {
+            let track_unmatchable = params.emit_unmatched_build();
+            let table_per_partition: Vec<_> = results_per_partition
+                .into_par_iter()
+                .with_max_len(1)
+                .map(|results| {
+                    // Estimate sizes and cardinality.
+                    let mut sketch = CardinalitySketch::new();
+                    let mut num_frames = 0;
+                    for result in &results {
+                        sketch.combine(result.sketch.as_ref().unwrap());
+                        num_frames += result.frames.len();
                     }
 
-                    combined.sort_unstable_by_key(|c| c.0);
-                    for (seq, hash_keys, frame) in combined {
-                        // Zero-sized chunks can get deleted, so skip entirely to avoid messing
-                        // up the chunk counter.
-                        if frame.height() == 0 {
-                            continue;
+                    // Build table for this partition.
+                    let mut combined_frames = Vec::with_capacity(num_frames);
+                    let mut chunk_seq_ids = Vec::with_capacity(num_frames);
+                    let mut table = table.new_empty();
+                    table.reserve(sketch.estimate() * 5 / 4);
+                    if params.preserve_order_build {
+                        let mut combined = Vec::with_capacity(num_frames);
+                        for result in results {
+                            for (hash_keys, (seq, frame)) in
+                                result.hash_keys.into_iter().zip(result.frames)
+                            {
+                                combined.push((seq, hash_keys, frame));
+                            }
                         }
 
-                        table.insert_key_chunk(hash_keys, track_unmatchable);
-                        combined_frames.push(frame);
-                        chunk_seq_ids.push(seq);
-                    }
-                } else {
-                    for result in results {
-                        for (hash_keys, (_, frame)) in
-                            result.hash_keys.into_iter().zip(result.frames)
-                        {
+                        combined.sort_unstable_by_key(|c| c.0);
+                        for (seq, hash_keys, frame) in combined {
                             // Zero-sized chunks can get deleted, so skip entirely to avoid messing
                             // up the chunk counter.
                             if frame.height() == 0 {
@@ -267,31 +538,48 @@ impl BuildState {
 
                             table.insert_key_chunk(hash_keys, track_unmatchable);
                             combined_frames.push(frame);
+                            chunk_seq_ids.push(seq);
+                        }
+                    } else {
+                        for result in results {
+                            for (hash_keys, (_, frame)) in
+                                result.hash_keys.into_iter().zip(result.frames)
+                            {
+                                // Zero-sized chunks can get deleted, so skip entirely to avoid messing
+                                // up the chunk counter.
+                                if frame.height() == 0 {
+                                    continue;
+                                }
+
+                                table.insert_key_chunk(hash_keys, track_unmatchable);
+                                combined_frames.push(frame);
+                            }
                         }
                     }
-                }
 
-                let df = if combined_frames.is_empty() {
-                    if params.left_is_build {
-                        DataFrame::empty_with_schema(&params.left_payload_schema)
+                    let df = if combined_frames.is_empty() {
+                        if params.left_is_build.unwrap() {
+                            DataFrame::empty_with_schema(&params.left_payload_schema)
+                        } else {
+                            DataFrame::empty_with_schema(&params.right_payload_schema)
+                        }
                     } else {
-                        DataFrame::empty_with_schema(&params.right_payload_schema)
+                        accumulate_dataframes_vertical_unchecked(combined_frames)
+                    };
+                    ProbeTable {
+                        table,
+                        df,
+                        chunk_seq_ids,
                     }
-                } else {
-                    accumulate_dataframes_vertical_unchecked(combined_frames)
-                };
-                ProbeTable {
-                    table,
-                    df,
-                    chunk_seq_ids,
-                }
-            })
-            .collect();
+                })
+                .collect();
 
-        ProbeState {
-            table_per_partition,
-            max_seq_sent: MorselSeq::default(),
-        }
+            ProbeState {
+                table_per_partition,
+                max_seq_sent: MorselSeq::default(),
+                sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
+            }
+        })
     }
 }
 
@@ -306,6 +594,7 @@ struct ProbeTable {
 struct ProbeState {
     table_per_partition: Vec<ProbeTable>,
     max_seq_sent: MorselSeq,
+    sampled_probe_morsels: Option<ArrayQueue<Morsel>>,
 }
 
 impl ProbeState {
@@ -329,7 +618,7 @@ impl ProbeState {
         let emit_unmatched = params.emit_unmatched_probe();
 
         let (key_selectors, payload_selector);
-        if params.left_is_build {
+        if params.left_is_build.unwrap() {
             payload_selector = &params.right_payload_select;
             key_selectors = &params.right_key_selectors;
         } else {
@@ -341,7 +630,9 @@ impl ProbeState {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
             let hash_keys = select_keys(&df, key_selectors, params, state).await?;
-            let payload = select_payload(df, payload_selector);
+            let mut payload = select_payload(df, payload_selector);
+            let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
+
             max_seq = seq;
 
             unsafe {
@@ -368,14 +659,26 @@ impl ProbeState {
                             IdxSize::MAX,
                         );
 
+                        if table_match.is_empty() {
+                            continue;
+                        }
+
+                        // Gather output and add to buffer.
                         let mut build_df = if emit_unmatched {
-                            p.df.take_opt_chunked_unchecked(&table_match)
+                            p.df.take_opt_chunked_unchecked(&table_match, false)
                         } else {
-                            p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
+                            p.df.take_chunked_unchecked(&table_match, IsSorted::Not, false)
                         };
+
+                        if !payload_rechunked {
+                            // TODO: can avoid rechunk? We have to rechunk here or else we do it
+                            // multiple times during the gather.
+                            payload.rechunk_mut();
+                            payload_rechunked = true;
+                        }
                         let mut probe_df = payload.take_slice_unchecked_impl(&probe_match, false);
 
-                        let mut out_df = if params.left_is_build {
+                        let mut out_df = if params.left_is_build.unwrap() {
                             build_df.hstack_mut_unchecked(probe_df.get_columns());
                             build_df
                         } else {
@@ -389,24 +692,29 @@ impl ProbeState {
                         out_per_partition.push(out_df);
                     }
 
-                    let sort_options = SortMultipleOptions {
-                        descending: vec![false],
-                        nulls_last: vec![false],
-                        multithreaded: false,
-                        maintain_order: true,
-                        limit: None,
-                    };
-                    let mut out_df = accumulate_dataframes_vertical_unchecked(out_per_partition);
-                    out_df.sort_in_place([name.clone()], sort_options).unwrap();
-                    out_df.drop_in_place(&name).unwrap();
-                    out_df = postprocess_join(out_df, params);
+                    if !out_per_partition.is_empty() {
+                        let sort_options = SortMultipleOptions {
+                            descending: vec![false],
+                            nulls_last: vec![false],
+                            multithreaded: false,
+                            maintain_order: true,
+                            limit: None,
+                        };
+                        let mut out_df =
+                            accumulate_dataframes_vertical_unchecked(out_per_partition);
+                        out_df.sort_in_place([name.clone()], sort_options).unwrap();
+                        out_df.drop_in_place(&name).unwrap();
+                        out_df = postprocess_join(out_df, params);
 
-                    // TODO: break in smaller morsels.
-                    let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                    if send.send(out_morsel).await.is_err() {
-                        break;
+                        // TODO: break in smaller morsels.
+                        let out_morsel = Morsel::new(out_df, seq, src_token.clone());
+                        if send.send(out_morsel).await.is_err() {
+                            break;
+                        }
                     }
                 } else {
+                    let mut out_frames = Vec::new();
+                    let mut out_len = 0;
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
@@ -417,19 +725,29 @@ impl ProbeState {
                                 &mut probe_match,
                                 mark_matches,
                                 emit_unmatched,
-                                probe_limit,
+                                probe_limit - out_len,
                             ) as usize;
+
+                            if table_match.is_empty() {
+                                continue;
+                            }
 
                             // Gather output and send.
                             let mut build_df = if emit_unmatched {
-                                p.df.take_opt_chunked_unchecked(&table_match)
+                                p.df.take_opt_chunked_unchecked(&table_match, false)
                             } else {
-                                p.df.take_chunked_unchecked(&table_match, IsSorted::Not)
+                                p.df.take_chunked_unchecked(&table_match, IsSorted::Not, false)
                             };
+                            if !payload_rechunked {
+                                // TODO: can avoid rechunk? We have to rechunk here or else we do it
+                                // multiple times during the gather.
+                                payload.rechunk_mut();
+                                payload_rechunked = true;
+                            }
                             let mut probe_df =
                                 payload.take_slice_unchecked_impl(&probe_match, false);
 
-                            let out_df = if params.left_is_build {
+                            let out_df = if params.left_is_build.unwrap() {
                                 build_df.hstack_mut_unchecked(probe_df.get_columns());
                                 build_df
                             } else {
@@ -438,10 +756,28 @@ impl ProbeState {
                             };
                             let out_df = postprocess_join(out_df, params);
 
-                            let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                            if send.send(out_morsel).await.is_err() {
-                                break;
+                            out_len = out_len
+                                .checked_add(out_df.height().try_into().unwrap())
+                                .unwrap();
+                            out_frames.push(out_df);
+
+                            if out_len >= probe_limit {
+                                out_len = 0;
+                                let df =
+                                    accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
+                                let out_morsel = Morsel::new(df, seq, src_token.clone());
+                                if send.send(out_morsel).await.is_err() {
+                                    break;
+                                }
                             }
+                        }
+                    }
+
+                    if out_len > 0 {
+                        let df = accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
+                        let out_morsel = Morsel::new(df, seq, src_token.clone());
+                        if send.send(out_morsel).await.is_err() {
+                            break;
                         }
                     }
                 }
@@ -467,9 +803,10 @@ impl ProbeState {
                 p.table.unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
 
                 // Gather and create full-null counterpart.
-                let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not);
+                let mut build_df =
+                    p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                 let len = build_df.height();
-                let mut out_df = if params.left_is_build {
+                let mut out_df = if params.left_is_build.unwrap() {
                     let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
                     build_df.hstack_mut_unchecked(probe_df.get_columns());
                     build_df
@@ -518,8 +855,15 @@ impl ProbeState {
 
 impl Drop for ProbeState {
     fn drop(&mut self) {
-        // Parallel drop as the state might be quite big.
-        self.table_per_partition.par_drain(..).for_each(drop);
+        POOL.install(|| {
+            // Parallel drop as the state might be quite big.
+            self.table_per_partition.par_drain(..).for_each(drop);
+            if let Some(morsels) = &self.sampled_probe_morsels {
+                (0..morsels.len())
+                    .into_par_iter()
+                    .for_each(|_| drop(morsels.pop()));
+            }
+        })
     }
 }
 
@@ -563,9 +907,10 @@ impl EmitUnmatchedState {
 
                 // Gather and create full-null counterpart.
                 let out_df = unsafe {
-                    let mut build_df = p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not);
+                    let mut build_df =
+                        p.df.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                     let len = build_df.height();
-                    if params.left_is_build {
+                    if params.left_is_build.unwrap() {
                         let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
                         build_df.hstack_mut_unchecked(probe_df.get_columns());
                         build_df
@@ -600,6 +945,7 @@ impl EmitUnmatchedState {
 }
 
 enum EquiJoinState {
+    Sample(SampleState),
     Build(BuildState),
     Probe(ProbeState),
     EmitUnmatchedBuild(EmitUnmatchedState),
@@ -608,11 +954,12 @@ enum EquiJoinState {
 }
 
 struct EquiJoinParams {
-    left_is_build: bool,
+    left_is_build: Option<bool>,
     preserve_order_build: bool,
     preserve_order_probe: bool,
     left_key_schema: Arc<Schema>,
     left_key_selectors: Vec<StreamExpr>,
+    right_key_schema: Arc<Schema>,
     right_key_selectors: Vec<StreamExpr>,
     left_payload_select: Vec<Option<PlSmallStr>>,
     right_payload_select: Vec<Option<PlSmallStr>>,
@@ -625,7 +972,7 @@ struct EquiJoinParams {
 impl EquiJoinParams {
     /// Should we emit unmatched rows from the build side?
     fn emit_unmatched_build(&self) -> bool {
-        if self.left_is_build {
+        if self.left_is_build.unwrap() {
             self.args.how == JoinType::Left || self.args.how == JoinType::Full
         } else {
             self.args.how == JoinType::Right || self.args.how == JoinType::Full
@@ -634,7 +981,7 @@ impl EquiJoinParams {
 
     /// Should we emit unmatched rows from the probe side?
     fn emit_unmatched_probe(&self) -> bool {
-        if self.left_is_build {
+        if self.left_is_build.unwrap() {
             self.args.how == JoinType::Right || self.args.how == JoinType::Full
         } else {
             self.args.how == JoinType::Left || self.args.how == JoinType::Full
@@ -646,7 +993,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     num_pipelines: usize,
-    table: Box<dyn ChunkedIdxTable>,
+    table: Option<Box<dyn ChunkedIdxTable>>,
 }
 
 impl EquiJoinNode {
@@ -660,11 +1007,25 @@ impl EquiJoinNode {
         args: JoinArgs,
     ) -> PolarsResult<Self> {
         let left_is_build = match args.maintain_order {
-            // TODO: use cardinality estimation to determine build side when not order-preserving.
-            MaintainOrderJoin::None => args.how != JoinType::Left,
-            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => false,
-            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => true,
+            MaintainOrderJoin::None => {
+                if *SAMPLE_LIMIT == 0 {
+                    Some(true)
+                } else {
+                    None
+                }
+            },
+            MaintainOrderJoin::Left | MaintainOrderJoin::LeftRight => Some(false),
+            MaintainOrderJoin::Right | MaintainOrderJoin::RightLeft => Some(true),
         };
+
+        let table = left_is_build.map(|lib| {
+            if lib {
+                new_chunked_idx_table(left_key_schema.clone())
+            } else {
+                new_chunked_idx_table(right_key_schema.clone())
+            }
+        });
+
         let preserve_order_probe = args.maintain_order != MaintainOrderJoin::None;
         let preserve_order_build = matches!(
             args.maintain_order,
@@ -686,18 +1047,16 @@ impl EquiJoinNode {
             &args,
         )?;
 
-        let table = if left_is_build {
-            new_chunked_idx_table(left_key_schema.clone())
+        let state = if left_is_build.is_some() {
+            EquiJoinState::Build(BuildState::default())
         } else {
-            new_chunked_idx_table(right_key_schema)
+            EquiJoinState::Sample(SampleState::default())
         };
 
         let left_payload_schema = select_schema(&left_input_schema, &left_payload_select);
         let right_payload_schema = select_schema(&right_input_schema, &right_payload_select);
         Ok(Self {
-            state: EquiJoinState::Build(BuildState {
-                partitions_per_worker: Vec::new(),
-            }),
+            state,
             num_pipelines: 0,
             params: EquiJoinParams {
                 left_is_build,
@@ -705,6 +1064,7 @@ impl EquiJoinNode {
                 preserve_order_probe,
                 left_key_schema,
                 left_key_selectors,
+                right_key_schema,
                 right_key_selectors,
                 left_payload_select,
                 right_payload_select,
@@ -730,25 +1090,48 @@ impl ComputeNode for EquiJoinNode {
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
         assert!(recv.len() == 2 && send.len() == 1);
 
-        let build_idx = if self.params.left_is_build { 0 } else { 1 };
-        let probe_idx = 1 - build_idx;
-
         // If the output doesn't want any more data, transition to being done.
         if send[0] == PortState::Done {
             self.state = EquiJoinState::Done;
         }
 
+        // If we are sampling and both sides are done/filled, transition to building.
+        if let EquiJoinState::Sample(sample_state) = &mut self.state {
+            if let Some(build_state) = sample_state.try_transition_to_build(
+                recv,
+                self.num_pipelines,
+                &mut self.params,
+                &mut self.table,
+            )? {
+                self.state = EquiJoinState::Build(build_state);
+            }
+        }
+
+        let build_idx = if self.params.left_is_build == Some(true) {
+            0
+        } else {
+            1
+        };
+        let probe_idx = 1 - build_idx;
+
         // If we are building and the build input is done, transition to probing.
         if let EquiJoinState::Build(build_state) = &mut self.state {
             if recv[build_idx] == PortState::Done {
-                self.state = EquiJoinState::Probe(build_state.finalize(&self.params, &*self.table));
+                self.state = EquiJoinState::Probe(
+                    build_state.finalize(&self.params, self.table.as_deref().unwrap()),
+                );
             }
         }
 
         // If we are probing and the probe input is done, emit unmatched if
         // necessary, otherwise we're done.
         if let EquiJoinState::Probe(probe_state) = &mut self.state {
-            if recv[probe_idx] == PortState::Done {
+            let samples_consumed = probe_state
+                .sampled_probe_morsels
+                .as_ref()
+                .map(|m| m.is_empty())
+                .unwrap_or(true);
+            if samples_consumed && recv[probe_idx] == PortState::Done {
                 if self.params.emit_unmatched_build() {
                     if self.params.preserve_order_build {
                         let partitioner = HashPartitioner::new(self.num_pipelines, 0);
@@ -781,13 +1164,47 @@ impl ComputeNode for EquiJoinNode {
         }
 
         match &mut self.state {
+            EquiJoinState::Sample(sample_state) => {
+                send[0] = PortState::Blocked;
+                if recv[0] != PortState::Done {
+                    recv[0] = if sample_state.left_len < *SAMPLE_LIMIT {
+                        PortState::Ready
+                    } else {
+                        PortState::Blocked
+                    };
+                }
+                if recv[1] != PortState::Done {
+                    recv[1] = if sample_state.right_len < *SAMPLE_LIMIT {
+                        PortState::Ready
+                    } else {
+                        PortState::Blocked
+                    };
+                }
+            },
             EquiJoinState::Build(_) => {
                 send[0] = PortState::Blocked;
-                recv[build_idx] = PortState::Ready;
-                recv[probe_idx] = PortState::Blocked;
+                if recv[build_idx] != PortState::Done {
+                    recv[build_idx] = PortState::Ready;
+                }
+                if recv[probe_idx] != PortState::Done {
+                    recv[probe_idx] = PortState::Blocked;
+                }
             },
-            EquiJoinState::Probe(_) => {
-                core::mem::swap(&mut send[0], &mut recv[probe_idx]);
+            EquiJoinState::Probe(probe_state) => {
+                if recv[probe_idx] != PortState::Done {
+                    core::mem::swap(&mut send[0], &mut recv[probe_idx]);
+                } else {
+                    let samples_consumed = probe_state
+                        .sampled_probe_morsels
+                        .as_ref()
+                        .map(|m| m.is_empty())
+                        .unwrap_or(true);
+                    send[0] = if samples_consumed {
+                        PortState::Done
+                    } else {
+                        PortState::Ready
+                    };
+                }
                 recv[build_idx] = PortState::Done;
             },
             EquiJoinState::EmitUnmatchedBuild(_) => {
@@ -813,7 +1230,10 @@ impl ComputeNode for EquiJoinNode {
     }
 
     fn is_memory_intensive_pipeline_blocker(&self) -> bool {
-        matches!(self.state, EquiJoinState::Build { .. })
+        matches!(
+            self.state,
+            EquiJoinState::Sample { .. } | EquiJoinState::Build { .. }
+        )
     }
 
     fn spawn<'env, 's>(
@@ -827,10 +1247,52 @@ impl ComputeNode for EquiJoinNode {
         assert!(recv_ports.len() == 2);
         assert!(send_ports.len() == 1);
 
-        let build_idx = if self.params.left_is_build { 0 } else { 1 };
+        let build_idx = if self.params.left_is_build == Some(true) {
+            0
+        } else {
+            1
+        };
         let probe_idx = 1 - build_idx;
 
         match &mut self.state {
+            EquiJoinState::Sample(sample_state) => {
+                assert!(send_ports[0].is_none());
+                let left_final_len = Arc::new(AtomicUsize::new(if recv_ports[0].is_none() {
+                    sample_state.left_len
+                } else {
+                    usize::MAX
+                }));
+                let right_final_len = Arc::new(AtomicUsize::new(if recv_ports[1].is_none() {
+                    sample_state.right_len
+                } else {
+                    usize::MAX
+                }));
+
+                if let Some(left_recv) = recv_ports[0].take() {
+                    join_handles.push(scope.spawn_task(
+                        TaskPriority::High,
+                        SampleState::sink(
+                            left_recv.serial(),
+                            &mut sample_state.left,
+                            &mut sample_state.left_len,
+                            left_final_len.clone(),
+                            right_final_len.clone(),
+                        ),
+                    ));
+                }
+                if let Some(right_recv) = recv_ports[1].take() {
+                    join_handles.push(scope.spawn_task(
+                        TaskPriority::High,
+                        SampleState::sink(
+                            right_recv.serial(),
+                            &mut sample_state.right,
+                            &mut sample_state.right_len,
+                            right_final_len,
+                            left_final_len,
+                        ),
+                    ));
+                }
+            },
             EquiJoinState::Build(build_state) => {
                 assert!(send_ports[0].is_none());
                 assert!(recv_ports[probe_idx].is_none());
@@ -856,8 +1318,15 @@ impl ComputeNode for EquiJoinNode {
             },
             EquiJoinState::Probe(probe_state) => {
                 assert!(recv_ports[build_idx].is_none());
-                let receivers = recv_ports[probe_idx].take().unwrap().parallel();
                 let senders = send_ports[0].take().unwrap().parallel();
+                let receivers = insert_cached_into_parallel_stream(
+                    &probe_state.sampled_probe_morsels,
+                    self.num_pipelines,
+                    recv_ports[probe_idx].take(),
+                    scope,
+                    join_handles,
+                )
+                .unwrap();
 
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                 let probe_tasks = receivers

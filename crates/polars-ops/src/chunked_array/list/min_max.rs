@@ -89,7 +89,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            _ => Ok(ca
+            dt => ca
                 .try_apply_amortized(|s| {
                     let s = s.as_ref();
                     let sc = s.min_reduce()?;
@@ -97,7 +97,8 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                 })?
                 .explode()
                 .unwrap()
-                .into_series()),
+                .into_series()
+                .cast(dt),
         }
     }
 
@@ -199,7 +200,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            _ => Ok(ca
+            dt => ca
                 .try_apply_amortized(|s| {
                     let s = s.as_ref();
                     let sc = s.max_reduce()?;
@@ -207,7 +208,8 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                 })?
                 .explode()
                 .unwrap()
-                .into_series()),
+                .into_series()
+                .cast(dt),
         }
     }
 

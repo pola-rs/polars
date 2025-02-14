@@ -16,6 +16,11 @@ on:
   repository_dispatch:
     types:
       - python-release
+  workflow_dispatch:
+    inputs:
+      polars_version:
+        description: 'Specify Polars version (e.g., py-0.20.1)'
+        required: true
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -47,7 +52,7 @@ jobs:
       - name: Build Python documentation
         working-directory: py-polars/docs
         env:
-          POLARS_VERSION: ${{ github.event.client_payload.tag || 'main' }}
+          POLARS_VERSION: ${{ github.event.inputs.polars_version || github.event.client_payload.tag || 'main' }}
         run: make html
 
       - name: Deploy Python docs for latest development version
@@ -60,26 +65,34 @@ jobs:
 
       - name: Parse the tag to find the major version of Polars
         id: version
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         shell: bash
         run: |
-          tag="${{ github.event.client_payload.tag }}"
+          tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
           regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
           [[ $tag =~ $regex ]]
           version=${BASH_REMATCH[1]}
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Python docs for latest release version - versioned
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' 
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
           target-folder: api/python/version/${{ steps.version.outputs.version }}
           single-commit: true
 
-      - name: Deploy Python docs for latest release version - stable
-        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false'
+      - name: Deploy Python docs for latest release version - manual
+        if:  github.event_name == 'workflow_dispatch'
         uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: py-polars/docs/build/html
+          target-folder: api/python/version/1
+          single-commit: true
+
+      - name: Deploy Python docs for latest release version - stable
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false' || github.event_name == 'workflow_dispatch'
+        uses: JamesIves/github-pages-deploy-action@v4 
         with:
           folder: py-polars/docs/build/html
           target-folder: api/python/stable
@@ -87,7 +100,7 @@ jobs:
 
       # Build global docs _after_ this workflow to avoid contention on the gh-pages branch
       - name: Trigger global docs workflow
-        if: github.event_name == 'repository_dispatch'
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         uses: peter-evans/repository-dispatch@v3
         with:
           event-type: python-release-docs

@@ -1260,3 +1260,33 @@ def test_window_size_validation() -> None:
 
     with pytest.raises(OverflowError, match=r"can't convert negative int to unsigned"):
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
+
+
+def test_rolling_empty_21032() -> None:
+    df = pl.DataFrame(schema={"a": pl.Datetime("ms"), "b": pl.Int64()})
+
+    result = df.rolling(index_column="a", period=timedelta(days=2)).agg(
+        pl.col("b").sum()
+    )
+    assert_frame_equal(result, df)
+
+    result = df.rolling(
+        index_column="a", period=timedelta(days=2), offset=timedelta(days=3)
+    ).agg(pl.col("b").sum())
+    assert_frame_equal(result, df)
+
+
+def test_rolling_offset_agg_15122() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [1, 2, 3, 1, 2, 3]})
+
+    result = df.rolling(index_column="b", period="1i", offset="0i", group_by="a").agg(
+        window=pl.col("b")
+    )
+    expected = df.with_columns(window=pl.Series([[2], [3], [], [2], [3], []]))
+    assert_frame_equal(result, expected)
+
+    result = df.rolling(index_column="b", period="1i", offset="1i", group_by="a").agg(
+        window=pl.col("b")
+    )
+    expected = df.with_columns(window=pl.Series([[3], [], [], [3], [], []]))
+    assert_frame_equal(result, expected)

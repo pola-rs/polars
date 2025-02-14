@@ -122,7 +122,7 @@ fn run_on_group_by_engine(
     expr: &Expr,
 ) -> PolarsResult<Option<Column>> {
     let lst = lst.rechunk();
-    let arr = lst.downcast_iter().next().unwrap();
+    let arr = lst.downcast_as_array();
     let groups = offsets_to_groups(arr.offsets()).unwrap();
 
     // List elements in a series.

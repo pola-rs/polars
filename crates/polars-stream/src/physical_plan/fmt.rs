@@ -87,6 +87,14 @@ fn visualize_plan_rec(
             format!("slice\\noffset: {offset}, length: {length}"),
             from_ref(input),
         ),
+        PhysNodeKind::NegativeSlice {
+            input,
+            offset,
+            length,
+        } => (
+            format!("slice\\noffset: {offset}, length: {length}"),
+            from_ref(input),
+        ),
         PhysNodeKind::Filter { input, predicate } => (
             format!("filter\\n{}", fmt_exprs(from_ref(predicate), expr_arena)),
             from_ref(input),
@@ -136,6 +144,7 @@ fn visualize_plan_rec(
             (label.to_string(), inputs.as_slice())
         },
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
+        PhysNodeKind::MultiScan { .. } => ("multi-scan-source".to_string(), &[][..]),
         PhysNodeKind::FileScan {
             scan_sources,
             file_info,

@@ -5,8 +5,7 @@ use polars_utils::error::TruncateErrorDetail;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::unity::models::{ColumnInfo, ColumnTypeJson, TableInfo};
-use crate::catalog::unity::models::ColumnTypeJsonType;
+use super::models::{ColumnInfo, ColumnTypeJson, ColumnTypeJsonType, TableInfo};
 use crate::utils::decode_json_response;
 
 /// Returns `(schema, hive_schema)`
@@ -201,7 +200,7 @@ fn parse_type_text(type_text: &str) -> PolarsResult<DataType> {
         "double" => Float64,
 
         "date" => Date,
-        "timestamp" | "timestamp_ntz" | "timestamp_ltz" => Datetime(TimeUnit::Nanoseconds, None),
+        "timestamp" | "timestamp_ntz" | "timestamp_ltz" => Datetime(TimeUnit::Microseconds, None),
 
         "string" => String,
         "binary" => Binary,
@@ -291,7 +290,7 @@ fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
         Float64 => S!("double"),
 
         Date => S!("date"),
-        Datetime(TimeUnit::Nanoseconds, None) => S!("timestamp_ntz"),
+        Datetime(TimeUnit::Microseconds, None) => S!("timestamp_ntz"),
 
         String => S!("string"),
         Binary => S!("binary"),
@@ -371,7 +370,7 @@ fn dtype_to_type_name(dtype: &DataType) -> PolarsResult<PlSmallStr> {
         Float64 => S!("DOUBLE"),
 
         Date => S!("DATE"),
-        Datetime(TimeUnit::Nanoseconds, None) => S!("TIMESTAMP_NTZ"),
+        Datetime(TimeUnit::Microseconds, None) => S!("TIMESTAMP_NTZ"),
         String => S!("STRING"),
         Binary => S!("BINARY"),
 
@@ -434,7 +433,7 @@ fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
         Float64 => S!("double"),
 
         Date => S!("date"),
-        Datetime(TimeUnit::Nanoseconds, None) => S!("timestamp_ntz"),
+        Datetime(TimeUnit::Microseconds, None) => S!("timestamp_ntz"),
 
         String => S!("string"),
         Binary => S!("binary"),

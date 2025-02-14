@@ -38,9 +38,9 @@ def test_run_on_pandas() -> None:
         return lambda: wrap_df(obj.df).to_pandas()
 
     @lru_cache(1)
-    def get_node_converters() -> (
-        dict[type, Callable[[Any, Any, Any], Callable[[], pd.DataFrame]]]
-    ):
+    def get_node_converters() -> dict[
+        type, Callable[[Any, Any, Any], Callable[[], pd.DataFrame]]
+    ]:
         return {
             _ir_nodes.Join: join,
             _ir_nodes.DataFrameScan: df_scan,

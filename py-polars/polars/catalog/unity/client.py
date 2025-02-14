@@ -3,21 +3,43 @@ from __future__ import annotations
 import contextlib
 import importlib
 import os
-from dataclasses import dataclass
+import sys
 from typing import TYPE_CHECKING, Any, Literal
 
 from polars._utils.unstable import issue_unstable_warning
 from polars._utils.wrap import wrap_ldf
-from polars.exceptions import DuplicateError
-from polars.schema import Schema
+from polars.catalog.unity.models import (
+    CatalogInfo,
+    ColumnInfo,
+    NamespaceInfo,
+    TableInfo,
+)
 
 if TYPE_CHECKING:
+    from collections.abc import Generator
     from datetime import datetime
 
+    import deltalake
+
     from polars._typing import SchemaDict
-    from polars.datatypes.classes import DataType
-    from polars.io.cloud import CredentialProviderFunction
+    from polars.catalog.unity.models import DataSourceFormat, TableType
+    from polars.dataframe.frame import DataFrame
+    from polars.io.cloud import (
+        CredentialProviderFunction,
+        CredentialProviderFunctionReturn,
+    )
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.lazyframe import LazyFrame
+
+with contextlib.suppress(ImportError):
+    from polars.polars import PyCatalogClient
+
+    PyCatalogClient.init_classes(
+        catalog_info_cls=CatalogInfo,
+        namespace_info_cls=NamespaceInfo,
+        table_info_cls=TableInfo,
+        column_info_cls=ColumnInfo,
+    )
 
 
 class Catalog:
@@ -34,6 +56,7 @@ class Catalog:
         workspace_url: str,
         *,
         bearer_token: str | None = "auto",
+        require_https: bool = True,
     ) -> None:
         """
         Initialize a catalog client.
@@ -49,18 +72,29 @@ class Catalog:
             API endpoint.
         bearer_token
             Bearer token to authenticate with. This can also be set to:
+
             * "auto": Automatically retrieve bearer tokens from the environment.
             * "databricks-sdk": Use the Databricks SDK to retrieve and use the
-            bearer token from the environment.
+              bearer token from the environment.
+        require_https
+            Require the `workspace_url` to use HTTPS.
         """
         issue_unstable_warning("`Catalog` functionality is considered unstable.")
+
+        if require_https and not workspace_url.startswith("https://"):
+            msg = (
+                f"a non-HTTPS workspace_url was given ({workspace_url}). To "
+                "allow non-HTTPS URLs, pass require_https=False."
+            )
+            raise ValueError(msg)
 
         if bearer_token == "databricks-sdk" or (
             bearer_token == "auto"
             # For security, in "auto" mode, only retrieve/use the token if:
             # * We are running inside a Databricks environment
-            # * The `workspace_url` is pointing to Databricks
+            # * The `workspace_url` is pointing to Databricks and uses HTTPS
             and "DATABRICKS_RUNTIME_VERSION" in os.environ
+            and workspace_url.startswith("https://")
             and (
                 workspace_url.removeprefix("https://")
                 .split("/", 1)[0]
@@ -137,6 +171,11 @@ class Catalog:
         """
         return self._client.get_table_info(catalog_name, namespace, table_name)
 
+    def _get_table_credentials(
+        self, table_id: str, *, write: bool
+    ) -> tuple[dict[str, str] | None, dict[str, str], int]:
+        return self._client.get_table_credentials(table_id=table_id, write=write)
+
     def scan_table(
         self,
         catalog_name: str,
@@ -201,18 +240,23 @@ class Catalog:
             table_info, "scan table"
         )
 
+        credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
+            credential_provider,
+            storage_options,
+            table_info,
+            write=False,
+            caller_name="Catalog.scan_table",
+        )
+
         if data_source_format in ["DELTA", "DELTASHARING"]:
             from polars.io.delta import scan_delta
-
-            if credential_provider is not None and credential_provider != "auto":
-                msg = "credential_provider when scanning DELTA"
-                raise NotImplementedError(msg)
 
             return scan_delta(
                 storage_location,
                 version=delta_table_version,
                 delta_table_options=delta_table_options,
                 storage_options=storage_options,
+                credential_provider=credential_provider,
             )
 
         if delta_table_version is not None:
@@ -228,15 +272,6 @@ class Catalog:
                 f"{data_source_format}"
             )
             raise ValueError(msg)
-
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
-
-        credential_provider = _maybe_init_credential_provider(
-            credential_provider,
-            storage_location,
-            storage_options,
-            "Catalog.scan_table",
-        )
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -254,6 +289,111 @@ class Catalog:
                 retries=retries,
             )
         )
+
+    def write_table(
+        self,
+        df: DataFrame,
+        catalog_name: str,
+        namespace: str,
+        table_name: str,
+        *,
+        delta_mode: Literal[
+            "error", "append", "overwrite", "ignore", "merge"
+        ] = "error",
+        delta_write_options: dict[str, Any] | None = None,
+        delta_merge_options: dict[str, Any] | None = None,
+        storage_options: dict[str, str] | None = None,
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
+    ) -> None | deltalake.table.TableMerger:
+        """
+        Write a DataFrame to a catalog table.
+
+        .. warning::
+            This functionality is considered **unstable**. It may be changed
+            at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        df
+            DataFrame to write.
+        catalog_name
+            Name of the catalog.
+        namespace
+            Name of the namespace (unity schema).
+        table_name
+            Name of the table.
+        delta_mode : {'error', 'append', 'overwrite', 'ignore', 'merge'}
+            (For delta tables) How to handle existing data.
+
+            - If 'error', throw an error if the table already exists (default).
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+            - If 'ignore', will not write anything if table already exists.
+            - If 'merge', return a `TableMerger` object to merge data from the DataFrame
+              with the existing data.
+        delta_write_options
+            (For delta tables) Additional keyword arguments while writing a
+            Delta lake Table.
+            See a list of supported write options `here <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__.
+        delta_merge_options
+            (For delta tables) Keyword arguments which are required to `MERGE` a
+            Delta lake Table.
+            See a list of supported merge options `here <https://delta-io.github.io/delta-rs/api/delta_table/#deltalake.DeltaTable.merge>`__.
+        storage_options
+            Options that indicate how to connect to a cloud provider.
+
+            The cloud providers currently supported are AWS, GCP, and Azure.
+            See supported keys here:
+
+            * `aws <https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html>`_
+            * `gcp <https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html>`_
+            * `azure <https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html>`_
+            * Hugging Face (`hf://`): Accepts an API key under the `token` parameter: \
+            `{'token': '...'}`, or by setting the `HF_TOKEN` environment variable.
+
+            If `storage_options` is not provided, Polars will try to infer the
+            information from environment variables.
+        credential_provider
+            Provide a function that can be called to provide cloud storage
+            credentials. The function is expected to return a dictionary of
+            credential keys along with an optional credential expiry time.
+
+            .. warning::
+                This functionality is considered **unstable**. It may be changed
+                at any point without it being considered a breaking change.
+        """
+        table_info = self.get_table_info(catalog_name, namespace, table_name)
+        storage_location, data_source_format = _extract_location_and_data_format(
+            table_info, "scan table"
+        )
+
+        credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
+            credential_provider,
+            storage_options,
+            table_info,
+            write=True,
+            caller_name="Catalog.write_table",
+        )
+
+        if data_source_format in ["DELTA", "DELTASHARING"]:
+            return df.write_delta(  # type: ignore[misc]
+                storage_location,
+                storage_options=storage_options,
+                credential_provider=credential_provider,
+                mode=delta_mode,
+                delta_write_options=delta_write_options,
+                delta_merge_options=delta_merge_options,
+            )  # type: ignore[call-overload]
+
+        else:
+            msg = (
+                "write_table: table format of "
+                f"{catalog_name}.{namespace}.{table_name} "
+                f"({data_source_format}) is unsupported."
+            )
+            raise NotImplementedError(msg)
 
     def create_catalog(
         self,
@@ -290,6 +430,10 @@ class Catalog:
     ) -> None:
         """
         Delete a catalog.
+
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -346,6 +490,10 @@ class Catalog:
     ) -> None:
         """
         Delete a namespace (unity schema) in the catalog.
+
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
 
         .. warning::
             This functionality is considered **unstable**. It may be changed
@@ -426,6 +574,13 @@ class Catalog:
         """
         Delete the table stored at this location.
 
+        Note that depending on the table type and catalog server, this may not
+        delete the actual data files from storage. For more details, please
+        consult the documentation of the catalog provider you are using.
+
+        If you would like to perform manual deletions, the storage location of
+        the files can be found using `get_table_info`.
+
         .. warning::
             This functionality is considered **unstable**. It may be changed
             at any point without it being considered a breaking change.
@@ -445,6 +600,81 @@ class Catalog:
             table_name=table_name,
         )
 
+    def _init_credentials(
+        self,
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None,
+        storage_options: dict[str, Any] | None,
+        table_info: TableInfo,
+        *,
+        write: bool,
+        caller_name: str,
+    ) -> tuple[
+        CredentialProviderBuilder | None,
+        dict[str, Any] | None,
+    ]:
+        from polars.io.cloud.credential_provider._builder import (
+            CredentialProviderBuilder,
+        )
+
+        if credential_provider != "auto":
+            if credential_provider:
+                return CredentialProviderBuilder.from_initialized_provider(
+                    credential_provider
+                ), storage_options
+            else:
+                return None, storage_options
+
+        verbose = os.getenv("POLARS_VERBOSE") == "1"
+
+        catalog_credential_provider = CatalogCredentialProvider(
+            self, table_info.table_id, write=write
+        )
+
+        try:
+            v = catalog_credential_provider._credentials_iter()
+            storage_update_options = next(v)
+
+            if storage_update_options:
+                storage_options = {**(storage_options or {}), **storage_update_options}
+
+            for _ in v:
+                pass
+
+        except Exception as e:
+            if verbose:
+                table_name = table_info.name
+                table_id = table_info.table_id
+                msg = (
+                    f"error auto-initializing CatalogCredentialProvider: {e!r} "
+                    f"{table_name = } ({table_id = }) ({write = })"
+                )
+                print(msg, file=sys.stderr)
+        else:
+            if verbose:
+                table_name = table_info.name
+                table_id = table_info.table_id
+                msg = (
+                    "auto-selected CatalogCredentialProvider for "
+                    f"{table_name = } ({table_id = })"
+                )
+                print(msg, file=sys.stderr)
+
+            return CredentialProviderBuilder.from_initialized_provider(
+                catalog_credential_provider
+            ), storage_options
+
+        # This should generally not happen, but if using the temporary
+        # credentials API fails for whatever reason, we fallback to our built-in
+        # credential provider resolution.
+
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
+
+        return _init_credential_provider_builder(
+            "auto", table_info.storage_location, storage_options, caller_name
+        ), storage_options
+
     @classmethod
     def _get_databricks_token(cls) -> str:
         if importlib.util.find_spec("databricks.sdk") is None:
@@ -455,6 +685,38 @@ class Catalog:
         m = importlib.import_module("databricks.sdk.core").__dict__
 
         return m["DefaultCredentials"]()(m["Config"]())()["Authorization"][7:]
+
+
+class CatalogCredentialProvider:
+    """Retrieves credentials from the Unity catalog temporary credentials API."""
+
+    def __init__(self, catalog: Catalog, table_id: str, *, write: bool) -> None:
+        self.catalog = catalog
+        self.table_id = table_id
+        self.write = write
+
+    def __call__(self) -> CredentialProviderFunctionReturn:  # noqa: D102
+        _, (creds, expiry) = self._credentials_iter()
+        return creds, expiry
+
+    def _credentials_iter(
+        self,
+    ) -> Generator[Any]:
+        creds, storage_update_options, expiry = self.catalog._get_table_credentials(
+            self.table_id, write=self.write
+        )
+
+        yield storage_update_options
+
+        if not creds:
+            table_id = self.table_id
+            msg = (
+                "did not receive credentials from temporary credentials API for "
+                f"{table_id = }"
+            )
+            raise Exception(msg)  # noqa: TRY002
+
+        yield creds, expiry
 
 
 def _extract_location_and_data_format(
@@ -469,151 +731,3 @@ def _extract_location_and_data_format(
         raise ValueError(msg)
 
     return table_info.storage_location, table_info.data_source_format
-
-
-@dataclass
-class CatalogInfo:
-    """Information for a catalog within a metastore."""
-
-    name: str
-    comment: str | None
-    properties: dict[str, str]
-    options: dict[str, str]
-    storage_location: str | None
-    created_at: datetime | None
-    created_by: str | None
-    updated_at: datetime | None
-    updated_by: str | None
-
-
-@dataclass
-class NamespaceInfo:
-    """
-    Information for a namespace within a catalog.
-
-    This is also known by the name "schema" in unity catalog terminology.
-    """
-
-    name: str
-    comment: str | None
-    properties: dict[str, str]
-    storage_location: str | None
-    created_at: datetime | None
-    created_by: str | None
-    updated_at: datetime | None
-    updated_by: str | None
-
-
-@dataclass
-class TableInfo:
-    """Information for a catalog table."""
-
-    name: str
-    comment: str | None
-    table_id: str
-    table_type: TableType
-    storage_location: str | None
-    data_source_format: DataSourceFormat | None
-    columns: list[ColumnInfo] | None
-    properties: dict[str, str]
-    created_at: datetime | None
-    created_by: str | None
-    updated_at: datetime | None
-    updated_by: str | None
-
-    def get_polars_schema(self) -> Schema | None:
-        """
-        Get the native polars schema of this table.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-        """
-        issue_unstable_warning(
-            "`get_polars_schema` functionality is considered unstable."
-        )
-        if self.columns is None:
-            return None
-
-        schema = Schema()
-
-        for column_info in self.columns:
-            if column_info.name in schema:
-                msg = f"duplicate column name: {column_info.name}"
-                raise DuplicateError(msg)
-            schema[column_info.name] = column_info.get_polars_dtype()
-
-        return schema
-
-
-@dataclass
-class ColumnInfo:
-    """Information for a column within a catalog table."""
-
-    name: str
-    type_name: str
-    type_text: str
-    type_json: str
-    position: int | None
-    comment: str | None
-    partition_index: int | None
-
-    def get_polars_dtype(self) -> DataType:
-        """
-        Get the native polars datatype of this column.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
-        """
-        issue_unstable_warning(
-            "`get_polars_dtype` functionality is considered unstable."
-        )
-        return PyCatalogClient.type_json_to_polars_type(self.type_json)
-
-
-# TODO: Expose these type aliases to reference guide
-TableType = Literal[
-    "MANAGED",
-    "EXTERNAL",
-    "VIEW",
-    "MATERIALIZED_VIEW",
-    "STREAMING_TABLE",
-    "MANAGED_SHALLOW_CLONE",
-    "FOREIGN",
-    "EXTERNAL_SHALLOW_CLONE",
-]
-
-DataSourceFormat = Literal[
-    "DELTA",
-    "CSV",
-    "JSON",
-    "AVRO",
-    "PARQUET",
-    "ORC",
-    "TEXT",
-    "UNITY_CATALOG",
-    "DELTASHARING",
-    "DATABRICKS_FORMAT",
-    "REDSHIFT_FORMAT",
-    "SNOWFLAKE_FORMAT",
-    "SQLDW_FORMAT",
-    "SALESFORCE_FORMAT",
-    "BIGQUERY_FORMAT",
-    "NETSUITE_FORMAT",
-    "WORKDAY_RAAS_FORMAT",
-    "HIVE_SERDE",
-    "HIVE_CUSTOM",
-    "VECTOR_INDEX_FORMAT",
-]
-
-# TODO: Move this back up after moving the data models to a separate file
-with contextlib.suppress(ImportError):
-    from polars.polars import PyCatalogClient
-
-    PyCatalogClient.init_classes(
-        catalog_info_cls=CatalogInfo,
-        namespace_info_cls=NamespaceInfo,
-        table_info_cls=TableInfo,
-        column_info_cls=ColumnInfo,
-    )

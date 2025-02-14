@@ -4,14 +4,12 @@
 #![allow(clippy::too_many_arguments)] // Python functions can have many arguments due to default arguments
 
 mod allocator;
-#[cfg(debug_assertions)]
-mod memory;
 
 use allocator::create_allocator_capsule;
 #[cfg(feature = "csv")]
 use polars_python::batched_csv::PyBatchedCsv;
 #[cfg(feature = "catalog")]
-use polars_python::catalog::PyCatalogClient;
+use polars_python::catalog::unity::PyCatalogClient;
 #[cfg(feature = "polars_cloud")]
 use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;
@@ -126,6 +124,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     m.add_wrapped(wrap_pyfunction!(functions::int_ranges))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::linear_space))
+        .unwrap();
+    m.add_wrapped(wrap_pyfunction!(functions::linear_spaces))
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(functions::date_range))
         .unwrap();

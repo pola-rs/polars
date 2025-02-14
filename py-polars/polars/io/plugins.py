@@ -18,17 +18,26 @@ if TYPE_CHECKING:
 
 @unstable()
 def register_io_source(
-    callable: Callable[
+    io_source: Callable[
         [list[str] | None, Expr | None, int | None, int | None], Iterator[DataFrame]
     ],
-    schema: SchemaDict,
+    *,
+    schema: Callable[[], SchemaDict] | SchemaDict,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
 
+    See the `user guide <https://docs.pola.rs/user-guide/plugins/io_plugins>`_
+    for more information about plugins.
+
+    .. warning::
+        This functionality is considered **unstable**. It may be changed
+        at any point without it being considered a breaking change.
+
+
     Parameters
     ----------
-    callable
+    io_source
         Function that accepts the following arguments:
             with_columns
                 Columns that are projected. The reader must
@@ -36,17 +45,22 @@ def register_io_source(
             predicate
                 Polars expression. The reader must filter
                 their rows accordingly.
-            n_rows:
+            n_rows
                 Materialize only n rows from the source.
                 The reader can stop when `n_rows` are read.
             batch_size
                 A hint of the ideal batch size the reader's
                 generator must produce.
-        The function should return a DataFrame batch
-        (an iterator over individual DataFrames).
-    schema
-        Schema that the reader will produce before projection pushdown.
 
+        The function should return a an iterator/generator
+        that produces DataFrames.
+    schema
+        Schema or function that when called produces the schema that the reader
+        will produce before projection pushdown.
+
+    Returns
+    -------
+    LazyFrame
     """
 
     def wrap(
@@ -68,7 +82,7 @@ def register_io_source(
                     )
                 parsed_predicate_success = False
 
-        return callable(
+        return io_source(
             with_columns, parsed_predicate, n_rows, batch_size
         ), parsed_predicate_success
 

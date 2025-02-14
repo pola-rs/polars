@@ -4,7 +4,9 @@ use std::sync::Arc;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions};
 use polars_core::schema::{Schema, SchemaRef};
+use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
+use polars_io::RowIndex;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::plans::hive::HivePartitions;
@@ -24,6 +26,7 @@ use polars_utils::pl_str::PlSmallStr;
 use slotmap::{SecondaryMap, SlotMap};
 pub use to_graph::physical_plan_to_graph;
 
+use crate::nodes::io_sources::multi_scan::RowRestrication;
 use crate::physical_plan::lower_expr::ExprCache;
 
 slotmap::new_key_type! {
@@ -104,6 +107,12 @@ pub enum PhysNodeKind {
         length: usize,
     },
 
+    NegativeSlice {
+        input: PhysStream,
+        offset: i64,
+        length: usize,
+    },
+
     Filter {
         input: PhysStream,
         predicate: ExprIR,
@@ -161,6 +170,31 @@ pub enum PhysNodeKind {
         input: PhysStream,
     },
 
+    MultiScan {
+        scan_sources: ScanSources,
+        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        scan_type: FileScan,
+        allow_missing_columns: bool,
+        include_file_paths: Option<PlSmallStr>,
+
+        /// Schema that all files are coerced into.
+        ///
+        /// - Does include the `row_index`.
+        /// - Does include `include_file_paths`.
+        /// - Does include the hive columns.
+        ///
+        /// Each file may never contain more column than are given in this schema.
+        ///
+        /// Each file should contain exactly all the columns ignoring the hive columns i.f.f.
+        /// `allow_missing_columns == false`.
+        file_schema: SchemaRef,
+
+        /// Selection of `file_schema` columns should to be included in the output morsels.
+        projection: Option<Bitmap>,
+
+        row_restriction: Option<RowRestrication>,
+        row_index: Option<RowIndex>,
+    },
     FileScan {
         scan_sources: ScanSources,
         file_info: FileInfo,
@@ -225,12 +259,14 @@ fn visit_node_inputs_mut(
     while let Some(node) = to_visit.pop() {
         match &mut phys_sm[node].kind {
             PhysNodeKind::InMemorySource { .. }
+            | PhysNodeKind::MultiScan { .. }
             | PhysNodeKind::FileScan { .. }
             | PhysNodeKind::InputIndependentSelect { .. } => {},
             PhysNodeKind::Select { input, .. }
             | PhysNodeKind::WithRowIndex { input, .. }
             | PhysNodeKind::Reduce { input, .. }
             | PhysNodeKind::StreamingSlice { input, .. }
+            | PhysNodeKind::NegativeSlice { input, .. }
             | PhysNodeKind::Filter { input, .. }
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }

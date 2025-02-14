@@ -707,6 +707,7 @@ def test_init_series_from_int_enum(EnumBase: tuple[type, ...]) -> None:
     assert_series_equal(expected, s)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_read_enum_from_csv() -> None:
     df = pl.DataFrame(
         {

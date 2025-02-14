@@ -6,12 +6,7 @@ import contextlib
 import os
 import random
 from collections import defaultdict
-from collections.abc import (
-    Generator,
-    Iterable,
-    Sequence,
-    Sized,
-)
+from collections.abc import Generator, Iterable, Sequence, Sized
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -28,11 +23,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._typing import (
-    DbWriteMode,
-    JaxExportType,
-    TorchExportType,
-)
+from polars._typing import DbWriteMode, JaxExportType, TorchExportType
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -51,6 +42,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
+from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -108,17 +100,13 @@ from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import (
-        Collection,
-        Iterator,
-        Mapping,
-    )
+    from collections.abc import Collection, Iterator, Mapping
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -427,20 +415,12 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
-        elif hasattr(data, "__arrow_c_array__"):
-            # This uses the fact that PySeries.from_arrow_c_array will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_array(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
-        elif hasattr(data, "__arrow_c_stream__"):
-            # This uses the fact that PySeries.from_arrow_c_stream will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_stream(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
+        elif is_pycapsule(data):
+            self._df = pycapsule_to_frame(
+                data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+            )._df
         else:
             msg = (
                 f"DataFrame constructor called with unsupported type {type(data).__name__!r}"
@@ -1097,8 +1077,8 @@ class DataFrame:
             return self.select(F.all() / lit(other))
 
         elif not isinstance(other, DataFrame):
-            s = _prepare_other_arg(other, length=len(self))
-            other = DataFrame([s.alias(f"n{i}") for i in range(len(self.columns))])
+            s = _prepare_other_arg(other, length=self.height)
+            other = DataFrame([s.alias(f"n{i}") for i in range(self.width)])
 
         orig_dtypes = other.dtypes
         # TODO: Dispatch to a native floordiv
@@ -2429,8 +2409,7 @@ class DataFrame:
                 else:
                     raise ModuleNotFoundError(msg)
 
-        # Object columns must be handled separately as Arrow does not convert them
-        # correctly
+        # handle Object columns separately (Arrow does not convert them correctly)
         if Object in self.dtypes:
             return self._to_pandas_with_object_columns(
                 use_pyarrow_extension_array=use_pyarrow_extension_array, **kwargs
@@ -2450,7 +2429,7 @@ class DataFrame:
         object_columns = []
         not_object_columns = []
         for i, dtype in enumerate(self.dtypes):
-            if dtype == Object:
+            if dtype.is_object():
                 object_columns.append(i)
             else:
                 not_object_columns.append(i)
@@ -2972,11 +2951,14 @@ class DataFrame:
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, file, storage_options, "write_csv"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -3000,7 +2982,7 @@ class DataFrame:
             null_value,
             quote_style,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -3316,7 +3298,7 @@ class DataFrame:
         ...     df.write_excel(
         ...         workbook=wb,
         ...         worksheet="data",
-        ...         position=(len(df) + 7, 1),
+        ...         position=(df.height + 7, 1),
         ...         table_style={
         ...             "style": "Table Style Light 4",
         ...             "first_column": True,
@@ -3352,7 +3334,9 @@ class DataFrame:
         ...         }
         ...     )
         ...     ws.write(2, 1, "Basic/default conditional formatting", fmt_title)
-        ...     ws.write(len(df) + 6, 1, "Customised conditional formatting", fmt_title)
+        ...     ws.write(
+        ...         df.height + 6, 1, "Customised conditional formatting", fmt_title
+        ...     )
 
         Export a table containing two different types of sparklines. Use default
         options for the "trend" sparkline and customized options (and positioning)
@@ -3475,13 +3459,12 @@ class DataFrame:
 
         # setup workbook/worksheet
         wb, ws, can_close = _xl_setup_workbook(workbook, worksheet)
-        df, is_empty = self, not len(self)
+        df, is_empty = self, self.is_empty()
 
-        # The _xl_setup_table_columns function in the below section
-        # converts all collection types (e.g. List, Struct, Object) to strings
-        # Hence, we need to store the original schema so that it can be used
-        # when selecting columns using column selectors based on datatypes
-        df_original = df.clear()
+        # note: `_xl_setup_table_columns` converts nested data (List, Struct, etc.) to
+        # string, so we keep a reference to the original so that column selection with
+        # selectors that target such types remains correct
+        df_original = df
 
         # setup table format/columns
         fmt_cache = _XLFormatCache(wb)
@@ -3509,11 +3492,11 @@ class DataFrame:
         )
         table_finish = (
             table_start[0]
-            + len(df)
+            + df.height
             + int(is_empty)
             - int(not include_header)
             + int(bool(column_totals)),
-            table_start[1] + len(df.columns) - 1,
+            table_start[1] + df.width - 1,
         )
 
         # write table structure and formats into the target sheet
@@ -3729,15 +3712,18 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = (
+        credential_provider_builder = (
             None
             if return_bytes
-            else _maybe_init_credential_provider(
+            else _init_credential_provider_builder(
                 credential_provider, file, storage_options, "write_ipc"
             )
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -3750,7 +3736,7 @@ class DataFrame:
             compression,
             compat_level,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
         return file if return_bytes else None  # type: ignore[return-value]
@@ -4013,11 +3999,14 @@ class DataFrame:
 
             return
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, file, storage_options, "write_parquet"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -4059,7 +4048,7 @@ class DataFrame:
             partition_by=partition_by,
             partition_chunk_size_bytes=partition_chunk_size_bytes,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -4447,6 +4436,21 @@ class DataFrame:
         ...     },
         ... )  # doctest: +SKIP
 
+        Write DataFrame as a Delta Lake table with zstd compression.
+        For all `delta_write_options` keyword arguments, check the deltalake docs
+        `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.write_deltalake>`__,
+        and for Writer Properties in particular `here
+        <https://delta-io.github.io/delta-rs/api/delta_writer/#deltalake.WriterProperties>`__.
+
+        >>> import deltalake
+        >>> df.write_delta(
+        ...     table_path,
+        ...     delta_write_options={
+        ...         "writer_properties": deltalake.WriterProperties(compression="zstd"),
+        ...     },
+        ... )  # doctest: +SKIP
+
         Merge the DataFrame with an existing Delta Lake table.
         For all `TableMerger` methods, check the deltalake docs
         `here <https://delta-io.github.io/delta-rs/api/delta_table/delta_table_merger/>`__.
@@ -4491,45 +4495,50 @@ class DataFrame:
 
         from deltalake import DeltaTable, write_deltalake
         from deltalake import __version__ as delta_version
-        from packaging.version import Version
 
         _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        if Version(delta_version) >= Version("0.23.0"):
+        if parse_version(delta_version) >= (0, 23, 0):
             data = self.to_arrow(compat_level=CompatLevel.newest())
         else:
             data = self.to_arrow()
 
-        from polars.io.cloud.credential_provider import (
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
+        from polars.io.cloud.credential_provider._providers import (
             _get_credentials_from_provider_expiry_aware,
-            _maybe_init_credential_provider,
         )
 
         if not isinstance(target, DeltaTable):
-            credential_provider = _maybe_init_credential_provider(
+            credential_provider_builder = _init_credential_provider_builder(
                 credential_provider, target, storage_options, "write_delta"
             )
         elif credential_provider is not None and credential_provider != "auto":
             msg = "cannot use credential_provider when passing a DeltaTable object"
             raise ValueError(msg)
         else:
-            credential_provider = None
+            credential_provider_builder = None
+
+        del credential_provider
 
         credential_provider_creds = {}
 
-        if credential_provider is not None:
+        if credential_provider_builder and (
+            provider := credential_provider_builder.build_credential_provider()
+        ):
             credential_provider_creds = _get_credentials_from_provider_expiry_aware(
-                credential_provider
+                provider
             )
 
         # We aren't calling into polars-native write functions so we just update
         # the storage_options here.
         storage_options = (
             {**(storage_options or {}), **credential_provider_creds}
-            if storage_options is not None or credential_provider is not None
+            if storage_options is not None or credential_provider_builder is not None
             else None
         )
 
@@ -4579,10 +4588,10 @@ class DataFrame:
 
         FFI buffers are included in this estimation.
 
-        Note
-        ----
-        For objects, the estimated size only reports the pointer size, which is
-        a huge underestimation.
+        Notes
+        -----
+        For data with Object dtype, the estimated size only reports the pointer
+        size, which is a huge underestimation.
 
         Parameters
         ----------
@@ -4849,12 +4858,12 @@ class DataFrame:
         └─────┴──────┴───────┴──────┘
         """
         if (original_index := index) < 0:
-            index = len(self.columns) + index
+            index = self.width + index
             if index < 0:
-                msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+                msg = f"column index {original_index} is out of range (frame has {self.width} columns)"
                 raise IndexError(msg)
-        elif index > len(self.columns):
-            msg = f"column index {original_index} is out of range (frame has {len(self.columns)} columns)"
+        elif index > self.width:
+            msg = f"column index {original_index} is out of range (frame has {self.width} columns)"
             raise IndexError(msg)
 
         if isinstance(column, pl.Series):
@@ -5131,9 +5140,7 @@ class DataFrame:
         # print individual columns: one row per column
         for col_name, dtype_str, val_str in data:
             output.write(
-                f"$ {col_name:<{max_col_name}}"
-                f" {dtype_str:>{max_col_dtype}}"
-                f" {val_str}\n"
+                f"$ {col_name:<{max_col_name}} {dtype_str:>{max_col_dtype}} {val_str}\n"
             )
 
         s = output.getvalue()
@@ -5301,7 +5308,7 @@ class DataFrame:
         └───────┴─────┴─────┘
         """
         if index < 0:
-            index = len(self.columns) + index
+            index = self.width + index
         self._df.replace_column(index, column._s)
         return self
 
@@ -10748,6 +10755,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[Any]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10757,6 +10765,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, Any]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10766,6 +10775,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[dict[str, Any]]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10775,6 +10785,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, dict[str, Any]]: ...
+
     def rows_by_key(
         self,
         key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],

@@ -948,17 +948,17 @@ def _drop_null_data(
                 col = df[col_name]
                 if (
                     col.dtype == Null
-                    or col.null_count() == len(df)
+                    or col.null_count() == df.height
                     or (
                         col.dtype in NUMERIC_DTYPES
-                        and col.replace(0, None).null_count() == len(df)
+                        and col.replace(0, None).null_count() == df.height
                     )
                 ):
                     null_cols.append(col_name)
         if null_cols:
             df = df.drop(*null_cols)
 
-    if len(df) == 0 and len(df.columns) == 0:
+    if df.height == df.width == 0:
         return _empty_frame(raise_if_empty)
     if drop_empty_rows:
         return df.filter(~F.all_horizontal(F.all().is_null()))
@@ -1059,7 +1059,7 @@ def _read_spreadsheet_calamine(
         if read_options.get("header_row", False) is None and not read_options.get(
             "column_names"
         ):
-            df.columns = [f"column_{i}" for i in range(1, len(df.columns) + 1)]
+            df.columns = [f"column_{i}" for i in range(1, df.width + 1)]
 
     df = _drop_null_data(
         df,

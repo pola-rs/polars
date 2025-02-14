@@ -69,6 +69,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_object(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_signed_integer(cls) -> bool:  # noqa: D102
         ...
 
@@ -167,6 +171,11 @@ class DataType(metaclass=DataTypeClass):
     def is_integer(cls) -> bool:
         """Check whether the data type is an integer type."""
         return issubclass(cls, IntegerType)
+
+    @classmethod
+    def is_object(cls) -> bool:
+        """Check whether the data type is an object type."""
+        return issubclass(cls, ObjectType)
 
     @classmethod
     def is_signed_integer(cls) -> bool:
@@ -301,6 +310,10 @@ class TemporalType(DataType):
 
 class NestedType(DataType):
     """Base class for nested data types."""
+
+
+class ObjectType(DataType):
+    """Base class for object data types."""
 
 
 class Int8(SignedIntegerType):
@@ -447,6 +460,44 @@ class Time(TemporalType):
     The underlying representation of this type is a 64-bit signed integer.
     The integer indicates the number of nanoseconds since midnight.
     """
+
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.max() == 86_399_999_999_999)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.min() == 0)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
 
 
 class Datetime(TemporalType):
@@ -690,7 +741,7 @@ class Enum(DataType):
     __or__ = union
 
 
-class Object(DataType):
+class Object(ObjectType):
     """Data type for wrapping arbitrary Python objects."""
 
 
@@ -767,8 +818,13 @@ class Array(NestedType):
     ----------
     inner
         The `DataType` of the values within each array.
+    shape
+        The shape of the arrays.
     width
         The length of the arrays.
+
+        .. deprecated:: 0.20.31
+            The `width` parameter for `Array` is deprecated. Use `shape` instead.
 
     Examples
     --------

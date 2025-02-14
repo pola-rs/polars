@@ -295,7 +295,7 @@ impl SeriesTrait for SeriesWrap<DecimalChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        let ca = self.0.rechunk();
+        let ca = self.0.rechunk().into_owned();
         ca.into_decimal_unchecked(self.0.precision(), self.0.scale())
             .into_series()
     }
