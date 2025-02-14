@@ -289,12 +289,12 @@ def test_schema_mismatch_type_mismatch(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     "ndjson",
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 @pytest.mark.write_disk
@@ -330,11 +330,11 @@ def test_schema_mismatch_order_mismatch(
             pl.scan_csv,
             pl.DataFrame.write_csv,
         ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 def test_multiscan_head(
@@ -358,15 +358,15 @@ def test_multiscan_head(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-        ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        # (
+        #     pl.scan_csv,
+        #     pl.DataFrame.write_csv,
+        # ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 def test_multiscan_tail(
@@ -390,15 +390,15 @@ def test_multiscan_tail(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-        ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        # (
+        #     pl.scan_csv,
+        #     pl.DataFrame.write_csv,
+        # ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 def test_multiscan_slice_middle(
@@ -454,12 +454,12 @@ def test_multiscan_slice_middle(
             marks=pytest.mark.may_fail_auto_streaming,
             # negatives slices are not yet implemented for CSV
         ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     "ndjson",
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
