@@ -266,6 +266,9 @@ def test_other_types(
             [
                 series.sort(descending=False),
                 series.sort(descending=True),
+                # Length 1 series are marked as sorted; this catches regression
+                # in issue #21100:
+                pl.Series(series.to_list()[:1], dtype=series.dtype),
             ]
         )
     for s in series_variants:
@@ -317,6 +320,8 @@ def test_enum(convert_to_literal: bool) -> None:
         series.drop_nulls(),
         series.sort(descending=False),
         series.sort(descending=True),
+        # Length 1 series, to check for #21100:
+        pl.Series(["a"], dtype=pl.Enum(["c", "b", "a"])),
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
@@ -350,8 +355,3 @@ def test_categorical(convert_to_literal: bool) -> None:
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
-
-
-def test_regression_21100() -> None:
-    series = pl.Series([[1, 2]], dtype=pl.Array(pl.Int64(), 2))
-    assert series.index_of([1, 2]) == 0
