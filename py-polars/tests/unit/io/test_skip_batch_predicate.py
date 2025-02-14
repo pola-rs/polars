@@ -14,6 +14,8 @@ from polars.testing.parametric.strategies import series
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from polars._typing import PythonLiteral
+
 
 class Case(TypedDict):
     """A test case for Skip Batch Predicate."""
@@ -56,7 +58,7 @@ def assert_skp_series(
 def test_equality() -> None:
     assert_skp_series(
         "a",
-        pl.Int64,
+        pl.Int64(),
         pl.col("a") == 5,
         [
             {"min": 1, "max": 2, "null_count": 0, "len": 42, "can_skip": True},
@@ -173,11 +175,11 @@ def test_skip_batch_predicate_parametric(s: pl.Series) -> None:
         if sbp is None:
             continue
 
-        mins = [None]
+        mins: list[PythonLiteral | None] = [None]
         with contextlib.suppress(Exception):
             mins = [s.min()]
 
-        maxs = [None]
+        maxs: list[PythonLiteral | None] = [None]
         with contextlib.suppress(Exception):
             maxs = [s.max()]
 
