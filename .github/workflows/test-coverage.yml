@@ -31,6 +31,7 @@ env:
   CARGO_LLVM_COV_TARGET_DIR: ${{ github.workspace }}/target
   # We use the stable ABI, silences error from PyO3 that the system Python is too new.
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+  POLARS_MAX_THREADS: 2
 
 jobs:
   coverage-rust:

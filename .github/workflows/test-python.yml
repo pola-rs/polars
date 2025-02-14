@@ -26,6 +26,7 @@ env:
   RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
   RUST_BACKTRACE: 1
   PYTHONUTF8: 1
+  POLARS_MAX_THREADS: 2
 
 defaults:
   run:
