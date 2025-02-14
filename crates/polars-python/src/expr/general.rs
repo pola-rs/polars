@@ -950,11 +950,7 @@ impl PyExpr {
     }
 
     #[pyo3(signature = (schema))]
-    fn skip_batch_predicate(
-        &self,
-        py: Python,
-        schema: Wrap<Schema>,
-    ) -> PyResult<Option<Self>> {
+    fn skip_batch_predicate(&self, py: Python, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
         let mut aexpr_arena = Arena::new();
         py.enter_polars(|| {
             let node = to_aexpr(self.inner.clone(), &mut aexpr_arena)?;

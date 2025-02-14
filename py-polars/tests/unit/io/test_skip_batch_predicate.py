@@ -5,11 +5,10 @@ import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from hypothesis import Phase, given, settings
-from hypothesis import strategies as st
 
 import polars as pl
 from polars.meta import get_index_type
-from polars.testing import assert_frame_equal, assert_series_equal
+from polars.testing import assert_series_equal
 from polars.testing.parametric.strategies import series
 
 if TYPE_CHECKING:
