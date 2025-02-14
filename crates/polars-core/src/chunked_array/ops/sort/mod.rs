@@ -649,7 +649,15 @@ impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= POOL.current_num_threads() > 1;
         let idx = self.arg_sort(options);
-        unsafe { self.take_unchecked(&idx) }
+        let mut out = unsafe { self.take_unchecked(&idx) };
+
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        out.set_sorted_flag(s);
+        out
     }
 
     fn sort(&self, descending: bool) -> ChunkedArray<StructType> {
