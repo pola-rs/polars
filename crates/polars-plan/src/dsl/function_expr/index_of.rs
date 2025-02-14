@@ -29,6 +29,9 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
         // find the value.
         IsSorted::Ascending | IsSorted::Descending
             if !needle.is_null() &&
+            // Some dtypes don't yet support search_sorted, and length 1 seems
+            // to sometimes be marked as sorted.
+            series.len() > 1 &&
             // search_sorted() doesn't support decimals at the moment.
             !series.dtype().is_decimal() =>
         {

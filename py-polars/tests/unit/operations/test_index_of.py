@@ -350,3 +350,8 @@ def test_categorical(convert_to_literal: bool) -> None:
     ]:
         for value in expected_values:
             assert_index_of(s, value, convert_to_literal=convert_to_literal)
+
+
+def test_regression_21100() -> None:
+    series = pl.Series([[1, 2]], dtype=pl.Array(pl.Int64(), 2))
+    assert series.index_of([1, 2]) == 0
