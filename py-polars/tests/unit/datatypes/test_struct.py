@@ -1226,3 +1226,15 @@ def test_nested_object_raises_15237() -> None:
         pl.exceptions.InvalidOperationError, match="nested objects are not allowed"
     ):
         df.select(pl.struct("a"))
+
+
+def test_empty_struct_with_fields_21095() -> None:
+    df = pl.DataFrame({"a": [{}, {}]})
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=pl.lit(42, pl.Int64))),
+        pl.DataFrame({"a": [{"a": 42}, {"a": 42}]}),
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=None)),
+        pl.DataFrame({"a": [{"a": None}, {"a": None}]}),
+    )
