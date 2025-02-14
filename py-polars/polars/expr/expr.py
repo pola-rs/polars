@@ -10898,6 +10898,12 @@ class Expr:
         """
         return ExprStructNameSpace(self)
 
+    def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
+        result = self._pyexpr.skip_batch_predicate(schema)
+        if result is None:
+            return None
+        return self._from_pyexpr(result)
+
 
 def _prepare_alpha(
     com: float | int | None = None,
