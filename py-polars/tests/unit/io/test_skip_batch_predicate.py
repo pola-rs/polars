@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import TYPE_CHECKING, Any, TypedDict
 
 from hypothesis import Phase, given, settings
@@ -80,6 +81,27 @@ def test_equality() -> None:
         pl.col("a") != 0,
         [
             {"min": None, "max": None, "null_count": 6, "len": 7, "can_skip": False},
+        ],
+    )
+
+
+def test_datetimes() -> None:
+    d = datetime.datetime(2023, 4, 1, 0, 0, 0, tzinfo=datetime.timezone.utc)
+    td = datetime.timedelta
+
+    assert_skp_series(
+        "a",
+        pl.Datetime(time_zone=datetime.timezone.utc),
+        pl.col("a") == d,
+        [
+            {"min": d - td(days=2), "max": d - td(days=1), "null_count": 0, "len": 42, "can_skip": True},
+            {"min": d + td(days=1), "max": d - td(days=2), "null_count": 0, "len": 42, "can_skip": True},
+            {"min": d, "max": d, "null_count": 42, "len": 42, "can_skip": True},
+
+            {"min": d, "max": d, "null_count": 0, "len": 42, "can_skip": False},
+            {"min": d - td(days=2), "max": d + td(days=2), "null_count": 0, "len": 42, "can_skip": False},
+
+            {"min": d + td(days=1), "max": None, "null_count": None, "len": None, "can_skip": True},
         ],
     )
 
