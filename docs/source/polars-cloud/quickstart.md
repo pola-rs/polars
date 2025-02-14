@@ -30,7 +30,7 @@ pc login
 Polars Cloud currently exclusively supports AWS as a cloud provider.
 
 Polars Cloud needs permission to spin up & down hardware in your environment. This is done by
-deploying our cloudformation template. See our [infrastructure](providers/aws/infrastructure.md) section for
+deploying our cloudformation template. See our [infrastructure](providers/aws/infra.md) section for
 more details.
 
 To connect your cloud run:
