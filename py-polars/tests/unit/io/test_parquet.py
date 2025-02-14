@@ -2849,3 +2849,23 @@ def test_equality_filter(
             raise
 
     pl.read_parquet(f)
+
+
+def test_nested_string_slice_utf8_21202() -> None:
+    s = pl.Series(
+        "a",
+        [
+            ["A" * 128],
+            ["A"],
+        ],
+        pl.List(pl.String()),
+    )
+
+    f = io.BytesIO()
+    s.to_frame().write_parquet(f)
+
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_parquet(f).slice(1, 1).collect().to_series(),
+        s.slice(1, 1),
+    )
