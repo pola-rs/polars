@@ -4916,6 +4916,10 @@ class DataFrame:
         False. As a result, these rows will not be retained. Ensure that null values
         are handled appropriately to avoid unexpected behaviour (see examples below).
 
+        See Also
+        --------
+        remove
+
         Examples
         --------
         >>> df = pl.DataFrame(
@@ -5079,6 +5083,10 @@ class DataFrame:
         involving `null` values will result in a `null` result, *not* boolean True or
         False. As a result, these rows will not be removed. Ensure that null values
         are handled appropriately to avoid unexpected behaviour (see examples below).
+
+        See Also
+        --------
+        filter
 
         Examples
         --------
