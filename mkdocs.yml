@@ -115,17 +115,12 @@ nav:
                 - polars-cloud/run/compute-context.md
                 - polars-cloud/run/interactive-batch.md
                 - polars-cloud/run/distributed-engine.md
-          - Workspace management:
-                - polars-cloud/workspace/add-members.md
-                - polars-cloud/workspace/add-delete-workspace.md
-                - polars-cloud/workspace/set-defaults.md
           - User Guide:
-                - polars-cloud/explain/concepts.md
                 - polars-cloud/explain/authentication.md
           - Providers:
                 - AWS:
-                      - polars-cloud/providers/aws/infrastructure.md
-                      - polars-cloud/providers/aws/permissions.md
+                  - polars-cloud/providers/aws/infra.md
+                  - polars-cloud/providers/aws/permissions.md
           - Integrations:
                 - polars-cloud/integrations/airflow.md
           - Misc:
