@@ -220,7 +220,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 O::Eq | O::EqValidity => {
                     let ((col, _), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
-                    let dtype = schema.get(&col)?;
+                    let dtype = schema.get(col)?;
 
                     if !does_dtype_have_sufficient_order(dtype) {
                         return None;
@@ -269,7 +269,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 O::NotEq | O::NotEqValidity => {
                     let ((col, _), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
-                    let dtype = schema.get(&col)?;
+                    let dtype = schema.get(col)?;
 
                     if !does_dtype_have_sufficient_order(dtype) {
                         return None;
@@ -311,7 +311,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 O::Lt | O::Gt | O::LtEq | O::GtEq => {
                     let ((col, col_node), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
-                    let dtype = schema.get(&col)?;
+                    let dtype = schema.get(col)?;
 
                     if !does_dtype_have_sufficient_order(dtype) {
                         return None;
@@ -404,6 +404,11 @@ fn aexpr_to_skip_batch_predicate_rec(
                         constant_evaluate(lv_node, expr_arena, schema, 0),
                     ) {
                         (Some(col), Some(_)) => {
+                            let dtype = schema.get(col)?;
+                            if !does_dtype_have_sufficient_order(dtype) {
+                                return None;
+                            }
+
                             // col(A).is_in([B1, ..., Bn]) ->
                             //      ([B1, ..., Bn].has_no_nulls() || null_count(A) == 0) &&
                             //      (
@@ -411,11 +416,6 @@ fn aexpr_to_skip_batch_predicate_rec(
                             //          max(A) < min[B1, ..., Bn]
                             //      )
                             let col = col.clone();
-                            let dtype = schema.get(&col)?;
-
-                            if !does_dtype_have_sufficient_order(dtype) {
-                                return None;
-                            }
 
                             let lv_min = expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
                                 input: lv_node,
@@ -471,7 +471,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                 #[cfg(feature = "is_between")]
                 BooleanFunction::IsBetween { closed } => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
-                    let dtype = schema.get(&col)?;
+                    let dtype = schema.get(col)?;
 
                     if !does_dtype_have_sufficient_order(dtype) {
                         return None;
