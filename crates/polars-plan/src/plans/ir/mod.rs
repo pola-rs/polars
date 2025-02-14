@@ -57,7 +57,7 @@ pub enum IR {
     Scan {
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<(DataFrame, Arc<Vec<HivePartitions>>)>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,

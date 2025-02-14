@@ -8,7 +8,6 @@ use std::sync::Arc;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::config;
-use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, IntoColumn};
 use polars_core::scalar::Scalar;
@@ -19,7 +18,6 @@ use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
 use polars_mem_engine::ScanPredicate;
-use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::{ScanSource, ScanSourceRef, ScanSources};
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -59,7 +57,7 @@ pub struct MultiScanNode<T: MultiScanable> {
     name: String,
     sources: ScanSources,
 
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
+    hive_parts: DataFrame,
     allow_missing_columns: bool,
     include_file_paths: Option<PlSmallStr>,
 
@@ -79,7 +77,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
     pub fn new(
         sources: ScanSources,
 
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: DataFrame,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
 
@@ -116,7 +114,8 @@ impl<T: MultiScanable> MultiScanNode<T> {
 fn process_dataframe(
     mut df: DataFrame,
     source_name: &PlSmallStr,
-    hive_part: Option<&HivePartitions>,
+    current_scan: usize,
+    hive_parts: &DataFrame,
     missing_columns: Option<&Bitmap>,
     include_file_paths: Option<&PlSmallStr>,
 
@@ -137,33 +136,36 @@ fn process_dataframe(
         .into_column();
     }
 
-    if let Some(hive_part) = hive_part {
+    if hive_parts.width() > 0 {
         let height = df.height();
 
         if cfg!(debug_assertions) {
             let schema = df.schema();
             // We should have projected the hive column out when we read the file.
-            for column in hive_part.get_statistics().column_stats().iter() {
-                assert!(!schema.contains(column.field_name()));
+            for column in hive_parts.get_columns() {
+                assert!(!schema.contains(column.name()));
             }
         }
         let mut columns = df.take_columns();
 
-        columns.extend(hive_part.get_statistics().column_stats().iter().filter_map(
-            |column_stat| {
-                let value = column_stat.get_min_state().unwrap().clone();
-                let column_idx = file_schema
-                    .index_of(value.name())
-                    .expect("hive column not in schema");
+        columns.extend(hive_parts.get_columns().iter().filter_map(|column| {
+            let column_idx = file_schema
+                .index_of(column.name())
+                .expect("hive column not in schema");
 
-                // If the hive column is not included in the projection, skip it.
-                if projection.is_some_and(|p| !p.get_bit(column_idx)) {
-                    return None;
-                }
+            // If the hive column is not included in the projection, skip it.
+            if projection.is_some_and(|p| !p.get_bit(column_idx)) {
+                return None;
+            }
 
-                Some(ScalarColumn::from_single_value_series(value, height).into_column())
-            },
-        ));
+            let column = column
+                .slice(current_scan as i64, 1)
+                .into_scalar_column()
+                .unwrap();
+            let column = column.resize(height);
+
+            Some(column.into_column())
+        }));
 
         df = DataFrame::new_with_height(height, columns)?;
     }
@@ -388,11 +390,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         let projection = &self.projection;
         let row_index_name = self.row_index.as_ref().map(|ri| &ri.name);
         let allow_missing_columns = self.allow_missing_columns;
-        let hive_schema = self
-            .hive_parts
-            .as_ref()
-            .and_then(|p| Some(p.first()?.get_statistics().schema().clone()))
-            .unwrap_or_else(|| Arc::new(Schema::default()));
+        let hive_schema = self.hive_parts.schema().clone();
         let physical_columns: Bitmap = file_schema
             .iter_names()
             .map(|n| {
@@ -706,7 +704,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                 while current_scan < sources.len() {
                     let source_name = source_name(sources.at(current_scan), current_scan);
-                    let hive_part = hive_parts.as_deref().map(|parts| &parts[current_scan]);
                     let si_recv = &mut si_recv[current_scan % num_concurrent_scans];
                     let Ok(phase) = si_recv.recv().await else {
                         return Ok(());
@@ -719,7 +716,8 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             let df = process_dataframe(
                                 df,
                                 &source_name,
-                                hive_part,
+                                current_scan,
+                                &hive_parts,
                                 phase.missing_columns.as_ref(),
                                 include_file_paths.as_ref(),
                                 file_schema.as_ref(),
@@ -756,7 +754,8 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     let df = process_dataframe(
                                         df,
                                         &source_name,
-                                        hive_part,
+                                        current_scan,
+                                        &hive_parts,
                                         phase.missing_columns.as_ref(),
                                         include_file_paths.as_ref(),
                                         file_schema.as_ref(),
@@ -808,7 +807,8 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     let df = process_dataframe(
                                         df,
                                         &source_name,
-                                        hive_part,
+                                        current_scan,
+                                        &hive_parts,
                                         phase.missing_columns.as_ref(),
                                         include_file_paths.as_ref(),
                                         file_schema.as_ref(),
