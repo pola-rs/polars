@@ -71,13 +71,14 @@ fn aexpr_to_skip_batch_predicate_rec(
         }}
     }
     macro_rules! binexpr {
-        ($op:ident, $l:expr, $r:expr) => {{
+        (op: $op:expr, $l:expr, $r:expr) => {{
             expr_arena.add(AExpr::BinaryExpr {
                 left: $l,
-                op: O::$op,
+                op: $op,
                 right: $r,
             })
         }};
+        ($op:ident, $l:expr, $r:expr) => {{ binexpr!(op: O::$op, $l, $r) }};
     }
     macro_rules! lt {
         ($l:expr, $r:expr) => {{
@@ -156,6 +157,31 @@ fn aexpr_to_skip_batch_predicate_rec(
             expr
         }};
     }
+    macro_rules! lv_cases {
+        (
+            $lv:expr, $lv_node:expr,
+            null: $null_case:expr,
+            not_null: $non_null_case:expr $(,)?
+        ) => {{
+            if let Some(lv) = $lv {
+                if lv.is_null() {
+                    $null_case
+                } else {
+                    $non_null_case
+                }
+            } else {
+                let lv_is_null = has_nulls!($lv_node);
+                let lv_not_null = has_no_nulls!($lv_node);
+
+                let null_case = $null_case;
+                let null_case = and!(lv_is_null, null_case);
+                let non_null_case = $non_null_case;
+                let non_null_case = and!(lv_not_null, non_null_case);
+
+                or!(null_case, non_null_case)
+            }
+        }};
+    }
     macro_rules! col {
         (len) => {{
             col!(PlSmallStr::from_static("len"))
@@ -206,124 +232,136 @@ fn aexpr_to_skip_batch_predicate_rec(
 
             match op {
                 O::Eq | O::EqValidity => {
-                    let ((col, _), (_, lv_node)) =
+                    let ((col, _), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
 
                     let op = *op;
                     let col = col.clone();
 
-                    // col(A) == B --> min(A) > B || max(A) < B
-                    let col_min = col!(min: col);
-                    let col_max = col!(max: col);
+                    // col(A) == B -> {
+                    //     null_count(A) == 0                              , if B.is_null(),
+                    //     null_count(A) == LEN || min(A) > B || max(A) < B, if B.is_not_null(),
+                    // }
 
-                    let dtype = schema.get(&col)?;
-                    let min_is_defined = is_stat_defined!(col_min, dtype);
-                    let max_is_defined = is_stat_defined!(col_max, dtype);
+                    Some(lv_cases!(
+                        lv, lv_node,
+                        null: {
+                            if matches!(op, O::Eq) {
+                                lv!(bool: false)
+                            } else {
+                                let col_nc = col!(null_count: col);
+                                let idx_zero = lv!(idx: 0);
+                                eq_missing!(col_nc, idx_zero)
+                            }
+                        },
+                        not_null: {
+                            let col_min = col!(min: col);
+                            let col_max = col!(max: col);
 
-                    let min_gt = gt!(col_min, lv_node);
-                    let min_gt = and!(min_is_defined, min_gt);
+                            let dtype = schema.get(&col)?;
+                            let min_is_defined = is_stat_defined!(col_min, dtype);
+                            let max_is_defined = is_stat_defined!(col_max, dtype);
 
-                    let max_lt = lt!(col_max, lv_node);
-                    let max_lt = and!(max_is_defined, max_lt);
+                            let min_gt = gt!(col_min, lv_node);
+                            let min_gt = and!(min_is_defined, min_gt);
 
-                    let non_null_case = or!(min_gt, max_lt);
-                    let lv_has_nulls = has_nulls!(lv_node);
+                            let max_lt = lt!(col_max, lv_node);
+                            let max_lt = and!(max_is_defined, max_lt);
 
-                    Some(if matches!(op, O::Eq) {
-                        or!(lv_has_nulls, non_null_case)
-                    } else {
-                        // col(A) == null --> NULL_COUNT(A) == 0
-                        let col_nc = col!(null_count: col);
-                        let idx_zero = lv!(idx: 0);
-                        let t = eq_missing!(col_nc, idx_zero);
-                        let null_case = and!(lv_has_nulls, t);
+                            let col_nc = col!(null_count: col);
+                            let len = col!(len);
+                            let all_nulls = eq_missing!(col_nc, len);
 
-                        let lv_no_nulls = has_no_nulls!(lv_node);
-                        let non_null_case = and!(lv_no_nulls, non_null_case);
-                        or!(null_case, non_null_case)
-                    })
+                            or!(all_nulls, min_gt, max_lt)
+                        }
+                    ))
                 },
                 O::NotEq | O::NotEqValidity => {
-                    let ((col, _), (_, lv_node)) =
+                    let ((col, _), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
 
                     let op = *op;
                     let col = col.clone();
 
-                    let col_min = col!(min: col);
-                    let col_max = col!(max: col);
-                    let min_eq = eq_missing!(col_min, lv_node);
-                    let max_eq = eq_missing!(col_max, lv_node);
-                    let non_null_case = and!(min_eq, max_eq);
+                    // col(A) != B -> {
+                    //     null_count(A) == LEN                            , if B.is_null(),
+                    //     null_count(A) == 0 && min(A) == B && max(A) == B, if B.is_not_null(),
+                    // }
 
-                    // col(A) !=     null --> false
-                    // col(A) !=~    null --> NULL_COUNT(A) == LEN
-                    // col(A) !=(~)  B    --> min(A) == B && max(A) == B
+                    Some(lv_cases!(
+                        lv, lv_node,
+                        null: {
+                            if matches!(op, O::NotEq) {
+                                lv!(bool: false)
+                            } else {
+                                let col_nc = col!(null_count: col);
+                                let len = col!(len);
+                                eq_missing!(col_nc, len)
+                            }
+                        },
+                        not_null: {
+                            let col_min = col!(min: col);
+                            let col_max = col!(max: col);
+                            let min_eq = eq_missing!(col_min, lv_node);
+                            let max_eq = eq_missing!(col_max, lv_node);
 
-                    let lv_no_nulls = has_no_nulls!(lv_node);
+                            let col_nc = col!(null_count: col);
+                            let idx_zero = lv!(idx: 0);
+                            let no_nulls = eq_missing!(col_nc, idx_zero);
 
-                    Some(if matches!(op, O::NotEq) {
-                        and!(lv_no_nulls, non_null_case)
-                    } else {
-                        let col_nc = col!(null_count: col);
-                        let len = col!(len);
-                        let t = eq_missing!(col_nc, len);
-                        let null_case = or!(lv_no_nulls, t);
-
-                        let lv_has_nulls = has_nulls!(lv_node);
-                        let non_null_case = or!(lv_has_nulls, non_null_case);
-                        and!(null_case, non_null_case)
-                    })
+                            and!(no_nulls, min_eq, max_eq)
+                        }
+                    ))
                 },
-                O::Lt | O::GtEq => {
-                    let ((col, col_node), (_, lv_node)) =
+                O::Lt | O::Gt | O::LtEq | O::GtEq => {
+                    let ((col, col_node), (lv, lv_node)) =
                         get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
 
-                    let is_col_less_than_lv = matches!(op, O::Lt) == (col_node == left);
+                    let col_is_left = col_node == left;
 
+                    let op = *op;
                     let col = col.clone();
+                    let lv_may_be_null = lv.is_none_or(|lv| lv.is_null());
                     let dtype = schema.get(&col)?;
-                    let expr = if is_col_less_than_lv {
-                        // col(A) < B --> min(A) >= B
-                        let col_min = col!(min: col);
-                        let min_is_defined = is_stat_defined!(col_min, dtype);
-                        let min_ge = ge!(col_min, lv_node);
-                        and!(min_is_defined, min_ge)
-                    } else {
-                        // col(A) >= B --> max(A) < B
-                        let col_max = col!(max: col);
-                        let max_is_defined = is_stat_defined!(col_max, dtype);
-                        let max_lt = lt!(col_max, lv_node);
-                        and!(max_is_defined, max_lt)
+
+                    // If B is null, this is always true.
+                    //
+                    // col(A) < B       ~       B > col(A)  ->
+                    //     null_count(A) == LEN || min(A) >= B
+                    //
+                    // col(A) > B       ~       B < col(A)  ->
+                    //     null_count(A) == LEN || max(A) <= B
+                    //
+                    // col(A) <= B      ~       B >= col(A) ->
+                    //     null_count(A) == LEN || min(A) > B
+                    //
+                    // col(A) >= B      ~       B <= col(A) ->
+                    //     null_count(A) == LEN || max(A) < B
+
+                    let stat = match (op, col_is_left) {
+                        (O::Lt | O::LtEq, true) | (O::Gt | O::GtEq, false) => col!(min: col),
+                        (O::Lt | O::LtEq, false) | (O::Gt | O::GtEq, true) => col!(max: col),
+                        _ => unreachable!(),
+                    };
+                    let cmp_op = match (op, col_is_left) {
+                        (O::Lt, true) | (O::Gt, false) => O::GtEq,
+                        (O::Lt, false) | (O::Gt, true) => O::LtEq,
+
+                        (O::LtEq, true) | (O::GtEq, false) => O::Gt,
+                        (O::LtEq, false) | (O::GtEq, true) => O::Lt,
+
+                        _ => unreachable!(),
                     };
 
-                    let has_nulls = has_nulls!(lv_node);
-                    Some(or!(has_nulls, expr))
-                },
-                O::Gt | O::LtEq => {
-                    let ((col, col_node), (_, lv_node)) =
-                        get_binary_expr_col_and_lv(left, right, expr_arena, schema)?;
+                    let stat_is_defined = is_stat_defined!(stat, dtype);
+                    let cmp_op = binexpr!(op: cmp_op, stat_is_defined, lv_node);
+                    let mut expr = and!(stat_is_defined, cmp_op);
 
-                    let is_col_greater_than_lv = matches!(op, O::Gt) == (col_node == left);
-
-                    let col = col.clone();
-                    let dtype = schema.get(&col)?;
-                    let expr = if is_col_greater_than_lv {
-                        // col(A) > B --> max(A) <= B
-                        let col_max = col!(max: col);
-                        let max_is_defined = is_stat_defined!(col_max, dtype);
-                        let max_le = le!(col_max, lv_node);
-                        and!(max_is_defined, max_le)
-                    } else {
-                        // col(A) <= B --> min(A) > B
-                        let col_min = col!(min: col);
-                        let min_is_defined = is_stat_defined!(col_min, dtype);
-                        let min_gt = gt!(col_min, lv_node);
-                        and!(min_is_defined, min_gt)
-                    };
-
-                    let has_nulls = has_nulls!(lv_node);
-                    Some(or!(has_nulls, expr))
+                    if lv_may_be_null {
+                        let has_nulls = has_nulls!(lv_node);
+                        expr = or!(has_nulls, expr);
+                    }
+                    Some(expr)
                 },
 
                 O::And | O::LogicalAnd => match (rec!(left), rec!(right)) {
@@ -368,13 +406,22 @@ fn aexpr_to_skip_batch_predicate_rec(
                     ) {
                         (Some(col), Some(_)) => {
                             // col(A).is_in([B1, ..., Bn]) ->
-                            //     (s.null_count() == 0 || (nc(A) == 0))
-                            //  && (
-                            //      all(min(A) > [B1, ..., Bn)]) ||
-                            //      all(max(A) < [B1, ..., Bn)])
-                            //  )
+                            //      ([B1, ..., Bn].has_no_nulls() || null_count(A) == 0) &&
+                            //      (
+                            //          min(A) > max[B1, ..., Bn] ||
+                            //          max(A) < min[B1, ..., Bn]
+                            //      )
                             let col = col.clone();
                             let dtype = schema.get(&col)?;
+
+                            let lv_min = expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Min {
+                                input: lv_node,
+                                propagate_nans: true,
+                            }));
+                            let lv_max = expr_arena.add(AExpr::Agg(crate::plans::IRAggExpr::Max {
+                                input: lv_node,
+                                propagate_nans: true,
+                            }));
 
                             let col_min = col!(min: col);
                             let col_max = col!(max: col);
@@ -382,12 +429,10 @@ fn aexpr_to_skip_batch_predicate_rec(
                             let min_is_defined = is_stat_defined!(col_min, dtype);
                             let max_is_defined = is_stat_defined!(col_max, dtype);
 
-                            let min_gt = gt!(col_min, lv_node);
-                            let min_gt = all!(min_gt);
+                            let min_gt = gt!(col_min, lv_max);
                             let min_gt = and!(min_is_defined, min_gt);
 
-                            let max_lt = lt!(col_max, lv_node);
-                            let max_lt = all!(max_lt);
+                            let max_lt = lt!(col_max, lv_min);
                             let max_lt = and!(max_is_defined, max_lt);
 
                             let expr = or!(min_gt, max_lt);
@@ -424,6 +469,11 @@ fn aexpr_to_skip_batch_predicate_rec(
                 BooleanFunction::IsBetween { closed } => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
 
+                    // col(A).is_between(X, Y) ->
+                    //     null_count(A) == LEN ||
+                    //         min(A) >(=) Y ||
+                    //         max(A) <(=) X
+
                     let left_node = input[1].node();
                     let right_node = input[2].node();
 
@@ -442,13 +492,14 @@ fn aexpr_to_skip_batch_predicate_rec(
 
                     use polars_ops::series::ClosedInterval;
                     let (left, right) = match closed {
-                        ClosedInterval::Both => (lt!(col_max, left_node), gt!(col_min, right_node)),
-                        ClosedInterval::Left => (lt!(col_max, left_node), ge!(col_min, right_node)),
-                        ClosedInterval::Right => {
-                            (le!(col_max, left_node), gt!(col_min, right_node))
-                        },
-                        ClosedInterval::None => (le!(col_max, left_node), ge!(col_min, right_node)),
+                        ClosedInterval::Both => (O::Lt, O::Gt),
+                        ClosedInterval::Left => (O::Lt, O::GtEq),
+                        ClosedInterval::Right => (O::LtEq, O::Gt),
+                        ClosedInterval::None => (O::LtEq, O::GtEq),
                     };
+
+                    let left = binexpr!(op: left, col_max, left_node);
+                    let right = binexpr!(op: right, col_min, right_node);
 
                     let min_is_defined = is_stat_defined!(col_min, dtype);
                     let max_is_defined = is_stat_defined!(col_max, dtype);
