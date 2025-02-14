@@ -80,6 +80,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         RankMethod,
         RollingInterpolationMethod,
+        SchemaDict,
         SearchSortedSide,
         SerializationFormat,
         TemporalLiteral,
