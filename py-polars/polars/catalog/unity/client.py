@@ -72,9 +72,10 @@ class Catalog:
             API endpoint.
         bearer_token
             Bearer token to authenticate with. This can also be set to:
+
             * "auto": Automatically retrieve bearer tokens from the environment.
             * "databricks-sdk": Use the Databricks SDK to retrieve and use the
-            bearer token from the environment.
+              bearer token from the environment.
         require_https
             Require the `workspace_url` to use HTTPS.
         """
