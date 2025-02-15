@@ -6,6 +6,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
+from polars._utils.various import parse_version
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
 
@@ -62,10 +63,11 @@ def _read_sql_connectorx(
 ) -> DataFrame:
     cx = import_optional("connectorx")
     try:
+        return_type = "arrow2" if parse_version(cx.__version__) < (0, 4, 2) else "arrow"
         tbl = cx.read_sql(
             conn=connection_uri,
             query=query,
-            return_type="arrow2",
+            return_type=return_type,
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,

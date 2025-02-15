@@ -3471,6 +3471,7 @@ version = "0.46.0"
 dependencies = [
  "atomic-waker",
  "crossbeam-deque",
+ "crossbeam-queue",
  "crossbeam-utils",
  "futures",
  "memmap2",

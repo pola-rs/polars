@@ -379,10 +379,18 @@ Alternatively, if the performance cost is acceptable, you could just set:
 on startup."#.trim_start())
     };
     (duplicate = $name:expr) => {
-        polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
+        $crate::polars_err!(Duplicate: "column with name '{}' has more than one occurrence", $name)
     };
     (col_not_found = $name:expr) => {
-        polars_err!(ColumnNotFound: "{:?} not found", $name)
+        $crate::polars_err!(ColumnNotFound: "{:?} not found", $name)
+    };
+    (mismatch, col=$name:expr, expected=$expected:expr, found=$found:expr) => {
+        $crate::polars_err!(
+            SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
+            $name,
+            $expected,
+            $found,
+        )
     };
     (oob = $idx:expr, $len:expr) => {
         polars_err!(OutOfBounds: "index {} is out of bounds for sequence of length {}", $idx, $len)

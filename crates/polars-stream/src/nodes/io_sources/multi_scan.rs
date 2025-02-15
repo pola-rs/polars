@@ -2,9 +2,12 @@ use std::cmp::Reverse;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::ops::Range;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, IntoColumn};
@@ -24,10 +27,10 @@ use polars_utils::priority::Priority;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
 use super::{SourceNode, SourceOutput};
-use crate::async_executor::spawn;
+use crate::async_executor::{spawn, AbortOnDropHandle};
 use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::linearizer::{self, Linearizer};
-use crate::async_primitives::wait_group::WaitGroup;
+use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::morsel::SourceToken;
 use crate::nodes::io_sources::SourceOutputPort;
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
@@ -45,9 +48,10 @@ fn source_name(scan_source: ScanSourceRef<'_>, index: usize) -> PlSmallStr {
     }
 }
 
-#[allow(unused)]
+#[derive(Clone, Debug)]
 pub enum RowRestrication {
     Slice(Range<usize>),
+    #[expect(dead_code)]
     Predicate(ScanPredicate),
 }
 
@@ -62,6 +66,7 @@ pub struct MultiScanNode<T: MultiScanable> {
     file_schema: SchemaRef,
     projection: Option<Bitmap>,
     row_index: Option<RowIndex>,
+    row_restriction: Option<RowRestrication>,
 
     read_options: Arc<T::ReadOptions>,
     cloud_options: Arc<Option<CloudOptions>>,
@@ -81,6 +86,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
         file_schema: SchemaRef,
         projection: Option<Bitmap>,
         row_index: Option<RowIndex>,
+        row_restriction: Option<RowRestrication>,
 
         read_options: T::ReadOptions,
         cloud_options: Option<CloudOptions>,
@@ -96,6 +102,7 @@ impl<T: MultiScanable> MultiScanNode<T> {
             file_schema,
             projection,
             row_index,
+            row_restriction,
 
             read_options: Arc::new(read_options),
             cloud_options: Arc::new(cloud_options),
@@ -260,7 +267,7 @@ fn resolve_source_projection(
     let mut source_projection = MutableBitmap::from_len_zeroed(source_schema.len());
 
     let mut j = 0;
-    for (i, source_col_name) in source_schema.iter_names().enumerate() {
+    for (i, (source_col_name, source_dtype)) in source_schema.iter().enumerate() {
         while let Some((file_col_name, _)) = file_schema.get_at_index(j) {
             if source_col_name == file_col_name {
                 break;
@@ -268,11 +275,20 @@ fn resolve_source_projection(
             j += 1;
         }
 
-        if j >= file_schema.len() {
+        let Some((_, file_dtype)) = file_schema.get_at_index(j) else {
             let source_name = source_name(source, source_idx);
             polars_bail!(
                 SchemaMismatch:
                 "the column order of '{source_name}' does not match the column order of the first scanned file"
+            );
+        };
+
+        if file_dtype != source_dtype {
+            polars_bail!(
+                mismatch,
+                col = source_col_name,
+                expected = file_dtype,
+                found = source_dtype
             );
         }
 
@@ -306,7 +322,6 @@ pub trait MultiScanable: SourceNode + Sized + Send + Sync {
     /// The provided bitmap should have the same length as a schema given by
     /// [`MultiScanable::physical_schema`].
     fn with_projection(&mut self, projection: Option<&Bitmap>);
-    #[expect(unused)]
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>);
 
     /// Get the number of physical rows in this source.
@@ -335,10 +350,10 @@ fn num_concurrent_scans(num_pipelines: usize) -> usize {
 }
 
 enum SourcePhaseContent {
-    /// 1+ columns
-    NonEmpty(SourceInput),
-    /// 0 columns
-    Empty(IdxSize),
+    /// 1+ columns, 0+ rows
+    Channels(SourceInput),
+    /// 0 columns / 0 rows
+    OneShot(DataFrame),
 }
 struct SourcePhase {
     content: SourcePhaseContent,
@@ -378,7 +393,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             .as_ref()
             .and_then(|p| Some(p.first()?.get_statistics().schema().clone()))
             .unwrap_or_else(|| Arc::new(Schema::default()));
-        let source_provided_columns: Bitmap = file_schema
+        let physical_columns: Bitmap = file_schema
             .iter_names()
             .map(|n| {
                 !hive_schema.contains(n)
@@ -391,124 +406,263 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             .map(|_| connector::<SourcePhase>())
             .collect::<(Vec<_>, Vec<_>)>();
 
-        join_handles.extend(si_send.into_iter().enumerate().map(|(mut i, mut si_send)| {
-            let sources = sources.clone();
-            let read_options = read_options.clone();
-            let cloud_options = cloud_options.clone();
-            let file_schema = file_schema.clone();
-            let projection = projection.clone();
-            let row_index_name = row_index_name.cloned();
-            let physical_columns = source_provided_columns.clone();
+        let slice_tx = if let Some(RowRestrication::Slice(slice)) = &self.row_restriction {
+            let (slice_tx, mut slice_rx) = (0..num_concurrent_scans)
+                .map(|_| {
+                    let (tx, rx) =
+                        connector::<(IdxSize, Arc<(AtomicUsize, AtomicUsize)>, WaitToken)>();
+                    (Some(tx), rx)
+                })
+                .collect::<(Vec<_>, Vec<_>)>();
 
-            spawn(TaskPriority::High, async move {
-                let state = ExecutionState::new();
-                let mut join_handles = Vec::new();
-                while i < sources.len() {
-                    join_handles.clear();
+            // Task that handles the slicing.
+            //
+            // Since we need someone to keep track of the slice centrally, this thread does the
+            // minimal amount of work to keep track of this and makes it is so that most of th work
+            // can still happen in parallel.
+            let sources = self.sources.clone();
+            let mut slice = slice.clone();
+            join_handles.push(spawn(TaskPriority::High, async move {
+                let verbose = config::verbose();
 
-                    let source = sources.at(i).into_owned()?;
-                    let (mut output_send, output_recv) = connector();
-                    let mut source = T::new(
-                        source,
-                        read_options.as_ref(),
-                        cloud_options.as_ref().as_ref(),
-                        row_index_name.clone(),
-                    )
-                    .await?;
-
-                    let source_schema = source.physical_schema().await?;
-                    let (source_projection, missing_columns) = resolve_source_projection(
-                        file_schema.as_ref(),
-                        source_schema.as_ref(),
-                        &physical_columns,
-                        allow_missing_columns,
-                        projection.as_ref(),
-                        sources.at(i),
-                        i,
-                    )?;
-
-                    // If we are not interested in any column, just count the rows and send that
-                    // back.
-                    if row_index_name.is_none() && source_projection.set_bits() == 0 {
-                        let row_count = source.unrestricted_row_count().await?;
-                        let phase = SourcePhase {
-                            content: SourcePhaseContent::Empty(row_count),
-                            missing_columns: missing_columns.clone(),
-                            unrestricted_row_count: row_index_name
-                                .is_some()
-                                .then(|| Arc::new(AtomicIdxSize::new(row_count))),
-                        };
-
-                        // Wait for the orchestrator task to actually be interested in the output
-                        // of this file.
-                        if si_send.send(phase).await.is_err() {
-                            break;
-                        };
-                        i += num_concurrent_scans;
-                        continue;
-                    }
-
-                    let unrestricted_row_count = row_index_name
-                        .is_some()
-                        .then(|| Arc::new(AtomicIdxSize::new(0)));
-
-                    source.with_projection(Some(&source_projection));
-
-                    source.spawn_source(
-                        num_pipelines,
-                        output_recv,
-                        &state,
-                        &mut join_handles,
-                        unrestricted_row_count.clone(),
-                    );
-
-                    // Loop until a phase result indicated that the source is empty.
-                    loop {
-                        let (tx, rx) = if source.is_source_output_parallel(true) {
-                            let (tx, rx) = (0..num_pipelines)
-                                .map(|_| connector())
-                                .collect::<(Vec<_>, Vec<_>)>();
-                            (SourceOutputPort::Parallel(tx), SourceInput::Parallel(rx))
-                        } else {
-                            let (tx, rx) = connector();
-                            (SourceOutputPort::Serial(tx), SourceInput::Serial(rx))
-                        };
-
-                        let phase = SourcePhase {
-                            content: SourcePhaseContent::NonEmpty(rx),
-                            missing_columns: missing_columns.clone(),
-                            unrestricted_row_count: unrestricted_row_count.clone(),
-                        };
-
-                        // Wait for the orchestrator task to actually be interested in the output
-                        // of this file.
-                        if si_send.send(phase).await.is_err() {
-                            break;
-                        };
-
-                        let (outcome, wait_group, tx) = SourceOutput::from_port(tx);
-
-                        // Start draining the source into the created channels.
-                        if output_send.send(tx).await.is_err() {
-                            break;
-                        };
-
-                        // Wait for the phase to end.
-                        wait_group.wait().await;
-                        if outcome.did_finish() {
-                            break;
+                for i in 0..sources.len() {
+                    if slice.is_empty() {
+                        if verbose {
+                            let source_name = source_name(sources.at(i), i);
+                            eprintln!("[MultiScan]: Slice is at '{source_name}' but no more data is needed. Stopping.");
                         }
+
+                        // Flush all remaining workers waiting for their slice.
+                        for mut rx in slice_rx {
+                            let Ok((_, slice_range, wait_token)) = rx.recv().await else {
+                                continue;
+                            };
+
+                            // The order here is necessary to avoid race-conditions.
+                            drop(rx);
+                            slice_range.0.store(0, Ordering::Relaxed);
+                            slice_range.1.store(0, Ordering::Relaxed);
+                            drop(wait_token);
+                        }
+
+                        break;
                     }
 
-                    for handle in join_handles.iter_mut() {
-                        handle.await?;
+                    let handler = i % num_concurrent_scans;
+                    let Ok((num_rows, slice_range, wait_token)) = slice_rx[handler].recv().await
+                    else {
+                        break;
+                    };
+
+                    let num_rows = num_rows as usize;
+                    if slice.start >= num_rows {
+                        if verbose {
+                            let source_name = source_name(sources.at(i), i);
+                            eprintln!("[MultiScan]: Skipping '{source_name}' using the slice.");
+                        }
+
+                        slice_range.0.store(0, Ordering::Relaxed);
+                        slice_range.1.store(0, Ordering::Relaxed);
+                    } else {
+                        let offset = slice.start;
+                        let length = (num_rows - slice.start).min(slice.len());
+
+                        // Only print something if it is actually interesting.
+                        if verbose && length < num_rows {
+                            let source_name = source_name(sources.at(i), i);
+                            eprintln!(
+                                "[MultiScan]: Slice for '{source_name}' is ({offset}, {length})."
+                            );
+                        }
+
+                        slice_range.0.store(offset, Ordering::Relaxed);
+                        slice_range.1.store(length, Ordering::Relaxed);
                     }
-                    i += num_concurrent_scans;
+
+                    slice.start = slice.start.saturating_sub(num_rows);
+                    slice.end = slice.end.saturating_sub(num_rows);
+
+                    drop(wait_token);
                 }
 
-                PolarsResult::Ok(())
-            })
-        }));
+                Ok(())
+            }));
+
+            slice_tx
+        } else {
+            (0..num_concurrent_scans).map(|_| None).collect()
+        };
+
+        join_handles.extend(si_send.into_iter().zip(slice_tx).enumerate().map(
+            |(mut i, (mut si_send, mut slice_tx))| {
+                let sources = sources.clone();
+                let read_options = read_options.clone();
+                let cloud_options = cloud_options.clone();
+                let file_schema = file_schema.clone();
+                let projection = projection.clone();
+                let row_index_name = row_index_name.cloned();
+                let physical_columns = physical_columns.clone();
+
+                spawn(TaskPriority::High, async move {
+                    let state = ExecutionState::new();
+                    let mut join_handles = Vec::new();
+
+                    // Handling of slices
+                    let slice_range = Arc::new((AtomicUsize::default(), AtomicUsize::default()));
+                    let slice_wg = WaitGroup::default();
+
+                    let mut stop = false;
+                    let verbose = config::verbose();
+
+                    while i < sources.len() && !stop {
+                        join_handles.clear();
+
+                        let source = sources.at(i).into_owned()?;
+                        let (mut output_send, output_recv) = connector();
+                        let mut source = T::new(
+                            source,
+                            read_options.as_ref(),
+                            cloud_options.as_ref().as_ref(),
+                            row_index_name.clone(),
+                        )
+                        .await?;
+
+                        let source_schema = source.physical_schema().await?;
+                        let (source_projection, missing_columns) = resolve_source_projection(
+                            file_schema.as_ref(),
+                            source_schema.as_ref(),
+                            &physical_columns,
+                            allow_missing_columns,
+                            projection.as_ref(),
+                            sources.at(i),
+                            i,
+                        )?;
+
+                        if let Some(slice_tx) = &mut slice_tx {
+                            let row_count = source.unrestricted_row_count().await?;
+                            if slice_tx
+                                .send((row_count, slice_range.clone(), slice_wg.token()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            };
+                            slice_wg.wait().await;
+
+                            let (start, length) = slice_range.as_ref();
+                            let start = start.load(Ordering::Relaxed);
+                            let length = length.load(Ordering::Relaxed);
+
+                            // If nothing needs to be loaded from this source, continue to the next
+                            // file. This is also the case when we overshoot the slices.
+                            if length == 0 {
+                                let mut df = DataFrame::empty_with_schema(&source_schema);
+                                if let Some(name) = &row_index_name {
+                                    df.with_row_index_mut(name.clone(), None);
+                                }
+                                let phase = SourcePhase {
+                                    content: SourcePhaseContent::OneShot(df),
+                                    missing_columns: missing_columns.clone(),
+                                    unrestricted_row_count: Some(Arc::new(AtomicIdxSize::new(
+                                        row_count,
+                                    ))),
+                                };
+
+                                // Wait for the orchestrator task to actually be interested in the output
+                                // of this file.
+                                if si_send.send(phase).await.is_err() {
+                                    break;
+                                };
+                                i += num_concurrent_scans;
+                                continue;
+                            }
+
+                            // If we are stopping before the end, this means that we don't have to
+                            // go any further. This saves one count rows.
+                            stop |= start + length < row_count as usize;
+
+                            // A slice might cause the source to need to linearize. So if we have a
+                            // slice that scans everything. Don't do anything.
+                            if length < row_count as usize {
+                                source.with_row_restriction(Some(RowRestrication::Slice(
+                                    start..start + length,
+                                )));
+                            }
+                        }
+
+                        let unrestricted_row_count = row_index_name
+                            .is_some()
+                            .then(|| Arc::new(AtomicIdxSize::new(0)));
+
+                        source.with_projection(Some(&source_projection));
+
+                        source.spawn_source(
+                            num_pipelines,
+                            output_recv,
+                            &state,
+                            &mut join_handles,
+                            unrestricted_row_count.clone(),
+                        );
+
+                        // Loop until a phase result indicated that the source is empty.
+                        loop {
+                            let (tx, rx) = if source.is_source_output_parallel(true) {
+                                let (tx, rx) =
+                                    (0..num_pipelines)
+                                        .map(|_| connector())
+                                        .collect::<(Vec<_>, Vec<_>)>();
+                                (SourceOutputPort::Parallel(tx), SourceInput::Parallel(rx))
+                            } else {
+                                let (tx, rx) = connector();
+                                (SourceOutputPort::Serial(tx), SourceInput::Serial(rx))
+                            };
+
+                            let phase = SourcePhase {
+                                content: SourcePhaseContent::Channels(rx),
+                                missing_columns: missing_columns.clone(),
+                                unrestricted_row_count: unrestricted_row_count.clone(),
+                            };
+
+                            // Wait for the orchestrator task to actually be interested in the output
+                            // of this file.
+                            if si_send.send(phase).await.is_err() {
+                                break;
+                            };
+
+                            let (outcome, wait_group, tx) = SourceOutput::from_port(tx);
+
+                            // Start draining the source into the created channels.
+                            if output_send.send(tx).await.is_err() {
+                                break;
+                            };
+
+                            // Wait for the phase to end.
+                            wait_group.wait().await;
+                            if outcome.did_finish() {
+                                break;
+                            }
+                        }
+
+                        if verbose {
+                            let source_name = source_name(sources.at(i), i);
+                            eprintln!("[MultiScan]: Last data received from '{source_name}'.",);
+                        }
+
+                        // One of the tasks might throw an error. In which case, we need to cancel all
+                        // handles and find the error.
+                        let mut join_handles: FuturesUnordered<_> =
+                            join_handles.drain(..).map(AbortOnDropHandle::new).collect();
+                        while let Some(ret) = join_handles.next().await {
+                            ret?;
+                        }
+
+                        i += num_concurrent_scans;
+                    }
+
+                    PolarsResult::Ok(())
+                })
+            },
+        ));
 
         let (mut pass_task_send, pass_task_recv) = (0..num_pipelines)
             .map(|_| {
@@ -561,9 +715,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     match phase.content {
                         // In certain cases, we don't actually need to read physical data from the
                         // file so we get back a row count.
-                        SourcePhaseContent::Empty(row_count) => {
-                            let df =
-                                DataFrame::new_with_height(row_count as usize, Vec::new()).unwrap();
+                        SourcePhaseContent::OneShot(df) => {
                             let df = process_dataframe(
                                 df,
                                 &source_name,
@@ -595,7 +747,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 continue 'phase_loop;
                             }
                         },
-                        SourcePhaseContent::NonEmpty(rx) => match rx {
+                        SourcePhaseContent::Channels(rx) => match rx {
                             SourceInput::Serial(mut rx) => {
                                 while let Ok(rg) = rx.recv().await {
                                     let original_source_token = rg.source_token().clone();

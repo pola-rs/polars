@@ -262,7 +262,7 @@ impl PyCatalogClient {
             parse_cloud_options(storage_location, cloud_options.unwrap_or_default())?
                 .with_max_retries(retries)
                 .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
                 );
 
         Ok(

@@ -361,6 +361,7 @@ fn to_graph_rec<'a>(
             allow_missing_columns,
             include_file_paths,
             projection,
+            row_restriction,
             row_index,
         } => match scan_type {
             #[cfg(feature = "parquet")]
@@ -378,6 +379,7 @@ fn to_graph_rec<'a>(
                         file_schema.clone(),
                         projection.clone(),
                         row_index.clone(),
+                        row_restriction.clone(),
                         options.clone(),
                         cloud_options.clone(),
                     ),
@@ -401,6 +403,7 @@ fn to_graph_rec<'a>(
                         file_schema.clone(),
                         projection.clone(),
                         row_index.clone(),
+                        row_restriction.clone(),
                         options.clone(),
                         cloud_options.clone(),
                     ),
@@ -423,6 +426,7 @@ fn to_graph_rec<'a>(
                         file_schema.clone(),
                         projection.clone(),
                         row_index.clone(),
+                        row_restriction.clone(),
                         options.clone(),
                         cloud_options.clone(),
                     ),

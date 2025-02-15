@@ -245,8 +245,7 @@ pub(super) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
     }
 
     let new_fields = fields.into_values().cloned().collect::<Vec<_>>();
-    let mut out =
-        StructChunked::from_series(ca.name().clone(), new_fields[0].len(), new_fields.iter())?;
+    let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), new_fields.iter())?;
     out.zip_outer_validity(ca);
     Ok(out.into_column())
 }

@@ -1,9 +1,11 @@
 import io
+import pickle
 from typing import Any
 
 import pytest
 
 import polars as pl
+import polars.io.cloud.credential_provider
 from polars.exceptions import ComputeError
 
 
@@ -16,7 +18,7 @@ from polars.exceptions import ComputeError
         pl.scan_ipc,
     ],
 )
-def test_scan_credential_provider(
+def test_credential_provider_scan(
     io_func: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     err_magic = "err_magic_3"
@@ -24,7 +26,9 @@ def test_scan_credential_provider(
     def raises(*_: None, **__: None) -> None:
         raise AssertionError(err_magic)
 
-    monkeypatch.setattr(pl.CredentialProviderAWS, "__init__", raises)
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
+
+    monkeypatch.setattr(CredentialProviderBuilder, "__init__", raises)
 
     with pytest.raises(AssertionError, match=err_magic):
         io_func("s3://bucket/path", credential_provider="auto")
@@ -55,13 +59,56 @@ def test_scan_credential_provider(
     def raises_2() -> pl.CredentialProviderFunctionReturn:
         raise AssertionError(err_magic)
 
-    # Note to reader: It is converted to a ComputeError as it is being called
-    # from Rust.
-    with pytest.raises(ComputeError, match=err_magic):
+    with pytest.raises(AssertionError, match=err_magic):
         io_func("s3://bucket/path", credential_provider=raises_2).collect()
 
 
-def test_scan_credential_provider_serialization() -> None:
+@pytest.mark.parametrize(
+    ("provider_class", "path"),
+    [
+        (polars.io.cloud.credential_provider.CredentialProviderAWS, "s3://.../..."),
+        (polars.io.cloud.credential_provider.CredentialProviderGCP, "gs://.../..."),
+        (polars.io.cloud.credential_provider.CredentialProviderAzure, "az://.../..."),
+    ],
+)
+def test_credential_provider_serialization_auto_init(
+    provider_class: polars.io.cloud.credential_provider.CredentialProvider,
+    path: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raises_1(*a: Any, **kw: Any) -> None:
+        msg = "err_magic_1"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(provider_class, "__init__", raises_1)
+
+    # If this is not set we will get an error before hitting the credential
+    # provider logic when polars attempts to retrieve the region from AWS.
+    monkeypatch.setenv("AWS_REGION", "eu-west-1")
+
+    # Credential provider should not be initialized during query plan construction.
+    q = pl.scan_parquet(path)
+
+    # Check baseline - query plan is configured to auto-initialize the credential
+    # provider.
+    with pytest.raises(pl.exceptions.ComputeError, match="err_magic_1"):
+        q.collect()
+
+    q = pickle.loads(pickle.dumps(q))
+
+    def raises_2(*a: Any, **kw: Any) -> None:
+        msg = "err_magic_2"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(provider_class, "__init__", raises_2)
+
+    # Check that auto-initialization happens upon executing the deserialized
+    # query.
+    with pytest.raises(pl.exceptions.ComputeError, match="err_magic_2"):
+        q.collect()
+
+
+def test_credential_provider_serialization_custom_provider() -> None:
     err_magic = "err_magic_3"
 
     class ErrCredentialProvider(pl.CredentialProvider):
@@ -80,7 +127,7 @@ def test_scan_credential_provider_serialization() -> None:
         lf.collect()
 
 
-def test_credential_provider_skips_config_autoload(
+def test_credential_provider_skips_google_config_autoload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("GOOGLE_SERVICE_ACCOUNT_PATH", "__non_existent")

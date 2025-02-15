@@ -1,11 +1,15 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
+use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::index::AtomicIdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
+use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 
@@ -83,6 +87,7 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         assert!(recv_ports.is_empty());
         assert_eq!(send_ports.len(), 1);
 
+        let name = self.name().to_string();
         let started = self.started.get_or_insert_with(|| {
             let (tx, rx) = connector();
             let mut join_handles = Vec::new();
@@ -114,8 +119,19 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
             // Wait for the phase to finish.
             wait_group.wait().await;
             if outcome.did_finish() {
-                for handle in std::mem::take(&mut started.join_handles) {
-                    handle.await?;
+                if config::verbose() {
+                    eprintln!("[{name}]: Last data received.");
+                }
+
+                // One of the tasks might throw an error. In which case, we need to cancel all
+                // handles and find the error.
+                let mut join_handles: FuturesUnordered<_> = started
+                    .join_handles
+                    .drain(..)
+                    .map(AbortOnDropHandle::new)
+                    .collect();
+                while let Some(ret) = join_handles.next().await {
+                    ret?;
                 }
             }
 

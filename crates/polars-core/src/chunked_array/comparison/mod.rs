@@ -828,6 +828,18 @@ where
         }
 
         if !is_missing && (a.null_count() > 0 || b.null_count() > 0) {
+            let mut a = a;
+            let mut b = b;
+
+            if broadcasts {
+                if a.len() == 1 {
+                    a = std::borrow::Cow::Owned(a.new_from_index(0, b.len()));
+                }
+                if b.len() == 1 {
+                    b = std::borrow::Cow::Owned(b.new_from_index(0, a.len()));
+                }
+            }
+
             let mut a = a.into_owned();
             a.zip_outer_validity(&b);
             unsafe {

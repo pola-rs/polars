@@ -11,7 +11,9 @@ from polars._utils.various import is_path_or_str_sequence, normalize_filepath
 from polars._utils.wrap import wrap_df, wrap_ldf
 from polars.datatypes import N_INFER_DEFAULT
 from polars.io._utils import parse_row_index_args
-from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyDataFrame, PyLazyFrame
@@ -157,9 +159,11 @@ def read_ndjson(
 
         return df
 
-    credential_provider = _maybe_init_credential_provider(
+    credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "read_ndjson"
     )
+
+    del credential_provider
 
     return scan_ndjson(
         source,
@@ -176,7 +180,7 @@ def read_ndjson(
         include_file_paths=include_file_paths,
         retries=retries,
         storage_options=storage_options,
-        credential_provider=credential_provider,
+        credential_provider=credential_provider_builder,  # type: ignore[arg-type]
         file_cache_ttl=file_cache_ttl,
     ).collect()
 
@@ -300,9 +304,11 @@ def scan_ndjson(
         msg = "'infer_schema_length' should be positive"
         raise ValueError(msg)
 
-    credential_provider = _maybe_init_credential_provider(
+    credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_ndjson"
     )
+
+    del credential_provider
 
     if storage_options:
         storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -325,7 +331,7 @@ def scan_ndjson(
         include_file_paths=include_file_paths,
         retries=retries,
         cloud_options=storage_options,
-        credential_provider=credential_provider,
+        credential_provider=credential_provider_builder,
         file_cache_ttl=file_cache_ttl,
     )
     return wrap_ldf(pylf)

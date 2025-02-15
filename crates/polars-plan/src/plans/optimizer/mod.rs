@@ -236,7 +236,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     #[cfg(feature = "cse")]
     if comm_subexpr_elim && !members.has_ext_context {
         let mut optimizer = CommonSubExprOptimizer::new();
-        let alp_node = IRNode::new(lp_top);
+        let alp_node = IRNode::new_mutate(lp_top);
 
         lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
             let rewritten = alp_node.rewrite(&mut optimizer, arena)?;

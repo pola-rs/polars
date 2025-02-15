@@ -21,7 +21,9 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
-from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 
 with contextlib.suppress(ImportError):
     from polars.polars import PyLazyFrame
@@ -33,6 +35,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, DataType, LazyFrame
     from polars._typing import FileSource, ParallelStrategy, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
 
 @deprecate_renamed_parameter("row_count_name", "row_index_name", version="0.20.4")
@@ -482,7 +485,7 @@ def scan_parquet(
             normalize_filepath(source, check_not_directory=False) for source in source
         ]
 
-    credential_provider = _maybe_init_credential_provider(
+    credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_parquet"
     )
 
@@ -495,7 +498,7 @@ def scan_parquet(
         row_index_name=row_index_name,
         row_index_offset=row_index_offset,
         storage_options=storage_options,
-        credential_provider=credential_provider,
+        credential_provider=credential_provider_builder,
         low_memory=low_memory,
         use_statistics=use_statistics,
         hive_partitioning=hive_partitioning,
@@ -519,7 +522,7 @@ def _scan_parquet_impl(
     row_index_name: str | None = None,
     row_index_offset: int = 0,
     storage_options: dict[str, object] | None = None,
-    credential_provider: CredentialProviderFunction | None = None,
+    credential_provider: CredentialProviderBuilder | None = None,
     low_memory: bool = False,
     use_statistics: bool = True,
     hive_partitioning: bool | None = None,

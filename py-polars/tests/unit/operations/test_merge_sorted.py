@@ -173,10 +173,35 @@ def test_merge_sorted_parametric_string(lhs: pl.Series, rhs: pl.Series) -> None:
 
 
 @given(
+    lhs=series(
+        name="a",
+        allowed_dtypes=[
+            pl.Struct({"x": pl.Int32, "y": pl.Struct({"x": pl.Int8, "y": pl.Int8})})
+        ],
+        allow_null=False,
+    ),  # Nulls see: https://github.com/pola-rs/polars/issues/20991
+    rhs=series(
+        name="a",
+        allowed_dtypes=[
+            pl.Struct({"x": pl.Int32, "y": pl.Struct({"x": pl.Int8, "y": pl.Int8})})
+        ],
+        allow_null=False,
+    ),  # Nulls see: https://github.com/pola-rs/polars/issues/20991
+)
+def test_merge_sorted_parametric_struct(lhs: pl.Series, rhs: pl.Series) -> None:
+    l_df = pl.DataFrame([lhs.sort()])
+    r_df = pl.DataFrame([rhs.sort()])
+
+    merge_sorted = l_df.lazy().merge_sorted(r_df.lazy(), "a").collect().get_column("a")
+    append_sorted = lhs.append(rhs).sort()
+
+    assert_series_equal(merge_sorted, append_sorted)
+
+
+@given(
     s=series(
         name="a",
         excluded_dtypes=[
-            pl.Struct,  # Bug. See https://github.com/pola-rs/polars/issues/20986
             pl.Categorical(
                 ordering="lexical"
             ),  # Bug. See https://github.com/pola-rs/polars/issues/21025

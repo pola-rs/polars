@@ -362,7 +362,7 @@ impl PyDataFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             )
         } else {
@@ -424,7 +424,7 @@ impl PyDataFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             )
         } else {
@@ -517,7 +517,7 @@ impl PyDataFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             )
         } else {

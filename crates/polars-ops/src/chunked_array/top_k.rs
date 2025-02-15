@@ -178,8 +178,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
     if is_sorted {
         let out_len = k.min(src.len());
         let ignored_len = src.len() - out_len;
-
-        let slice_at_start = (sorted_flag == IsSorted::Ascending) ^ descending;
+        let slice_at_start = (sorted_flag == IsSorted::Ascending) == descending;
         let nulls_at_start = src.get(0).unwrap() == AnyValue::Null;
         let offset = if nulls_at_start == slice_at_start {
             src.null_count().min(ignored_len)

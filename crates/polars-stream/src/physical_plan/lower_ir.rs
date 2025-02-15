@@ -17,6 +17,7 @@ use polars_utils::itertools::Itertools;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
+use crate::nodes::io_sources::multi_scan::RowRestrication;
 use crate::physical_plan::lower_expr::{
     build_length_preserving_select_stream, build_select_stream, is_elementwise_rec_cached,
     lower_exprs, unique_column_name, ExprCache,
@@ -422,6 +423,12 @@ pub fn lower_ir(
                     projection.freeze()
                 });
 
+                let mut row_restriction = None;
+                if let Some((start, len)) = file_options.slice.take_if(|(start, _)| *start >= 0) {
+                    let start = start as usize;
+                    row_restriction = Some(RowRestrication::Slice(start..start + len));
+                }
+
                 // The schema afterwards only includes the projected columns.
                 let mut schema = if let Some(projection) = projection.as_ref() {
                     Arc::new(file_schema.as_ref().project_select(projection))
@@ -435,6 +442,7 @@ pub fn lower_ir(
                     file_schema,
                     allow_missing_columns: file_options.allow_missing_columns,
                     include_file_paths: file_options.include_file_paths,
+                    row_restriction,
                     projection,
                     row_index: file_options.row_index,
                 };
@@ -457,18 +465,11 @@ pub fn lower_ir(
                         kind: node,
                     });
                     let stream = PhysStream::first(source_node);
-                    node = if slice.0 < 0 {
-                        PhysNodeKind::NegativeSlice {
-                            input: stream,
-                            offset: slice.0,
-                            length: slice.1,
-                        }
-                    } else {
-                        PhysNodeKind::StreamingSlice {
-                            input: stream,
-                            offset: slice.0 as usize,
-                            length: slice.1,
-                        }
+                    assert!(slice.0 < 0);
+                    node = PhysNodeKind::NegativeSlice {
+                        input: stream,
+                        offset: slice.0,
+                        length: slice.1,
                     };
                 }
 

@@ -18,7 +18,10 @@ fn get_binary_expr_col_and_lv<'a>(
     right: Node,
     expr_arena: &'a Arena<AExpr>,
     schema: &Schema,
-) -> Option<((&'a PlSmallStr, Node), (Cow<'a, LiteralValue>, Node))> {
+) -> Option<(
+    (&'a PlSmallStr, Node),
+    (Option<Cow<'a, LiteralValue>>, Node),
+)> {
     match (
         into_column(left, expr_arena, schema, 0),
         into_column(right, expr_arena, schema, 0),
