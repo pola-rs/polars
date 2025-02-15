@@ -115,12 +115,14 @@ nav:
                 - polars-cloud/run/compute-context.md
                 - polars-cloud/run/interactive-batch.md
                 - polars-cloud/run/distributed-engine.md
+          - Manage workspace:
+                - polars-cloud/workspace/settings.md
           - User Guide:
                 - polars-cloud/explain/authentication.md
           - Providers:
                 - AWS:
-                  - polars-cloud/providers/aws/infra.md
-                  - polars-cloud/providers/aws/permissions.md
+                      - polars-cloud/providers/aws/infra.md
+                      - polars-cloud/providers/aws/permissions.md
           - Integrations:
                 - polars-cloud/integrations/airflow.md
           - Misc:
