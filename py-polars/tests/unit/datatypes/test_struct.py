@@ -1227,6 +1227,18 @@ def test_nested_object_raises_15237() -> None:
         df.select(pl.struct("a"))
 
 
+def test_empty_struct_with_fields_21095() -> None:
+    df = pl.DataFrame({"a": [{}, {}]})
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=pl.lit(42, pl.Int64))),
+        pl.DataFrame({"a": [{"a": 42}, {"a": 42}]}),
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=None)),
+        pl.DataFrame({"a": [{"a": None}, {"a": None}]}),
+    )
+
+
 def test_cast_to_struct_needs_field_14083() -> None:
     with pytest.raises(
         InvalidOperationError, match="must specify one field in the struct"
