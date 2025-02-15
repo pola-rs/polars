@@ -24,7 +24,9 @@ from polars.io._utils import (
     parse_row_index_args,
     prepare_file_arg,
 )
-from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+from polars.io.cloud.credential_provider._builder import (
+    _init_credential_provider_builder,
+)
 from polars.io.csv._utils import _check_arg_is_1byte, _update_columns
 from polars.io.csv.batched_reader import BatchedCsvReader
 
@@ -37,6 +39,7 @@ if TYPE_CHECKING:
     from polars import DataFrame, LazyFrame
     from polars._typing import CsvEncoding, PolarsDataType, SchemaDict
     from polars.io.cloud import CredentialProviderFunction
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
 
 
 @deprecate_renamed_parameter("dtypes", "schema_overrides", version="0.20.31")
@@ -1311,9 +1314,10 @@ def scan_csv(
     if not infer_schema:
         infer_schema_length = 0
 
-    credential_provider = _maybe_init_credential_provider(
+    credential_provider_builder = _init_credential_provider_builder(
         credential_provider, source, storage_options, "scan_csv"
     )
+    del credential_provider
 
     return _scan_csv_impl(
         source,
@@ -1346,7 +1350,7 @@ def scan_csv(
         glob=glob,
         retries=retries,
         storage_options=storage_options,
-        credential_provider=credential_provider,
+        credential_provider=credential_provider_builder,
         file_cache_ttl=file_cache_ttl,
         include_file_paths=include_file_paths,
     )
@@ -1391,7 +1395,7 @@ def _scan_csv_impl(
     decimal_comma: bool = False,
     glob: bool = True,
     storage_options: dict[str, Any] | None = None,
-    credential_provider: CredentialProviderFunction | None = None,
+    credential_provider: CredentialProviderBuilder | None = None,
     retries: int = 2,
     file_cache_ttl: int | None = None,
     include_file_paths: str | None = None,

@@ -28,6 +28,7 @@ if TYPE_CHECKING:
         CredentialProviderFunction,
         CredentialProviderFunctionReturn,
     )
+    from polars.io.cloud.credential_provider._builder import CredentialProviderBuilder
     from polars.lazyframe import LazyFrame
 
 with contextlib.suppress(ImportError):
@@ -71,9 +72,10 @@ class Catalog:
             API endpoint.
         bearer_token
             Bearer token to authenticate with. This can also be set to:
+
             * "auto": Automatically retrieve bearer tokens from the environment.
             * "databricks-sdk": Use the Databricks SDK to retrieve and use the
-            bearer token from the environment.
+              bearer token from the environment.
         require_https
             Require the `workspace_url` to use HTTPS.
         """
@@ -238,7 +240,7 @@ class Catalog:
             table_info, "scan table"
         )
 
-        credential_provider, storage_options = self._init_credentials(
+        credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
             credential_provider,
             storage_options,
             table_info,
@@ -367,7 +369,7 @@ class Catalog:
             table_info, "scan table"
         )
 
-        credential_provider, storage_options = self._init_credentials(
+        credential_provider, storage_options = self._init_credentials(  # type: ignore[assignment]
             credential_provider,
             storage_options,
             table_info,
@@ -600,15 +602,27 @@ class Catalog:
 
     def _init_credentials(
         self,
-        credential_provider: (CredentialProviderFunction | Literal["auto"] | None),
+        credential_provider: CredentialProviderFunction | Literal["auto"] | None,
         storage_options: dict[str, Any] | None,
         table_info: TableInfo,
         *,
         write: bool,
         caller_name: str,
-    ) -> tuple[CredentialProviderFunction | None, dict[str, Any] | None]:
+    ) -> tuple[
+        CredentialProviderBuilder | None,
+        dict[str, Any] | None,
+    ]:
+        from polars.io.cloud.credential_provider._builder import (
+            CredentialProviderBuilder,
+        )
+
         if credential_provider != "auto":
-            return credential_provider, storage_options
+            if credential_provider:
+                return CredentialProviderBuilder.from_initialized_provider(
+                    credential_provider
+                ), storage_options
+            else:
+                return None, storage_options
 
         verbose = os.getenv("POLARS_VERBOSE") == "1"
 
@@ -645,15 +659,19 @@ class Catalog:
                 )
                 print(msg, file=sys.stderr)
 
-            return catalog_credential_provider, storage_options
+            return CredentialProviderBuilder.from_initialized_provider(
+                catalog_credential_provider
+            ), storage_options
 
         # This should generally not happen, but if using the temporary
         # credentials API fails for whatever reason, we fallback to our built-in
         # credential provider resolution.
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        return _maybe_init_credential_provider(
+        return _init_credential_provider_builder(
             "auto", table_info.storage_location, storage_options, caller_name
         ), storage_options
 

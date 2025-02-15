@@ -105,7 +105,7 @@ where
 /// This is essentially boilerplate for visiting bytes without copying where possible.
 pub fn deserialize_map_bytes<'de, D, O>(
     deserializer: D,
-    func: &mut (dyn for<'b> FnMut(std::borrow::Cow<'b, [u8]>) -> O),
+    mut func: impl for<'b> FnMut(std::borrow::Cow<'b, [u8]>) -> O,
 ) -> Result<O, D::Error>
 where
     D: serde::de::Deserializer<'de>,

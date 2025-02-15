@@ -389,6 +389,7 @@ def test_schema_full_outer_join_projection_pd_13287() -> None:
         how="full",
         left_on="a",
         right_on="c",
+        maintain_order="right_left",
     ).with_columns(
         pl.col("a").fill_null(pl.col("c")),
     ).select("a").collect().to_dict(as_series=False) == {"a": [2, 3, 1, 1]}
