@@ -146,7 +146,7 @@ fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<boo
     if lhs.dtype().is_categorical() {
         let lhs_ca = lhs.categorical().unwrap();
         if lhs_ca.uses_lexical_ordering() {
-            let rhs_ca = rhs.categorical().unwrap();     
+            let rhs_ca = rhs.categorical().unwrap();
             let out = get_merge_indicator(lhs_ca.iter_str(), rhs_ca.iter_str());
             return Ok(out);
         }
