@@ -297,6 +297,7 @@ pub trait AsofJoin: IntoDf {
                 let ca = left_key.i32().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
             },
+            #[cfg(feature = "dtype-i128")]
             DataType::Int128 => {
                 let ca = left_key.i128().unwrap();
                 join_asof_numeric(ca, &right_key, strategy, tolerance, allow_eq)
