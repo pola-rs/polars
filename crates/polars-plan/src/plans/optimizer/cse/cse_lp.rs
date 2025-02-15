@@ -364,6 +364,7 @@ pub(crate) fn elim_cmn_subplans(
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();
 
+        let lp_node = IRNode::new_mutate(root);
         let mut rewriter = CommonSubPlanRewriter::new(&sp_count, &id_array);
         lp_node.rewrite(&mut rewriter, arena).unwrap();
 

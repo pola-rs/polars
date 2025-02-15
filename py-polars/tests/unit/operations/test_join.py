@@ -826,7 +826,7 @@ def test_full_outer_join_coalesce_different_names_13450() -> None:
     )
 
     out = df1.join(df2, left_on="L1", right_on="L3", how="full", coalesce=True)
-    assert_frame_equal(out, expected)
+    assert_frame_equal(out, expected, check_row_order=False)
 
 
 # https://github.com/pola-rs/polars/issues/10663

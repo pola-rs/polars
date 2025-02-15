@@ -1,0 +1,13 @@
+{% extends "!layout.html" %}
+
+{% block extrahead %}
+  <script async 
+          src="https://widget.kapa.ai/kapa-widget.bundle.js"
+          data-website-id="f17ed31e-d3a5-4970-b9a2-2b618b3675c5"
+          data-project-name="Polars"
+          data-project-color="#0075FF"
+          data-project-logo="https://github.com/pola-rs/polars-static/blob/master/logos/polars_logo_blue_square_white_background.png?raw=true"
+          data-modal-disclaimer="This is a custom LLM for Polars with access to all [documentation](https://docs.pola.rs) and the [API reference.](https://docs.pola.rs/api/)."
+	  data-modal-example-questions="How can I execute a SQL query against Polars DataFrames?,Can you help me figure out how to read a CSV file using Polars?">
+                </script>
+{% endblock %}

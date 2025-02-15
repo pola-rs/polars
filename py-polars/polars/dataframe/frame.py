@@ -2951,11 +2951,14 @@ class DataFrame:
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, file, storage_options, "write_csv"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2979,7 +2982,7 @@ class DataFrame:
             null_value,
             quote_style,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -3709,15 +3712,18 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = (
+        credential_provider_builder = (
             None
             if return_bytes
-            else _maybe_init_credential_provider(
+            else _init_credential_provider_builder(
                 credential_provider, file, storage_options, "write_ipc"
             )
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -3730,7 +3736,7 @@ class DataFrame:
             compression,
             compat_level,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
         return file if return_bytes else None  # type: ignore[return-value]
@@ -3993,11 +3999,14 @@ class DataFrame:
 
             return
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, file, storage_options, "write_parquet"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -4039,7 +4048,7 @@ class DataFrame:
             partition_by=partition_by,
             partition_chunk_size_bytes=partition_chunk_size_bytes,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -4486,45 +4495,50 @@ class DataFrame:
 
         from deltalake import DeltaTable, write_deltalake
         from deltalake import __version__ as delta_version
-        from packaging.version import Version
 
         _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        if Version(delta_version) >= Version("0.23.0"):
+        if parse_version(delta_version) >= (0, 23, 0):
             data = self.to_arrow(compat_level=CompatLevel.newest())
         else:
             data = self.to_arrow()
 
-        from polars.io.cloud.credential_provider import (
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
+        from polars.io.cloud.credential_provider._providers import (
             _get_credentials_from_provider_expiry_aware,
-            _maybe_init_credential_provider,
         )
 
         if not isinstance(target, DeltaTable):
-            credential_provider = _maybe_init_credential_provider(
+            credential_provider_builder = _init_credential_provider_builder(
                 credential_provider, target, storage_options, "write_delta"
             )
         elif credential_provider is not None and credential_provider != "auto":
             msg = "cannot use credential_provider when passing a DeltaTable object"
             raise ValueError(msg)
         else:
-            credential_provider = None
+            credential_provider_builder = None
+
+        del credential_provider
 
         credential_provider_creds = {}
 
-        if credential_provider is not None:
+        if credential_provider_builder and (
+            provider := credential_provider_builder.build_credential_provider()
+        ):
             credential_provider_creds = _get_credentials_from_provider_expiry_aware(
-                credential_provider
+                provider
             )
 
         # We aren't calling into polars-native write functions so we just update
         # the storage_options here.
         storage_options = (
             {**(storage_options or {}), **credential_provider_creds}
-            if storage_options is not None or credential_provider is not None
+            if storage_options is not None or credential_provider_builder is not None
             else None
         )
 
@@ -4574,10 +4588,10 @@ class DataFrame:
 
         FFI buffers are included in this estimation.
 
-        Note
-        ----
-        For objects, the estimated size only reports the pointer size, which is
-        a huge underestimation.
+        Notes
+        -----
+        For data with Object dtype, the estimated size only reports the pointer
+        size, which is a huge underestimation.
 
         Parameters
         ----------
@@ -10741,6 +10755,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[Any]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10750,6 +10765,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, Any]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10759,6 +10775,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[dict[str, Any]]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10768,6 +10785,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, dict[str, Any]]: ...
+
     def rows_by_key(
         self,
         key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],
