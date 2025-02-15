@@ -6996,6 +6996,7 @@ class DataFrame:
         tolerance: str | int | float | timedelta | None = None,
         allow_parallel: bool = True,
         force_parallel: bool = False,
+        join_nulls: bool = False,
         coalesce: bool = True,
         allow_exact_matches: bool = True,
         check_sortedness: bool = True,
@@ -7076,6 +7077,9 @@ class DataFrame:
         force_parallel
             Force the physical plan to evaluate the computation of both DataFrames up to
             the join in parallel.
+        join_nulls
+            Join on null values in the "by" part.
+            By default null values will never produce matches.
         coalesce
             Coalescing behavior (merging of `on` / `left_on` / `right_on` columns):
 
@@ -7326,6 +7330,7 @@ class DataFrame:
                 tolerance=tolerance,
                 allow_parallel=allow_parallel,
                 force_parallel=force_parallel,
+                join_nulls=join_nulls,
                 coalesce=coalesce,
                 allow_exact_matches=allow_exact_matches,
                 check_sortedness=check_sortedness,
