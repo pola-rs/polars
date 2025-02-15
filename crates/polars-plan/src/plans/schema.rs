@@ -32,12 +32,17 @@ impl DslPlan {
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FileInfo {
+    /// Schema of the physical file.
+    ///
+    /// Notes:
+    /// - Does not include logical columns like `include_file_path` and row index.
+    /// - Always includes all hive columns.
     pub schema: SchemaRef,
     /// Stores the schema used for the reader, as the main schema can contain
     /// extra hive columns.
     pub reader_schema: Option<Either<ArrowSchemaRef, SchemaRef>>,
     /// - known size
-    /// - estimated size (set to unsize::max if unknown).
+    /// - estimated size (set to usize::max if unknown).
     pub row_estimation: (Option<usize>, usize),
 }
 

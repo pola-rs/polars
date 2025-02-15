@@ -322,3 +322,13 @@ def test_nyi_scan_in_memory(method: str) -> None:
         match="not yet implemented: Streaming scanning of in-memory buffers",
     ):
         (getattr(pl, f"scan_{method}"))(f).collect(streaming=True)
+
+
+def test_empty_sink_parquet_join_14863(tmp_path: Path) -> None:
+    file_path = tmp_path / "empty.parquet"
+    lf = pl.LazyFrame(schema=["a", "b", "c"]).cast(pl.String)
+    lf.sink_parquet(file_path)
+    assert_frame_equal(
+        pl.LazyFrame({"a": ["uno"]}).join(pl.scan_parquet(file_path), on="a").collect(),
+        lf.collect(),
+    )

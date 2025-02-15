@@ -994,6 +994,28 @@ def test_is_finite_is_infinite() -> None:
     assert df.select(pl.col("nrs").is_finite())["nrs"].to_list() == [True, True, False]
 
 
+def test_is_finite_is_infinite_null_series() -> None:
+    df = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Null)})
+    result = df.select(
+        pl.col("a").is_finite().alias("finite"),
+        pl.col("a").is_infinite().alias("infinite"),
+    )
+    expected = pl.DataFrame(
+        {
+            "finite": pl.Series([None, None, None], dtype=pl.Boolean),
+            "infinite": pl.Series([None, None, None], dtype=pl.Boolean),
+        }
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_is_nan_null_series() -> None:
+    df = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Null)})
+    result = df.select(pl.col("a").is_nan())
+    expected = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Boolean)})
+    assert_frame_equal(result, expected)
+
+
 def test_len() -> None:
     df = pl.DataFrame({"nrs": [1, 2, 3]})
     assert cast(int, df.select(pl.col("nrs").len()).item()) == 3

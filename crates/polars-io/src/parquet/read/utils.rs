@@ -52,9 +52,12 @@ pub(super) fn projected_arrow_schema_to_projection_indices(
         let expected_dtype = DataType::from_arrow_field(field);
 
         if dtype.clone() != expected_dtype {
-            polars_bail!(SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
-                &field.name, expected_dtype, dtype
-            )
+            polars_bail!(
+                mismatch,
+                col = &field.name,
+                expected = expected_dtype,
+                found = dtype
+            );
         }
     }
 

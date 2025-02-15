@@ -9,7 +9,6 @@ on:
   repository_dispatch:
     types:
       - python-release-docs
-  # Allow manual trigger until we have properly versioned docs
   workflow_dispatch:
 
 jobs:

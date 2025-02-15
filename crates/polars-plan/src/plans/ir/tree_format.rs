@@ -1,6 +1,7 @@
 use std::fmt;
 
 use polars_core::error::*;
+use polars_utils::{format_list_container_truncated, format_list_truncated};
 #[cfg(feature = "regex")]
 use regex::Regex;
 
@@ -190,22 +191,33 @@ impl<'a> TreeFmtNode<'a> {
                         schema,
                         output_schema,
                         ..
-                    } => ND(
-                        wh(
-                            h,
-                            &format!(
-                                "DF {:?}\nPROJECT {}/{} COLUMNS",
-                                schema.iter_names().take(4).collect::<Vec<_>>(),
-                                if let Some(columns) = output_schema {
-                                    format!("{}", columns.len())
-                                } else {
-                                    "*".to_string()
-                                },
-                                schema.len()
+                    } => {
+                        let (n_columns, projected) = if let Some(schema) = output_schema {
+                            (
+                                format!("{}", schema.len()),
+                                format!(
+                                    ": {};",
+                                    format_list_truncated!(schema.iter_names(), 4, '"')
+                                ),
+                            )
+                        } else {
+                            ("*".to_string(), "".to_string())
+                        };
+                        ND(
+                            wh(
+                                h,
+                                &format!(
+                                    "DF {}\nPROJECT{} {}/{} COLUMNS",
+                                    format_list_truncated!(schema.iter_names(), 4, '"'),
+                                    projected,
+                                    n_columns,
+                                    schema.len()
+                                ),
                             ),
-                        ),
-                        vec![],
-                    ),
+                            vec![],
+                        )
+                    },
+
                     Union { inputs, .. } => ND(
                         wh(
                             h,
