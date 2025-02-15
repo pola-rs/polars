@@ -140,7 +140,7 @@ impl ParquetSourceNode {
                     break;
                 };
                 let df = decode_fut.await?;
-                if df.is_empty() {
+                if df.height() == 0 {
                     continue;
                 }
                 next = Some(df);
@@ -155,7 +155,7 @@ impl ParquetSourceNode {
                         break;
                     };
                     let next_df = decode_fut.await?;
-                    if next_df.is_empty() {
+                    if next_df.height() == 0 {
                         continue;
                     }
                     next = Some(next_df);
@@ -348,7 +348,7 @@ fn split_to_morsels(
     (0..i64::try_from(df.height()).unwrap())
         .step_by(rows_per_morsel)
         .map(move |offset| df.slice(offset, rows_per_morsel))
-        .filter(|df| !df.is_empty())
+        .filter(|df| df.height() > 0)
 }
 
 mod tests {

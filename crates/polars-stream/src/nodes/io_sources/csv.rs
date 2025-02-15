@@ -233,9 +233,6 @@ impl CsvSourceNode {
         let global_slice = self.file_options.slice;
         let include_file_paths = self.file_options.include_file_paths.is_some();
 
-        // We don't deal with this yet for unrestricted_row_count.
-        assert!(unrestricted_row_count.is_none() || global_slice.is_none());
-
         if verbose {
             eprintln!(
                 "[CsvSource]: slice: {:?}, row_index: {:?}",
@@ -368,7 +365,15 @@ impl CsvSourceNode {
                                 // lines.
                                 SplitSlicePosition::Before => continue,
                                 SplitSlicePosition::Overlapping(offset, len) => (offset, len),
-                                SplitSlicePosition::After => break 'main,
+                                SplitSlicePosition::After => {
+                                    if unrestricted_row_count.is_some() {
+                                        // If we need to know the unrestricted row count, we need
+                                        // to go until the end.
+                                        continue;
+                                    } else {
+                                        break 'main;
+                                    }
+                                },
                             }
                         } else {
                             // (0, 0) is interpreted as no slicing
@@ -594,14 +599,22 @@ impl MultiScanable for CsvSourceNode {
     ) -> PolarsResult<Self> {
         let sources = source.into_sources();
 
+        let has_row_index = row_index.is_some();
+
         let file_options = FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
         };
 
         let mut csv_options = options.clone();
-
-        let file_info = csv_file_info(&sources, &file_options, &mut csv_options, cloud_options)?;
+        let mut file_info =
+            csv_file_info(&sources, &file_options, &mut csv_options, cloud_options)?;
+        if has_row_index {
+            // @HACK: This is really hacky because the CSV schema wrongfully adds the row index.
+            let mut schema = file_info.schema.as_ref().clone();
+            _ = schema.shift_remove_index(0);
+            file_info.schema = Arc::new(schema);
+        }
         Ok(Self::new(sources, file_info, file_options, csv_options))
     }
 
@@ -613,16 +626,23 @@ impl MultiScanable for CsvSourceNode {
         });
     }
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
-        _ = row_restriction;
-        todo!()
+        self.file_options.slice = None;
+        match row_restriction {
+            None => {},
+            Some(RowRestrication::Slice(rng)) => {
+                self.file_options.slice = Some((rng.start as i64, rng.end - rng.start))
+            },
+            Some(RowRestrication::Predicate(_)) => unreachable!(),
+        }
     }
 
     async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
+        let run_async = self.scan_sources.is_cloud_url() || config::force_async();
         let parse_options = self.options.get_parse_options();
         let source = self
             .scan_sources
             .at(0)
-            .to_memslice_async_assume_latest(true)?;
+            .to_memslice_async_assume_latest(run_async)?;
 
         let mem_slice = {
             let mut out = vec![];
