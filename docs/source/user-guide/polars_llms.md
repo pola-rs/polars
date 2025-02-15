@@ -22,13 +22,15 @@ IDE-based LLMs like Cursor. Refer to each application's documentation for specif
 Some LLMs can search the web to access information beyond their pre-training data. Enabling web
 search allows an LLM to reference up-to-date Polars documentation for the current API.
 
-However, web search is not a universal solution. If a model is confident in a result based on its
-pre-training data, it may not incorporate web search results in its output.
-
-## Reference documentation
-
 Some IDE-based LLMs can index the Polars API documentation and reference this when generating code.
-For example, in Cursor you can add Polars as a custom docs source.
+For example, in Cursor you can add Polars as a custom docs source and instruct the agent to
+reference the Polars documentation in a prompt.
+
+However, web search does not yet guarantee that valid code will be produced. If a model is confident
+in a result based on its pre-training data, it may not incorporate web search results in its output.
+
+The Polars API pages also have AI-enabled search to help you find the information you need more
+easily.
 
 ## Provide examples
 
@@ -62,8 +64,7 @@ df = pl.DataFrame({
 # df.group_by("a").agg(pl.col("b").mean())
 ```
 
-Produces valid outputs more consistently. This approach has been validated across several leading
-models.
+Produces valid outputs more often. This approach has been validated across several leading models.
 
 The combination of web search and examples is more effective than either independently. Model
 outputs indicate that when an example contradicts the model's pre-trained expectations, it seems
