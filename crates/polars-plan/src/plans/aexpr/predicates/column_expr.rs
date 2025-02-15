@@ -94,6 +94,7 @@ pub fn aexpr_to_column_predicates(
                         };
                         let ((_, _), (lv, _)) =
                             get_binary_expr_col_and_lv(*left, *right, expr_arena, schema)?;
+                        let lv = lv?;
                         let av = lv.to_any_value()?;
                         if av.dtype() != dtype {
                             return None;
