@@ -1672,45 +1672,22 @@ def test_to_physical() -> None:
     assert_series_equal(s.to_physical(), expected)
 
 
-def test_to_physical_array_rechunked() -> None:
-    # A series with multiple chunks, dtype is array of structs with a null field
-    # (causes rechunking) and a field with a different physical and logical
-    # repr (causes the full body of `ArrayChunked::to_physical_repr` to run).
-    s = pl.Series(
-        "a",
-        [None],  # content doesn't matter
-        pl.Array(pl.Struct({"f0": pl.Time, "f1": pl.Null}), shape=(1,)),
-    )
+def test_to_physical_rechunked_21285() -> None:
+    # A series with multiple chunks, dtype is array or list of structs with a
+    # null field (causes rechunking) and a field with a different physical and
+    # logical repr (causes the full body of `to_physical_repr` to run).
+    dtype = pl.Array(pl.Struct({"f0": pl.Time, "f1": pl.Null}), shape=(1,))
+    s = pl.Series("a", [None], dtype) # content doesn't matter
     s = s.append(s)
-    expected = pl.Series(
-        "a",
-        [
-            None,
-            None,
-        ],
-        pl.Array(pl.Struct({"f0": Int64, "f1": pl.Null}), shape=(1,)),
-    )
+    expected_dtype = pl.Array(pl.Struct({"f0": Int64, "f1": pl.Null}), shape=(1,))
+    expected = pl.Series("a", [None, None], expected_dtype)
     assert_series_equal(s.to_physical(), expected)
 
-
-def test_to_physical_list_rechunked() -> None:
-    # A series with multiple chunks, dtype is list of structs with a null field
-    # (causes rechunking) and a field with a different physical and logical
-    # repr (causes the full body of `ListChunked::to_physical_repr` to run).
-    s = pl.Series(
-        "a",
-        [None],  # content doesn't matter
-        pl.List(pl.Struct({"f0": pl.Time, "f1": pl.Null})),
-    )
+    dtype = pl.List(pl.Struct({"f0": pl.Time, "f1": pl.Null}))
+    s = pl.Series("a", [None], dtype) # content doesn't matter
     s = s.append(s)
-    expected = pl.Series(
-        "a",
-        [
-            None,
-            None,
-        ],
-        pl.List(pl.Struct({"f0": Int64, "f1": pl.Null})),
-    )
+    expected_dtype = pl.List(pl.Struct({"f0": Int64, "f1": pl.Null}))
+    expected = pl.Series("a", [None, None], expected_dtype)
     assert_series_equal(s.to_physical(), expected)
 
 
