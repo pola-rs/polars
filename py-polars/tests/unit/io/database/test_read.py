@@ -716,7 +716,12 @@ def test_read_database_exceptions(
 ) -> None:
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
-        params = {"uri": conn, "query": query, "engine": engine, "pre_execution_query": pre_execution_query}
+        params = {
+            "uri": conn,
+            "query": query,
+            "engine": engine,
+            "pre_execution_query": pre_execution_query,
+        }
     else:
         params = {"connection": protocol, "query": query}
         if execute_options:
@@ -851,8 +856,9 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
         s = pl.Series(list(query_result))
         assert_series_equal(expected_series, s)
 
-@patch('polars.io.database._utils.import_optional')
-def test_read_database_uri_pre_execution_query_exception(import_mock) -> None:
+
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_pre_execution_query_exception(import_mock: Mock) -> None:
     cx_mock = Mock()
     cx_mock.__version__ = "0.4.0"
 
@@ -871,9 +877,12 @@ def test_read_database_uri_pre_execution_query_exception(import_mock) -> None:
             pre_execution_query="SET statement_timeout = 2151",
         )
 
-@patch('polars.io.database._utils.from_arrow')
-@patch('polars.io.database._utils.import_optional')
-def test_read_database_uri_pre_execution_query_success(import_mock, _) -> None:
+
+@patch("polars.io.database._utils.from_arrow")
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_pre_execution_query_success(
+    import_mock: Mock, from_arrow_mock: Mock
+) -> None:
     cx_mock = Mock()
     cx_mock.__version__ = "0.4.2"
 
@@ -888,4 +897,6 @@ def test_read_database_uri_pre_execution_query_success(import_mock, _) -> None:
         pre_execution_query=pre_execution_query,
     )
 
-    assert cx_mock.read_sql.call_args.kwargs["pre_execution_query"] == pre_execution_query
+    assert (
+        cx_mock.read_sql.call_args.kwargs["pre_execution_query"] == pre_execution_query
+    )
