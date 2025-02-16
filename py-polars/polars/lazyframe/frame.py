@@ -5622,8 +5622,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Fill the resulting null values with this value. Accepts scalar expression
+            input. Non-expression inputs are parsed as literals.
 
         Notes
         -----

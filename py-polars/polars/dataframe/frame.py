@@ -4311,9 +4311,9 @@ class DataFrame:
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool | None = None,
         storage_options: dict[str, str] | None = None,
-        credential_provider: CredentialProviderFunction
-        | Literal["auto"]
-        | None = "auto",
+        credential_provider: (
+            CredentialProviderFunction | Literal["auto"] | None
+        ) = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
     ) -> deltalake.table.TableMerger | None:
@@ -9302,8 +9302,8 @@ class DataFrame:
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Fill the resulting null values with this value. Accepts scalar expression
+            input. Non-expression inputs are parsed as literals.
 
         Notes
         -----
