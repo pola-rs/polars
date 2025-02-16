@@ -1693,6 +1693,27 @@ def test_to_physical_array_rechunked() -> None:
     assert_series_equal(s.to_physical(), expected)
 
 
+def test_to_physical_list_rechunked() -> None:
+    # A series with multiple chunks, dtype is list of structs with a null field
+    # (causes rechunking) and a field with a different physical and logical
+    # repr (causes the full body of `ListChunked::to_physical_repr` to run).
+    s = pl.Series(
+        "a",
+        [None],  # content doesn't matter
+        pl.List(pl.Struct({"f0": pl.Time, "f1": pl.Null})),
+    )
+    s = s.append(s)
+    expected = pl.Series(
+        "a",
+        [
+            None,
+            None,
+        ],
+        pl.List(pl.Struct({"f0": Int64, "f1": pl.Null})),
+    )
+    assert_series_equal(s.to_physical(), expected)
+
+
 def test_is_between_datetime() -> None:
     s = pl.Series("a", [datetime(2020, 1, 1, 10, 0, 0), datetime(2020, 1, 1, 20, 0, 0)])
     start = datetime(2020, 1, 1, 12, 0, 0)
