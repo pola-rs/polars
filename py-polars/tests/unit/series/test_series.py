@@ -1677,14 +1677,14 @@ def test_to_physical_rechunked_21285() -> None:
     # null field (causes rechunking) and a field with a different physical and
     # logical repr (causes the full body of `to_physical_repr` to run).
     dtype = pl.Array(pl.Struct({"f0": pl.Time, "f1": pl.Null}), shape=(1,))
-    s = pl.Series("a", [None], dtype) # content doesn't matter
+    s = pl.Series("a", [None], dtype)  # content doesn't matter
     s = s.append(s)
     expected_dtype = pl.Array(pl.Struct({"f0": Int64, "f1": pl.Null}), shape=(1,))
     expected = pl.Series("a", [None, None], expected_dtype)
     assert_series_equal(s.to_physical(), expected)
 
     dtype = pl.List(pl.Struct({"f0": pl.Time, "f1": pl.Null}))
-    s = pl.Series("a", [None], dtype) # content doesn't matter
+    s = pl.Series("a", [None], dtype)  # content doesn't matter
     s = s.append(s)
     expected_dtype = pl.List(pl.Struct({"f0": Int64, "f1": pl.Null}))
     expected = pl.Series("a", [None, None], expected_dtype)
