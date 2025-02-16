@@ -430,7 +430,7 @@ def test_is_sorted_arithmetic_overflow_14106() -> None:
 
 
 def test_is_sorted_struct() -> None:
-    s = pl.Series("a", [{"x": 3 }, {"x": 1 }, {"x": 2 }]).sort()
+    s = pl.Series("a", [{"x": 3}, {"x": 1}, {"x": 2}]).sort()
     assert s.flags["SORTED_ASC"]
     assert not s.flags["SORTED_DESC"]
 
