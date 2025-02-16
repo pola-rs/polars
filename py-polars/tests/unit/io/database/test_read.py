@@ -8,6 +8,7 @@ from datetime import date
 from pathlib import Path
 from types import GeneratorType
 from typing import TYPE_CHECKING, Any, NamedTuple, cast
+from unittest.mock import Mock, patch
 
 import pyarrow as pa
 import pytest
@@ -147,6 +148,7 @@ class ExceptionTestParams(NamedTuple):
     errmsg: str
     engine: str | None = None
     execute_options: dict[str, Any] | None = None
+    pre_execution_query: str | list[str] | None = None
     kwargs: dict[str, Any] | None = None
 
 
@@ -565,6 +567,7 @@ def test_read_database_mocked(
         "errmsg",
         "engine",
         "execute_options",
+        "pre_execution_query",
         "kwargs",
     ),
     [
@@ -686,6 +689,18 @@ def test_read_database_mocked(
             ),
             id="Invalid ODBC string",
         ),
+        pytest.param(
+            *ExceptionTestParams(
+                read_method="read_database_uri",
+                query="SELECT * FROM test_data",
+                protocol="sqlite",
+                errclass=ValueError,
+                errmsg="the 'connectorx' engine does not support use of `pre_execution_query`",
+                engine="adbc",
+                pre_execution_query="SET statement_timeout = 2151",
+            ),
+            id="Unavailable `pre_execution_query` for adbc",
+        ),
     ],
 )
 def test_read_database_exceptions(
@@ -696,11 +711,12 @@ def test_read_database_exceptions(
     errmsg: str,
     engine: DbReadEngine | None,
     execute_options: dict[str, Any] | None,
+    pre_execution_query: str | list[str] | None,
     kwargs: dict[str, Any] | None,
 ) -> None:
     if read_method == "read_database_uri":
         conn = f"{protocol}://test" if isinstance(protocol, str) else protocol
-        params = {"uri": conn, "query": query, "engine": engine}
+        params = {"uri": conn, "query": query, "engine": engine, "pre_execution_query": pre_execution_query}
     else:
         params = {"connection": protocol, "query": query}
         if execute_options:
@@ -834,3 +850,42 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
         query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
         s = pl.Series(list(query_result))
         assert_series_equal(expected_series, s)
+
+@patch('polars.io.database._utils.import_optional')
+def test_read_database_uri_pre_execution_query_exception(import_mock) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.0"
+
+    import_mock.return_value = cx_mock
+
+    with (
+        pytest.raises(
+            ValueError,
+            match="pre_execution_query is only supported in connectorx version 0.4.2 or later.",
+        ),
+    ):
+        pl.read_database_uri(
+            query="SELECT 1",
+            uri="mysql://test",
+            engine="connectorx",
+            pre_execution_query="SET statement_timeout = 2151",
+        )
+
+@patch('polars.io.database._utils.from_arrow')
+@patch('polars.io.database._utils.import_optional')
+def test_read_database_uri_pre_execution_query_success(import_mock, _) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.2"
+
+    import_mock.return_value = cx_mock
+
+    pre_execution_query = "SET statement_timeout = 2151"
+
+    pl.read_database_uri(
+        query="SELECT 1",
+        uri="mysql://test",
+        engine="connectorx",
+        pre_execution_query=pre_execution_query,
+    )
+
+    assert cx_mock.read_sql.call_args.kwargs["pre_execution_query"] == pre_execution_query
