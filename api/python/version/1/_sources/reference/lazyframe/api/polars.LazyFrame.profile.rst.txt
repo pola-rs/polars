@@ -1,0 +1,6 @@
+﻿polars.LazyFrame.profile
+========================
+
+.. currentmodule:: polars
+
+.. automethod:: LazyFrame.profile
