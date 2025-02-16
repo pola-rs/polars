@@ -857,27 +857,6 @@ def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
         assert_series_equal(expected_series, s)
 
 
-@patch("polars.io.database._utils.import_optional")
-def test_read_database_uri_pre_execution_query_exception(import_mock: Mock) -> None:
-    cx_mock = Mock()
-    cx_mock.__version__ = "0.4.0"
-
-    import_mock.return_value = cx_mock
-
-    with (
-        pytest.raises(
-            ValueError,
-            match="pre_execution_query is only supported in connectorx version 0.4.2 or later.",
-        ),
-    ):
-        pl.read_database_uri(
-            query="SELECT 1",
-            uri="mysql://test",
-            engine="connectorx",
-            pre_execution_query="SET statement_timeout = 2151",
-        )
-
-
 @patch("polars.io.database._utils.from_arrow")
 @patch("polars.io.database._utils.import_optional")
 def test_read_database_uri_pre_execution_query_success(
@@ -900,3 +879,45 @@ def test_read_database_uri_pre_execution_query_success(
     assert (
         cx_mock.read_sql.call_args.kwargs["pre_execution_query"] == pre_execution_query
     )
+
+
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_pre_execution_not_supported_exception(
+    import_mock: Mock,
+) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.0"
+
+    import_mock.return_value = cx_mock
+
+    with (
+        pytest.raises(
+            ValueError,
+            match="pre_execution_query is only supported in connectorx version 0.4.2 or later.",
+        ),
+    ):
+        pl.read_database_uri(
+            query="SELECT 1",
+            uri="mysql://test",
+            engine="connectorx",
+            pre_execution_query="SET statement_timeout = 2151",
+        )
+
+
+@patch("polars.io.database._utils.from_arrow")
+@patch("polars.io.database._utils.import_optional")
+def test_read_database_uri_pre_execution_query_not_supported_success(
+    import_mock: Mock, from_arrow_mock: Mock
+) -> None:
+    cx_mock = Mock()
+    cx_mock.__version__ = "0.4.0"
+
+    import_mock.return_value = cx_mock
+
+    pl.read_database_uri(
+        query="SELECT 1",
+        uri="mysql://test",
+        engine="connectorx",
+    )
+
+    assert cx_mock.read_sql.call_args.kwargs.get("pre_execution_query") is None
