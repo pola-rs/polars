@@ -211,7 +211,7 @@ impl Executor {
     fn runner(&self, thread: usize) {
         TLS_THREAD_ID.set(thread);
 
-        let mut rng = SmallRng::from_rng(&mut rand::thread_rng()).unwrap();
+        let mut rng = SmallRng::from_rng(&mut rand::rng());
         let mut worker = self.park_group.new_worker();
         let mut last_block_start = None;
 
@@ -420,10 +420,10 @@ fn random_permutation<R: Rng>(len: u32, rng: &mut R) -> impl Iterator<Item = u32
     let modulus = len.next_power_of_two();
     let halfwidth = modulus.trailing_zeros() / 2;
     let mask = modulus - 1;
-    let displace_zero = rng.gen::<u32>();
-    let odd1 = rng.gen::<u32>() | 1;
-    let odd2 = rng.gen::<u32>() | 1;
-    let uniform_first = ((rng.gen::<u32>() as u64 * len as u64) >> 32) as u32;
+    let displace_zero = rng.random::<u32>();
+    let odd1 = rng.random::<u32>() | 1;
+    let odd2 = rng.random::<u32>() | 1;
+    let uniform_first = ((rng.random::<u32>() as u64 * len as u64) >> 32) as u32;
 
     (0..modulus)
         .map(move |mut i| {
