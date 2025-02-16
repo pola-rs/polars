@@ -2453,9 +2453,9 @@ class ExprStringNameSpace:
         self, patterns: IntoExpr, *, ascii_case_insensitive: bool = False
     ) -> Expr:
         """
-        Use the Aho-Corasick algorithm to find matches.
-
         Determines if any of the patterns are contained in the string.
+
+        Use the Aho-Corasick algorithm to find matches.
 
         Parameters
         ----------
