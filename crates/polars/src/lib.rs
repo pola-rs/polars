@@ -262,6 +262,7 @@
 //!     - `list_count` - Count elements in lists.
 //!     - `list_eval` - Apply expressions over list elements.
 //!     - `list_sets` - Compute UNION, INTERSECTION, and DIFFERENCE on list types.
+//!     - `list_pad` - Pad all sub-lists until they have the same length.
 //!     - `cumulative_eval` - Apply expressions over cumulatively increasing windows.
 //!     - `arg_where` - Get indices where condition holds.
 //!     - `search_sorted` - Find indices where elements should be inserted to maintain order.
