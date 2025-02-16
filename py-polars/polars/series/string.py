@@ -2121,7 +2121,6 @@ class StringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
-
         """
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Series:
