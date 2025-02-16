@@ -25,12 +25,14 @@ def isnan(value: object) -> bool:
     return np.isnan(value)  # type: ignore[no-any-return]
 
 
-def assert_index_of(
-    series: pl.Series,
-    value: IntoExpr,
-    convert_to_literal: bool = False,
-) -> None:
-    """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
+def to_python(maybe_series: object) -> object:
+    if isinstance(maybe_series, pl.Series):
+        return [to_python(sub) for sub in maybe_series.to_list()]
+    else:
+        return maybe_series
+
+
+def get_expected_index(series: pl.Series, value: IntoExpr) -> int | None:
     if isnan(value):
         expected_index = None
         for i, o in enumerate(series.to_list()):
@@ -39,21 +41,27 @@ def assert_index_of(
                 break
     else:
         try:
-            expected_index = series.to_list().index(value)
+            expected_index = to_python(series).index(  # type: ignore[attr-defined]
+                to_python(value)
+            )
         except ValueError:
             expected_index = None
     if expected_index == -1:
         expected_index = None
+    return expected_index
 
-    if convert_to_literal:
-        value = pl.lit(value, dtype=series.dtype)
 
-    # Eager API:
-    assert series.index_of(value) == expected_index
-    # Lazy API:
-    assert pl.LazyFrame({"series": series}).select(
-        pl.col("series").index_of(value)
-    ).collect().get_column("series").to_list() == [expected_index]
+def assert_index_of(series: pl.Series, value: IntoExpr) -> None:
+    """``Series.index_of()`` returns the index, or ``None`` if it can't be found."""
+    expected_index = get_expected_index(series, value)
+    orig_value = value
+    for value in (orig_value, pl.lit(orig_value, dtype=series.dtype)):
+        # Eager API:
+        assert series.index_of(value) == expected_index
+        # Lazy API:
+        assert pl.LazyFrame({"series": series}).select(
+            pl.col("series").index_of(value)
+        ).collect().get_column("series").to_list() == [expected_index]
 
 
 @pytest.mark.parametrize("dtype", [pl.Float32, pl.Float64])
@@ -74,8 +82,7 @@ def test_float(dtype: pl.DataType) -> None:
     ]
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         for value in values:
-            assert_index_of(s, value, convert_to_literal=True)
-            assert_index_of(s, value, convert_to_literal=False)
+            assert_index_of(s, value)
         for value in extra_values:  # type: ignore[assignment]
             assert_index_of(s, value)
 
@@ -133,11 +140,9 @@ def test_integer(dtype: pl.DataType) -> None:
     for s in [series, sorted_series_asc, sorted_series_desc, chunked_series]:
         value: IntoExpr
         for value in values:
-            assert_index_of(s, value, convert_to_literal=True)
-            assert_index_of(s, value, convert_to_literal=False)
+            assert_index_of(s, value)
         for value in extra_values:
-            assert_index_of(s, value, convert_to_literal=True)
-            assert_index_of(s, value, convert_to_literal=False)
+            assert_index_of(s, value)
 
         # Can't cast floats:
         for f in [np.float32(3.1), np.float64(3.1), 50.9]:
@@ -270,8 +275,7 @@ def test_other_types(
         )
     for s in series_variants:
         for value in expected_values:
-            assert_index_of(s, value, convert_to_literal=True)
-            assert_index_of(s, value, convert_to_literal=False)
+            assert_index_of(s, value)
         # Extra values may not be expressible as literal of correct dtype, so
         # don't try:
         for value in extra_values:
@@ -302,14 +306,7 @@ def test_error_on_multiple_values() -> None:
         pl.Series("a", [1, 2, 3]).index_of(pl.Series([2, 3]))
 
 
-@pytest.mark.parametrize(
-    "convert_to_literal",
-    [
-        True,
-        False,
-    ],
-)
-def test_enum(convert_to_literal: bool) -> None:
+def test_enum() -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Enum(["c", "b", "a"]))
     expected_values = series.to_list()
     for s in [
@@ -319,27 +316,16 @@ def test_enum(convert_to_literal: bool) -> None:
         series.sort(descending=True),
     ]:
         for value in expected_values:
-            assert_index_of(s, value, convert_to_literal=convert_to_literal)
+            assert_index_of(s, value)
 
 
-@pytest.mark.parametrize(
-    "convert_to_literal",
-    [
-        pytest.param(
-            True,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20318"
-            ),
-        ),
-        pytest.param(
-            False,
-            marks=pytest.mark.xfail(
-                reason="https://github.com/pola-rs/polars/issues/20171"
-            ),
-        ),
-    ],
+@pytest.mark.xfail(
+    reason=(
+        "https://github.com/pola-rs/polars/issues/20318 and "
+        + "https://github.com/pola-rs/polars/issues/20171"
+    )
 )
-def test_categorical(convert_to_literal: bool) -> None:
+def test_categorical() -> None:
     series = pl.Series(["a", "c", None, "b"], dtype=pl.Categorical)
     expected_values = series.to_list()
     for s in [
@@ -349,4 +335,4 @@ def test_categorical(convert_to_literal: bool) -> None:
         series.sort(descending=True),
     ]:
         for value in expected_values:
-            assert_index_of(s, value, convert_to_literal=convert_to_literal)
+            assert_index_of(s, value)
