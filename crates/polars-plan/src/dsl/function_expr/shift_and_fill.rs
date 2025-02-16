@@ -45,8 +45,8 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
     let n_s = &args[1];
 
     polars_ensure!(
-    n_s.len() == 1,
-    ComputeError: "n must be a single value."
+        n_s.len() == 1,
+        ComputeError: "n must be a single value."
     );
     let n_s = n_s.cast(&DataType::Int64)?;
     let n = n_s.i64()?;
@@ -55,7 +55,11 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
         let logical = s.dtype();
         let physical = s.to_physical_repr();
         let fill_value_s = &args[2];
-        let fill_value = fill_value_s.get(0)?;
+        polars_ensure!(
+            fill_value_s.len() == 1,
+            ComputeError: format!("'fill_value' must be scalar; got series of length {}", fill_value_s.len())
+        );
+        let fill_value = fill_value_s.get(0).unwrap();
 
         use DataType::*;
         match logical {
