@@ -1,0 +1,66 @@
+name: Lint Python
+
+on:
+  pull_request:
+    paths:
+      - py-polars/**
+      - .github/workflows/lint-python.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get ruff version from requirements file
+        id: version
+        run: |
+          VERSION=$(grep -m 1 -oP 'ruff==\K(.*)' py-polars/requirements-lint.txt)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - uses: chartboost/ruff-action@v1
+        with:
+          src: py-polars/
+          version: ${{ steps.version.outputs.version }}
+          args: check --no-fix
+
+      - uses: chartboost/ruff-action@v1
+        with:
+          src: py-polars/
+          version: ${{ steps.version.outputs.version }}
+          args: format --diff
+
+  mypy:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Create virtual environment
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        working-directory: py-polars
+        run: uv pip install -r requirements-dev.txt -r requirements-lint.txt
+
+      # Allow untyped calls for older Python versions
+      - name: Run mypy
+        working-directory: py-polars
+        run: mypy ${{ (matrix.python-version == '3.9') && '--allow-untyped-calls' || '' }}

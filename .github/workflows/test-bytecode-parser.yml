@@ -1,0 +1,36 @@
+name: Test Bytecode Parser
+
+on:
+  pull_request:
+    paths:
+      - py-polars/**
+      - .github/workflows/test-bytecode-parser.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only the versions that are not already run as part of the regular test suite
+        python-version: ['3.10', '3.11']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: pip install ipython numpy pytest
+
+      - name: Run tests
+        env:
+          PYTHONPATH: py-polars
+        run: pytest .github/scripts/test_bytecode_parser.py

@@ -1,0 +1,44 @@
+*.iml
+*.so
+*.pyd
+*.pdb
+*.ipynb
+.ENV
+.env
+.ipynb_checkpoints/
+.python-version
+.yarn/
+coverage.lcov
+coverage.xml
+profile.json
+polars/vendor
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+.vim
+
+# Python
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.venv*/
+__pycache__/
+.coverage
+
+# Rust
+target/
+
+# Data
+*.csv
+*.parquet
+*.feather
+*.tbl
+
+# Project
+/docs/assets/data/
+/docs/assets/people.md

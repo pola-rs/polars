@@ -1,0 +1,76 @@
+# We're pinning our tooling, because it's an environment we can strictly control.
+# We're not pinning package dependencies, because our tests need to pass with the
+# latest version of the packages.
+
+# -----
+# BUILD
+# -----
+
+maturin
+# extra dependency for maturin (linux-only)
+patchelf; platform_system == 'Linux'
+pip
+
+# ------------
+# DEPENDENCIES
+# ------------
+
+# Interop
+numpy
+numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
+pandas
+pyarrow
+pydantic>=2.0.0
+# Datetime / time zones
+tzdata; platform_system == 'Windows'
+# Database
+sqlalchemy
+adbc-driver-manager; platform_system != 'Windows'
+adbc-driver-sqlite; platform_system != 'Windows'
+aiosqlite
+connectorx
+kuzu
+# Cloud
+cloudpickle
+fsspec
+s3fs[boto3]
+# Spreadsheet
+fastexcel>=0.11.5
+openpyxl
+xlsx2csv
+xlsxwriter
+# Other I/O
+deltalake>=0.15.0
+# Csv
+zstandard
+# Plotting
+altair>=5.4.0
+# Styling
+great-tables>=0.8.0
+# Async
+gevent
+# Graph
+matplotlib
+# Testing
+hypothesis
+# Miscellaneous
+orjson
+
+# -------
+# TOOLING
+# -------
+
+pytest==8.3.2
+pytest-codspeed==3.2.0
+pytest-cov==6.0.0
+pytest-xdist==3.6.1
+
+# Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
+moto[s3]==5.0.9
+flask
+flask-cors
+
+# Stub files
+pandas-stubs
+boto3-stubs
+google-auth-stubs

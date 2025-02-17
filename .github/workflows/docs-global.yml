@@ -1,0 +1,111 @@
+name: Build documentation
+
+on:
+  pull_request:
+    paths:
+      - docs/**
+      - mkdocs.yml
+      - .github/workflows/docs-global.yml
+  repository_dispatch:
+    types:
+      - python-release-docs
+  workflow_dispatch:
+
+jobs:
+  markdown-link-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha }}
+      - uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          config-file: docs/mlc-config.json
+          folder-path: docs
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha }}
+
+      - name: Get ruff version from requirements file
+        id: version
+        run: |
+          VERSION=$(grep -m 1 -oP 'ruff==\K(.*)' py-polars/requirements-lint.txt)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - uses: chartboost/ruff-action@v1
+        with:
+          src: docs/source/
+          version: ${{ steps.version.outputs.version }}
+          args: check --no-fix
+
+      - uses: chartboost/ruff-action@v1
+        with:
+          src: docs/source/
+          version: ${{ steps.version.outputs.version }}
+          args: format --diff
+
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Create virtual environment
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv
+          echo "$GITHUB_WORKSPACE/.venv/bin" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/.venv" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: uv pip install -r py-polars/requirements-dev.txt -r docs/source/requirements.txt
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Install Polars
+        working-directory: py-polars
+        run: maturin develop
+
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
+
+      - name: Build documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: mkdocs build
+
+      - name: Add .nojekyll
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        working-directory: site
+        run: touch .nojekyll
+
+      - name: Deploy docs
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: site
+          # docs/ and py-polars/ included for backwards compatibility
+          clean-exclude: |
+            api/python/
+            api/rust/
+            docs/python
+            docs/rust
+            py-polars/html
+          single-commit: true

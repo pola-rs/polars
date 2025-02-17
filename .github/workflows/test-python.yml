@@ -1,0 +1,127 @@
+name: Test Python
+
+on:
+  pull_request:
+    paths:
+      - Cargo.lock
+      - py-polars/**
+      - docs/source/src/python/**
+      - crates/**
+      - .github/workflows/test-python.yml
+  push:
+    branches:
+      - main
+    paths:
+      - Cargo.lock
+      - crates/**
+      - docs/source/src/python/**
+      - py-polars/**
+      - .github/workflows/test-python.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUSTFLAGS: -C debuginfo=0  # Do not produce debug symbols to keep memory usage down
+  RUST_BACKTRACE: 1
+  PYTHONUTF8: 1
+
+defaults:
+  run:
+    working-directory: py-polars
+    shell: bash
+
+jobs:
+  test-python:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ['3.9', '3.12', '3.13']
+        include:
+          - os: windows-latest
+            python-version: '3.13'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Graphviz
+        uses: ts-graphviz/setup-graphviz@v2
+
+      - name: Create virtual environment
+        env:
+          BIN: ${{ matrix.os == 'windows-latest' && 'Scripts' || 'bin' }}
+        run: |
+          python -m venv .venv
+          echo "$GITHUB_WORKSPACE/py-polars/.venv/$BIN" >> $GITHUB_PATH
+          echo "VIRTUAL_ENV=$GITHUB_WORKSPACE/py-polars/.venv" >> $GITHUB_ENV
+
+      - name: Install Python dependencies
+        run: |
+          pip install uv
+          # Install typing-extensions separately whilst the `--extra-index-url` in `requirements-ci.txt`
+          # doesn't have an up-to-date typing-extensions, see
+          # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
+          uv pip install -U typing-extensions
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose --index-strategy=unsafe-best-match
+
+      - name: Set up Rust
+        run: rustup show
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: py-polars
+          save-if: ${{ github.ref_name == 'main' }}
+
+      - name: Install Polars
+        run: maturin develop
+
+      - name: Run doctests
+        if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
+        run: |
+          python tests/docs/run_doctest.py
+          pytest tests/docs/test_user_guide.py -m docs
+
+      - name: Run tests
+        if: github.ref_name != 'main'
+        run: pytest -n auto --dist loadgroup -m "not release and not benchmark and not docs"
+
+      - name: Run tests with new streaming engine
+        if: github.ref_name != 'main'
+        env:
+          POLARS_AUTO_NEW_STREAMING: 1
+        run: pytest -n auto --dist loadgroup -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
+
+      - name: Run tests async reader tests
+        if: github.ref_name != 'main' && matrix.os != 'windows-latest'
+        env:
+          POLARS_FORCE_ASYNC: 1
+        run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
+
+      - name: Check import without optional dependencies
+        if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
+        run: |
+          declare -a deps=("pandas"
+          "pyarrow"
+          "fsspec"
+          "matplotlib"
+          "backports.zoneinfo"
+          "connectorx"
+          "pyiceberg"
+          "deltalake"
+          "xlsx2csv"
+          )
+          for d in "${deps[@]}"
+          do
+            echo "uninstall $i and check imports..."
+            pip uninstall "$d" -y
+            python -c 'import polars'
+          done
