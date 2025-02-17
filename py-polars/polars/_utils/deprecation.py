@@ -211,7 +211,7 @@ def deprecate_parameter_as_multi_positional(
 
     Use as follows::
 
-        @deprecate_parameter_as_positional("columns", version="0.20.4")
+        @deprecate_parameter_as_multi_positional("columns", version="0.20.4")
         def myfunc(*columns): ...
     """  # noqa: W505
 
