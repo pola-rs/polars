@@ -747,8 +747,12 @@ impl Display for DataFrame {
                     str_truncate + ellipsis_len + padding,
                     std::cmp::max(name_lengths[idx], *elem_len),
                 );
-                if mx <= min_col_width {
+                if (mx <= min_col_width) && !(max_n_rows > 0 && height > max_n_rows) {
+                    // col width is less than min width + table is not truncated
                     constraints.push(col_width_exact(mx));
+                } else if mx <= min_col_width {
+                    // col width is less than min width + table is truncated (w/ ellipsis)
+                    constraints.push(col_width_bounds(mx, min_col_width));
                 } else {
                     constraints.push(col_width_bounds(min_col_width, mx));
                 }
