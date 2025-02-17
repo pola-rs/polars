@@ -51,7 +51,9 @@ impl ExprOrigin {
     ) -> PolarsResult<ExprOrigin> {
         Ok(if left_schema.contains(column_name) {
             ExprOrigin::Left
-        } else if right_schema.contains(column_name.strip_suffix(suffix).unwrap_or(column_name)) {
+        } else if right_schema.contains(column_name)
+            || right_schema.contains(column_name.strip_suffix(suffix).unwrap_or(column_name))
+        {
             ExprOrigin::Right
         } else {
             polars_bail!(ColumnNotFound: "{}", column_name)

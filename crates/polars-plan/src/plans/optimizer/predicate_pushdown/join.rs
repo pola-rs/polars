@@ -136,9 +136,9 @@ pub(super) fn process_join(
             &schema_right,
             options.args.suffix(),
         )
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|e| {
             if cfg!(debug_assertions) {
-                panic!()
+                panic!("{:?}", e)
             } else {
                 ExprOrigin::None
             }
