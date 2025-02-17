@@ -51,16 +51,6 @@ impl<T> Default for Connector<T> {
     }
 }
 
-impl<T> Drop for Connector<T> {
-    fn drop(&mut self) {
-        if self.state.load(Ordering::Acquire) & FULL_BIT == FULL_BIT {
-            unsafe {
-                self.value.get().drop_in_place();
-            }
-        }
-    }
-}
-
 pub enum SendError<T> {
     Full(T),
     Closed(T),
@@ -177,12 +167,18 @@ impl<T> Connector<T> {
     }
 
     /// # Safety
-    /// After calling close as a sender/receiver, you may not access
-    /// this connector anymore as that end.
-    unsafe fn close(&self) {
+    /// You may not access this connector anymore as a sender after this call.
+    unsafe fn close_send(&self) {
         self.state.fetch_or(CLOSED_BIT, Ordering::Relaxed);
-        self.send_waker.wake();
         self.recv_waker.wake();
+    }
+
+    /// # Safety
+    /// You may not access this connector anymore as a receiver after this call.
+    unsafe fn close_recv(&self) {
+        self.state.fetch_or(CLOSED_BIT, Ordering::Relaxed);
+        drop(self.try_recv());
+        self.send_waker.wake();
     }
 }
 
@@ -194,7 +190,7 @@ unsafe impl<T: Send> Send for Sender<T> {}
 
 impl<T> Drop for Sender<T> {
     fn drop(&mut self) {
-        unsafe { self.connector.close() }
+        unsafe { self.connector.close_send() }
     }
 }
 
@@ -206,7 +202,7 @@ unsafe impl<T: Send> Send for Receiver<T> {}
 
 impl<T> Drop for Receiver<T> {
     fn drop(&mut self) {
-        unsafe { self.connector.close() }
+        unsafe { self.connector.close_recv() }
     }
 }
 
