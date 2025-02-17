@@ -109,8 +109,7 @@ nav:
     - Polars Cloud:
           - polars-cloud/index.md
           - polars-cloud/quickstart.md
-          - Connect cloud environment:
-                - polars-cloud/connect/ui.md
+          - polars-cloud/connect-cloud.md
           - Run queries remote:
                 - polars-cloud/run/compute-context.md
                 - polars-cloud/run/interactive-batch.md
