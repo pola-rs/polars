@@ -242,10 +242,11 @@ impl DateLikeNameSpace {
 
     /// Round the Datetime/Date range into buckets.
     pub fn round(self, every: Expr) -> Expr {
+        let returns_scalar = all_return_scalar(&self.0);
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::Round),
             &[every],
-            false,
+            returns_scalar,
             None,
         )
     }
@@ -254,10 +255,11 @@ impl DateLikeNameSpace {
     /// This will take leap years/ months into account.
     #[cfg(feature = "offset_by")]
     pub fn offset_by(self, by: Expr) -> Expr {
+        let returns_scalar = all_return_scalar(&self.0);
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::OffsetBy),
             &[by],
-            false,
+            returns_scalar,
             None,
         )
     }
@@ -269,20 +271,22 @@ impl DateLikeNameSpace {
         ambiguous: Expr,
         non_existent: NonExistent,
     ) -> Expr {
+        let returns_scalar = all_return_scalar(&self.0);
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::ReplaceTimeZone(time_zone, non_existent)),
             &[ambiguous],
-            false,
+            returns_scalar,
             None,
         )
     }
 
     /// Combine an existing Date/Datetime with a Time, creating a new Datetime value.
     pub fn combine(self, time: Expr, tu: TimeUnit) -> Expr {
+        let returns_scalar = all_return_scalar(&self.0) && all_return_scalar(&time);
         self.0.map_many_private(
             FunctionExpr::TemporalExpr(TemporalFunction::Combine(tu)),
             &[time],
-            false,
+            returns_scalar,
             None,
         )
     }

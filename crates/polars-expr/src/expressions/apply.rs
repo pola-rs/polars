@@ -46,13 +46,6 @@ impl ApplyExpr {
         output_field: Field,
         returns_scalar: bool,
     ) -> Self {
-        #[cfg(debug_assertions)]
-        if matches!(options.collect_groups, ApplyOptions::ElementWise)
-            && options.flags.contains(FunctionFlags::RETURNS_SCALAR)
-        {
-            panic!("expr {:?} is not implemented correctly. 'returns_scalar' and 'elementwise' are mutually exclusive", expr)
-        }
-
         Self {
             inputs,
             function,
