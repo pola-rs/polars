@@ -21,6 +21,7 @@ impl<'a, O: Offset> GrowableUtf8<'a, O> {
     /// If `arrays` is empty.
     pub fn new(arrays: Vec<&'a Utf8Array<O>>, mut use_validity: bool, capacity: usize) -> Self {
         assert!(!arrays.is_empty());
+
         // if any of the arrays has nulls, insertions from any array requires setting bits
         // as there is at least one array with nulls.
         if arrays.iter().any(|array| array.null_count() > 0) {
