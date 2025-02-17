@@ -340,13 +340,20 @@ impl FunctionExpr {
                 })
             },
             MeanHorizontal { .. } => {
-                mapper.map_to_supertype().map(|mut f| {
-                    match f.dtype {
-                        dt @ DataType::Float32 => { f.dtype = dt; },
-                        _ => { f.dtype = DataType::Float64; },
-                    };
-                    f
-                })
+                let out = match mapper.map_to_supertype() {
+                    Ok(mut field) => {
+                        match field.dtype {
+                            DataType::Boolean => { field.dtype = DataType::Float64; },
+                            DataType::Float32 => { field.dtype = DataType::Float32; },
+                            DataType::Date => { field.dtype = DataType::Datetime(TimeUnit::Milliseconds, None); }
+                            dt if dt.is_temporal() => { field.dtype = dt; }
+                            _ => { field.dtype = DataType::Float64; },
+                        };
+                        field
+                    },
+                    Err(_) => polars_bail!(InvalidOperation: "'mean_horizontal' expects all numeric or all temporal expressions"),
+                };
+                Ok(out)
             }
             #[cfg(feature = "ewma")]
             EwmMean { .. } => mapper.map_to_float_dtype(),
