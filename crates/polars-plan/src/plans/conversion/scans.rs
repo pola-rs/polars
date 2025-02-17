@@ -132,6 +132,60 @@ pub(super) fn ipc_file_info(
 }
 
 #[cfg(feature = "csv")]
+pub fn isolated_csv_file_info(
+    source: ScanSourceRef,
+    file_options: &FileScanOptions,
+    csv_options: &mut CsvReadOptions,
+    _cloud_options: Option<&polars_io::cloud::CloudOptions>,
+) -> PolarsResult<FileInfo> {
+    use std::io::{Read, Seek};
+
+    use polars_io::csv::read::schema_inference::SchemaInferenceResult;
+    use polars_io::utils::get_reader_bytes;
+
+    let run_async = source.run_async();
+
+    let memslice = source.to_memslice_async_assume_latest(run_async)?;
+    let owned = &mut vec![];
+    let mut reader = std::io::Cursor::new(maybe_decompress_bytes(&memslice, owned)?);
+    if reader.read(&mut [0; 4])? < 2 && csv_options.raise_if_empty {
+        polars_bail!(NoData: "empty CSV")
+    }
+    reader.rewind()?;
+
+    let reader_bytes = get_reader_bytes(&mut reader).expect("could not mmap file");
+
+    // this needs a way to estimated bytes/rows.
+    let si_result =
+        SchemaInferenceResult::try_from_reader_bytes_and_options(&reader_bytes, csv_options)?;
+
+    csv_options.update_with_inference_result(&si_result);
+
+    let mut schema = csv_options
+        .schema
+        .clone()
+        .unwrap_or_else(|| si_result.get_inferred_schema());
+
+    let reader_schema = if let Some(rc) = &file_options.row_index {
+        let reader_schema = schema.clone();
+        let mut output_schema = (*reader_schema).clone();
+        output_schema.insert_at_index(0, rc.name.clone(), IDX_DTYPE)?;
+        schema = Arc::new(output_schema);
+        reader_schema
+    } else {
+        schema.clone()
+    };
+
+    let estimated_n_rows = si_result.get_estimated_n_rows();
+
+    Ok(FileInfo::new(
+        schema,
+        Some(Either::Right(reader_schema)),
+        (None, estimated_n_rows),
+    ))
+}
+
+#[cfg(feature = "csv")]
 pub fn csv_file_info(
     sources: &ScanSources,
     file_options: &FileScanOptions,
