@@ -66,7 +66,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
+    /// * `offsets.last()` is greater than `values.len()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
@@ -92,7 +92,7 @@ impl<O: Offset> MutableUtf8ValuesArray<O> {
     ///
     /// # Panic
     /// This function does not panic iff:
-    /// * The last offset is equal to the values' length.
+    /// * `offsets.last()` is greater than `values.len()`
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is equal to either `Utf8` or `LargeUtf8`.
     ///
     /// # Safety

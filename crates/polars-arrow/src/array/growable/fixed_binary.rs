@@ -22,6 +22,7 @@ impl<'a> GrowableFixedSizeBinary<'a> {
         mut use_validity: bool,
         capacity: usize,
     ) -> Self {
+        assert!(!arrays.is_empty());
         // if any of the arrays has nulls, insertions from any array requires setting bits
         // as there is at least one array with nulls.
         if arrays.iter().any(|array| array.null_count() > 0) {
