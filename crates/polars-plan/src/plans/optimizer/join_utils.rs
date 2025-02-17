@@ -54,7 +54,7 @@ impl ExprOrigin {
         } else if right_schema.contains(column_name)
             || column_name
                 .strip_suffix(suffix)
-                .map_or(false, |x| right_schema.contains(x))
+                .is_some_and(|x| right_schema.contains(x))
         {
             ExprOrigin::Right
         } else {
