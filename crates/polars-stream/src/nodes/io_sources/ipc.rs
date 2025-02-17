@@ -6,8 +6,7 @@ use std::sync::Arc;
 
 use polars_core::config;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType};
-use polars_core::scalar::Scalar;
+use polars_core::prelude::DataType;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::array::TryExtend;
 use polars_core::utils::arrow::bitmap::Bitmap;
@@ -22,7 +21,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::utils::columns_to_projection;
 use polars_io::RowIndex;
-use polars_plan::plans::{FileInfo, ScanSource, ScanSources};
+use polars_plan::plans::{FileInfo, ScanSource};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::mmap::MemSlice;
@@ -48,7 +47,8 @@ consider compiling with polars-bigidx feature (polars-u64-idx package on python)
 ));
 
 pub struct IpcSourceNode {
-    source: Source,
+    memslice: MemSlice,
+    metadata: Arc<FileMetadata>,
 
     row_index: Option<RowIndex>,
     slice: Range<usize>,
@@ -57,28 +57,21 @@ pub struct IpcSourceNode {
     projection_info: Option<ProjectionInfo>,
 
     rechunk: bool,
-    include_file_paths: Option<PlSmallStr>,
-}
-
-#[derive(Clone)]
-pub struct Source {
-    file_path: Option<Arc<str>>,
-    memslice: Arc<MemSlice>,
-    metadata: Arc<FileMetadata>,
 }
 
 impl IpcSourceNode {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        sources: ScanSources,
+        source: ScanSource,
         file_info: FileInfo,
         options: IpcScanOptions,
         _cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
         mut metadata: Option<Arc<FileMetadata>>,
     ) -> PolarsResult<Self> {
-        assert!(!sources.is_empty());
-        assert_eq!(sources.len(), 1);
+        // All these things should be handled by the MultiScan node
+        assert!(file_options.include_file_paths.is_none());
+        assert!(!file_options.allow_missing_columns);
 
         let IpcScanOptions = options;
 
@@ -91,12 +84,11 @@ impl IpcSourceNode {
             file_counter: _,
             hive_options: _,
             glob: _,
-            include_file_paths,
+            include_file_paths: _,
             allow_missing_columns: _,
         } = file_options;
 
-        let source = sources.iter().next().unwrap();
-        let memslice = source.to_memslice()?;
+        let memslice = source.as_scan_source_ref().to_memslice()?;
         let metadata = match metadata.take() {
             Some(md) => md,
             None => Arc::new(read_file_metadata(&mut std::io::Cursor::new(
@@ -127,15 +119,9 @@ impl IpcSourceNode {
             .as_ref()
             .map(|p| prepare_projection(&metadata.schema, p.clone()));
 
-        let file_path = Some(source.to_include_path_name().into());
-        let source = Source {
-            file_path,
-            memslice: Arc::new(memslice),
-            metadata,
-        };
-
         Ok(IpcSourceNode {
-            source,
+            memslice,
+            metadata,
 
             slice,
             row_index,
@@ -144,7 +130,6 @@ impl IpcSourceNode {
             file_info,
 
             rechunk,
-            include_file_paths,
         })
     }
 }
@@ -198,13 +183,13 @@ impl SourceNode for IpcSourceNode {
         let source_token = SourceToken::new();
 
         let Self {
-            source,
+            memslice,
+            metadata,
             row_index,
             slice,
             projection_info,
             file_info: _,
             rechunk,
-            include_file_paths,
         } = self;
 
         /// Messages sent from Walker task to Decoder tasks.
@@ -268,17 +253,17 @@ impl SourceNode for IpcSourceNode {
         // into smaller pieces an spread among the pipelines.
         let decoder_tasks = decoded_tx.into_iter().zip(batch_rxs)
             .map(|(mut send, mut rx)| {
-                let source = source.clone();
+                let memslice = memslice.clone();
+                let metadata = metadata.clone();
                 let rechunk = *rechunk;
                 let row_index = row_index.clone();
                 let projection_info = projection_info.clone();
-                let include_file_paths = include_file_paths.clone();
                 spawn(TaskPriority::Low, async move {
                     // Amortize allocations.
                     let mut data_scratch = Vec::new();
                     let mut message_scratch = Vec::new();
 
-                    let schema = projection_info.as_ref().map_or(source.metadata.schema.as_ref(), |ProjectionInfo { schema, .. }| schema);
+                    let schema = projection_info.as_ref().map_or(metadata.schema.as_ref(), |ProjectionInfo { schema, .. }| schema);
                     let pl_schema = schema
                         .iter()
                         .map(|(n, f)| (n.clone(), DataType::from_arrow_field(f)))
@@ -298,8 +283,8 @@ impl SourceNode for IpcSourceNode {
                             DataFrame::empty_with_height(slice.len())
                         } else {
                             let mut reader = FileReader::new_with_projection_info(
-                                Cursor::new(source.memslice.as_ref()),
-                                source.metadata.as_ref().clone(),
+                                Cursor::new(memslice.as_ref()),
+                                metadata.as_ref().clone(),
                                 projection_info.clone(),
                                 None,
                             );
@@ -329,16 +314,6 @@ impl SourceNode for IpcSourceNode {
                             df = df.with_row_index(name.clone(), Some(offset))?;
                         }
 
-                        if let Some(col) = include_file_paths.as_ref() {
-                            let file_path = source.file_path.as_ref().unwrap();
-                            let file_path = Scalar::from(PlSmallStr::from(file_path.as_ref()));
-                            df.with_column(Column::new_scalar(
-                                col.clone(),
-                                file_path,
-                                df.height(),
-                            ))?;
-                        }
-
                         // If the block is very large, we want to split the block amongst the
                         // pipelines. That will at least allow some parallelism.
                         if df.height() > max_morsel_size && config::verbose() {
@@ -358,7 +333,8 @@ impl SourceNode for IpcSourceNode {
             })
             .collect::<Vec<_>>();
 
-        let source = source.clone();
+        let memslice = memslice.clone();
+        let metadata = metadata.clone();
         let slice = slice.clone();
         let row_index = row_index.clone();
         let projection_info = projection_info.clone();
@@ -370,8 +346,8 @@ impl SourceNode for IpcSourceNode {
             // Calculate the unrestricted row count if needed.
             if let Some(rc) = unrestricted_row_count {
                 let num_rows = get_row_count_from_blocks(
-                    &mut std::io::Cursor::new(source.memslice.as_ref()),
-                    &source.metadata.blocks,
+                    &mut std::io::Cursor::new(memslice.as_ref()),
+                    &metadata.blocks,
                 )?;
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = num_rows))?;
@@ -391,11 +367,11 @@ impl SourceNode for IpcSourceNode {
             // Batch completion parameters
             let batch_size_limit = get_ideal_morsel_size();
             let sliced_batch_size_limit = slice.len().div_ceil(num_pipelines);
-            let batch_block_limit = source.metadata.blocks.len().div_ceil(num_pipelines);
+            let batch_block_limit = metadata.blocks.len().div_ceil(num_pipelines);
 
             let mut reader = FileReader::new_with_projection_info(
-                Cursor::new(source.memslice.as_ref()),
-                source.metadata.as_ref().clone(),
+                Cursor::new(memslice.as_ref()),
+                metadata.as_ref().clone(),
                 projection_info.clone(),
                 None,
             );
@@ -521,10 +497,9 @@ impl MultiScanable for IpcSourceNode {
         cloud_options: Option<&CloudOptions>,
         row_index: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let source = source.into_sources();
         let options = options.clone();
 
-        let memslice = source.at(0).to_memslice()?;
+        let memslice = source.as_scan_source_ref().to_memslice()?;
         let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
             memslice.as_ref(),
         ))?);
@@ -550,14 +525,14 @@ impl MultiScanable for IpcSourceNode {
             options,
             cloud_options.cloned(),
             file_options,
-            None,
+            Some(metadata),
         )
     }
 
     fn with_projection(&mut self, projection: Option<&Bitmap>) {
         self.projection_info = projection.map(|p| {
             let p = p.true_idx_iter().collect();
-            prepare_projection(&self.source.metadata.schema, p)
+            prepare_projection(&self.metadata.schema, p)
         });
     }
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
@@ -572,8 +547,8 @@ impl MultiScanable for IpcSourceNode {
 
     async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
         get_row_count_from_blocks(
-            &mut std::io::Cursor::new(self.source.memslice.as_ref()),
-            &self.source.metadata.blocks,
+            &mut std::io::Cursor::new(self.memslice.as_ref()),
+            &self.metadata.blocks,
         )
         .map(|v| v as IdxSize)
     }

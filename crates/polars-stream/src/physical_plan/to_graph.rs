@@ -521,7 +521,7 @@ fn to_graph_rec<'a>(
                         ctx.graph.add_node(
                             nodes::io_sources::SourceComputeNode::new(
                                 nodes::io_sources::ipc::IpcSourceNode::new(
-                                    scan_source.into_sources(),
+                                    scan_source,
                                     file_info,
                                     options,
                                     cloud_options,
