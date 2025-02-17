@@ -52,7 +52,9 @@ impl ExprOrigin {
         Ok(if left_schema.contains(column_name) {
             ExprOrigin::Left
         } else if right_schema.contains(column_name)
-            || right_schema.contains(column_name.strip_suffix(suffix).unwrap_or(column_name))
+            || column_name
+                .strip_suffix(suffix)
+                .map_or(false, |x| right_schema.contains(x))
         {
             ExprOrigin::Right
         } else {
