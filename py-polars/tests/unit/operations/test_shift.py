@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -119,3 +120,23 @@ def test_shift_fill_value_group_logicals() -> None:
     result = df.select(pl.col("d").shift(fill_value=pl.col("d").max(), n=-1).over("s"))
 
     assert result.dtypes == [pl.Date]
+
+
+def test_shift_fill_value_nonscalar() -> None:
+    df = pl.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": [4, 5, 6],
+        }
+    )
+    with pytest.raises(
+        ComputeError,
+        match="'fill_value' must be scalar; got series of length 3",
+    ):
+        df.shift(1, fill_value=pl.col("y"))
+
+    with pytest.raises(
+        ComputeError,
+        match="'fill_value' must be scalar; got series of length 3",
+    ):
+        df.select(pl.col("x").shift(1, fill_value=pl.col("y")))
