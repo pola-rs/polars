@@ -1577,6 +1577,31 @@ def test_join_where_predicate_type_coercion_21009() -> None:
     assert_frame_equal(q1.collect(), q2.collect())
 
 
+def test_join_right_predicate_pushdown_21142() -> None:
+    left = pl.LazyFrame({"key": [1, 2, 4], "values": ["a", "b", "c"]})
+    right = pl.LazyFrame({"key": [1, 2, 3], "values": ["d", "e", "f"]})
+
+    rjoin = left.join(right, on="key", how="right")
+
+    q = rjoin.filter(pl.col("values").is_null())
+
+    expect = pl.select(
+        pl.Series("values", [None], pl.String),
+        pl.Series("key", [3], pl.Int64),
+        pl.Series("values_right", ["f"], pl.String),
+    )
+
+    assert_frame_equal(q.collect(), expect)
+
+    # Ensure for right join, filter on RHS key-columns are pushed down.
+    q = rjoin.filter(pl.col("values_right").is_null())
+
+    plan = q.explain()
+    assert plan.index("FILTER") > plan.index("RIGHT PLAN ON")
+
+    assert_frame_equal(q.collect(), expect.clear())
+
+
 def test_join_where_nested_expr_21066() -> None:
     left = pl.LazyFrame({"a": [1, 2]})
     right = pl.LazyFrame({"a": [1]})
