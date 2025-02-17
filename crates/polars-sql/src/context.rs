@@ -996,11 +996,11 @@ impl SQLContext {
                 filter_expression = all_horizontal([filter_expression])?;
             }
             lf = self.process_subqueries(lf, vec![&mut filter_expression]);
-            if invert_filter {
-                // negate the filter (being careful about null values)
-                filter_expression = filter_expression.neq_missing(lit(true))
-            }
-            lf = lf.filter(filter_expression);
+            lf = if invert_filter {
+                lf.remove(filter_expression)
+            } else {
+                lf.filter(filter_expression)
+            };
         }
         Ok(lf)
     }

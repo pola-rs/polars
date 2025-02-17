@@ -928,9 +928,10 @@ impl LazyFrame {
         Ok(())
     }
 
-    /// Filter by some predicate expression.
+    /// Filter frame rows that match a predicate expression.
     ///
-    /// The expression must yield boolean values.
+    /// The expression must yield boolean values (note that rows where the
+    /// predicate resolves to `null` are *not* included in the resulting frame).
     ///
     /// # Example
     ///
@@ -948,6 +949,27 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().filter(predicate).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Remove frame rows that match a predicate expression.
+    ///
+    /// The expression must yield boolean values (note that rows where the
+    /// predicate resolves to `null` are *not* removed from the resulting frame).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .remove(col("sepal_width").is_null())
+    ///         .select([col("sepal_width"), col("sepal_length")])
+    /// }
+    /// ```
+    pub fn remove(self, predicate: Expr) -> Self {
+        self.filter(predicate.neq_missing(lit(true)))
     }
 
     /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.

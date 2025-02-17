@@ -1495,7 +1495,6 @@ class Expr:
         │ 1   ┆ 1       ┆ 1               │
         │ 2   ┆ 1       ┆ 2               │
         └─────┴─────────┴─────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
@@ -4217,7 +4216,7 @@ class Expr:
         constraints
             Column filters; use `name = value` to filter columns by the supplied value.
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
-            will be implicitly joined with the other filter conditions using `&`.
+            be implicitly joined with the other filter conditions using `&`.
 
         Examples
         --------
@@ -4485,7 +4484,6 @@ class Expr:
         │ 0   ┆ 3   ┆ 0         │
         │ 3   ┆ 4   ┆ 12        │
         └─────┴─────┴───────────┘
-
         """
         if return_dtype is not None:
             return_dtype = parse_into_dtype(return_dtype)
