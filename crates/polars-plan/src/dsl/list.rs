@@ -322,6 +322,21 @@ impl ListNameSpace {
         )
     }
 
+    #[cfg(feature = "list_index_of_in")]
+    /// Find the index of a needle in the list.
+    pub fn index_of_in<N: Into<Expr>>(self, needle: N) -> Expr {
+        Expr::Function {
+            input: vec![self.0, needle.into()],
+            function: FunctionExpr::ListExpr(ListFunction::IndexOfIn),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                flags: FunctionFlags::default(),
+                cast_options: Some(CastingRules::FirstArgInnerLossless),
+                ..Default::default()
+            },
+        }
+    }
+
     #[cfg(feature = "list_sets")]
     fn set_operation(self, other: Expr, set_operation: SetOperation) -> Expr {
         Expr::Function {
