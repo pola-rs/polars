@@ -1,0 +1,6 @@
+﻿polars.Series.dt.hour
+=====================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.hour
