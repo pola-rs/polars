@@ -47,20 +47,56 @@ pub enum ScanSourceRef<'a> {
 }
 
 /// A single source to scan from
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum ScanSource {
-    Path(PathBuf),
-    File(File),
+    Path(Arc<Path>),
+    File(Arc<File>),
     Buffer(MemSlice),
 }
 
 impl ScanSource {
+    pub fn from_sources(sources: ScanSources) -> Result<Self, ScanSources> {
+        if sources.len() == 1 {
+            match sources {
+                ScanSources::Paths(ps) => Ok(Self::Path(ps.as_ref()[0].clone().into())),
+                ScanSources::Files(fs) => {
+                    assert_eq!(fs.len(), 1);
+                    let ptr: *const File = Arc::into_raw(fs) as *const File;
+                    // SAFETY: A [T] with length 1 can be interpreted as T
+                    let f: Arc<File> = unsafe { Arc::from_raw(ptr) };
+
+                    Ok(Self::File(f))
+                },
+                ScanSources::Buffers(bs) => Ok(Self::Buffer(bs.as_ref()[0].clone())),
+            }
+        } else {
+            Err(sources)
+        }
+    }
+
     pub fn into_sources(self) -> ScanSources {
         match self {
-            ScanSource::Path(p) => ScanSources::Paths([p].into()),
-            ScanSource::File(f) => ScanSources::Files([f].into()),
+            ScanSource::Path(p) => ScanSources::Paths([p.to_path_buf()].into()),
+            ScanSource::File(f) => {
+                let ptr: *const [File] = std::ptr::slice_from_raw_parts(Arc::into_raw(f), 1);
+                // SAFETY: A T can be interpreted as [T] with length 1.
+                let fs: Arc<[File]> = unsafe { Arc::from_raw(ptr) };
+                ScanSources::Files(fs)
+            },
             ScanSource::Buffer(m) => ScanSources::Buffers([m].into()),
         }
+    }
+
+    pub fn as_scan_source_ref(&self) -> ScanSourceRef {
+        match self {
+            ScanSource::Path(path) => ScanSourceRef::Path(path.as_ref()),
+            ScanSource::File(file) => ScanSourceRef::File(file.as_ref()),
+            ScanSource::Buffer(mem_slice) => ScanSourceRef::Buffer(mem_slice),
+        }
+    }
+
+    pub fn run_async(&self) -> bool {
+        self.as_scan_source_ref().run_async()
     }
 }
 
@@ -261,8 +297,15 @@ impl ScanSourceRef<'_> {
     // @TODO: I would like to remove this function eventually.
     pub fn into_owned(&self) -> PolarsResult<ScanSource> {
         Ok(match self {
-            ScanSourceRef::Path(path) => ScanSource::Path(path.to_path_buf()),
-            _ => ScanSource::Buffer(self.to_memslice()?),
+            ScanSourceRef::Path(path) => ScanSource::Path((*path).into()),
+            ScanSourceRef::File(file) => {
+                if let Ok(file) = file.try_clone() {
+                    ScanSource::File(Arc::new(file))
+                } else {
+                    ScanSource::Buffer(self.to_memslice()?)
+                }
+            },
+            ScanSourceRef::Buffer(buffer) => ScanSource::Buffer((*buffer).clone()),
         })
     }
 
@@ -334,6 +377,10 @@ impl ScanSourceRef<'_> {
             Self::File(file) => Ok(DynByteSource::from(MemSlice::from_file(file)?)),
             Self::Buffer(buff) => Ok(DynByteSource::from((*buff).clone())),
         }
+    }
+
+    pub(crate) fn run_async(&self) -> bool {
+        matches!(self, Self::Path(p) if polars_io::is_cloud_url(p) || polars_core::config::force_async())
     }
 }
 

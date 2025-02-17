@@ -10,7 +10,7 @@ use polars_io::RowIndex;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::JoinTypeOptionsIR;
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSources, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSource, ScanSources, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
 mod fmt;
@@ -196,7 +196,7 @@ pub enum PhysNodeKind {
         row_index: Option<RowIndex>,
     },
     FileScan {
-        scan_sources: ScanSources,
+        scan_source: ScanSource,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ExprIR>,
