@@ -175,7 +175,7 @@ impl<O: Offset> Offsets<O> {
 
     /// Returns a `length` corresponding to the position `index`
     /// # Panic
-    /// This function panics iff `index >= self.len()`
+    /// This function panics iff `index >= self.len_proxy()`
     #[inline]
     pub fn length_at(&self, index: usize) -> usize {
         let (start, end) = self.start_end(index);
