@@ -31,6 +31,11 @@ pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     unsafe fn update(&mut self, start: usize, end: usize) -> Option<T>;
 }
 
+pub trait RollingAggWindowBoolNoNulls<Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> {
+    /// Find false/true idx and fill false/true in the window given by det_effects_fn.
+    fn result_values(bitmap: &Bitmap, window_size: WindowSize, det_effects_fn: Fo) -> Bitmap;
+}
+
 // Use an aggregation window that maintains the state
 pub(super) fn rolling_apply_agg_window<'a, Agg, T, Fo>(
     values: &'a [T],
@@ -68,6 +73,31 @@ where
     });
     let arr = PrimitiveArray::from_trusted_len_iter(out);
     Ok(Box::new(arr))
+}
+
+pub(super) fn rolling_apply_agg_window_bool<Agg, Fo>(
+    values: &Bitmap,
+    window_size: usize,
+    min_periods: usize,
+    det_offsets_fn: Fo,
+    det_effects_fn: Fo,
+) -> ArrayRef
+where
+    Fo: Fn(Idx, WindowSize, Len) -> (Start, End),
+    Agg: RollingAggWindowBoolNoNulls<Fo>,
+{
+    let len = values.len();
+    let validity = create_validity(min_periods, len, window_size, det_offsets_fn);
+    if let Some(ref validity) = validity {
+        if validity.set_bits() == 0 {
+            return Box::new(BooleanArray::new_null(ArrowDataType::Boolean, len));
+        }
+    }
+
+    let out = Agg::result_values(values, window_size, det_effects_fn);
+    let validity = validity.map(MutableBitmap::freeze);
+
+    BooleanArray::new(ArrowDataType::Boolean, out, validity).boxed()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]

@@ -1,3 +1,5 @@
+use no_nulls::RollingAggWindowBoolNoNulls;
+
 use super::*;
 use crate::array::iterator::NonNullValuesIter;
 use crate::bitmap::utils::count_zeros;
@@ -403,4 +405,51 @@ where
             None,
         )
     }
+}
+
+pub struct AggWindowBool<const V: bool>;
+
+impl<const V: bool, Fo: Fn(Idx, WindowSize, Len) -> (Start, End)> RollingAggWindowBoolNulls<Fo>
+    for AggWindowBool<V>
+{
+    fn result_values(
+        bitmap: &Bitmap,
+        validity: &Bitmap,
+        window_size: WindowSize,
+        det_effects_fn: Fo,
+    ) -> Bitmap {
+        let bitmap = match V {
+            true => bitmap & validity,
+            false => bitmap | &(!validity),
+        };
+
+        no_nulls::AggWindowBool::<V>::result_values(&bitmap, window_size, det_effects_fn)
+    }
+}
+
+pub fn rolling_find_and_set_bool<const V: bool>(
+    arr: &BooleanArray,
+    window_size: usize,
+    min_periods: usize,
+    center: bool,
+) -> ArrayRef {
+    let offset_fn = match center {
+        true => det_offsets_center,
+        false => det_offsets,
+    };
+
+    // window that should be unset if value is false at `i`
+    let effect_fn = match center {
+        true => det_effects_center,
+        false => det_effects,
+    };
+
+    rolling_apply_agg_window_bool::<AggWindowBool<V>, _>(
+        arr.values(),
+        arr.validity().unwrap(),
+        window_size,
+        min_periods,
+        offset_fn,
+        effect_fn,
+    )
 }
