@@ -1,8 +1,9 @@
 use polars_core::error::to_compute_err;
 use polars_core::utils::accumulate_dataframes_vertical;
+use polars_expr::state::node_timer::NodeTimer;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
-use pyo3::types::{PyBytes, PyNone};
+use pyo3::types::{PyBytes, PyNone, PyTuple};
 use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
 
 use self::python_dsl::PythonScanSource;
@@ -12,6 +13,39 @@ pub(crate) struct PythonScanExec {
     pub(crate) options: PythonOptions,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) predicate_serialized: Option<Vec<u8>>,
+}
+
+#[pyclass]
+pub struct PyNodeTimer {
+    timer: Option<NodeTimer>,
+}
+
+#[pymethods]
+impl PyNodeTimer {
+    pub fn record(
+        &self,
+        py: Python,
+        name: &str,
+        func: PyObject,
+        args: &Bound<'_, PyTuple>,
+    ) -> PyResult<PyObject> {
+        match &self.timer {
+            None => Ok(func.call1(py, args)?),
+            Some(timer) => {
+                let start = std::time::Instant::now();
+                let result = func.call1(py, args)?;
+                let end = std::time::Instant::now();
+                timer.store(start, end, name.to_string());
+                Ok(result)
+            },
+        }
+    }
+}
+
+impl PyNodeTimer {
+    pub fn new(timer: Option<NodeTimer>) -> Self {
+        PyNodeTimer { timer }
+    }
 }
 
 impl Executor for PythonScanExec {
@@ -51,10 +85,17 @@ impl Executor for PythonScanExec {
                 },
             };
 
-            let generator_init = if matches!(
-                self.options.python_source,
-                PythonScanSource::Pyarrow | PythonScanSource::Cuda
-            ) {
+            let generator_init = if matches!(self.options.python_source, PythonScanSource::Cuda) {
+                let py_node_timer = PyNodeTimer::new(state.node_timer.clone());
+                let args = (
+                    python_scan_function,
+                    with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
+                    predicate,
+                    n_rows,
+                    Py::new(py, py_node_timer).unwrap(),
+                );
+                callable.call1(args).map_err(to_compute_err)
+            } else if matches!(self.options.python_source, PythonScanSource::Pyarrow) {
                 let args = (
                     python_scan_function,
                     with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
