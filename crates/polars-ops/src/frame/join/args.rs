@@ -15,7 +15,6 @@ pub type ChunkJoinOptIds = Vec<NullableIdxSize>;
 #[cfg(not(feature = "chunked_ids"))]
 pub type ChunkJoinIds = Vec<IdxSize>;
 
-use once_cell::sync::Lazy;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -138,8 +137,8 @@ impl JoinArgs {
     }
 
     pub fn suffix(&self) -> &PlSmallStr {
-        static DEFAULT: Lazy<PlSmallStr> = Lazy::new(|| PlSmallStr::from_static("_right"));
-        self.suffix.as_ref().unwrap_or(&*DEFAULT)
+        const DEFAULT: &PlSmallStr = &PlSmallStr::from_static("_right");
+        self.suffix.as_ref().unwrap_or(DEFAULT)
     }
 }
 

@@ -1,5 +1,5 @@
 use super::*;
-use crate::plans::optimizer::join_utils::split_suffix;
+use crate::plans::optimizer::join_utils::remove_suffix;
 
 // Information concerning individual sides of a join.
 #[derive(PartialEq, Eq)]
@@ -97,28 +97,6 @@ fn all_pred_cols_in_left_on(
         .all(|pred_column_name| left_on.iter().any(|e| e.output_name() == &pred_column_name))
 }
 
-// Checks if a predicate refers to columns in both tables
-fn predicate_applies_to_both_tables(
-    predicate: Node,
-    expr_arena: &Arena<AExpr>,
-    schema_left: &Schema,
-    schema_right: &Schema,
-    suffix: &str,
-) -> bool {
-    let mut left_used = false;
-    let mut right_used = false;
-    for name in aexpr_to_leaf_names_iter(predicate, expr_arena) {
-        if schema_left.contains(name.as_ref()) {
-            left_used |= true;
-        } else {
-            right_used |= schema_right.contains(name.as_ref())
-                || name.ends_with(suffix)
-                    && schema_right.contains(split_suffix(name.as_ref(), suffix))
-        }
-    }
-    left_used && right_used
-}
-
 #[allow(clippy::too_many_arguments)]
 pub(super) fn process_join(
     opt: &mut PredicatePushDown,
@@ -151,23 +129,32 @@ pub(super) fn process_join(
     let mut local_predicates = Vec::with_capacity(acc_predicates.len());
 
     for (_, predicate) in acc_predicates {
+        let column_origins = ExprOrigin::get_expr_origin(
+            predicate.node(),
+            expr_arena,
+            &schema_left,
+            &schema_right,
+            options.args.suffix(),
+        )
+        .unwrap_or_else(|e| {
+            if cfg!(debug_assertions) {
+                panic!("{:?}", e)
+            } else {
+                ExprOrigin::None
+            }
+        });
+
         // Cross joins produce a cartesian product, so if a predicate combines columns from both tables, we should not push down.
         // Inequality joins logically produce a cartesian product, so the same logic applies.
         if (options.args.how.is_cross() || options.args.how.is_ie())
-            && predicate_applies_to_both_tables(
-                predicate.node(),
-                expr_arena,
-                &schema_left,
-                &schema_right,
-                options.args.suffix(),
-            )
+            && column_origins == ExprOrigin::Both
         {
             local_predicates.push(predicate);
             continue;
         }
 
         // check if predicate can pass the joins node
-        let block_pushdown_left = has_aexpr(predicate.node(), expr_arena, |ae| {
+        let allow_pushdown_left = !has_aexpr(predicate.node(), expr_arena, |ae| {
             should_block_join_specific(
                 ae,
                 &options.args.how,
@@ -178,7 +165,8 @@ pub(super) fn process_join(
             )
             .0
         });
-        let block_pushdown_right = has_aexpr(predicate.node(), expr_arena, |ae| {
+
+        let allow_pushdown_right = !has_aexpr(predicate.node(), expr_arena, |ae| {
             should_block_join_specific(
                 ae,
                 &options.args.how,
@@ -194,9 +182,10 @@ pub(super) fn process_join(
         let mut filter_left = false;
         let mut filter_right = false;
 
-        if !block_pushdown_left && check_input_node(predicate.node(), &schema_left, expr_arena) {
-            insert_and_combine_predicate(&mut pushdown_left, &predicate, expr_arena);
+        if allow_pushdown_left && column_origins == ExprOrigin::Left {
             filter_left = true;
+
+            insert_and_combine_predicate(&mut pushdown_left, &predicate, expr_arena);
             // If we push down to the left and all predicate columns are also
             // join columns, we also push down right for inner, left or semi join
             if all_pred_cols_in_left_on(&predicate, expr_arena, &left_on) {
@@ -215,12 +204,17 @@ pub(super) fn process_join(
         // the right hand side should be renamed with the suffix.
         // in that case we should not push down as the user wants to filter on `x`
         // not on `x_rhs`.
-        } else if !block_pushdown_right
-            && check_input_node(predicate.node(), &schema_right, expr_arena)
-        {
-            filter_right = true
-        }
-        if filter_right {
+        } else if allow_pushdown_right && column_origins == ExprOrigin::Right {
+            filter_right = true;
+
+            let mut predicate = predicate.clone();
+            remove_suffix(
+                &mut predicate,
+                expr_arena,
+                &schema_right,
+                options.args.suffix(),
+            );
+
             insert_and_combine_predicate(&mut pushdown_right, &predicate, expr_arena);
         }
 
