@@ -19,7 +19,6 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
-use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
@@ -646,25 +645,19 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl StructChunked {
-    pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        let bin = _get_rows_encoded_ca(
-            self.name().clone(),
-            &[self.clone().into_column()],
-            &[options.descending],
-            &[options.nulls_last],
-        )
-        .unwrap();
-        bin.arg_sort(Default::default())
-    }
-}
-
-#[cfg(feature = "dtype-struct")]
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= POOL.current_num_threads() > 1;
         let idx = self.arg_sort(options);
-        unsafe { self.take_unchecked(&idx) }
+        let mut out = unsafe { self.take_unchecked(&idx) };
+
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        out.set_sorted_flag(s);
+        out
     }
 
     fn sort(&self, descending: bool) -> ChunkedArray<StructType> {
