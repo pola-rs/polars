@@ -610,7 +610,7 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
         """
         df2 INNER JOIN (
           df3 JOIN df4 ON df3.CharacterID = df4.CharacterID
-        ) ON df2.CharacterID = df3.CharacterID
+        ) AS r0 ON df2.CharacterID = df3.CharacterID
         """,
     ],
 )
@@ -661,7 +661,7 @@ def test_nested_join(join_clause: str) -> None:
             f"""
             SELECT df1.CharacterID, df1.FirstName, df2.Role, df3.Species
             FROM df1
-            INNER JOIN ({join_clause})
+            INNER JOIN ({join_clause}) AS r99
             ON df1.CharacterID = df2.CharacterID
             ORDER BY ALL
             """
@@ -680,6 +680,23 @@ def test_nested_join(join_clause: str) -> None:
                 "Species": "Human",
             },
         ]
+
+
+def test_sql_forbid_join_unnamed_relation() -> None:
+    df = pl.DataFrame({"a": 1})
+
+    with (
+        pl.SQLContext({"left": df, "right": df}) as ctx,
+        pytest.raises(SQLInterfaceError, match="cannot join on unnamed relation"),
+    ):
+        ctx.execute(
+            """\
+SELECT a
+FROM left
+JOIN (right JOIN right ON right.a = right.a)
+ON left.a = right.a
+"""
+        )
 
 
 def test_join_nulls_19624() -> None:

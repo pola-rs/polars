@@ -614,6 +614,7 @@ impl SQLContext {
             for join in &tbl_expr.joins {
                 let (r_name, mut rf) = self.get_table(&join.relation)?;
                 if r_name.is_empty() {
+                    // Require non-empty to avoid duplicate column errors from nested self-joins.
                     polars_bail!(
                         SQLInterface:
                         "cannot join on unnamed relation; please provide an alias"
