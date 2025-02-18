@@ -255,7 +255,15 @@ pub(crate) fn det_join_schema(
         // the schema will never change.
         #[cfg(feature = "semi_anti_join")]
         JoinType::Semi | JoinType::Anti => Ok(schema_left.clone()),
-        JoinType::Right => {
+        // Right-join with coalesce enabled will coalesce LHS columns into RHS columns (i.e. LHS columns
+        // are removed). This is the opposite of what a left join does so it has its own codepath.
+        //
+        // E.g. df(cols=[A, B]).right_join(df(cols=[A, B]), on=A, coalesce=True)
+        //
+        // will result in
+        //
+        // df(cols=[B, A, B_right])
+        JoinType::Right if options.args.should_coalesce() => {
             // Get join names.
             let mut join_on_left: PlHashSet<_> = PlHashSet::with_capacity(left_on.len());
             for e in left_on {
@@ -269,44 +277,38 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
-            // init
-            let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
-            let should_coalesce = options.args.should_coalesce();
-
-            // Prepare left table schema
-            if !should_coalesce {
-                for (name, dtype) in schema_left.iter() {
-                    new_schema.with_column(name.clone(), dtype.clone());
-                }
-            } else {
-                for (name, dtype) in schema_left.iter() {
-                    if !join_on_left.contains(name) {
-                        new_schema.with_column(name.clone(), dtype.clone());
+            let new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
+                // Columns from left, excluding those used as join keys
+                .hstack(schema_left.iter().filter_map(|(name, dtype)| {
+                    if join_on_left.contains(name) {
+                        return None;
                     }
-                }
-            }
 
-            // Prepare right table schema
-            for (name, dtype) in schema_right.iter() {
-                {
-                    let left_is_removed = join_on_left.contains(name.as_str()) && should_coalesce;
-                    if schema_left.contains(name.as_str()) && !left_is_removed {
-                        let new_name = format_pl_smallstr!("{}{}", name, options.args.suffix());
-                        new_schema.with_column(new_name, dtype.clone());
+                    Some((name.clone(), dtype.clone()))
+                }))?
+                // Columns from right
+                .hstack(schema_right.iter().map(|(name, dtype)| {
+                    let in_left_schema = schema_left.contains(name.as_str());
+                    let is_coalesced = join_on_left.contains(name.as_str());
+
+                    if in_left_schema && !is_coalesced {
+                        let suffixed_name =
+                            format_pl_smallstr!("{}{}", name, options.args.suffix());
+                        (suffixed_name, dtype.clone())
                     } else {
-                        new_schema.with_column(name.clone(), dtype.clone());
+                        (name.clone(), dtype.clone())
                     }
-                }
-            }
+                }))?;
+
             Ok(Arc::new(new_schema))
         },
         _how => {
-            let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len());
+            let mut new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
+                .hstack(schema_left.iter_fields())?;
 
-            for (name, dtype) in schema_left.iter() {
-                new_schema.with_column(name.clone(), dtype.clone());
-            }
-            let should_coalesce = options.args.should_coalesce();
+            let is_coalesced = options.args.should_coalesce();
+
+            let mut _asof_pre_added_rhs_keys: PlHashSet<PlSmallStr> = PlHashSet::new();
 
             // Handles coalescing of asof-joins.
             // Asof joins are not equi-joins
@@ -318,7 +320,9 @@ pub(crate) fn det_join_schema(
                     let field_left = left_on.field(schema_left, Context::Default, expr_arena)?;
                     let field_right = right_on.field(schema_right, Context::Default, expr_arena)?;
 
-                    if should_coalesce && field_left.name != field_right.name {
+                    if is_coalesced && field_left.name != field_right.name {
+                        _asof_pre_added_rhs_keys.insert(field_right.name.clone());
+
                         if schema_left.contains(&field_right.name) {
                             new_schema.with_column(
                                 _join_suffix_name(&field_right.name, options.args.suffix()),
@@ -330,6 +334,7 @@ pub(crate) fn det_join_schema(
                     }
                 }
             }
+
             let mut join_on_right: PlHashSet<_> = PlHashSet::with_capacity(right_on.len());
             for e in right_on {
                 let field = e.field(schema_right, Context::Default, expr_arena)?;
@@ -337,28 +342,41 @@ pub(crate) fn det_join_schema(
             }
 
             for (name, dtype) in schema_right.iter() {
-                if !join_on_right.contains(name.as_str()) || (!should_coalesce) {
-                    // Asof join by columns are coalesced
-                    #[cfg(feature = "asof_join")]
+                #[cfg(feature = "asof_join")]
+                {
                     if let JoinType::AsOf(asof_options) = &options.args.how {
-                        if let Some(right_by) = &asof_options.right_by {
-                            {
-                                // Do not add suffix. The column of the left table will be used
-                                if right_by.contains(name) {
-                                    continue;
-                                }
-                            }
+                        // Asof adds keys earlier
+                        if _asof_pre_added_rhs_keys.contains(name) {
+                            continue;
+                        }
+
+                        // Asof join by columns are coalesced
+                        if asof_options
+                            .right_by
+                            .as_deref()
+                            .is_some_and(|x| x.contains(name))
+                        {
+                            // Do not add suffix. The column of the left table will be used
+                            continue;
                         }
                     }
-
-                    // The names that are joined on are merged
-                    if schema_left.contains(name.as_str()) {
-                        let new_name = format_pl_smallstr!("{}{}", name, options.args.suffix());
-                        new_schema.with_column(new_name, dtype.clone());
-                    } else {
-                        new_schema.with_column(name.clone(), dtype.clone());
-                    }
                 }
+
+                if join_on_right.contains(name.as_str()) && is_coalesced {
+                    // Column will be coalesced into an already added LHS column.
+                    continue;
+                }
+
+                let (name, dtype) = if schema_left.contains(name.as_str()) {
+                    (
+                        format_pl_smallstr!("{}{}", name, options.args.suffix()),
+                        dtype.clone(),
+                    )
+                } else {
+                    (name.clone(), dtype.clone())
+                };
+
+                new_schema.try_insert(name, dtype)?;
             }
 
             Ok(Arc::new(new_schema))
