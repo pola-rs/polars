@@ -38,7 +38,7 @@ Polars can convert data to NumPy format with the `to_numpy` method.
 Polars exploits the strong support for concurrency in Rust to run many operations in parallel. While
 some operations in pandas are multi-threaded the core of the library is single-threaded and an
 additional library such as `Dask` must be used to parallelize operations. Polars is faster than all
-open source solutions that paralellize pandas code.
+open source solutions that parallelize pandas code.
 
 ### Polars has support for different engines
 
