@@ -303,16 +303,24 @@ def test_decimal_aggregations() -> None:
         "a": [[D("0.1"), D("10.1")], [D("100.01"), D("9000.12")]],
     }
 
-    assert df.group_by("g", maintain_order=True).agg(
+    result = df.group_by("g", maintain_order=True).agg(
         sum=pl.sum("a"),
         min=pl.min("a"),
         max=pl.max("a"),
-    ).to_dict(as_series=False) == {
-        "g": [1, 2],
-        "sum": [D("10.20"), D("9100.13")],
-        "min": [D("0.10"), D("100.01")],
-        "max": [D("10.10"), D("9000.12")],
-    }
+        mean=pl.mean("a"),
+        median=pl.median("a"),
+    )
+    expected = pl.DataFrame(
+        {
+            "g": [1, 2],
+            "sum": [D("10.20"), D("9100.13")],
+            "min": [D("0.10"), D("100.01")],
+            "max": [D("10.10"), D("9000.12")],
+            "mean": [5.1, 4550.065],
+            "median": [5.1, 4550.065],
+        }
+    )
+    assert_frame_equal(result, expected)
 
     res = df.select(
         sum=pl.sum("a"),
