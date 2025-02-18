@@ -68,6 +68,7 @@ impl ParquetSourceNode {
             memory_prefetch_func,
             current_path_index: 0,
             current_byte_source: Default::default(),
+            current_rg_selection: None,
             current_row_groups: Default::default(),
             current_row_group_idx: 0,
             current_max_row_group_height: 0,

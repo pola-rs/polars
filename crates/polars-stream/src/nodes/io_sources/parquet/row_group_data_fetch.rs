@@ -1,18 +1,23 @@
 use std::sync::Arc;
 
-use polars_core::prelude::{ArrowSchema, PlHashMap};
+use polars_core::frame::DataFrame;
+use polars_core::prelude::{
+    AnyValue, ArrowSchema, Column, DataType, PlHashMap, PlIndexSet, IDX_DTYPE,
+};
+use polars_core::scalar::Scalar;
+use polars_core::schema::Schema;
 use polars_core::series::IsSorted;
+use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::operation_exceeded_idxsize_msg;
-use polars_error::{polars_err, PolarsResult};
-use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::_internal::read_this_row_group;
-use polars_io::prelude::{create_sorting_map, FileMetadata};
+use polars_error::{polars_err, PolarsError, PolarsResult};
+use polars_io::predicates::{ScanIOPredicate, SkipBatchPredicate};
+use polars_io::prelude::{collect_statistics, create_sorting_map, FileMetadata};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
+use polars_utils::{format_pl_smallstr, IdxSize};
 
 use super::mem_prefetch_funcs;
 use super::row_group_decode::SharedFileState;
@@ -47,6 +52,7 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
     pub(super) current_path_index: usize,
     pub(super) current_byte_source: Arc<DynByteSource>,
+    pub(super) current_rg_selection: Option<Bitmap>,
     pub(super) current_row_groups: std::vec::IntoIter<RowGroupMetadata>,
     pub(super) current_row_group_idx: usize,
     pub(super) current_max_row_group_height: usize,
@@ -54,12 +60,130 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) current_shared_file_state: Arc<tokio::sync::OnceCell<SharedFileState>>,
 }
 
+fn create_select_mask(
+    sbp: &dyn SkipBatchPredicate,
+    live_columns: &PlIndexSet<PlSmallStr>,
+    schema: &ArrowSchema,
+    rgs: &[RowGroupMetadata],
+) -> PolarsResult<Bitmap> {
+    let idxs = live_columns
+        .iter()
+        .map(|l| schema.index_of(l.as_str()).unwrap())
+        .collect::<Vec<_>>();
+    let stat_schema: Schema = std::iter::once((PlSmallStr::from_static("len"), IDX_DTYPE))
+        .chain(
+            live_columns
+                .iter()
+                .map(|l| {
+                    let dtype = DataType::from_arrow_field(schema.get(l).unwrap());
+                    [
+                        (format_pl_smallstr!("{}_min", l), dtype.clone()),
+                        (format_pl_smallstr!("{}_max", l), dtype),
+                        (format_pl_smallstr!("{}_nc", l), IDX_DTYPE),
+                    ]
+                    .into_iter()
+                })
+                .flatten(),
+        )
+        .collect();
+    let mut df = DataFrame::empty_with_schema(&stat_schema);
+
+    for md in rgs {
+        let mut columns = Vec::with_capacity(stat_schema.len());
+
+        columns.push(Column::new_scalar(
+            PlSmallStr::from_static("len"),
+            (md.num_rows() as IdxSize).into(),
+            1,
+        ));
+
+        if let Some(stats) = collect_statistics(md, schema)? {
+            for col_idx in &idxs {
+                let col = &stats.column_stats()[*col_idx];
+                let dtype = col.dtype();
+
+                let min = Scalar::new(
+                    dtype.clone(),
+                    col.to_min()
+                        .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
+                );
+                let max = Scalar::new(
+                    dtype.clone(),
+                    col.to_max()
+                        .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
+                );
+                let null_count = col
+                    .null_count()
+                    .map_or(Scalar::null(IDX_DTYPE), |nc| Scalar::from(nc as IdxSize));
+
+                columns.extend([
+                    Column::new_scalar(format_pl_smallstr!("{}_min", col.field_name()), min, 1),
+                    Column::new_scalar(format_pl_smallstr!("{}_max", col.field_name()), max, 1),
+                    Column::new_scalar(
+                        format_pl_smallstr!("{}_nc", col.field_name()),
+                        null_count,
+                        1,
+                    ),
+                ]);
+            }
+        } else {
+            for (i, l) in live_columns.iter().enumerate() {
+                let (_, dtype) = stat_schema.get_at_index(1 + i * 3).unwrap();
+                columns.extend([
+                    Column::full_null(format_pl_smallstr!("{l}_min"), 1, dtype),
+                    Column::full_null(format_pl_smallstr!("{l}_max"), 1, dtype),
+                    Column::full_null(format_pl_smallstr!("{l}_nc"), 1, &IDX_DTYPE),
+                ]);
+            }
+        }
+
+        df.vstack_mut_owned_unchecked(unsafe { DataFrame::new_no_checks(1, columns) });
+    }
+
+    df.rechunk_mut();
+    let pred_result = sbp.evaluate_with_stat_df(&df);
+    // a parquet file may not have statistics of all columns
+    match pred_result {
+        Err(PolarsError::ColumnNotFound(errstr)) => {
+            return Err(PolarsError::ColumnNotFound(errstr))
+        },
+        Ok(bm) => Ok(bm),
+        _ => Ok(Bitmap::new_with_value(false, rgs.len())),
+    }
+}
+
 impl RowGroupDataFetcher {
-    pub(super) async fn init_next_file_state(&mut self) -> bool {
+    pub(super) async fn init_next_file_state(&mut self) -> PolarsResult<bool> {
         let Ok((path_index, row_offset, byte_source, metadata)) = self.metadata_rx.recv().await
         else {
-            return false;
+            return Ok(false);
         };
+
+        self.current_rg_selection = None;
+        if self.use_statistics && !std::env::var("POLARS_NO_PARQUET_STATISTICS").is_ok() {
+            if let Some(pred) = self.predicate.as_ref() {
+                if let Some(sbp) = &pred.skip_batch_predicate {
+                    let mask = create_select_mask(
+                        sbp.as_ref(),
+                        pred.live_columns.as_ref(),
+                        &self.reader_schema,
+                        &metadata.row_groups,
+                    )?;
+
+                    if self.verbose {
+                        eprintln!(
+                            "[ParquetSource]: Predicate pushdown: \
+                            Skipping {} / {} row groups in file {}",
+                            mask.set_bits(),
+                            metadata.row_groups.len(),
+                            self.current_path_index
+                        );
+                    }
+
+                    self.current_rg_selection = Some(mask);
+                }
+            }
+        }
 
         self.current_path_index = path_index;
         self.current_byte_source = byte_source;
@@ -71,14 +195,14 @@ impl RowGroupDataFetcher {
         self.current_row_groups = metadata.row_groups.into_iter();
         self.current_shared_file_state = Default::default();
 
-        true
+        Ok(true)
     }
 
     pub(super) async fn next(
         &mut self,
     ) -> Option<PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
         'main: loop {
-            for row_group_metadata in self.current_row_groups.by_ref() {
+            for (rg_idx, row_group_metadata) in self.current_row_groups.by_ref().enumerate() {
                 let current_row_offset = self.current_row_offset;
                 let current_row_group_idx = self.current_row_group_idx;
 
@@ -89,22 +213,11 @@ impl RowGroupDataFetcher {
                 self.current_row_group_idx += 1;
 
                 if self.use_statistics
-                    && !match read_this_row_group(
-                        self.predicate.as_ref(),
-                        &row_group_metadata,
-                        self.reader_schema.as_ref(),
-                    ) {
-                        Ok(v) => v,
-                        Err(e) => return Some(Err(e)),
-                    }
+                    && self
+                        .current_rg_selection
+                        .as_ref()
+                        .is_some_and(|s| s.get_bit(rg_idx))
                 {
-                    if self.verbose {
-                        eprintln!(
-                            "[ParquetSource]: Predicate pushdown: \
-                            Skipped row group {} in file {} ({} rows)",
-                            current_row_group_idx, self.current_path_index, num_rows
-                        );
-                    }
                     continue;
                 }
 
@@ -243,8 +356,10 @@ impl RowGroupDataFetcher {
             }
 
             // Initialize state to the next file.
-            if !self.init_next_file_state().await {
-                break;
+            match self.init_next_file_state().await {
+                Ok(true) => {},
+                Ok(false) => break,
+                Err(err) => return Some(Err(err)),
             }
         }
 
