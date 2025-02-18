@@ -44,6 +44,7 @@ Manipulation/selection
     DataFrame.pipe
     DataFrame.pivot
     DataFrame.rechunk
+    DataFrame.remove
     DataFrame.rename
     DataFrame.replace_column
     DataFrame.reverse

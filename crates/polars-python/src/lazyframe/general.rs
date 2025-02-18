@@ -875,6 +875,11 @@ impl PyLazyFrame {
         ldf.filter(predicate.inner).into()
     }
 
+    fn remove(&mut self, predicate: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.remove(predicate.inner).into()
+    }
+
     fn select(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = exprs.to_exprs();
