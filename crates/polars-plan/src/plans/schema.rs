@@ -298,7 +298,7 @@ pub(crate) fn det_join_schema(
                         suffixed.replace(format_pl_smallstr!("{}{}", name, options.args.suffix()));
                         (suffixed.clone().unwrap(), dtype.clone())
                     } else {
-                        suffixed.take();
+                        suffixed = None;
                         (name.clone(), dtype.clone())
                     }
                 }))
