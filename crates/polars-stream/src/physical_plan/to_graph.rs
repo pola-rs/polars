@@ -438,7 +438,7 @@ fn to_graph_rec<'a>(
 
         v @ FileScan { .. } => {
             let FileScan {
-                scan_sources,
+                scan_source,
                 file_info,
                 hive_parts: _,
                 output_schema,
@@ -498,7 +498,7 @@ fn to_graph_rec<'a>(
                     } => ctx.graph.add_node(
                         nodes::io_sources::SourceComputeNode::new(
                             nodes::io_sources::parquet::ParquetSourceNode::new(
-                                scan_sources,
+                                scan_source.into_sources(),
                                 file_info,
                                 predicate,
                                 options,
@@ -521,7 +521,7 @@ fn to_graph_rec<'a>(
                         ctx.graph.add_node(
                             nodes::io_sources::SourceComputeNode::new(
                                 nodes::io_sources::ipc::IpcSourceNode::new(
-                                    scan_sources,
+                                    scan_source,
                                     file_info,
                                     options,
                                     cloud_options,
@@ -545,7 +545,7 @@ fn to_graph_rec<'a>(
                         ctx.graph.add_node(
                             nodes::io_sources::SourceComputeNode::new(
                                 nodes::io_sources::csv::CsvSourceNode::new(
-                                    scan_sources,
+                                    scan_source,
                                     file_info,
                                     file_options,
                                     options,

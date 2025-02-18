@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, EscapeLabel, FileScan, ScanSourcesDisplay};
+use polars_plan::plans::{AExpr, EscapeLabel, FileScan};
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;
@@ -146,7 +146,7 @@ fn visualize_plan_rec(
         PhysNodeKind::Multiplexer { input } => ("multiplexer".to_string(), from_ref(input)),
         PhysNodeKind::MultiScan { .. } => ("multi-scan-source".to_string(), &[][..]),
         PhysNodeKind::FileScan {
-            scan_sources,
+            scan_source,
             file_info,
             hive_parts,
             output_schema: _,
@@ -170,9 +170,7 @@ fn visualize_plan_rec(
             let mut f = EscapeLabel(&mut out);
 
             {
-                let disp = ScanSourcesDisplay(scan_sources);
-
-                write!(f, "\npaths: {}", disp).unwrap();
+                write!(f, "\npath: {}", scan_source.as_scan_source_ref()).unwrap();
             }
 
             {
