@@ -248,16 +248,14 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     // This one should run (nearly) last as this modifies the projections
     #[cfg(feature = "cse")]
-    if comm_subexpr_elim {
-        if !get_or_init_members!().has_ext_context {
-            let mut optimizer = CommonSubExprOptimizer::new();
-            let alp_node = IRNode::new_mutate(lp_top);
+    if comm_subexpr_elim && !get_or_init_members!().has_ext_context {
+        let mut optimizer = CommonSubExprOptimizer::new();
+        let alp_node = IRNode::new_mutate(lp_top);
 
-            lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
-                let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
-                Ok(rewritten.node())
-            })?;
-        }
+        lp_top = try_with_ir_arena(lp_arena, expr_arena, |arena| {
+            let rewritten = alp_node.rewrite(&mut optimizer, arena)?;
+            Ok(rewritten.node())
+        })?;
     }
 
     // During debug we check if the optimizations have not modified the final schema.
