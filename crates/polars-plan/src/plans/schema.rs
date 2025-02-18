@@ -291,14 +291,15 @@ pub(crate) fn det_join_schema(
                 }))?
                 // Columns from right
                 .hstack(schema_right.iter().map(|(name, dtype)| {
+                    suffixed = None;
+
                     let in_left_schema = schema_left.contains(name.as_str());
                     let is_coalesced = join_on_left.contains(name.as_str());
 
                     if in_left_schema && !is_coalesced {
-                        suffixed.replace(format_pl_smallstr!("{}{}", name, options.args.suffix()));
+                        suffixed = Some(format_pl_smallstr!("{}{}", name, options.args.suffix()));
                         (suffixed.clone().unwrap(), dtype.clone())
                     } else {
-                        suffixed = None;
                         (name.clone(), dtype.clone())
                     }
                 }))
@@ -381,7 +382,7 @@ pub(crate) fn det_join_schema(
                 let mut suffixed = None;
 
                 let (name, dtype) = if schema_left.contains(name) {
-                    suffixed.replace(format_pl_smallstr!("{}{}", name, options.args.suffix()));
+                    suffixed = Some(format_pl_smallstr!("{}{}", name, options.args.suffix()));
                     (suffixed.clone().unwrap(), dtype.clone())
                 } else {
                     (name.clone(), dtype.clone())
