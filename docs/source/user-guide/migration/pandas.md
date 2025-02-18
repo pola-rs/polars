@@ -65,7 +65,7 @@ examines the query plan and looks for ways to accelerate the query or reduce mem
 
 Polars is strict about data types. Data type resolution in Polars is dependent on the operation
 graph, whereas pandas converts types loosely (e.g. new missing data can lead to integer columns
-being converted to floats). This strictness leads to less bugs and more predicatable behavior.
+being converted to floats). This strictness leads to fewer bugs and more predictable behavior.
 
 ### Polars has a more verstatile API
 
