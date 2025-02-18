@@ -682,7 +682,7 @@ def test_nested_join(join_clause: str) -> None:
         ]
 
 
-def test_sql_forbid_join_unnamed_relation() -> None:
+def test_sql_forbid_nested_join_unnamed_relation() -> None:
     df = pl.DataFrame({"a": 1})
 
     with (
@@ -691,7 +691,7 @@ def test_sql_forbid_join_unnamed_relation() -> None:
     ):
         ctx.execute(
             """\
-SELECT a
+SELECT *
 FROM left
 JOIN (right JOIN right ON right.a = right.a)
 ON left.a = right.a
