@@ -59,7 +59,7 @@ pub struct SQLContext {
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
-    /// For creating unique suffixes for unnamed joins to avoid duplicate column errors.
+    /// Used to create unique suffixes for unnamed joins to avoid duplicate column errors.
     pub(crate) join_name_counter: usize,
 
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
@@ -616,17 +616,15 @@ impl SQLContext {
         let l_name: PlSmallStr = l_name.into();
 
         if !tbl_expr.joins.is_empty() {
-            let mut names: PlHashSet<PlSmallStr> = PlHashSet::with_capacity(tbl_expr.joins.len());
-
             for join in &tbl_expr.joins {
                 let (r_name, mut rf) = self.get_table(&join.relation)?;
                 let r_name: PlSmallStr = r_name.into();
-                let rsuffix = if !names.insert(r_name.clone()) {
-                    r_name.clone()
-                } else {
+                let rsuffix = if r_name.is_empty() {
                     let v = format_pl_smallstr!("__UNNAMED_TBL_{}", self.join_name_counter);
                     self.join_name_counter += 1;
                     v
+                } else {
+                    r_name.clone()
                 };
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
