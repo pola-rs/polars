@@ -200,8 +200,8 @@ fn aexpr_to_skip_batch_predicate_rec(
     if let Some(Some(lv)) = constant_evaluate(e, expr_arena, schema, 0) {
         if let Some(av) = lv.to_any_value() {
             return match av {
-                AnyValue::Null => Some(lv!(bool: false)),
-                AnyValue::Boolean(b) => Some(lv!(bool: b)),
+                AnyValue::Null => Some(lv!(bool: true)),
+                AnyValue::Boolean(b) => Some(lv!(bool: !b)),
                 _ => None,
             };
         }

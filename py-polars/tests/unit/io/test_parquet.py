@@ -2869,3 +2869,13 @@ def test_nested_string_slice_utf8_21202() -> None:
         pl.scan_parquet(f).slice(1, 1).collect().to_series(),
         s.slice(1, 1),
     )
+
+
+def test_filter_true_predicate_21204() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [1]})
+    df.write_parquet(f)
+    f.seek(0)
+    lf = pl.scan_parquet(f).filter(pl.lit(True))
+    assert_frame_equal(lf.collect(), df)
