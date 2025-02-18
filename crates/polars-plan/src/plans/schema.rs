@@ -404,7 +404,9 @@ pub(crate) fn det_join_schema(
 fn join_suffix_duplicate_help_msg(column_name: &str) -> PolarsError {
     polars_err!(
         Duplicate:
-        "column with name '{}' already exists
+        "\
+column with name '{}' already exists
+
 You may want to try:
 - renaming the column prior to joining
 - using the `suffix` parameter to specify a suffix different to the default one ('_right')",
