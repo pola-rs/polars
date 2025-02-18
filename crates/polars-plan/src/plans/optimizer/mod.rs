@@ -231,19 +231,19 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
 
     lp_top = opt.optimize_loop(&mut rules, expr_arena, lp_arena, lp_top)?;
 
-    if let Some(members) = get_members_opt!() {
-        if members.has_joins_or_unions && members.has_cache && _cse_plan_changed {
-            // We only want to run this on cse inserted caches
-            cache_states::set_cache_states(
-                lp_top,
-                lp_arena,
-                expr_arena,
-                scratch,
-                expr_eval,
-                verbose,
-                opt_flags.new_streaming(),
-            )?;
-        }
+    if get_members_opt!().is_some_and(|members| {
+        members.has_joins_or_unions && members.has_cache && _cse_plan_changed
+    }) {
+        // We only want to run this on cse inserted caches
+        cache_states::set_cache_states(
+            lp_top,
+            lp_arena,
+            expr_arena,
+            scratch,
+            expr_eval,
+            verbose,
+            opt_flags.new_streaming(),
+        )?;
     }
 
     // This one should run (nearly) last as this modifies the projections
