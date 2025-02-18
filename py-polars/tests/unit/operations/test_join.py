@@ -862,30 +862,35 @@ def test_join_results_in_duplicate_names() -> None:
     def f(x: Any) -> Any:
         return x.join(x, on=["a", "b"], how="left")
 
-    with pytest.raises(DuplicateError, match="'c_right' is duplicate"):
+    match_str = "(?s)column with name 'c_right' already exists.*You may want to try"
+
+    with pytest.raises(DuplicateError, match=match_str):
         f(df.lazy()).collect_schema()
 
-    with pytest.raises(DuplicateError, match="'c_right' is duplicate"):
+    with pytest.raises(DuplicateError, match=match_str):
         f(df.lazy()).collect()
 
-    with pytest.raises(DuplicateError, match="'c_right' is duplicate"):
+    with pytest.raises(DuplicateError, match=match_str):
         f(df).collect()
 
 
-def test_join_duplicate_suffixed_columns_21048() -> None:
+def test_join_duplicate_suffixed_columns_from_join_key_column_21048() -> None:
     df = pl.DataFrame({"a": 1, "b": 1, "b_right": 1})
 
     def f(x: Any) -> Any:
         return x.join(x, on="a")
 
+    # Ensure it also contains the hint
+    match_str = "(?s)column with name 'b_right' already exists.*You may want to try"
+
     # Ensure it fails immediately when resolving schema.
-    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
+    with pytest.raises(DuplicateError, match=match_str):
         f(df.lazy()).collect_schema()
 
-    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
+    with pytest.raises(DuplicateError, match=match_str):
         f(df.lazy()).collect()
 
-    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
+    with pytest.raises(DuplicateError, match=match_str):
         f(df)
 
 
