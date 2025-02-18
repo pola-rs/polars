@@ -3,7 +3,8 @@ from __future__ import annotations
 import typing
 import warnings
 from datetime import date, datetime
-from typing import TYPE_CHECKING, Literal
+from time import perf_counter
+from typing import TYPE_CHECKING, Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
@@ -1738,3 +1739,27 @@ def test_empty_join_result_with_array_15474() -> None:
     result = lhs.join(rhs, on="x")
     expected = pl.DataFrame(schema={"x": pl.Int64, "y": pl.Array(pl.Int64, 3)})
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.slow
+def test_join_where_eager_perf_21145() -> None:
+    left = pl.Series("left", range(3_000)).to_frame()
+    right = pl.Series("right", range(1_000)).to_frame()
+
+    def time_func(func: Callable[[], Any]) -> float:
+        times = []
+        for _ in range(3):
+            t = perf_counter()
+            func()
+            times.append(perf_counter() - t)
+
+        return min(times)
+
+    p = pl.col("left").is_between(pl.lit(0, dtype=pl.Int64), pl.col("right"))
+    runtime_eager = time_func(lambda: left.join_where(right, p))
+    runtime_lazy = time_func(lambda: left.lazy().join_where(right.lazy(), p).collect())
+    runtime_ratio = runtime_eager / runtime_lazy
+
+    if runtime_ratio > 1.3:
+        msg = f"runtime_ratio ({runtime_ratio}) > 1.3x ({runtime_eager = }, {runtime_lazy = })"
+        raise ValueError(msg)
