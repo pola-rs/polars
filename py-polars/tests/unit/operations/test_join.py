@@ -1793,6 +1793,10 @@ def test_join_where_eager_perf_21145() -> None:
     runtime_lazy = time_func(lambda: left.lazy().join_where(right.lazy(), p).collect())
     runtime_ratio = runtime_eager / runtime_lazy
 
-    if runtime_ratio > 1.3:
-        msg = f"runtime_ratio ({runtime_ratio}) > 1.3x ({runtime_eager = }, {runtime_lazy = })"
+    # Pick as high as reasonably possible for CI stability
+    # * Was observed to be >=5 seconds on the bugged version, so 3 is a safe bet.
+    threshold = 3
+
+    if runtime_ratio > threshold:
+        msg = f"runtime_ratio ({runtime_ratio}) > {threshold}x ({runtime_eager = }, {runtime_lazy = })"
         raise ValueError(msg)
