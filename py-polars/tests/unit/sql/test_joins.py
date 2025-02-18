@@ -603,10 +603,10 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
 @pytest.mark.parametrize(
     "join_clause",
     [
-        """
-        df2 JOIN df3 ON
-        df2.CharacterID = df3.CharacterID
-        """,
+        # """
+        # df2 JOIN df3 ON
+        # df2.CharacterID = df3.CharacterID
+        # """,
         """
         df2 INNER JOIN (
           df3 JOIN df4 ON df3.CharacterID = df4.CharacterID

@@ -27,7 +27,7 @@ use crate::table_functions::PolarsTableFunctions;
 #[derive(Clone)]
 pub struct TableInfo {
     pub(crate) frame: LazyFrame,
-    pub(crate) name: String,
+    pub(crate) name: PlSmallStr,
     pub(crate) schema: Arc<Schema>,
 }
 
@@ -59,6 +59,8 @@ pub struct SQLContext {
     pub(crate) function_registry: Arc<dyn FunctionRegistry>,
     pub(crate) lp_arena: Arena<IR>,
     pub(crate) expr_arena: Arena<AExpr>,
+    /// For creating unique suffixes for unnamed joins to avoid duplicate column errors.
+    pub(crate) join_name_counter: usize,
 
     cte_map: RefCell<PlHashMap<String, LazyFrame>>,
     table_aliases: RefCell<PlHashMap<String, String>>,
@@ -75,6 +77,7 @@ impl Default for SQLContext {
             joined_aliases: Default::default(),
             lp_arena: Default::default(),
             expr_arena: Default::default(),
+            join_name_counter: 0,
         }
     }
 }
@@ -610,9 +613,21 @@ impl SQLContext {
     /// execute the 'FROM' part of the query
     fn execute_from_statement(&mut self, tbl_expr: &TableWithJoins) -> PolarsResult<LazyFrame> {
         let (l_name, mut lf) = self.get_table(&tbl_expr.relation)?;
+        let l_name: PlSmallStr = l_name.into();
+
         if !tbl_expr.joins.is_empty() {
+            let mut names: PlHashSet<PlSmallStr> = PlHashSet::with_capacity(tbl_expr.joins.len());
+
             for join in &tbl_expr.joins {
                 let (r_name, mut rf) = self.get_table(&join.relation)?;
+                let r_name: PlSmallStr = r_name.into();
+                let rsuffix = if !names.insert(r_name.clone()) {
+                    r_name.clone()
+                } else {
+                    let v = format_pl_smallstr!("__UNNAMED_TBL_{}", self.join_name_counter);
+                    self.join_name_counter += 1;
+                    v
+                };
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
 
@@ -649,15 +664,24 @@ impl SQLContext {
                                 JoinOperator::RightOuter(_) => JoinType::Right,
                                 JoinOperator::Inner(_) => JoinType::Inner,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::Anti(_) | JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
+                                JoinOperator::Anti(_)
+                                | JoinOperator::LeftAnti(_)
+                                | JoinOperator::RightAnti(_) => JoinType::Anti,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::Semi(_) | JoinOperator::LeftSemi(_) | JoinOperator::RightSemi(_) => JoinType::Semi,
-                                join_type => polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type),
+                                JoinOperator::Semi(_)
+                                | JoinOperator::LeftSemi(_)
+                                | JoinOperator::RightSemi(_) => JoinType::Semi,
+                                join_type => polars_bail!(
+                                    SQLInterface:
+                                    "join type '{:?}' not currently supported",
+                                    join_type
+                                ),
                             },
+                            &rsuffix,
                         )?
                     },
                     JoinOperator::CrossJoin => {
-                        lf.cross_join(rf, Some(format_pl_smallstr!(":{}", r_name)))
+                        lf.cross_join(rf, Some(format_pl_smallstr!(":{}", rsuffix)))
                     },
                     join_type => {
                         polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type)
@@ -673,7 +697,7 @@ impl SQLContext {
                         .iter_names()
                         .filter_map(|name| {
                             // col exists in both tables and is aliased in the joined result
-                            let aliased_name = format!("{}:{}", name, r_name);
+                            let aliased_name = format!("{}:{}", name, rsuffix);
                             if left_schema.contains(name)
                                 && joined_schema.contains(aliased_name.as_str())
                             {
@@ -1011,6 +1035,7 @@ impl SQLContext {
         tbl_right: &TableInfo,
         constraint: &JoinConstraint,
         join_type: JoinType,
+        rsuffix: &str,
     ) -> PolarsResult<LazyFrame> {
         let (left_on, right_on) = process_join_constraint(constraint, tbl_left, tbl_right)?;
 
@@ -1022,7 +1047,7 @@ impl SQLContext {
             .left_on(left_on)
             .right_on(right_on)
             .how(join_type)
-            .suffix(format!(":{}", tbl_right.name))
+            .suffix(format!(":{}", rsuffix))
             .coalesce(JoinCoalesce::KeepColumns)
             .finish();
 
