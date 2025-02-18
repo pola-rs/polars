@@ -63,9 +63,9 @@ def test_true_false_predicate() -> None:
     df = pl.DataFrame({"len": [1]})
 
     out = df.select(
-        true=true_sbp.replace(None, False),
-        false=false_sbp.replace(None, False),
-        null=null_sbp.replace(None, False),
+        true=true_sbp,
+        false=false_sbp,
+        null=null_sbp,
     )
 
     assert_frame_equal(
