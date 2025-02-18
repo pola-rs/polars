@@ -72,7 +72,7 @@ being converted to floats). This strictness leads to fewer bugs and more predict
 Polars is built on expressions and allows expression inputs in almost all operations. This means
 that when you understand how expressions work, your knowledge in Polars extrapolates. Pandas doesn't
 have an expression system and often requires Python `lambda`s to express the complexity you want.
-Polars sees the requirement of a Python lambda as a lack of expressiveness of its API, and tries to
+Polars sees the requirement of a Python `lambda` as a lack of expressiveness of its API, and tries to
 give you native support whenever possible.
 
 ## Key syntax differences
