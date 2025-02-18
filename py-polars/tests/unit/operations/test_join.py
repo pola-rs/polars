@@ -850,7 +850,7 @@ def test_join_on_nth_error() -> None:
 
 
 def test_join_results_in_duplicate_names() -> None:
-    lhs = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 2, 3],
             "b": [4, 5, 6],
@@ -858,9 +858,35 @@ def test_join_results_in_duplicate_names() -> None:
             "c_right": [1, 2, 3],
         }
     )
-    rhs = lhs.clone()
+
+    def f(x: Any) -> Any:
+        return x.join(x, on=["a", "b"], how="left")
+
     with pytest.raises(DuplicateError, match="'c_right' is duplicate"):
-        lhs.join(rhs, on=["a", "b"], how="left")
+        f(df.lazy()).collect_schema()
+
+    with pytest.raises(DuplicateError, match="'c_right' is duplicate"):
+        f(df.lazy()).collect()
+
+    with pytest.raises(DuplicateError, match="'c_right' is duplicate"):
+        f(df).collect()
+
+
+def test_join_duplicate_suffixed_columns_21048() -> None:
+    df = pl.DataFrame({"a": 1, "b": 1, "b_right": 1})
+
+    def f(x: Any) -> Any:
+        return x.join(x, on="a")
+
+    # Ensure it fails immediately when resolving schema.
+    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
+        f(df.lazy()).collect_schema()
+
+    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
+        f(df.lazy()).collect()
+
+    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
+        f(df)
 
 
 def test_join_projection_invalid_name_contains_suffix_15243() -> None:
@@ -1763,20 +1789,3 @@ def test_join_where_eager_perf_21145() -> None:
     if runtime_ratio > 1.3:
         msg = f"runtime_ratio ({runtime_ratio}) > 1.3x ({runtime_eager = }, {runtime_lazy = })"
         raise ValueError(msg)
-
-
-def test_join_duplicate_suffixed_columns_21048() -> None:
-    df = pl.DataFrame({"a": 1, "b": 1, "b_right": 1})
-
-    def f(x: Any) -> Any:
-        return x.join(x, on="a")
-
-    # Ensure it fails immediately when resolving schema.
-    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
-        f(df.lazy()).collect_schema()
-
-    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
-        f(df.lazy()).collect()
-
-    with pytest.raises(DuplicateError, match="'b_right' is duplicate"):
-        f(df)

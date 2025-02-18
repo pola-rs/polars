@@ -277,6 +277,9 @@ pub(crate) fn det_join_schema(
                 join_on_right.insert(field.name);
             }
 
+            // For the error message
+            let mut suffixed = None;
+
             let new_schema = Schema::with_capacity(schema_left.len() + schema_right.len())
                 // Columns from left, excluding those used as join keys
                 .hstack(schema_left.iter().filter_map(|(name, dtype)| {
@@ -292,13 +295,20 @@ pub(crate) fn det_join_schema(
                     let is_coalesced = join_on_left.contains(name.as_str());
 
                     if in_left_schema && !is_coalesced {
-                        let suffixed_name =
-                            format_pl_smallstr!("{}{}", name, options.args.suffix());
-                        (suffixed_name, dtype.clone())
+                        suffixed.replace(format_pl_smallstr!("{}{}", name, options.args.suffix()));
+                        (suffixed.clone().unwrap(), dtype.clone())
                     } else {
+                        suffixed.take();
                         (name.clone(), dtype.clone())
                     }
-                }))?;
+                }))
+                .map_err(|e| {
+                    if let Some(column) = suffixed {
+                        join_suffix_duplicate_help_msg(&column)
+                    } else {
+                        e
+                    }
+                })?;
 
             Ok(Arc::new(new_schema))
         },
@@ -367,21 +377,39 @@ pub(crate) fn det_join_schema(
                     continue;
                 }
 
-                let (name, dtype) = if schema_left.contains(name.as_str()) {
-                    (
-                        format_pl_smallstr!("{}{}", name, options.args.suffix()),
-                        dtype.clone(),
-                    )
+                // For the error message.
+                let mut suffixed = None;
+
+                let (name, dtype) = if schema_left.contains(name) {
+                    suffixed.replace(format_pl_smallstr!("{}{}", name, options.args.suffix()));
+                    (suffixed.clone().unwrap(), dtype.clone())
                 } else {
                     (name.clone(), dtype.clone())
                 };
 
-                new_schema.try_insert(name, dtype)?;
+                new_schema.try_insert(name, dtype).map_err(|e| {
+                    if let Some(column) = suffixed {
+                        join_suffix_duplicate_help_msg(&column)
+                    } else {
+                        e
+                    }
+                })?;
             }
 
             Ok(Arc::new(new_schema))
         },
     }
+}
+
+fn join_suffix_duplicate_help_msg(column_name: &str) -> PolarsError {
+    polars_err!(
+        Duplicate:
+        "column with name '{}' already exists
+You may want to try:
+- renaming the column prior to joining
+- using the `suffix` parameter to specify a suffix different to the default one ('_right')",
+        column_name
+    )
 }
 
 // We don't use an `Arc<Mutex>` because caches should live in different query plans.
