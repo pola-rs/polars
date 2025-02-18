@@ -222,6 +222,14 @@ impl MutableFixedSizeBinaryArray {
             validity.shrink_to_fit()
         }
     }
+
+    pub fn freeze(self) -> FixedSizeBinaryArray {
+        FixedSizeBinaryArray::new(
+            ArrowDataType::FixedSizeBinary(self.size),
+            self.values.into(),
+            self.validity.map(|x| x.into()),
+        )
+    }
 }
 
 /// Accessors

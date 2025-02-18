@@ -1,13 +1,15 @@
 //! APIs exposing `crate::parquet`'s statistics as arrow's statistics.
 use arrow::array::{
-    Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, PrimitiveArray, Utf8ViewArray,
+    Array, BinaryViewArray, BooleanArray, FixedSizeBinaryArray, MutableBinaryViewArray, MutableBooleanArray, MutableFixedSizeBinaryArray, MutablePrimitiveArray, NullArray, PrimitiveArray, Utf8ViewArray
 };
+use arrow::bitmap::BitmapBuilder;
 use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
-use arrow::types::{f16, i256, NativeType};
+use arrow::types::{f16, i256, NativeType, PrimitiveType};
 use ethnum::I256;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::IdxSize;
 
-use super::ParquetTimeUnit;
+use super::{ParquetTimeUnit, RowGroupMetadata};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PhysicalType as ParquetPhysicalType;
 use crate::parquet::statistics::Statistics as ParquetStatistics;
@@ -275,6 +277,228 @@ impl ColumnStatistics {
             max_value,
         })
     }
+
+    pub fn arrow_arrays(
+        field: &Field,
+        logical_type: Option<PrimitiveLogicalType>,
+        physical_type: ParquetPhysicalType,
+        statistics: impl Clone + ExactSizeIterator<Item = ParquetResult<Option<ParquetStatistics>>>,
+    ) -> ParquetResult<ArrowColumnStatisticsArrays> {
+        use ParquetStatistics as S;
+
+        let mut null_count = MutablePrimitiveArray::<IdxSize>::with_capacity(statistics.len());
+        let mut distinct_count = MutablePrimitiveArray::<IdxSize>::with_capacity(statistics.len());
+
+        for s in statistics.clone() {
+            let Some(s) = s? else {
+                null_count.push(None);
+                distinct_count.push(None);
+                continue;
+            };
+
+            let (nc, dc) = match &s {
+                S::Binary(s) => (s.null_count, s.distinct_count),
+                S::Boolean(s) => (s.null_count, s.distinct_count),
+                S::FixedLen(s) => (s.null_count, s.distinct_count),
+                S::Int32(s) => (s.null_count, s.distinct_count),
+                S::Int64(s) => (s.null_count, s.distinct_count),
+                S::Int96(s) => (s.null_count, s.distinct_count),
+                S::Float(s) => (s.null_count, s.distinct_count),
+                S::Double(s) => (s.null_count, s.distinct_count),
+            };
+
+            null_count.push(nc.map(|nc| nc as IdxSize));
+            distinct_count.push(dc.map(|dc| dc as IdxSize));
+        }
+
+        let null_count = null_count.freeze();
+        let distinct_count = distinct_count.freeze();
+
+        macro_rules! rmap {
+            ($expect:ident, $map:expr, $mutable:ty$(, $wc_args:expr)*) => {{
+
+                let mut min_array = <$mutable>::with_capacity(statistics.len()$(, $wc_args)*);
+                let mut max_array = <$mutable>::with_capacity(statistics.len()$(, $wc_args)*);
+
+                for s in statistics {
+                    let s = s?.map(|s| s.$expect());
+                    let (min, max) = match s {
+                        None => (None, None),
+                        Some(s) => (($map)(s.min_value)?, ($map)(s.max_value)?),
+                    };
+
+                    min_array.push(min);
+                    max_array.push(max);
+                }
+
+                (min_array.freeze().to_boxed(), max_array.freeze().to_boxed())
+            }};
+            ($expect:ident, @prim $from:ty $(as $to:ty)? $(, $map:expr)?) => {{
+                rmap!(
+                    $expect,
+                    |x: Option<$from>| {
+                        $(
+                        let x = x.map(|x| x as $to);
+                        )?
+                        $(
+                        let x = x.map($map);
+                        )?
+                        ParquetResult::Ok(x)
+                    },
+                    MutablePrimitiveArray<_>
+                )
+            }};
+            (@binary $(, $map:expr)?) => {{
+                rmap!(
+                    expect_binary,
+                    |x: Option<Vec<u8>>| {
+                        $(
+                        let x = x.map($map);
+                        )?
+                        ParquetResult::Ok(x)
+                    },
+                    MutableBinaryViewArray::<[u8]>
+                )
+            }};
+            (@string) => {{
+                rmap!(
+                    expect_binary,
+                    |x: Option<Vec<u8>>| {
+                        let x = x.map(String::from_utf8).transpose().map_err(|_| {
+                            ParquetError::oos("Invalid UTF8 in Statistics")
+                        })?;
+                        ParquetResult::Ok(x)
+                    },
+                    MutableBinaryViewArray::<str>
+                )
+            }};
+        }
+
+        use {ArrowDataType as D, ParquetPhysicalType as PPT};
+        let (min_value, max_value) = match (field.dtype(), &physical_type) {
+            (D::Null, _) => (
+                NullArray::try_new(ArrowDataType::Null, statistics.len()).unwrap().boxed(),
+                NullArray::try_new(ArrowDataType::Null, statistics.len()).unwrap().boxed(),
+            ),
+
+            (D::Boolean, _) => rmap!(
+                expect_boolean,
+                |x: Option<bool>| ParquetResult::Ok(x),
+                MutableBooleanArray
+            ),
+
+            (D::Int8, _) => rmap!(expect_int32, @prim i32 as i8),
+            (D::Int16, _) => rmap!(expect_int32, @prim i32 as i16),
+            (D::Int32 | D::Date32 | D::Time32(_), _) => rmap!(expect_int32, @prim i32 as i32),
+
+            // some implementations of parquet write arrow's date64 into i32.
+            (D::Date64, PPT::Int32) => rmap!(expect_int32, @prim i32 as i64, |x| x * 86400000),
+
+            (D::Int64 | D::Time64(_) | D::Duration(_), _) | (D::Date64, PPT::Int64) => {
+                rmap!(expect_int64, @prim i64 as i64)
+            },
+
+            (D::Interval(IntervalUnit::YearMonth), _) => rmap!(
+                expect_binary,
+                @prim Vec<u8>,
+                |x| convert_year_month(&x)
+            ),
+            (D::Interval(IntervalUnit::DayTime), _) => rmap!(
+                expect_binary,
+                @prim Vec<u8>,
+                |x| convert_days_ms(&x)
+            ),
+
+            (D::UInt8, _) => rmap!(expect_int32, @prim i32 as u8),
+            (D::UInt16, _) => rmap!(expect_int32, @prim i32 as u16),
+            (D::UInt32, PPT::Int32) => rmap!(expect_int32, @prim i32 as u32),
+
+            // some implementations of parquet write arrow's u32 into i64.
+            (D::UInt32, PPT::Int64) => rmap!(expect_int64, @prim i64 as u32),
+            (D::UInt64, _) => rmap!(expect_int64, @prim i64 as u64),
+
+            (D::Timestamp(time_unit, _), PPT::Int96) => {
+                rmap!(expect_int96, @prim [u32; 3], |x| {
+                    timestamp(logical_type.as_ref(), *time_unit, int96_to_i64_ns(x))
+                })
+            },
+            (D::Timestamp(time_unit, _), PPT::Int64) => {
+                rmap!(expect_int64, @prim i64, |x| {
+                    timestamp(logical_type.as_ref(), *time_unit, x)
+                })
+            },
+
+            // Read Float16, since we don't have a f16 type in Polars we read it to a Float32.
+            (_, PPT::FixedLenByteArray(2))
+                if matches!(
+                    logical_type.as_ref(),
+                    Some(PrimitiveLogicalType::Float16)
+                ) =>
+            {
+                rmap!(expect_fixedlen, @prim Vec<u8>, |v| f16::from_le_bytes([v[0], v[1]]).to_f32())
+            },
+            (D::Float32, _) => rmap!(expect_float, @prim f32),
+            (D::Float64, _) => rmap!(expect_double, @prim f64),
+
+            (D::Decimal(_, _), PPT::Int32) => rmap!(expect_int32, @prim i32 as i128),
+            (D::Decimal(_, _), PPT::Int64) => rmap!(expect_int64, @prim i64 as i128),
+            (D::Decimal(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
+                return Err(ParquetError::not_supported(format!(
+                    "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}",
+                )))
+            },
+            (D::Decimal(_, _), PPT::FixedLenByteArray(n)) => rmap!(
+                expect_fixedlen,
+                @prim Vec<u8>,
+                |x| convert_i128(&x, *n)
+            ),
+            (D::Decimal256(_, _), PPT::Int32) => {
+                rmap!(expect_int32, @prim i32, |x: i32| i256(I256::new(x.into())))
+            },
+            (D::Decimal256(_, _), PPT::Int64) => {
+                rmap!(expect_int64, @prim i64, |x: i64| i256(I256::new(x.into())))
+            },
+            (D::Decimal256(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
+                return Err(ParquetError::not_supported(format!(
+                    "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
+                )))
+            },
+            (D::Decimal256(_, _), PPT::FixedLenByteArray(_)) => rmap!(
+                expect_fixedlen,
+                @prim Vec<u8>,
+                |x| convert_i256(&x)
+            ),
+            (D::Binary, _) => rmap!(@binary),
+            (D::LargeBinary, _) => rmap!(@binary),
+            (D::Utf8, _) => rmap!(@string),
+            (D::LargeUtf8, _) => rmap!(@string),
+
+            (D::BinaryView, _) => rmap!(@binary),
+            (D::Utf8View, _) => rmap!(@string),
+
+            (D::FixedSizeBinary(size), _) => {
+                rmap!(expect_fixedlen, |x: Option<Vec<u8>>| ParquetResult::Ok(x), MutableFixedSizeBinaryArray, *size)
+            },
+
+            other => todo!("{:?}", other),
+        };
+
+        Ok(ArrowColumnStatisticsArrays {
+            null_count,
+            distinct_count,
+
+            min_value,
+            max_value,
+        })
+    }
+}
+
+pub struct ArrowColumnStatisticsArrays {
+    pub null_count: PrimitiveArray<IdxSize>,
+    pub distinct_count: PrimitiveArray<IdxSize>,
+
+    pub min_value: Box<dyn Array>,
+    pub max_value: Box<dyn Array>,
 }
 
 /// Deserializes the statistics in the column chunks from a single `row_group`

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
-    AnyValue, ArrowSchema, Column, DataType, PlHashMap, PlIndexSet, IDX_DTYPE,
+    AnyValue, ArrowSchema, Column, DataType, IdxCa, IntoColumn, PlHashMap, PlIndexSet, IDX_DTYPE
 };
 use polars_core::scalar::Scalar;
 use polars_core::schema::Schema;
@@ -88,57 +88,69 @@ fn create_select_mask(
         .collect();
     let mut df = DataFrame::empty_with_schema(&stat_schema);
 
-    for md in rgs {
-        let mut columns = Vec::with_capacity(stat_schema.len());
-
-        columns.push(Column::new_scalar(
+    let mut columns = Vec::with_capacity(stat_schema.len());
+    columns.push(
+        IdxCa::from_vec(
             PlSmallStr::from_static("len"),
-            (md.num_rows() as IdxSize).into(),
-            1,
-        ));
+            rgs.iter().map(|rg| rg.num_rows() as IdxSize).collect(),
+        )
+        .into_column(),
+    );
 
-        if let Some(stats) = collect_statistics(md, schema)? {
-            for col_idx in &idxs {
-                let col = &stats.column_stats()[*col_idx];
-                let dtype = col.dtype();
+    let Some(first_rg) = rgs.first() else {
+        return Ok(Bitmap::new());
+    };
 
-                let min = Scalar::new(
-                    dtype.clone(),
-                    col.to_min()
-                        .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
-                );
-                let max = Scalar::new(
-                    dtype.clone(),
-                    col.to_max()
-                        .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
-                );
-                let null_count = col
-                    .null_count()
-                    .map_or(Scalar::null(IDX_DTYPE), |nc| Scalar::from(nc as IdxSize));
+    for live_col in live_columns.iter() {
+        let field = schema.get(live_col).unwrap();
 
-                columns.extend([
-                    Column::new_scalar(format_pl_smallstr!("{}_min", col.field_name()), min, 1),
-                    Column::new_scalar(format_pl_smallstr!("{}_max", col.field_name()), max, 1),
-                    Column::new_scalar(
-                        format_pl_smallstr!("{}_nc", col.field_name()),
-                        null_count,
-                        1,
-                    ),
-                ]);
-            }
-        } else {
-            for (i, l) in live_columns.iter().enumerate() {
-                let (_, dtype) = stat_schema.get_at_index(1 + i * 3).unwrap();
-                columns.extend([
-                    Column::full_null(format_pl_smallstr!("{l}_min"), 1, dtype),
-                    Column::full_null(format_pl_smallstr!("{l}_max"), 1, dtype),
-                    Column::full_null(format_pl_smallstr!("{l}_nc"), 1, &IDX_DTYPE),
-                ]);
-            }
-        }
+        let mut iter = md.columns_under_root_iter(&field.name).unwrap();
 
-        df.vstack_mut_owned_unchecked(unsafe { DataFrame::new_no_checks(1, columns) });
+        let statistics = deserialize(field, &mut iter)?;
+        assert!(iter.next().is_none());
     }
+
+    if let Some(stats) = collect_statistics(md, schema)? {
+        for col_idx in &idxs {
+            let col = &stats.column_stats()[*col_idx];
+            let dtype = col.dtype();
+
+            let min = Scalar::new(
+                dtype.clone(),
+                col.to_min()
+                    .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
+            );
+            let max = Scalar::new(
+                dtype.clone(),
+                col.to_max()
+                    .map_or(AnyValue::Null, |s| s.get(0).unwrap().into_static()),
+            );
+            let null_count = col
+                .null_count()
+                .map_or(Scalar::null(IDX_DTYPE), |nc| Scalar::from(nc as IdxSize));
+
+            columns.extend([
+                Column::new_scalar(format_pl_smallstr!("{}_min", col.field_name()), min, 1),
+                Column::new_scalar(format_pl_smallstr!("{}_max", col.field_name()), max, 1),
+                Column::new_scalar(
+                    format_pl_smallstr!("{}_nc", col.field_name()),
+                    null_count,
+                    1,
+                ),
+            ]);
+        }
+    } else {
+        for (i, l) in live_columns.iter().enumerate() {
+            let (_, dtype) = stat_schema.get_at_index(1 + i * 3).unwrap();
+            columns.extend([
+                Column::full_null(format_pl_smallstr!("{l}_min"), 1, dtype),
+                Column::full_null(format_pl_smallstr!("{l}_max"), 1, dtype),
+                Column::full_null(format_pl_smallstr!("{l}_nc"), 1, &IDX_DTYPE),
+            ]);
+        }
+    }
+
+    df.vstack_mut_owned_unchecked(unsafe { DataFrame::new_no_checks(1, columns) });
 
     df.rechunk_mut();
     let pred_result = sbp.evaluate_with_stat_df(&df);
