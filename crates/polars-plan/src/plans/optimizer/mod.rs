@@ -193,7 +193,7 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     // Make sure it is after predicate pushdown
-    if opt_flags.collapse_joins() {
+    if opt_flags.collapse_joins() && get_or_init_members!().has_filter_with_join_input {
         collapse_joins::optimize(lp_top, lp_arena, expr_arena);
     }
 
