@@ -862,8 +862,10 @@ def test_join_results_in_duplicate_names() -> None:
     def f(x: Any) -> Any:
         return x.join(x, on=["a", "b"], how="left")
 
+    # Ensure it also contains the hint
     match_str = "(?s)column with name 'c_right' already exists.*You may want to try"
 
+    # Ensure it fails immediately when resolving schema.
     with pytest.raises(DuplicateError, match=match_str):
         f(df.lazy()).collect_schema()
 
