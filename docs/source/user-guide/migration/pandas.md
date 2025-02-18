@@ -50,6 +50,20 @@ examines the query plan and looks for ways to accelerate the query or reduce mem
 
 `Dask` also supports lazy evaluation when it generates a query plan.
 
+### Polars is strict
+
+Polars is strict about data types. Data type resolution in Polars are dependent on the operation
+graph, whereas pandas converts types loosely (e.g. new missing data can lead to integer columns
+being converted to floats). This strictness leads to less bugs and more predicatable behavior.
+
+### Polars has a more verstatile API
+
+Polars is built on expressions and allows expression inputs in almost all operations. This means
+that when you understand how expressions work, your knowledge in Polars extrapolates. Pandas doesn't
+have an expression system and often requires Python lambda's to express the complexity you want.
+Polars sees the requirement of a Python lambda as a lack of expressiveness of its API, and tries to
+give you native support whenever possible.
+
 ## Key syntax differences
 
 Users coming from pandas generally need to know one thing...
