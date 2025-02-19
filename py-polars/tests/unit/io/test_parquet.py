@@ -1305,6 +1305,9 @@ def test_parquet_nested_struct_17933() -> None:
     test_round_trip(df)
 
 
+# This is fixed with POLARS_FORCE_MULTISCAN=1. Without it we have
+# first_metadata.unwrap() on None.
+@pytest.mark.may_fail_auto_streaming
 def test_parquet_pyarrow_map() -> None:
     xs = [
         [
@@ -1340,6 +1343,18 @@ def test_parquet_pyarrow_map() -> None:
     )
     f.seek(0)
     assert_frame_equal(pl.read_parquet(f).explode(["x"]), expected)
+
+    # Test for https://github.com/pola-rs/polars/issues/21317
+    # Specifying schema/allow_missing_columns
+    for allow_missing_columns in [True, False]:
+        assert_frame_equal(
+            pl.read_parquet(
+                f,
+                schema={"x": pl.List(pl.Struct({"key": pl.Int32, "value": pl.Int32}))},
+                allow_missing_columns=allow_missing_columns,
+            ).explode(["x"]),
+            expected,
+        )
 
 
 @pytest.mark.parametrize(
