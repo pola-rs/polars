@@ -103,19 +103,24 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
         dfs
     };
 
-    let mut acc_df = DataFrame::empty();
-    unsafe { acc_df.get_columns_mut() }.reserve(out_width);
+    let mut acc_cols = Vec::with_capacity(out_width);
 
     for df in dfs {
-        unsafe { acc_df.get_columns_mut() }.extend(df.get_columns().iter().cloned());
+        acc_cols.extend(df.get_columns().iter().cloned());
     }
 
-    if check_duplicates {
-        DataFrame::validate_columns_slice(acc_df.get_columns())
-            .map_err(|e| e.context("unable to hstack".into()))?;
-    }
+    let df = if check_duplicates {
+        DataFrame::new(acc_cols).map_err(|e| e.context("unable to hstack".into()))?
+    } else {
+        if cfg!(debug_assertions) {
+            if acc_cols.len() > 2 {
+                assert!(acc_cols.iter().all(|c| c.len() == acc_cols[0].len()));
+            }
+        }
+        unsafe { DataFrame::new_no_checks_height_from_first(acc_cols) }
+    };
 
-    Ok(acc_df)
+    Ok(df)
 }
 
 #[cfg(test)]

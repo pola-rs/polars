@@ -272,7 +272,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn new(columns: Vec<Column>) -> PolarsResult<Self> {
-        DataFrame::validate_columns_slice(&columns)?;
+        DataFrame::validate_columns_slice(&columns)
+            .map_err(|e| e.context("could not create a new DataFrame"))?;
         Ok(unsafe { Self::new_no_checks_height_from_first(columns) })
     }
 
