@@ -12,6 +12,9 @@ impl DataFrame {
         Self::validate_columns_iter(columns.iter())
     }
 
+    /// Ensure all equal height and names are unique.
+    ///
+    /// An Ok() result indicates `columns` is a valid state for a DataFrame.
     pub fn validate_columns_iter<'a, I: IntoIterator<Item = &'a Column>>(
         columns_iter: I,
     ) -> PolarsResult<()> {
