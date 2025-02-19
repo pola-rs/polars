@@ -261,6 +261,8 @@ impl DataFrame {
 
     /// Create a DataFrame from a Vector of Series.
     ///
+    /// Errors if a column names are not unique, or if heights are not all equal.
+    ///
     /// # Example
     ///
     /// ```
