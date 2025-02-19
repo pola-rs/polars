@@ -34,7 +34,7 @@ impl DataFrame {
 
             Ok(())
         } else {
-            Self::validate_columns_iter(columns.iter())
+            DataFrame::validate_columns_iter(columns.iter())
         }
     }
 

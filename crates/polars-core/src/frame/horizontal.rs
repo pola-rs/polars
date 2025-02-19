@@ -14,20 +14,15 @@ impl DataFrame {
     ///
     /// Note that on a debug build this will panic on duplicates / height mismatch.
     pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
-        // If we don't have any columns yet, copy the height from the given columns.
-        if let Some(fst) = columns.first() {
-            if self.width() == 0 {
-                // SAFETY: The functions invariants asks for all columns to be the same length so
-                // that makes that a valid height.
-                unsafe { self.set_height(fst.len()) };
-            }
-        }
-
         self.clear_schema();
         self.columns.extend_from_slice(columns);
 
         if cfg!(debug_assertions) {
             Self::validate_columns_slice(&self.columns).unwrap();
+        }
+
+        if let Some(c) = self.columns.first() {
+            unsafe { self.set_height(c.len()) };
         }
 
         self
@@ -45,10 +40,14 @@ impl DataFrame {
     /// }
     /// ```
     pub fn hstack_mut(&mut self, columns: &[Column]) -> PolarsResult<&mut Self> {
-        // Validate first - on a debug build `hstack_mut_unchecked` will panic on invalid columns.
-        Self::validate_columns_iter(self.get_columns().iter().chain(columns))?;
+        self.clear_schema();
+        self.columns.extend_from_slice(columns);
 
-        unsafe { self.hstack_mut_unchecked(columns) };
+        Self::validate_columns_slice(&self.columns)?;
+
+        if let Some(c) = self.columns.first() {
+            unsafe { self.set_height(c.len()) };
+        }
 
         Ok(self)
     }
