@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import sys
 from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
@@ -361,6 +362,14 @@ class Col:
             return getattr(type(self), name)
 
         return _create_col(name)
+
+    if not sys.version_info >= (3, 11):
+
+        def __getstate__(self) -> object:
+            return self.__dict__
+
+        def __setstate__(self, state: object) -> None:
+            self.__dict__ = state
 
 
 col: Col = Col()
