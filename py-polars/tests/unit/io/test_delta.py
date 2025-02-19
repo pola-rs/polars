@@ -3,16 +3,20 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pyarrow as pa
 import pyarrow.fs
 import pytest
-from deltalake import DeltaTable, write_deltalake, convert_to_deltalake
+from deltalake import DeltaTable, convert_to_deltalake, write_deltalake
 from deltalake.exceptions import DeltaError, TableNotFoundError
 from deltalake.table import TableMerger
 
 import polars as pl
 from polars.testing import assert_frame_equal, assert_frame_not_equal
+
+if TYPE_CHECKING:
+    from typing import Literal
 
 
 @pytest.fixture
@@ -532,22 +536,24 @@ def test_schema_on_read(tmp_path: Path) -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": datetime.now()})
 
     df.write_delta(tmp_path)
-    schema = {"a": pl.Int64, "b": pl.Datetime(time_unit="us")}
+    schema = pl.Schema({"a": pl.Int64(), "b": pl.Datetime(time_unit="us")})
     pl.read_delta(str(tmp_path), schema=schema)
 
 
 @pytest.mark.write_disk
 def test_schema_on_read_spark_ts(tmp_path: Path) -> None:
-    def get_df(t: str) -> pl.DataFrame:
+    def get_df(t: Literal["ns", "us", "ms"]) -> pl.DataFrame:
         return pl.DataFrame({"a": [1, 2, 3], "ts_nano": datetime.now()}).with_columns(
             pl.col("ts_nano").cast(pl.Datetime(t))
         )
 
     delta_path = Path(tmp_path, "sub")
     delta_path.mkdir()
+
     # Write as microseconds
     get_df("us").write_parquet(f"{delta_path}/p.parquet")
     convert_to_deltalake(str(delta_path))
+
     # Overwrite with nanosecond to emulate Spark/Delta default write
     get_df("ns").write_parquet(f"{delta_path}/p.parquet")
 
@@ -561,5 +567,5 @@ def test_schema_on_read_spark_ts(tmp_path: Path) -> None:
     assert expected in str(err.value)
 
     # Fix read with explicit schema
-    schema = {"a": pl.Int64, "ts": pl.Datetime(time_unit="ns")}
+    schema = pl.Schema({"a": pl.Int64(), "ts": pl.Datetime(time_unit="ns")})
     pl.read_delta(str(delta_path), schema=schema)

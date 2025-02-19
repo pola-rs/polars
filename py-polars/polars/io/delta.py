@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from deltalake import DeltaTable
 
     from polars import DataFrame, DataType, LazyFrame
-    from polars._typing import SchemaDict
     from polars.io.cloud import CredentialProviderFunction
 
 
@@ -29,7 +28,7 @@ def read_delta(
     *,
     version: int | str | datetime | None = None,
     columns: list[str] | None = None,
-    schema: SchemaDict | None = None,
+    schema: Schema | None = None,
     rechunk: bool | None = None,
     storage_options: dict[str, Any] | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
@@ -174,7 +173,7 @@ def scan_delta(
     *,
     version: int | str | datetime | None = None,
     storage_options: dict[str, Any] | None = None,
-    schema: SchemaDict | None = None,
+    schema: Schema | None = None,
     credential_provider: CredentialProviderFunction | Literal["auto"] | None = "auto",
     delta_table_options: dict[str, Any] | None = None,
     use_pyarrow: bool = False,
