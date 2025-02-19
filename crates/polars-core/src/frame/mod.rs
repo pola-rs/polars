@@ -4,7 +4,7 @@ use std::{mem, ops};
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
-use polars_schema::schema::debug_ensure_matching_schema_names;
+use polars_schema::schema::ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -31,6 +31,7 @@ pub(crate) mod horizontal;
 pub mod row;
 mod top_k;
 mod upstream_traits;
+mod validation;
 
 use arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
@@ -271,17 +272,8 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn new(columns: Vec<Column>) -> PolarsResult<Self> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-
-        let Some(fst) = columns.first() else {
-            return Ok(DataFrame {
-                height: 0,
-                columns,
-                cached_schema: OnceLock::new(),
-            });
-        };
-
-        Self::new_with_height(fst.len(), columns)
+        DataFrame::validate_columns_slice(&columns)?;
+        Ok(unsafe { Self::new_no_checks_height_from_first(columns) })
     }
 
     pub fn new_with_height(height: usize, columns: Vec<Column>) -> PolarsResult<Self> {
@@ -1845,7 +1837,9 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        debug_ensure_matching_schema_names(schema, self.schema())?;
+        if cfg!(debug_assertions) {
+            ensure_matching_schema_names(schema, self.schema())?;
+        }
 
         cols.iter()
             .map(|name| {
