@@ -74,9 +74,9 @@ impl HashKeys {
         self.len() == 0
     }
 
-    /// After this call partition_idxs[p] will contain the indices of hashes
-    /// that belong to partition p, and the cardinality sketches are updated
-    /// accordingly.
+    /// After this call partition_idxs[p] will be extended with the indices of
+    /// hashes that belong to partition p, and the cardinality sketches are
+    /// updated accordingly.
     pub fn gen_partition_idxs(
         &self,
         partitioner: &HashPartitioner,
@@ -168,9 +168,6 @@ impl RowEncodedKeys {
     ) {
         assert!(partition_idxs.len() == partitioner.num_partitions());
         assert!(!BUILD_SKETCHES || sketches.len() == partitioner.num_partitions());
-        for p in partition_idxs.iter_mut() {
-            p.clear();
-        }
 
         if let Some(validity) = self.keys.validity() {
             for (i, (h, is_v)) in self.hashes.values_iter().zip(validity).enumerate() {
@@ -272,9 +269,6 @@ impl SingleKeys {
         _partition_nulls: bool,
     ) {
         assert!(partitioner.num_partitions() == partition_idxs.len());
-        for p in partition_idxs.iter_mut() {
-            p.clear();
-        }
 
         todo!()
     }

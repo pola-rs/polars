@@ -456,6 +456,71 @@ impl SampleState {
     }
 }
 
+mod new {
+    use super::*;
+
+    #[derive(Default)]
+    struct LocalBuilder {
+        // The complete list of morsels and their computed hashes seen by this builder.
+        morsels: Vec<(MorselSeq, DataFrame, HashKeys)>,
+
+        // A cardinality sketch per partition for the keys seen by this builder.
+        sketch_per_p: Vec<CardinalitySketch>,
+        
+        // morsel_idxs_values_per_p[p][start..stop] contains the offsets into morsels[i]
+        // for partition p, where start, stop are:
+        // let start = morsel_idxs_offsets[i * num_partitions + p];
+        // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
+        morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
+        morsel_idxs_offsets_per_p: Vec<usize>,
+    }
+
+    async fn partition_and_sink(
+        mut recv: Receiver<Morsel>,
+        local: &mut LocalBuilder,
+        partitioner: HashPartitioner,
+        params: &EquiJoinParams,
+        state: &ExecutionState,
+    ) -> PolarsResult<()> {
+        let track_unmatchable = params.emit_unmatched_build();
+        local.sketch_per_p.resize_with(partitioner.num_partitions(), Default::default);
+        local.morsel_idxs_values_per_p.resize_with(partitioner.num_partitions(), Default::default);
+        
+        if local.morsel_idxs_offsets_per_p.is_empty() {
+            local.morsel_idxs_offsets_per_p.resize(partitioner.num_partitions(), 0);
+        }
+
+        let (key_selectors, payload_selector);
+        if params.left_is_build.unwrap() {
+            payload_selector = &params.left_payload_select;
+            key_selectors = &params.left_key_selectors;
+        } else {
+            payload_selector = &params.right_payload_select;
+            key_selectors = &params.right_key_selectors;
+        };
+
+        while let Ok(morsel) = recv.recv().await {
+            // Compute hashed keys and payload. We must rechunk the payload for
+            // later gathers.
+            let hash_keys = select_keys(morsel.df(), key_selectors, params, state).await?;
+            let mut payload = select_payload(morsel.df().clone(), payload_selector);
+            payload.rechunk_mut();
+
+            hash_keys.gen_partition_idxs(
+                &partitioner,
+                &mut local.morsel_idxs_values_per_p,
+                &mut local.sketch_per_p,
+                track_unmatchable,
+            );
+
+            local.morsel_idxs_offsets_per_p.extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
+            local.morsels.push((morsel.seq(), payload, hash_keys));
+        }
+        Ok(())
+    }
+}
+
+
 #[derive(Default)]
 struct BuildPartition {
     hash_keys: Vec<HashKeys>,
@@ -500,6 +565,9 @@ impl BuildState {
             payload._deshare_views_mut();
 
             unsafe {
+                for p in partition_idxs.iter_mut() {
+                    p.clear();
+                }
                 hash_keys.gen_partition_idxs(
                     &partitioner,
                     &mut partition_idxs,
@@ -672,6 +740,9 @@ impl ProbeState {
 
             unsafe {
                 // Partition and probe the tables.
+                for p in partition_idxs.iter_mut() {
+                    p.clear();
+                }
                 hash_keys.gen_partition_idxs(
                     &partitioner,
                     &mut partition_idxs,
