@@ -109,7 +109,7 @@ impl<T> Connector<T> {
             }
             if state & CLOSED_BIT == CLOSED_BIT {
                 // SAFETY: no synchronization needed, we are the only one left.
-                // Restore the closed bit we just overwrite.
+                // Restore the closed bit we just overwrote.
                 self.state.store(CLOSED_BIT, Ordering::Relaxed);
                 return Err(SendError::Closed(self.value.get().read().assume_init()));
             }
@@ -147,7 +147,7 @@ impl<T> Connector<T> {
                     self.send_waker.wake();
                 }
                 if state & CLOSED_BIT == CLOSED_BIT {
-                    // Restore the closed bit we just overwrite.
+                    // Restore the closed bit we just overwrote.
                     self.state.store(CLOSED_BIT, Ordering::Relaxed);
                 }
                 return Ok(ret);
