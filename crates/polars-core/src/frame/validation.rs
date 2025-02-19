@@ -44,7 +44,7 @@ impl DataFrame {
                 if col_len != first_len {
                     polars_bail!(
                         ShapeMismatch:
-                        "height of '{}' ({}) does not match height of '{}' ({})",
+                        "height of column '{}' ({}) does not match height of column '{}' ({})",
                         col_name, col_len, first_name, first_len
                     )
                 }

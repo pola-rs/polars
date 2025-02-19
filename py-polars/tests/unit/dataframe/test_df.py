@@ -3009,7 +3009,7 @@ def test_get_column_index() -> None:
 def test_dataframe_creation_with_different_series_lengths_19795() -> None:
     with pytest.raises(
         ShapeError,
-        match='could not create a new DataFrame: series "a" has length 2 while series "b" has length 1',
+        match=r"could not create a new DataFrame: height of column 'b' \(1\) does not match height of column 'a' \(2\)",
     ):
         pl.DataFrame({"a": [1, 2], "b": [1]})
 
