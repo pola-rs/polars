@@ -2894,6 +2894,6 @@ def test_nested_deprecated_int96_timestamps_21332() -> None:
 
     f.seek(0)
     assert_frame_equal(
-        pl.read_parquet(0),
+        pl.read_parquet(f),
         df,
     )
