@@ -18,7 +18,7 @@ impl DataFrame {
         self.columns.extend_from_slice(columns);
 
         if cfg!(debug_assertions) {
-            Self::validate_columns_slice(&self.columns).unwrap();
+            DataFrame::validate_columns_slice(&self.columns).unwrap();
         }
 
         if let Some(c) = self.columns.first() {
@@ -43,7 +43,7 @@ impl DataFrame {
         self.clear_schema();
         self.columns.extend_from_slice(columns);
 
-        Self::validate_columns_slice(&self.columns)?;
+        DataFrame::validate_columns_slice(&self.columns)?;
 
         if let Some(c) = self.columns.first() {
             unsafe { self.set_height(c.len()) };
