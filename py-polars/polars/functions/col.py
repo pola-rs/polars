@@ -22,6 +22,9 @@ if TYPE_CHECKING:
     from polars._typing import PolarsDataType, PythonDataType
     from polars.expr.expr import Expr
 
+    if not sys.version_info >= (3, 11):
+        from typing import Any
+
 __all__ = ["col"]
 
 
@@ -365,10 +368,10 @@ class Col:
 
     if not sys.version_info >= (3, 11):
 
-        def __getstate__(self) -> object:
+        def __getstate__(self) -> Any:
             return self.__dict__
 
-        def __setstate__(self, state: object) -> None:
+        def __setstate__(self, state: Any) -> None:
             self.__dict__ = state
 
 
