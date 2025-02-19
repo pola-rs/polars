@@ -34,14 +34,11 @@ impl DataFrame {
 
             Ok(())
         } else {
-            DataFrame::validate_columns_iter(columns.iter())
+            DataFrame::_validate_columns_iter(columns.iter())
         }
     }
 
-    /// Ensure all equal height and names are unique.
-    ///
-    /// An Ok() result indicates `columns` is a valid state for a DataFrame.
-    pub fn validate_columns_iter<'a, I: IntoIterator<Item = &'a Column>>(
+    fn _validate_columns_iter<'a, I: IntoIterator<Item = &'a Column>>(
         columns_iter: I,
     ) -> PolarsResult<()> {
         return _validate_columns_iter_impl(&mut columns_iter.into_iter());
