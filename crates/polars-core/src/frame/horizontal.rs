@@ -108,15 +108,11 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
         acc_cols.extend(df.get_columns().iter().cloned());
     }
 
-    let df = if check_duplicates {
-        DataFrame::new(acc_cols).map_err(|e| e.context("unable to hstack".into()))?
-    } else {
-        if cfg!(debug_assertions) && acc_cols.len() > 1 {
-            assert!(acc_cols.iter().all(|c| c.len() == acc_cols[0].len()));
-        }
+    if check_duplicates {
+        DataFrame::validate_columns_slice(&acc_cols)?;
+    }
 
-        unsafe { DataFrame::new_no_checks_height_from_first(acc_cols) }
-    };
+    let df = unsafe { DataFrame::new_no_checks_height_from_first(acc_cols) };
 
     Ok(df)
 }
