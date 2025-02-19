@@ -4311,9 +4311,9 @@ class DataFrame:
         mode: Literal["error", "append", "overwrite", "ignore", "merge"] = "error",
         overwrite_schema: bool | None = None,
         storage_options: dict[str, str] | None = None,
-        credential_provider: (
-            CredentialProviderFunction | Literal["auto"] | None
-        ) = "auto",
+        credential_provider: CredentialProviderFunction
+        | Literal["auto"]
+        | None = "auto",
         delta_write_options: dict[str, Any] | None = None,
         delta_merge_options: dict[str, Any] | None = None,
     ) -> deltalake.table.TableMerger | None:
