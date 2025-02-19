@@ -41,6 +41,11 @@ impl DataFrame {
             }
         }
 
+        if cfg!(debug_assertions) {
+            // It is an impl error if this fails.
+            self._validate_hstack(columns).unwrap();
+        }
+
         self.clear_schema();
         self.columns.extend_from_slice(columns);
         self
@@ -58,6 +63,11 @@ impl DataFrame {
     /// }
     /// ```
     pub fn hstack_mut(&mut self, columns: &[Column]) -> PolarsResult<&mut Self> {
+        self._validate_hstack(columns)?;
+        Ok(unsafe { self.hstack_mut_unchecked(columns) })
+    }
+
+    fn _validate_hstack(&self, columns: &[Column]) -> PolarsResult<()> {
         let mut names = self
             .columns
             .iter()
@@ -71,8 +81,8 @@ impl DataFrame {
         for col in columns {
             check_hstack(col, &mut names, height, is_empty)?;
         }
-        drop(names);
-        Ok(unsafe { self.hstack_mut_unchecked(columns) })
+
+        Ok(())
     }
 }
 /// Concat [`DataFrame`]s horizontally.

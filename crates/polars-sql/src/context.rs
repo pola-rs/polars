@@ -27,7 +27,7 @@ use crate::table_functions::PolarsTableFunctions;
 #[derive(Clone)]
 pub struct TableInfo {
     pub(crate) frame: LazyFrame,
-    pub(crate) name: String,
+    pub(crate) name: PlSmallStr,
     pub(crate) schema: Arc<Schema>,
 }
 
@@ -613,6 +613,13 @@ impl SQLContext {
         if !tbl_expr.joins.is_empty() {
             for join in &tbl_expr.joins {
                 let (r_name, mut rf) = self.get_table(&join.relation)?;
+                if r_name.is_empty() {
+                    // Require non-empty to avoid duplicate column errors from nested self-joins.
+                    polars_bail!(
+                        SQLInterface:
+                        "cannot join on unnamed relation; please provide an alias"
+                    )
+                }
                 let left_schema = self.get_frame_schema(&mut lf)?;
                 let right_schema = self.get_frame_schema(&mut rf)?;
 
@@ -634,12 +641,12 @@ impl SQLContext {
                         self.process_join(
                             &TableInfo {
                                 frame: lf,
-                                name: l_name.clone(),
+                                name: (&l_name).into(),
                                 schema: left_schema.clone(),
                             },
                             &TableInfo {
                                 frame: rf,
-                                name: r_name.clone(),
+                                name: (&r_name).into(),
                                 schema: right_schema.clone(),
                             },
                             constraint,
@@ -649,10 +656,18 @@ impl SQLContext {
                                 JoinOperator::RightOuter(_) => JoinType::Right,
                                 JoinOperator::Inner(_) => JoinType::Inner,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::Anti(_) | JoinOperator::LeftAnti(_) | JoinOperator::RightAnti(_) => JoinType::Anti,
+                                JoinOperator::Anti(_)
+                                | JoinOperator::LeftAnti(_)
+                                | JoinOperator::RightAnti(_) => JoinType::Anti,
                                 #[cfg(feature = "semi_anti_join")]
-                                JoinOperator::Semi(_) | JoinOperator::LeftSemi(_) | JoinOperator::RightSemi(_) => JoinType::Semi,
-                                join_type => polars_bail!(SQLInterface: "join type '{:?}' not currently supported", join_type),
+                                JoinOperator::Semi(_)
+                                | JoinOperator::LeftSemi(_)
+                                | JoinOperator::RightSemi(_) => JoinType::Semi,
+                                join_type => polars_bail!(
+                                    SQLInterface:
+                                    "join type '{:?}' not currently supported",
+                                    join_type
+                                ),
                             },
                         )?
                     },
@@ -668,7 +683,7 @@ impl SQLContext {
                 let joined_schema = self.get_frame_schema(&mut lf)?;
 
                 self.joined_aliases.borrow_mut().insert(
-                    r_name.to_string(),
+                    r_name.clone(),
                     right_schema
                         .iter_names()
                         .filter_map(|name| {

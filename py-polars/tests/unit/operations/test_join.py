@@ -850,7 +850,7 @@ def test_join_on_nth_error() -> None:
 
 
 def test_join_results_in_duplicate_names() -> None:
-    lhs = pl.DataFrame(
+    df = pl.DataFrame(
         {
             "a": [1, 2, 3],
             "b": [4, 5, 6],
@@ -858,9 +858,42 @@ def test_join_results_in_duplicate_names() -> None:
             "c_right": [1, 2, 3],
         }
     )
-    rhs = lhs.clone()
-    with pytest.raises(DuplicateError, match="'c_right' already exists"):
-        lhs.join(rhs, on=["a", "b"], how="left")
+
+    def f(x: Any) -> Any:
+        return x.join(x, on=["a", "b"], how="left")
+
+    # Ensure it also contains the hint
+    match_str = "(?s)column with name 'c_right' already exists.*You may want to try"
+
+    # Ensure it fails immediately when resolving schema.
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect_schema()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df).collect()
+
+
+def test_join_duplicate_suffixed_columns_from_join_key_column_21048() -> None:
+    df = pl.DataFrame({"a": 1, "b": 1, "b_right": 1})
+
+    def f(x: Any) -> Any:
+        return x.join(x, on="a")
+
+    # Ensure it also contains the hint
+    match_str = "(?s)column with name 'b_right' already exists.*You may want to try"
+
+    # Ensure it fails immediately when resolving schema.
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect_schema()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df.lazy()).collect()
+
+    with pytest.raises(DuplicateError, match=match_str):
+        f(df)
 
 
 def test_join_projection_invalid_name_contains_suffix_15243() -> None:
@@ -1760,6 +1793,10 @@ def test_join_where_eager_perf_21145() -> None:
     runtime_lazy = time_func(lambda: left.lazy().join_where(right.lazy(), p).collect())
     runtime_ratio = runtime_eager / runtime_lazy
 
-    if runtime_ratio > 1.3:
-        msg = f"runtime_ratio ({runtime_ratio}) > 1.3x ({runtime_eager = }, {runtime_lazy = })"
+    # Pick as high as reasonably possible for CI stability
+    # * Was observed to be >=5 seconds on the bugged version, so 3 is a safe bet.
+    threshold = 3
+
+    if runtime_ratio > threshold:
+        msg = f"runtime_ratio ({runtime_ratio}) > {threshold}x ({runtime_eager = }, {runtime_lazy = })"
         raise ValueError(msg)
