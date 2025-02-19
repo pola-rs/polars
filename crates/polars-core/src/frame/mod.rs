@@ -515,11 +515,7 @@ impl DataFrame {
     /// having an equal length and a unique name, if not this may panic down the line.
     pub unsafe fn new_no_checks(height: usize, columns: Vec<Column>) -> DataFrame {
         if cfg!(debug_assertions) {
-            ensure_names_unique(&columns, |s| s.name().as_str()).unwrap();
-
-            for col in &columns {
-                assert_eq!(col.len(), height);
-            }
+            DataFrame::validate_columns_slice(&columns).unwrap();
         }
 
         unsafe { Self::_new_no_checks_impl(height, columns) }
