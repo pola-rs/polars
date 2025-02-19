@@ -12,7 +12,7 @@ impl DataFrame {
     /// - the length of all [`Column`] is equal to the height of this [`DataFrame`]
     /// - the columns names are unique
     ///
-    /// Note that on a debug build this will panic on duplicates / height mismatch
+    /// Note that on a debug build this will panic on duplicates / height mismatch.
     pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
         // If we don't have any columns yet, copy the height from the given columns.
         if let Some(fst) = columns.first() {
