@@ -1305,7 +1305,9 @@ def test_parquet_nested_struct_17933() -> None:
     test_round_trip(df)
 
 
-@pytest.mark.may_fail_auto_streaming  # TODO: first_metadata.unwrap() on None
+# This is fixed with POLARS_FORCE_MULTISCAN=1. Without it we have
+# first_metadata.unwrap() on None.
+@pytest.mark.may_fail_auto_streaming
 def test_parquet_pyarrow_map() -> None:
     xs = [
         [
