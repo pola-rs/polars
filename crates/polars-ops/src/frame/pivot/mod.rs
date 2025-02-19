@@ -379,6 +379,5 @@ fn pivot_impl_single_column(
     });
     out?;
 
-    // SAFETY: length has already been checked.
-    unsafe { DataFrame::new_no_length_checks(final_cols) }
+    DataFrame::new(final_cols)
 }

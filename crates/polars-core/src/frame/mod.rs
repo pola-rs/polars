@@ -533,30 +533,6 @@ impl DataFrame {
         }
     }
 
-    /// Create a new `DataFrame` but does not check the length of the `Series`,
-    /// only check for duplicates.
-    ///
-    /// It is advised to use [DataFrame::new] in favor of this method.
-    ///
-    /// # Safety
-    ///
-    /// It is the callers responsibility to uphold the contract of all `Series`
-    /// having an equal length, if not this may panic down the line.
-    pub unsafe fn new_no_length_checks(columns: Vec<Column>) -> PolarsResult<DataFrame> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-
-        Ok(if cfg!(debug_assertions) {
-            Self::new(columns).unwrap()
-        } else {
-            let height = Self::infer_height(&columns);
-            DataFrame {
-                height,
-                columns,
-                cached_schema: OnceLock::new(),
-            }
-        })
-    }
-
     /// Shrink the capacity of this DataFrame to fit its length.
     pub fn shrink_to_fit(&mut self) {
         // Don't parallelize this. Memory overhead

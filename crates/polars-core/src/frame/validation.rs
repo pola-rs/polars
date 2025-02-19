@@ -9,7 +9,31 @@ impl DataFrame {
     ///
     /// An Ok() result indicates `columns` is a valid state for a DataFrame.
     pub fn validate_columns_slice(columns: &[Column]) -> PolarsResult<()> {
-        Self::validate_columns_iter(columns.iter())
+        if columns.len() <= 4 {
+            // Too small to be worth spawning a hashmap for, this is at most 6 comparisons.
+            for i in 0..columns.len() - 1 {
+                let name = columns[i].name();
+                let height = columns[i].len();
+
+                for other in columns.iter().skip(i + 1) {
+                    if other.name() == name {
+                        polars_bail!(duplicate = name);
+                    }
+
+                    if other.len() != height {
+                        polars_bail!(
+                            ShapeMismatch:
+                            "height of column '{}' ({}) does not match height of column '{}' ({})",
+                            other.name(), other.len(), name, height
+                        )
+                    }
+                }
+            }
+
+            Ok(())
+        } else {
+            Self::validate_columns_iter(columns.iter())
+        }
     }
 
     /// Ensure all equal height and names are unique.
@@ -50,7 +74,7 @@ impl DataFrame {
                 }
 
                 if names.contains(col_name) {
-                    polars_bail!(Duplicate: "column '{}' is duplicate", col_name)
+                    polars_bail!(duplicate = col_name)
                 }
 
                 names.insert(col_name);
