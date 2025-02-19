@@ -74,10 +74,14 @@ pub fn concat_df_horizontal(dfs: &[DataFrame], check_duplicates: bool) -> Polars
 
     // if not all equal length, extend the DataFrame with nulls
     let dfs = if !all_equal_height {
+        out_width = 0;
+
         owned_df = dfs
             .iter()
             .cloned()
             .map(|mut df| {
+                out_width += df.width();
+
                 if df.height() != output_height {
                     let diff = output_height - df.height();
 
