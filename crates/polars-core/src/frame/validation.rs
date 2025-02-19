@@ -9,7 +9,9 @@ impl DataFrame {
     ///
     /// An Ok() result indicates `columns` is a valid state for a DataFrame.
     pub fn validate_columns_slice(columns: &[Column]) -> PolarsResult<()> {
-        if columns.len() <= 4 {
+        if columns.len() <= 1 {
+            Ok(())
+        } else if columns.len() <= 4 {
             // Too small to be worth spawning a hashmap for, this is at most 6 comparisons.
             for i in 0..columns.len() - 1 {
                 let name = columns[i].name();
