@@ -10,8 +10,10 @@ impl DataFrame {
     /// An Ok() result indicates `columns` is a valid state for a DataFrame.
     pub fn validate_columns_slice(columns: &[Column]) -> PolarsResult<()> {
         if columns.len() <= 1 {
-            Ok(())
-        } else if columns.len() <= 4 {
+            return Ok(());
+        }
+
+        if columns.len() <= 4 {
             // Too small to be worth spawning a hashmap for, this is at most 6 comparisons.
             for i in 0..columns.len() - 1 {
                 let name = columns[i].name();
@@ -31,36 +33,16 @@ impl DataFrame {
                     }
                 }
             }
-
-            Ok(())
         } else {
-            DataFrame::_validate_columns_iter(columns.iter())
-        }
-    }
-
-    fn _validate_columns_iter<'a, I: IntoIterator<Item = &'a Column>>(
-        columns_iter: I,
-    ) -> PolarsResult<()> {
-        return _validate_columns_iter_impl(&mut columns_iter.into_iter());
-
-        fn _validate_columns_iter_impl(
-            columns_iter: &mut dyn Iterator<Item = &Column>,
-        ) -> PolarsResult<()> {
-            let Some(first) = columns_iter.next() else {
-                return Ok(());
-            };
+            let first = &columns[0];
 
             let first_len = first.len();
             let first_name = first.name();
 
-            let mut names = PlHashSet::with_capacity({
-                let (_, exact) = columns_iter.size_hint();
-                exact.unwrap_or(16)
-            });
-
+            let mut names = PlHashSet::with_capacity(columns.len());
             names.insert(first_name);
 
-            for col in columns_iter {
+            for col in &columns[1..] {
                 let col_name = col.name();
                 let col_len = col.len();
 
@@ -78,8 +60,8 @@ impl DataFrame {
 
                 names.insert(col_name);
             }
-
-            Ok(())
         }
+
+        Ok(())
     }
 }
