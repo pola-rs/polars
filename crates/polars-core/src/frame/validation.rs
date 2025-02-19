@@ -18,6 +18,8 @@ impl DataFrame {
     pub fn validate_columns_iter<'a, I: IntoIterator<Item = &'a Column>>(
         columns_iter: I,
     ) -> PolarsResult<()> {
+        return _validate_columns_iter_impl(&mut columns_iter.into_iter());
+
         fn _validate_columns_iter_impl(
             columns_iter: &mut dyn Iterator<Item = &Column>,
         ) -> PolarsResult<()> {
@@ -56,7 +58,5 @@ impl DataFrame {
 
             Ok(())
         }
-
-        _validate_columns_iter_impl(&mut columns_iter.into_iter())
     }
 }
