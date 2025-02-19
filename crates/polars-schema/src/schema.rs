@@ -458,14 +458,14 @@ where
 }
 
 pub fn ensure_matching_schema_names<D>(lhs: &Schema<D>, rhs: &Schema<D>) -> PolarsResult<()> {
-    let lhs = lhs.iter_names().collect::<Vec<_>>();
-    let rhs = rhs.iter_names().collect::<Vec<_>>();
+    let lhs_names = lhs.iter_names();
+    let rhs_names = rhs.iter_names();
 
-    if lhs != rhs {
+    if !(lhs_names.len() == rhs_names.len() && lhs_names.zip(rhs_names).all(|(l, r)| l == r)) {
         polars_bail!(
             SchemaMismatch:
             "lhs: {:?} rhs: {:?}",
-            lhs, rhs
+            lhs.iter_names().collect::<Vec<_>>(), rhs.iter_names().collect::<Vec<_>>()
         )
     }
 
