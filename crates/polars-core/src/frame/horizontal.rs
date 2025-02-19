@@ -29,7 +29,7 @@ impl DataFrame {
     }
 
     /// Add multiple [`Column`] to a [`DataFrame`].
-    /// The added `Series` are required to have the same length.
+    /// Errors if the resulting DataFrame columns have duplicate names or unequal heights.
     ///
     /// # Example
     ///
