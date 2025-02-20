@@ -1248,7 +1248,7 @@ def test_join_preserve_order_inner() -> None:
 # The new streaming engine does not provide the same maintain_order="none"
 # ordering guarantee that is currently kept for compatibility on the in-memory
 # engine.
-@pytest.mark.may_fail_auto_streaming 
+@pytest.mark.may_fail_auto_streaming
 def test_join_preserve_order_left() -> None:
     left = pl.LazyFrame({"a": [None, 2, 1, 1, 5]})
     right = pl.LazyFrame({"a": [1, None, 2, 6], "b": [6, 7, 8, 9]})
