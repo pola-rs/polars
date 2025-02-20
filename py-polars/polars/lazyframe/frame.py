@@ -1708,6 +1708,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          │ group_by_partitioned(a) ┆ 5     ┆ 470  │
          │ sort(a)                 ┆ 475   ┆ 1964 │
          └─────────────────────────┴───────┴──────┘)
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
+        ...     "a"
+        ... ).profile(engine="gpu")  # doctest: +SKIP
+        (shape: (3, 3)
+         ┌─────┬─────┬─────┐
+         │ a   ┆ b   ┆ c   │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ i64 │
+         ╞═════╪═════╪═════╡
+         │ a   ┆ 4   ┆ 10  │
+         │ b   ┆ 11  ┆ 10  │
+         │ c   ┆ 6   ┆ 1   │
+         └─────┴─────┴─────┘,
+         shape: (4, 3)
+         ┌────────────────┬───────┬──────┐
+         │ node           ┆ start ┆ end  │
+         │ ---            ┆ ---   ┆ ---  │
+         │ str            ┆ u64   ┆ u64  │
+         ╞════════════════╪═══════╪══════╡
+         │ optimization   ┆ 0     ┆ 130  │
+         │ dataframe_scan ┆ 130   ┆ 2431 │
+         │ group_by       ┆ 2453  ┆ 5759 │
+         │ sort           ┆ 5794  ┆ 6443 │
+         └────────────────┴───────┴──────┘)
         """
         if no_optimization:
             predicate_pushdown = False
