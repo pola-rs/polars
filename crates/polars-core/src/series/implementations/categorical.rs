@@ -212,6 +212,12 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
             .into_series()
     }
 
+    fn top_k(&self, k: usize, descending: bool) -> PolarsResult<Series> {
+        Ok(self
+            .with_state(false, |cats| cats.top_k(k, descending))
+            .into_series())
+    }
+
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
         self.try_with_state(false, |cats| cats.take(indices))
             .map(|ca| ca.into_series())

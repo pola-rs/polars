@@ -3311,6 +3311,7 @@ class Series:
             3
         ]
         """
+        return self._from_pyseries(self._s.top_k(k))
 
     def bottom_k(self, k: int = 5) -> Series:
         r"""
@@ -3345,6 +3346,7 @@ class Series:
             3
         ]
         """
+        return self._from_pyseries(self._s.bottom_k(k))
 
     def arg_sort(self, *, descending: bool = False, nulls_last: bool = False) -> Series:
         """

@@ -124,6 +124,10 @@ impl SeriesTrait for SeriesWrap<BinaryOffsetChunked> {
         self.0.take_unchecked(indices).into_series()
     }
 
+    fn top_k(&self, k: usize, descending: bool) -> PolarsResult<Series> {
+        Ok(self.0.top_k(k, descending).into_series())
+    }
+
     fn take_slice(&self, indices: &[IdxSize]) -> PolarsResult<Series> {
         Ok(self.0.take(indices)?.into_series())
     }

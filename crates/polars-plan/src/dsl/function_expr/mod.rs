@@ -71,6 +71,7 @@ mod strings;
 mod struct_;
 #[cfg(feature = "temporal")]
 mod temporal;
+mod top_k;
 #[cfg(feature = "trigonometry")]
 pub mod trigonometry;
 mod unique;
@@ -1045,10 +1046,10 @@ impl From<FunctionExpr> for SpecialEq<Arc<dyn ColumnsUdf>> {
             },
             #[cfg(feature = "top_k")]
             TopK { descending } => {
-                map_as_slice!(top_k, descending)
+                map_as_slice!(top_k::top_k, descending)
             },
             #[cfg(feature = "top_k")]
-            TopKBy { descending } => map_as_slice!(top_k_by, descending.clone()),
+            TopKBy { descending } => map_as_slice!(top_k::top_k_by, descending.clone()),
             Shift => map_as_slice!(shift_and_fill::shift),
             #[cfg(feature = "cum_agg")]
             CumCount { reverse } => map!(cum::cum_count, reverse),

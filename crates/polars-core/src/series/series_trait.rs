@@ -402,6 +402,10 @@ pub trait SeriesTrait:
         polars_bail!(opq = sort_with, self._dtype());
     }
 
+    fn top_k(&self, _k: usize, _descending: bool) -> PolarsResult<Series> {
+        polars_bail!(opq = top_k, self._dtype());
+    }
+
     /// Retrieve the indexes needed for a sort.
     #[allow(unused)]
     fn arg_sort(&self, options: SortOptions) -> IdxCa {

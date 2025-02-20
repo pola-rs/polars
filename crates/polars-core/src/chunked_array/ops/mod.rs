@@ -125,6 +125,12 @@ pub trait ChunkTakeUnchecked<Idx: ?Sized> {
     unsafe fn take_unchecked(&self, indices: &Idx) -> Self;
 }
 
+pub trait ChunkTopK {
+    fn top_k(&self, k: usize, descending: bool) -> Self
+    where
+        Self: Sized;
+}
+
 /// Create a `ChunkedArray` with new values by index or by boolean mask.
 ///
 /// Note that these operations clone data. This is however the only way we can modify at mask or

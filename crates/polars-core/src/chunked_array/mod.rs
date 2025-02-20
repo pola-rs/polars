@@ -4,7 +4,7 @@ use std::iter::Map;
 use std::sync::Arc;
 
 use arrow::array::*;
-use arrow::bitmap::Bitmap;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::compute::concatenate::concatenate_unchecked;
 use polars_compute::filter::filter_with_bitmap;
 
@@ -500,6 +500,17 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         self.rename(name);
         self
     }
+
+    fn first_n_valid_mask(num_valid: usize, out_len: usize) -> Option<Bitmap> {
+        if num_valid < out_len {
+            let mut bm = BitmapBuilder::with_capacity(out_len);
+            bm.extend_constant(num_valid, true);
+            bm.extend_constant(out_len - num_valid, false);
+            Some(bm.freeze())
+        } else {
+            None
+        }
+    }
 }
 
 impl<T> ChunkedArray<T>
@@ -760,6 +771,129 @@ where
                 .map(|v| *v)
                 .trust_my_length(self.len())
         }
+    }
+
+    pub fn top_k(&self, k: usize, descending: bool) -> Self {
+        if k >= self.len() && self.null_count() == 0 {
+            return self.clone();
+        }
+
+        // Get rid of all the nulls and transform into Vec<T::Native>.
+        let mut nnca = self.drop_nulls();
+        nnca.rechunk_mut();
+        let chunk = nnca.downcast_into_iter().next().unwrap();
+        let (_, buffer, _) = chunk.into_inner();
+        let mut vec = buffer.make_mut();
+
+        // Partition.
+        if k < vec.len() {
+            if descending {
+                vec.select_nth_unstable_by(k, TotalOrd::tot_cmp);
+            } else {
+                vec.select_nth_unstable_by(k, |a, b| TotalOrd::tot_cmp(b, a));
+            }
+        }
+
+        // Reconstruct output (with nulls at the end).
+        let out_len = k.min(self.len());
+        let non_null_count = self.len() - self.null_count();
+        vec.resize(out_len, T::Native::default());
+        let validity = Self::first_n_valid_mask(non_null_count, out_len);
+
+        let arr = PrimitiveArray::from_vec(vec).with_validity_typed(validity);
+        ChunkedArray::with_chunk_like(self, arr)
+    }
+}
+
+impl ChunkedArray<BinaryType> {
+    pub fn top_k(&self, k: usize, descending: bool) -> Self {
+        if k >= self.len() && self.null_count() == 0 {
+            return self.clone();
+        }
+
+        // Get rid of all the nulls and transform into mutable views.
+        let mut nnca = self.drop_nulls();
+        nnca.rechunk_mut();
+        let chunk = nnca.downcast_into_iter().next().unwrap();
+        let buffers = chunk.data_buffers().clone();
+        let mut views = chunk.into_views();
+
+        // Partition.
+        if k < views.len() {
+            if descending {
+                views.select_nth_unstable_by(k, |a, b| unsafe {
+                    let a_sl = a.get_slice_unchecked(&buffers);
+                    let b_sl = b.get_slice_unchecked(&buffers);
+                    a_sl.cmp(b_sl)
+                });
+            } else {
+                views.select_nth_unstable_by(k, |a, b| unsafe {
+                    let a_sl = a.get_slice_unchecked(&buffers);
+                    let b_sl = b.get_slice_unchecked(&buffers);
+                    b_sl.cmp(a_sl)
+                });
+            }
+        }
+
+        // Reconstruct output (with nulls at the end).
+        let out_len = k.min(self.len());
+        let non_null_count = self.len() - self.null_count();
+        views.resize(out_len, View::default());
+        let validity = Self::first_n_valid_mask(non_null_count, out_len);
+
+        let arr = unsafe {
+            BinaryViewArray::new_unchecked_unknown_md(
+                ArrowDataType::BinaryView,
+                views.into(),
+                buffers,
+                validity,
+                None,
+            )
+        };
+        ChunkedArray::with_chunk_like(self, arr)
+    }
+}
+
+impl ChunkedArray<BooleanType> {
+    pub fn top_k(&self, k: usize, descending: bool) -> Self {
+        if k >= self.len() && self.null_count() == 0 {
+            return self.clone();
+        }
+
+        let null_count = self.null_count();
+        let non_null_count = self.len() - self.null_count();
+        let true_count = self.sum().unwrap() as usize;
+        let false_count = non_null_count - true_count;
+        let mut out_len = k.min(self.len());
+        let validity = Self::first_n_valid_mask(non_null_count, out_len);
+
+        // Logical sequence of physical bits.
+        let sequence = if descending {
+            [
+                (false_count, false),
+                (true_count, true),
+                (null_count, false),
+            ]
+        } else {
+            [
+                (true_count, true),
+                (false_count, false),
+                (null_count, false),
+            ]
+        };
+
+        let mut bm = BitmapBuilder::with_capacity(out_len);
+        for (n, value) in sequence {
+            if out_len == 0 {
+                break;
+            }
+            let extra = out_len.min(n);
+            bm.extend_constant(extra, value);
+            out_len -= extra;
+        }
+
+        let arr = BooleanArray::from_data_default(bm.freeze(), validity);
+        ChunkedArray::with_chunk_like(self, arr)
     }
 }
 

@@ -11,8 +11,6 @@ pub mod peaks;
 mod scatter;
 pub mod strings;
 mod sum;
-#[cfg(feature = "top_k")]
-mod top_k;
 
 #[cfg(feature = "mode")]
 pub mod mode;
@@ -41,8 +39,6 @@ use polars_core::prelude::*;
 pub use repeat_by::*;
 pub use scatter::ChunkedSet;
 pub use strings::*;
-#[cfg(feature = "top_k")]
-pub use top_k::*;
 
 #[allow(unused_imports)]
 use crate::prelude::*;

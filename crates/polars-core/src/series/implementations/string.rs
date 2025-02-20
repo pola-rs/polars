@@ -190,6 +190,12 @@ impl SeriesTrait for SeriesWrap<StringChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
+    fn top_k(&self, k: usize, descending: bool) -> PolarsResult<Series> {
+        let ca = &self.0.as_binary().top_k(k, descending);
+        let ca = unsafe { ca.to_string_unchecked() };
+        Ok(ca.into_series())
+    }
+
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         Ok(ChunkSort::sort_with(&self.0, options).into_series())
     }

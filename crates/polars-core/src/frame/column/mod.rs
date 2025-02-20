@@ -1607,6 +1607,23 @@ impl Column {
         }
     }
 
+    pub fn top_k(&self, k: usize, descending: bool) -> PolarsResult<Self> {
+        match self {
+            Column::Series(s) => s.top_k(k, descending).map(Self::from),
+            // @partition-opt
+            Column::Partitioned(s) => s
+                .as_materialized_series()
+                .top_k(k, descending)
+                .map(Self::from),
+            Column::Scalar(s) => {
+                // This makes this function throw the same errors as Series::sort_with
+                _ = s.as_single_value_series().top_k(k, descending)?;
+
+                Ok(self.clone())
+            },
+        }
+    }
+
     pub fn map_unary_elementwise_to_bool(
         &self,
         f: impl Fn(&Series) -> BooleanChunked,

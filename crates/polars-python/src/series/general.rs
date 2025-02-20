@@ -242,6 +242,14 @@ impl PySeries {
         })
     }
 
+    fn top_k(&mut self, py: Python, k: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.top_k(k, false))
+    }
+
+    fn bottom_k(&mut self, py: Python, k: usize) -> PyResult<Self> {
+        py.enter_polars_series(|| self.series.top_k(k, true))
+    }
+
     fn gather_with_series(&self, py: Python, indices: &PySeries) -> PyResult<Self> {
         py.enter_polars_series(|| self.series.take(indices.series.idx()?))
     }

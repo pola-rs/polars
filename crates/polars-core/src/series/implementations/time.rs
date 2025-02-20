@@ -258,6 +258,10 @@ impl SeriesTrait for SeriesWrap<TimeChunked> {
         self.0.get_any_value_unchecked(index)
     }
 
+    fn top_k(&self, k: usize, descending: bool) -> PolarsResult<Series> {
+        Ok(self.0.top_k(k, descending).into_time().into_series())
+    }
+
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
         Ok(self.0.sort_with(options).into_time().into_series())
     }

@@ -278,6 +278,10 @@ impl SeriesTrait for NullChunked {
         IdxCa::from_vec(self.name().clone(), (0..self.len() as IdxSize).collect())
     }
 
+    fn top_k(&self, k: usize, _descending: bool) -> PolarsResult<Series> {
+        Ok(self.slice(0, k))
+    }
+
     fn is_null(&self) -> BooleanChunked {
         BooleanChunked::full(self.name().clone(), true, self.len())
     }

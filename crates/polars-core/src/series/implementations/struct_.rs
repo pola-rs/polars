@@ -142,6 +142,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         self.0.take_unchecked(_idx).into_series()
     }
 
+    fn top_k(&self, k: usize, descending: bool) -> PolarsResult<Series> {
+        Ok(self.0.top_k(k, descending).into_series())
+    }
+
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series> {
         self.0.take(_indices).map(|ca| ca.into_series())
     }

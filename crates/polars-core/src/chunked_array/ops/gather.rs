@@ -5,6 +5,8 @@ use polars_compute::gather::take_unchecked;
 use polars_error::polars_ensure;
 use polars_utils::index::check_bounds;
 
+use crate::POOL;
+use crate::chunked_array::ops::sort::arg_bottom_k::_arg_bottom_k;
 use crate::prelude::*;
 use crate::series::IsSorted;
 
@@ -58,6 +60,34 @@ where
 
         // SAFETY: we just checked the indices are valid.
         Ok(unsafe { self.take_unchecked(indices) })
+    }
+}
+
+impl<T: PolarsDataType> ChunkTopK for ChunkedArray<T>
+where
+    ChunkedArray<T>: ChunkTakeUnchecked<IdxCa> + IntoColumn,
+{
+    fn top_k(&self, k: usize, descending: bool) -> Self
+    where
+        Self: Sized,
+    {
+        if self.is_empty() {
+            return self.clone();
+        }
+
+        let by = &[self.clone().into_column()];
+
+        let multithreaded = k >= 10000 && POOL.current_num_threads() > 1;
+        let mut sort_options = SortMultipleOptions {
+            descending: vec![!descending],
+            nulls_last: vec![true],
+            multithreaded,
+            maintain_order: false,
+            limit: None,
+        };
+
+        let idx = _arg_bottom_k(k, by, &mut sort_options).unwrap();
+        unsafe { self.take_unchecked(&idx.into_inner()) }
     }
 }
 
