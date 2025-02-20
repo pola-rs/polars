@@ -891,7 +891,12 @@ def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
 
 
 @pytest.mark.write_disk
-def test_hive_parquet_prefiltered_20894_21327(tmp_path: Path) -> None:
+@pytest.mark.parametrize("force_single_thread", [True, False])
+def test_hive_parquet_prefiltered_20894_21327(
+    tmp_path: Path, force_single_thread: bool
+) -> None:
+    n_threads = 1 if force_single_thread else pl.thread_pool_size()
+
     file_path = tmp_path / "date=2025-01-01/00000000.parquet"
     file_path.parent.mkdir(exist_ok=True, parents=True)
 
@@ -917,7 +922,7 @@ def test_hive_parquet_prefiltered_20894_21327(tmp_path: Path) -> None:
             "-c",
             f"""\
 import os
-os.environ["POLARS_MAX_THREADS"] = "1"
+os.environ["POLARS_MAX_THREADS"] = "{n_threads}"
 
 import polars as pl
 import datetime
@@ -925,7 +930,7 @@ import base64
 
 from polars.testing import assert_frame_equal
 
-assert pl.thread_pool_size() == 1
+assert pl.thread_pool_size() == {n_threads}
 
 tmp_path = base64.b64decode("{scan_path_b64}").decode()
 df = pl.scan_parquet(tmp_path, hive_partitioning=True).filter(pl.col("value") == "1").collect()
