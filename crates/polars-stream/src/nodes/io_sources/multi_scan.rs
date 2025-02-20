@@ -687,6 +687,8 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 &mut join_handles,
                                 unrestricted_row_count.clone(),
                             );
+                            let mut join_handles: FuturesUnordered<_> =
+                                join_handles.drain(..).map(AbortOnDropHandle::new).collect();
 
                             // Loop until a phase result indicated that the source is empty.
                             loop {
@@ -734,8 +736,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                             // One of the tasks might throw an error. In which case, we need to cancel all
                             // handles and find the error.
-                            let mut join_handles: FuturesUnordered<_> =
-                                join_handles.drain(..).map(AbortOnDropHandle::new).collect();
                             while let Some(ret) = join_handles.next().await {
                                 ret?;
                             }
@@ -937,13 +937,13 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                 Ok(())
             }));
 
-        let mut join_handles: FuturesUnordered<_> = join_handles
-            .drain(..)
-            .map(AbortOnDropHandle::new)
-            .collect();
-        while let Some(ret) = join_handles.next().await {
-            ret?;
-        }
+            let mut join_handles: FuturesUnordered<_> = join_handles
+                .drain(..)
+                .map(AbortOnDropHandle::new)
+                .collect();
+            while let Some(ret) = join_handles.next().await {
+                ret?;
+            }
 
             Ok(())
         }));

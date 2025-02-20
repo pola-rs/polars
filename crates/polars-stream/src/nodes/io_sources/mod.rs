@@ -33,7 +33,7 @@ pub enum RowRestriction {
 /// The state needed to manage a spawned [`SourceNode`].
 struct StartedSourceComputeNode {
     output_send: Sender<SourceOutput>,
-    join_handles: Vec<JoinHandle<PolarsResult<()>>>,
+    join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
 /// A [`ComputeNode`] to wrap a [`SourceNode`].
@@ -103,6 +103,10 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
 
             self.source
                 .spawn_source(self.num_pipelines, rx, state, &mut join_handles, None);
+            // One of the tasks might throw an error. In which case, we need to cancel all
+            // handles and find the error.
+            let join_handles: FuturesUnordered<_> =
+                join_handles.drain(..).map(AbortOnDropHandle::new).collect();
 
             StartedSourceComputeNode {
                 output_send: tx,
@@ -121,27 +125,22 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (outcome, wait_group, source_output) = SourceOutput::from_port(source_output);
-            if started.output_send.send(source_output).await.is_err() {
-                return Ok(());
-            };
 
-            // Wait for the phase to finish.
-            wait_group.wait().await;
-            if outcome.did_finish() {
+            if started.output_send.send(source_output).await.is_ok() {
+                // Wait for the phase to finish.
+                wait_group.wait().await;
+                if !outcome.did_finish() {
+                    return Ok(());
+                }
+
                 if config::verbose() {
                     eprintln!("[{name}]: Last data received.");
                 }
+            };
 
-                // One of the tasks might throw an error. In which case, we need to cancel all
-                // handles and find the error.
-                let mut join_handles: FuturesUnordered<_> = started
-                    .join_handles
-                    .drain(..)
-                    .map(AbortOnDropHandle::new)
-                    .collect();
-                while let Some(ret) = join_handles.next().await {
-                    ret?;
-                }
+            // Either the task finished or some error occurred.
+            while let Some(ret) = started.join_handles.next().await {
+                ret?;
             }
 
             Ok(())
