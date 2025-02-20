@@ -261,6 +261,9 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
                 };
                 let df = DataFrame::empty_with_height(row_count);
 
+                if let Some(ri) = &self.row_index {
+                    df.with_row_index_mut(ri.name.clone(), Some(ri.offset));
+                }
                 return PolarsResult::Ok(df);
             }
 
