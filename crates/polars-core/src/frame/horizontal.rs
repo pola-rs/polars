@@ -18,7 +18,11 @@ impl DataFrame {
         self.columns.extend_from_slice(columns);
 
         if cfg!(debug_assertions) {
-            DataFrame::validate_columns_slice(&self.columns).unwrap();
+            if let err @ Err(_) = DataFrame::validate_columns_slice(&self.columns) {
+                // Reset DataFrame state to before extend.
+                self.columns.truncate(self.columns.len() - columns.len());
+                err.unwrap();
+            }
         }
 
         if let Some(c) = self.columns.first() {
@@ -43,7 +47,11 @@ impl DataFrame {
         self.clear_schema();
         self.columns.extend_from_slice(columns);
 
-        DataFrame::validate_columns_slice(&self.columns)?;
+        if let err @ Err(_) = DataFrame::validate_columns_slice(&self.columns) {
+            // Reset DataFrame state to before extend.
+            self.columns.truncate(self.columns.len() - columns.len());
+            err?;
+        }
 
         if let Some(c) = self.columns.first() {
             unsafe { self.set_height(c.len()) };
