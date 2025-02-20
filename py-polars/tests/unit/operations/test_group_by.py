@@ -11,8 +11,8 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ColumnNotFoundError
-from polars.testing import assert_frame_equal, assert_series_equal
 from polars.meta import get_index_type
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import PolarsDataType
