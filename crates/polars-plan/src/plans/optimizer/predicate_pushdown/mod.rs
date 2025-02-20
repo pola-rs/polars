@@ -411,13 +411,15 @@ impl PredicatePushDown<'_> {
                             let mut new_paths = Vec::with_capacity(paths.len());
                             let mut new_hive_parts = Vec::with_capacity(paths.len());
 
+                            let hive_parts_stats = hive_parts.into_statistics();
+
                             for i in 0..paths.len() {
                                 let path = &paths[i];
-                                let hive_parts = &hive_parts[i];
+                                let hive_part = &hive_parts_stats[i];
 
-                                if stats_evaluator.should_read(hive_parts.get_statistics())? {
+                                if stats_evaluator.should_read(hive_part.get_statistics())? {
                                     new_paths.push(path.clone());
-                                    new_hive_parts.push(hive_parts.clone());
+                                    new_hive_parts.push(i as IdxSize);
                                 }
                             }
 
@@ -442,7 +444,7 @@ impl PredicatePushDown<'_> {
                                 });
                             } else {
                                 sources = ScanSources::Paths(new_paths.into());
-                                scan_hive_parts = Some(Arc::from(new_hive_parts));
+                                scan_hive_parts = Some(hive_parts.take_indices(&new_hive_parts));
                             }
                         }
                     }

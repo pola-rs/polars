@@ -1,7 +1,7 @@
 use arrow::datatypes::ArrowSchemaRef;
 use either::Either;
 use expr_expansion::{is_regex_projection, rewrite_projections};
-use hive::{hive_partitions_from_paths, HivePartitions};
+use hive::hive_partitions_from_paths;
 
 use super::stack_opt::ConversionOptimizer;
 use super::*;
@@ -281,7 +281,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 };
 
                 if let Some(ref hive_parts) = hive_parts {
-                    let hive_schema = hive_parts[0].schema();
+                    let hive_schema = hive_parts.schema();
                     file_info.update_schema_with_hive_schema(hive_schema.clone());
                 } else if let Some(hive_schema) = file_options.hive_options.schema.clone() {
                     // We hit here if we are passed the `hive_schema` to `scan_parquet` but end up with an empty file
@@ -323,7 +323,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 file_options.with_columns = if file_info.reader_schema.is_some() {
                     maybe_init_projection_excluding_hive(
                         file_info.reader_schema.as_ref().unwrap(),
-                        hive_parts.as_ref().map(|x| &x[0]),
+                        hive_parts.as_ref().map(|h| h.schema()),
                     )
                 } else {
                     None
@@ -1132,12 +1132,11 @@ where
 
 pub(crate) fn maybe_init_projection_excluding_hive(
     reader_schema: &Either<ArrowSchemaRef, SchemaRef>,
-    hive_parts: Option<&HivePartitions>,
+    hive_parts: Option<&SchemaRef>,
 ) -> Option<Arc<[PlSmallStr]>> {
     // Update `with_columns` with a projection so that hive columns aren't loaded from the
     // file
-    let hive_parts = hive_parts?;
-    let hive_schema = hive_parts.schema();
+    let hive_schema = hive_parts?;
 
     match &reader_schema {
         Either::Left(reader_schema) => hive_schema
