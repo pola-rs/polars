@@ -14,8 +14,8 @@ use polars_lazy::prelude::*;
 use polars_plan::prelude::typed_lit;
 use polars_plan::prelude::LiteralValue::Null;
 use polars_time::Duration;
-use rand::distributions::Alphanumeric;
-use rand::{thread_rng, Rng};
+use rand::distr::Alphanumeric;
+use rand::{rng, Rng};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use sqlparser::ast::{
@@ -267,7 +267,7 @@ impl SQLExprVisitor<'_> {
             if schema.len() != 1 {
                 polars_bail!(SQLSyntax: "SQL subquery returns more than one column");
             }
-            let rand_string: String = thread_rng()
+            let rand_string: String = rng()
                 .sample_iter(&Alphanumeric)
                 .take(16)
                 .map(char::from)
