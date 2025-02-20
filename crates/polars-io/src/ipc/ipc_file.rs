@@ -252,24 +252,22 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         // In case only hive columns are projected, the df would be empty, but we need the row count
         // of the file in order to project the correct number of rows for the hive columns.
-        let (mut df, row_count) = (|| {
+        let mut df = (|| {
             if self.projection.as_ref().is_some_and(|x| x.is_empty()) {
                 let row_count = if let Some(v) = self.n_rows {
                     v
                 } else {
                     get_row_count(&mut self.reader)? as usize
                 };
-                let mut df = DataFrame::empty();
-                unsafe { df.set_height(row_count) };
+                let df = DataFrame::empty_with_height(row_count);
 
-                return PolarsResult::Ok((df, row_count));
+                return PolarsResult::Ok(df);
             }
 
             if self.memory_map.is_some() && self.reader.to_file().is_some() {
                 match self.finish_memmapped(None) {
                     Ok(df) => {
-                        let n = df.height();
-                        return Ok((df, n));
+                        return Ok(df);
                     },
                     Err(err) => check_mmap_err(err)?,
                 }
@@ -293,17 +291,11 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             let ipc_reader =
                 read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
             let df = finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_index)?;
-            let n = df.height();
-            Ok((df, n))
+            Ok(df)
         })()?;
 
         if let Some(hive_cols) = hive_partition_columns {
-            materialize_hive_partitions(
-                &mut df,
-                reader_schema,
-                Some(hive_cols.as_slice()),
-                row_count,
-            );
+            materialize_hive_partitions(&mut df, reader_schema, Some(hive_cols.as_slice()));
         };
 
         if let Some((col, value)) = include_file_path {
@@ -314,7 +306,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
                         DataType::String,
                         AnyValue::StringOwned(value.as_ref().into()),
                     ),
-                    row_count,
+                    df.height(),
                 ))
             };
         }

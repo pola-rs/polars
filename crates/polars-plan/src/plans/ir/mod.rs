@@ -10,7 +10,6 @@ use std::fmt;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
-use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
@@ -19,6 +18,7 @@ pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use self::hive::HivePartitionsDf;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -57,7 +57,7 @@ pub enum IR {
     Scan {
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
