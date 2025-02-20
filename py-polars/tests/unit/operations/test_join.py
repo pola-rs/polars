@@ -1800,3 +1800,12 @@ def test_join_where_eager_perf_21145() -> None:
     if runtime_ratio > threshold:
         msg = f"runtime_ratio ({runtime_ratio}) > {threshold}x ({runtime_eager = }, {runtime_lazy = })"
         raise ValueError(msg)
+
+
+def test_select_len_after_semi_anti_join_21343() -> None:
+    lhs = pl.LazyFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    rhs = pl.LazyFrame({"a": [1, 2, 3]})
+
+    q = lhs.join(rhs, on="a", how="anti").select(pl.len())
+
+    assert q.collect().item() == 0
