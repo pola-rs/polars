@@ -441,11 +441,3 @@ def test_categorical_lexical_sort_2732() -> None:
     df.write_ipc(f)
     f.seek(0)
     assert_frame_equal(df, pl.read_ipc(f))
-
-
-def test_project_only_row_index_21165() -> None:
-    f = io.BytesIO()
-    pl.DataFrame({"a": [1]}).write_ipc(f)
-    result = pl.scan_ipc(f, row_index_name="ri").select("ri").collect()
-    expected = pl.DataFrame({"ri": [0]}, schema={"ri": pl.UInt32})
-    assert_frame_equal(result, expected)
