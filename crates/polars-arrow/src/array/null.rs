@@ -1,8 +1,10 @@
 use std::any::Any;
 
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::IdxSize;
 
 use super::Splitable;
+use crate::array::builder::{ArrayBuilder, ShareStrategy};
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -211,5 +213,37 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
     unsafe fn try_from_ffi(array: A) -> PolarsResult<Self> {
         let dtype = array.dtype().clone();
         Self::try_new(dtype, array.array().len())
+    }
+}
+
+
+pub struct NullArrayBuilder {
+    dtype: ArrowDataType,
+    length: usize,
+}
+
+impl NullArrayBuilder {
+    pub fn new(dtype: ArrowDataType) -> Self {
+        Self { dtype, length: 0 }
+    }
+}
+
+impl ArrayBuilder for NullArrayBuilder {
+    fn dtype(&self) -> &ArrowDataType {
+        &self.dtype
+    }
+
+    fn reserve(&mut self, _additional: usize) { }
+
+    fn freeze(self) -> Box<dyn Array> {
+        NullArray::new(self.dtype, self.length).to_boxed()
+    }
+
+    fn subslice_extend(&mut self, _other: &dyn Array, _start: usize, length: usize, _share: ShareStrategy) {
+        self.length += length;
+    }
+
+    unsafe fn gather_extend(&mut self, _other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
+        self.length += idxs.len();
     }
 }

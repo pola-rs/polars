@@ -1,0 +1,123 @@
+use polars_utils::vec::PushUnchecked;
+use polars_utils::IdxSize;
+
+use crate::array::binview::BinaryViewArrayGenericBuilder;
+use crate::array::boolean::BooleanArrayBuilder;
+use crate::array::fixed_size_binary::FixedSizeBinaryArrayBuilder;
+use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
+use crate::array::list::ListArrayBuilder;
+use crate::array::null::NullArrayBuilder;
+use crate::array::struct_::StructArrayBuilder;
+use crate::array::{Array, MutableArray, MutablePrimitiveArray, PrimitiveArray, PrimitiveArrayBuilder, StaticArray};
+use crate::bitmap::OptBitmapBuilder;
+use crate::datatypes::{ArrowDataType, PhysicalType};
+use crate::types::NativeType;
+use crate::{with_match_primitive_type, with_match_primitive_type_full};
+
+/// Used for arrays which can share buffers with input arrays to appends,
+/// gathers, etc.
+#[derive(Copy, Clone, Debug)]
+pub enum ShareStrategy {
+    Never,
+    Always,
+}
+
+#[allow(private_bounds)]
+pub trait ArrayBuilder : ArrayBuilderBoxedHelper {
+    fn dtype(&self) -> &ArrowDataType;
+    fn reserve(&mut self, additional: usize);
+
+    /// Consume this builder returning the built array.
+    fn freeze(self) -> Box<dyn Array>;
+    
+    /// Extends this builder with the contents of the given array. May panic if
+    /// other does not match the dtype of this array.
+    fn extend(&mut self, other: &dyn Array, share: ShareStrategy) {
+        self.subslice_extend(other, 0, other.len(), share);
+    }
+
+    /// Extends this builder with the contents of the given array subslice. May
+    /// panic if other does not match the dtype of this array.
+    fn subslice_extend(&mut self, other: &dyn Array, start: usize, length: usize, share: ShareStrategy);
+
+    /// Extends this builder with the contents of the given array at the given
+    /// indices. That is, other[idxs[i]] is appended to this array in order,
+    /// for each i=0..idxs.len(). May panic if other does not match the
+    /// dtype of this array.
+    ///
+    /// # Safety
+    /// The indices must be in-bounds.
+    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy);
+}
+
+/// A hack that lets us call the consuming `freeze` method on Box<dyn ArrayBuilder>.
+trait ArrayBuilderBoxedHelper {
+    fn freeze_boxed(self: Box<Self>) -> Box<dyn Array>;
+}
+
+impl<T: ArrayBuilder> ArrayBuilderBoxedHelper for T {
+    fn freeze_boxed(self: Box<Self>) -> Box<dyn Array> {
+        self.freeze()
+    }
+}
+
+impl ArrayBuilder for Box<dyn ArrayBuilder> {
+    fn dtype(&self) -> &ArrowDataType {
+        (**self).dtype()
+    }
+
+    fn reserve(&mut self, additional: usize) {
+        (**self).reserve(additional)
+    }
+
+    fn freeze(self) -> Box<dyn Array> {
+        self.freeze_boxed()
+    }
+
+    fn subslice_extend(&mut self, other: &dyn Array, start: usize, length: usize, share: ShareStrategy) {
+        (**self).subslice_extend(other, start, length, share);
+    }
+
+    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
+        (**self).gather_extend(other, idxs, share);
+    }
+}
+
+/// Construct an ArrayBuilder for the given type.
+pub fn make_builder(dtype: &ArrowDataType) -> Box<dyn ArrayBuilder> {
+    use PhysicalType::*;
+    match dtype.to_physical_type() {
+        Null => Box::new(NullArrayBuilder::new(dtype.clone())),
+        Boolean => Box::new(BooleanArrayBuilder::new(dtype.clone())),
+        Primitive(prim_t) => 
+            with_match_primitive_type_full!(prim_t, |$T| {
+                Box::new(PrimitiveArrayBuilder::<$T>::new(dtype.clone()))
+            })
+        ,
+        FixedSizeBinary => Box::new(FixedSizeBinaryArrayBuilder::new(dtype.clone())),
+        LargeList => {
+            let ArrowDataType::LargeList(inner_dt) = dtype else { unreachable!() };
+            Box::new(ListArrayBuilder::<i64, _>::new(dtype.clone(), make_builder(inner_dt.dtype())))
+        }
+        FixedSizeList => {
+            let ArrowDataType::FixedSizeList(inner_dt, _) = dtype else { unreachable!() };
+            Box::new(FixedSizeListArrayBuilder::new(dtype.clone(), make_builder(inner_dt.dtype())))
+        }
+        Struct => {
+            let ArrowDataType::Struct(fields) = dtype else { unreachable!() };
+            let builders = fields.iter().map(|f| make_builder(f.dtype())).collect();
+            Box::new(StructArrayBuilder::new(dtype.clone(), builders))
+        }
+        BinaryView => Box::new(BinaryViewArrayGenericBuilder::<[u8]>::new(dtype.clone())),
+        Utf8View => Box::new(BinaryViewArrayGenericBuilder::<str>::new(dtype.clone())),
+
+        List |
+        Binary |
+        LargeBinary |
+        Utf8 | 
+        LargeUtf8 | 
+        Map |
+        Union |
+        Dictionary(_) => unimplemented!(),
+    }
+}

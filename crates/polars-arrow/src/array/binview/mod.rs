@@ -1,4 +1,8 @@
+
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
+
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -43,6 +47,10 @@ pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
 
 static BIN_VIEW_TYPE: ArrowDataType = ArrowDataType::BinaryView;
 static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
+
+// Growth parameters of view array buffers.
+const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
+const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
 pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     const IS_UTF8: bool;
@@ -354,6 +362,29 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
         let v = self.views.get_unchecked(i);
         T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
+    }
+
+    /// Returns the element at index `i`, or None if it is null.
+    /// # Panics
+    /// iff `i >= self.len()`
+    #[inline]
+    pub fn get(&self, i: usize) -> Option<&T> {
+        assert!(i < self.len());
+        unsafe { self.get_unchecked(i) }
+    }
+
+    /// Returns the element at index `i`, or None if it is null.
+    ///
+    /// # Safety
+    /// Assumes that the `i < self.len`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, i: usize) -> Option<&T> {
+        if self.validity.as_ref().is_none_or(|v| !v.get_bit_unchecked(i)) {
+            None
+        } else {
+            let v = self.views.get_unchecked(i);
+            Some(T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers)))
+        }
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.

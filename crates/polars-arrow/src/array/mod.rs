@@ -653,6 +653,7 @@ impl<'a> AsRef<(dyn Array + 'a)> for dyn Array {
 
 mod binary;
 mod boolean;
+pub mod builder;
 mod dictionary;
 mod fixed_size_binary;
 mod fixed_size_list;
