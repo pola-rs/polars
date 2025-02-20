@@ -21,6 +21,7 @@ pub use builder_dsl::*;
 pub mod dt;
 mod expr;
 mod expr_dyn_fn;
+mod format;
 mod from;
 pub mod function_expr;
 pub mod functions;

@@ -15,7 +15,6 @@ pub(crate) mod conversion;
 pub(crate) mod debug;
 pub mod expr_ir;
 mod file_scan;
-mod format;
 mod functions;
 pub mod hive;
 pub(crate) mod iterator;
