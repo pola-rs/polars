@@ -12,6 +12,9 @@ impl DataFrame {
     /// - the length of all [`Column`] is equal to the height of this [`DataFrame`]
     /// - the columns names are unique
     ///
+    /// Note: If `self` is empty, `self.height` will always be overridden by the height of the first
+    /// column in `columns`.
+    ///
     /// Note that on a debug build this will panic on duplicates / height mismatch.
     pub unsafe fn hstack_mut_unchecked(&mut self, columns: &[Column]) -> &mut Self {
         self.clear_schema();
