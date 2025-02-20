@@ -1708,9 +1708,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          │ group_by_partitioned(a) ┆ 5     ┆ 470  │
          │ sort(a)                 ┆ 475   ┆ 1964 │
          └─────────────────────────┴───────┴──────┘)
-        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort(
-        ...     "a"
-        ... ).profile(engine="gpu")  # doctest: +SKIP
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort("a").profile(
+        ...     engine="gpu"
+        ... )  # doctest: +SKIP
         (shape: (3, 3)
          ┌─────┬─────┬─────┐
          │ a   ┆ b   ┆ c   │
