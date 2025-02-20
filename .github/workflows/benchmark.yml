@@ -72,7 +72,12 @@ jobs:
         run: maturin build --profile nodebug-release -- -C codegen-units=8 -C lto=thin -C target-cpu=native
 
       - name: Install Polars release build
-        run: pip install target/wheels/polars*.whl
+        run: |
+          pip install target/wheels/polars*.whl
+          # symlink the binary so that it can be found even if polars is imported from py-polars/polars
+          ln -sv \
+            $(python -c "import importlib; print(importlib.util.find_spec('polars').submodule_search_locations[0] + '/polars.abi3.so')") \
+            py-polars/polars/polars.abi3.so
 
       - name: Set wheel size
         run: |
