@@ -841,33 +841,39 @@ def _from_series_repr(m: re.Match[str]) -> Series:
 
 def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
     """
-    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+    Build a Polars DataFrame from any dataframe supporting the PyCapsule Interface.
+
+    .. versionchanged:: 1.23.0
+
+       `from_dataframe` now uses the PyCapsule Interface for conversion,
+       only falling back to the Dataframe Interchange Protocol if that fails.
 
     Parameters
     ----------
     df
-        Object supporting the dataframe interchange protocol, i.e. must have implemented
-        the `__dataframe__` method.
+        Object supporting the dataframe PyCapsule Interface.
     allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, causes
+        Allow memory to be copied to perform the conversion. If set to False, may cause
         conversions that are not zero-copy to fail.
 
     Notes
     -----
-    Details on the Python dataframe interchange protocol:
-    https://data-apis.org/dataframe-protocol/latest/index.html
+    - Details on the PyCapsule Interface:
+      https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
+    - Details on the Python dataframe interchange protocol:
+      https://data-apis.org/dataframe-protocol/latest/index.html.
 
     Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
-    efficient method of conversion.
+    efficient method of conversion. This method is mostly just kept around for
+    backwards-compatibility.
 
     Examples
     --------
-    Convert a pandas dataframe to Polars through the interchange protocol.
+    Convert a pandas dataframe to Polars.
 
     >>> import pandas as pd
     >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-    >>> dfi = df_pd.__dataframe__()
-    >>> pl.from_dataframe(dfi)
+    >>> pl.from_dataframe(df_pd)
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
@@ -878,6 +884,13 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
     """
+    if is_pycapsule(df) and not _check_for_pyarrow(df):
+        try:
+            return pycapsule_to_frame(df)
+        except Exception:
+            # If the PyCapsule Interface failed, fallback to the
+            # interchange protocol.
+            pass
     from polars.interchange.from_dataframe import from_dataframe
 
     return from_dataframe(df, allow_copy=allow_copy)

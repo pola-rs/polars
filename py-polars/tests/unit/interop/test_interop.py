@@ -875,3 +875,10 @@ def test_from_arrow_string_cache_20271() -> None:
 def test_to_arrow_empty_chunks_20627() -> None:
     df = pl.concat(2 * [pl.Series([1])]).filter(pl.Series([False, True])).to_frame()
     assert df.to_arrow().shape == (1, 1)
+
+
+def test_to_pandas_int8_20316() -> None:
+    df = pl.Series("a", [None], pl.Int8).to_frame()
+    df_pd = df.to_pandas(use_pyarrow_extension_array=True)
+    result = pl.from_dataframe(df_pd)
+    assert_frame_equal(result, df)
