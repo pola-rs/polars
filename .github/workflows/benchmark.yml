@@ -74,7 +74,11 @@ jobs:
       - name: Install Polars release build
         run: |
           pip install target/wheels/polars*.whl
-          # symlink the binary so that it can be found even if polars is imported from py-polars/polars
+
+          # This workflow builds and installs a wheel, meaning there is no polars.abi3.so under
+          # py-polars/. This causes a binary not found error if a test tries to import polars in
+          # a Python executed using `subprocess.check_output([sys.executable])`. Fix this by
+          # symlinking the binary.
           ln -sv \
             $(python -c "import importlib; print(importlib.util.find_spec('polars').submodule_search_locations[0] + '/polars.abi3.so')") \
             py-polars/polars/polars.abi3.so
@@ -124,7 +128,7 @@ jobs:
                   body: commentBody,
                 });
               }
-        continue-on-error: true 
+        continue-on-error: true
 
       - name: Run benchmark tests
         uses: CodSpeedHQ/action@v3
