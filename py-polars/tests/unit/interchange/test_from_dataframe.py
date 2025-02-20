@@ -176,11 +176,9 @@ def test_from_dataframe_pandas_boolean_bytes() -> None:
     expected = pl.Series("a", [True, False]).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(
-        CopyNotAllowedError,
-        match="byte-packed boolean buffer must be converted to bit-packed boolean",
-    ):
-        result = pl.from_dataframe(df, allow_copy=False)
+    result = pl.from_dataframe(df, allow_copy=False)
+    expected = pl.Series("a", [True, False]).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_from_dataframe_categorical_pandas() -> None:
@@ -189,11 +187,12 @@ def test_from_dataframe_categorical_pandas() -> None:
     df_pd = pd.Series(values, dtype="category", name="a").to_frame()
 
     result = pl.from_dataframe(df_pd)
-    expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
+    expected = pl.Series("a", values, dtype=pl.Categorical("physical")).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(CopyNotAllowedError, match="string buffers must be converted"):
-        result = pl.from_dataframe(df_pd, allow_copy=False)
+    result = pl.from_dataframe(df_pd, allow_copy=False)
+    expected = pl.Series("a", values, dtype=pl.Categorical("physical")).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_from_dataframe_categorical_pyarrow() -> None:
