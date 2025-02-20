@@ -143,7 +143,7 @@ impl BitmapBuilder {
             self.bit_len += length;
         }
     }
-    
+
     /// Pushes the first length bits from the given word, assuming the rest of
     /// the bits are zero.
     /// # Safety
@@ -253,7 +253,13 @@ impl BitmapBuilder {
 
     /// # Safety
     /// The indices must be in-bounds.
-    pub unsafe fn gather_extend_from_slice(&mut self, slice: &[u8], offset: usize, length: usize, idxs: &[IdxSize]) {
+    pub unsafe fn gather_extend_from_slice(
+        &mut self,
+        slice: &[u8],
+        offset: usize,
+        length: usize,
+        idxs: &[IdxSize],
+    ) {
         assert!(8 * slice.len() >= offset + length);
 
         self.reserve(idxs.len());
@@ -359,21 +365,20 @@ impl BitmapBuilder {
     }
 }
 
-
 /// A wrapper for BitmapBuilder that does not allocate until the first false is
 /// pushed. Less efficient if you know there are false values because it must
 /// check if it has allocated for each push.
 pub enum OptBitmapBuilder {
-    AllTrue {
-        bit_len: usize,
-        bit_cap: usize,
-    },
+    AllTrue { bit_len: usize, bit_cap: usize },
     MayHaveFalse(BitmapBuilder),
 }
 
 impl Default for OptBitmapBuilder {
     fn default() -> Self {
-        Self::AllTrue { bit_len: 0, bit_cap: 0 }
+        Self::AllTrue {
+            bit_len: 0,
+            bit_cap: 0,
+        }
     }
 }
 
@@ -382,11 +387,11 @@ impl OptBitmapBuilder {
         match self {
             Self::AllTrue { bit_len, bit_cap } => {
                 *bit_cap = usize::max(*bit_cap, *bit_len + additional);
-            }
+            },
             Self::MayHaveFalse(inner) => inner.reserve(additional),
         }
     }
-    
+
     pub fn extend_constant(&mut self, length: usize, value: bool) {
         match self {
             Self::AllTrue { bit_len, bit_cap } => {
@@ -396,39 +401,49 @@ impl OptBitmapBuilder {
                 } else {
                     self.get_builder().extend_constant(length, value);
                 }
-            }
+            },
             Self::MayHaveFalse(inner) => inner.extend_constant(length, value),
         }
     }
 
-    pub fn into_opt_validity(mut self) -> Option<Bitmap> {
+    pub fn into_opt_validity(self) -> Option<Bitmap> {
         match self {
             Self::AllTrue { .. } => None,
             Self::MayHaveFalse(inner) => inner.into_opt_validity(),
         }
     }
-    
-    pub fn subslice_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, start: usize, length: usize) {
+
+    pub fn subslice_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+    ) {
         match bitmap {
             Some(bm) => {
-                self.get_builder().subslice_extend_from_bitmap(bm, start, length);
-            }
+                self.get_builder()
+                    .subslice_extend_from_bitmap(bm, start, length);
+            },
             None => {
                 self.extend_constant(length, true);
-            }
+            },
         }
     }
-    
+
     /// # Safety
     /// The indices must be in-bounds.
-    pub unsafe fn gather_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, idxs: &[IdxSize]) {
+    pub unsafe fn gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+    ) {
         match bitmap {
             Some(bm) => {
                 self.get_builder().gather_extend_from_bitmap(bm, idxs);
-            }
+            },
             None => {
                 self.extend_constant(idxs.len(), true);
-            }
+            },
         }
     }
 
@@ -438,9 +453,11 @@ impl OptBitmapBuilder {
                 let mut builder = BitmapBuilder::with_capacity(*bit_cap);
                 builder.extend_constant(*bit_len, true);
                 *self = Self::MayHaveFalse(builder);
-                let Self::MayHaveFalse(inner) = self else { unreachable!() };
+                let Self::MayHaveFalse(inner) = self else {
+                    unreachable!()
+                };
                 inner
-            }
+            },
             Self::MayHaveFalse(inner) => inner,
         }
     }

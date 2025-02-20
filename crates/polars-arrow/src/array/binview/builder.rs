@@ -9,7 +9,7 @@ use super::BinaryViewArray;
 use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
 use crate::array::builder::{ArrayBuilder, ShareStrategy};
 use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
-use crate::bitmap::{BitmapBuilder, OptBitmapBuilder};
+use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
@@ -105,26 +105,32 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
             self.views.push(view);
         }
     }
-    
+
     fn switch_active_stealing_bufferset_to(&mut self, buffer_set: &Arc<[Buffer<u8>]>) {
         // Fat pointer equality, checks both start and length.
-        if self.last_buffer_set_stolen_from.as_ref().is_some_and(|stolen_bs| std::ptr::eq(
-            Arc::as_ptr(stolen_bs),
-            Arc::as_ptr(buffer_set)
-        )) {
+        if self
+            .last_buffer_set_stolen_from
+            .as_ref()
+            .is_some_and(|stolen_bs| std::ptr::eq(Arc::as_ptr(stolen_bs), Arc::as_ptr(buffer_set)))
+        {
             return; // Already active.
         }
-        
+
         // Switch to new generation (invalidating all old translation indices),
         // and resizing the buffer with invalid indices if necessary.
         let old_gen = self.buffer_set_translation_generation;
         self.buffer_set_translation_generation = old_gen.wrapping_add(1);
         if self.buffer_set_translation_idxs.len() < buffer_set.len() {
-            self.buffer_set_translation_idxs.resize(buffer_set.len(), (0, old_gen));
+            self.buffer_set_translation_idxs
+                .resize(buffer_set.len(), (0, old_gen));
         }
     }
-    
-    unsafe fn extend_views_dedup_ignore_validity(&mut self, views: impl IntoIterator<Item=View>, other_bufferset: &Arc<[Buffer<u8>]>) {
+
+    unsafe fn extend_views_dedup_ignore_validity(
+        &mut self,
+        views: impl IntoIterator<Item = View>,
+        other_bufferset: &Arc<[Buffer<u8>]>,
+    ) {
         // TODO: if there are way more buffers than length translate per-view
         // rather than all at once.
         self.switch_active_stealing_bufferset_to(other_bufferset);
@@ -132,13 +138,17 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         for mut view in views {
             if view.length > View::MAX_INLINE_SIZE {
                 // Translate from old array-local buffer idx to global stolen buffer idx.
-                let (mut new_buffer_idx, gen) =
-                    *self.buffer_set_translation_idxs.get_unchecked(view.buffer_idx as usize);
+                let (mut new_buffer_idx, gen) = *self
+                    .buffer_set_translation_idxs
+                    .get_unchecked(view.buffer_idx as usize);
                 if gen != self.buffer_set_translation_generation {
                     // This buffer index wasn't seen before for this array, do a dedup lookup.
                     // Since we map by starting pointer and different subslices may have different lengths, we expand
                     // the buffer to the maximum it could be.
-                    let buffer = other_bufferset.get_unchecked(view.buffer_idx as usize).clone().expand_end_to_storage();
+                    let buffer = other_bufferset
+                        .get_unchecked(view.buffer_idx as usize)
+                        .clone()
+                        .expand_end_to_storage();
                     let buf_id = buffer.as_slice().as_ptr();
                     let idx = match self.stolen_buffers.entry(buf_id) {
                         Entry::Occupied(o) => *o.get(),
@@ -152,7 +162,10 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
                     };
 
                     // Cache result for future lookups.
-                    *self.buffer_set_translation_idxs.get_unchecked_mut(view.buffer_idx as usize) = (idx, self.buffer_set_translation_generation);
+                    *self
+                        .buffer_set_translation_idxs
+                        .get_unchecked_mut(view.buffer_idx as usize) =
+                        (idx, self.buffer_set_translation_generation);
                     new_buffer_idx = idx;
                 }
                 view.buffer_idx = new_buffer_idx;
@@ -223,7 +236,10 @@ impl<V: ViewType + ?Sized> ArrayBuilder for BinaryViewArrayGenericBuilder<V> {
                 },
                 ShareStrategy::Always => {
                     let other_views = &other.views()[start..start + length];
-                    self.extend_views_dedup_ignore_validity(other_views.iter().copied(), other.data_buffers());
+                    self.extend_views_dedup_ignore_validity(
+                        other_views.iter().copied(),
+                        other.data_buffers(),
+                    );
                 },
             }
         }
@@ -257,7 +273,9 @@ impl<V: ViewType + ?Sized> ArrayBuilder for BinaryViewArrayGenericBuilder<V> {
                 },
                 ShareStrategy::Always => {
                     let other_view_slice = other.views().as_slice();
-                    let other_views = idxs.iter().map(|idx| *other_view_slice.get_unchecked(*idx as usize));
+                    let other_views = idxs
+                        .iter()
+                        .map(|idx| *other_view_slice.get_unchecked(*idx as usize));
                     self.extend_views_dedup_ignore_validity(other_views, other.data_buffers());
                 },
             }

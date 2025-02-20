@@ -3,10 +3,10 @@ use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
+mod builder;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
-mod builder;
 pub use builder::*;
 mod mutable;
 pub use mutable::*;

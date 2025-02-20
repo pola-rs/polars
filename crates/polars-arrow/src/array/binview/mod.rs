@@ -1,4 +1,3 @@
-
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
 
 mod builder;
@@ -379,11 +378,17 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn get_unchecked(&self, i: usize) -> Option<&T> {
-        if self.validity.as_ref().is_none_or(|v| !v.get_bit_unchecked(i)) {
+        if self
+            .validity
+            .as_ref()
+            .is_none_or(|v| !v.get_bit_unchecked(i))
+        {
             None
         } else {
             let v = self.views.get_unchecked(i);
-            Some(T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers)))
+            Some(T::from_bytes_unchecked(
+                v.get_slice_unchecked(&self.buffers),
+            ))
         }
     }
 

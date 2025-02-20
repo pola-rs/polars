@@ -38,7 +38,13 @@ impl ArrayBuilder for BooleanArrayBuilder {
         Box::new(BooleanArray::try_new(self.dtype, values, validity).unwrap())
     }
 
-    fn subslice_extend(&mut self, other: &dyn Array, start: usize, length: usize, _share: ShareStrategy) {
+    fn subslice_extend(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
         let other: &BooleanArray = other.as_any().downcast_ref().unwrap();
         self.values
             .subslice_extend_from_bitmap(other.values(), start, length);

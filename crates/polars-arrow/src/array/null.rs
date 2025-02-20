@@ -216,7 +216,6 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for NullArray {
     }
 }
 
-
 pub struct NullArrayBuilder {
     dtype: ArrowDataType,
     length: usize,
@@ -233,17 +232,28 @@ impl ArrayBuilder for NullArrayBuilder {
         &self.dtype
     }
 
-    fn reserve(&mut self, _additional: usize) { }
+    fn reserve(&mut self, _additional: usize) {}
 
     fn freeze(self) -> Box<dyn Array> {
         NullArray::new(self.dtype, self.length).to_boxed()
     }
 
-    fn subslice_extend(&mut self, _other: &dyn Array, _start: usize, length: usize, _share: ShareStrategy) {
+    fn subslice_extend(
+        &mut self,
+        _other: &dyn Array,
+        _start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
         self.length += length;
     }
 
-    unsafe fn gather_extend(&mut self, _other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        _other: &dyn Array,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
         self.length += idxs.len();
     }
 }

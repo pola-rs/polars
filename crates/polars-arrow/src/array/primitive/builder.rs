@@ -17,7 +17,11 @@ pub struct PrimitiveArrayBuilder<T> {
 
 impl<T: NativeType> PrimitiveArrayBuilder<T> {
     pub fn new(dtype: ArrowDataType) -> Self {
-        Self { dtype, values: Vec::new(), validity: OptBitmapBuilder::default() }
+        Self {
+            dtype,
+            values: Vec::new(),
+            validity: OptBitmapBuilder::default(),
+        }
     }
 }
 
@@ -37,9 +41,16 @@ impl<T: NativeType> ArrayBuilder for PrimitiveArrayBuilder<T> {
         Box::new(PrimitiveArray::new(self.dtype, values, validity))
     }
 
-    fn subslice_extend(&mut self, other: &dyn Array, start: usize, length: usize, _share: ShareStrategy) {
+    fn subslice_extend(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
         let other: &PrimitiveArray<T> = other.as_any().downcast_ref().unwrap();
-        self.values.extend_from_slice(&other.values()[start..start+length]);
+        self.values
+            .extend_from_slice(&other.values()[start..start + length]);
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }

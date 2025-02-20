@@ -37,17 +37,28 @@ impl ArrayBuilder for StructArrayBuilder {
     }
 
     fn freeze(self) -> Box<dyn Array> {
-        let values = self.inner_builders.into_iter().map(|b| b.freeze()).collect();
+        let values = self
+            .inner_builders
+            .into_iter()
+            .map(|b| b.freeze())
+            .collect();
         let validity = self.validity.into_opt_validity();
         Box::new(StructArray::new(self.dtype, self.length, values, validity))
     }
 
-    fn subslice_extend(&mut self, other: &dyn Array, start: usize, length: usize, share: ShareStrategy) {
+    fn subslice_extend(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        share: ShareStrategy,
+    ) {
         let other: &StructArray = other.as_any().downcast_ref().unwrap();
         for (builder, other_values) in self.inner_builders.iter_mut().zip(other.values()) {
             builder.subslice_extend(&**other_values, start, length, share);
         }
-        self.validity.subslice_extend_from_opt_validity(other.validity(), start, length);
+        self.validity
+            .subslice_extend_from_opt_validity(other.validity(), start, length);
         self.length += length;
     }
 
@@ -56,7 +67,8 @@ impl ArrayBuilder for StructArrayBuilder {
         for (builder, other_values) in self.inner_builders.iter_mut().zip(other.values()) {
             builder.gather_extend(&**other_values, idxs, share);
         }
-        self.validity.gather_extend_from_opt_validity(other.validity(), idxs);
+        self.validity
+            .gather_extend_from_opt_validity(other.validity(), idxs);
         self.length += idxs.len();
     }
 }

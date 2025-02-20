@@ -15,7 +15,11 @@ pub struct FixedSizeBinaryArrayBuilder {
 
 impl FixedSizeBinaryArrayBuilder {
     pub fn new(dtype: ArrowDataType) -> Self {
-        Self { dtype, values: Vec::new(), validity: OptBitmapBuilder::default() }
+        Self {
+            dtype,
+            values: Vec::new(),
+            validity: OptBitmapBuilder::default(),
+        }
     }
 }
 
@@ -36,11 +40,18 @@ impl ArrayBuilder for FixedSizeBinaryArrayBuilder {
         Box::new(FixedSizeBinaryArray::new(self.dtype, values, validity))
     }
 
-    fn subslice_extend(&mut self, other: &dyn Array, start: usize, length: usize, _share: ShareStrategy) {
+    fn subslice_extend(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        _share: ShareStrategy,
+    ) {
         let other: &FixedSizeBinaryArray = other.as_any().downcast_ref().unwrap();
         let other_slice = other.values().as_slice();
         let size = FixedSizeBinaryArray::get_size(&self.dtype);
-        self.values.extend_from_slice(&other_slice[start * size..(start + length) * size]);
+        self.values
+            .extend_from_slice(&other_slice[start * size..(start + length) * size]);
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }

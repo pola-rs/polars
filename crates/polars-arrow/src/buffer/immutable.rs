@@ -88,7 +88,7 @@ impl<T> Buffer<T> {
             length,
         }
     }
-    
+
     pub fn from_static(data: &'static [T]) -> Self {
         Self::from_storage(SharedStorage::from_static(data))
     }
@@ -111,7 +111,7 @@ impl<T> Buffer<T> {
     pub fn is_sliced(&self) -> bool {
         self.storage.len() != self.length
     }
-    
+
     /// Expands this slice to the maximum allowed by the underlying storage.
     /// Only expands towards the end, the offset isn't changed. That is, element
     /// i before and after this operation refer to the same element.
