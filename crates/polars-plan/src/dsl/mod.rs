@@ -45,7 +45,7 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
-mod logical_plan;
+mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
@@ -55,11 +55,11 @@ pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
-pub use logical_plan::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;
 pub use options::*;
+pub use plan::*;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
