@@ -35,6 +35,9 @@ impl DataFrame {
     /// Add multiple [`Column`] to a [`DataFrame`].
     /// Errors if the resulting DataFrame columns have duplicate names or unequal heights.
     ///
+    /// Note: If `self` is empty, `self.height` will always be overridden by the height of the first
+    /// column in `columns`.
+    ///
     /// # Example
     ///
     /// ```rust
