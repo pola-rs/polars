@@ -44,6 +44,7 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+mod logical_plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
@@ -53,6 +54,7 @@ pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
 pub use functions::*;
 pub use list::*;
+pub use logical_plan::*;
 #[cfg(feature = "meta")]
 pub use meta::*;
 pub use name::*;

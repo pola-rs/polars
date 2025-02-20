@@ -5,7 +5,8 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
-use polars_plan::plans::{DslPlan, FileScan, ScanSources};
+use polars_plan::dsl::DslPlan;
+use polars_plan::plans::{FileScan, ScanSources};
 use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
 
 use crate::prelude::LazyFrame;
