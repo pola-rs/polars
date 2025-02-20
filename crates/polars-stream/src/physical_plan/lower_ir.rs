@@ -17,7 +17,8 @@ use polars_utils::itertools::Itertools;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
-use crate::nodes::io_sources::multi_scan::RowRestrication;
+use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
+use crate::nodes::io_sources::RowRestriction;
 use crate::physical_plan::lower_expr::{
     build_length_preserving_select_stream, build_select_stream, is_elementwise_rec_cached,
     lower_exprs, unique_column_name, ExprCache,
@@ -522,9 +523,16 @@ pub fn lower_ir(
                 });
 
                 let mut row_restriction = None;
-                if let Some((start, len)) = file_options.slice.take_if(|(start, _)| *start >= 0) {
-                    let start = start as usize;
-                    row_restriction = Some(RowRestrication::Slice(start..start + len));
+                if let Some((offset, len)) = file_options.slice.take() {
+                    if offset < 0 {
+                        let offset = (-offset) as usize;
+                        row_restriction = Some(MultiscanRowRestriction::NegativeSlice(offset, len));
+                    } else {
+                        let start = offset as usize;
+                        row_restriction = Some(MultiscanRowRestriction::Source(
+                            RowRestriction::Slice(start..start + len),
+                        ));
+                    }
                 }
 
                 // The schema afterwards only includes the projected columns.
@@ -556,20 +564,6 @@ pub fn lower_ir(
                     columns: output_schema.iter_names_cloned().collect(),
                 };
                 schema = proj_schema;
-
-                if let Some(slice) = file_options.slice {
-                    let source_node = phys_sm.insert(PhysNode {
-                        output_schema: schema.clone(),
-                        kind: node,
-                    });
-                    let stream = PhysStream::first(source_node);
-                    assert!(slice.0 < 0);
-                    node = PhysNodeKind::NegativeSlice {
-                        input: stream,
-                        offset: slice.0,
-                        length: slice.1,
-                    };
-                }
 
                 if let Some(predicate) = predicate {
                     let source_node = phys_sm.insert(PhysNode {
