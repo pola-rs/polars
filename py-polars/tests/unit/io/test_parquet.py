@@ -2894,3 +2894,21 @@ def test_filter_true_predicate_21204() -> None:
     f.seek(0)
     lf = pl.scan_parquet(f).filter(pl.lit(True))
     assert_frame_equal(lf.collect(), df)
+
+
+def test_nested_deprecated_int96_timestamps_21332() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"a": [{"t": datetime(2025, 1, 1)}]})
+
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_deprecated_int96_timestamps=True,
+    )
+
+    f.seek(0)
+    assert_frame_equal(
+        pl.read_parquet(f),
+        df,
+    )
