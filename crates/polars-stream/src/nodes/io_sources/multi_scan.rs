@@ -9,13 +9,14 @@ use futures::StreamExt;
 use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, IntoColumn};
+use polars_core::prelude::{Column, IntoColumn, IDX_DTYPE};
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_error::{polars_bail, PolarsResult};
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
+use polars_io::predicates::ScanIOPredicate;
 use polars_io::RowIndex;
 use polars_plan::dsl::{ScanSource, ScanSourceRef, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
@@ -84,11 +85,19 @@ impl<T: MultiScanable> MultiScanNode<T> {
         file_schema: SchemaRef,
         projection: Option<Bitmap>,
         row_index: Option<RowIndex>,
-        row_restriction: Option<MultiscanRowRestriction>,
+        mut row_restriction: Option<MultiscanRowRestriction>,
+        predicate: Option<ScanIOPredicate>,
 
         read_options: T::ReadOptions,
         cloud_options: Option<CloudOptions>,
     ) -> Self {
+        if let Some(predicate) = predicate {
+            assert!(row_restriction.is_none());
+            row_restriction = Some(MultiscanRowRestriction::Source(RowRestriction::Predicate(
+                predicate,
+            )));
+        }
+
         Self {
             name: format!("multi-scan[{}]", T::BASE_NAME),
             sources,
@@ -302,6 +311,93 @@ fn resolve_source_projection(
     Ok((source_projection.freeze(), missing_columns))
 }
 
+fn scan_predicate_to_mask(
+    scan_predicate: &ScanIOPredicate,
+    file_schema: &Schema,
+    hive_schema: &Schema,
+    hive_parts: &HivePartitionsDf,
+) -> PolarsResult<(Option<Bitmap>, bool)> {
+    let Some(sbp) = scan_predicate.skip_batch_predicate.as_ref() else {
+        return Ok((None, true));
+    };
+
+    let non_hive_live_columns = scan_predicate
+        .live_columns
+        .iter()
+        .filter(|lc| !hive_schema.contains(lc))
+        .collect::<Vec<_>>();
+
+    if non_hive_live_columns.len() == scan_predicate.live_columns.len() {
+        return Ok((None, true));
+    }
+
+    let mut statistics_columns =
+        Vec::with_capacity(1 + 3 * hive_schema.len() + 3 * non_hive_live_columns.len());
+
+    // We don't know the sizes of the files here yet.
+    statistics_columns.push(Column::new_scalar(
+        "len".into(),
+        Scalar::null(IDX_DTYPE),
+        hive_parts.df().height(),
+    ));
+    for column in hive_parts.df().get_columns() {
+        let c = column.name();
+
+        // If the hive value is not null, we know we have 0 nulls for the hive column in the file
+        // otherwise we don't know. Same reasoning as with the `len`.
+        let mut nc = Column::new_scalar(
+            format_pl_smallstr!("{c}_nc"),
+            (0 as IdxSize).into(),
+            hive_parts.df().height(),
+        );
+        if column.has_nulls() {
+            nc = nc.zip_with_same_type(
+                &column.is_null(),
+                &Column::new_scalar(PlSmallStr::EMPTY, Scalar::null(IDX_DTYPE), 1),
+            )?;
+        }
+
+        statistics_columns.extend([
+            column.clone().with_name(format_pl_smallstr!("{c}_min")),
+            column.clone().with_name(format_pl_smallstr!("{c}_max")),
+            nc,
+        ]);
+    }
+    for c in &non_hive_live_columns {
+        let dtype = file_schema.try_get(c)?;
+        statistics_columns.extend([
+            Column::full_null(
+                format_pl_smallstr!("{c}_min"),
+                hive_parts.df().height(),
+                dtype,
+            ),
+            Column::full_null(
+                format_pl_smallstr!("{c}_max"),
+                hive_parts.df().height(),
+                dtype,
+            ),
+            Column::full_null(
+                format_pl_smallstr!("{c}_nc"),
+                hive_parts.df().height(),
+                &IDX_DTYPE,
+            ),
+        ]);
+    }
+
+    let statistics_df = DataFrame::new(statistics_columns)?;
+    let mask = sbp.evaluate_with_stat_df(&statistics_df)?;
+
+    if config::verbose() {
+        eprintln!(
+            "[MultiScan]: Predicate pushdown allows skipping {} / {} sources",
+            mask.set_bits(),
+            mask.len()
+        );
+    }
+
+    Ok((Some(mask), !non_hive_live_columns.is_empty()))
+}
+
 pub trait MultiScanable: SourceNode + Sized + Send + Sync {
     type ReadOptions: Send + Sync + 'static;
 
@@ -356,6 +452,8 @@ enum SourcePhaseContent {
     OneShot(DataFrame),
 }
 struct SourcePhase {
+    /// We don't use this to communicate anything, it is just a sanity check.
+    source_idx: usize,
     content: SourcePhaseContent,
     unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
     missing_columns: Option<Bitmap>,
@@ -414,6 +512,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         join_handles.push(spawn(TaskPriority::Low, async move {
             let verbose = config::verbose();
             let mut first_data_source = 0;
+            let mut skipable_file_mask = None;
 
             let row_restriction = match row_restriction {
                 Some(MultiscanRowRestriction::NegativeSlice(mut offset, length)) => {
@@ -465,6 +564,25 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                     first_data_source = start_index;
                     Some(RowRestriction::Slice(positive_slice))
+                },
+                Some(MultiscanRowRestriction::Source(RowRestriction::Predicate(scan_predicate))) => {
+                    if let Some(hive_parts) = hive_parts.as_ref() {
+                        let (mask, need_pred_for_inner_readers) = scan_predicate_to_mask(
+                            &scan_predicate,
+                            file_schema.as_ref(),
+                            hive_schema.as_ref(),
+                            hive_parts
+                        )?;
+
+                        skipable_file_mask = mask;
+                        if need_pred_for_inner_readers {
+                            Some(RowRestriction::Predicate(scan_predicate))
+                        } else {
+                            None
+                        }
+                    } else {
+                        Some(RowRestriction::Predicate(scan_predicate))
+                    }
                 },
                 Some(MultiscanRowRestriction::Source(r)) => Some(r),
                 None => None,
@@ -579,6 +697,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     let projection = projection.clone();
                     let row_index_name = row_index_name.clone();
                     let physical_columns = physical_columns.clone();
+                    let skipable_file_mask = skipable_file_mask.clone();
 
                     spawn(TaskPriority::High, async move {
                         let state = ExecutionState::new();
@@ -603,6 +722,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         }
 
                         while i < sources.len() && !stop {
+                            let is_selected = skipable_file_mask.as_ref().is_some_and(|s| s.get_bit(i));
+
+                            // If the predicate allowed skipping this file, do.
+                            if row_index_name.is_none() && is_selected {
+                                i += max_concurrent_scans;
+                                continue;
+                            }
+
                             let source = sources.at(i).into_owned()?;
                             let (mut output_send, output_recv) = connector();
                             let mut source = T::new(
@@ -612,6 +739,25 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 row_index_name.clone(),
                             )
                             .await?;
+
+                            if is_selected {
+                                let row_count = source.unrestricted_row_count().await?;
+                                let phase = SourcePhase {
+                                    source_idx: i,
+                                    content: SourcePhaseContent::OneShot(DataFrame::empty()),
+                                    missing_columns: None,
+                                    unrestricted_row_count: Some(Arc::new(AtomicIdxSize::new(
+                                        row_count,
+                                    ))),
+                                };
+                                // Wait for the orchestrator task to actually be interested in the output
+                                // of this file.
+                                if si_send.send(phase).await.is_err() {
+                                    break;
+                                };
+                                i += max_concurrent_scans;
+                                continue;
+                            }
 
                             let source_schema = source.physical_schema().await?;
                             let (source_projection, missing_columns) = resolve_source_projection(
@@ -647,6 +793,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                         df.with_row_index_mut(name.clone(), None);
                                     }
                                     let phase = SourcePhase {
+                                        source_idx: i,
                                         content: SourcePhaseContent::OneShot(df),
                                         missing_columns: missing_columns.clone(),
                                         unrestricted_row_count: Some(Arc::new(AtomicIdxSize::new(
@@ -705,6 +852,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 };
 
                                 let phase = SourcePhase {
+                                    source_idx: i,
                                     content: SourcePhaseContent::Channels(rx),
                                     missing_columns: missing_columns.clone(),
                                     unrestricted_row_count: unrestricted_row_count.clone(),
@@ -774,6 +922,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             let file_schema = file_schema;
             let projection = projection;
             let sources = sources.clone();
+            let mut skipable_file_mask = skipable_file_mask.clone();
             join_handles.push(spawn(TaskPriority::High, async move {
                 let mut seq = MorselSeq::default();
                 let mut current_scan = first_scan_source;
@@ -787,6 +936,19 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                     let wait_group = WaitGroup::default();
 
                     while current_scan < sources.len() {
+                        if let Some(skipable_file_mask) = skipable_file_mask.as_mut() {
+                            assert_eq!(sources.len() - current_scan, skipable_file_mask.len());
+
+                            if row_index.is_none() {
+                                // Skip over all skipable files. The workers must do the same
+                                // otherwise they get out of sync.
+                                current_scan += skipable_file_mask.take_leading_ones();
+                            }
+                            if skipable_file_mask.unset_bits() == 0 {
+                                break 'phase_loop;
+                            }
+                        }
+
                         let source_name = source_name(sources.at(current_scan), current_scan);
                         let hive_part = hive_parts.as_ref();
                         let si_recv = &mut si_recv[current_scan % max_concurrent_scans];
@@ -794,135 +956,149 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             return Ok(());
                         };
 
+                        // Sanity Check: Is the worker currently on the same source as we are?
+                        assert_eq!(phase.source_idx, current_scan);
+
+                        let is_selected = skipable_file_mask.as_ref().is_none_or(|s| !s.get_bit(0));
+                        if let Some(skipable_file_mask) = skipable_file_mask.as_mut() {
+                            skipable_file_mask.slice(1, skipable_file_mask.len() - 1);
+                        }
+
                         match phase.content {
                             // In certain cases, we don't actually need to read physical data from the
                             // file so we get back a row count.
                             SourcePhaseContent::OneShot(df) => {
-                                let df = process_dataframe(
-                                    df,
-                                    &source_name,
-                                    current_scan,
-                                    hive_part,
-                                    phase.missing_columns.as_ref(),
-                                    include_file_paths.as_ref(),
-                                    file_schema.as_ref(),
-                                    projection.as_ref(),
-                                    row_index.as_ref(),
-                                );
-                                let df = match df {
-                                    Ok(df) => df,
-                                    Err(err) => {
-                                        return Err(err);
-                                    },
-                                };
+                                if is_selected {
+                                    let df = process_dataframe(
+                                        df,
+                                        &source_name,
+                                        current_scan,
+                                        hive_part,
+                                        phase.missing_columns.as_ref(),
+                                        include_file_paths.as_ref(),
+                                        file_schema.as_ref(),
+                                        projection.as_ref(),
+                                        row_index.as_ref(),
+                                    );
+                                    let df = match df {
+                                        Ok(df) => df,
+                                        Err(err) => {
+                                            return Err(err);
+                                        },
+                                    };
 
-                                let mut morsel = Morsel::new(df, seq, source_token.clone());
-                                morsel.set_consume_token(wait_group.token());
-                                seq = seq.successor();
+                                    let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                    morsel.set_consume_token(wait_group.token());
+                                    seq = seq.successor();
 
-                                if send.send(morsel).await.is_err() {
-                                    break 'phase_loop;
-                                }
+                                    if send.send(morsel).await.is_err() {
+                                        break 'phase_loop;
+                                    }
 
-                                wait_group.wait().await;
-                                if source_token.stop_requested() {
-                                    phase_output.outcome.stop();
-                                    continue 'phase_loop;
+                                    wait_group.wait().await;
+                                    if source_token.stop_requested() {
+                                        phase_output.outcome.stop();
+                                        continue 'phase_loop;
+                                    }
                                 }
                             },
-                            SourcePhaseContent::Channels(rx) => match rx {
-                                SourceInput::Serial(mut rx) => {
-                                    while let Ok(rg) = rx.recv().await {
-                                        let original_source_token = rg.source_token().clone();
+                            SourcePhaseContent::Channels(rx) => {
+                                assert!(is_selected);
 
-                                        let df = rg.into_df();
-                                        let df = process_dataframe(
-                                            df,
-                                            &source_name,
-                                            current_scan,
-                                            hive_part,
-                                            phase.missing_columns.as_ref(),
-                                            include_file_paths.as_ref(),
-                                            file_schema.as_ref(),
-                                            projection.as_ref(),
-                                            row_index.as_ref(),
-                                        );
-                                        let df = match df {
-                                            Ok(df) => df,
-                                            Err(err) => {
-                                                return Err(err);
-                                            },
-                                        };
+                                match rx {
+                                    SourceInput::Serial(mut rx) => {
+                                        while let Ok(rg) = rx.recv().await {
+                                            let original_source_token = rg.source_token().clone();
 
-                                        let mut morsel = Morsel::new(df, seq, source_token.clone());
-                                        morsel.set_consume_token(wait_group.token());
-                                        seq = seq.successor();
+                                            let df = rg.into_df();
+                                            let df = process_dataframe(
+                                                df,
+                                                &source_name,
+                                                current_scan,
+                                                hive_part,
+                                                phase.missing_columns.as_ref(),
+                                                include_file_paths.as_ref(),
+                                                file_schema.as_ref(),
+                                                projection.as_ref(),
+                                                row_index.as_ref(),
+                                            );
+                                            let df = match df {
+                                                Ok(df) => df,
+                                                Err(err) => {
+                                                    return Err(err);
+                                                },
+                                            };
 
-                                        if send.send(morsel).await.is_err() {
-                                            break 'phase_loop;
+                                            let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                            morsel.set_consume_token(wait_group.token());
+                                            seq = seq.successor();
+
+                                            if send.send(morsel).await.is_err() {
+                                                break 'phase_loop;
+                                            }
+
+                                            wait_group.wait().await;
+                                            if source_token.stop_requested() {
+                                                original_source_token.stop();
+                                                phase_output.outcome.stop();
+                                                continue 'phase_loop;
+                                            }
+                                        }
+                                    },
+                                    SourceInput::Parallel(rxs) => {
+                                        let (mut linearizer, inserters) =
+                                            Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+                                        for ((rx, pass_task_send), inserter) in rxs
+                                            .into_iter()
+                                            .zip(pass_task_send.iter_mut())
+                                            .zip(inserters)
+                                        {
+                                            if pass_task_send.send((rx, inserter)).await.is_err() {
+                                                return Ok(());
+                                            };
                                         }
 
-                                        wait_group.wait().await;
-                                        if source_token.stop_requested() {
-                                            original_source_token.stop();
-                                            phase_output.outcome.stop();
-                                            continue 'phase_loop;
+                                        while let Some(rg) = linearizer.get().await {
+                                            let rg = rg.1;
+
+                                            let original_source_token = rg.source_token().clone();
+
+                                            let df = rg.into_df();
+                                            let df = process_dataframe(
+                                                df,
+                                                &source_name,
+                                                current_scan,
+                                                hive_part,
+                                                phase.missing_columns.as_ref(),
+                                                include_file_paths.as_ref(),
+                                                file_schema.as_ref(),
+                                                projection.as_ref(),
+                                                row_index.as_ref(),
+                                            );
+                                            let df = match df {
+                                                Ok(df) => df,
+                                                Err(err) => {
+                                                    return Err(err);
+                                                },
+                                            };
+
+                                            let mut morsel = Morsel::new(df, seq, source_token.clone());
+                                            morsel.set_consume_token(wait_group.token());
+                                            seq = seq.successor();
+
+                                            if send.send(morsel).await.is_err() {
+                                                break 'phase_loop;
+                                            }
+
+                                            wait_group.wait().await;
+                                            if source_token.stop_requested() {
+                                                original_source_token.stop();
+                                                phase_output.outcome.stop();
+                                                continue 'phase_loop;
+                                            }
                                         }
-                                    }
-                                },
-                                SourceInput::Parallel(rxs) => {
-                                    let (mut linearizer, inserters) =
-                                        Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
-                                    for ((rx, pass_task_send), inserter) in rxs
-                                        .into_iter()
-                                        .zip(pass_task_send.iter_mut())
-                                        .zip(inserters)
-                                    {
-                                        if pass_task_send.send((rx, inserter)).await.is_err() {
-                                            return Ok(());
-                                        };
-                                    }
-
-                                    while let Some(rg) = linearizer.get().await {
-                                        let rg = rg.1;
-
-                                        let original_source_token = rg.source_token().clone();
-
-                                        let df = rg.into_df();
-                                        let df = process_dataframe(
-                                            df,
-                                            &source_name,
-                                            current_scan,
-                                            hive_part,
-                                            phase.missing_columns.as_ref(),
-                                            include_file_paths.as_ref(),
-                                            file_schema.as_ref(),
-                                            projection.as_ref(),
-                                            row_index.as_ref(),
-                                        );
-                                        let df = match df {
-                                            Ok(df) => df,
-                                            Err(err) => {
-                                                return Err(err);
-                                            },
-                                        };
-
-                                        let mut morsel = Morsel::new(df, seq, source_token.clone());
-                                        morsel.set_consume_token(wait_group.token());
-                                        seq = seq.successor();
-
-                                        if send.send(morsel).await.is_err() {
-                                            break 'phase_loop;
-                                        }
-
-                                        wait_group.wait().await;
-                                        if source_token.stop_requested() {
-                                            original_source_token.stop();
-                                            phase_output.outcome.stop();
-                                            continue 'phase_loop;
-                                        }
-                                    }
-                                },
+                                    },
+                                }
                             },
                         }
 
