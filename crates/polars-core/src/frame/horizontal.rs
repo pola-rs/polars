@@ -143,5 +143,8 @@ mod tests {
             matches!(result, Err(PolarsError::ShapeMismatch(_))),
             "expected shape mismatch error"
         );
+
+        // Ensure the DataFrame is not mutated in the error case.
+        assert_eq!(df.width(), 0);
     }
 }
