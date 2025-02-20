@@ -168,7 +168,7 @@ impl StructArray {
 
     /// Slices this [`StructArray`].
     /// # Panics
-    /// * `offset + length` must be smaller than `self.len()`.
+    /// panics iff `offset + length > self.len()`
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
     pub fn slice(&mut self, offset: usize, length: usize) {

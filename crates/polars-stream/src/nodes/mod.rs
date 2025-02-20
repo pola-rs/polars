@@ -8,6 +8,7 @@ pub mod io_sinks;
 pub mod io_sources;
 pub mod joins;
 pub mod map;
+#[cfg(feature = "merge_sorted")]
 pub mod merge_sorted;
 pub mod multiplexer;
 pub mod negative_slice;

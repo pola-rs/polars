@@ -91,3 +91,14 @@ def test_fill_null_int_dtype_15546() -> None:
     result = df.fill_null(0).collect()
     expected = pl.Series("a", [1, 2, 0], dtype=pl.Int8).to_frame()
     assert_frame_equal(result, expected)
+
+
+def test_fill_null_with_list_10869() -> None:
+    assert_series_equal(
+        pl.Series([[1], None]).fill_null([2]),
+        pl.Series([[1], [2]]),
+    )
+
+    match = "failed to determine supertype"
+    with pytest.raises(pl.exceptions.SchemaError, match=match):
+        pl.Series([1, None]).fill_null([2])

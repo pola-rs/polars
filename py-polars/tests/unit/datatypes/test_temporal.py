@@ -554,6 +554,14 @@ def test_read_utc_times_parquet() -> None:
     assert df_in["Timestamp"][0] == datetime(2022, 1, 1, 0, 0, tzinfo=tz)
 
 
+def test_convert_pandas_timezone_info() -> None:
+    ts = pd.Timestamp("20200101 00:00").tz_localize("America/New_York")
+    df = pl.DataFrame({"date": [ts]})
+    assert df["date"][0] == datetime(
+        2020, 1, 1, 0, 0, tzinfo=ZoneInfo("America/New_York")
+    )
+
+
 def test_asof_join_tolerance_grouper() -> None:
     from datetime import date
 

@@ -55,6 +55,7 @@ default_role = "code"
 
 maximum_signature_line_length = 88
 
+
 # Below setting is used by
 # sphinx-autosummary-accessors - build docs for namespace accessors like `Series.str`
 # https://sphinx-autosummary-accessors.readthedocs.io/en/stable/
@@ -145,9 +146,14 @@ html_theme_options = {
             "icon": "fa-brands fa-discord",
         },
         {
-            "name": "Twitter",
-            "url": "https://twitter.com/DataPolars",
-            "icon": "fa-brands fa-twitter",
+            "name": "X/Twitter",
+            "url": "https://x.com/datapolars",
+            "icon": "fa-brands fa-x-twitter",
+        },
+        {
+            "name": "Bluesky",
+            "url": "https://bsky.app/profile/pola.rs",
+            "icon": "fa-brands fa-bluesky",
         },
     ],
     "logo": {
