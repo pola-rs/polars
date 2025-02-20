@@ -73,6 +73,8 @@ pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
+mod file_scan;
+pub use file_scan::*;
 
 use crate::constants::MAP_LIST_NAME;
 pub use crate::plans::lit;

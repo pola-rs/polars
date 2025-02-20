@@ -14,7 +14,6 @@ pub(crate) mod conversion;
 #[cfg(feature = "debugging")]
 pub(crate) mod debug;
 pub mod expr_ir;
-mod file_scan;
 mod functions;
 pub mod hive;
 pub(crate) mod iterator;
@@ -34,16 +33,12 @@ pub use apply::*;
 pub use builder_ir::*;
 pub use conversion::*;
 pub(crate) use expr_ir::*;
-pub use file_scan::*;
 pub use functions::*;
 pub use ir::*;
 pub use iterator::*;
 pub use lit::*;
 pub use optimizer::*;
 pub use schema::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub enum Context {
