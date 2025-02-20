@@ -259,7 +259,7 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
                 } else {
                     get_row_count(&mut self.reader)? as usize
                 };
-                let df = DataFrame::empty_with_height(row_count);
+                let mut df = DataFrame::empty_with_height(row_count);
 
                 if let Some(ri) = &self.row_index {
                     df.with_row_index_mut(ri.name.clone(), Some(ri.offset));
