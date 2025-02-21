@@ -3,6 +3,7 @@ use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use polars_utils::arena::Node;
+#[cfg(feature = "serde")]
 use polars_utils::pl_serialize;
 use recursive::recursive;
 #[cfg(feature = "serde")]
@@ -213,6 +214,7 @@ impl DslPlan {
         Ok(plan)
     }
 
+    #[cfg(feature = "serde")]
     pub fn serialize_versioned<W: Write>(&self, mut writer: W) -> PolarsResult<()> {
         let le_major = DSL_VERSION.0.to_le_bytes();
         let le_minor = DSL_VERSION.1.to_le_bytes();
@@ -222,6 +224,7 @@ impl DslPlan {
         pl_serialize::SerializeOptions::default().serialize_into_writer::<_, _, true>(writer, self)
     }
 
+    #[cfg(feature = "serde")]
     pub fn deserialize_versioned<R: Read>(mut reader: R) -> PolarsResult<Self> {
         const MAGIC_LEN: usize = DSL_MAGIC_BYTES.len();
         let mut version_magic = [0u8; MAGIC_LEN + 4];
