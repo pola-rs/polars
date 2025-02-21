@@ -14,7 +14,7 @@ use crate::PyExpr;
 #[pymethods]
 impl PyExpr {
     // Pickle we set FC is false, as that is used for caching (compact is faster) and is not intended to be used
-    // accross different versions.
+    // across different versions.
     fn __getstate__<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyBytes>> {
         // Used in pickle/pickling
         let mut writer: Vec<u8> = vec![];
