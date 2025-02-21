@@ -18,7 +18,7 @@ from polars._utils.construction.dataframe import (
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
 from polars._utils.deprecation import deprecate_renamed_parameter
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
-from polars._utils.various import _cast_repr_strings_with_schema
+from polars._utils.various import _cast_repr_strings_with_schema, issue_warning
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.dependencies import _check_for_pyarrow
@@ -887,10 +887,12 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     if is_pycapsule(df) and not _check_for_pyarrow(df):
         try:
             return pycapsule_to_frame(df)
-        except Exception:
-            # If the PyCapsule Interface failed, fallback to the
-            # interchange protocol.
-            pass
+        except Exception as exc:
+            issue_warning(
+                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
+                "Using Dataframe Interchange Protocol, which is known to be less robust, as fallback.",
+                UserWarning,
+            )
     from polars.interchange.from_dataframe import from_dataframe
 
     return from_dataframe(df, allow_copy=allow_copy)
