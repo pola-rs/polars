@@ -180,7 +180,7 @@ else:
     hypothesis, _HYPOTHESIS_AVAILABLE = _lazy_import("hypothesis")
     numpy, _NUMPY_AVAILABLE = _lazy_import("numpy")
     pandas, _PANDAS_AVAILABLE = _lazy_import("pandas")
-    polars_cloud, _POLARS_CLOUD_AVAILABLE = _lazy_import("pandas")
+    polars_cloud, _POLARS_CLOUD_AVAILABLE = _lazy_import("polars_cloud")
     pyarrow, _PYARROW_AVAILABLE = _lazy_import("pyarrow")
     pydantic, _PYDANTIC_AVAILABLE = _lazy_import("pydantic")
     pyiceberg, _PYICEBERG_AVAILABLE = _lazy_import("pyiceberg")
