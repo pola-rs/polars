@@ -2975,13 +2975,15 @@ def test_final_masked_optional_iteration_21378() -> None:
         1, 1, 0, 0, 0, 0, 1, 1,
     ]
 
-    values = [None if x == 1 else 0.0 for x in values]
     df = pl.DataFrame(
         [
-            pl.Series("x", values, pl.Float32),
+            pl.Series("x", [None if x == 1 else 0.0 for x in values], pl.Float32),
             pl.Series(
                 "f",
-                [False] * 56 + [True] * 64 + [False] * 264 + [True] * 10,
+                [False] * 164 +
+                [True] * 10 +
+                [False] * 264 +
+                [True] * 10,
                 pl.Boolean(),
             ),
         ]
