@@ -994,7 +994,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # reshape wide result
         n_metrics = len(metrics)
         column_metrics = [
-            df_metrics.row(0)[(n * n_metrics): (n + 1) * n_metrics]
+            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
             for n in range(schema.len())
         ]
         summary = dict(zip(schema, column_metrics))
