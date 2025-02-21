@@ -88,9 +88,6 @@ tokio-util = { workspace = true, features = ["compat"] }
 [build-dependencies]
 version_check = { workspace = true }
 
-[target.wasm32-unknown-unknown.dependencies]
-getrandom = { version = "0.2", features = ["js"] }
-
 [features]
 default = []
 full = [

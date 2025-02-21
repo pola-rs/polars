@@ -2956,7 +2956,6 @@ dependencies = [
  "fast-float2",
  "flate2",
  "futures",
- "getrandom 0.2.15",
  "hashbrown 0.15.2",
  "hex",
  "indexmap",

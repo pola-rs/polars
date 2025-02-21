@@ -404,7 +404,10 @@ def test_list_sample() -> None:
         sample_frac=pl.col("values").list.sample(fraction=pl.col("frac"), seed=1),
     )
     expected_df = pl.DataFrame(
-        {"sample_n": [[None, 3], [None], [3, 4]], "sample_frac": [[None, 3], [None], [3, 4]]}
+        {
+            "sample_n": [[None, 3], [None], [3, 4]],
+            "sample_frac": [[None, 3], [None], [3, 4]],
+        }
     )
     assert_frame_equal(df, expected_df)
 
