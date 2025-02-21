@@ -440,7 +440,6 @@ fn to_graph_rec<'a>(
             let FileScan {
                 scan_source,
                 file_info,
-                hive_parts: _,
                 output_schema,
                 scan_type,
                 predicate,
