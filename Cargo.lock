@@ -3018,7 +3018,6 @@ name = "polars-core"
 version = "0.46.0"
 dependencies = [
  "ahash",
- "bincode",
  "bitflags",
  "bytemuck",
  "chrono",
@@ -3530,6 +3529,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "bytes",
+ "ciborium",
  "compact_str",
  "flate2",
  "hashbrown 0.15.2",

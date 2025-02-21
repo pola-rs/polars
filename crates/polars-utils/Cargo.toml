@@ -10,9 +10,10 @@ description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
 ahash = { workspace = true }
-bincode = {version = "1.3.3", optional = true}
+bincode = { version = "1.3.3", optional = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
+ciborium = "0.2.2"
 compact_str = { workspace = true }
 flate2 = { workspace = true, default-features = true, optional = true }
 hashbrown = { workspace = true }

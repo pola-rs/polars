@@ -10,11 +10,12 @@ where
     W: std::io::Write,
     T: serde::ser::Serialize,
 {
+    ciborium::into_writer(value, writer).map_err(to_compute_err)
     //if FC {
     //let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
     //value.serialize(&mut s).map_err(to_compute_err)
     //} else {
-    bincode::serialize_into(writer, value).map_err(to_compute_err)
+    //bincode::serialize_into(writer, value).map_err(to_compute_err)
     //}
 }
 
@@ -23,10 +24,11 @@ where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
+    ciborium::from_reader(reader).map_err(to_compute_err)
     //if FC {
     //rmp_serde::from_read(reader).map_err(to_compute_err)
     //} else {
-    bincode::deserialize_from(reader).map_err(to_compute_err)
+    //bincode::deserialize_from(reader).map_err(to_compute_err)
     //}
 }
 
