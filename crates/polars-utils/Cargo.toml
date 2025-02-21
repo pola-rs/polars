@@ -10,6 +10,7 @@ description = "Private utils for the Polars DataFrame library"
 
 [dependencies]
 ahash = { workspace = true }
+bincode = {version = "1.3.3", optional = true}
 bytemuck = { workspace = true }
 bytes = { workspace = true }
 compact_str = { workspace = true }
@@ -42,5 +43,5 @@ mmap = ["memmap"]
 bigidx = []
 nightly = []
 ir_serde = ["serde"]
-serde = ["dep:serde", "serde/derive", "dep:rmp-serde", "dep:flate2", "dep:serde_json"]
+serde = ["dep:serde", "serde/derive", "dep:bincode", "dep:flate2", "dep:serde_json"]
 python = ["pyo3"]

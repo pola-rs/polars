@@ -11,10 +11,10 @@ where
     T: serde::ser::Serialize,
 {
     //if FC {
-    let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
-    value.serialize(&mut s).map_err(to_compute_err)
+    //let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
+    //value.serialize(&mut s).map_err(to_compute_err)
     //} else {
-    //    bincode::serialize_into(writer, value).map_err(to_compute_err)
+    bincode::serialize_into(writer, value).map_err(to_compute_err)
     //}
 }
 
@@ -24,9 +24,9 @@ where
     R: std::io::Read,
 {
     //if FC {
-    rmp_serde::from_read(reader).map_err(to_compute_err)
+    //rmp_serde::from_read(reader).map_err(to_compute_err)
     //} else {
-    //    bincode::deserialize_from(reader).map_err(to_compute_err)
+    bincode::deserialize_from(reader).map_err(to_compute_err)
     //}
 }
 
