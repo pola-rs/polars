@@ -549,6 +549,7 @@ pub fn lower_ir(
                     allow_missing_columns: file_options.allow_missing_columns,
                     include_file_paths: file_options.include_file_paths,
                     row_restriction,
+                    predicate: predicate.clone(),
                     projection,
                     row_index: file_options.row_index,
                 };

@@ -193,6 +193,7 @@ pub enum PhysNodeKind {
         projection: Option<Bitmap>,
 
         row_restriction: Option<MultiscanRowRestriction>,
+        predicate: Option<ExprIR>,
         row_index: Option<RowIndex>,
     },
     FileScan {
