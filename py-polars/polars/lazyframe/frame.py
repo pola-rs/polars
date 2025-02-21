@@ -7493,6 +7493,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             streamable=streamable,
         )
 
+    @unstable()
     def remote(
         self,
         context: pc.ComputeContext | None = None,
@@ -7523,19 +7524,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         .. doctest::
             :skip:
 
-        >>> lf = pl.LazyFrame([1, 2, 3]).sum()
-        >>> in_progress = lf.remote().collect()
-        >>> # do some other work
-        >>> in_progress.await_result()
-        shape: (1, 1)
-        ┌──────────┐
-        │ column_0 │
-        │ ---      │
-        │ i64      │
-        ╞══════════╡
-        │ 6        │
-        └──────────┘
-
+            >>> lf = pl.LazyFrame([1, 2, 3]).sum()
+            >>> in_progress = lf.remote().collect()
+            >>> # do some other work
+            >>> in_progress.await_result()
+            shape: (1, 1)
+            ┌──────────┐
+            │ column_0 │
+            │ ---      │
+            │ i64      │
+            ╞══════════╡
+            │ 6        │
+            └──────────┘
 
         """
         return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
