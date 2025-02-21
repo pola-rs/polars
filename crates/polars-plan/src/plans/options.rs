@@ -1,7 +1,6 @@
 use bitflags::bitflags;
 use polars_core::prelude::*;
 use polars_core::utils::SuperTypeOptions;
-#[cfg(feature = "dynamic_group_by")]
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -117,7 +116,7 @@ impl CastingRules {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(any(feature = "serde"), derive(Serialize, Deserialize))]
 pub struct FunctionOptions {
     /// Collect groups to a list and apply the function over the groups.
     /// This can be important in aggregation context.
