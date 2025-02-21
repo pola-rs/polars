@@ -41,7 +41,6 @@ strum_macros = { workspace = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
-bincode = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
