@@ -39,7 +39,6 @@ extensions = [
     "sphinx.ext.intersphinx",
     "sphinx.ext.linkcode",
     "sphinx.ext.mathjax",
-    "sphinx.ext.doctest",
     # Third-party extensions
     "autodocsumm",
     "numpydoc",
