@@ -4,8 +4,8 @@ use parking_lot::Mutex;
 use polars_core::frame::DataFrame;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
-use polars_plan::dsl::FileScan;
-use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, ScanSources, IR};
+use polars_plan::dsl::{FileScan, ScanSources};
+use polars_plan::plans::{AnonymousScan, AnonymousScanArgs, FileInfo, IR};
 use polars_plan::prelude::{AnonymousScanOptions, FileScanOptions};
 
 /// Used to insert a dataframe into in-memory-engine query plan after the query

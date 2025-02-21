@@ -1,8 +1,7 @@
 use polars_core::error::{polars_err, PolarsResult};
 use polars_io::path_utils::is_cloud_url;
 
-use crate::dsl::{DslPlan, FileScan};
-use crate::plans::ScanSources;
+use crate::dsl::{DslPlan, FileScan, ScanSources};
 
 /// Assert that the given [`DslPlan`] is eligible to be executed on Polars Cloud.
 pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {

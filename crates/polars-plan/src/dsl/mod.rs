@@ -34,6 +34,7 @@ mod options;
 pub mod python_dsl;
 #[cfg(feature = "random")]
 mod random;
+mod scan_sources;
 mod selector;
 mod statistics;
 #[cfg(feature = "strings")]
@@ -75,6 +76,7 @@ pub use struct_::*;
 pub use udf::UserDefinedFunction;
 mod file_scan;
 pub use file_scan::*;
+pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
 use crate::constants::MAP_LIST_NAME;
 pub use crate::plans::lit;
