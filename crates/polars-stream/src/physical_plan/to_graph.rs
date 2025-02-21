@@ -391,7 +391,7 @@ fn to_graph_rec<'a>(
                             nodes::io_sources::parquet::ParquetSourceNode,
                         >::new(
                             scan_sources.clone(),
-                            hive_parts.clone(),
+                            hive_parts.clone().map(Arc::new),
                             *allow_missing_columns,
                             include_file_paths.clone(),
                             file_schema.clone(),
@@ -416,7 +416,7 @@ fn to_graph_rec<'a>(
                             nodes::io_sources::ipc::IpcSourceNode,
                         >::new(
                             scan_sources.clone(),
-                            hive_parts.clone(),
+                            hive_parts.clone().map(Arc::new),
                             *allow_missing_columns,
                             include_file_paths.clone(),
                             file_schema.clone(),
@@ -440,7 +440,7 @@ fn to_graph_rec<'a>(
                             nodes::io_sources::csv::CsvSourceNode,
                         >::new(
                             scan_sources.clone(),
-                            hive_parts.clone(),
+                            hive_parts.clone().map(Arc::new),
                             *allow_missing_columns,
                             include_file_paths.clone(),
                             file_schema.clone(),
