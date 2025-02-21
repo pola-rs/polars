@@ -27,7 +27,6 @@ use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
-#[cfg(feature = "dynamic_group_by")]
 use strum_macros::IntoStaticStr;
 
 use super::ExprIR;
