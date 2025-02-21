@@ -167,8 +167,6 @@ pub trait DatetimeMethods: AsDatetime {
         time_zone: Option<&str>,
         name: PlSmallStr,
     ) -> PolarsResult<DatetimeChunked> {
-        let mut error_date_values: Option<(i32, i8, i8)> = None;
-        let mut error_time_values: Option<(i8, i8, i8, i32)> = None;
         let ca: Int64Chunked = year
             .into_iter()
             .zip(month)
@@ -182,51 +180,35 @@ pub trait DatetimeMethods: AsDatetime {
                     (y, m, d, h, mnt, s, ns)
                 {
                     NaiveDate::from_ymd_opt(y, m as u32, d as u32).map_or_else(
-                        // If None is returned, then we have an invalid date.
-                        // We save the faulty values and move on.
-                        || {
-                            error_date_values = Some((y, m, d));
-                            None
-                        },
+                        // We have an invalid date.
+                        || Err(polars_err!(ComputeError: format!("Invalid date components ({}, {}, {}) supplied", y, m, d))),
                         // We have a valid date.
                         |date| {
                             date.and_hms_nano_opt(h as u32, mnt as u32, s as u32, ns as u32)
                                 .map_or_else(
-                                    // If None is returned, then we have invalid time components for the
-                                    // specified date. We save the faulty values and move on.
-                                    || {
-                                        error_time_values = Some((h, mnt, s, ns));
-                                        None
-                                    },
+                                    // We have invalid time components for the specified date.
+                                    || Err(polars_err!(ComputeError: format!("Invalid time components ({}, {}, {}, {}) supplied", h, mnt, s, ns))),
                                     // We have a valid time.
                                     |ndt| {
                                         let t = ndt.and_utc();
-                                        Some(match time_unit {
+                                        Ok(Some(match time_unit {
                                             TimeUnit::Milliseconds => t.timestamp_millis(),
                                             TimeUnit::Microseconds => t.timestamp_micros(),
                                             TimeUnit::Nanoseconds => {
                                                 t.timestamp_nanos_opt().unwrap()
                                             },
-                                        })
+                                        }))
                                     },
                                 )
                         },
                     )
                 } else {
-                    None
+                    Ok(None)
                 }
             })
-            .collect_trusted();
+            .try_collect_ca_with_dtype(name, DataType::Int64)?;
 
-        if let Some(values) = error_date_values {
-            // An invalid date was detected.
-            polars_bail!(ComputeError: format!("Invalid date components ({}, {}, {}) supplied", values.0, values.1, values.2))
-        };
-        if let Some(values) = error_time_values {
-            // An invalid time was detected.
-            polars_bail!(ComputeError: format!("Invalid time components ({}, {}, {}, {}) supplied", values.0, values.1, values.2, values.3))
-        };
-        let mut ca = match time_zone {
+        let ca = match time_zone {
             #[cfg(feature = "timezones")]
             Some(_) => {
                 let mut ca = ca.into_datetime(*time_unit, None);
@@ -241,7 +223,6 @@ pub trait DatetimeMethods: AsDatetime {
                 ca.into_datetime(*time_unit, None)
             },
         };
-        ca.rename(name);
         Ok(ca)
     }
 }
