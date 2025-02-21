@@ -23,11 +23,11 @@ where
     T: serde::de::DeserializeOwned,
     R: std::io::Read,
 {
-    if FC {
-        rmp_serde::from_read(reader).map_err(to_compute_err)
-    } else {
-        bincode::deserialize_from(reader).map_err(to_compute_err)
-    }
+    //if FC {
+    rmp_serde::from_read(reader).map_err(to_compute_err)
+    //} else {
+    //    bincode::deserialize_from(reader).map_err(to_compute_err)
+    //}
 }
 
 /// Mainly used to enable compression when serializing the final outer value.
