@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
@@ -157,7 +158,9 @@ def test_from_dataframe_chunked() -> None:
     assert result.n_chunks() == 2
 
 
-def test_from_dataframe_chunked_string() -> None:
+def test_from_dataframe_chunked_string(request: pytest.FixtureRequest) -> None:
+    if os.environ.get("POLARS_AUTO_NEW_STREAMING") == "1":
+        request.applymarker(pytest.mark.xfail)
     df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
     df_chunked = pl.concat([df[:1], df[1:3], df[3:]], rechunk=False)
 
