@@ -994,7 +994,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # reshape wide result
         n_metrics = len(metrics)
         column_metrics = [
-            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
+            df_metrics.row(0)[(n * n_metrics): (n + 1) * n_metrics]
             for n in range(schema.len())
         ]
         summary = dict(zip(schema, column_metrics))
@@ -7505,7 +7505,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         one or more workers via several strategies
         for distributed compute.
 
-        Read more in the `Announcement post https://pola.rs/posts/polars-cloud-what-we-are-building/`_
+        Read more in the `Announcement post <https://pola.rs/posts/polars-cloud-what-we-are-building/>`_
 
         Parameters
         ----------
@@ -7520,10 +7520,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         --------
         Run a query on a cloud instance.
 
+        .. doctest::
+            :skip:
+
         >>> lf = pl.LazyFrame([1, 2, 3]).sum()
-        >>> in_progress = lf.remote().collect()  # doctest: +IGNORE_RESULT
+        >>> in_progress = lf.remote().collect()
         >>> # do some other work
-        >>> in_progress.await_result()  # doctest: +IGNORE_RESULT
+        >>> in_progress.await_result()
         shape: (1, 1)
         ┌──────────┐
         │ column_0 │
