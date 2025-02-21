@@ -913,7 +913,7 @@ def from_dataframe(
             )
     from polars.interchange.from_dataframe import from_dataframe
 
-    result = from_dataframe(df, allow_copy=allow_copy)
+    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
     if rechunk:
         return result.rechunk()
     return result
