@@ -81,9 +81,8 @@ from polars.dependencies import (
     import_optional,
     subprocess,
 )
-from polars.dependencies import (
-    pyarrow as pa,
-)
+from polars.dependencies import polars_cloud as pc
+from polars.dependencies import pyarrow as pa
 from polars.exceptions import PerformanceWarning
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -995,7 +994,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         # reshape wide result
         n_metrics = len(metrics)
         column_metrics = [
-            df_metrics.row(0)[(n * n_metrics) : (n + 1) * n_metrics]
+            df_metrics.row(0)[(n * n_metrics): (n + 1) * n_metrics]
             for n in range(schema.len())
         ]
         summary = dict(zip(schema, column_metrics))
@@ -7493,6 +7492,50 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             value_name=value_name,
             streamable=streamable,
         )
+
+    def remote(
+        self,
+        context: pc.ComputeContext | None = None,
+        plan_type: pc._typing.PlanTypePreference = "dot",
+    ) -> pc.LazyFrameExt:
+        """
+        Run a query remotely on Polars Cloud.
+
+        This allows you to run Polars remotely on
+        one or more workers via several strategies
+        for distributed compute.
+
+        Read more in the `Announcement post https://pola.rs/posts/polars-cloud-what-we-are-building/`_
+
+        Parameters
+        ----------
+        context
+            Compute context in which queries are executed.
+            If none given, it will take the default context.
+        plan_type
+            Whether to give a dot diagram of a plain text
+            version of logical plan.
+
+        Examples
+        --------
+        Run a query on a cloud instance.
+
+        >>> lf = pl.LazyFrame([1, 2, 3]).sum()
+        >>> in_progress = lf.remote().collect()  # doctest: +IGNORE_RESULT
+        >>> # do some other work
+        >>> in_progress.await_result()  # doctest: +IGNORE_RESULT
+        shape: (1, 1)
+        ┌──────────┐
+        │ column_0 │
+        │ ---      │
+        │ i64      │
+        ╞══════════╡
+        │ 6        │
+        └──────────┘
+
+
+        """
+        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
 
     def _to_metadata(
         self,

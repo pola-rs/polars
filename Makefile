@@ -71,7 +71,7 @@ FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS
 requirements: .venv  ## Install/refresh Python project requirements
 	@unset CONDA_PREFIX \
 	&& $(VENV_BIN)/python -m pip install --upgrade uv \
-	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build \
+	&& $(VENV_BIN)/uv pip install --upgrade --compile-bytecode --no-build --prerelease=allow \
 	   -r py-polars/requirements-dev.txt \
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
