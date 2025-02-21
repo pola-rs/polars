@@ -365,7 +365,7 @@ fn to_graph_rec<'a>(
             row_index,
         } => match scan_type {
             #[cfg(feature = "parquet")]
-            polars_plan::plans::FileScan::Parquet {
+            polars_plan::dsl::FileScan::Parquet {
                 options,
                 cloud_options,
                 ..
@@ -387,7 +387,7 @@ fn to_graph_rec<'a>(
                 [],
             ),
             #[cfg(feature = "ipc")]
-            polars_plan::plans::FileScan::Ipc {
+            polars_plan::dsl::FileScan::Ipc {
                 options,
                 cloud_options,
                 ..
@@ -411,7 +411,7 @@ fn to_graph_rec<'a>(
                 [],
             ),
             #[cfg(feature = "csv")]
-            polars_plan::plans::FileScan::Csv {
+            polars_plan::dsl::FileScan::Csv {
                 options,
                 cloud_options,
             } => ctx.graph.add_node(

@@ -3,7 +3,7 @@ mod check;
 use polars_core::error::PolarsResult;
 use polars_utils::pl_serialize;
 
-use crate::plans::DslPlan;
+use crate::dsl::DslPlan;
 
 /// Prepare the given [`DslPlan`] for execution on Polars Cloud.
 pub fn prepare_cloud_plan(dsl: DslPlan) -> PolarsResult<Vec<u8>> {
