@@ -24,7 +24,6 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
-use crate::nodes::io_sources::parquet::ParquetSourceNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -388,7 +387,9 @@ fn to_graph_rec<'a>(
                     ..
                 } => ctx.graph.add_node(
                     nodes::io_sources::SourceComputeNode::new(
-                        nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::parquet::ParquetSourceNode,
+                        >::new(
                             scan_sources.clone(),
                             hive_parts.clone(),
                             *allow_missing_columns,
