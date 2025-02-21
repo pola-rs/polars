@@ -10,12 +10,12 @@ where
     W: std::io::Write,
     T: serde::ser::Serialize,
 {
-    if FC {
-        let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
-        value.serialize(&mut s).map_err(to_compute_err)
-    } else {
-        bincode::serialize_into(writer, value).map_err(to_compute_err)
-    }
+    //if FC {
+    let mut s = rmp_serde::Serializer::new(writer).with_struct_map();
+    value.serialize(&mut s).map_err(to_compute_err)
+    //} else {
+    //    bincode::serialize_into(writer, value).map_err(to_compute_err)
+    //}
 }
 
 pub fn deserialize_impl<T, R, const FC: bool>(reader: R) -> PolarsResult<T>

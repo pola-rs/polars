@@ -3394,7 +3394,6 @@ version = "0.46.0"
 dependencies = [
  "ahash",
  "arboard",
- "bincode",
  "bytemuck",
  "bytes",
  "chrono",

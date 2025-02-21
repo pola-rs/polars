@@ -29,7 +29,6 @@ polars-utils = { workspace = true }
 ahash = { workspace = true }
 arboard = { workspace = true, optional = true }
 arrow = { workspace = true }
-bincode = { workspace = true }
 bytemuck = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
