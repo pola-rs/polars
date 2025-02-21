@@ -902,7 +902,7 @@ def from_dataframe(
         )
     else:
         allow_copy = True
-    if is_pycapsule(df):
+    if is_pycapsule(df) and not _check_for_pyarrow(df):
         try:
             return pycapsule_to_frame(df, rechunk=rechunk)
         except Exception as exc:
@@ -911,6 +911,9 @@ def from_dataframe(
                 "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
                 UserWarning,
             )
+    elif isinstance(df, (pa.Table, pa.RecordBatch)):
+        # Workaround for https://github.com/pola-rs/polars/issues/21384.
+        return wrap_df(arrow_to_pydf(data=df, rechunk=rechunk))
     from polars.interchange.from_dataframe import from_dataframe
 
     result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
