@@ -18,7 +18,7 @@ impl PyLazyFrame {
         let writer = BufWriter::new(file);
         py.enter_polars(|| {
             pl_serialize::SerializeOptions::default()
-                .serialize_into_writer(writer, &self.ldf.logical_plan)
+                .serialize_into_writer::<_, _, true>(writer, &self.ldf.logical_plan)
         })
     }
 
@@ -39,7 +39,7 @@ impl PyLazyFrame {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
         let lp: DslPlan = py.enter_polars(|| {
-            pl_serialize::SerializeOptions::default().deserialize_from_reader(reader)
+            pl_serialize::SerializeOptions::default().deserialize_from_reader::<_, _, true>(reader)
         })?;
         Ok(LazyFrame::from(lp).into())
     }

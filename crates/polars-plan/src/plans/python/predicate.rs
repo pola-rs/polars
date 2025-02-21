@@ -62,7 +62,7 @@ pub fn serialize(expr: &Expr) -> PolarsResult<Option<Vec<u8>>> {
         return Ok(None);
     }
     let mut buf = vec![];
-    pl_serialize::serialize_into_writer(&mut buf, expr)?;
+    pl_serialize::serialize_into_writer::<_, _, true>(&mut buf, expr)?;
 
     Ok(Some(buf))
 }
