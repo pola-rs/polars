@@ -1,6 +1,7 @@
 use core::fmt;
 use std::sync::Arc;
 
+use arrow::bitmap::Bitmap;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{
     AnyValue, Column, Field, GroupPositions, PlHashMap, PlIndexMap, PlIndexSet, IDX_DTYPE,
@@ -286,5 +287,19 @@ impl SkipBatchPredicate for SkipBatchPredicateHelper {
             .bool()?
             .first()
             .unwrap())
+    }
+
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+        let array = self
+            .skip_batch_predicate
+            .evaluate(&df, &Default::default())?;
+        let array = array.bool()?;
+        let array = array.downcast_as_array();
+
+        if let Some(validity) = array.validity() {
+            Ok(array.values() & validity)
+        } else {
+            Ok(array.values().clone())
+        }
     }
 }

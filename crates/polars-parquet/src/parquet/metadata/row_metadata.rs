@@ -86,6 +86,10 @@ impl RowGroupMetadata {
             .sum::<usize>()
     }
 
+    pub fn parquet_columns(&self) -> &[ColumnChunkMetadata] {
+        self.columns.as_ref().as_ref()
+    }
+
     pub fn full_byte_range(&self) -> core::ops::Range<u64> {
         self.full_byte_range.clone()
     }

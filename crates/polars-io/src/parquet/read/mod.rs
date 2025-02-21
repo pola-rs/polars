@@ -34,6 +34,7 @@ pub use options::{ParallelStrategy, ParquetOptions};
 use polars_error::{ErrString, PolarsError};
 pub use polars_parquet::arrow::read::infer_schema;
 pub use polars_parquet::read::FileMetadata;
+pub use predicates::collect_statistics;
 pub use read_impl::{create_sorting_map, try_set_sorted_flag};
 #[cfg(feature = "cloud")]
 pub use reader::ParquetAsyncReader;

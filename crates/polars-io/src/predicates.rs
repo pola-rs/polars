@@ -1,5 +1,5 @@
 use arrow::array::Array;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
@@ -348,6 +348,10 @@ pub trait SkipBatchPredicate: Send + Sync {
         batch_size: IdxSize,
         statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
     ) -> PolarsResult<bool>;
+    fn evaluate_with_stat_df(
+        &self,
+        df: &DataFrame,
+    ) -> PolarsResult<Bitmap>;
 }
 
 pub struct ColumnPredicates {
