@@ -158,9 +158,7 @@ def test_from_dataframe_chunked() -> None:
     assert result.n_chunks() == 2
 
 
-def test_from_dataframe_chunked_string(request: pytest.FixtureRequest) -> None:
-    if os.environ.get("POLARS_AUTO_NEW_STREAMING") == "1":
-        request.applymarker(pytest.mark.xfail)
+def test_from_dataframe_chunked_string() -> None:
     df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
     df_chunked = pl.concat([df[:1], df[1:3], df[3:]], rechunk=False)
 
@@ -168,7 +166,10 @@ def test_from_dataframe_chunked_string(request: pytest.FixtureRequest) -> None:
     result = pl.from_dataframe(df_pa, rechunk=False)
 
     assert_frame_equal(result, df_chunked)
-    assert result.n_chunks() == 3
+    if os.environ.get("POLARS_AUTO_NEW_STREAMING") == "1":
+        assert result.n_chunks() == 6
+    else:
+        assert result.n_chunks() == 3
 
 
 def test_from_dataframe_pandas_nan_as_null() -> None:
