@@ -12,30 +12,6 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
-#[cfg(feature = "dynamic_group_by")]
-unsafe fn update_keys(keys: &mut [Column], groups: &GroupsType) {
-    match groups {
-        GroupsType::Idx(groups) => {
-            let first = groups.first();
-            // we don't use agg_first here, because the group
-            // can be empty, but we still want to know the first value
-            // of that group
-            for key in keys.iter_mut() {
-                *key = key.take_slice_unchecked(first);
-            }
-        },
-        GroupsType::Slice { groups, .. } => {
-            for key in keys.iter_mut() {
-                let indices = groups
-                    .iter()
-                    .map(|[first, _len]| *first)
-                    .collect_ca(PlSmallStr::EMPTY);
-                *key = key.take_unchecked(&indices);
-            }
-        },
-    }
-}
-
 impl GroupByRollingExec {
     #[cfg(feature = "dynamic_group_by")]
     fn execute_impl(
@@ -43,15 +19,57 @@ impl GroupByRollingExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
+        use polars_utils::itertools::Itertools;
+        use polars_utils::unique_column_name;
+
         df.as_single_chunk_par();
 
-        let keys = self
+        let mut keys = self
             .keys
             .iter()
             .map(|e| e.evaluate(&df, state))
             .collect::<PolarsResult<Vec<_>>>()?;
 
-        let (mut time_key, mut keys, groups) = df.rolling(keys, &self.options)?;
+        let group_by = if !self.keys.is_empty() {
+            // 1. Sort
+            // 1. Compute offsets on sorted groups (this will ensure the amount)
+
+            let encoded = row_encode::encode_rows_vertical_par_unordered(&keys)?;
+            let encoded = encoded.rechunk().into_owned();
+            let encoded = encoded.with_name(unique_column_name());
+            let idx = encoded.arg_sort(Default::default());
+
+            let encoded = unsafe {
+                df.with_column_unchecked(encoded.into_series().into());
+
+                // If not sorted on keys, sort.
+                let idx_s = idx.clone().into_series();
+                if !idx_s.is_sorted(Default::default()).unwrap() {
+                    let (df_ordered, keys_ordered) = POOL.join(
+                        || df.take_unchecked(&idx),
+                        || keys.iter().map(|c| c.take_unchecked(&idx)).collect_vec(),
+                    );
+                    df = df_ordered;
+                    keys = keys_ordered;
+                }
+
+                df.get_columns_mut().pop().unwrap()
+            };
+            let encoded = encoded.as_series().unwrap();
+            let encoded = encoded.binary_offset().unwrap();
+            let encoded = encoded.with_sorted_flag(polars_core::series::IsSorted::Ascending);
+            let groups = encoded.group_tuples(true, false).unwrap();
+
+            let GroupsType::Slice { groups, .. } = groups else {
+                // memory would explode
+                unreachable!();
+            };
+            Some(groups)
+        } else {
+            None
+        };
+
+        let (mut time_key, groups) = df.rolling(group_by, &self.options)?;
 
         if let Some(f) = &self.apply {
             let gb = GroupBy::new(&df, vec![], groups, None);
@@ -73,12 +91,10 @@ impl GroupByRollingExec {
             groups = sliced_groups.as_ref().unwrap();
 
             time_key = time_key.slice(offset, len);
+            for k in &mut keys {
+                *k = k.slice(offset, len);
+            }
         }
-
-        // the ordering has changed due to the group_by
-        if !keys.is_empty() {
-            unsafe { update_keys(&mut keys, groups) }
-        };
 
         let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;
 

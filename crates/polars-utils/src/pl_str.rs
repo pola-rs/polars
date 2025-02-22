@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+
 #[macro_export]
 macro_rules! format_pl_smallstr {
     ($($arg:tt)*) => {{
@@ -265,4 +267,10 @@ impl core::fmt::Display for PlSmallStr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.as_str().fmt(f)
     }
+}
+
+pub fn unique_column_name() -> PlSmallStr {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let idx = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format_pl_smallstr!("_POLARS_TMP_{idx}")
 }
