@@ -2638,7 +2638,7 @@ class Expr:
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value.
+            Fill the resulting null values with this scalar value.
 
         Notes
         -----
