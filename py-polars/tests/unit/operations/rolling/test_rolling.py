@@ -741,7 +741,7 @@ def test_rolling_aggregations_with_over_11225() -> None:
 
 
 @pytest.mark.parametrize("dtype", INTEGER_DTYPES)
-def test_rolling(dtype: PolarsDataType) -> None:
+def test_rolling_ints(dtype: PolarsDataType) -> None:
     s = pl.Series("a", [1, 2, 3, 2, 1], dtype=dtype)
     assert_series_equal(
         s.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1], dtype=dtype)
@@ -750,7 +750,14 @@ def test_rolling(dtype: PolarsDataType) -> None:
         s.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2], dtype=dtype)
     )
     assert_series_equal(
-        s.rolling_sum(2), pl.Series("a", [None, 3, 5, 5, 3], dtype=dtype)
+        s.rolling_sum(2),
+        pl.Series(
+            "a",
+            [None, 3, 5, 5, 3],
+            dtype=(
+                pl.Int64 if dtype in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16] else dtype
+            ),
+        ),
     )
     assert_series_equal(s.rolling_mean(2), pl.Series("a", [None, 1.5, 2.5, 2.5, 1.5]))
 
@@ -776,6 +783,8 @@ def test_rolling(dtype: PolarsDataType) -> None:
     )
     assert s.rolling_skew(4).null_count() == 3
 
+
+def test_rolling_floats() -> None:
     # 3099
     # test if we maintain proper dtype
     for dt in [pl.Float32, pl.Float64]:
@@ -846,6 +855,22 @@ def test_rolling_by_integer(dtype: PolarsDataType) -> None:
     result = df.with_columns(roll=pl.col("val").rolling_sum_by("index", "2i"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_rolling_sum_by_integer(dtype: PolarsDataType) -> None:
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": dtype})
+        .with_row_index()
+        .select(pl.col("a").rolling_sum_by("index", "2i"))
+    )
+    result = lf.collect()
+    expected_dtype = (
+        pl.Int64 if dtype in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16] else dtype
+    )
+    expected = pl.DataFrame({"a": [1, 3, 5]}, schema={"a": expected_dtype})
+    assert_frame_equal(result, expected)
+    assert lf.collect_schema() == expected.schema
 
 
 def test_rolling_nanoseconds_11003() -> None:
