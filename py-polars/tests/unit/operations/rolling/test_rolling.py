@@ -1315,3 +1315,17 @@ def test_rolling_offset_agg_15122() -> None:
     )
     expected = df.with_columns(window=pl.Series([[3], [], [], [3], [], []]))
     assert_frame_equal(result, expected)
+
+
+def test_rolling_sum_boolean() -> None:
+    lf = pl.LazyFrame({"a": [False, True, True]}).with_row_index()
+
+    q = lf.select(pl.col("a").rolling_sum(2, min_samples=1))
+    expected = pl.DataFrame({"a": [0, 1, 2]}).cast(pl.get_index_type())
+    assert_frame_equal(q.collect(), expected)
+    assert q.collect_schema() == expected.schema
+
+    q = lf.select(pl.col("a").rolling_sum_by("index", "2i"))
+    expected = pl.DataFrame({"a": [0, 1, 2]}).cast(pl.get_index_type())
+    assert_frame_equal(q.collect(), expected)
+    assert q.collect_schema() == expected.schema

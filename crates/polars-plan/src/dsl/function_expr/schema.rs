@@ -551,6 +551,7 @@ impl<'a> FieldsMapper<'a> {
     pub fn sum_dtype(&self) -> PolarsResult<Field> {
         use DataType::*;
         self.map_dtype(|dtype| match dtype {
+            Boolean => IDX_DTYPE,
             Int8 | UInt8 | Int16 | UInt16 => Int64,
             dt => dt.clone(),
         })

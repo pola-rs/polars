@@ -196,12 +196,13 @@ pub trait SeriesOpsTime: AsSeries {
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
         let mut s = self.as_series().clone();
-        if matches!(
-            s.dtype(),
-            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
-        ) {
-            s = s.cast(&DataType::Int64).unwrap();
-        }
+        s = match s.dtype() {
+            DataType::Boolean => s.cast(&IDX_DTYPE).unwrap(),
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
+                s.cast(&DataType::Int64).unwrap()
+            },
+            _ => s,
+        };
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg_by(
@@ -219,13 +220,15 @@ pub trait SeriesOpsTime: AsSeries {
         let mut s = self.as_series().clone();
         if options.weights.is_some() {
             s = s.to_float()?;
-        } else if matches!(
-            s.dtype(),
-            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
-        ) {
-            s = s.cast(&DataType::Int64).unwrap();
+        } else {
+            s = match s.dtype() {
+                DataType::Boolean => s.cast(&IDX_DTYPE).unwrap(),
+                DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16 => {
+                    s.cast(&DataType::Int64).unwrap()
+                },
+                _ => s,
+            }
         }
-
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg(
