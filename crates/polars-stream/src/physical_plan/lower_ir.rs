@@ -15,6 +15,7 @@ use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, LiteralValue, IR};
 use polars_plan::prelude::{FileType, GroupbyOptions, SinkType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
+use polars_utils::unique_column_name;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
@@ -22,7 +23,7 @@ use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::nodes::io_sources::RowRestriction;
 use crate::physical_plan::lower_expr::{
     build_length_preserving_select_stream, build_select_stream, is_elementwise_rec_cached,
-    lower_exprs, unique_column_name, ExprCache,
+    lower_exprs, ExprCache,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
