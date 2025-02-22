@@ -149,7 +149,7 @@ where
                         metadata,
                         file_options,
                         file_info,
-                        hive_parts,
+                        hive_parts.map(|h| h.into_statistics()),
                         verbose,
                         predicate,
                     )?;

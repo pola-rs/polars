@@ -1,6 +1,5 @@
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Read};
 
-use polars_utils::pl_serialize;
 use pyo3::prelude::*;
 
 use super::PyLazyFrame;
@@ -16,10 +15,7 @@ impl PyLazyFrame {
     fn serialize_binary(&self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = get_file_like(py_f, true)?;
         let writer = BufWriter::new(file);
-        py.enter_polars(|| {
-            pl_serialize::SerializeOptions::default()
-                .serialize_into_writer(writer, &self.ldf.logical_plan)
-        })
+        py.enter_polars(|| self.ldf.logical_plan.serialize_versioned(writer))
     }
 
     /// Serialize into a JSON string.
@@ -38,9 +34,8 @@ impl PyLazyFrame {
     fn deserialize_binary(py: Python, py_f: PyObject) -> PyResult<Self> {
         let file = get_file_like(py_f, false)?;
         let reader = BufReader::new(file);
-        let lp: DslPlan = py.enter_polars(|| {
-            pl_serialize::SerializeOptions::default().deserialize_from_reader(reader)
-        })?;
+
+        let lp: DslPlan = py.enter_polars(|| DslPlan::deserialize_versioned(reader))?;
         Ok(LazyFrame::from(lp).into())
     }
 

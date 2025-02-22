@@ -8,7 +8,7 @@ from hypothesis import Phase, given, settings
 
 import polars as pl
 from polars.meta import get_index_type
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric.strategies import series
 
 if TYPE_CHECKING:
@@ -53,6 +53,31 @@ def assert_skp_series(
     except AssertionError:
         print(sbp)
         raise
+
+
+def test_true_false_predicate() -> None:
+    true_sbp = pl.lit(True)._skip_batch_predicate({})
+    false_sbp = pl.lit(False)._skip_batch_predicate({})
+    null_sbp = pl.lit(None)._skip_batch_predicate({})
+
+    df = pl.DataFrame({"len": [1]})
+
+    out = df.select(
+        true=true_sbp,
+        false=false_sbp,
+        null=null_sbp,
+    )
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "true": [False],
+                "false": [True],
+                "null": [True],
+            }
+        ),
+    )
 
 
 def test_equality() -> None:

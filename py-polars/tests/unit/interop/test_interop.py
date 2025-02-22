@@ -348,7 +348,11 @@ def test_from_pyarrow_map() -> None:
         ),
     )
 
-    result = cast(pl.DataFrame, pl.from_arrow(pa_table))
+    # Convert from an empty table to trigger an ArrowSchema -> native schema
+    # conversion (checks that ArrowDataType::Map is handled in Rust).
+    pl.DataFrame(pa_table.slice(0, 0))
+
+    result = pl.DataFrame(pa_table)
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
         "mapping": [

@@ -66,8 +66,9 @@ impl FunctionExpr {
             RollingExpr(rolling_func, ..) => {
                 use RollingFunction::*;
                 match rolling_func {
-                    Min(_) | Max(_) | Sum(_) => mapper.with_same_dtype(),
+                    Min(_) | Max(_) => mapper.with_same_dtype(),
                     Mean(_) | Quantile(_) | Var(_) | Std(_) => mapper.map_to_float_dtype(),
+                    Sum(_) => mapper.sum_dtype(),
                     #[cfg(feature = "cov")]
                     CorrCov {..} => mapper.map_to_float_dtype(),
                     #[cfg(feature = "moment")]
@@ -78,8 +79,9 @@ impl FunctionExpr {
             RollingExprBy(rolling_func, ..) => {
                 use RollingFunctionBy::*;
                 match rolling_func {
-                    MinBy(_) | MaxBy(_) | SumBy(_) => mapper.with_same_dtype(),
+                    MinBy(_) | MaxBy(_) => mapper.with_same_dtype(),
                     MeanBy(_) | QuantileBy(_) | VarBy(_) | StdBy(_) => mapper.map_to_float_dtype(),
+                    SumBy(_) => mapper.sum_dtype(),
                 }
             },
             ShiftAndFill => mapper.with_same_dtype(),
@@ -543,6 +545,14 @@ impl<'a> FieldsMapper<'a> {
             } else {
                 polars_bail!(op = "replace-time-zone", got = dt, expected = "Datetime");
             }
+        })
+    }
+
+    pub fn sum_dtype(&self) -> PolarsResult<Field> {
+        use DataType::*;
+        self.map_dtype(|dtype| match dtype {
+            Int8 | UInt8 | Int16 | UInt16 => Int64,
+            dt => dt.clone(),
         })
     }
 

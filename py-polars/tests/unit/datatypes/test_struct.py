@@ -1258,3 +1258,25 @@ def test_zip_outer_validity_infinite_recursion_21267() -> None:
         s.to_frame().select(pl.col.x.__eq__(None)).to_series(),
         pl.Series("x", [None, None], pl.Boolean),
     )
+
+
+def test_struct_arithmetic_broadcast_21376() -> None:
+    df = pl.DataFrame(
+        {
+            "struct1": [{"low": 1, "mid": 2, "up": 3}],
+            "list_struct": [
+                [{"low": 1, "mid": 2, "up": 3}, {"low": 1, "mid": 2, "up": 3}]
+            ],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "add_struct": [{"low": 2, "mid": 4, "up": 6}] * 2,
+        }
+    )
+    out = (
+        df.with_row_index()
+        .explode("list_struct")
+        .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
+    )
+    assert_frame_equal(out, expected)

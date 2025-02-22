@@ -247,7 +247,7 @@ fn create_physical_plan_impl(
                 return Ok(Box::new(executors::MultiScanExec::new(
                     sources,
                     file_info,
-                    hive_parts,
+                    hive_parts.map(|h| h.into_statistics()),
                     predicate,
                     file_options,
                     scan_type,
@@ -274,7 +274,7 @@ fn create_physical_plan_impl(
                     predicate,
                     options,
                     file_options,
-                    hive_parts,
+                    hive_parts: hive_parts.map(|h| h.into_statistics()),
                     cloud_options,
                     metadata,
                 })),
@@ -286,7 +286,7 @@ fn create_physical_plan_impl(
                 } => Ok(Box::new(executors::ParquetExec::new(
                     sources,
                     file_info,
-                    hive_parts,
+                    hive_parts.map(|h| h.into_statistics()),
                     predicate,
                     options,
                     cloud_options,

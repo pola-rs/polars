@@ -977,3 +977,34 @@ def test_categorical_prefill() -> None:
     s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
     s = s.filter([True, False, True])
     assert s.n_unique() == 2
+
+
+@pytest.mark.may_fail_auto_streaming  # not implemented
+def test_categorical_min_max() -> None:
+    schema = pl.Schema(
+        {
+            "a": pl.Categorical("physical"),
+            "b": pl.Categorical("lexical"),
+            "c": pl.Enum(["foo", "bar"]),
+        }
+    )
+    lf = pl.LazyFrame(
+        {
+            "a": ["foo", "bar"],
+            "b": ["foo", "bar"],
+            "c": ["foo", "bar"],
+        },
+        schema=schema,
+    )
+
+    q = lf.select(pl.all().min())
+    result = q.collect()
+    assert q.collect_schema() == schema
+    assert result.schema == schema
+    assert result.to_dict(as_series=False) == {"a": ["foo"], "b": ["bar"], "c": ["foo"]}
+
+    q = lf.select(pl.all().max())
+    result = q.collect()
+    assert q.collect_schema() == schema
+    assert result.schema == schema
+    assert result.to_dict(as_series=False) == {"a": ["bar"], "b": ["foo"], "c": ["bar"]}

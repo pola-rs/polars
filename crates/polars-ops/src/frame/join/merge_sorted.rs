@@ -143,6 +143,15 @@ where
 }
 
 fn series_to_merge_indicator(lhs: &Series, rhs: &Series) -> PolarsResult<Vec<bool>> {
+    if lhs.dtype().is_categorical() {
+        let lhs_ca = lhs.categorical().unwrap();
+        if lhs_ca.uses_lexical_ordering() {
+            let rhs_ca = rhs.categorical().unwrap();
+            let out = get_merge_indicator(lhs_ca.iter_str(), rhs_ca.iter_str());
+            return Ok(out);
+        }
+    }
+
     let lhs_s = lhs.to_physical_repr().into_owned();
     let rhs_s = rhs.to_physical_repr().into_owned();
 

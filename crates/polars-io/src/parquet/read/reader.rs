@@ -89,8 +89,8 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         projected_arrow_schema: Option<&ArrowSchema>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        // `self.schema` gets overwritten if allow_missing_columns
-        let this_schema_width = self.schema()?.len();
+        let slf_schema = self.schema()?;
+        let slf_schema_width = slf_schema.len();
 
         if allow_missing_columns {
             // Must check the dtypes
@@ -98,7 +98,14 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                 projected_arrow_schema.unwrap_or(first_schema.as_ref()),
                 self.schema()?.as_ref(),
             )?;
-            self.schema.replace(first_schema.clone());
+            self.schema = Some(Arc::new(
+                first_schema
+                    .iter()
+                    .map(|(name, field)| {
+                        (name.clone(), slf_schema.get(name).unwrap_or(field).clone())
+                    })
+                    .collect(),
+            ));
         }
 
         let schema = self.schema()?;
@@ -110,7 +117,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
                     projected_arrow_schema,
                 )?;
             } else {
-                if this_schema_width > first_schema.len() {
+                if slf_schema_width > first_schema.len() {
                     polars_bail!(
                        SchemaMismatch:
                        "parquet file contained extra columns and no selection was given"
@@ -334,8 +341,8 @@ impl ParquetAsyncReader {
         projected_arrow_schema: Option<&ArrowSchema>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        // `self.schema` gets overwritten if allow_missing_columns
-        let this_schema_width = self.schema().await?.len();
+        let slf_schema = self.schema().await?;
+        let slf_schema_width = slf_schema.len();
 
         if allow_missing_columns {
             // Must check the dtypes
@@ -343,7 +350,14 @@ impl ParquetAsyncReader {
                 projected_arrow_schema.unwrap_or(first_schema.as_ref()),
                 self.schema().await?.as_ref(),
             )?;
-            self.schema.replace(first_schema.clone());
+            self.schema = Some(Arc::new(
+                first_schema
+                    .iter()
+                    .map(|(name, field)| {
+                        (name.clone(), slf_schema.get(name).unwrap_or(field).clone())
+                    })
+                    .collect(),
+            ));
         }
 
         let schema = self.schema().await?;
@@ -355,7 +369,7 @@ impl ParquetAsyncReader {
                     projected_arrow_schema,
                 )?;
             } else {
-                if this_schema_width > first_schema.len() {
+                if slf_schema_width > first_schema.len() {
                     polars_bail!(
                        SchemaMismatch:
                        "parquet file contained extra columns and no selection was given"

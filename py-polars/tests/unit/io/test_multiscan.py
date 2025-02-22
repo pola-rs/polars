@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import io
-import os
 from typing import TYPE_CHECKING, Any, Callable
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 import polars as pl
 from polars.meta.index_type import get_index_type
@@ -160,6 +161,73 @@ def test_multiscan_projection(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+    ],
+)
+@pytest.mark.write_disk
+def test_multiscan_hive_predicate(
+    tmp_path: Path,
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, Path], Any],
+    ext: str,
+) -> None:
+    a = pl.DataFrame({"col": [5, 10, 1996]})
+    b = pl.DataFrame({"col": [13, 37]})
+    c = pl.DataFrame({"col": [3, 5, 2024]})
+
+    (tmp_path / "hive_col=0").mkdir()
+    a_path = tmp_path / "hive_col=0" / f"0.{ext}"
+    (tmp_path / "hive_col=1").mkdir()
+    b_path = tmp_path / "hive_col=1" / f"0.{ext}"
+    (tmp_path / "hive_col=2").mkdir()
+    c_path = tmp_path / "hive_col=2" / f"0.{ext}"
+
+    multiscan_path = tmp_path
+
+    write(a, a_path)
+    write(b, b_path)
+    write(c, c_path)
+
+    full = scan(multiscan_path).collect(new_streaming=True)  # type: ignore[call-overload]
+    full_ri = full.with_row_index("ri", 42)
+
+    last_pred = None
+    try:
+        for pred in [
+            pl.col.hive_col == 0,
+            pl.col.hive_col == 1,
+            pl.col.hive_col == 2,
+            pl.col.hive_col < 2,
+            pl.col.hive_col > 0,
+            pl.col.hive_col != 1,
+            pl.col.hive_col != 3,
+            pl.col.col == 13,
+            pl.col.col != 13,
+            (pl.col.col != 13) & (pl.col.hive_col == 1),
+            (pl.col.col != 13) & (pl.col.hive_col != 1),
+        ]:
+            last_pred = pred
+            assert_frame_equal(
+                full.filter(pred),
+                scan(multiscan_path).filter(pred).collect(new_streaming=True),  # type: ignore[call-overload]
+            )
+
+            assert_frame_equal(
+                full_ri.filter(pred),
+                scan(multiscan_path)
+                .with_row_index("ri", 42)
+                .filter(pred)
+                .collect(new_streaming=True),  # type: ignore[call-overload]
+            )
+    except Exception as _:
+        print(last_pred)
+        raise
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
     ],
 )
@@ -288,12 +356,12 @@ def test_schema_mismatch_type_mismatch(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     "ndjson",
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 @pytest.mark.write_disk
@@ -321,32 +389,25 @@ def test_schema_mismatch_order_mismatch(
 
 
 @pytest.mark.parametrize(
-    ("scan", "write", "ext"),
+    ("scan", "write"),
     [
-        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
         (
             pl.scan_csv,
             pl.DataFrame.write_csv,
-            "csv",
         ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 def test_multiscan_head(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
-    ext: str,
 ) -> None:
-    if ext == "ndjson" and os.environ["POLARS_AUTO_NEW_STREAMING"] == "1":
-        msg = "NYI"
-        raise Exception(msg)  # noqa: TRY002
-
     a = io.BytesIO()
     b = io.BytesIO()
     for f in [a, b]:
@@ -360,32 +421,25 @@ def test_multiscan_head(
 
 
 @pytest.mark.parametrize(
-    ("scan", "write", "ext"),
+    ("scan", "write"),
     [
-        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-            "csv",
-        ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        # (
+        #     pl.scan_csv,
+        #     pl.DataFrame.write_csv,
+        # ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 def test_multiscan_tail(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
-    ext: str,
 ) -> None:
-    if ext == "ndjson" and os.environ["POLARS_AUTO_NEW_STREAMING"] == "1":
-        msg = "NYI"
-        raise Exception(msg)  # noqa: TRY002
-
     a = io.BytesIO()
     b = io.BytesIO()
     for f in [a, b]:
@@ -399,44 +453,125 @@ def test_multiscan_tail(
 
 
 @pytest.mark.parametrize(
-    ("scan", "write", "ext"),
+    ("scan", "write"),
     [
-        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
-        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-            "csv",
-        ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        # (
+        #     pl.scan_csv,
+        #     pl.DataFrame.write_csv,
+        # ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
     ],
 )
 def test_multiscan_slice_middle(
     scan: Callable[..., pl.LazyFrame],
     write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
-    ext: str,
 ) -> None:
-    if ext == "ndjson" and os.environ["POLARS_AUTO_NEW_STREAMING"] == "1":
-        msg = "NYI"
-        raise Exception(msg)  # noqa: TRY002
+    fs = [io.BytesIO() for _ in range(13)]
+    for f in fs:
+        write(pl.Series("c1", range(7)).to_frame(), f)
+        f.seek(0)
+
+    offset = 5 * 7 - 5
+    expected = (
+        list(range(2, 7))  # fs[4]
+        + list(range(7))  # fs[5]
+        + list(range(5))  # fs[6]
+    )
+    expected_series = [pl.Series("c1", expected)]
+    ri_expected_series = [
+        pl.Series("ri", range(offset, offset + 17), get_index_type())
+    ] + expected_series
+
+    assert_frame_equal(
+        scan(fs).slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        pl.DataFrame(expected_series),
+    )
+    assert_frame_equal(
+        scan(fs, row_index_name="ri").slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        pl.DataFrame(ri_expected_series),
+    )
+
+    # Negative slices
+    offset = -(13 * 7 - offset)
+    assert_frame_equal(
+        scan(fs).slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        pl.DataFrame(expected_series),
+    )
+    assert_frame_equal(
+        scan(fs, row_index_name="ri").slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        pl.DataFrame(ri_expected_series),
+    )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+        pytest.param(
+            pl.scan_csv,
+            pl.DataFrame.write_csv,
+            "csv",
+            marks=pytest.mark.may_fail_auto_streaming,
+            # negatives slices are not yet implemented for CSV
+        ),
+        # pytest.param(
+        #     pl.scan_ndjson,
+        #     pl.DataFrame.write_ndjson,
+        #     "ndjson",
+        #     marks=pytest.mark.xfail(reason="NYI"),
+        # ),
+    ],
+)
+@given(offset=st.integers(-100, 100), length=st.integers(0, 101))
+def test_multiscan_slice_parametric(
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, io.BytesIO | Path], Any],
+    ext: str,
+    offset: int,
+    length: int,
+) -> None:
+    # Once CSV negative slicing is implemented this should be removed. If we
+    # don't do this, this test is flaky.
+    if ext == "csv":
+        f = io.BytesIO()
+        write(pl.Series("a", [1]).to_frame(), f)
+        f.seek(0)
+        try:
+            scan(f).slice(-1, 1).collect(new_streaming=True)  # type: ignore[call-overload]
+            pytest.fail("This should crash")
+        except pl.exceptions.ComputeError:
+            pass
+
+    ref = io.BytesIO()
+    write(pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame(), ref)
+    ref.seek(0)
 
     fs = [io.BytesIO() for _ in range(13)]
     for f in fs:
         write(pl.Series("c1", range(7)).to_frame(), f)
         f.seek(0)
 
-    expected = (
-        list(range(2, 7))  # fs[4]
-        + list(range(7))  # fs[5]
-        + list(range(5))  # fs[6]
+    assert_frame_equal(
+        scan(ref).slice(offset, length).collect(),
+        scan(fs).slice(offset, length).collect(new_streaming=True),  # type: ignore[call-overload]
     )
 
+    ref.seek(0)
+    for f in fs:
+        f.seek(0)
+
     assert_frame_equal(
-        scan(fs).slice(5 * 7 - 5, 17).collect(new_streaming=True),  # type: ignore[call-overload]
-        pl.Series("c1", expected).to_frame(),
+        scan(ref, row_index_name="ri", row_index_offset=42)
+        .slice(offset, length)
+        .collect(),
+        scan(fs, row_index_name="ri", row_index_offset=42)
+        .slice(offset, length)
+        .collect(new_streaming=True),  # type: ignore[call-overload]
     )

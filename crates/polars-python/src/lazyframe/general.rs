@@ -8,7 +8,7 @@ use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::dsl::ScanSources;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
@@ -873,6 +873,11 @@ impl PyLazyFrame {
     fn filter(&mut self, predicate: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
+    }
+
+    fn remove(&mut self, predicate: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.remove(predicate.inner).into()
     }
 
     fn select(&mut self, exprs: Vec<PyExpr>) -> Self {
