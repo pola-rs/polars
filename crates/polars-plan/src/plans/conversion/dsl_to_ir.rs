@@ -607,6 +607,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(group_by)))?;
 
+            // Rolling + group-by sorts the whole table, so remove unneeded columns
+            if ctxt.opt_flags.eager() && options.is_rolling() && !keys.is_empty() {
+                ctxt.opt_flags.insert(OptFlags::PROJECTION_PUSHDOWN)
+            }
+
             let (keys, aggs, schema) = resolve_group_by(
                 input,
                 keys,
