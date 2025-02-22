@@ -1,5 +1,3 @@
-use std::usize;
-
 use arrow::legacy::time_zone::Tz;
 use arrow::legacy::utils::CustomIterTools;
 use polars_core::prelude::*;
@@ -8,6 +6,7 @@ use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
 use polars_ops::series::SeriesMethods;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::SortedSlice;
 use rayon::prelude::*;
@@ -551,14 +550,12 @@ impl Wrap<&DataFrame> {
 
             let groups = group_by.unwrap();
 
-            let mut total = vec![];
-            for [start, len] in groups {
+            let iter = groups.into_par_iter().map(|[start, len]| {
                 let group_offset = start;
-                dbg!(start, len);
                 let start = start as usize;
-                let end = start as usize + len as usize;
+                let end = start + len as usize;
                 let values = &ts[start..end];
-                dbg!(&values);
+                check_sortedness_slice(values)?;
 
                 let group = group_by_values(
                     options.period,
@@ -568,15 +565,19 @@ impl Wrap<&DataFrame> {
                     tu,
                     tz,
                 )?;
-                total.extend(
+
+                PolarsResult::Ok(
                     group
                         .iter()
-                        .map(|[start, len]| [*start + group_offset, *len]),
-                );
-            }
-            dbg!(&total);
+                        .map(|[start, len]| [*start + group_offset, *len])
+                        .collect_vec(),
+                )
+            });
+
+            let groups = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let groups = POOL.install(|| flatten_par(&groups));
             PolarsResult::Ok(GroupsType::Slice {
-                groups: total,
+                groups,
                 rolling: true,
             })
         }?;

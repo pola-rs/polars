@@ -12,30 +12,6 @@ pub(crate) struct GroupByRollingExec {
     pub(crate) apply: Option<Arc<dyn DataFrameUdf>>,
 }
 
-#[cfg(feature = "dynamic_group_by")]
-unsafe fn update_keys(keys: &mut [Column], groups: &GroupsType) {
-    match groups {
-        GroupsType::Idx(groups) => {
-            let first = groups.first();
-            // we don't use agg_first here, because the group
-            // can be empty, but we still want to know the first value
-            // of that group
-            for key in keys.iter_mut() {
-                *key = key.take_slice_unchecked(first);
-            }
-        },
-        GroupsType::Slice { groups, .. } => {
-            for key in keys.iter_mut() {
-                let indices = groups
-                    .iter()
-                    .map(|[first, _len]| *first)
-                    .collect_ca(PlSmallStr::EMPTY);
-                *key = key.take_unchecked(&indices);
-            }
-        },
-    }
-}
-
 impl GroupByRollingExec {
     #[cfg(feature = "dynamic_group_by")]
     fn execute_impl(
@@ -57,6 +33,7 @@ impl GroupByRollingExec {
         let group_by = if !self.keys.is_empty() {
             // 1. Sort
             // 1. Compute offsets on sorted groups (this will ensure the amount)
+
             let encoded = row_encode::encode_rows_vertical_par_unordered(&keys)?;
             let encoded = encoded.rechunk().into_owned();
             let encoded = encoded.with_name(unique_column_name());
@@ -64,12 +41,17 @@ impl GroupByRollingExec {
 
             let encoded = unsafe {
                 df.with_column_unchecked(encoded.into_series().into());
-                let (df_ordered, keys_ordered) = POOL.join(
-                    || df.take_unchecked(&idx),
-                    || keys.iter().map(|c| c.take_unchecked(&idx)).collect_vec(),
-                );
-                df = df_ordered;
-                keys = keys_ordered;
+
+                // If not sorted on keys, sort.
+                let idx_s = idx.clone().into_series();
+                if !idx_s.is_sorted(Default::default()).unwrap() {
+                    let (df_ordered, keys_ordered) = POOL.join(
+                        || df.take_unchecked(&idx),
+                        || keys.iter().map(|c| c.take_unchecked(&idx)).collect_vec(),
+                    );
+                    df = df_ordered;
+                    keys = keys_ordered;
+                }
 
                 df.get_columns_mut().pop().unwrap()
             };
@@ -109,6 +91,9 @@ impl GroupByRollingExec {
             groups = sliced_groups.as_ref().unwrap();
 
             time_key = time_key.slice(offset, len);
+            for k in &mut keys {
+                *k = k.slice(offset, len);
+            }
         }
 
         let agg_columns = evaluate_aggs(&df, &self.aggs, groups, state)?;

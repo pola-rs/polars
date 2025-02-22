@@ -443,11 +443,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
         index_column="Date", period="2i", offset="-2i", group_by="Event", closed="left"
     ).agg(pl.len())
 
-    assert result.to_dict(as_series=False) == {
-        "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
-        "Date": [1, 2, 3, 4, 1, 2, 3, 4],
-        "len": [0, 1, 2, 2, 0, 1, 2, 2],
-    }
+    assert result.to_dict(as_series=False) == {'Event': ['Sun', 'Sun', 'Sun', 'Sun', 'Rain', 'Rain', 'Rain', 'Rain'], 'Date': [1, 2, 3, 4, 1, 2, 3, 4], 'len': [0, 1, 2, 2, 0, 1, 2, 2]}
 
 
 def test_rolling_duplicates() -> None:

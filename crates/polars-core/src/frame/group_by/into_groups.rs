@@ -1,6 +1,5 @@
 use arrow::legacy::kernels::sort_partition::{
-    create_clean_partitions, partition_to_groups, partition_to_groups_amortized,
-    partition_to_groups_amortized_varsize,
+    create_clean_partitions, partition_to_groups, partition_to_groups_amortized_varsize,
 };
 use polars_error::signals::try_raise_keyboard_interrupt;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
