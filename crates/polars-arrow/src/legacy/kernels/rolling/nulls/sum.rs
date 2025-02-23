@@ -4,9 +4,38 @@ pub struct SumWindow<'a, T> {
     slice: &'a [T],
     validity: &'a Bitmap,
     sum: Option<T>,
+    err: T,
     last_start: usize,
     last_end: usize,
     pub(super) null_count: usize,
+}
+
+impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Output = T>>
+    SumWindow<'_, T>
+{
+    // Kahan summation
+    fn add(&mut self, val: T) {
+        if T::is_float() && val.is_finite() {
+            self.sum = self.sum.map(|sum| {
+                let y = val - self.err;
+                let new_sum = sum + y;
+
+                // Algebraically, err should always be zero, so compiler should not optimize.
+                self.err = std::hint::black_box((new_sum - sum) - y);
+                new_sum
+            });
+        } else {
+            self.sum = self.sum.map(|v| v + val)
+        }
+    }
+
+    fn sub(&mut self, val: T) {
+        if T::is_float() && val.is_finite() {
+            self.add(T::zeroed() - val)
+        } else {
+            self.sum = self.sum.map(|v| v - val)
+        }
+    }
 }
 
 impl<T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<'_, T> {
@@ -32,8 +61,8 @@ impl<T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> SumWindow<'_, 
     }
 }
 
-impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAggWindowNulls<'a, T>
-    for SumWindow<'a, T>
+impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + AddAssign + SubAssign>
+    RollingAggWindowNulls<'a, T> for SumWindow<'a, T>
 {
     unsafe fn new(
         slice: &'a [T],
@@ -46,6 +75,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
             slice,
             validity,
             sum: None,
+            err: T::zeroed(),
             last_start: start,
             last_end: end,
             null_count: 0,
@@ -74,7 +104,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
                         recompute_sum = true;
                         break;
                     }
-                    self.sum = self.sum.map(|v| v - *leaving_value)
+                    self.sub(*leaving_value);
                 } else {
                     // null value leaving the window
                     self.null_count -= 1;
@@ -103,7 +133,7 @@ impl<'a, T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T>> RollingAgg
                     let value = *self.slice.get_unchecked(idx);
                     match self.sum {
                         None => self.sum = Some(value),
-                        Some(current) => self.sum = Some(current + value),
+                        _ => self.add(value),
                     }
                 } else {
                     // null value entering the window
@@ -129,7 +159,13 @@ pub fn rolling_sum<T>(
     _params: Option<RollingFnParams>,
 ) -> ArrayRef
 where
-    T: NativeType + IsFloat + PartialOrd + Add<Output = T> + Sub<Output = T>,
+    T: NativeType
+        + IsFloat
+        + PartialOrd
+        + Add<Output = T>
+        + Sub<Output = T>
+        + SubAssign
+        + AddAssign,
 {
     if weights.is_some() {
         panic!("weights not yet supported on array with null values")
