@@ -159,7 +159,7 @@ impl OptimizationRule for TypeCoercionRule {
             } => return process_binary(expr_arena, lp_arena, lp_node, node_left, op, node_right),
             #[cfg(feature = "is_in")]
             AExpr::Function {
-                function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                function: FunctionExpr::Boolean(BooleanFunction::IsIn { missing }),
                 ref input,
                 options,
             } => {
@@ -173,7 +173,7 @@ impl OptimizationRule for TypeCoercionRule {
                 input[1].set_node(other_input);
 
                 Some(AExpr::Function {
-                    function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+                    function: FunctionExpr::Boolean(BooleanFunction::IsIn { missing }),
                     input,
                     options,
                 })

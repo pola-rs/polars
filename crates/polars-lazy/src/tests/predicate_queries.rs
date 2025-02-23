@@ -48,7 +48,7 @@ fn test_issue_2472() -> PolarsResult<()> {
         .extract(lit(r"(\d+-){4}(\w+)-"), 2)
         .cast(DataType::Int32)
         .alias("age");
-    let predicate = col("age").is_in(lit(Series::new("".into(), [2i32])));
+    let predicate = col("age").is_in(lit(Series::new("".into(), [2i32])), false);
 
     let out = base
         .clone()

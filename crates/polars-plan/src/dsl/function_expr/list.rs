@@ -254,12 +254,15 @@ pub(super) fn contains(args: &mut [Column]) -> PolarsResult<Option<Column>> {
     polars_ensure!(matches!(list.dtype(), DataType::List(_)),
         SchemaMismatch: "invalid series dtype: expected `List`, got `{}`", list.dtype(),
     );
-    polars_ops::prelude::is_in(item.as_materialized_series(), list.as_materialized_series()).map(
-        |mut ca| {
-            ca.rename(list.name().clone());
-            Some(ca.into_column())
-        },
+    polars_ops::prelude::is_in(
+        item.as_materialized_series(),
+        list.as_materialized_series(),
+        false,
     )
+    .map(|mut ca| {
+        ca.rename(list.name().clone());
+        Some(ca.into_column())
+    })
 }
 
 #[cfg(feature = "list_drop_nulls")]

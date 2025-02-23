@@ -398,7 +398,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         } => match function {
             FunctionExpr::Boolean(f) => match f {
                 #[cfg(feature = "is_in")]
-                BooleanFunction::IsIn => {
+                BooleanFunction::IsIn { .. } => {
                     let lv_node = input[1].node();
                     match (
                         into_column(input[0].node(), expr_arena, schema, 0),
