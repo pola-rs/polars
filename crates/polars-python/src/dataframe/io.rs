@@ -103,7 +103,7 @@ impl PyDataFrame {
 
         let scan_source: PythonScanSourceInput =
             get_python_scan_source_input(py_f.as_unbound().clone(), false)?;
-        let path_name_for_include_file_path = get_path_name_from_input(&scan_source);
+        // let path_name_for_include_file_path = get_path_name_from_input(&scan_source);
 
         py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
@@ -128,7 +128,7 @@ impl PyDataFrame {
                 .with_row_index(row_index)
                 .with_raise_if_empty(raise_if_empty)
                 .with_include_file_paths(include_file_paths.map(|x| x.into()))
-                .with_path_name_for_include_file_path(path_name_for_include_file_path.into())
+                // .with_path_name_for_include_file_path(path_name_for_include_file_path.into())
                 .with_parse_options(
                     CsvParseOptions::default()
                         .with_separator(separator.as_bytes()[0])

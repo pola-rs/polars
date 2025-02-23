@@ -2320,8 +2320,8 @@ def test_read_csv_include_file_name(tmp_path: Path, number_of_files: int) -> Non
     assert_frame_equal(res, expected)
 
 
-# TODO: check if there is a nicer way to get the bytes instead of writing the file? (both)
-@pytest.mark.write_disk
+# TODO: check if there is a nicer way to get the bytes instead of writing the file? (both) 222
+# @pytest.mark.write_disk
 def test_read_csv_include_file_name_file_obj(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 
@@ -2337,7 +2337,7 @@ def test_read_csv_include_file_name_file_obj(tmp_path: Path) -> None:
         assert_frame_equal(res, expected)
 
 
-@pytest.mark.write_disk
+# @pytest.mark.write_disk
 def test_read_csv_include_file_name_bytes(tmp_path: Path) -> None:
     tmp_path.mkdir(exist_ok=True)
 

@@ -222,7 +222,7 @@ fn infer_file_schema_inner(
 
     let bytes = skip_line_ending(skip_bom(reader_bytes), eol_char);
     if raise_if_empty {
-        polars_ensure!(!bytes.is_empty(), NoData: "empty CSV");
+        polars_ensure!(!bytes.is_empty(), NoData: "empty CSV 1");
     };
     let mut lines = SplitLines::new(bytes, quote_char, eol_char).skip(skip_rows);
 
