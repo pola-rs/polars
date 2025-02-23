@@ -2,6 +2,7 @@ use serde::{Serialize, Serializer};
 
 use crate::prelude::*;
 
+// We don't use this internally (we call Series::serialize instead), but Rust users might need it.
 impl<T> Serialize for ChunkedArray<T>
 where
     T: PolarsDataType,
