@@ -841,6 +841,7 @@ fn from_to_binview(
         Int16 => primitive_to_binview_dyn::<i16>(array),
         Int32 => primitive_to_binview_dyn::<i32>(array),
         Int64 => primitive_to_binview_dyn::<i64>(array),
+        Int128 => primitive_to_binview_dyn::<i128>(array),
         Float32 => primitive_to_binview_dyn::<f32>(array),
         Float64 => primitive_to_binview_dyn::<f64>(array),
         Binary => binary_to_binview::<i32>(array.as_any().downcast_ref().unwrap()),
