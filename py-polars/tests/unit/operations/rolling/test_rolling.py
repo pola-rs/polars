@@ -1315,3 +1315,39 @@ def test_rolling_offset_agg_15122() -> None:
     )
     expected = df.with_columns(window=pl.Series([[3], [], [], [3], [], []]))
     assert_frame_equal(result, expected)
+
+
+def test_rolling_sum_stability_11146() -> None:
+    data_frame = pl.DataFrame(
+        {
+            "value": [
+                0.0,
+                290.57,
+                107.0,
+                172.0,
+                124.25,
+                304.0,
+                379.5,
+                347.35,
+                1516.41,
+                386.12,
+                226.5,
+                294.62,
+                125.5,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ]
+        }
+    )
+    assert (
+        data_frame.with_columns(
+            pl.col("value").rolling_mean(window_size=8, min_samples=1).alias("test_col")
+        )["test_col"][-1]
+        == 0.0
+    )

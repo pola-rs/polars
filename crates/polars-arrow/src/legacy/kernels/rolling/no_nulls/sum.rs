@@ -1,20 +1,82 @@
 use super::*;
 
+fn sum_kahan<
+    T: NativeType
+        + IsFloat
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Sub<Output = T>
+        + Add<Output = T>,
+>(
+    vals: &[T],
+) -> (T, T) {
+    if T::is_float() {
+        let mut sum = T::zeroed();
+        let mut err = T::zeroed();
+
+        for val in vals.iter().copied() {
+            let y = val - err;
+            let new_sum = sum + y;
+
+            err = (new_sum - sum) - y;
+            sum = new_sum;
+        }
+        (sum, err)
+    } else {
+        (vals.iter().copied().sum::<T>(), T::zeroed())
+    }
+}
+
 pub struct SumWindow<'a, T> {
     slice: &'a [T],
     sum: T,
+    err: T,
     last_start: usize,
     last_end: usize,
 }
 
-impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
-    RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
+impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Output = T>>
+    SumWindow<'_, T>
+{
+    fn add(&mut self, val: T) {
+        if T::is_float() {
+            let y = val - self.err;
+            let new_sum = self.sum + y;
+
+            self.err = (new_sum - self.sum) - y;
+            self.sum = new_sum;
+        } else {
+            self.sum += val;
+        }
+    }
+
+    fn sub(&mut self, val: T) {
+        if T::is_float() {
+            self.add(T::zeroed() - val)
+        } else {
+            self.sum -= val;
+        }
+    }
+}
+
+impl<
+        'a,
+        T: NativeType
+            + IsFloat
+            + std::iter::Sum
+            + AddAssign
+            + SubAssign
+            + Sub<Output = T>
+            + Add<Output = T>,
+    > RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
-        let sum = slice[start..end].iter().copied().sum::<T>();
+        let (sum, err) = sum_kahan(&slice[start..end]);
         Self {
             slice,
             sum,
+            err,
             last_start: start,
             last_end: end,
         }
@@ -38,7 +100,7 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
                     break;
                 }
 
-                self.sum -= *leaving_value;
+                self.sub(*leaving_value);
             }
             recompute_sum
         };
@@ -46,17 +108,15 @@ impl<'a, T: NativeType + IsFloat + std::iter::Sum + AddAssign + SubAssign>
 
         // we traverse all values and compute
         if recompute_sum {
-            self.sum = self
-                .slice
-                .get_unchecked(start..end)
-                .iter()
-                .copied()
-                .sum::<T>();
+            let vals = self.slice.get_unchecked(start..end);
+            let (sum, err) = sum_kahan(vals);
+            self.sum = sum;
+            self.err = err;
         }
-        // remove leaving values.
+        // add entering values.
         else {
             for idx in self.last_end..end {
-                self.sum += *self.slice.get_unchecked(idx);
+                self.add(*self.slice.get_unchecked(idx))
             }
         }
         self.last_end = end;
