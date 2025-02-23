@@ -12,13 +12,14 @@ use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::unique_column_name;
 use recursive::recursive;
 use slotmap::SlotMap;
 
 use super::lower_expr::lower_exprs;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_input_independent, unique_column_name,
+    build_select_stream, compute_output_schema, is_input_independent,
 };
 use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
