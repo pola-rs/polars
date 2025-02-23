@@ -13,13 +13,15 @@ pub struct SumWindow<'a, T> {
 impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Output = T>>
     SumWindow<'_, T>
 {
+    // Kahan summation
     fn add(&mut self, val: T) {
-        if T::is_float() {
+        if T::is_float() && val.is_finite() {
             self.sum = self.sum.map(|sum| {
                 let y = val - self.err;
                 let new_sum = sum + y;
 
-                self.err = (new_sum - sum) - y;
+                // Algebraically, err should always be zero, so compiler should not optimize.
+                self.err = std::hint::black_box((new_sum - sum) - y);
                 new_sum
             });
         } else {
@@ -28,7 +30,7 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
     }
 
     fn sub(&mut self, val: T) {
-        if T::is_float() {
+        if T::is_float() && val.is_finite() {
             self.add(T::zeroed() - val)
         } else {
             self.sum = self.sum.map(|v| v - val)
