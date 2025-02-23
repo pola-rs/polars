@@ -2296,7 +2296,7 @@ def test_read_csv_include_file_name(tmp_path: Path, number_of_files: int) -> Non
     dfs: list[pl.DataFrame] = []
 
     for x in ["1", "2"][:number_of_files]:
-        path = Path(f"{tmp_path}/{x}.csv").absolute()
+        path = Path(tmp_path / f"{x}.csv").absolute()
         dfs.append(pl.DataFrame({"x": 10 * [x]}).with_columns(path=pl.lit(str(path))))
         dfs[-1].drop("path").write_csv(path)
 
@@ -2304,9 +2304,9 @@ def test_read_csv_include_file_name(tmp_path: Path, number_of_files: int) -> Non
     assert expected.columns == ["x", "path"]
 
     if number_of_files == 1:
-        read_csv_path = f"{tmp_path}/1.csv"
+        read_csv_path = tmp_path / "1.csv"
     else:
-        read_csv_path = f"{tmp_path}/*.csv"
+        read_csv_path = tmp_path / "*.csv"
 
     with pytest.raises(
         pl.exceptions.DuplicateError,
@@ -2318,6 +2318,41 @@ def test_read_csv_include_file_name(tmp_path: Path, number_of_files: int) -> Non
         read_csv_path, include_file_paths="path", schema=expected.drop("path").schema
     )
     assert_frame_equal(res, expected)
+
+
+# TODO: check if there is a nicer way to get the bytes instead of writing the file? (both)
+@pytest.mark.write_disk
+def test_read_csv_include_file_name_file_obj(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    path = Path(tmp_path / "1.csv").absolute()
+    df = pl.DataFrame({"x": 10 * [1]})
+    df.write_csv(path)
+
+    expected = df.with_columns(path=pl.lit("open-file"))
+    with path.open("rb") as f:
+        res = pl.read_csv(
+            f, include_file_paths="path", schema=expected.drop("path").schema
+        )
+        assert_frame_equal(res, expected)
+
+
+@pytest.mark.write_disk
+def test_read_csv_include_file_name_bytes(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    path = Path(tmp_path / "1.csv").absolute()
+    df = pl.DataFrame({"x": 10 * [1]})
+    df.write_csv(path)
+
+    expected = df.with_columns(path=pl.lit("in-mem"))
+
+    with path.open("rb") as f:
+        data = io.BytesIO(f.read())
+        res = pl.read_csv(
+            data, include_file_paths="path", schema=expected.drop("path").schema
+        )
+        assert_frame_equal(res, expected)
 
 
 def test_csv_double_new_line() -> None:

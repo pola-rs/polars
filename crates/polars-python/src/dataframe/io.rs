@@ -19,10 +19,19 @@ use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{
     get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
-    read_if_bytesio, EitherRustPythonFile,
+    get_python_scan_source_input, read_if_bytesio, EitherRustPythonFile, PythonScanSourceInput,
 };
-use crate::prelude::PyCompatLevel;
 
+fn get_path_name_from_input(input: &PythonScanSourceInput) -> &str {
+    // TODO: duplicates get_path_name_from_input
+    match input {
+        PythonScanSourceInput::Path(path) => path.to_str().unwrap(),
+        PythonScanSourceInput::File(_file) => "open-file",
+        PythonScanSourceInput::Buffer(_bytes) => "in-mem",
+    }
+}
+
+use crate::prelude::PyCompatLevel;
 #[pymethods]
 impl PyDataFrame {
     #[staticmethod]
@@ -92,6 +101,10 @@ impl PyDataFrame {
                 .collect::<Vec<_>>()
         });
 
+        let scan_source: PythonScanSourceInput =
+            get_python_scan_source_input(py_f.as_unbound().clone(), false)?;
+        let path_name_for_include_file_path = get_path_name_from_input(&scan_source);
+
         py_f = read_if_bytesio(py_f);
         let mmap_bytes_r = get_mmap_bytes_reader(&py_f)?;
         let df = py.allow_threads(move || {
@@ -115,6 +128,7 @@ impl PyDataFrame {
                 .with_row_index(row_index)
                 .with_raise_if_empty(raise_if_empty)
                 .with_include_file_paths(include_file_paths.map(|x| x.into()))
+                .with_path_name_for_include_file_path(path_name_for_include_file_path.into())
                 .with_parse_options(
                     CsvParseOptions::default()
                         .with_separator(separator.as_bytes()[0])

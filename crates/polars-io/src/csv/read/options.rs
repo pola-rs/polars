@@ -38,6 +38,7 @@ pub struct CsvReadOptions {
     pub ignore_errors: bool,
     pub fields_to_cast: Vec<Field>,
     pub include_file_paths: Option<PlSmallStr>,
+    pub path_name_for_include_file_path: Option<PlSmallStr>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -83,6 +84,7 @@ impl Default for CsvReadOptions {
             ignore_errors: false,
             fields_to_cast: vec![],
             include_file_paths: None,
+            path_name_for_include_file_path: None,
         }
     }
 }
@@ -227,6 +229,13 @@ impl CsvReadOptions {
     /// Include the path of the source file(s) as a column with this name, or don't include.
     pub fn with_include_file_paths(mut self, include_file_paths: Option<PlSmallStr>) -> Self {
         self.include_file_paths = include_file_paths;
+        self
+    }
+    pub fn with_path_name_for_include_file_path(
+        mut self,
+        path_name_for_include_file_path: PlSmallStr,
+    ) -> Self {
+        self.path_name_for_include_file_path = Some(path_name_for_include_file_path);
         self
     }
 

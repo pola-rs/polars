@@ -182,14 +182,6 @@ where
         let mut df = csv_reader.finish()?;
 
         if let Some(col) = &self.options.include_file_paths {
-            // TODO: fix this - handle "open-file" vs "in-mem" - see `to_include_path_name`
-            let name = self
-                .options
-                .path
-                .as_ref()
-                .and_then(|path| path.to_str())
-                .unwrap_or("not a file");
-
             if df.get_column_index(col).is_some() {
                 polars_bail!(
                     Duplicate: r#"column name for file paths "{}" conflicts with column name from file"#,
@@ -197,12 +189,15 @@ where
                 );
             }
 
-            // TODO: add safety comment
-            // SAFETY:
             unsafe {
                 df.with_column_unchecked(Column::new_scalar(
                     col.clone(),
-                    Scalar::new(DataType::String, AnyValue::StringOwned(name.into())),
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(
+                            self.options.path_name_for_include_file_path.unwrap().into(),
+                        ),
+                    ),
                     df.height(),
                 ));
             }
