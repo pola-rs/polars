@@ -1114,6 +1114,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     seq = seq.max(unsafe { MorselSeq::from_u64(max_morsel_seq.load(Ordering::Relaxed)) });
                                     did_finish &= outcome.did_finish();
                                 }
+                                seq = seq.successor();
 
                                 if !did_finish {
                                     phase_output.outcome.stop();
