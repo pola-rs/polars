@@ -1187,8 +1187,9 @@ def test_excel_write_worksheet_object() -> None:
             df.write_excel(None, worksheet=ws)
 
 
-def test_excel_write_beyond_max_rows_cols() -> None:
-    path = "/tmp/test.xlsx"
+def test_excel_write_beyond_max_rows_cols(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+    path = tmp_path / "test_max_dimensions.xlsx"
     sheet = "mysheet"
 
     df = pl.DataFrame({"col1": range(10), "col2": range(10, 20)})
