@@ -82,18 +82,14 @@ pub(super) fn parquet_file_info(
 
 // TODO! return metadata arced
 #[cfg(feature = "ipc")]
-pub(super) fn ipc_file_info(
-    sources: &ScanSources,
+pub fn ipc_file_info(
+    source: ScanSourceRef,
     file_options: &FileScanOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<(FileInfo, arrow::io::ipc::read::FileMetadata)> {
     use polars_core::error::feature_gated;
 
-    let Some(first) = sources.first() else {
-        polars_bail!(ComputeError: "expected at least 1 source");
-    };
-
-    let metadata = match first {
+    let metadata = match source {
         ScanSourceRef::Path(path) => {
             if is_cloud_url(path) {
                 feature_gated!("cloud", {

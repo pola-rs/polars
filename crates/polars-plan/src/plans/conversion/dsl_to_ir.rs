@@ -214,9 +214,15 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         metadata,
                         ..
                     } => {
-                        let (file_info, md) =
-                            scans::ipc_file_info(&sources, &file_options, cloud_options.as_ref())
-                                .map_err(|e| e.context(failed_here!(ipc scan)))?;
+                        let Some(first_source) = sources.first() else {
+                            polars_bail!(ComputeError: "expected at least 1 source");
+                        };
+                        let (file_info, md) = scans::ipc_file_info(
+                            first_source,
+                            &file_options,
+                            cloud_options.as_ref(),
+                        )
+                        .map_err(|e| e.context(failed_here!(ipc scan)))?;
                         *metadata = Some(Arc::new(md));
                         file_info
                     },
