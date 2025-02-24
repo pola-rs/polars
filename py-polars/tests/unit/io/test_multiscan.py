@@ -575,3 +575,29 @@ def test_multiscan_slice_parametric(
         .slice(offset, length)
         .collect(new_streaming=True),  # type: ignore[call-overload]
     )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
+    ],
+)
+def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
+    f = io.BytesIO()
+    write(pl.DataFrame({"a": [5, 10, 1996]}), f)
+    bs = f.getvalue()
+
+    out = scan([bs] * 1023)
+
+    assert_frame_equal(
+        out.collect(),
+        pl.DataFrame(
+            {
+                "a": [5, 10, 1996] * 1023,
+            }
+        ),
+    )
