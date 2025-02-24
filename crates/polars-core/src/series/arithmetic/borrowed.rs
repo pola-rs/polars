@@ -448,8 +448,21 @@ pub fn _struct_arithmetic<F: FnMut(&Series, &Series) -> PolarsResult<Series>>(
             Ok(rhs.try_apply_fields(|rhs| func(s, rhs))?.into_series())
         },
         _ => {
-            let (s, rhs) = align_chunks_binary(s, rhs);
+            let mut s = Cow::Borrowed(s);
+            let mut rhs = Cow::Borrowed(rhs);
+
+            match (s.len(), rhs.len()) {
+                (l, r) if l == r => {},
+                (1, _) => s = Cow::Owned(s.new_from_index(0, rhs.len())),
+                (_, 1) => rhs = Cow::Owned(rhs.new_from_index(0, s.len())),
+                (l, r) => {
+                    polars_bail!(ComputeError: "Struct arithmetic between different lengths {l} != {r}")
+                },
+            };
+            let (s, rhs) = align_chunks_binary(&s, &rhs);
             let mut s = s.into_owned();
+
+            // Expects lengths to be equal.
             s.zip_outer_validity(rhs.as_ref());
 
             let mut rhs_iter = rhs.fields_as_series().into_iter();

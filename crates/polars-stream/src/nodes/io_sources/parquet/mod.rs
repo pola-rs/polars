@@ -14,8 +14,9 @@ use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_io::RowIndex;
 use polars_parquet::read::read_metadata;
 use polars_parquet::read::schema::infer_schema_with_options;
+use polars_plan::dsl::{ScanSource, ScanSources};
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{FileInfo, ScanSource, ScanSources};
+use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
@@ -340,11 +341,11 @@ impl MultiScanable for ParquetSourceNode {
         if let Some(row_restriction) = row_restriction {
             match row_restriction {
                 RowRestriction::Slice(slice) => {
-                    self.file_options.slice = Some((slice.start as i64, slice.len()))
+                    self.file_options.slice = Some((slice.start as i64, slice.len()));
                 },
                 // @TODO: Cache
                 RowRestriction::Predicate(scan_predicate) => {
-                    self.predicate = Some(scan_predicate.to_io(None, &self.file_info.schema))
+                    self.predicate = Some(scan_predicate);
                 },
             }
         }

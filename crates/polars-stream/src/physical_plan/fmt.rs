@@ -1,7 +1,8 @@
 use std::fmt::Write;
 
+use polars_plan::dsl::FileScan;
 use polars_plan::plans::expr_ir::ExprIR;
-use polars_plan::plans::{AExpr, EscapeLabel, FileScan};
+use polars_plan::plans::{AExpr, EscapeLabel};
 use polars_plan::prelude::FileType;
 use polars_utils::arena::Arena;
 use polars_utils::itertools::Itertools;

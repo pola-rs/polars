@@ -595,6 +595,14 @@ fn get_arithmetic_field(
                         polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
                     },
                 },
+                (Duration(_), r) if r.is_primitive_numeric() => match op {
+                    Operator::Multiply => {
+                        return Ok(left_field);
+                    },
+                    _ => {
+                        polars_bail!(InvalidOperation: "{} not allowed on {} and {}", op, left_field.dtype, right_type)
+                    },
+                },
                 #[cfg(feature = "dtype-decimal")]
                 (Decimal(_, Some(scale_left)), Decimal(_, Some(scale_right))) => {
                     let scale = match op {

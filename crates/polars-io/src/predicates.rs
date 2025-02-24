@@ -1,5 +1,7 @@
+use std::fmt;
+
 use arrow::array::Array;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
@@ -348,6 +350,7 @@ pub trait SkipBatchPredicate: Send + Sync {
         batch_size: IdxSize,
         statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
     ) -> PolarsResult<bool>;
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
 }
 
 pub struct ColumnPredicates {
@@ -384,6 +387,12 @@ pub struct ScanIOPredicate {
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub column_predicates: Arc<ColumnPredicates>,
+}
+
+impl fmt::Debug for ScanIOPredicate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("scan_io_predicate")
+    }
 }
 
 /// A collection of column stats with a known schema.

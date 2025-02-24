@@ -7,7 +7,7 @@ use futures::StreamExt;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
-use polars_mem_engine::ScanPredicate;
+use polars_io::predicates::ScanIOPredicate;
 use polars_utils::index::AtomicIdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
@@ -26,8 +26,7 @@ pub mod parquet;
 #[derive(Clone, Debug)]
 pub enum RowRestriction {
     Slice(Range<usize>),
-    #[expect(dead_code)]
-    Predicate(ScanPredicate),
+    Predicate(ScanIOPredicate),
 }
 
 /// The state needed to manage a spawned [`SourceNode`].
