@@ -207,6 +207,7 @@ pub(super) fn construct(
         Sink {
             input,
             payload: SinkType::Memory,
+            num_partition_exprs: 0,
         } => *input,
         // Other sinks were not inserted during conversion,
         // so they are returned as-is

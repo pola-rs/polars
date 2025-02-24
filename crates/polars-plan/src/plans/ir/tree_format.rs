@@ -349,14 +349,27 @@ impl<'a> TreeFmtNode<'a> {
                     ExtContext { input, .. } => {
                         ND(wh(h, "EXTERNAL_CONTEXT"), vec![self.lp_node(None, *input)])
                     },
-                    Sink { input, payload } => ND(
-                        wh(
-                            h,
-                            match payload {
-                                SinkType::Memory => "SINK (memory)",
-                                SinkType::File { .. } => "SINK (file)",
-                            },
-                        ),
+                    Sink {
+                        input,
+                        payload,
+                        num_partition_exprs,
+                    } => ND(
+                        {
+                            let ty = match payload {
+                                SinkType::Memory => "memory",
+                                SinkType::File { .. } => "file",
+                            };
+                            if *num_partition_exprs == 0 {
+                                wh(h, &format!("SINK ({ty})"))
+                            } else {
+                                wh(
+                                    h,
+                                    &format!(
+                                        "SINK ({ty}, partioned by {num_partition_exprs} exprs)"
+                                    ),
+                                )
+                            }
+                        },
                         vec![self.lp_node(None, *input)],
                     ),
                     SimpleProjection { input, columns } => {

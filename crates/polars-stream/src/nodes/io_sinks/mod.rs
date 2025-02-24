@@ -19,6 +19,7 @@ pub mod ipc;
 pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+pub mod partition;
 
 pub enum SinkInputPort {
     Serial(Receiver<Morsel>),

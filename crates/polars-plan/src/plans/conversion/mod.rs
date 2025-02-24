@@ -270,9 +270,9 @@ impl IR {
                     .collect();
                 DslPlan::ExtContext { input, contexts }
             },
-            IR::Sink { input, payload } => {
+            IR::Sink { input, payload, num_partition_exprs } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
-                DslPlan::Sink { input, payload }
+                DslPlan::Sink { input, payload, num_partition_exprs }
             },
             #[cfg(feature = "merge_sorted")]
             IR::MergeSorted {

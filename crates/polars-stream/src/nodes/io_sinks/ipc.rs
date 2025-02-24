@@ -1,9 +1,11 @@
 use std::cmp::Reverse;
+use std::future::Future;
 use std::io::BufWriter;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::CompatLevel;
+use polars_core::prelude::{AnyValue, CompatLevel};
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow::io::ipc::write::{
     default_ipc_fields, dictionaries_to_encode, encode_dictionary, encode_record_batch,
@@ -15,6 +17,7 @@ use polars_io::ipc::{IpcWriter, IpcWriterOptions};
 use polars_io::SerWriter;
 use polars_utils::priority::Priority;
 
+use super::partition::PartionableSinkNode;
 use super::SinkNode;
 use crate::async_executor::spawn;
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -240,5 +243,36 @@ impl SinkNode for IpcSinkNode {
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
+    }
+}
+
+impl PartionableSinkNode for IpcSinkNode {
+    type SinkOptions = IpcWriterOptions;
+
+    fn new(
+        path: &Path,
+        input_schema: &SchemaRef,
+        options: &Self::SinkOptions,
+    ) -> impl Future<Output = PolarsResult<Self>> + Send + Sync {
+        async move {
+            Ok(Self::new(
+                input_schema.clone(),
+                path.to_path_buf(),
+                options.clone(),
+            ))
+        }
+    }
+
+    fn key_to_path(
+        _keys: &[AnyValue<'static>],
+        _options: &Self::SinkOptions,
+    ) -> PolarsResult<PathBuf> {
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+
+        // @Hack: Fix
+        let mut pb = PathBuf::new();
+        pb.push(&CTR.fetch_add(1, Ordering::Relaxed).to_string());
+        pb.set_extension("ipc");
+        Ok(pb)
     }
 }

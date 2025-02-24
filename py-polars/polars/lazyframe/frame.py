@@ -2308,6 +2308,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | Literal["auto"]
         | None = "auto",
         retries: int = 2,
+        partition_by: None | list[Expr] = None,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2464,6 +2465,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
+            partition_by=None if partition_by is None else [e._pyexpr for e in partition_by],
         )
 
     @unstable()

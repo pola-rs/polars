@@ -730,7 +730,7 @@ impl LazyFrame {
         #[cfg(feature = "new_streaming")]
         {
             let mut slf = self;
-            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory) {
+            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory, None) {
                 return Ok(df?.unwrap());
             }
 
@@ -779,6 +779,27 @@ impl LazyFrame {
                 cloud_options,
             },
             "collect().write_parquet()",
+        )
+    }
+
+    /// Stream a query result into parquet files partitioned by certain expressions. This is useful
+    /// if the final result doesn't fit into memory. This methods will return an error if the query
+    /// cannot be completely done in a streaming fashion.
+    #[cfg(feature = "parquet")]
+    pub fn sink_parquet_partitioned(
+        self,
+        path: &dyn AsRef<Path>,
+        options: ParquetWriteOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        partition_by: Vec<Expr>,
+    ) -> PolarsResult<()> {
+        self.sink_partioned(
+            SinkType::File {
+                path: Arc::new(path.as_ref().to_path_buf()),
+                file_type: FileType::Parquet(options),
+                cloud_options,
+            },
+            partition_by,
         )
     }
 
@@ -846,7 +867,10 @@ impl LazyFrame {
     pub fn try_new_streaming_if_requested(
         &mut self,
         payload: SinkType,
+        partition_by: Option<Vec<Expr>>,
     ) -> Option<PolarsResult<Option<DataFrame>>> {
+        use polars_utils::format_pl_smallstr;
+
         let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
         let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
 
@@ -857,6 +881,20 @@ impl LazyFrame {
             // Try to run using the new streaming engine, falling back
             // if it fails in a todo!() error if auto_new_streaming is set.
             let mut new_stream_lazy = self.clone();
+            let mut num_partition_exprs = 0;
+            if let Some(mut partition_by) = partition_by {
+                if partition_by.is_empty() {
+                    return Some(Err(
+                        polars_err!(ComputeError: "cannot partition_by without expressions"),
+                    ));
+                }
+                num_partition_exprs = partition_by.len();
+                for (i, p) in partition_by.iter_mut().enumerate() {
+                    *p = std::mem::take(p).alias(format_pl_smallstr!("__PL_PARTBY_{i}"));
+                }
+                new_stream_lazy = new_stream_lazy.with_columns(partition_by);
+            }
+
             new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
             new_stream_lazy.opt_state &= !OptFlags::STREAMING;
             let mut alp_plan = match new_stream_lazy.to_alp_optimized() {
@@ -866,6 +904,7 @@ impl LazyFrame {
             let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
                 input: alp_plan.lp_top,
                 payload,
+                num_partition_exprs,
             });
 
             let _hold = StringCacheHolder::hold();
@@ -906,7 +945,7 @@ impl LazyFrame {
         #[cfg(feature = "new_streaming")]
         {
             if self
-                .try_new_streaming_if_requested(payload.clone())
+                .try_new_streaming_if_requested(payload.clone(), None)
                 .is_some()
             {
                 return Ok(());
@@ -916,6 +955,7 @@ impl LazyFrame {
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
             payload,
+            num_partition_exprs: 0,
         };
         self.opt_state |= OptFlags::STREAMING;
         let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
@@ -926,6 +966,33 @@ impl LazyFrame {
         );
         let _ = physical_plan.execute(&mut state)?;
         Ok(())
+    }
+
+    #[cfg(any(
+        feature = "ipc",
+        feature = "parquet",
+        feature = "csv",
+        feature = "json",
+    ))]
+    fn sink_partioned(
+        mut self,
+        payload: SinkType,
+        partition_by: Vec<Expr>,
+    ) -> Result<(), PolarsError> {
+        #[cfg(feature = "new_streaming")]
+        {
+            if self
+                .try_new_streaming_if_requested(payload.clone(), Some(partition_by))
+                .is_some()
+            {
+                return Ok(());
+            }
+        }
+
+        Err(polars_err!(
+            ComputeError: "cannot run partition_by in streaming order; \
+            try using the new streaming engine"
+        ))
     }
 
     /// Filter frame rows that match a predicate expression.

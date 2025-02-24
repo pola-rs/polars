@@ -174,7 +174,8 @@ where
 {
     use IR::*;
     let out = match lp_arena.get(node) {
-        Sink { input, payload } => {
+        Sink { input, payload, num_partition_exprs } => {
+            assert_eq!(*num_partition_exprs, 0);
             let input_schema = lp_arena.get(*input).schema(lp_arena);
             match payload {
                 SinkType::Memory => {

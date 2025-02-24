@@ -224,54 +224,86 @@ fn to_graph_rec<'a>(
             path,
             file_type,
             input,
+            num_partition_exprs,
         } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
 
-            match file_type {
-                #[cfg(feature = "ipc")]
-                FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
-                        input_schema,
-                        path.to_path_buf(),
-                        *ipc_writer_options,
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "json")]
-                FileType::Json(_) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
-                        path.to_path_buf(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "parquet")]
-                FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
-                        input_schema,
-                        path,
-                        parquet_writer_options,
-                    )?),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(feature = "csv")]
-                FileType::Csv(csv_writer_options) => ctx.graph.add_node(
-                    SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        input_schema,
-                        path.to_path_buf(),
-                        csv_writer_options.clone(),
-                    )),
-                    [(input_key, input.port)],
-                ),
-                #[cfg(not(any(
-                    feature = "csv",
-                    feature = "parquet",
-                    feature = "json",
-                    feature = "ipc"
-                )))]
-                _ => {
-                    panic!("activate source feature")
-                },
+            if *num_partition_exprs > 0 {
+                match file_type {
+                    #[cfg(feature = "ipc")]
+                    FileType::Ipc(_) => todo!(),
+                    #[cfg(feature = "json")]
+                    FileType::Json(_) => todo!(),
+                    #[cfg(feature = "parquet")]
+                    FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
+                        SinkComputeNode::from(nodes::io_sinks::partition::PartitionSink::<
+                            nodes::io_sinks::parquet::ParquetSinkNode,
+                        >::new(
+                            *parquet_writer_options,
+                            *num_partition_exprs,
+                            input_schema,
+                        )),
+                        [(input_key, input.port)],
+                    ),
+                    #[cfg(feature = "csv")]
+                    FileType::Csv(_) => todo!(),
+                    #[cfg(not(any(
+                        feature = "csv",
+                        feature = "parquet",
+                        feature = "json",
+                        feature = "ipc"
+                    )))]
+                    _ => {
+                        panic!("activate source feature")
+                    },
+                }
+            } else {
+                match file_type {
+                    #[cfg(feature = "ipc")]
+                    FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
+                        SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
+                            input_schema,
+                            path.to_path_buf(),
+                            *ipc_writer_options,
+                        )),
+                        [(input_key, input.port)],
+                    ),
+                    #[cfg(feature = "json")]
+                    FileType::Json(_) => ctx.graph.add_node(
+                        SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
+                            path.to_path_buf(),
+                        )),
+                        [(input_key, input.port)],
+                    ),
+                    #[cfg(feature = "parquet")]
+                    FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
+                        SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
+                            input_schema,
+                            path,
+                            parquet_writer_options,
+                        )?),
+                        [(input_key, input.port)],
+                    ),
+                    #[cfg(feature = "csv")]
+                    FileType::Csv(csv_writer_options) => ctx.graph.add_node(
+                        SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
+                            input_schema,
+                            path.to_path_buf(),
+                            csv_writer_options.clone(),
+                        )),
+                        [(input_key, input.port)],
+                    ),
+                    #[cfg(not(any(
+                        feature = "csv",
+                        feature = "parquet",
+                        feature = "json",
+                        feature = "ipc"
+                    )))]
+                    _ => {
+                        panic!("activate source feature")
+                    },
+                }
             }
         },
 

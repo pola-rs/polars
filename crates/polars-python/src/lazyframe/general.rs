@@ -682,7 +682,7 @@ impl PyLazyFrame {
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
         path, compression, compression_level, statistics, row_group_size, data_page_size,
-        maintain_order, cloud_options, credential_provider, retries
+        maintain_order, cloud_options, credential_provider, retries, partition_by,
     ))]
     fn sink_parquet(
         &self,
@@ -697,6 +697,7 @@ impl PyLazyFrame {
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
+        partition_by: Option<Vec<PyExpr>>,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -720,7 +721,18 @@ impl PyLazyFrame {
             )
         };
 
-        py.enter_polars(|| self.ldf.clone().sink_parquet(&path, options, cloud_options))
+        py.enter_polars(|| match partition_by {
+            None => self.ldf.clone().sink_parquet(&path, options, cloud_options),
+            Some(partition_by) => {
+                let partition_by = partition_by.into_iter().map(|e| e.inner).collect();
+                self.ldf.clone().sink_parquet_partitioned(
+                    &path,
+                    options,
+                    cloud_options,
+                    partition_by,
+                )
+            },
+        })
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]

@@ -220,7 +220,7 @@ pub fn lower_ir(
             node_kind
         },
 
-        IR::Sink { input, payload } => match payload {
+        IR::Sink { input, payload, num_partition_exprs } => match payload {
             SinkType::Memory => {
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::InMemorySink { input: phys_input }
@@ -232,6 +232,7 @@ pub fn lower_ir(
             } => {
                 let path = path.clone();
                 let file_type = file_type.clone();
+                let num_partition_exprs = *num_partition_exprs;
 
                 match file_type {
                     #[cfg(feature = "ipc")]
@@ -241,6 +242,7 @@ pub fn lower_ir(
                             path,
                             file_type,
                             input: phys_input,
+                            num_partition_exprs,
                         }
                     },
                     #[cfg(feature = "parquet")]
@@ -250,6 +252,7 @@ pub fn lower_ir(
                             path,
                             file_type,
                             input: phys_input,
+                            num_partition_exprs,
                         }
                     },
                     #[cfg(feature = "csv")]
@@ -259,6 +262,7 @@ pub fn lower_ir(
                             path,
                             file_type,
                             input: phys_input,
+                            num_partition_exprs,
                         }
                     },
                     #[cfg(feature = "json")]
@@ -268,6 +272,7 @@ pub fn lower_ir(
                             path,
                             file_type,
                             input: phys_input,
+                            num_partition_exprs,
                         }
                     },
                 }

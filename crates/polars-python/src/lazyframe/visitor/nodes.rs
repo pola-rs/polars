@@ -644,6 +644,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
         IR::Sink {
             input: _,
             payload: _,
+            num_partition_exprs: _,
         } => Err(PyNotImplementedError::new_err(
             "Not expecting to see a Sink node",
         )),

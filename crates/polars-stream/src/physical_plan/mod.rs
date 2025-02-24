@@ -131,6 +131,7 @@ pub enum PhysNodeKind {
         path: Arc<PathBuf>,
         file_type: FileType,
         input: PhysStream,
+        num_partition_exprs: usize,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming mappings.

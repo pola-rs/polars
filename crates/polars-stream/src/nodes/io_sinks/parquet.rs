@@ -1,6 +1,8 @@
 use std::cmp::Reverse;
+use std::future::Future;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use polars_core::frame::DataFrame;
@@ -19,6 +21,7 @@ use polars_parquet::write::{
 };
 use polars_utils::priority::Priority;
 
+use super::partition::PartionableSinkNode;
 use super::{SinkNode, SinkRecvPort};
 use crate::async_executor::spawn;
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -276,5 +279,30 @@ impl SinkNode for ParquetSinkNode {
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
+    }
+}
+
+impl PartionableSinkNode for ParquetSinkNode {
+    type SinkOptions = ParquetWriteOptions;
+
+    fn new(
+        path: &Path,
+        input_schema: &SchemaRef,
+        options: &Self::SinkOptions,
+    ) -> impl Future<Output = PolarsResult<Self>> + Send + Sync {
+        async move { Self::new(input_schema.clone(), path, options) }
+    }
+
+    fn key_to_path(
+        keys: &[polars_core::prelude::AnyValue<'static>],
+        options: &Self::SinkOptions,
+    ) -> PolarsResult<PathBuf> {
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+
+        // @Hack: Fix
+        let mut pb = PathBuf::new();
+        pb.push(&CTR.fetch_add(1, Ordering::Relaxed).to_string());
+        pb.set_extension("parquet");
+        Ok(pb)
     }
 }
