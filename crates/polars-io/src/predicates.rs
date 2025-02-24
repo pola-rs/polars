@@ -5,6 +5,7 @@ use arrow::bitmap::{Bitmap, MutableBitmap};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::read::expr::{ParquetColumnExpr, ParquetScalar, ParquetScalarRange};
+use polars_utils::format_pl_smallstr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -348,11 +349,77 @@ pub trait SkipBatchPredicate: Send + Sync {
     fn can_skip_batch(
         &self,
         batch_size: IdxSize,
+        live_columns: &PlIndexSet<PlSmallStr>,
         statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
-    ) -> PolarsResult<bool>;
+    ) -> PolarsResult<bool> {
+        let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
+
+        columns.push(Column::new_scalar(
+            PlSmallStr::from_static("len"),
+            Scalar::null(IDX_DTYPE),
+            1,
+        ));
+        for col in live_columns.iter() {
+            let dtype = &statistics.get(col).unwrap().dtype;
+            columns.extend([
+                Column::new_scalar(
+                    format_pl_smallstr!("{col}_min"),
+                    Scalar::null(dtype.clone()),
+                    1,
+                ),
+                Column::new_scalar(
+                    format_pl_smallstr!("{col}_max"),
+                    Scalar::null(dtype.clone()),
+                    1,
+                ),
+                Column::new_scalar(format_pl_smallstr!("{col}_nc"), Scalar::null(IDX_DTYPE), 1),
+            ]);
+        }
+
+        // SAFETY:
+        // * Each column is length = 1
+        // * We have an IndexSet, so each column name is unique
+        let mut df = unsafe { DataFrame::new_no_checks(1, columns) };
+
+        // SAFETY: We don't update the dtype, name or length of columns.
+        let columns = unsafe { df.get_columns_mut() };
+
+        // Set `len` statistic.
+        columns[0]
+            .as_scalar_column_mut()
+            .unwrap()
+            .with_value(batch_size.into());
+
+        for (col, stat) in statistics {
+            // Skip all statistics of columns that are not used in the predicate.
+            let Some(idx) = live_columns.get_index_of(col.as_str()) else {
+                continue;
+            };
+
+            let nc = stat.null_count.map_or(AnyValue::Null, |nc| nc.into());
+
+            // Set `min`, `max` and `null_count` statistics.
+            let col_idx = (idx * 3) + 1;
+            columns[col_idx]
+                .as_scalar_column_mut()
+                .unwrap()
+                .with_value(stat.min);
+            columns[col_idx + 1]
+                .as_scalar_column_mut()
+                .unwrap()
+                .with_value(stat.max);
+            columns[col_idx + 2]
+                .as_scalar_column_mut()
+                .unwrap()
+                .with_value(nc);
+        }
+
+        Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
+    }
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
 }
 
+#[derive(Clone)]
 pub struct ColumnPredicates {
     pub predicates: PlHashMap<
         PlSmallStr,
@@ -375,6 +442,40 @@ impl Default for ColumnPredicates {
     }
 }
 
+pub struct PhysicalExprWithConstCols<T> {
+    constants: Vec<(PlSmallStr, Scalar)>,
+    child: T,
+}
+
+impl SkipBatchPredicate for PhysicalExprWithConstCols<Arc<dyn SkipBatchPredicate>> {
+    fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
+        let mut df = df.clone();
+        for (name, scalar) in self.constants.iter() {
+            df.with_column(Column::new_scalar(
+                name.clone(),
+                scalar.clone(),
+                df.height(),
+            ))?;
+        }
+        self.child.evaluate_with_stat_df(&df)
+    }
+}
+
+impl PhysicalIoExpr for PhysicalExprWithConstCols<Arc<dyn PhysicalIoExpr>> {
+    fn evaluate_io(&self, df: &DataFrame) -> PolarsResult<Series> {
+        let mut df = df.clone();
+        for (name, scalar) in self.constants.iter() {
+            df.with_column(Column::new_scalar(
+                name.clone(),
+                scalar.clone(),
+                df.height(),
+            ))?;
+        }
+
+        self.child.evaluate_io(&df)
+    }
+}
+
 #[derive(Clone)]
 pub struct ScanIOPredicate {
     pub predicate: Arc<dyn PhysicalIoExpr>,
@@ -387,6 +488,45 @@ pub struct ScanIOPredicate {
 
     /// A predicate that gets given statistics and evaluates whether a batch can be skipped.
     pub column_predicates: Arc<ColumnPredicates>,
+}
+impl ScanIOPredicate {
+    pub fn set_external_constant_columns(&mut self, constant_columns: Vec<(PlSmallStr, Scalar)>) {
+        let mut live_columns = self.live_columns.as_ref().clone();
+        for (c, _) in constant_columns.iter() {
+            live_columns.swap_remove(c);
+        }
+        self.live_columns = Arc::new(live_columns);
+
+        if let Some(skip_batch_predicate) = self.skip_batch_predicate.take() {
+            let mut sbp_constant_columns = Vec::with_capacity(constant_columns.len() * 3);
+            for (c, v) in constant_columns.iter() {
+                sbp_constant_columns.push((format_pl_smallstr!("{c}_min"), v.clone()));
+                sbp_constant_columns.push((format_pl_smallstr!("{c}_max"), v.clone()));
+                let nc = if v.is_null() {
+                    AnyValue::Null
+                } else {
+                    (0 as IdxSize).into()
+                };
+                sbp_constant_columns
+                    .push((format_pl_smallstr!("{c}_nc"), Scalar::new(IDX_DTYPE, nc)));
+            }
+            self.skip_batch_predicate = Some(Arc::new(PhysicalExprWithConstCols {
+                constants: sbp_constant_columns,
+                child: skip_batch_predicate,
+            }));
+        }
+
+        let mut column_predicates = self.column_predicates.as_ref().clone();
+        for (c, _) in constant_columns.iter() {
+            column_predicates.predicates.remove(c);
+        }
+        self.column_predicates = Arc::new(column_predicates);
+
+        self.predicate = Arc::new(PhysicalExprWithConstCols {
+            constants: constant_columns,
+            child: self.predicate.clone(),
+        });
+    }
 }
 
 impl fmt::Debug for ScanIOPredicate {

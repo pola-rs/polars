@@ -68,8 +68,8 @@ pub fn read_this_row_group(
 
     let mut should_read = true;
 
-    if let Some(pred) = predicate {
-        if let Some(pred) = &pred.skip_batch_predicate {
+    if let Some(predicate) = predicate {
+        if let Some(pred) = &predicate.skip_batch_predicate {
             if let Some(stats) = collect_statistics(md, schema)? {
                 let stats = PlIndexMap::from_iter(stats.column_stats().iter().map(|col| {
                     (
@@ -86,7 +86,11 @@ pub fn read_this_row_group(
                         },
                     )
                 }));
-                let pred_result = pred.can_skip_batch(md.num_rows() as IdxSize, stats);
+                let pred_result = pred.can_skip_batch(
+                    md.num_rows() as IdxSize,
+                    predicate.live_columns.as_ref(),
+                    stats,
+                );
 
                 // a parquet file may not have statistics of all columns
                 match pred_result {
@@ -97,7 +101,7 @@ pub fn read_this_row_group(
                     _ => {},
                 }
             }
-        } else if let Some(pred) = pred.predicate.as_stats_evaluator() {
+        } else if let Some(pred) = predicate.predicate.as_stats_evaluator() {
             if let Some(stats) = collect_statistics(md, schema)? {
                 let pred_result = pred.should_read(&stats);
 
