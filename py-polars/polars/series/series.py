@@ -1084,10 +1084,12 @@ class Series:
     def __truediv__(self, other: Any) -> Series | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) / other
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before dividing datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
             return self.to_frame().select(F.col(self.name) / other).to_series()
 
         self = (
@@ -1095,7 +1097,7 @@ class Series:
             if (
                 self.dtype.is_float()
                 or self.dtype.is_decimal()
-                or isinstance(self.dtype, (List, Array))
+                or isinstance(self.dtype, (List, Array, Duration))
                 or (
                     isinstance(other, Series) and isinstance(other.dtype, (List, Array))
                 )
@@ -1139,10 +1141,12 @@ class Series:
     def __mul__(self, other: Any) -> Series | DataFrame | Expr:
         if isinstance(other, pl.Expr):
             return F.lit(self) * other
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
-        if self.dtype.is_decimal() and isinstance(other, (float, int)):
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
             return self.to_frame().select(F.col(self.name) * other).to_series()
         elif isinstance(other, pl.DataFrame):
             return other * self
@@ -1203,10 +1207,12 @@ class Series:
         return self._arithmetic(other, "div", "div_<>_rhs")
 
     def __rmul__(self, other: Any) -> Series:
-        if self.dtype.is_temporal():
+        if self.dtype.is_temporal() and not isinstance(self.dtype, Duration):
             msg = "first cast to integer before multiplying datelike dtypes"
             raise TypeError(msg)
-        if isinstance(other, (int, float)) and self.dtype.is_decimal():
+        if isinstance(other, (int, float)) and (
+            self.dtype.is_decimal() or isinstance(self.dtype, Duration)
+        ):
             return self.to_frame().select(other * F.col(self.name)).to_series()
         return self._arithmetic(other, "mul", "mul_<>")
 
