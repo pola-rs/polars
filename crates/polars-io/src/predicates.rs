@@ -427,7 +427,7 @@ impl SkipBatchPredicate for PhysicalExprWithConstCols<Arc<dyn SkipBatchPredicate
     fn schema(&self) -> &SchemaRef {
         self.child.schema()
     }
-    
+
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
         let mut df = df.clone();
         for (name, scalar) in self.constants.iter() {

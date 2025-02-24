@@ -167,7 +167,10 @@ impl ScanPredicate {
     }
 
     /// Create a predicate to skip batches using statistics.
-    pub(crate) fn to_dyn_skip_batch_predicate(&self, schema: SchemaRef) -> Option<Arc<dyn SkipBatchPredicate>> {
+    pub(crate) fn to_dyn_skip_batch_predicate(
+        &self,
+        schema: SchemaRef,
+    ) -> Option<Arc<dyn SkipBatchPredicate>> {
         let skip_batch_predicate = self.skip_batch_predicate.as_ref()?.clone();
         Some(Arc::new(SkipBatchPredicateHelper {
             skip_batch_predicate,

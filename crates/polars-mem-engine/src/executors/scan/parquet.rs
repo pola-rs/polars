@@ -81,10 +81,12 @@ impl ParquetExec {
                 None
             }
         };
-        let predicate = self
-            .predicate
-            .as_ref()
-            .map(|p| p.to_io(self.skip_batch_predicate.as_ref(), self.file_info.schema.clone()));
+        let predicate = self.predicate.as_ref().map(|p| {
+            p.to_io(
+                self.skip_batch_predicate.as_ref(),
+                self.file_info.schema.clone(),
+            )
+        });
         let mut base_row_index = self.file_options.row_index.take();
 
         // (offset, end)
