@@ -552,8 +552,7 @@ impl MultiScanable for CsvSourceNode {
 
     const BASE_NAME: &'static str = "csv";
 
-    const DOES_PRED_PD: bool = false;
-    const DOES_SLICE_PD: bool = true;
+    const SPECIALIZED_PRED_PD: bool = false;
 
     async fn new(
         source: ScanSource,

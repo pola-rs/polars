@@ -377,7 +377,9 @@ fn to_graph_rec<'a>(
                     )
                 })
                 .transpose()?;
-            let predicate = predicate.as_ref().map(|p| p.to_io(None, file_schema));
+            let predicate = predicate
+                .as_ref()
+                .map(|p| p.to_io(None, file_schema.clone()));
 
             match scan_type {
                 #[cfg(feature = "parquet")]
@@ -505,7 +507,9 @@ fn to_graph_rec<'a>(
                     )
                 })
                 .transpose()?;
-            let predicate = predicate.as_ref().map(|p| p.to_io(None, &file_info.schema));
+            let predicate = predicate
+                .as_ref()
+                .map(|p| p.to_io(None, file_info.schema.clone()));
 
             {
                 use polars_plan::prelude::FileScan;
