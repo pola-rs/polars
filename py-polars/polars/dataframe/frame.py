@@ -3870,7 +3870,8 @@ class DataFrame:
 
             Possible values:
 
-            - `True`: enable default set of statistics (default)
+            - `True`: enable default set of statistics (default). Some
+              statistics may be disabled.
             - `False`: disable all statistics
             - "full": calculate and write all available statistics. Cannot be
               combined with `use_pyarrow`.
