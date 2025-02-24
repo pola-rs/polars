@@ -413,7 +413,7 @@ impl MultiScanExec {
             let skip_batch_predicate = file_predicate
                 .as_ref()
                 .take_if(|_| use_statistics)
-                .and_then(|p| p.to_dyn_skip_batch_predicate());
+                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone()));
             if let Some(skip_batch_predicate) = &skip_batch_predicate {
                 let can_skip_batch = skip_batch_predicate.can_skip_batch(
                     exec_source.num_unfiltered_rows()?,

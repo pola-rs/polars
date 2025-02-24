@@ -5,7 +5,7 @@ use arrow::bitmap::Bitmap;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{AnyValue, Column, Field, GroupPositions, PlHashMap, PlIndexSet};
 use polars_core::scalar::Scalar;
-use polars_core::schema::Schema;
+use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
 use polars_expr::prelude::{phys_expr_to_io_expr, AggregationContext, PhysicalExpr};
 use polars_expr::state::ExecutionState;
@@ -56,6 +56,7 @@ pub struct PhysicalColumnPredicates {
 /// Helper to implement [`SkipBatchPredicate`].
 struct SkipBatchPredicateHelper {
     skip_batch_predicate: Arc<dyn PhysicalExpr>,
+    schema: SchemaRef,
 }
 
 /// Helper for the [`PhysicalExpr`] trait to include constant columns.
@@ -166,23 +167,25 @@ impl ScanPredicate {
     }
 
     /// Create a predicate to skip batches using statistics.
-    pub(crate) fn to_dyn_skip_batch_predicate(&self) -> Option<Arc<dyn SkipBatchPredicate>> {
+    pub(crate) fn to_dyn_skip_batch_predicate(&self, schema: SchemaRef) -> Option<Arc<dyn SkipBatchPredicate>> {
         let skip_batch_predicate = self.skip_batch_predicate.as_ref()?.clone();
         Some(Arc::new(SkipBatchPredicateHelper {
             skip_batch_predicate,
+            schema,
         }))
     }
 
     pub fn to_io(
         &self,
         skip_batch_predicate: Option<&Arc<dyn SkipBatchPredicate>>,
+        schema: SchemaRef,
     ) -> ScanIOPredicate {
         ScanIOPredicate {
             predicate: phys_expr_to_io_expr(self.predicate.clone()),
             live_columns: self.live_columns.clone(),
             skip_batch_predicate: skip_batch_predicate
                 .cloned()
-                .or_else(|| self.to_dyn_skip_batch_predicate()),
+                .or_else(|| self.to_dyn_skip_batch_predicate(schema)),
             column_predicates: Arc::new(ColumnPredicates {
                 predicates: self
                     .column_predicates
@@ -197,6 +200,10 @@ impl ScanPredicate {
 }
 
 impl SkipBatchPredicate for SkipBatchPredicateHelper {
+    fn schema(&self) -> &SchemaRef {
+        &self.schema
+    }
+
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
         let array = self
             .skip_batch_predicate

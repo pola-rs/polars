@@ -346,74 +346,50 @@ pub struct ColumnStatistics {
 }
 
 pub trait SkipBatchPredicate: Send + Sync {
+    fn schema(&self) -> &SchemaRef;
+
     fn can_skip_batch(
         &self,
         batch_size: IdxSize,
         live_columns: &PlIndexSet<PlSmallStr>,
-        statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
+        mut statistics: PlIndexMap<PlSmallStr, ColumnStatistics>,
     ) -> PolarsResult<bool> {
         let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
 
         columns.push(Column::new_scalar(
             PlSmallStr::from_static("len"),
-            Scalar::null(IDX_DTYPE),
+            Scalar::new(IDX_DTYPE, batch_size.into()),
             1,
         ));
+
         for col in live_columns.iter() {
-            let dtype = &statistics.get(col).unwrap().dtype;
+            let dtype = self.schema().get(col).unwrap();
+            let (min, max, nc) = match statistics.swap_remove(col) {
+                None => (
+                    Scalar::null(dtype.clone()),
+                    Scalar::null(dtype.clone()),
+                    Scalar::null(IDX_DTYPE),
+                ),
+                Some(stat) => (
+                    Scalar::new(dtype.clone(), stat.min),
+                    Scalar::new(dtype.clone(), stat.max),
+                    Scalar::new(
+                        IDX_DTYPE,
+                        stat.null_count.map_or(AnyValue::Null, |nc| nc.into()),
+                    ),
+                ),
+            };
             columns.extend([
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_min"),
-                    Scalar::null(dtype.clone()),
-                    1,
-                ),
-                Column::new_scalar(
-                    format_pl_smallstr!("{col}_max"),
-                    Scalar::null(dtype.clone()),
-                    1,
-                ),
-                Column::new_scalar(format_pl_smallstr!("{col}_nc"), Scalar::null(IDX_DTYPE), 1),
+                Column::new_scalar(format_pl_smallstr!("{col}_min"), min, 1),
+                Column::new_scalar(format_pl_smallstr!("{col}_max"), max, 1),
+                Column::new_scalar(format_pl_smallstr!("{col}_nc"), nc, 1),
             ]);
         }
 
         // SAFETY:
         // * Each column is length = 1
         // * We have an IndexSet, so each column name is unique
-        let mut df = unsafe { DataFrame::new_no_checks(1, columns) };
-
-        // SAFETY: We don't update the dtype, name or length of columns.
-        let columns = unsafe { df.get_columns_mut() };
-
-        // Set `len` statistic.
-        columns[0]
-            .as_scalar_column_mut()
-            .unwrap()
-            .with_value(batch_size.into());
-
-        for (col, stat) in statistics {
-            // Skip all statistics of columns that are not used in the predicate.
-            let Some(idx) = live_columns.get_index_of(col.as_str()) else {
-                continue;
-            };
-
-            let nc = stat.null_count.map_or(AnyValue::Null, |nc| nc.into());
-
-            // Set `min`, `max` and `null_count` statistics.
-            let col_idx = (idx * 3) + 1;
-            columns[col_idx]
-                .as_scalar_column_mut()
-                .unwrap()
-                .with_value(stat.min);
-            columns[col_idx + 1]
-                .as_scalar_column_mut()
-                .unwrap()
-                .with_value(stat.max);
-            columns[col_idx + 2]
-                .as_scalar_column_mut()
-                .unwrap()
-                .with_value(nc);
-        }
-
+        let df = unsafe { DataFrame::new_no_checks(1, columns) };
         Ok(self.evaluate_with_stat_df(&df)?.get_bit(0))
     }
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap>;
@@ -448,6 +424,10 @@ pub struct PhysicalExprWithConstCols<T> {
 }
 
 impl SkipBatchPredicate for PhysicalExprWithConstCols<Arc<dyn SkipBatchPredicate>> {
+    fn schema(&self) -> &SchemaRef {
+        self.child.schema()
+    }
+    
     fn evaluate_with_stat_df(&self, df: &DataFrame) -> PolarsResult<Bitmap> {
         let mut df = df.clone();
         for (name, scalar) in self.constants.iter() {
