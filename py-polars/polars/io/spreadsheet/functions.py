@@ -62,6 +62,9 @@ def _sources(source: FileSource) -> tuple[Any, bool]:
     for src in source:  # type: ignore[union-attr]
         if isinstance(src, (str, os.PathLike)) and not Path(src).exists():
             src = os.path.expanduser(str(src))  # noqa: PTH111
+            if looks_like_url(src):
+                sources.append(src)
+                continue
             sources.extend(files := glob(src, recursive=True))  # noqa: PTH207
             if not files:
                 msg = f"no workbook found at path {src!r}"

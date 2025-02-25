@@ -593,11 +593,24 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
 
         let argsort = |args| {
-            sort_unstable_by_branch(args, options, |a, b| unsafe {
-                let a = arr.value_unchecked(*a as usize);
-                let b = arr.value_unchecked(*b as usize);
-                a.tot_cmp(&b)
-            });
+            if options.maintain_order {
+                sort_by_branch(
+                    args,
+                    options.descending,
+                    |a, b| unsafe {
+                        let a = arr.value_unchecked(*a as usize);
+                        let b = arr.value_unchecked(*b as usize);
+                        a.tot_cmp(&b)
+                    },
+                    options.multithreaded,
+                );
+            } else {
+                sort_unstable_by_branch(args, options, |a, b| unsafe {
+                    let a = arr.value_unchecked(*a as usize);
+                    let b = arr.value_unchecked(*b as usize);
+                    a.tot_cmp(&b)
+                });
+            }
         };
 
         if self.null_count() == 0 {

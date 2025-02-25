@@ -1,12 +1,20 @@
 use std::fmt;
+use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
 use polars_utils::arena::Node;
+#[cfg(feature = "serde")]
+use polars_utils::pl_serialize;
 use recursive::recursive;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::*;
+// (Major, Minor)
+// Add a field -> increment minor
+// Remove or modify a field -> increment major and reset minor
+pub static DSL_VERSION: (u16, u16) = (0, 0);
+static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum DslPlan {
@@ -204,5 +212,41 @@ impl DslPlan {
         let plan = IRPlan::new(node, lp_arena, expr_arena);
 
         Ok(plan)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn serialize_versioned<W: Write>(&self, mut writer: W) -> PolarsResult<()> {
+        let le_major = DSL_VERSION.0.to_le_bytes();
+        let le_minor = DSL_VERSION.1.to_le_bytes();
+        writer.write_all(DSL_MAGIC_BYTES)?;
+        writer.write_all(&le_major)?;
+        writer.write_all(&le_minor)?;
+        pl_serialize::SerializeOptions::default().serialize_into_writer::<_, _, true>(writer, self)
+    }
+
+    #[cfg(feature = "serde")]
+    pub fn deserialize_versioned<R: Read>(mut reader: R) -> PolarsResult<Self> {
+        const MAGIC_LEN: usize = DSL_MAGIC_BYTES.len();
+        let mut version_magic = [0u8; MAGIC_LEN + 4];
+        reader.read_exact(&mut version_magic)?;
+
+        if &version_magic[..MAGIC_LEN] != DSL_MAGIC_BYTES {
+            polars_bail!(ComputeError: "dsl magic bytes not found")
+        }
+
+        // The DSL serialization is forward compatible if fields don't change,
+        // so we don't check equality here, we just use this version
+        // to inform users when the deserialization fails.
+        let major = u16::from_be_bytes(version_magic[MAGIC_LEN..MAGIC_LEN + 2].try_into().unwrap());
+        let minor = u16::from_be_bytes(
+            version_magic[MAGIC_LEN + 2..MAGIC_LEN + 4]
+                .try_into()
+                .unwrap(),
+        );
+
+        pl_serialize::SerializeOptions::default()
+                    .deserialize_from_reader::<_, _, true>(reader).map_err(|e| {
+                    polars_err!(ComputeError: "deserialization failed\n\ngiven DSL_VERSION: {:?} is not compatible with this Polars version which uses DSL_VERSION: {:?}\nerror: {}", (major, minor), DSL_VERSION, e)
+                })
     }
 }

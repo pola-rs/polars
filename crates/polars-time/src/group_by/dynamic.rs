@@ -6,6 +6,7 @@ use polars_core::utils::flatten::flatten_par;
 use polars_core::POOL;
 use polars_ops::series::SeriesMethods;
 use polars_utils::idx_vec::IdxVec;
+use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::slice::SortedSlice;
 use rayon::prelude::*;
@@ -84,9 +85,9 @@ const UP_NAME: &str = "_upper_boundary";
 pub trait PolarsTemporalGroupby {
     fn rolling(
         &self,
-        group_by: Vec<Column>,
+        group_by: Option<GroupsSlice>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)>;
+    ) -> PolarsResult<(Column, GroupPositions)>;
 
     fn group_by_dynamic(
         &self,
@@ -98,9 +99,9 @@ pub trait PolarsTemporalGroupby {
 impl PolarsTemporalGroupby for DataFrame {
     fn rolling(
         &self,
-        group_by: Vec<Column>,
+        group_by: Option<GroupsSlice>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
+    ) -> PolarsResult<(Column, GroupPositions)> {
         Wrap(self).rolling(group_by, options)
     }
 
@@ -116,16 +117,16 @@ impl PolarsTemporalGroupby for DataFrame {
 impl Wrap<&DataFrame> {
     fn rolling(
         &self,
-        group_by: Vec<Column>,
+        group_by: Option<GroupsSlice>,
         options: &RollingGroupOptions,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
+    ) -> PolarsResult<(Column, GroupPositions)> {
         polars_ensure!(
                         !options.period.is_zero() && !options.period.negative,
                         ComputeError:
                         "rolling window period should be strictly positive",
         );
         let time = self.0.column(&options.index_column)?.clone();
-        if group_by.is_empty() {
+        if group_by.is_none() {
             // If by is given, the column must be sorted in the 'by' arg, which we can not check now
             // this will be checked when the groups are materialized.
             time.as_materialized_series().ensure_sorted_arg("rolling")?;
@@ -147,7 +148,7 @@ impl Wrap<&DataFrame> {
             UInt32 | UInt64 | Int32 => {
                 let time_type_dt = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&Int64).unwrap().cast(&time_type_dt).unwrap();
-                let (out, by, gt) = self.impl_rolling(
+                let (out, gt) = self.impl_rolling(
                     dt,
                     group_by,
                     options,
@@ -156,12 +157,12 @@ impl Wrap<&DataFrame> {
                     &time_type_dt,
                 )?;
                 let out = out.cast(&Int64).unwrap().cast(time_type).unwrap();
-                return Ok((out, by, gt));
+                return Ok((out, gt));
             },
             Int64 => {
                 let time_type = Datetime(TimeUnit::Nanoseconds, None);
                 let dt = time.cast(&time_type).unwrap();
-                let (out, by, gt) = self.impl_rolling(
+                let (out, gt) = self.impl_rolling(
                     dt,
                     group_by,
                     options,
@@ -170,7 +171,7 @@ impl Wrap<&DataFrame> {
                     &time_type,
                 )?;
                 let out = out.cast(&Int64).unwrap();
-                return Ok((out, by, gt));
+                return Ok((out, gt));
             },
             dt => polars_bail!(
                 ComputeError:
@@ -516,15 +517,15 @@ impl Wrap<&DataFrame> {
     fn impl_rolling(
         &self,
         dt: Column,
-        group_by: Vec<Column>,
+        group_by: Option<GroupsSlice>,
         options: &RollingGroupOptions,
         tu: TimeUnit,
         tz: Option<Tz>,
         time_type: &DataType,
-    ) -> PolarsResult<(Column, Vec<Column>, GroupPositions)> {
+    ) -> PolarsResult<(Column, GroupPositions)> {
         let mut dt = dt.rechunk();
 
-        let groups = if group_by.is_empty() {
+        let groups = if group_by.is_none() {
             // a requirement for the index
             // so we can set this such that downstream code has this info
             dt.set_sorted_flag(IsSorted::Ascending);
@@ -543,76 +544,47 @@ impl Wrap<&DataFrame> {
                 rolling: true,
             })
         } else {
-            let groups = self
-                .0
-                .group_by_with_series(group_by.clone(), true, true)?
-                .take_groups();
+            let dt = dt.datetime().unwrap();
+            let vals = dt.downcast_iter().next().unwrap();
+            let ts = vals.values().as_slice();
 
-            // we keep a local copy, as we are reordering on next operation.
-            let dt_local = dt.datetime().unwrap().clone();
+            let groups = group_by.unwrap();
 
-            // make sure that the output order is correct
-            dt = unsafe { dt.agg_list(&groups).explode().unwrap() };
+            let iter = groups.into_par_iter().map(|[start, len]| {
+                let group_offset = start;
+                let start = start as usize;
+                let end = start + len as usize;
+                let values = &ts[start..end];
+                check_sortedness_slice(values)?;
 
-            // continue determining the rolling indexes.
+                let group = group_by_values(
+                    options.period,
+                    options.offset,
+                    values,
+                    options.closed_window,
+                    tu,
+                    tz,
+                )?;
 
-            POOL.install(|| match groups.as_ref() {
-                GroupsType::Idx(groups) => {
-                    let idx = groups
-                        .par_iter()
-                        .map(|base_g| {
-                            let dt = unsafe { dt_local.take_unchecked(base_g.1) };
-                            let vals = dt.downcast_iter().next().unwrap();
-                            let ts = vals.values().as_slice();
-                            if !matches!(dt.is_sorted_flag(), IsSorted::Ascending) {
-                                check_sortedness_slice(ts)?
-                            }
+                PolarsResult::Ok(
+                    group
+                        .iter()
+                        .map(|[start, len]| [*start + group_offset, *len])
+                        .collect_vec(),
+                )
+            });
 
-                            let sub_groups = group_by_values(
-                                options.period,
-                                options.offset,
-                                ts,
-                                options.closed_window,
-                                tu,
-                                tz,
-                            )?;
-                            Ok(update_subgroups_idx(&sub_groups, base_g))
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-
-                    Ok(GroupsType::Idx(GroupsIdx::from(idx)))
-                },
-                GroupsType::Slice { groups, .. } => {
-                    let slice_groups = groups
-                        .par_iter()
-                        .map(|base_g| {
-                            let dt = dt_local.slice(base_g[0] as i64, base_g[1] as usize);
-                            let vals = dt.downcast_iter().next().unwrap();
-                            let ts = vals.values().as_slice();
-                            let sub_groups = group_by_values(
-                                options.period,
-                                options.offset,
-                                ts,
-                                options.closed_window,
-                                tu,
-                                tz,
-                            )?;
-                            Ok(update_subgroups_slice(&sub_groups, *base_g))
-                        })
-                        .collect::<PolarsResult<Vec<_>>>()?;
-
-                    let slice_groups = flatten_par(&slice_groups);
-                    Ok(GroupsType::Slice {
-                        groups: slice_groups,
-                        rolling: false,
-                    })
-                },
+            let groups = POOL.install(|| iter.collect::<PolarsResult<Vec<_>>>())?;
+            let groups = POOL.install(|| flatten_par(&groups));
+            PolarsResult::Ok(GroupsType::Slice {
+                groups,
+                rolling: true,
             })
         }?;
 
         let dt = dt.cast(time_type).unwrap();
 
-        Ok((dt, group_by, groups.into_sliceable()))
+        Ok((dt, groups.into_sliceable()))
     }
 }
 
@@ -697,9 +669,9 @@ mod test {
             let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
             let df = DataFrame::new(vec![date, a.clone()])?;
 
-            let (_, _, groups) = df
+            let (_, groups) = df
                 .rolling(
-                    vec![],
+                    None,
                     &RollingGroupOptions {
                         index_column: "dt".into(),
                         period: Duration::parse("2d"),
@@ -744,9 +716,9 @@ mod test {
         let a = Column::new("a".into(), [3, 7, 5, 9, 2, 1]);
         let df = DataFrame::new(vec![date, a.clone()])?;
 
-        let (_, _, groups) = df
+        let (_, groups) = df
             .rolling(
-                vec![],
+                None,
                 &RollingGroupOptions {
                     index_column: "dt".into(),
                     period: Duration::parse("2d"),

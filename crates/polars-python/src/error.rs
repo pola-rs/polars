@@ -12,7 +12,7 @@ use pyo3::prelude::*;
 use pyo3::PyTypeInfo;
 
 use crate::exceptions::{
-    CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
+    AssertionError, CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
     SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError,
     StringCacheMismatchError, StructFieldNotFoundError,
@@ -68,6 +68,7 @@ impl From<PyPolarsErr> for PyErr {
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
+                PolarsError::AssertionError(err) => AssertionError::new_err(err.to_string()),
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),

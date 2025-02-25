@@ -81,9 +81,8 @@ from polars.dependencies import (
     import_optional,
     subprocess,
 )
-from polars.dependencies import (
-    pyarrow as pa,
-)
+from polars.dependencies import polars_cloud as pc
+from polars.dependencies import pyarrow as pa
 from polars.exceptions import PerformanceWarning
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -2340,7 +2339,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             Possible values:
 
-            - `True`: enable default set of statistics (default)
+            - `True`: enable default set of statistics (default). Some
+              statistics may be disabled.
             - `False`: disable all statistics
             - "full": calculate and write all available statistics. Cannot be
               combined with `use_pyarrow`.
@@ -5622,8 +5622,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Fill the resulting null values with this value. Accepts scalar expression
+            input. Non-expression inputs are parsed as literals.
 
         Notes
         -----
@@ -7493,6 +7493,66 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             value_name=value_name,
             streamable=streamable,
         )
+
+    @unstable()
+    def remote(
+        self,
+        context: pc.ComputeContext | None = None,
+        plan_type: pc._typing.PlanTypePreference = "dot",
+    ) -> pc.LazyFrameExt:
+        """
+        Run a query remotely on Polars Cloud.
+
+        This allows you to run Polars remotely on
+        one or more workers via several strategies
+        for distributed compute.
+
+        Read more in the `Announcement post <https://pola.rs/posts/polars-cloud-what-we-are-building/>`_
+
+        Parameters
+        ----------
+        context
+            Compute context in which queries are executed.
+            If none given, it will take the default context.
+        plan_type
+            Whether to give a dot diagram of a plain text
+            version of logical plan.
+
+        Examples
+        --------
+        Run a query on a cloud instance.
+
+        >>> lf = pl.LazyFrame([1, 2, 3]).sum()
+        >>> in_progress = lf.remote().collect()  # doctest: +SKIP
+        >>> # do some other work
+        >>> in_progress.await_result()  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────────┐
+        │ column_0 │
+        │ ---      │
+        │ i64      │
+        ╞══════════╡
+        │ 6        │
+        └──────────┘
+
+        Run a query distributed.
+
+        >>> lf = (
+        ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))
+        ... )
+        >>> in_progress = lf.remote().distributed().collect()  # doctest: +SKIP
+        >>> in_progress.await_result()  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────────┐
+        │ column_0 │
+        │ ---      │
+        │ i64      │
+        ╞══════════╡
+        │ 6        │
+        └──────────┘
+
+        """
+        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
 
     def _to_metadata(
         self,
