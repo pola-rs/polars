@@ -235,7 +235,9 @@ fn to_graph_rec<'a>(
                 ),
                 #[cfg(feature = "json")]
                 FileType::Json(_) => ctx.graph.add_node(
-                    nodes::io_sinks::json::NDJsonSinkNode::new(path)?,
+                    nodes::io_sinks::SinkComputeNode::<nodes::io_sinks::json::NDJsonSinkNode>::new(
+                        nodes::io_sinks::json::NDJsonSinkNode::new(path.to_path_buf()),
+                    ),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "parquet")]
