@@ -252,7 +252,11 @@ fn to_graph_rec<'a>(
                 ),
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::csv::CsvSinkNode::new(input_schema, path, csv_writer_options)?,
+                    SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
+                        input_schema,
+                        path,
+                        csv_writer_options,
+                    )?),
                     [(input_key, input.port)],
                 ),
                 #[cfg(not(any(
