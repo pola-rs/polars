@@ -114,6 +114,7 @@ nav:
                 - polars-cloud/run/compute-context.md
                 - polars-cloud/run/interactive-batch.md
                 - polars-cloud/run/distributed-engine.md
+                - polars-cloud/run/service-accounts.md
           - Manage workspace:
                 - polars-cloud/workspace/settings.md
           - User Guide:
