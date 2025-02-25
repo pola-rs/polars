@@ -51,7 +51,7 @@ impl SinkNode for NDJsonSinkNode {
         // Encode task.
         //
         // Task encodes the columns into their corresponding JSON encoding.
-        join_handles.extend(rx_receivers.into_iter().zip(senders.into_iter()).map(
+        join_handles.extend(rx_receivers.into_iter().zip(senders).map(
             |(mut rx_receiver, mut sender)| {
                 spawn(TaskPriority::High, async move {
                     // Amortize the allocations over time. If we see that we need to do way larger

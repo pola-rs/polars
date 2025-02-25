@@ -56,8 +56,16 @@ impl SinkInputPort {
 }
 
 impl SinkRecvPort {
-    pub fn parallel(mut self) -> (JoinHandle<PolarsResult<()>>, Vec<Receiver<(WaitToken, PhaseOutcomeToken, Receiver<Morsel>)>>) {
-        let (mut rx_senders, rx_receivers) = (0..self.num_pipelines).map(|_| connector()).collect::<(Vec<_>, Vec<_>)>();
+    #[allow(clippy::type_complexity)]
+    pub fn parallel(
+        mut self,
+    ) -> (
+        JoinHandle<PolarsResult<()>>,
+        Vec<Receiver<(WaitToken, PhaseOutcomeToken, Receiver<Morsel>)>>,
+    ) {
+        let (mut rx_senders, rx_receivers) = (0..self.num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
         let handle = spawn(TaskPriority::High, async move {
             let wg = WaitGroup::default();
 
@@ -67,7 +75,11 @@ impl SinkRecvPort {
                 let mut outcomes = Vec::with_capacity(inputs.len());
                 for (input, rx_sender) in inputs.into_iter().zip(rx_senders.iter_mut()) {
                     let outcome = PhaseOutcomeToken::new();
-                    if rx_sender.send((wg.token(), outcome.clone(), input)).await.is_err() {
+                    if rx_sender
+                        .send((wg.token(), outcome.clone(), input))
+                        .await
+                        .is_err()
+                    {
                         return Ok(());
                     }
                     outcomes.push(outcome);
@@ -154,7 +166,11 @@ impl<T: SinkNode + Send + Sync> ComputeNode for SinkComputeNode<T> {
     fn initialize(&mut self, num_pipelines: usize) {
         self.num_pipelines = num_pipelines;
     }
-    fn update_state(&mut self, recv: &mut [PortState], _send: &mut [PortState]) -> PolarsResult<()> {
+    fn update_state(
+        &mut self,
+        recv: &mut [PortState],
+        _send: &mut [PortState],
+    ) -> PolarsResult<()> {
         if recv[0] != PortState::Done {
             recv[0] = PortState::Ready;
         }
@@ -162,14 +178,13 @@ impl<T: SinkNode + Send + Sync> ComputeNode for SinkComputeNode<T> {
         if recv[0] == PortState::Done {
             if let Some(mut started) = self.started.take() {
                 drop(started.input_send);
-                polars_io::pl_async::get_runtime()
-                    .block_on(async move {
-                        // Either the task finished or some error occurred.
-                        while let Some(ret) = started.join_handles.next().await {
-                            ret?;
-                        }
-                        PolarsResult::Ok(())
-                    })?;
+                polars_io::pl_async::get_runtime().block_on(async move {
+                    // Either the task finished or some error occurred.
+                    while let Some(ret) = started.join_handles.next().await {
+                        ret?;
+                    }
+                    PolarsResult::Ok(())
+                })?;
             }
         }
 
@@ -192,8 +207,15 @@ impl<T: SinkNode + Send + Sync> ComputeNode for SinkComputeNode<T> {
             let (tx, rx) = connector();
             let mut join_handles = Vec::new();
 
-            self.sink
-                .spawn_sink(self.num_pipelines, SinkRecvPort { num_pipelines: self.num_pipelines, recv: rx }, state, &mut join_handles);
+            self.sink.spawn_sink(
+                self.num_pipelines,
+                SinkRecvPort {
+                    num_pipelines: self.num_pipelines,
+                    recv: rx,
+                },
+                state,
+                &mut join_handles,
+            );
             // One of the tasks might throw an error. In which case, we need to cancel all
             // handles and find the error.
             let join_handles: FuturesUnordered<_> =

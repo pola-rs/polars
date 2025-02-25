@@ -90,7 +90,7 @@ impl SinkNode for ParquetSinkNode {
             Linearizer::<Linearized>::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
 
         let input_schema = self.input_schema.clone();
-        let write_options = self.write_options.clone();
+        let write_options = self.write_options;
 
         let options = WriteOptions {
             statistics: write_options.statistics,
