@@ -1,6 +1,6 @@
 # --8<-- [start:example]
 import polars as pl
-import polars_cloud as plc
+import polars_cloud as pc
 import datetime as dt
 
 lf = pl.LazyFrame(
@@ -19,7 +19,7 @@ lf = pl.LazyFrame(
 # --8<-- [end:example]
 
 # --8<-- [start:batch]
-ctx = plc.ComputeContext(workspace="your-workspace", cpus=24, memory=64)
+ctx = pc.ComputeContext(workspace="your-workspace", cpus=24, memory=64)
 
 lf = lf.select(
     pl.col("name"),
@@ -27,11 +27,11 @@ lf = lf.select(
     (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
 ).sort(by="bmi")
 
-lf.remote(ctx).write_parquet("s3://bucket/output.parquet")
+lf.remote(ctx).sink_parquet("s3://bucket/output.parquet")
 # --8<-- [end:batch]
 
 # --8<-- [start:interactive]
-ctx = plc.ComputeContext(
+ctx = pc.ComputeContext(
     workspace="your-workspace", cpus=24, memory=64, interactive=True
 )
 
@@ -41,7 +41,7 @@ lf = lf.select(
     (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
 ).sort(by="bmi")
 
-res1 = lf.remote(ctx).write_parquet("s3://bucket/output.parquet").await_result()
+res1 = lf.remote(ctx).collect().await_result()
 
 # --8<-- [end:interactive]
 
@@ -52,7 +52,7 @@ res2 = (
         pl.col("birth_year").is_in([1983, 1985]),
     )
     .remote(ctx)
-    .write_parquet("s3://bucket/output2.parquet")
+    .collect()
     .await_result()
 )
 # --8<-- [end:interactive-next]
