@@ -1,7 +1,5 @@
 ![Image showing the Polars Cloud logo](assets/polars-cloud.svg)
 
-# Distributed cloud architecture to run Polars anywhere
-
 DataFrame implementations always differed from SQL and databases. SQL could run anywhere from embedded databases to massive data warehouses. Yet, DataFrame users have been forced to choose between a solution for local work or solutions geared towards distributed computing, each with their own APIs and limitations.
 
 Polars is bridging this gap with **Polars Cloud**. Build on top of the popular open source project, Polars Cloud enables you to write DataFrame code once and run it anywhere. The distributed engine available with Polars Cloud allows to scale your Polars queries beyond a single machine.
