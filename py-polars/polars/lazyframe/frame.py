@@ -2919,7 +2919,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
+        comm_subplan_elim: bool = False,
+        comm_subexpr_elim: bool = False,
         _check_order: bool = True,
     ) -> PyLazyFrame:
         if no_optimization:
@@ -2935,9 +2938,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            cluster_with_columns=False,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
             streaming=True,
             _eager=False,
