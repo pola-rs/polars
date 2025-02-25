@@ -126,7 +126,6 @@ nav:
           # - Integrations:
           # - polars-cloud/integrations/airflow.md
           - Misc:
-                - polars-cloud/glossary.md
                 - polars-cloud/cli.md
                 - polars-cloud/faq.md
                 - API Reference: https://docs.cloud.pola.rs
