@@ -60,6 +60,12 @@ pub struct PartitionSink<T: PartionableSinkNode> {
 
     include_key: bool,
     stable: bool,
+    
+    /// How many partition sinks may be open / active at any given time.
+    ///
+    /// This is needed because platforms put limits on the amount of open files you can have at any
+    /// given time. On linux for example this maximum is 1024.
+    max_open_partitions: usize,
 }
 
 impl<T: PartionableSinkNode> PartitionSink<T> {
@@ -86,7 +92,14 @@ impl<T: PartionableSinkNode> PartitionSink<T> {
 
             include_key: false,
             stable: false,
+
+            max_open_partitions: max_open_partitions(),
         }
+    }
+
+    pub fn with_max_open_partitions(mut self, max_open_partitions: usize) -> Self {
+        self.max_open_partitions = max_open_partitions;
+        max_open_partitions
     }
 }
 
@@ -107,25 +120,45 @@ async fn open_sink<T: PartionableSinkNode>(
     keys: &[AnyValue<'static>],
     output_schema: &SchemaRef,
     options: &T::SinkOptions,
+    num_pipelines: usize,
 ) -> PolarsResult<(SinkInput, OpenSinkNode)> {
     let path = T::key_to_path(&keys, &options)?;
-    let (tx, rx) = connector();
+    let (tx, mut rx) = connector();
     let mut sink_node = T::new(&path, &output_schema, &options).await?;
+    let mut join_handles = Vec::new();
+
     let sink_input = if sink_node.is_sink_input_parallel() {
-        SinkInputPort::Parallel(vec![rx])
+        let (mut txs, mut rxs) = (0..num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+
+        // Place a small distributor between the RX and the actual sink receive port. This allows
+        // the sink to actually use parallelism properly.
+        join_handles.push(spawn(TaskPriority::High, async move {
+            let mut rr = 0;
+            while let Ok(m) = rx.recv().await {
+                if txs[rr].send(m).await.is_err() {
+                    break;
+                }
+                rr += 1;
+                rr %= num_pipelines;
+            }
+
+            Ok(())
+        }));
+        SinkInputPort::Parallel(rxs)
     } else {
         SinkInputPort::Serial(rx)
     };
     let (outcome, wg, sink_input) = SinkInput::from_port(sink_input);
     let (mut oneshot_tx, oneshot_rx) = connector();
     let port = SinkRecvPort {
-        num_pipelines: 1,
+        num_pipelines,
         recv: oneshot_rx,
     };
 
-    let mut join_handles = Vec::new();
     let state = ExecutionState::new();
-    sink_node.spawn_sink(1, port, &state, &mut join_handles);
+    sink_node.spawn_sink(num_pipelines, port, &state, &mut join_handles);
     let join_handles = join_handles
         .into_iter()
         .map(AbortOnDropHandle::new)
@@ -209,7 +242,7 @@ impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
                 }),
         );
 
-        let max_open_partitions = max_open_partitions();
+        let max_open_partitions = self.max_open_partitions;
         let options = self.options.clone();
         let num_partition_exprs = self.num_partition_exprs;
         let output_schema = self.output_schema.clone();
@@ -242,7 +275,8 @@ impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
                             let (idx, _) = known_partitions.insert_full(key);
                             if idx < max_open_partitions {
                                 let (sink_input, mut open_sink) =
-                                    open_sink::<T>(&keys, &output_schema, &options).await?;
+                                    open_sink::<T>(&keys, &output_schema, &options, num_pipelines)
+                                        .await?;
                                 if open_sink.oneshot_tx.send(sink_input).await.is_err() {
                                     open_sinks.push(open_sink);
                                     break;
@@ -302,7 +336,7 @@ impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
                     .get_index(idx + max_open_partitions)
                     .unwrap();
                 let (sink_input, mut open_sink_node) =
-                    open_sink::<T>(keys, &output_schema, &options).await?;
+                    open_sink::<T>(keys, &output_schema, &options, num_pipelines).await?;
                 if open_sink_node.oneshot_tx.send(sink_input).await.is_ok() {
                     if open_sink_node
                         .tx
