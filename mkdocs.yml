@@ -123,8 +123,8 @@ nav:
                 - AWS:
                       - polars-cloud/providers/aws/infra.md
                       - polars-cloud/providers/aws/permissions.md
-          - Integrations:
-                - polars-cloud/integrations/airflow.md
+          # - Integrations:
+          # - polars-cloud/integrations/airflow.md
           - Misc:
                 - polars-cloud/glossary.md
                 - polars-cloud/cli.md
