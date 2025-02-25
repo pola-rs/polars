@@ -137,14 +137,14 @@ struct StartedSinkComputeNode {
 }
 
 /// A [`ComputeNode`] to wrap a [`SinkNode`].
-pub struct SinkComputeNode<T: SinkNode + Send + Sync> {
-    sink: T,
+pub struct SinkComputeNode {
+    sink: Box<dyn SinkNode + Send + Sync>,
     num_pipelines: usize,
     started: Option<StartedSinkComputeNode>,
 }
 
-impl<T: SinkNode + Send + Sync> SinkComputeNode<T> {
-    pub fn new(sink: T) -> Self {
+impl SinkComputeNode {
+    pub fn new(sink: Box<dyn SinkNode + Send + Sync>) -> Self {
         Self {
             sink,
             num_pipelines: 0,
@@ -153,13 +153,13 @@ impl<T: SinkNode + Send + Sync> SinkComputeNode<T> {
     }
 }
 
-impl<T: SinkNode + Send + Sync> From<T> for SinkComputeNode<T> {
+impl<T: SinkNode + Send + Sync + 'static> From<T> for SinkComputeNode {
     fn from(value: T) -> Self {
-        Self::new(value)
+        Self::new(Box::new(value))
     }
 }
 
-impl<T: SinkNode + Send + Sync> ComputeNode for SinkComputeNode<T> {
+impl ComputeNode for SinkComputeNode {
     fn name(&self) -> &str {
         self.sink.name()
     }
