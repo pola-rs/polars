@@ -3007,3 +3007,23 @@ def test_predicate_empty_is_in_21450() -> None:
         df.clear(),
         pl.scan_parquet(f).filter(pl.col("a").is_in([])).collect(),
     )
+
+
+@pytest.mark.write_disk
+def test_scan_parquet_filter_statistics_load_missing_column_21391(
+    tmp_path: Path,
+) -> None:
+    root = tmp_path
+    dfs = [pl.DataFrame({"x": 1, "y": 1}), pl.DataFrame({"x": 2})]
+
+    for i, df in enumerate(dfs):
+        df.write_parquet(root / f"{i}.parquet")
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(root, allow_missing_columns=True)
+            .filter(pl.col("y") == 1)
+            .collect()
+        ),
+        pl.DataFrame({"x": 1, "y": 1}),
+    )
