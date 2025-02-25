@@ -24,7 +24,7 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
-use crate::nodes::io_sources::parquet::ParquetSourceNode;
+use crate::nodes::io_sinks::SinkComputeNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -231,26 +231,36 @@ fn to_graph_rec<'a>(
             match file_type {
                 #[cfg(feature = "ipc")]
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
+                    SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
+                        input_schema,
+                        path.to_path_buf(),
+                        *ipc_writer_options,
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "json")]
                 FileType::Json(_) => ctx.graph.add_node(
-                    nodes::io_sinks::json::NDJsonSinkNode::new(path)?,
+                    SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
+                        path.to_path_buf(),
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "parquet")]
                 FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::parquet::ParquetSinkNode::new(
+                    SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
                         path,
                         parquet_writer_options,
-                    )?,
+                    )?),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::csv::CsvSinkNode::new(input_schema, path, csv_writer_options)?,
+                    SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
+                        input_schema,
+                        path.to_path_buf(),
+                        csv_writer_options.clone(),
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(not(any(
@@ -362,78 +372,103 @@ fn to_graph_rec<'a>(
             include_file_paths,
             projection,
             row_restriction,
+            predicate,
             row_index,
-        } => match scan_type {
-            #[cfg(feature = "parquet")]
-            polars_plan::plans::FileScan::Parquet {
-                options,
-                cloud_options,
-                ..
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<ParquetSourceNode>::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+        } => {
+            let predicate = predicate
+                .as_ref()
+                .map(|pred| {
+                    create_scan_predicate(
+                        pred,
+                        ctx.expr_arena,
+                        file_schema,
+                        &mut ctx.expr_conversion_state,
+                        true,
+                        false,
+                    )
+                })
+                .transpose()?;
+            let predicate = predicate
+                .as_ref()
+                .map(|p| p.to_io(None, file_schema.clone()));
+
+            match scan_type {
+                #[cfg(feature = "parquet")]
+                polars_plan::dsl::FileScan::Parquet {
+                    options,
+                    cloud_options,
+                    ..
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::parquet::ParquetSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts.clone().map(Arc::new),
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            predicate,
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            #[cfg(feature = "ipc")]
-            polars_plan::plans::FileScan::Ipc {
-                options,
-                cloud_options,
-                ..
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<
-                        nodes::io_sources::ipc::IpcSourceNode,
-                    >::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+                #[cfg(feature = "ipc")]
+                polars_plan::dsl::FileScan::Ipc {
+                    options,
+                    cloud_options,
+                    ..
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::ipc::IpcSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts.clone().map(Arc::new),
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            predicate,
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            #[cfg(feature = "csv")]
-            polars_plan::plans::FileScan::Csv {
-                options,
-                cloud_options,
-            } => ctx.graph.add_node(
-                nodes::io_sources::SourceComputeNode::new(
-                    nodes::io_sources::multi_scan::MultiScanNode::<
-                        nodes::io_sources::csv::CsvSourceNode,
-                    >::new(
-                        scan_sources.clone(),
-                        hive_parts.clone(),
-                        *allow_missing_columns,
-                        include_file_paths.clone(),
-                        file_schema.clone(),
-                        projection.clone(),
-                        row_index.clone(),
-                        row_restriction.clone(),
-                        options.clone(),
-                        cloud_options.clone(),
+                #[cfg(feature = "csv")]
+                polars_plan::dsl::FileScan::Csv {
+                    options,
+                    cloud_options,
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::csv::CsvSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts.clone().map(Arc::new),
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            predicate,
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
                     ),
+                    [],
                 ),
-                [],
-            ),
-            _ => todo!(),
+                _ => todo!(),
+            }
         },
 
         v @ FileScan { .. } => {
@@ -483,7 +518,9 @@ fn to_graph_rec<'a>(
                     )
                 })
                 .transpose()?;
-            let predicate = predicate.as_ref().map(|p| p.to_io(None, &file_info.schema));
+            let predicate = predicate
+                .as_ref()
+                .map(|p| p.to_io(None, file_info.schema.clone()));
 
             {
                 use polars_plan::prelude::FileScan;

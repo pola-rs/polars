@@ -21,7 +21,8 @@ use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::utils::columns_to_projection;
 use polars_io::RowIndex;
-use polars_plan::plans::{FileInfo, ScanSource};
+use polars_plan::dsl::ScanSource;
+use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::mmap::MemSlice;
@@ -488,8 +489,7 @@ impl MultiScanable for IpcSourceNode {
 
     const BASE_NAME: &'static str = "ipc";
 
-    const DOES_PRED_PD: bool = false;
-    const DOES_SLICE_PD: bool = true;
+    const SPECIALIZED_PRED_PD: bool = false;
 
     async fn new(
         source: ScanSource,

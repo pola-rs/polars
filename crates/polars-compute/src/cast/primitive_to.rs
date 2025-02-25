@@ -39,6 +39,7 @@ impl_ser_primitive!(i8);
 impl_ser_primitive!(i16);
 impl_ser_primitive!(i32);
 impl_ser_primitive!(i64);
+impl_ser_primitive!(i128);
 impl_ser_primitive!(u8);
 impl_ser_primitive!(u16);
 impl_ser_primitive!(u32);

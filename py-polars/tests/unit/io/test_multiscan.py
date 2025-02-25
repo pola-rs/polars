@@ -161,6 +161,73 @@ def test_multiscan_projection(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+    ],
+)
+@pytest.mark.write_disk
+def test_multiscan_hive_predicate(
+    tmp_path: Path,
+    scan: Callable[..., pl.LazyFrame],
+    write: Callable[[pl.DataFrame, Path], Any],
+    ext: str,
+) -> None:
+    a = pl.DataFrame({"col": [5, 10, 1996]})
+    b = pl.DataFrame({"col": [13, 37]})
+    c = pl.DataFrame({"col": [3, 5, 2024]})
+
+    (tmp_path / "hive_col=0").mkdir()
+    a_path = tmp_path / "hive_col=0" / f"0.{ext}"
+    (tmp_path / "hive_col=1").mkdir()
+    b_path = tmp_path / "hive_col=1" / f"0.{ext}"
+    (tmp_path / "hive_col=2").mkdir()
+    c_path = tmp_path / "hive_col=2" / f"0.{ext}"
+
+    multiscan_path = tmp_path
+
+    write(a, a_path)
+    write(b, b_path)
+    write(c, c_path)
+
+    full = scan(multiscan_path).collect(new_streaming=True)  # type: ignore[call-overload]
+    full_ri = full.with_row_index("ri", 42)
+
+    last_pred = None
+    try:
+        for pred in [
+            pl.col.hive_col == 0,
+            pl.col.hive_col == 1,
+            pl.col.hive_col == 2,
+            pl.col.hive_col < 2,
+            pl.col.hive_col > 0,
+            pl.col.hive_col != 1,
+            pl.col.hive_col != 3,
+            pl.col.col == 13,
+            pl.col.col != 13,
+            (pl.col.col != 13) & (pl.col.hive_col == 1),
+            (pl.col.col != 13) & (pl.col.hive_col != 1),
+        ]:
+            last_pred = pred
+            assert_frame_equal(
+                full.filter(pred),
+                scan(multiscan_path).filter(pred).collect(new_streaming=True),  # type: ignore[call-overload]
+            )
+
+            assert_frame_equal(
+                full_ri.filter(pred),
+                scan(multiscan_path)
+                .with_row_index("ri", 42)
+                .filter(pred)
+                .collect(new_streaming=True),  # type: ignore[call-overload]
+            )
+    except Exception as _:
+        print(last_pred)
+        raise
+
+
+@pytest.mark.parametrize(
+    ("scan", "write", "ext"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
+        (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
     ],
 )
@@ -507,4 +574,30 @@ def test_multiscan_slice_parametric(
         scan(fs, row_index_name="ri", row_index_offset=42)
         .slice(offset, length)
         .collect(new_streaming=True),  # type: ignore[call-overload]
+    )
+
+
+@pytest.mark.parametrize(
+    ("scan", "write"),
+    [
+        (pl.scan_ipc, pl.DataFrame.write_ipc),
+        (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
+    ],
+)
+def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
+    f = io.BytesIO()
+    write(pl.DataFrame({"a": [5, 10, 1996]}), f)
+    bs = f.getvalue()
+
+    out = scan([bs] * 1023)
+
+    assert_frame_equal(
+        out.collect(),
+        pl.DataFrame(
+            {
+                "a": [5, 10, 1996] * 1023,
+            }
+        ),
     )

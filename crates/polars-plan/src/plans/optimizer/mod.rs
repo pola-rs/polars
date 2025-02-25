@@ -182,7 +182,8 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     }
 
     if opt_flags.predicate_pushdown() {
-        let mut predicate_pushdown_opt = PredicatePushDown::new(expr_eval);
+        let mut predicate_pushdown_opt =
+            PredicatePushDown::new(expr_eval, opt_flags.new_streaming());
         let alp = lp_arena.take(lp_top);
         let alp = predicate_pushdown_opt.optimize(alp, lp_arena, expr_arena)?;
         lp_arena.replace(lp_top, alp);

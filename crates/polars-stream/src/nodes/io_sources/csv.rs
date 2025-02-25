@@ -18,7 +18,8 @@ use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
 use polars_io::RowIndex;
-use polars_plan::plans::{isolated_csv_file_info, FileInfo, ScanSource};
+use polars_plan::dsl::ScanSource;
+use polars_plan::plans::{isolated_csv_file_info, FileInfo};
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::mmap::MemSlice;
@@ -551,8 +552,7 @@ impl MultiScanable for CsvSourceNode {
 
     const BASE_NAME: &'static str = "csv";
 
-    const DOES_PRED_PD: bool = false;
-    const DOES_SLICE_PD: bool = true;
+    const SPECIALIZED_PRED_PD: bool = false;
 
     async fn new(
         source: ScanSource,

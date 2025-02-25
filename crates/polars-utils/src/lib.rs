@@ -57,6 +57,7 @@ pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
 pub use io::*;
+pub use pl_str::unique_column_name;
 
 #[cfg(feature = "python")]
 pub mod python_function;

@@ -8,9 +8,9 @@ use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_ops::frame::JoinArgs;
-use polars_plan::dsl::JoinTypeOptionsIR;
+use polars_plan::dsl::{FileScan, JoinTypeOptionsIR, ScanSource, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, FileScan, ScanSource, ScanSources, IR};
+use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
 
 mod fmt;
@@ -193,6 +193,7 @@ pub enum PhysNodeKind {
         projection: Option<Bitmap>,
 
         row_restriction: Option<MultiscanRowRestriction>,
+        predicate: Option<ExprIR>,
         row_index: Option<RowIndex>,
     },
     FileScan {

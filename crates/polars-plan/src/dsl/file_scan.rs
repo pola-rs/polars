@@ -8,8 +8,18 @@ use polars_io::ipc::IpcScanOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
+#[cfg(feature = "serde")]
+use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
 use super::*;
+
+bitflags::bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct ScanFlags : u32 {
+        const SPECIALIZED_PREDICATE_FILTER = 0x01;
+    }
+}
 
 #[derive(Clone, Debug, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -158,6 +168,21 @@ impl FileScan {
                 *metadata = None;
             },
             _ => {},
+        }
+    }
+
+    pub fn flags(&self) -> ScanFlags {
+        match self {
+            #[cfg(feature = "csv")]
+            Self::Csv { .. } => ScanFlags::empty(),
+            #[cfg(feature = "ipc")]
+            Self::Ipc { .. } => ScanFlags::empty(),
+            #[cfg(feature = "parquet")]
+            Self::Parquet { .. } => ScanFlags::SPECIALIZED_PREDICATE_FILTER,
+            #[cfg(feature = "json")]
+            Self::NDJson { .. } => ScanFlags::empty(),
+            #[allow(unreachable_patterns)]
+            _ => ScanFlags::empty(),
         }
     }
 
