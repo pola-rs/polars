@@ -9,5 +9,5 @@ df = pl.DataFrame({
     "b": [4, 4, 5]
 })
 lf = df.lazy().with_columns(pl.col("a").max().over("b").alias("c"))
-lf.remote(context = ctx).write_parquet(uri="s3://my-bucket/result.parquet")
+lf.remote(context = ctx).sink_parquet(uri="s3://my-bucket/result.parquet")
 # --8<-- [end:general]
