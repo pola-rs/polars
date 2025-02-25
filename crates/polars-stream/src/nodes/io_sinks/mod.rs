@@ -87,6 +87,9 @@ impl SinkRecvPort {
 
         (handle, rx_receivers)
     }
+    fn serial(self) -> Receiver<SinkInput> {
+        self.recv
+    }
 }
 
 impl SinkInput {
@@ -109,7 +112,7 @@ pub trait SinkNode {
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
-        input_recv: SinkRecvPort,
+        recv_ports_recv: SinkRecvPort,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
@@ -135,6 +138,12 @@ impl<T: SinkNode + Send + Sync> SinkComputeNode<T> {
             num_pipelines: 0,
             started: None,
         }
+    }
+}
+
+impl<T: SinkNode + Send + Sync> From<T> for SinkComputeNode<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
     }
 }
 

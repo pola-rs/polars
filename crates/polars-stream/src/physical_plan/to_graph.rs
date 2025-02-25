@@ -24,6 +24,7 @@ use crate::expression::StreamExpr;
 use crate::graph::{Graph, GraphNodeKey};
 use crate::morsel::MorselSeq;
 use crate::nodes;
+use crate::nodes::io_sinks::SinkComputeNode;
 use crate::physical_plan::lower_expr::compute_output_schema;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
 
@@ -235,18 +236,18 @@ fn to_graph_rec<'a>(
                 ),
                 #[cfg(feature = "json")]
                 FileType::Json(_) => ctx.graph.add_node(
-                    nodes::io_sinks::SinkComputeNode::<nodes::io_sinks::json::NDJsonSinkNode>::new(
-                        nodes::io_sinks::json::NDJsonSinkNode::new(path.to_path_buf()),
-                    ),
+                    SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
+                        path.to_path_buf(),
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "parquet")]
                 FileType::Parquet(parquet_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::parquet::ParquetSinkNode::new(
+                    SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
                         path,
                         parquet_writer_options,
-                    )?,
+                    )?),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "csv")]
