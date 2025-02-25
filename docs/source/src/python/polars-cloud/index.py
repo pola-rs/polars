@@ -14,5 +14,5 @@ query = (
     )
 )
 
-query.remote(ctx).write_parquet("s3://my-dst/")
+query.remote(ctx).sink_parquet("s3://my-dst/")
 # --8<-- [end:index]
