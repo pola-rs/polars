@@ -3,7 +3,7 @@
 <!-- dprint-ignore-start -->
 
 !!! tip "Polars Cloud alpha launch"
-Polars cloud has recently been made available to a select group of individuals / companies for early alpha testing. You can read more about Polars Cloud and its ambitious goals in our blog post.
+    Polars cloud has recently been made available to a select group of individuals / companies for early alpha testing. You can read more about Polars Cloud and its ambitious goals in our blog post.
 
 <!-- dprint-ignore-end-->
 
