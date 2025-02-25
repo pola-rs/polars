@@ -231,7 +231,11 @@ fn to_graph_rec<'a>(
             match file_type {
                 #[cfg(feature = "ipc")]
                 FileType::Ipc(ipc_writer_options) => ctx.graph.add_node(
-                    nodes::io_sinks::ipc::IpcSinkNode::new(input_schema, path, ipc_writer_options)?,
+                    SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
+                        input_schema,
+                        path.to_path_buf(),
+                        *ipc_writer_options,
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "json")]
@@ -254,9 +258,9 @@ fn to_graph_rec<'a>(
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
                         input_schema,
-                        path,
-                        csv_writer_options,
-                    )?),
+                        path.to_path_buf(),
+                        csv_writer_options.clone(),
+                    )),
                     [(input_key, input.port)],
                 ),
                 #[cfg(not(any(

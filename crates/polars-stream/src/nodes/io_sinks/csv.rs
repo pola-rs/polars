@@ -1,5 +1,5 @@
 use std::cmp::Reverse;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
@@ -19,22 +19,15 @@ type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct CsvSinkNode {
     path: PathBuf,
     schema: SchemaRef,
-
     write_options: CsvWriterOptions,
 }
-
 impl CsvSinkNode {
-    pub fn new(
-        schema: SchemaRef,
-        path: &Path,
-        write_options: &CsvWriterOptions,
-    ) -> PolarsResult<Self> {
-        Ok(Self {
-            path: path.to_path_buf(),
+    pub fn new(schema: SchemaRef, path: PathBuf, write_options: CsvWriterOptions) -> Self {
+        Self {
+            path,
             schema,
-
-            write_options: write_options.clone(),
-        })
+            write_options,
+        }
     }
 }
 
