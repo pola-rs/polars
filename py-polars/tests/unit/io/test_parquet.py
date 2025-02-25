@@ -2995,3 +2995,15 @@ def test_final_masked_optional_iteration_21378() -> None:
 
     output = pl.scan_parquet(f, parallel="prefiltered").filter(pl.col.f).collect()
     assert_frame_equal(df.filter(pl.col.f), output)
+
+
+def test_predicate_empty_is_in_21450() -> None:
+    f = io.BytesIO()
+    df = pl.DataFrame({"a": [1, 2], "b": [3, 4]})
+    df.write_parquet(f)
+
+    f.seek(0)
+    assert_frame_equal(
+        df.clear(),
+        pl.scan_parquet(f).filter(pl.col("a").is_in([])).collect(),
+    )
