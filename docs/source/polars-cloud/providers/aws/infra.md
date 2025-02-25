@@ -3,7 +3,7 @@
 Polars Cloud manages the hardware for you by spinning up and down raw EC2 instances. In order to do
 this it needs permissions in your own cloud environment. None of the resources below have costs
 associated with them. While no compute clusters are running Polars Cloud will not create any AWS
-costs. The recommended way of doing this is running `plc workspace setup`.
+costs. The recommended way of doing this is running `pc workspace setup`.
 
 ## Recommended setup
 
