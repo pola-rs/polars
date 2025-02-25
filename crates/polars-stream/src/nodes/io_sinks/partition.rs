@@ -5,10 +5,10 @@ use std::sync::Arc;
 
 use futures::stream::{FuturesUnordered, StreamExt};
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{AnyValue, PlHashMap};
-use polars_core::schema::{Schema, SchemaRef};
+use polars_core::prelude::{AnyValue, GroupsType, PlHashMap, PlIndexMap, PlIndexSet};
+use polars_core::schema::SchemaRef;
+use polars_core::series::IsSorted;
 use polars_error::PolarsResult;
-use polars_expr::prelude::PhysicalExpr;
 use polars_expr::state::ExecutionState;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -43,15 +43,11 @@ struct OpenSinkNode {
     tx: Sender<Morsel>,
     node: Box<dyn SinkNode + Send + Sync>,
     join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
+    seq: MorselSeq,
 
     oneshot_tx: Sender<SinkInput>,
     wg: WaitGroup,
     outcome: PhaseOutcomeToken,
-}
-
-struct OpenPartition {
-    sink_node: Result<OpenSinkNode, DataFrame>,
-    seq: MorselSeq,
 }
 
 pub struct PartitionSink<T: PartionableSinkNode> {
@@ -61,6 +57,9 @@ pub struct PartitionSink<T: PartionableSinkNode> {
 
     input_schema: SchemaRef,
     output_schema: SchemaRef,
+
+    include_key: bool,
+    stable: bool,
 }
 
 impl<T: PartionableSinkNode> PartitionSink<T> {
@@ -84,6 +83,9 @@ impl<T: PartionableSinkNode> PartitionSink<T> {
 
             input_schema,
             output_schema,
+
+            include_key: false,
+            stable: false,
         }
     }
 }
@@ -99,6 +101,49 @@ fn max_open_partitions() -> usize {
             .expect("unable to parse POLARS_MAX_OPEN_PARTITION_SINKS")
             .max(1)
     })
+}
+
+async fn open_sink<T: PartionableSinkNode>(
+    keys: &[AnyValue<'static>],
+    output_schema: &SchemaRef,
+    options: &T::SinkOptions,
+) -> PolarsResult<(SinkInput, OpenSinkNode)> {
+    let path = T::key_to_path(&keys, &options)?;
+    let (tx, rx) = connector();
+    let mut sink_node = T::new(&path, &output_schema, &options).await?;
+    let sink_input = if sink_node.is_sink_input_parallel() {
+        SinkInputPort::Parallel(vec![rx])
+    } else {
+        SinkInputPort::Serial(rx)
+    };
+    let (outcome, wg, sink_input) = SinkInput::from_port(sink_input);
+    let (mut oneshot_tx, oneshot_rx) = connector();
+    let port = SinkRecvPort {
+        num_pipelines: 1,
+        recv: oneshot_rx,
+    };
+
+    let mut join_handles = Vec::new();
+    let state = ExecutionState::new();
+    sink_node.spawn_sink(1, port, &state, &mut join_handles);
+    let join_handles = join_handles
+        .into_iter()
+        .map(AbortOnDropHandle::new)
+        .collect();
+
+    Ok((
+        sink_input,
+        OpenSinkNode {
+            tx,
+            node: Box::new(sink_node),
+            join_handles,
+
+            seq: MorselSeq::default(),
+            oneshot_tx,
+            wg,
+            outcome,
+        },
+    ))
 }
 
 impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
@@ -132,11 +177,13 @@ impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
                 .zip(txs)
                 .map(|(mut rx_receiver, mut tx)| {
                     let num_partition_exprs = self.num_partition_exprs;
-                    let state = state.clone();
+                    let stable = self.stable;
+                    let include_key = self.include_key;
+
                     spawn(TaskPriority::High, async move {
                         while let Ok((_token, outcome, mut rx)) = rx_receiver.recv().await {
                             while let Ok(m) = rx.recv().await {
-                                let (mut df, seq, _, _) = m.into_inner();
+                                let (df, seq, _, _) = m.into_inner();
                                 if df.height() == 0 {
                                     continue;
                                 }
@@ -144,10 +191,11 @@ impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
                                 let partition_cols = df.get_columns()
                                     [df.width() - num_partition_exprs..]
                                     .iter()
-                                    .map(|c| c.name().clone());
+                                    .map(|c| c.name().clone())
+                                    .collect::<Vec<_>>();
 
-                                // @Incomplete: Stability
-                                let partitions = df.partition_by(partition_cols, true)?;
+                                let partitions =
+                                    df._partition_by_impl(&partition_cols, stable, true, false)?;
                                 if tx.insert(Priority(Reverse(seq), partitions)).await.is_err() {
                                     return Ok(());
                                 }
@@ -166,7 +214,9 @@ impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
         let num_partition_exprs = self.num_partition_exprs;
         let output_schema = self.output_schema.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
-            let mut open_partitions = PlHashMap::<Vec<AnyValue<'static>>, OpenPartition>::default();
+            let mut known_partitions = PlIndexSet::<Vec<AnyValue<'static>>>::default();
+            let mut open_sinks = Vec::<OpenSinkNode>::with_capacity(max_open_partitions);
+            let mut buffering_partitions = Vec::<DataFrame>::new();
 
             let mut keys = Vec::with_capacity(num_partition_exprs);
             let source_token = SourceToken::new();
@@ -183,100 +233,95 @@ impl<T: PartionableSinkNode> SinkNode for PartitionSink<T> {
                         keys.push(key_value.into_static());
                     }
 
-                    let open_partition = match open_partitions.get_mut(&keys) {
-                        Some(open_partition) => open_partition,
+                    let idx = match known_partitions.get_index_of(&keys) {
                         None => {
-                            let sink_node = if open_partitions.len() <= max_open_partitions {
-                                let path = T::key_to_path(&keys, &options)?;
-                                let (tx, rx) = connector();
-                                let mut sink_node = T::new(&path, &output_schema, &options).await?;
-                                let sink_input = if sink_node.is_sink_input_parallel() {
-                                    SinkInputPort::Parallel(vec![rx])
-                                } else {
-                                    SinkInputPort::Serial(rx)
-                                };
-                                let (outcome, wg, sink_input) = SinkInput::from_port(sink_input);
-                                let (mut oneshot_tx, oneshot_rx) = connector();
-                                let port = SinkRecvPort {
-                                    num_pipelines: 1,
-                                    recv: oneshot_rx,
-                                };
-
-                                let mut join_handles = Vec::new();
-                                let state = ExecutionState::new();
-                                sink_node.spawn_sink(1, port, &state, &mut join_handles);
-                                let join_handles = join_handles
-                                    .into_iter()
-                                    .map(AbortOnDropHandle::new)
-                                    .collect();
-
-                                if oneshot_tx.send(sink_input).await.is_err() {
-                                    return Ok(());
-                                }
-
-                                Ok(OpenSinkNode {
-                                    tx,
-                                    node: Box::new(sink_node),
-                                    join_handles,
-
-                                    oneshot_tx,
-                                    wg,
-                                    outcome,
-                                })
-                            } else {
-                                Err(DataFrame::empty_with_schema(&output_schema))
-                            };
-
-                            let mut open_partition = OpenPartition {
-                                sink_node,
-                                seq: MorselSeq::default(),
-                            };
                             let key = std::mem::replace(
                                 &mut keys,
                                 Vec::with_capacity(num_partition_exprs),
                             );
-                            let (_, open_partition) = unsafe {
-                                open_partitions.insert_unique_unchecked(key, open_partition)
+                            let (idx, _) = known_partitions.insert_full(key);
+                            if idx < max_open_partitions {
+                                let (sink_input, mut open_sink) =
+                                    open_sink::<T>(&keys, &output_schema, &options).await?;
+                                if open_sink.oneshot_tx.send(sink_input).await.is_err() {
+                                    open_sinks.push(open_sink);
+                                    break;
+                                };
+                                open_sinks.push(open_sink);
+                            } else {
+                                // If there are too many files open, we need to start buffering the
+                                // remaining partitions.
+                                buffering_partitions
+                                    .push(DataFrame::empty_with_schema(&output_schema));
                             };
-
-                            open_partition
+                            idx
                         },
+                        Some(idx) => idx,
                     };
 
-                    match open_partition.sink_node.as_mut() {
-                        Ok(open_sink_node) => {
-                            let seq = open_partition.seq;
-                            open_partition.seq = open_partition.seq.successor();
-                            if open_sink_node
-                                .tx
-                                .send(Morsel::new(df, seq, source_token.clone()))
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                            assert!(!source_token.stop_requested());
-                        },
-                        Err(buffer_df) => buffer_df.vstack_mut_owned_unchecked(df),
+                    if idx < max_open_partitions {
+                        let open_sink_node = &mut open_sinks[idx];
+                        let seq = open_sink_node.seq;
+                        open_sink_node.seq = seq.successor();
+
+                        if open_sink_node
+                            .tx
+                            .send(Morsel::new(df, seq, source_token.clone()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
+                        assert!(!source_token.stop_requested());
+                    } else {
+                        let buffer_df = &mut buffering_partitions[idx - max_open_partitions];
+                        buffer_df.vstack_mut_owned_unchecked(df);
                     }
                 }
             }
 
-            if open_partitions.len() > max_open_partitions {
-                todo!()
+            if known_partitions.is_empty() {
+                return Ok(());
             }
-            for (_, open_partition) in open_partitions.into_iter() {
-                match open_partition.sink_node {
-                    Ok(mut sink_node) => {
-                        drop(sink_node.oneshot_tx);
-                        sink_node.wg.wait().await;
 
-                        // Either the task finished or some error occurred.
-                        while let Some(ret) = sink_node.join_handles.next().await {
-                            ret?;
-                        }
-                    },
-                    _ => todo!(),
+            let mut num_open_sinks = known_partitions.len().min(max_open_partitions);
+            for mut open_sink_node in open_sinks.drain(..) {
+                drop(open_sink_node.oneshot_tx);
+                drop(open_sink_node.tx);
+                open_sink_node.wg.wait().await;
+
+                // Either the task finished or some error occurred.
+                while let Some(ret) = open_sink_node.join_handles.next().await {
+                    ret?;
+                }
+            }
+
+            // @Improvement: This should be better parallelized.
+            for (idx, mut df) in buffering_partitions.into_iter().enumerate() {
+                let keys = known_partitions
+                    .get_index(idx + max_open_partitions)
+                    .unwrap();
+                let (sink_input, mut open_sink_node) =
+                    open_sink::<T>(keys, &output_schema, &options).await?;
+                if open_sink_node.oneshot_tx.send(sink_input).await.is_ok() {
+                    if open_sink_node
+                        .tx
+                        .send(Morsel::new(df, MorselSeq::default(), source_token.clone()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                    assert!(!source_token.stop_requested());
+                };
+
+                drop(open_sink_node.oneshot_tx);
+                drop(open_sink_node.tx);
+                open_sink_node.wg.wait().await;
+
+                // Either the task finished or some error occurred.
+                while let Some(ret) = open_sink_node.join_handles.next().await {
+                    ret?;
                 }
             }
 
