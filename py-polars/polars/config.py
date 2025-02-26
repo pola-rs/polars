@@ -1463,38 +1463,27 @@ class Config(contextlib.ContextDecorator):
         Parameters
         ----------
         engine : Literal["cpu", "gpu", "streaming"]
-            The default engine to use on all .collect() calls
+            The default execution engine Polars will attempt to use
+            when calling `.collect()`. However, the query is not
+            guaranteed to execute with the specified engine.
 
         Examples
         --------
-        >>> pl.Config.set_verbose(True)  # doctest: +SKIP
         >>> pl.Config.set_engine_affinity("streaming")  # doctest: +SKIP
+        >>> lf = pl.LazyFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})  # doctest: +SKIP
         >>> lf.max().collect()  # doctest: +SKIP
-        polars-stream: updating graph state
-        polars-stream: running in_memory_source in subgraph
-        polars-stream: running reduce in subgraph
-        async thread count: 4
-        polars-stream: done running graph phase
-        polars-stream: updating graph state
-        polars-stream: running in_memory_sink in subgraph
-        polars-stream: running select in subgraph
-        polars-stream: running reduce in subgraph
-        polars-stream: done running graph phase
-        polars-stream: updating graph state
-        shape: (1, 2)
+        shape: (3, 2)
         ┌─────┬─────┐
         │ v   ┆ v2  │
         │ --- ┆ --- │
         │ i64 ┆ i64 │
         ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
         │ 3   ┆ 6   │
         └─────┴─────┘
         >>> pl.Config.set_engine_affinity("gpu")  # doctest: +SKIP
-        >>> lf = pl.LazyFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})  # doctest: +SKIP
         >>> lf.max().collect()  # doctest: +SKIP
-        run PythonScanExec
-        run UdfExec
-        run StackExec
         shape: (3, 2)
         ┌─────┬─────┐
         │ v   ┆ v2  │

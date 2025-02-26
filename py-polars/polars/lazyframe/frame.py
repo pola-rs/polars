@@ -1789,7 +1789,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: None | EngineType = "cpu",
         background: Literal[True],
         _eager: bool = False,
         _check_order: bool = True,
@@ -1811,7 +1811,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: None | EngineType = "cpu",
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1832,7 +1832,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: None | EngineType = "cpu",
         background: bool = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1992,6 +1992,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
+
+        if engine is None:
+            engine = get_engine_affinity()
+            if engine is None:
+                engine = "cpu"
 
         new_streaming = (
             _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
