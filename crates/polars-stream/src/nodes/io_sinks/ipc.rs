@@ -253,14 +253,12 @@ impl PartionableSinkNode for IpcSinkNode {
         path: &Path,
         input_schema: &SchemaRef,
         options: &Self::SinkOptions,
-    ) -> impl Future<Output = PolarsResult<Self>> + Send + Sync {
-        async move {
-            Ok(Self::new(
-                input_schema.clone(),
-                path.to_path_buf(),
-                options.clone(),
-            ))
-        }
+    ) -> PolarsResult<Self> {
+        Ok(Self::new(
+            input_schema.clone(),
+            path.to_path_buf(),
+            options.clone(),
+        ))
     }
 
     fn key_to_path(
