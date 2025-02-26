@@ -112,6 +112,7 @@ nav:
           - polars-cloud/connect-cloud.md
           - Run queries remote:
                 - polars-cloud/run/compute-context.md
+                - polars-cloud/run/workflow.md
                 - polars-cloud/run/interactive-batch.md
                 - polars-cloud/run/distributed-engine.md
                 - polars-cloud/run/service-accounts.md
