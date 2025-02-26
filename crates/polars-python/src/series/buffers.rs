@@ -346,15 +346,12 @@ where
 {
     let ca: &ChunkedArray<T> = s.as_ref().as_ref();
     let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
-    arr.values().clone()
+    ca.downcast_as_array().values().clone()
 }
 fn series_to_bitmap(s: Series) -> PyResult<Bitmap> {
     let ca_result = s.bool();
     let ca = ca_result.map_err(PyPolarsErr::from)?.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
-    let bitmap = arr.values().clone();
-    Ok(bitmap)
+    Ok(ca.downcast_as_array().values().clone())
 }
 fn series_to_offsets(s: Series) -> OffsetsBuffer<i64> {
     let buffer = series_to_buffer::<Int64Type>(s);

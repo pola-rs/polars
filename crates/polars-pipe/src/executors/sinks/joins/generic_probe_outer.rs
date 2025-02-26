@@ -224,7 +224,10 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         }
         self.hashes = hashes;
 
-        let left_df = unsafe { self.df_a.take_opt_chunked_unchecked(&self.join_tuples_a) };
+        let left_df = unsafe {
+            self.df_a
+                .take_opt_chunked_unchecked(&self.join_tuples_a, false)
+        };
         let right_df = unsafe {
             self.join_tuples_b.with_freeze(|idx| {
                 let idx = IdxCa::from(idx.clone());
@@ -257,7 +260,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not)
+                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not, false)
         };
 
         let size = left_df.height();

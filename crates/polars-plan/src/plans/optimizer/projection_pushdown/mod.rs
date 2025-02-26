@@ -172,14 +172,18 @@ fn add_expr_to_accumulated(
 
 fn add_str_to_accumulated(
     name: PlSmallStr,
-    acc_projections: &mut Vec<ColumnNode>,
-    projected_names: &mut PlHashSet<PlSmallStr>,
+    ctx: &mut ProjectionContext,
     expr_arena: &mut Arena<AExpr>,
 ) {
-    // if empty: all columns are already projected.
-    if !acc_projections.is_empty() && !projected_names.contains(&name) {
+    // if not pushed down: all columns are already projected.
+    if ctx.has_pushed_down() && !ctx.projected_names.contains(&name) {
         let node = expr_arena.add(AExpr::Column(name));
-        add_expr_to_accumulated(node, acc_projections, projected_names, expr_arena);
+        add_expr_to_accumulated(
+            node,
+            &mut ctx.acc_projections,
+            &mut ctx.projected_names,
+            expr_arena,
+        );
     }
 }
 
@@ -497,28 +501,19 @@ impl ProjectionPushDown {
                             scan_type.sort_projection(&file_options),
                         )?;
 
-                        hive_parts = if let Some(hive_parts) = hive_parts {
-                            let (new_schema, projected_indices) = hive_parts[0]
-                                .get_projection_schema_and_indices(
-                                    &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
-                                );
-
-                            Some(Arc::new(
-                                hive_parts
-                                    .iter()
-                                    .cloned()
-                                    .map(|mut hp| {
-                                        hp.apply_projection(
-                                            new_schema.clone(),
-                                            projected_indices.as_ref(),
-                                        );
-                                        hp
-                                    })
-                                    .collect::<Vec<_>>(),
-                            ))
-                        } else {
-                            None
-                        };
+                        if !self.in_new_streaming_engine {
+                            // Cull the hive partitions that are not projected out.
+                            hive_parts = if let Some(mut hive_parts) = hive_parts {
+                                let (_, projected_indices) = hive_parts
+                                    .get_projection_schema_and_indices(
+                                        &with_columns.iter().cloned().collect::<PlHashSet<_>>(),
+                                    );
+                                hive_parts.apply_projection(&projected_indices);
+                                Some(hive_parts)
+                            } else {
+                                None
+                            };
+                        }
 
                         if let Some(ref hive_parts) = hive_parts {
                             // @TODO:
@@ -528,7 +523,7 @@ impl ProjectionPushDown {
                                 && std::env::var("POLARS_NEW_MULTIFILE").as_deref() != Ok("1")
                             {
                                 // Skip reading hive columns from the file.
-                                let partition_schema = hive_parts.first().unwrap().schema();
+                                let partition_schema = hive_parts.schema();
                                 file_options.with_columns = file_options.with_columns.map(|x| {
                                     x.iter()
                                         .filter(|x| !partition_schema.contains(x))
@@ -606,10 +601,12 @@ impl ProjectionPushDown {
 
                         Some(Arc::new(schema))
                     } else {
-                        file_options.with_columns = maybe_init_projection_excluding_hive(
-                            file_info.reader_schema.as_ref().unwrap(),
-                            hive_parts.as_ref().map(|x| &x[0]),
-                        );
+                        if !self.in_new_streaming_engine {
+                            file_options.with_columns = maybe_init_projection_excluding_hive(
+                                file_info.reader_schema.as_ref().unwrap(),
+                                hive_parts.as_ref().map(|h| h.schema()),
+                            );
+                        }
                         None
                     };
                 }
@@ -661,9 +658,13 @@ impl ProjectionPushDown {
                 // TODO: Our scans don't perfectly give the right projection order with combinations
                 // of hive columns that exist in the file, so we always add a `Select {}` node here.
 
-                let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
-                let builder = builder.project_simple_nodes(ctx.acc_projections)?;
-                Ok(builder.build())
+                if self.in_new_streaming_engine {
+                    Ok(lp)
+                } else {
+                    let builder = IRBuilder::from_lp(lp, expr_arena, lp_arena);
+                    let builder = builder.project_simple_nodes(ctx.acc_projections)?;
+                    Ok(builder.build())
+                }
             },
             Sort {
                 input,
@@ -696,23 +697,13 @@ impl ProjectionPushDown {
                 if ctx.has_pushed_down() {
                     if let Some(subset) = options.subset.as_ref() {
                         subset.iter().for_each(|name| {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut ctx.acc_projections,
-                                &mut ctx.projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         })
                     } else {
                         // distinct needs all columns
                         let input_schema = lp_arena.get(input).schema(lp_arena);
                         for name in input_schema.iter_names() {
-                            add_str_to_accumulated(
-                                name.clone(),
-                                &mut ctx.acc_projections,
-                                &mut ctx.projected_names,
-                                expr_arena,
-                            )
+                            add_str_to_accumulated(name.clone(), &mut ctx, expr_arena)
                         }
                     }
                 }
@@ -858,12 +849,7 @@ impl ProjectionPushDown {
             } => {
                 if ctx.has_pushed_down() {
                     // make sure that the filter column is projected
-                    add_str_to_accumulated(
-                        key.clone(),
-                        &mut ctx.acc_projections,
-                        &mut ctx.projected_names,
-                        expr_arena,
-                    );
+                    add_str_to_accumulated(key.clone(), &mut ctx, expr_arena);
                 };
 
                 self.pushdown_and_assign(input_left, ctx.clone(), lp_arena, expr_arena)?;

@@ -1,4 +1,3 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
@@ -14,18 +13,12 @@ use polars_plan::prelude::*;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{format_pl_smallstr, unitvec};
+use polars_utils::{unique_column_name, unitvec};
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 
 type ExprNodeKey = Node;
-
-pub fn unique_column_name() -> PlSmallStr {
-    static COUNTER: AtomicU64 = AtomicU64::new(0);
-    let idx = COUNTER.fetch_add(1, Ordering::Relaxed);
-    format_pl_smallstr!("__POLARS_STMP_{idx}")
-}
 
 pub(crate) struct ExprCache {
     is_elementwise: PlHashMap<Node, bool>,
@@ -668,7 +661,8 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::Sum(ref mut inner)
                 | IRAggExpr::Mean(ref mut inner)
                 | IRAggExpr::Var(ref mut inner, _ /* ddof */)
-                | IRAggExpr::Std(ref mut inner, _ /* ddof */) => {
+                | IRAggExpr::Std(ref mut inner, _ /* ddof */)
+                | IRAggExpr::Count(ref mut inner, _ /* count_nulls */) => {
                     let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[*inner], ctx)?;
                     *inner = trans_exprs[0];
 
@@ -688,7 +682,6 @@ fn lower_exprs_with_ctx(
                 | IRAggExpr::NUnique(_)
                 | IRAggExpr::Implode(_)
                 | IRAggExpr::Quantile { .. }
-                | IRAggExpr::Count(_, _)
                 | IRAggExpr::AggGroups(_) => {
                     let out_name = unique_column_name();
                     fallback_subset.push(ExprIR::new(expr, OutputName::Alias(out_name.clone())));

@@ -4,7 +4,7 @@ use std::{mem, ops};
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
-use polars_schema::schema::debug_ensure_matching_schema_names;
+use polars_schema::schema::ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -31,6 +31,7 @@ pub(crate) mod horizontal;
 pub mod row;
 mod top_k;
 mod upstream_traits;
+mod validation;
 
 use arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
@@ -260,6 +261,8 @@ impl DataFrame {
 
     /// Create a DataFrame from a Vector of Series.
     ///
+    /// Errors if a column names are not unique, or if heights are not all equal.
+    ///
     /// # Example
     ///
     /// ```
@@ -271,18 +274,13 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn new(columns: Vec<Column>) -> PolarsResult<Self> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
+        DataFrame::validate_columns_slice(&columns)
+            .map_err(|e| e.wrap_msg(|e| format!("could not create a new DataFrame: {}", e)))?;
+        Ok(unsafe { Self::new_no_checks_height_from_first(columns) })
+    }
 
-        let Some(fst) = columns.first() else {
-            return Ok(DataFrame {
-                height: 0,
-                columns,
-                cached_schema: OnceLock::new(),
-            });
-        };
-
-        let height = fst.len();
-        for col in &columns[1..] {
+    pub fn new_with_height(height: usize, columns: Vec<Column>) -> PolarsResult<Self> {
+        for col in &columns {
             polars_ensure!(
                 col.len() == height,
                 ShapeMismatch: "could not create a new DataFrame: series {:?} has length {} while series {:?} has length {}",
@@ -365,8 +363,13 @@ impl DataFrame {
     /// static EMPTY: DataFrame = DataFrame::empty();
     /// ```
     pub const fn empty() -> Self {
+        Self::empty_with_height(0)
+    }
+
+    /// Creates an empty `DataFrame` with a specific `height`.
+    pub const fn empty_with_height(height: usize) -> Self {
         DataFrame {
-            height: 0,
+            height,
             columns: vec![],
             cached_schema: OnceLock::new(),
         }
@@ -514,11 +517,7 @@ impl DataFrame {
     /// having an equal length and a unique name, if not this may panic down the line.
     pub unsafe fn new_no_checks(height: usize, columns: Vec<Column>) -> DataFrame {
         if cfg!(debug_assertions) {
-            ensure_names_unique(&columns, |s| s.name().as_str()).unwrap();
-
-            for col in &columns {
-                assert_eq!(col.len(), height);
-            }
+            DataFrame::validate_columns_slice(&columns).unwrap();
         }
 
         unsafe { Self::_new_no_checks_impl(height, columns) }
@@ -534,30 +533,6 @@ impl DataFrame {
             columns,
             cached_schema: OnceLock::new(),
         }
-    }
-
-    /// Create a new `DataFrame` but does not check the length of the `Series`,
-    /// only check for duplicates.
-    ///
-    /// It is advised to use [DataFrame::new] in favor of this method.
-    ///
-    /// # Safety
-    ///
-    /// It is the callers responsibility to uphold the contract of all `Series`
-    /// having an equal length, if not this may panic down the line.
-    pub unsafe fn new_no_length_checks(columns: Vec<Column>) -> PolarsResult<DataFrame> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-
-        Ok(if cfg!(debug_assertions) {
-            Self::new(columns).unwrap()
-        } else {
-            let height = Self::infer_height(&columns);
-            DataFrame {
-                height,
-                columns,
-                cached_schema: OnceLock::new(),
-            }
-        })
     }
 
     /// Shrink the capacity of this DataFrame to fit its length.
@@ -595,6 +570,24 @@ impl DataFrame {
 
         for col in columns.iter_mut().filter(|c| c.n_chunks() > 1) {
             *col = col.rechunk();
+        }
+    }
+
+    pub fn _deshare_views_mut(&mut self) {
+        // SAFETY: We never adjust the length or names of the columns.
+        unsafe {
+            let columns = self.get_columns_mut();
+            for col in columns {
+                let Column::Series(s) = col else { continue };
+
+                if let Ok(ca) = s.binary() {
+                    let gc_ca = ca.apply_kernel(&|a| a.deshare().into_boxed());
+                    *col = Column::from(gc_ca.into_series());
+                } else if let Ok(ca) = s.str() {
+                    let gc_ca = ca.apply_kernel(&|a| a.deshare().into_boxed());
+                    *col = Column::from(gc_ca.into_series());
+                }
+            }
         }
     }
 
@@ -1819,7 +1812,9 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        debug_ensure_matching_schema_names(schema, self.schema())?;
+        if cfg!(debug_assertions) {
+            ensure_matching_schema_names(schema, self.schema())?;
+        }
 
         cols.iter()
             .map(|name| {
@@ -3109,7 +3104,7 @@ impl DataFrame {
         for ca in iter {
             acc_ca.append(&ca)?;
         }
-        Ok(acc_ca.rechunk())
+        Ok(acc_ca.rechunk().into_owned())
     }
 
     /// Get the supertype of the columns in this DataFrame
@@ -3295,6 +3290,7 @@ impl DataFrame {
         // - we don't adjust the names of the columns
         // - each column gets appended the same number of rows, which is an invariant of
         //   record_batch.
+        self.height += rb.height();
         let columns = unsafe { self.get_columns_mut() };
         for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
             let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();

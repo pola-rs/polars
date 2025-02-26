@@ -101,7 +101,8 @@ where
         V: IntoIterator<Item = Option<T::Native>>,
     {
         check_bounds(idx, self.len() as IdxSize)?;
-        let mut ca = std::mem::take(self).rechunk();
+        let mut ca = std::mem::take(self);
+        ca.rechunk_mut();
 
         // SAFETY:
         // we will not modify the length

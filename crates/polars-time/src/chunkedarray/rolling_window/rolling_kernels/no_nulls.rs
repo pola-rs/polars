@@ -1,3 +1,5 @@
+use std::ops::{Add, Sub};
+
 use arrow::bitmap::MutableBitmap;
 use arrow::legacy::kernels::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use bytemuck::allocation::zeroed_vec;
@@ -224,7 +226,15 @@ pub(crate) fn rolling_sum<T>(
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + std::iter::Sum + NumCast + Mul<Output = T> + AddAssign + SubAssign + IsFloat,
+    T: NativeType
+        + std::iter::Sum
+        + NumCast
+        + Mul<Output = T>
+        + AddAssign
+        + SubAssign
+        + IsFloat
+        + Sub<Output = T>
+        + Add<Output = T>,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]

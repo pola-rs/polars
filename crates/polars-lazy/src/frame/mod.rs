@@ -928,9 +928,10 @@ impl LazyFrame {
         Ok(())
     }
 
-    /// Filter by some predicate expression.
+    /// Filter frame rows that match a predicate expression.
     ///
-    /// The expression must yield boolean values.
+    /// The expression must yield boolean values (note that rows where the
+    /// predicate resolves to `null` are *not* included in the resulting frame).
     ///
     /// # Example
     ///
@@ -948,6 +949,27 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().filter(predicate).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Remove frame rows that match a predicate expression.
+    ///
+    /// The expression must yield boolean values (note that rows where the
+    /// predicate resolves to `null` are *not* removed from the resulting frame).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .remove(col("sepal_width").is_null())
+    ///         .select([col("sepal_width"), col("sepal_length")])
+    /// }
+    /// ```
+    pub fn remove(self, predicate: Expr) -> Self {
+        self.filter(predicate.neq_missing(lit(true)))
     }
 
     /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.
@@ -1331,10 +1353,23 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn join<E: AsRef<[Expr]>>(
-        mut self,
+        self,
         other: LazyFrame,
         left_on: E,
         right_on: E,
+        args: JoinArgs,
+    ) -> LazyFrame {
+        let left_on = left_on.as_ref().to_vec();
+        let right_on = right_on.as_ref().to_vec();
+
+        self._join_impl(other, left_on, right_on, args)
+    }
+
+    fn _join_impl(
+        mut self,
+        other: LazyFrame,
+        left_on: Vec<Expr>,
+        right_on: Vec<Expr>,
         args: JoinArgs,
     ) -> LazyFrame {
         // if any of the nodes reads from files we must activate this plan as well.
@@ -1342,22 +1377,35 @@ impl LazyFrame {
             self.opt_state |= OptFlags::FILE_CACHING;
         }
 
-        let left_on = left_on.as_ref().to_vec();
-        let right_on = right_on.as_ref().to_vec();
+        let JoinArgs {
+            how,
+            validation,
+            suffix,
+            slice,
+            join_nulls,
+            coalesce,
+            maintain_order,
+        } = args;
+
+        if slice.is_some() {
+            panic!("impl error: slice is not handled")
+        }
 
         let mut builder = self
             .join_builder()
             .with(other)
             .left_on(left_on)
             .right_on(right_on)
-            .how(args.how)
-            .validate(args.validation)
-            .coalesce(args.coalesce)
-            .join_nulls(args.join_nulls);
+            .how(how)
+            .validate(validation)
+            .join_nulls(join_nulls)
+            .coalesce(coalesce)
+            .maintain_order(maintain_order);
 
-        if let Some(suffix) = args.suffix {
+        if let Some(suffix) = suffix {
             builder = builder.suffix(suffix);
         }
+
         // Note: args.slice is set by the optimizer
         builder.finish()
     }

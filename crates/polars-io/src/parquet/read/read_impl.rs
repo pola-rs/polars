@@ -309,13 +309,13 @@ fn rg_to_dfs_prefiltered(
             .live_columns
             .iter()
             .map(|name| {
-                let (p, specialized) = predicate.predicate.isolate_column_expr(name.as_str())?;
+                let (p, specialized) = predicate.column_predicates.predicates.get(name)?;
 
                 let p = ColumnPredicateExpr::new(
                     name.clone(),
                     DataType::from_arrow_field(schema.get(name).unwrap()),
-                    p,
-                    specialized,
+                    p.clone(),
+                    specialized.clone(),
                 );
 
                 let eq_scalar = p.to_eq_scalar().cloned();
@@ -440,12 +440,7 @@ fn rg_to_dfs_prefiltered(
                 } else {
                     df = unsafe { DataFrame::new_no_checks(md.num_rows(), live_columns.clone()) };
 
-                    materialize_hive_partitions(
-                        &mut df,
-                        schema.as_ref(),
-                        hive_partition_columns,
-                        md.num_rows(),
-                    );
+                    materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
                     let s = predicate.predicate.evaluate_io(&df)?;
                     let mask = s.bool().expect("filter predicates was not of type boolean");
 
@@ -489,12 +484,7 @@ fn rg_to_dfs_prefiltered(
 
                 // We don't need to do any further work if there are no dead columns
                 if dead_idx_to_col_idx.is_empty() {
-                    materialize_hive_partitions(
-                        &mut df,
-                        schema.as_ref(),
-                        hive_partition_columns,
-                        md.num_rows(),
-                    );
+                    materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
 
                     return Ok(Some(df));
                 }
@@ -606,12 +596,7 @@ fn rg_to_dfs_prefiltered(
                 // and the length is given by the parquet file which should always be the same.
                 let mut df = unsafe { DataFrame::new_no_checks(height, merged) };
 
-                materialize_hive_partitions(
-                    &mut df,
-                    schema.as_ref(),
-                    hive_partition_columns,
-                    md.num_rows(),
-                );
+                materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
 
                 PolarsResult::Ok(Some(df))
             })
@@ -713,7 +698,7 @@ fn rg_to_dfs_optionally_par_over_columns(
             );
         }
 
-        materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns, rg_slice.1);
+        materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
         apply_predicate(
             &mut df,
             predicate.as_ref().map(|p| p.predicate.as_ref()),
@@ -850,12 +835,7 @@ fn rg_to_dfs_par_over_rg(
                     );
                 }
 
-                materialize_hive_partitions(
-                    &mut df,
-                    schema.as_ref(),
-                    hive_partition_columns,
-                    slice.1,
-                );
+                materialize_hive_partitions(&mut df, schema.as_ref(), hive_partition_columns);
                 apply_predicate(
                     &mut df,
                     predicate.as_ref().map(|p| p.predicate.as_ref()),
@@ -1435,7 +1415,7 @@ impl PrefilterMaskSetting {
                 let is_nested = dtype.is_nested();
 
                 // We empirically selected these numbers.
-                is_nested && prefilter_cost <= 0.01
+                !is_nested && prefilter_cost <= 0.01
             },
             Self::Pre => true,
             Self::Post => false,

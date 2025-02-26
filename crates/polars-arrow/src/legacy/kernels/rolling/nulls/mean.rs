@@ -6,7 +6,14 @@ pub struct MeanWindow<'a, T> {
 
 impl<
         'a,
-        T: NativeType + IsFloat + Add<Output = T> + Sub<Output = T> + NumCast + Div<Output = T>,
+        T: NativeType
+            + IsFloat
+            + Add<Output = T>
+            + Sub<Output = T>
+            + NumCast
+            + Div<Output = T>
+            + AddAssign
+            + SubAssign,
     > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
     unsafe fn new(
@@ -45,6 +52,8 @@ where
         + Add<Output = T>
         + Sub<Output = T>
         + NumCast
+        + AddAssign
+        + SubAssign
         + Div<Output = T>,
 {
     if weights.is_some() {

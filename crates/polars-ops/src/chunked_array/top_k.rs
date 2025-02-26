@@ -71,7 +71,8 @@ where
     }
 
     // Get rid of all the nulls and transform into Vec<T::Native>.
-    let nnca = ca.drop_nulls().rechunk();
+    let mut nnca = ca.drop_nulls();
+    nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
     let (_, buffer, _) = chunk.into_inner();
     let mut vec = buffer.make_mut();
@@ -105,7 +106,8 @@ fn top_k_binary_impl(
     }
 
     // Get rid of all the nulls and transform into mutable views.
-    let nnca = ca.drop_nulls().rechunk();
+    let mut nnca = ca.drop_nulls();
+    nnca.rechunk_mut();
     let chunk = nnca.downcast_into_iter().next().unwrap();
     let buffers = chunk.data_buffers().clone();
     let mut views = chunk.into_views();
@@ -176,8 +178,7 @@ pub fn top_k(s: &[Column], descending: bool) -> PolarsResult<Column> {
     if is_sorted {
         let out_len = k.min(src.len());
         let ignored_len = src.len() - out_len;
-
-        let slice_at_start = (sorted_flag == IsSorted::Ascending) ^ descending;
+        let slice_at_start = (sorted_flag == IsSorted::Ascending) == descending;
         let nulls_at_start = src.get(0).unwrap() == AnyValue::Null;
         let offset = if nulls_at_start == slice_at_start {
             src.null_count().min(ignored_len)

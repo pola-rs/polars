@@ -444,8 +444,11 @@ macro_rules! impl_sliced {
         #[inline]
         #[must_use]
         pub fn sliced(self, offset: usize, length: usize) -> Self {
+            let total = offset
+                .checked_add(length)
+                .expect("offset + length overflowed");
             assert!(
-                offset + length <= self.len(),
+                total <= self.len(),
                 "the offset of the new Buffer cannot exceed the existing length"
             );
             unsafe { Self::sliced_unchecked(self, offset, length) }

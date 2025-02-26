@@ -3,6 +3,7 @@
     feature(stdarch_aarch64_prefetch)
 )]
 #![cfg_attr(feature = "nightly", feature(core_intrinsics))] // For algebraic ops.
+#![cfg_attr(feature = "nightly", feature(select_unpredictable))] // For branchless programming.
 #![cfg_attr(feature = "nightly", allow(internal_features))]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 pub mod abs_diff;
@@ -26,6 +27,7 @@ pub mod mem;
 pub mod min_max;
 pub mod pl_str;
 pub mod priority;
+pub mod select;
 pub mod slice;
 pub mod sort;
 pub mod sync;
@@ -55,6 +57,7 @@ pub mod partitioned;
 
 pub use index::{IdxSize, NullableIdxSize};
 pub use io::*;
+pub use pl_str::unique_column_name;
 
 #[cfg(feature = "python")]
 pub mod python_function;

@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use super::*;
 use crate::chunked_array::cast::CastOptions;
 
@@ -24,10 +26,11 @@ unsafe fn bitwise_agg(
     f: fn(&BooleanChunked) -> Option<bool>,
 ) -> Series {
     // Prevent a rechunk for every individual group.
+
     let s = if groups.len() > 1 {
         ca.rechunk()
     } else {
-        ca.clone()
+        Cow::Borrowed(ca)
     };
 
     match groups {

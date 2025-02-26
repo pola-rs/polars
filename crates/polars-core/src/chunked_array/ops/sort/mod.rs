@@ -19,7 +19,6 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
-use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
@@ -408,7 +407,7 @@ impl ChunkSort<BinaryType> for BinaryChunked {
         // We will sort by the views and reconstruct with sorted views. We leave the buffers as is.
         // We must rechunk to ensure that all views point into the proper buffers.
         let ca = self.rechunk();
-        let arr = ca.downcast_into_array();
+        let arr = ca.downcast_as_array().clone();
 
         let (views, buffers, validity, total_bytes_len, total_buffer_len) = arr.into_inner();
         let mut views = views.make_mut();
@@ -590,15 +589,28 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
     fn arg_sort(&self, mut options: SortOptions) -> IdxCa {
         options.multithreaded &= POOL.current_num_threads() > 1;
         let ca = self.rechunk();
-        let arr = ca.downcast_into_array();
+        let arr = ca.downcast_as_array();
         let mut idx = (0..(arr.len() as IdxSize)).collect::<Vec<_>>();
 
         let argsort = |args| {
-            sort_unstable_by_branch(args, options, |a, b| unsafe {
-                let a = arr.value_unchecked(*a as usize);
-                let b = arr.value_unchecked(*b as usize);
-                a.tot_cmp(&b)
-            });
+            if options.maintain_order {
+                sort_by_branch(
+                    args,
+                    options.descending,
+                    |a, b| unsafe {
+                        let a = arr.value_unchecked(*a as usize);
+                        let b = arr.value_unchecked(*b as usize);
+                        a.tot_cmp(&b)
+                    },
+                    options.multithreaded,
+                );
+            } else {
+                sort_unstable_by_branch(args, options, |a, b| unsafe {
+                    let a = arr.value_unchecked(*a as usize);
+                    let b = arr.value_unchecked(*b as usize);
+                    a.tot_cmp(&b)
+                });
+            }
         };
 
         if self.null_count() == 0 {
@@ -646,25 +658,19 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
 }
 
 #[cfg(feature = "dtype-struct")]
-impl StructChunked {
-    pub(crate) fn arg_sort(&self, options: SortOptions) -> IdxCa {
-        let bin = _get_rows_encoded_ca(
-            self.name().clone(),
-            &[self.clone().into_column()],
-            &[options.descending],
-            &[options.nulls_last],
-        )
-        .unwrap();
-        bin.arg_sort(Default::default())
-    }
-}
-
-#[cfg(feature = "dtype-struct")]
 impl ChunkSort<StructType> for StructChunked {
     fn sort_with(&self, mut options: SortOptions) -> ChunkedArray<StructType> {
         options.multithreaded &= POOL.current_num_threads() > 1;
         let idx = self.arg_sort(options);
-        unsafe { self.take_unchecked(&idx) }
+        let mut out = unsafe { self.take_unchecked(&idx) };
+
+        let s = if options.descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        out.set_sorted_flag(s);
+        out
     }
 
     fn sort(&self, descending: bool) -> ChunkedArray<StructType> {

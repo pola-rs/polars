@@ -138,6 +138,7 @@ where
                                 predicate: Arc::new(Wrap { p }) as Arc<dyn PhysicalIoExpr>,
                                 live_columns,
                                 skip_batch_predicate: None,
+                                column_predicates: Arc::new(Default::default()),
                             })
                         })
                         .transpose()?;
@@ -148,7 +149,7 @@ where
                         metadata,
                         file_options,
                         file_info,
-                        hive_parts,
+                        hive_parts.map(|h| h.into_statistics()),
                         verbose,
                         predicate,
                     )?;

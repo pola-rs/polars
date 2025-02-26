@@ -400,6 +400,10 @@ impl StructChunked {
 
     /// Combine the validities of two structs.
     pub fn zip_outer_validity(&mut self, other: &StructChunked) {
+        // This might go wrong for broadcasting behavior. If this is not checked, it leads to a
+        // segfault because we infinitely recurse.
+        assert_eq!(self.len(), other.len());
+
         if other.null_count() == 0 {
             return;
         }
@@ -411,7 +415,7 @@ impl StructChunked {
                 .zip(other.chunks())
                 .any(|(a, b)| a.len() != b.len())
         {
-            *self = self.rechunk();
+            self.rechunk_mut();
             let other = other.rechunk();
             return self.zip_outer_validity(&other);
         }

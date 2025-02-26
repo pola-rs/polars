@@ -6,12 +6,7 @@ import contextlib
 import os
 import random
 from collections import defaultdict
-from collections.abc import (
-    Generator,
-    Iterable,
-    Sequence,
-    Sized,
-)
+from collections.abc import Generator, Iterable, Sequence, Sized
 from io import BytesIO, StringIO
 from pathlib import Path
 from typing import (
@@ -28,11 +23,7 @@ from typing import (
 
 import polars._reexport as pl
 from polars import functions as F
-from polars._typing import (
-    DbWriteMode,
-    JaxExportType,
-    TorchExportType,
-)
+from polars._typing import DbWriteMode, JaxExportType, TorchExportType
 from polars._utils.construction import (
     arrow_to_pydf,
     dataframe_to_pydf,
@@ -51,6 +42,7 @@ from polars._utils.deprecation import (
 )
 from polars._utils.getitem import get_df_item_by_key
 from polars._utils.parse import parse_into_expression
+from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
 from polars._utils.serde import serialize_polars_object
 from polars._utils.unstable import issue_unstable_warning, unstable
 from polars._utils.various import (
@@ -98,6 +90,7 @@ from polars.dependencies import pandas as pd
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import (
     ColumnNotFoundError,
+    InvalidOperationError,
     ModuleUpgradeRequiredError,
     NoRowsReturnedError,
     TooManyRowsReturnedError,
@@ -108,17 +101,13 @@ from polars.schema import Schema
 from polars.selectors import _expand_selector_dicts, _expand_selectors
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyDataFrame, PySeries
+    from polars.polars import PyDataFrame
     from polars.polars import dtype_str_repr as _dtype_str_repr
     from polars.polars import write_clipboard_string as _write_clipboard_string
 
 if TYPE_CHECKING:
     import sys
-    from collections.abc import (
-        Collection,
-        Iterator,
-        Mapping,
-    )
+    from collections.abc import Collection, Iterator, Mapping
     from datetime import timedelta
     from io import IOBase
     from typing import Literal
@@ -427,20 +416,12 @@ class DataFrame:
                 data, schema=schema, schema_overrides=schema_overrides, strict=strict
             )
 
-        elif hasattr(data, "__arrow_c_array__"):
-            # This uses the fact that PySeries.from_arrow_c_array will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_array(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
-        elif hasattr(data, "__arrow_c_stream__"):
-            # This uses the fact that PySeries.from_arrow_c_stream will create a
-            # struct-typed Series. Then we unpack that to a DataFrame.
-            tmp_col_name = ""
-            s = wrap_s(PySeries.from_arrow_c_stream(data))
-            self._df = s.to_frame(tmp_col_name).unnest(tmp_col_name)._df
-
+        elif is_pycapsule(data):
+            self._df = pycapsule_to_frame(
+                data,
+                schema=schema,
+                schema_overrides=schema_overrides,
+            )._df
         else:
             msg = (
                 f"DataFrame constructor called with unsupported type {type(data).__name__!r}"
@@ -2971,11 +2952,14 @@ class DataFrame:
         elif isinstance(file, (str, os.PathLike)):
             file = normalize_filepath(file)
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, file, storage_options, "write_csv"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2999,7 +2983,7 @@ class DataFrame:
             null_value,
             quote_style,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -3516,6 +3500,16 @@ class DataFrame:
             table_start[1] + df.width - 1,
         )
 
+        excel_max_valid_rows = 1048575
+        excel_max_valid_cols = 16384
+
+        if (
+            table_finish[0] > excel_max_valid_rows
+            or table_finish[1] > excel_max_valid_cols
+        ):
+            msg = f"writing {df.height}x{df.width} frame at {position!r} does not fit worksheet dimensions of {excel_max_valid_rows} rows and {excel_max_valid_cols} columns"
+            raise InvalidOperationError(msg)
+
         # write table structure and formats into the target sheet
         if not is_empty or include_header:
             ws.add_table(
@@ -3729,15 +3723,18 @@ class DataFrame:
         if compression is None:
             compression = "uncompressed"
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = (
+        credential_provider_builder = (
             None
             if return_bytes
-            else _maybe_init_credential_provider(
+            else _init_credential_provider_builder(
                 credential_provider, file, storage_options, "write_ipc"
             )
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -3750,7 +3747,7 @@ class DataFrame:
             compression,
             compat_level,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
         return file if return_bytes else None  # type: ignore[return-value]
@@ -3873,7 +3870,8 @@ class DataFrame:
 
             Possible values:
 
-            - `True`: enable default set of statistics (default)
+            - `True`: enable default set of statistics (default). Some
+              statistics may be disabled.
             - `False`: disable all statistics
             - "full": calculate and write all available statistics. Cannot be
               combined with `use_pyarrow`.
@@ -4013,11 +4011,14 @@ class DataFrame:
 
             return
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, file, storage_options, "write_parquet"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -4059,7 +4060,7 @@ class DataFrame:
             partition_by=partition_by,
             partition_chunk_size_bytes=partition_chunk_size_bytes,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -4506,45 +4507,50 @@ class DataFrame:
 
         from deltalake import DeltaTable, write_deltalake
         from deltalake import __version__ as delta_version
-        from packaging.version import Version
 
         _check_for_unsupported_types(self.dtypes)
 
         if isinstance(target, (str, Path)):
             target = _resolve_delta_lake_uri(str(target), strict=False)
 
-        if Version(delta_version) >= Version("0.23.0"):
+        if parse_version(delta_version) >= (0, 23, 0):
             data = self.to_arrow(compat_level=CompatLevel.newest())
         else:
             data = self.to_arrow()
 
-        from polars.io.cloud.credential_provider import (
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
+        from polars.io.cloud.credential_provider._providers import (
             _get_credentials_from_provider_expiry_aware,
-            _maybe_init_credential_provider,
         )
 
         if not isinstance(target, DeltaTable):
-            credential_provider = _maybe_init_credential_provider(
+            credential_provider_builder = _init_credential_provider_builder(
                 credential_provider, target, storage_options, "write_delta"
             )
         elif credential_provider is not None and credential_provider != "auto":
             msg = "cannot use credential_provider when passing a DeltaTable object"
             raise ValueError(msg)
         else:
-            credential_provider = None
+            credential_provider_builder = None
+
+        del credential_provider
 
         credential_provider_creds = {}
 
-        if credential_provider is not None:
+        if credential_provider_builder and (
+            provider := credential_provider_builder.build_credential_provider()
+        ):
             credential_provider_creds = _get_credentials_from_provider_expiry_aware(
-                credential_provider
+                provider
             )
 
         # We aren't calling into polars-native write functions so we just update
         # the storage_options here.
         storage_options = (
             {**(storage_options or {}), **credential_provider_creds}
-            if storage_options is not None or credential_provider is not None
+            if storage_options is not None or credential_provider_builder is not None
             else None
         )
 
@@ -4594,10 +4600,10 @@ class DataFrame:
 
         FFI buffers are included in this estimation.
 
-        Note
-        ----
-        For objects, the estimated size only reports the pointer size, which is
-        a huge underestimation.
+        Notes
+        -----
+        For data with Object dtype, the estimated size only reports the pointer
+        size, which is a huge underestimation.
 
         Parameters
         ----------
@@ -4898,30 +4904,33 @@ class DataFrame:
         **constraints: Any,
     ) -> DataFrame:
         """
-        Filter the rows in the DataFrame based on one or more predicate expressions.
+        Filter rows, retaining those that match the given predicate expression(s).
 
         The original order of the remaining rows is preserved.
 
-        Rows where the filter does not evaluate to True are discarded, including nulls.
+        Only rows where the predicate resolves as True are retained; when the
+        predicate result is False (or null), the row is discarded.
 
         Parameters
         ----------
         predicates
-            Expression(s) that evaluates to a boolean Series.
+            Expression(s) that evaluate to a boolean Series.
         constraints
             Column filters; use `name = value` to filter columns by the supplied value.
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
-            will be implicitly joined with the other filter conditions using `&`.
+            be implicitly joined with the other filter conditions using `&`.
 
         Notes
         -----
-        If you are transitioning from pandas and performing filter operations based on
-        the comparison of two or more columns, please note that in Polars,
-        any comparison involving null values will always result in null.
-        As a result, these rows will be filtered out.
-        Ensure to handle null values appropriately to avoid unintended filtering
-        (See examples below).
+        If you are transitioning from Pandas, and performing filter operations based on
+        the comparison of two or more columns, please note that in Polars any comparison
+        involving `null` values will result in a `null` result, *not* boolean True or
+        False. As a result, these rows will not be retained. Ensure that null values
+        are handled appropriately to avoid unexpected behaviour (see examples below).
 
+        See Also
+        --------
+        remove
 
         Examples
         --------
@@ -4933,7 +4942,7 @@ class DataFrame:
         ...     }
         ... )
 
-        Filter on one condition:
+        Filter rows matching a condition:
 
         >>> df.filter(pl.col("foo") > 1)
         shape: (3, 3)
@@ -4949,7 +4958,9 @@ class DataFrame:
 
         Filter on multiple conditions, combined with and/or operators:
 
-        >>> df.filter((pl.col("foo") < 3) & (pl.col("ham") == "a"))
+        >>> df.filter(
+        ...     (pl.col("foo") < 3) & (pl.col("ham") == "a"),
+        ... )
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4959,7 +4970,9 @@ class DataFrame:
         │ 1   ┆ 6   ┆ a   │
         └─────┴─────┴─────┘
 
-        >>> df.filter((pl.col("foo") == 1) | (pl.col("ham") == "c"))
+        >>> df.filter(
+        ...     (pl.col("foo") == 1) | (pl.col("ham") == "c"),
+        ... )
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -4998,9 +5011,11 @@ class DataFrame:
         │ 2   ┆ 7   ┆ b   │
         └─────┴─────┴─────┘
 
-        Filter by comparing two columns against each other
+        Filter by comparing two columns against each other:
 
-        >>> df.filter(pl.col("foo") == pl.col("bar"))
+        >>> df.filter(
+        ...     pl.col("foo") == pl.col("bar"),
+        ... )
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -5010,7 +5025,9 @@ class DataFrame:
         │ 0   ┆ 0   ┆ f   │
         └─────┴─────┴─────┘
 
-        >>> df.filter(pl.col("foo") != pl.col("bar"))
+        >>> df.filter(
+        ...     pl.col("foo") != pl.col("bar"),
+        ... )
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -5025,7 +5042,9 @@ class DataFrame:
         Notice how the row with `None` values is filtered out. In order to keep the
         same behavior as pandas, use:
 
-        >>> df.filter(pl.col("foo").ne_missing(pl.col("bar")))
+        >>> df.filter(
+        ...     pl.col("foo").ne_missing(pl.col("bar")),
+        ... )
         shape: (5, 3)
         ┌──────┬──────┬─────┐
         │ foo  ┆ bar  ┆ ham │
@@ -5038,9 +5057,147 @@ class DataFrame:
         │ 4    ┆ null ┆ d   │
         │ null ┆ 9    ┆ e   │
         └──────┴──────┴─────┘
-
         """
         return self.lazy().filter(*predicates, **constraints).collect(_eager=True)
+
+    def remove(
+        self,
+        *predicates: (
+            IntoExprColumn
+            | Iterable[IntoExprColumn]
+            | bool
+            | list[bool]
+            | np.ndarray[Any, Any]
+        ),
+        **constraints: Any,
+    ) -> DataFrame:
+        """
+        Remove rows, dropping those that match the given predicate expression(s).
+
+        The original order of the remaining rows is preserved.
+
+        Rows where the filter predicate does not evaluate to True are retained
+        (this includes rows where the predicate evaluates as `null`).
+
+        Parameters
+        ----------
+        predicates
+            Expression that evaluates to a boolean Series.
+        constraints
+            Column filters; use `name = value` to filter columns using the supplied
+            value. Each constraint behaves the same as `pl.col(name).eq(value)`,
+            and is implicitly joined with the other filter conditions using `&`.
+
+        Notes
+        -----
+        If you are transitioning from Pandas, and performing filter operations based on
+        the comparison of two or more columns, please note that in Polars any comparison
+        involving `null` values will result in a `null` result, *not* boolean True or
+        False. As a result, these rows will not be removed. Ensure that null values
+        are handled appropriately to avoid unexpected behaviour (see examples below).
+
+        See Also
+        --------
+        filter
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [2, 3, None, 4, 0],
+        ...         "bar": [5, 6, None, None, 0],
+        ...         "ham": ["a", "b", None, "c", "d"],
+        ...     }
+        ... )
+
+        Remove rows matching a condition:
+
+        >>> df.remove(pl.col("bar") >= 5)
+        shape: (3, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        │ 0    ┆ 0    ┆ d    │
+        └──────┴──────┴──────┘
+
+        Discard rows based on multiple conditions, combined with and/or operators:
+
+        >>> df.remove(
+        ...     (pl.col("foo") >= 0) & (pl.col("bar") >= 0),
+        ... )
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        └──────┴──────┴──────┘
+
+        >>> df.remove(
+        ...     (pl.col("foo") >= 0) | (pl.col("bar") >= 0),
+        ... )
+        shape: (1, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
+
+        Provide multiple constraints using `*args` syntax:
+
+        >>> df.remove(
+        ...     pl.col("ham").is_not_null(),
+        ...     pl.col("bar") >= 0,
+        ... )
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        └──────┴──────┴──────┘
+
+        Provide constraints(s) using `**kwargs` syntax:
+
+        >>> df.remove(foo=0, bar=0)
+        shape: (4, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ 2    ┆ 5    ┆ a    │
+        │ 3    ┆ 6    ┆ b    │
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        └──────┴──────┴──────┘
+
+        Remove rows by comparing two columns against each other:
+
+        >>> df.remove(
+        ...     pl.col("foo").ne_missing(pl.col("bar")),
+        ... )
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 0    ┆ 0    ┆ d    │
+        └──────┴──────┴──────┘
+        """
+        return self.lazy().remove(*predicates, **constraints).collect(_eager=True)
 
     @overload
     def glimpse(
@@ -7299,7 +7456,6 @@ class DataFrame:
         │ Netherlands ┆ 2018-08-01 ┆ 17.32      ┆ 910  │
         │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
         └─────────────┴────────────┴────────────┴──────┘
-
         """
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
@@ -7634,7 +7790,6 @@ class DataFrame:
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
-
         """
         if not isinstance(other, DataFrame):
             msg = f"expected `other` join table to be a DataFrame, got {type(other).__name__!r}"
@@ -9159,8 +9314,8 @@ class DataFrame:
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Fill the resulting null values with this value. Accepts scalar expression
+            input. Non-expression inputs are parsed as literals.
 
         Notes
         -----
@@ -10761,6 +10916,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[Any]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10770,6 +10926,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, Any]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10779,6 +10936,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[False] = ...,
     ) -> dict[Any, list[dict[str, Any]]]: ...
+
     @overload
     def rows_by_key(
         self,
@@ -10788,6 +10946,7 @@ class DataFrame:
         include_key: bool = ...,
         unique: Literal[True],
     ) -> dict[Any, dict[str, Any]]: ...
+
     def rows_by_key(
         self,
         key: ColumnNameOrSelector | Sequence[ColumnNameOrSelector],

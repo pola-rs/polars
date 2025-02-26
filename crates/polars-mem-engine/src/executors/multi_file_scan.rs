@@ -60,16 +60,6 @@ impl PhysicalExpr for PhysicalExprWithConstCols {
         self.child.to_field(input_schema)
     }
 
-    fn isolate_column_expr(
-        &self,
-        name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<polars_io::predicates::SpecializedColumnPredicateExpr>,
-    )> {
-        self.child.isolate_column_expr(name)
-    }
-
     fn is_scalar(&self) -> bool {
         self.child.is_scalar()
     }
@@ -423,10 +413,13 @@ impl MultiScanExec {
             let skip_batch_predicate = file_predicate
                 .as_ref()
                 .take_if(|_| use_statistics)
-                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref()));
+                .and_then(|p| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone()));
             if let Some(skip_batch_predicate) = &skip_batch_predicate {
-                let can_skip_batch = skip_batch_predicate
-                    .can_skip_batch(exec_source.num_unfiltered_rows()?, PlIndexMap::default())?;
+                let can_skip_batch = skip_batch_predicate.can_skip_batch(
+                    exec_source.num_unfiltered_rows()?,
+                    file_predicate.as_ref().unwrap().live_columns.as_ref(),
+                    PlIndexMap::default(),
+                )?;
                 if can_skip_batch && verbose {
                     eprintln!(
                         "File statistics allows skipping of '{}'",

@@ -134,6 +134,7 @@ fn cast_single_to_struct(
     fields: &[Field],
     options: CastOptions,
 ) -> PolarsResult<Series> {
+    polars_ensure!(fields.len() == 1, InvalidOperation: "must specify one field in the struct");
     let mut new_fields = Vec::with_capacity(fields.len());
     // cast to first field dtype
     let mut fields = fields.iter();
@@ -601,7 +602,7 @@ fn cast_list(
     // We still rechunk because we must bubble up a single data-type
     // TODO!: consider a version that works on chunks and merges the data-types and arrays.
     let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
+    let arr = ca.downcast_as_array();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked(
@@ -630,7 +631,7 @@ fn cast_list(
 unsafe fn cast_list_unchecked(ca: &ListChunked, child_type: &DataType) -> PolarsResult<Series> {
     // TODO! add chunked, but this must correct for list offsets.
     let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
+    let arr = ca.downcast_as_array();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked(
@@ -666,7 +667,7 @@ fn cast_fixed_size_list(
     options: CastOptions,
 ) -> PolarsResult<(ArrayRef, DataType)> {
     let ca = ca.rechunk();
-    let arr = ca.downcast_iter().next().unwrap();
+    let arr = ca.downcast_as_array();
     // SAFETY: inner dtype is passed correctly
     let s = unsafe {
         Series::from_chunks_and_dtype_unchecked(

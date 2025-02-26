@@ -68,7 +68,6 @@ def test_arrow_dict_to_polars() -> None:
         name="pa_dict",
         values=["AAA", "BBB", "CCC", "DDD", "BBB", "AAA", "CCC", "DDD", "DDD", "CCC"],
     )
-
     assert_series_equal(s, pl.Series("pa_dict", pa_dict))
 
 
@@ -349,7 +348,11 @@ def test_from_pyarrow_map() -> None:
         ),
     )
 
-    result = cast(pl.DataFrame, pl.from_arrow(pa_table))
+    # Convert from an empty table to trigger an ArrowSchema -> native schema
+    # conversion (checks that ArrowDataType::Map is handled in Rust).
+    pl.DataFrame(pa_table.slice(0, 0))
+
+    result = pl.DataFrame(pa_table)
     assert result.to_dict(as_series=False) == {
         "idx": [1, 2],
         "mapping": [
@@ -812,13 +815,23 @@ def test_df_pycapsule_interface() -> None:
             "c": ["fooooooooooooooooooooo", "bar", "looooooooooooooooong string"],
         }
     )
-    out = pa.table(PyCapsuleStreamHolder(df))
+
+    capsule_df = PyCapsuleStreamHolder(df)
+    out = pa.table(capsule_df)
     assert df.shape == out.shape
     assert df.schema.names() == out.schema.names
 
-    df2 = pl.from_arrow(out)
-    assert isinstance(df2, pl.DataFrame)
-    assert df.equals(df2)
+    schema_overrides = {"a": pl.Int128}
+    expected_schema = pl.Schema([("a", pl.Int128), ("b", pl.String), ("c", pl.String)])
+
+    for arrow_obj in (
+        pl.from_arrow(capsule_df),  # capsule
+        out,  # table loaded from capsule
+    ):
+        df_res = pl.from_arrow(arrow_obj, schema_overrides=schema_overrides)
+        assert expected_schema == df_res.schema  # type: ignore[union-attr]
+        assert isinstance(df_res, pl.DataFrame)
+        assert df.equals(df_res)
 
 
 def test_misaligned_nested_arrow_19097() -> None:

@@ -4,8 +4,8 @@ use polars_core::error::feature_gated;
 use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
+use polars_plan::dsl::ScanSources;
 use polars_plan::global::_set_n_rows_for_scan;
-use polars_plan::plans::ScanSources;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
 

@@ -27,10 +27,12 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     }
 
     fn _get_flags(&self) -> StatisticsFlags {
-        StatisticsFlags::empty()
+        self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, _flags: StatisticsFlags) {}
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
+        self.0.set_flags(flags);
+    }
 
     // TODO! remove this. Very slow. Asof join should use row-encoding.
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -149,8 +151,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        let ca = self.0.rechunk();
-        ca.into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {

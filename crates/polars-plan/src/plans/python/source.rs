@@ -5,10 +5,11 @@ use polars_utils::python_function::PythonFunction;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::dsl::python_dsl::PythonScanSource;
 use crate::plans::{ExprIR, PlSmallStr};
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct PythonOptions {
     /// A function that returns a Python Generator.
     /// The generator should produce Polars DataFrame's.
@@ -28,16 +29,7 @@ pub struct PythonOptions {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub enum PythonScanSource {
-    Pyarrow,
-    Cuda,
-    #[default]
-    IOPlugin,
-}
-
-#[derive(Clone, PartialEq, Eq, Debug, Default)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub enum PythonPredicate {
     // A pyarrow predicate python expression
     // can be evaluated with python.eval

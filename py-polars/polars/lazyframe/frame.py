@@ -76,7 +76,13 @@ from polars.datatypes import (
     parse_into_dtype,
 )
 from polars.datatypes.group import DataTypeGroup
-from polars.dependencies import import_optional, subprocess
+from polars.dependencies import (
+    _PYARROW_AVAILABLE,
+    import_optional,
+    subprocess,
+)
+from polars.dependencies import polars_cloud as pc
+from polars.dependencies import pyarrow as pa
 from polars.exceptions import PerformanceWarning
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
@@ -87,13 +93,12 @@ from polars.selectors import by_dtype, expand_selector
 with contextlib.suppress(ImportError):  # Module not available when building docs
     from polars.polars import PyLazyFrame, get_engine_affinity
 
+
 if TYPE_CHECKING:
     import sys
     from collections.abc import Awaitable, Iterable, Sequence
     from io import IOBase
     from typing import Literal
-
-    import pyarrow as pa
 
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
@@ -336,7 +341,7 @@ class LazyFrame:
     @classmethod
     def _scan_python_function(
         cls,
-        schema: pa.schema | Mapping[str, PolarsDataType],
+        schema: pa.schema | SchemaDict | Callable[[], SchemaDict],
         scan_fn: Any,
         *,
         pyarrow: bool = False,
@@ -346,9 +351,13 @@ class LazyFrame:
             self._ldf = PyLazyFrame.scan_from_python_function_pl_schema(
                 list(schema.items()), scan_fn, pyarrow
             )
-        else:
+        elif _PYARROW_AVAILABLE and isinstance(schema, pa.Schema):
             self._ldf = PyLazyFrame.scan_from_python_function_arrow_schema(
                 list(schema), scan_fn, pyarrow
+            )
+        else:
+            self._ldf = PyLazyFrame.scan_from_python_function_schema_function(
+                schema, scan_fn
             )
         return self
 
@@ -2336,7 +2345,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
             Possible values:
 
-            - `True`: enable default set of statistics (default)
+            - `True`: enable default set of statistics (default). Some
+              statistics may be disabled.
             - `False`: disable all statistics
             - "full": calculate and write all available statistics. Cannot be
               combined with `use_pyarrow`.
@@ -2434,11 +2444,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 "null_count": True,
             }
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_parquet"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2455,7 +2468,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             data_page_size=data_page_size,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -2558,11 +2571,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ipc"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2575,7 +2591,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             compression=compression,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -2745,11 +2761,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_csv"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2774,7 +2793,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             quote_style=quote_style,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -2873,11 +2892,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             no_optimization=no_optimization,
         )
 
-        from polars.io.cloud.credential_provider import _maybe_init_credential_provider
+        from polars.io.cloud.credential_provider._builder import (
+            _init_credential_provider_builder,
+        )
 
-        credential_provider = _maybe_init_credential_provider(
+        credential_provider_builder = _init_credential_provider_builder(
             credential_provider, path, storage_options, "sink_ndjson"
         )
+        del credential_provider
 
         if storage_options:
             storage_options = list(storage_options.items())  # type: ignore[assignment]
@@ -2889,7 +2911,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             path=path,
             maintain_order=maintain_order,
             cloud_options=storage_options,
-            credential_provider=credential_provider,
+            credential_provider=credential_provider_builder,
             retries=retries,
         )
 
@@ -2903,7 +2925,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         simplify_expression: bool = True,
         slice_pushdown: bool = True,
         collapse_joins: bool = True,
+        cluster_with_columns: bool = True,
         no_optimization: bool = False,
+        comm_subplan_elim: bool = False,
+        comm_subexpr_elim: bool = False,
         _check_order: bool = True,
     ) -> PyLazyFrame:
         if no_optimization:
@@ -2919,9 +2944,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             projection_pushdown=projection_pushdown,
             simplify_expression=simplify_expression,
             slice_pushdown=slice_pushdown,
-            comm_subplan_elim=False,
-            comm_subexpr_elim=False,
-            cluster_with_columns=False,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
             streaming=True,
             _eager=False,
@@ -3319,6 +3344,91 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         """
         return self._from_pyldf(self._ldf.clone())
 
+    def _filter(
+        self,
+        *,
+        predicates: tuple[
+            IntoExprColumn
+            | Iterable[IntoExprColumn]
+            | bool
+            | list[bool]
+            | np.ndarray[Any, Any],
+            ...,
+        ],
+        constraints: dict[str, Any],
+        invert: bool = False,
+    ) -> LazyFrame:
+        """Common code for filter/remove ops."""
+        all_predicates: list[pl.Expr] = []
+        boolean_masks = []
+
+        for p in predicates:
+            # quick exit/skip conditions
+            if (p is False and invert) or (p is True and not invert):
+                continue  # ignore; doesn't filter/remove anything
+            if (p is True and invert) or (p is False and not invert):
+                return self.clear()  # discard all rows
+
+            if _is_generator(p):
+                p = tuple(p)
+
+            # note: identify masks separately from predicates
+            if is_bool_sequence(p, include_series=True):
+                boolean_masks.append(pl.Series(p, dtype=Boolean))
+            elif (
+                (is_seq := is_sequence(p))
+                and any(not isinstance(x, pl.Expr) for x in p)
+            ) or (
+                not is_seq
+                and not isinstance(p, pl.Expr)
+                and not (isinstance(p, str) and p in self.collect_schema())
+            ):
+                err = (
+                    f"Series(…, dtype={p.dtype})"
+                    if isinstance(p, pl.Series)
+                    else repr(p)
+                )
+                msg = f"invalid predicate for `filter`: {err}"
+                raise TypeError(msg)
+            else:
+                all_predicates.extend(
+                    wrap_expr(x) for x in parse_into_list_of_expressions(p)
+                )
+
+        # unpack equality constraints from kwargs
+        all_predicates.extend(
+            F.col(name).eq(value) for name, value in constraints.items()
+        )
+        if not (all_predicates or boolean_masks):
+            msg = "at least one predicate or constraint must be provided"
+            raise TypeError(msg)
+
+        # if multiple predicates, combine as 'horizontal' expression
+        combined_predicate = (
+            (
+                F.all_horizontal(*all_predicates)
+                if len(all_predicates) > 1
+                else all_predicates[0]
+            )
+            if all_predicates
+            else None
+        )
+
+        # apply reduced boolean mask first, if applicable, then predicates
+        if boolean_masks:
+            mask_expr = F.lit(reduce(and_, boolean_masks))
+            combined_predicate = (
+                mask_expr
+                if combined_predicate is None
+                else mask_expr & combined_predicate
+            )
+
+        if combined_predicate is None:
+            return self._from_pyldf(self._ldf)
+
+        filter_method = self._ldf.remove if invert else self._ldf.filter
+        return self._from_pyldf(filter_method(combined_predicate._pyexpr))
+
     def filter(
         self,
         *predicates: (
@@ -3331,29 +3441,33 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         **constraints: Any,
     ) -> LazyFrame:
         """
-        Filter the rows in the LazyFrame based on a predicate expression.
+        Filter rows in the LazyFrame based on a predicate expression.
 
         The original order of the remaining rows is preserved.
 
-        Rows where the filter does not evaluate to True are discarded, including nulls.
+        Rows where the filter predicate does not evaluate to True are discarded
+        (this includes rows where the predicate evaluates as `null`).
 
         Parameters
         ----------
         predicates
             Expression that evaluates to a boolean Series.
         constraints
-            Column filters; use `name = value` to filter columns by the supplied value.
-            Each constraint will behave the same as `pl.col(name).eq(value)`, and
-            will be implicitly joined with the other filter conditions using `&`.
+            Column filters; use `name = value` to filter columns using the supplied
+            value. Each constraint behaves the same as `pl.col(name).eq(value)`,
+            and is implicitly joined with the other filter conditions using `&`.
 
         Notes
         -----
-        If you are transitioning from pandas and performing filter operations based on
-        the comparison of two or more columns, please note that in Polars,
-        any comparison involving null values will always result in null.
-        As a result, these rows will be filtered out.
-        Ensure to handle null values appropriately to avoid unintended filtering
-        (See examples below).
+        If you are transitioning from Pandas, and performing filter operations based on
+        the comparison of two or more columns, please note that in Polars any comparison
+        involving `null` values will result in a `null` result, *not* boolean True or
+        False. As a result, these rows will not be retained. Ensure that null values
+        are handled appropriately to avoid unexpected behaviour (see examples below).
+
+        See Also
+        --------
+        remove
 
         Examples
         --------
@@ -3420,7 +3534,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Filter on an OR condition:
 
-        >>> lf.filter((pl.col("foo") == 1) | (pl.col("ham") == "c")).collect()
+        >>> lf.filter(
+        ...     (pl.col("foo") == 1) | (pl.col("ham") == "c"),
+        ... ).collect()
         shape: (2, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -3433,7 +3549,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         Filter by comparing two columns against each other
 
-        >>> lf.filter(pl.col("foo") == pl.col("bar")).collect()
+        >>> lf.filter(
+        ...     pl.col("foo") == pl.col("bar"),
+        ... ).collect()
         shape: (1, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -3443,7 +3561,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 0   ┆ 0   ┆ f   │
         └─────┴─────┴─────┘
 
-        >>> lf.filter(pl.col("foo") != pl.col("bar")).collect()
+        >>> lf.filter(
+        ...     pl.col("foo") != pl.col("bar"),
+        ... ).collect()
         shape: (3, 3)
         ┌─────┬─────┬─────┐
         │ foo ┆ bar ┆ ham │
@@ -3455,10 +3575,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 3   ┆ 8   ┆ c   │
         └─────┴─────┴─────┘
 
-        Notice how the row with `None` values is filtered out.
-        In order to keep the same behavior as pandas, use:
+        Notice how the row with `None` values is filtered out; using `ne_missing`
+        ensures that null values compare equal, and we get similar behaviour to Pandas:
 
-        >>> lf.filter(pl.col("foo").ne_missing(pl.col("bar"))).collect()
+        >>> lf.filter(
+        ...     pl.col("foo").ne_missing(pl.col("bar")),
+        ... ).collect()
         shape: (5, 3)
         ┌──────┬──────┬─────┐
         │ foo  ┆ bar  ┆ ham │
@@ -3472,70 +3594,171 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ null ┆ 9    ┆ e   │
         └──────┴──────┴─────┘
         """
-        all_predicates: list[pl.Expr] = []
-        boolean_masks = []
-
-        # no-op; immediately matches all rows
-        if len(predicates) == 1 and predicates[0] is True and not constraints:
-            return self.clone()
-
-        # note: identify masks separately from predicates
-        for p in predicates:
-            if p is False:  # immediately disallows all rows
+        if not constraints:
+            # early-exit conditions (exclude/include all rows)
+            if not predicates or (len(predicates) == 1 and predicates[0] is True):
+                return self.clone()
+            if len(predicates) == 1 and predicates[0] is False:
                 return self.clear()
-            elif p is True:
-                continue  # no-op; matches all rows
-            if _is_generator(p):
-                p = tuple(p)
-            if is_bool_sequence(p, include_series=True):
-                boolean_masks.append(pl.Series(p, dtype=Boolean))
-            elif (
-                (is_seq := is_sequence(p))
-                and any(not isinstance(x, pl.Expr) for x in p)
-            ) or (
-                not is_seq
-                and not isinstance(p, pl.Expr)
-                and not (isinstance(p, str) and p in self.collect_schema())
-            ):
-                err = (
-                    f"Series(…, dtype={p.dtype})"
-                    if isinstance(p, pl.Series)
-                    else repr(p)
-                )
-                msg = f"invalid predicate for `filter`: {err}"
-                raise TypeError(msg)
-            else:
-                all_predicates.extend(
-                    wrap_expr(x) for x in parse_into_list_of_expressions(p)
-                )
 
-        # unpack equality constraints from kwargs
-        all_predicates.extend(
-            F.col(name).eq(value) for name, value in constraints.items()
-        )
-        if not (all_predicates or boolean_masks):
-            msg = "at least one predicate or constraint must be provided"
-            raise TypeError(msg)
-
-        # if multiple predicates, combine as 'horizontal' expression
-        combined_predicate = (
-            (
-                F.all_horizontal(*all_predicates)
-                if len(all_predicates) > 1
-                else all_predicates[0]
-            )._pyexpr
-            if all_predicates
-            else None
+        return self._filter(
+            predicates=predicates,
+            constraints=constraints,
+            invert=False,
         )
 
-        # apply reduced boolean mask first, if applicable, then predicates
-        ldf = (
-            self._ldf.filter(F.lit(reduce(and_, boolean_masks))._pyexpr)
-            if boolean_masks
-            else self._ldf
-        )
-        return self._from_pyldf(
-            ldf if combined_predicate is None else ldf.filter(combined_predicate)
+    def remove(
+        self,
+        *predicates: (
+            IntoExprColumn
+            | Iterable[IntoExprColumn]
+            | bool
+            | list[bool]
+            | np.ndarray[Any, Any]
+        ),
+        **constraints: Any,
+    ) -> LazyFrame:
+        """
+        Remove rows, dropping those that match the given predicate expression(s).
+
+        The original order of the remaining rows is preserved.
+
+        Rows where the filter predicate does not evaluate to True are retained
+        (this includes rows where the predicate evaluates as `null`).
+
+        Parameters
+        ----------
+        predicates
+            Expression that evaluates to a boolean Series.
+        constraints
+            Column filters; use `name = value` to filter columns using the supplied
+            value. Each constraint behaves the same as `pl.col(name).eq(value)`,
+            and is implicitly joined with the other filter conditions using `&`.
+
+        Notes
+        -----
+        If you are transitioning from Pandas, and performing filter operations based on
+        the comparison of two or more columns, please note that in Polars any comparison
+        involving `null` values will result in a `null` result, *not* boolean True or
+        False. As a result, these rows will not be removed. Ensure that null values
+        are handled appropriately to avoid unexpected behaviour (see examples below).
+
+        See Also
+        --------
+        filter
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "foo": [2, 3, None, 4, 0],
+        ...         "bar": [5, 6, None, None, 0],
+        ...         "ham": ["a", "b", None, "c", "d"],
+        ...     }
+        ... )
+
+        Remove rows matching a condition:
+
+        >>> lf.remove(
+        ...     pl.col("bar") >= 5,
+        ... ).collect()
+        shape: (3, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        │ 0    ┆ 0    ┆ d    │
+        └──────┴──────┴──────┘
+
+        Discard rows based on multiple conditions, combined with and/or operators:
+
+        >>> lf.remove(
+        ...     (pl.col("foo") >= 0) & (pl.col("bar") >= 0),
+        ... ).collect()
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        └──────┴──────┴──────┘
+
+        >>> lf.remove(
+        ...     (pl.col("foo") >= 0) | (pl.col("bar") >= 0),
+        ... ).collect()
+        shape: (1, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        └──────┴──────┴──────┘
+
+        Provide multiple constraints using `*args` syntax:
+
+        >>> lf.remove(
+        ...     pl.col("ham").is_not_null(),
+        ...     pl.col("bar") >= 0,
+        ... ).collect()
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        └──────┴──────┴──────┘
+
+        Provide constraints(s) using `**kwargs` syntax:
+
+        >>> lf.remove(foo=0, bar=0).collect()
+        shape: (4, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ 2    ┆ 5    ┆ a    │
+        │ 3    ┆ 6    ┆ b    │
+        │ null ┆ null ┆ null │
+        │ 4    ┆ null ┆ c    │
+        └──────┴──────┴──────┘
+
+        Remove rows by comparing two columns against each other; in this case, we
+        remove rows where the two columns are not equal (using `ne_missing` to
+        ensure that null values compare equal):
+
+        >>> lf.remove(
+        ...     pl.col("foo").ne_missing(pl.col("bar")),
+        ... ).collect()
+        shape: (2, 3)
+        ┌──────┬──────┬──────┐
+        │ foo  ┆ bar  ┆ ham  │
+        │ ---  ┆ ---  ┆ ---  │
+        │ i64  ┆ i64  ┆ str  │
+        ╞══════╪══════╪══════╡
+        │ null ┆ null ┆ null │
+        │ 0    ┆ 0    ┆ d    │
+        └──────┴──────┴──────┘
+        """
+        if not constraints:
+            # early-exit conditions (exclude/include all rows)
+            if not predicates or (len(predicates) == 1 and predicates[0] is True):
+                return self.clear()
+            if len(predicates) == 1 and predicates[0] is False:
+                return self.clone()
+
+        return self._filter(
+            predicates=predicates,
+            constraints=constraints,
+            invert=True,
         )
 
     def select(
@@ -4571,7 +4794,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ Netherlands ┆ 2018-08-01 ┆ 17.32      ┆ 910  │
         │ Netherlands ┆ 2019-01-01 ┆ 17.4       ┆ 910  │
         └─────────────┴────────────┴────────────┴──────┘
-
         """
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
@@ -4967,7 +5189,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 676  ┆ 150  ┆ 15   ┆ 1           │
         │ 101 ┆ 140 ┆ 14  ┆ 8     ┆ 742  ┆ 170  ┆ 16   ┆ 4           │
         └─────┴─────┴─────┴───────┴──────┴──────┴──────┴─────────────┘
-
         """
         if not isinstance(other, LazyFrame):
             msg = f"expected `other` join table to be a LazyFrame, not a {type(other).__name__!r}"
@@ -5410,8 +5631,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value. Accepts expression input.
-            Non-expression inputs are parsed as literals.
+            Fill the resulting null values with this value. Accepts scalar expression
+            input. Non-expression inputs are parsed as literals.
 
         Notes
         -----
@@ -7281,6 +7502,66 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             value_name=value_name,
             streamable=streamable,
         )
+
+    @unstable()
+    def remote(
+        self,
+        context: pc.ComputeContext | None = None,
+        plan_type: pc._typing.PlanTypePreference = "dot",
+    ) -> pc.LazyFrameExt:
+        """
+        Run a query remotely on Polars Cloud.
+
+        This allows you to run Polars remotely on
+        one or more workers via several strategies
+        for distributed compute.
+
+        Read more in the `Announcement post <https://pola.rs/posts/polars-cloud-what-we-are-building/>`_
+
+        Parameters
+        ----------
+        context
+            Compute context in which queries are executed.
+            If none given, it will take the default context.
+        plan_type
+            Whether to give a dot diagram of a plain text
+            version of logical plan.
+
+        Examples
+        --------
+        Run a query on a cloud instance.
+
+        >>> lf = pl.LazyFrame([1, 2, 3]).sum()
+        >>> in_progress = lf.remote().collect()  # doctest: +SKIP
+        >>> # do some other work
+        >>> in_progress.await_result()  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────────┐
+        │ column_0 │
+        │ ---      │
+        │ i64      │
+        ╞══════════╡
+        │ 6        │
+        └──────────┘
+
+        Run a query distributed.
+
+        >>> lf = (
+        ...     pl.scan_parquet("s3://my_bucket/").group_by("key").agg(pl.sum("values"))
+        ... )
+        >>> in_progress = lf.remote().distributed().collect()  # doctest: +SKIP
+        >>> in_progress.await_result()  # doctest: +SKIP
+        shape: (1, 1)
+        ┌──────────┐
+        │ column_0 │
+        │ ---      │
+        │ i64      │
+        ╞══════════╡
+        │ 6        │
+        └──────────┘
+
+        """
+        return pc.LazyFrameExt(lf=self, context=context, plan_type=plan_type)
 
     def _to_metadata(
         self,

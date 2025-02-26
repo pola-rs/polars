@@ -1,4 +1,5 @@
 mod convert;
+mod count;
 mod first_last;
 mod len;
 mod mean;

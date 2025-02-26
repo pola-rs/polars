@@ -2,12 +2,13 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 
+use either::Either;
 use polars::io::{HiveOptions, RowIndex};
 use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::dsl::ScanSources;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
@@ -85,7 +86,7 @@ impl PyLazyFrame {
             cloud_options = cloud_options
                 .with_max_retries(retries)
                 .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
                 );
 
             if let Some(file_cache_ttl) = file_cache_ttl {
@@ -205,7 +206,7 @@ impl PyLazyFrame {
             cloud_options = cloud_options
                 .with_max_retries(retries)
                 .with_credential_provider(
-                    credential_provider.map(PlCredentialProvider::from_python_func_object),
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
                 );
             r = r.with_cloud_options(Some(cloud_options));
         }
@@ -340,7 +341,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             );
         }
@@ -416,7 +417,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(PlCredentialProvider::from_python_builder),
                     ),
             );
         }
@@ -431,8 +432,9 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = pyarrow_schema_to_rust(schema)?;
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
+
+        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
     }
 
     #[staticmethod]
@@ -441,12 +443,20 @@ impl PyLazyFrame {
         scan_fn: PyObject,
         pyarrow: bool,
     ) -> PyResult<Self> {
-        let schema = Schema::from_iter(
+        let schema = Arc::new(Schema::from_iter(
             schema
                 .into_iter()
                 .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
-        );
-        Ok(LazyFrame::scan_from_python_function(schema, scan_fn, pyarrow).into())
+        ));
+        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
+    }
+
+    #[staticmethod]
+    fn scan_from_python_function_schema_function(
+        schema_fn: PyObject,
+        scan_fn: PyObject,
+    ) -> PyResult<Self> {
+        Ok(LazyFrame::scan_from_python_function(Either::Left(schema_fn), scan_fn, false).into())
     }
 
     fn describe_plan(&self) -> PyResult<String> {
@@ -705,7 +715,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -738,7 +748,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -809,7 +819,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -844,7 +854,7 @@ impl PyLazyFrame {
                 cloud_options
                     .with_max_retries(retries)
                     .with_credential_provider(
-                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_func_object),
+                        credential_provider.map(polars::prelude::cloud::credential_provider::PlCredentialProvider::from_python_builder),
                     ),
             )
         };
@@ -863,6 +873,11 @@ impl PyLazyFrame {
     fn filter(&mut self, predicate: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.filter(predicate.inner).into()
+    }
+
+    fn remove(&mut self, predicate: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.remove(predicate.inner).into()
     }
 
     fn select(&mut self, exprs: Vec<PyExpr>) -> Self {

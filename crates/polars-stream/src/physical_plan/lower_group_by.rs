@@ -12,13 +12,14 @@ use polars_plan::prelude::GroupbyOptions;
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::unique_column_name;
 use recursive::recursive;
 use slotmap::SlotMap;
 
 use super::lower_expr::lower_exprs;
 use super::{ExprCache, PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
 use crate::physical_plan::lower_expr::{
-    build_select_stream, compute_output_schema, is_input_independent, unique_column_name,
+    build_select_stream, compute_output_schema, is_input_independent,
 };
 use crate::physical_plan::lower_ir::build_slice_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -193,7 +194,8 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::Mean(input)
                 | IRAggExpr::Sum(input)
                 | IRAggExpr::Var(input, ..)
-                | IRAggExpr::Std(input, ..) => {
+                | IRAggExpr::Std(input, ..)
+                | IRAggExpr::Count(input, ..) => {
                     let orig_agg = agg.clone();
                     // Lower and replace input.
                     let trans_input = lower_rec!(*input, true)?;
@@ -216,7 +218,6 @@ fn try_lower_elementwise_scalar_agg_expr(
                 | IRAggExpr::NUnique(..)
                 | IRAggExpr::Implode(..)
                 | IRAggExpr::Quantile { .. }
-                | IRAggExpr::Count(..)
                 | IRAggExpr::AggGroups(..) => None, // TODO: allow all aggregates,
             }
         },

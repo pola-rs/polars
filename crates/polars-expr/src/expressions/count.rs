@@ -36,16 +36,6 @@ impl PhysicalExpr for CountExpr {
         Ok(AggregationContext::new(c, Cow::Borrowed(groups), true))
     }
 
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
-    }
-
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
         Ok(Field::new(PlSmallStr::from_static(LEN), IDX_DTYPE))
     }

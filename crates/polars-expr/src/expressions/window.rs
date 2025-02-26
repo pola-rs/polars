@@ -650,16 +650,6 @@ impl PhysicalExpr for WindowExpr {
         false
     }
 
-    fn isolate_column_expr(
-        &self,
-        _name: &str,
-    ) -> Option<(
-        Arc<dyn PhysicalExpr>,
-        Option<SpecializedColumnPredicateExpr>,
-    )> {
-        None
-    }
-
     #[allow(clippy::ptr_arg)]
     fn evaluate_on_groups<'a>(
         &self,
@@ -684,7 +674,7 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
             Either::Left(ids) => unsafe {
                 IdxCa::with_nullable_idx(ids, |idx| out_column.take_unchecked(idx))
             },
-            Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids) },
+            Either::Right(ids) => unsafe { out_column.take_opt_chunked_unchecked(ids, false) },
         }
     }
 }
@@ -709,7 +699,7 @@ fn set_by_groups(
             }};
         }
         downcast_as_macro_arg_physical!(&s, dispatch)
-            .map(|s| s.cast(dtype).unwrap())
+            .map(|s| unsafe { s.from_physical_unchecked(dtype) }.unwrap())
             .map(Column::from)
     } else {
         None
