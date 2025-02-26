@@ -8,7 +8,6 @@ import pyarrow as pa
 import pytest
 
 import polars as pl
-import polars.interchange.from_dataframe
 from polars.interchange.buffer import PolarsBuffer
 from polars.interchange.column import PolarsColumn
 from polars.interchange.from_dataframe import (
@@ -34,7 +33,8 @@ NE = Endianness.NATIVE
 
 def test_from_dataframe_polars() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["foo", "bar"]})
-    result = pl.from_dataframe(df, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -44,7 +44,8 @@ def test_from_dataframe_polars_interchange_fast_path() -> None:
         schema_overrides={"c": pl.Categorical},
     )
     dfi = df.__dataframe__()
-    result = pl.from_dataframe(dfi, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(dfi, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -52,31 +53,33 @@ def test_from_dataframe_categorical() -> None:
     df = pl.DataFrame({"a": ["foo", "bar"]}, schema={"a": pl.Categorical})
     df_pa = df.to_arrow()
 
-    result = pl.from_dataframe(df_pa, allow_copy=True)
-    expected = pl.DataFrame(
-        {"a": ["foo", "bar"]}, schema={"a": pl.Enum(["foo", "bar"])}
-    )
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df_pa, allow_copy=True)
+    expected = pl.DataFrame({"a": ["foo", "bar"]}, schema={"a": pl.Categorical})
     assert_frame_equal(result, expected)
 
 
 def test_from_dataframe_empty_string_zero_copy() -> None:
     df = pl.DataFrame({"a": []}, schema={"a": pl.String})
     df_pa = df.to_arrow()
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df_pa, allow_copy=False)
     assert_frame_equal(result, df)
 
 
 def test_from_dataframe_empty_bool_zero_copy() -> None:
     df = pl.DataFrame(schema={"a": pl.Boolean})
     df_pd = df.to_pandas()
-    result = pl.from_dataframe(df_pd, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df_pd, allow_copy=False)
     assert_frame_equal(result, df)
 
 
 def test_from_dataframe_empty_categories_zero_copy() -> None:
     df = pl.DataFrame(schema={"a": pl.Enum([])})
     df_pa = df.to_arrow()
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df_pa, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -84,7 +87,8 @@ def test_from_dataframe_pandas_zero_copy() -> None:
     data = {"a": [1, 2], "b": [3.0, 4.0]}
 
     df = pd.DataFrame(data)
-    result = pl.from_dataframe(df, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df, allow_copy=False)
     expected = pl.DataFrame(data)
     assert_frame_equal(result, expected)
 
@@ -98,7 +102,8 @@ def test_from_dataframe_pyarrow_table_zero_copy() -> None:
     )
     df_pa = df.to_arrow()
 
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df_pa, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -106,7 +111,8 @@ def test_from_dataframe_pyarrow_empty_table() -> None:
     df = pl.Series("a", dtype=pl.Int8).to_frame()
     df_pa = df.to_arrow()
 
-    result = pl.from_dataframe(df_pa, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df_pa, allow_copy=False)
     assert_frame_equal(result, df)
 
 
@@ -115,7 +121,8 @@ def test_from_dataframe_pyarrow_recordbatch_zero_copy() -> None:
     b = pa.array([3.0, 4.0])
 
     batch = pa.record_batch([a, b], names=["a", "b"])
-    result = pl.from_dataframe(batch, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(batch, allow_copy=False)
 
     expected = pl.DataFrame({"a": [1, 2], "b": [3.0, 4.0]})
     assert_frame_equal(result, expected)
@@ -134,10 +141,9 @@ def test_from_dataframe_pyarrow_boolean() -> None:
     result = pl.from_dataframe(df_pa)
     assert_frame_equal(result, df)
 
-    # note: pyarrow uses the incorrect form "casted" instead of "cast" in this error.
-    # (in case they fix it in the future, the regex match handles both forms)
-    with pytest.raises(RuntimeError, match="Boolean column will be cast(ed)? to uint8"):
-        pl.from_dataframe(df_pa, allow_copy=False)
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
+        result = pl.from_dataframe(df_pa, allow_copy=False)
+    assert_frame_equal(result, df)
 
 
 def test_from_dataframe_chunked() -> None:
@@ -145,18 +151,19 @@ def test_from_dataframe_chunked() -> None:
     df_chunked = pl.concat([df[:1], df[1:]], rechunk=False)
 
     df_pa = df_chunked.to_arrow()
-    result = pl.from_dataframe(df_pa)
+    result = pl.from_dataframe(df_pa, rechunk=False)
 
     assert_frame_equal(result, df_chunked)
     assert result.n_chunks() == 2
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_from_dataframe_chunked_string() -> None:
     df = pl.Series("a", ["a", None, "bc", "d", None, "efg"]).to_frame()
     df_chunked = pl.concat([df[:1], df[1:3], df[3:]], rechunk=False)
 
     df_pa = df_chunked.to_arrow()
-    result = pl.from_dataframe(df_pa)
+    result = pl.from_dataframe(df_pa, rechunk=False)
 
     assert_frame_equal(result, df_chunked)
     assert result.n_chunks() == 3
@@ -167,6 +174,7 @@ def test_from_dataframe_pandas_nan_as_null() -> None:
     result = pl.from_dataframe(df)
     expected = pl.Series("a", [1.0, None, float("inf")]).to_frame()
     assert_frame_equal(result, expected)
+    assert result.n_chunks() == 1
 
 
 def test_from_dataframe_pandas_boolean_bytes() -> None:
@@ -176,11 +184,10 @@ def test_from_dataframe_pandas_boolean_bytes() -> None:
     expected = pl.Series("a", [True, False]).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(
-        CopyNotAllowedError,
-        match="byte-packed boolean buffer must be converted to bit-packed boolean",
-    ):
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
         result = pl.from_dataframe(df, allow_copy=False)
+    expected = pl.Series("a", [True, False]).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_from_dataframe_categorical_pandas() -> None:
@@ -189,11 +196,13 @@ def test_from_dataframe_categorical_pandas() -> None:
     df_pd = pd.Series(values, dtype="category", name="a").to_frame()
 
     result = pl.from_dataframe(df_pd)
-    expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
+    expected = pl.Series("a", values, dtype=pl.Categorical).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(CopyNotAllowedError, match="string buffers must be converted"):
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
         result = pl.from_dataframe(df_pd, allow_copy=False)
+    expected = pl.Series("a", values, dtype=pl.Categorical).to_frame()
+    assert_frame_equal(result, expected)
 
 
 def test_from_dataframe_categorical_pyarrow() -> None:
@@ -204,11 +213,12 @@ def test_from_dataframe_categorical_pyarrow() -> None:
     df_pa = pa.Table.from_arrays([arr], names=["a"])
 
     result = pl.from_dataframe(df_pa)
-    expected = pl.Series("a", values, dtype=pl.Enum(["a", "b"])).to_frame()
+    expected = pl.Series("a", values, dtype=pl.Categorical).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(CopyNotAllowedError, match="string buffers must be converted"):
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
         result = pl.from_dataframe(df_pa, allow_copy=False)
+    assert_frame_equal(result, expected)
 
 
 def test_from_dataframe_categorical_non_string_keys() -> None:
@@ -217,11 +227,9 @@ def test_from_dataframe_categorical_non_string_keys() -> None:
     dtype = pa.dictionary(pa.uint32(), pa.int32())
     arr = pa.array(values, dtype)
     df_pa = pa.Table.from_arrays([arr], names=["a"])
-
-    with pytest.raises(
-        NotImplementedError, match="non-string categories are not supported"
-    ):
-        pl.from_dataframe(df_pa)
+    result = pl.from_dataframe(df_pa)
+    expected = pl.DataFrame({"a": [1, 2, None, 1]}, schema={"a": pl.Int32})
+    assert_frame_equal(result, expected)
 
 
 def test_from_dataframe_categorical_non_u32_values() -> None:
@@ -232,13 +240,12 @@ def test_from_dataframe_categorical_non_u32_values() -> None:
     df_pa = pa.Table.from_arrays([arr], names=["a"])
 
     result = pl.from_dataframe(df_pa)
-    expected = pl.Series("a", values, dtype=pl.Enum([])).to_frame()
+    expected = pl.Series("a", values, dtype=pl.Categorical).to_frame()
     assert_frame_equal(result, expected)
 
-    with pytest.raises(
-        CopyNotAllowedError, match="data buffer must be cast from Int8 to UInt32"
-    ):
+    with pytest.deprecated_call(match="`allow_copy` is deprecated"):
         result = pl.from_dataframe(df_pa, allow_copy=False)
+    assert_frame_equal(result, expected)
 
 
 class PatchableColumn(PolarsColumn):
@@ -588,3 +595,21 @@ def test_construct_validity_buffer_from_bytemask_zero_copy_fails(
         _construct_validity_buffer_from_bytemask(
             bytemask, null_value=0, allow_copy=False
         )
+
+
+def test_interchange_protocol_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    df_pd = pd.DataFrame({"a": [1, 2, 3]})
+    monkeypatch.setattr(df_pd, "__arrow_c_stream__", lambda *args, **kwargs: 1 / 0)
+    with pytest.warns(
+        UserWarning, match="Falling back to Dataframe Interchange Protocol"
+    ):
+        result = pl.from_dataframe(df_pd)
+    expected = pl.DataFrame({"a": [1, 2, 3]})
+    assert_frame_equal(result, expected)
+
+
+def test_to_pandas_int8_20316() -> None:
+    df = pl.Series("a", [None], pl.Int8).to_frame()
+    df_pd = df.to_pandas(use_pyarrow_extension_array=True)
+    result = pl.from_dataframe(df_pd)
+    assert_frame_equal(result, df)
