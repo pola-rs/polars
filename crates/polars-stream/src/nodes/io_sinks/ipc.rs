@@ -111,9 +111,12 @@ impl SinkNode for IpcSinkNode {
             while let Ok(input) = recv_ports_recv.recv().await {
                 let mut receiver = input.port.serial();
 
-                let mut stop_requested = false;
-                loop {
-                    if buffer.height() >= chunk_size || (buffer.height() > 0 && stop_requested) {
+                while let Ok(morsel) = receiver.recv().await {
+                    let df = morsel.into_df();
+                    // @NOTE: This also performs schema validation.
+                    buffer.vstack_mut(&df)?;
+
+                    while buffer.height() >= chunk_size {
                         let df;
                         (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
@@ -147,24 +150,45 @@ impl SinkNode for IpcSinkNode {
                             break;
                         }
                     }
-
-                    // If we have no more rows to write and there are no more morsels coming, we can
-                    // stop this task.
-                    if buffer.is_empty() && stop_requested {
-                        break;
-                    }
-
-                    let Ok(morsel) = receiver.recv().await else {
-                        stop_requested = true;
-                        continue;
-                    };
-
-                    let df = morsel.into_df();
-                    // @NOTE: This also performs schema validation.
-                    buffer.vstack_mut(&df)?;
                 }
 
                 input.outcome.stop();
+            }
+
+            // Flush the remaining rows.
+            while buffer.height() > 0 {
+                let df;
+                (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+
+                // We want to rechunk for two reasons:
+                // 1. the IPC writer expects aligned column chunks
+                // 2. the IPC writer turns chunks / record batches into chunks in the file,
+                //    so we want to respect the given `chunk_size`.
+                //
+                // This also properly sets the inner types of the record batches, which is
+                // important for dictionary and nested type encoding.
+                let record_batch = df.rechunk_to_record_batch(compat_level);
+
+                // If there are dictionaries, we might need to emit the original dictionary
+                // definitions or dictionary deltas. We have precomputed which columns contain
+                // dictionaries and only check those columns.
+                let mut dicts_to_encode = Vec::new();
+                for &i in &dict_columns_idxs {
+                    dictionaries_to_encode(
+                        &ipc_fields[i],
+                        record_batch.arrays()[i].as_ref(),
+                        &mut dictionary_tracker,
+                        &mut dicts_to_encode,
+                    )?;
+                }
+
+                // Send of the dictionaries and record batch to be encoded by an Encoder
+                // task. This is compute heavy, so distribute the chunks.
+                let msg = (seq, dicts_to_encode, record_batch);
+                seq += 1;
+                if distribute.send(msg).await.is_err() {
+                    break;
+                }
             }
 
             PolarsResult::Ok(())
