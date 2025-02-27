@@ -1037,7 +1037,6 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1943,7 +1942,6 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()

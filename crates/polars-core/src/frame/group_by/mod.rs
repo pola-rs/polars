@@ -594,7 +594,6 @@ impl<'a> GroupBy<'a> {
     ///
     /// ```rust
     /// # use polars_core::prelude::*;
-    /// # use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> PolarsResult<DataFrame> {
     ///     df.group_by(["date"])?.select(["temp"]).quantile(0.2, QuantileMethod::default())
