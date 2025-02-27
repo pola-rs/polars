@@ -238,13 +238,14 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
+                use DataType::*;
                 let rollopts = rollopts.clone();
                 let mut input = input.clone();
                 let e = &mut input[0];
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
-                if matches!(dtype, DataType::Int8 | DataType::Int16 | DataType::UInt8 | DataType::UInt16) {
-                    cast_expr_ir(e, &dtype, &DataType::Int64, expr_arena, CastOptions::Strict)?;
+                if matches!(dtype, Int8 | Int16 | UInt8 | UInt16) {
+                    cast_expr_ir(e, &dtype, &Int64, expr_arena, CastOptions::Strict)?;
                 } else {
                     return Ok(None);
                 }
@@ -262,13 +263,14 @@ impl OptimizationRule for TypeCoercionRule {
                 ref input,
                 options,
             } => {
+                use DataType::*;
                 let rollopts = rollopts.clone();
                 let mut input = input.clone();
                 let e = &mut input[0];
                 let input_schema = get_schema(lp_arena, lp_node);
                 let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
-                if matches!(dtype, DataType::Int8 | DataType::Int16 | DataType::UInt8 | DataType::UInt16) {
-                    cast_expr_ir(e, &dtype, &DataType::Int64, expr_arena, CastOptions::Strict)?;
+                if matches!(dtype, Int8 | Int16 | UInt8 | UInt16) {
+                    cast_expr_ir(e, &dtype, &Int64, expr_arena, CastOptions::Strict)?;
                 } else {
                     return Ok(None);
                 }
