@@ -8,9 +8,7 @@ use polars_utils::priority::Priority;
 
 use super::{SinkNode, SinkRecvPort};
 use crate::async_executor::spawn;
-use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::{JoinHandle, MorselSeq, TaskPriority};
-use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
 type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct NDJsonSinkNode {
@@ -33,17 +31,14 @@ impl SinkNode for NDJsonSinkNode {
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
+        _num_pipelines: usize,
         recv_ports_recv: SinkRecvPort,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        let (handle, rx_receivers) = recv_ports_recv.parallel();
+        let (handle, rx_receivers, mut rx_linearizer) =
+            recv_ports_recv.parallel_into_linearize::<Linearized>();
         join_handles.push(handle);
-
-        // Encode tasks -> IO task
-        let (mut linearizer, senders) =
-            Linearizer::<Linearized>::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
 
         // 16MB
         const DEFAULT_ALLOCATION_SIZE: usize = 1 << 24;
@@ -51,33 +46,36 @@ impl SinkNode for NDJsonSinkNode {
         // Encode task.
         //
         // Task encodes the columns into their corresponding JSON encoding.
-        join_handles.extend(rx_receivers.into_iter().zip(senders).map(
-            |(mut rx_receiver, mut sender)| {
-                spawn(TaskPriority::High, async move {
-                    // Amortize the allocations over time. If we see that we need to do way larger
-                    // allocations, we adjust to that over time.
-                    let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
+        join_handles.extend(rx_receivers.into_iter().map(|mut rx_receiver| {
+            spawn(TaskPriority::High, async move {
+                // Amortize the allocations over time. If we see that we need to do way larger
+                // allocations, we adjust to that over time.
+                let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
 
-                    while let Ok((_token, outcome, mut rx)) = rx_receiver.recv().await {
-                        while let Ok(morsel) = rx.recv().await {
-                            let (df, seq, _, _) = morsel.into_inner();
+                while let Ok((phase_consume_token, outcome, mut rx, mut sender)) =
+                    rx_receiver.recv().await
+                {
+                    while let Ok(morsel) = rx.recv().await {
+                        let (df, seq, _, consume_token) = morsel.into_inner();
 
-                            let mut buffer = Vec::with_capacity(allocation_size);
-                            let mut writer = BatchedWriter::new(&mut buffer);
+                        let mut buffer = Vec::with_capacity(allocation_size);
+                        let mut writer = BatchedWriter::new(&mut buffer);
 
-                            writer.write_batch(&df)?;
+                        writer.write_batch(&df)?;
 
-                            allocation_size = allocation_size.max(buffer.len());
-                            sender.insert(Priority(Reverse(seq), buffer)).await.unwrap();
-                        }
-
-                        outcome.stop();
+                        allocation_size = allocation_size.max(buffer.len());
+                        sender.insert(Priority(Reverse(seq), buffer)).await.unwrap();
+                        drop(consume_token); // Keep the consume_token until here to increase the
+                                             // backpressure.
                     }
 
-                    PolarsResult::Ok(())
-                })
-            },
-        ));
+                    outcome.stop();
+                    drop(phase_consume_token);
+                }
+
+                PolarsResult::Ok(())
+            })
+        }));
 
         let path = self.path.clone();
 
@@ -96,8 +94,12 @@ impl SinkNode for NDJsonSinkNode {
                 .await
                 .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
 
-            while let Some(Priority(_, buffer)) = linearizer.get().await {
-                file.write_all(&buffer).await?;
+            while let Ok((consume_token, outcome, mut linearizer)) = rx_linearizer.recv().await {
+                while let Some(Priority(_, buffer)) = linearizer.get().await {
+                    file.write_all(&buffer).await?;
+                }
+                outcome.stop();
+                drop(consume_token);
             }
 
             PolarsResult::Ok(())
