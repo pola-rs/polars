@@ -41,7 +41,12 @@ impl IpcExec {
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
             })
         } else {
-            self.read_sync()?
+            self.read_sync().map_err(|e| match &self.sources {
+                ScanSources::Paths(paths) => {
+                    e.context(format!("reading paths {:?} failed", paths.as_ref()).into())
+                },
+                _ => e,
+            })?
         };
 
         if self.file_options.rechunk {
