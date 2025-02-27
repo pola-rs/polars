@@ -22,6 +22,42 @@ def test_frame() -> pl.LazyFrame:
     )
 
 
+@pytest.mark.parametrize(
+    ("delete_constraint", "expected_ids"),
+    [
+        # basic constraints
+        ("WHERE id = 200", {100, 300}),
+        ("WHERE id = 200 OR id = 300", {100}),
+        ("WHERE id IN (200, 300, 400)", {100}),
+        ("WHERE id NOT IN (200, 300, 400)", {200, 300}),
+        # more involved constraints
+        ("WHERE EXTRACT(year FROM dt) >= 2000", {200}),
+        # null-handling (in the data)
+        ("WHERE v1 < 0", {100, 300}),
+        ("WHERE v1 > 0", {200, 300}),
+        # null handling (in the constraint)
+        ("WHERE v1 IS NULL", {100, 200}),
+        ("WHERE v1 IS NOT NULL", {300}),
+        # boolean handling (delete all/none)
+        ("WHERE FALSE", {100, 200, 300}),
+        ("WHERE TRUE", set()),
+        # no constraint; equivalent to TRUNCATE (drop all rows)
+        ("", set()),
+    ],
+)
+def test_delete_clause(delete_constraint: str, expected_ids: set[int]) -> None:
+    df = pl.DataFrame(
+        {
+            "id": [100, 200, 300],
+            "dt": [date(2020, 10, 10), date(1999, 1, 2), date(2001, 7, 5)],
+            "v1": [3.5, -4.0, None],
+            "v2": [10.0, 2.5, -1.5],
+        }
+    )
+    res = df.sql(f"DELETE FROM self {delete_constraint}")
+    assert set(res["id"]) == expected_ids
+
+
 def test_drop_table(test_frame: pl.LazyFrame) -> None:
     # 'drop' completely removes the table from sql context
     expected = pl.DataFrame()

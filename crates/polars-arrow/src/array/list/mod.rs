@@ -4,6 +4,8 @@ use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -27,8 +29,8 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
     /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation
@@ -66,8 +68,8 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Panics
     /// This function panics iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
     /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation

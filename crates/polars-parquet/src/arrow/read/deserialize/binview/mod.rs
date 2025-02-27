@@ -248,6 +248,8 @@ pub fn decode_plain_generic(
     target.finish_in_progress();
     unsafe { target.views_mut() }.reserve(num_rows);
 
+    let start_target_length = target.len();
+
     let buffer_idx = target.completed_buffers().len() as u32;
     let mut buffer = Vec::with_capacity(values.len() + 1);
     let mut none_starting_with_continuation_byte = true; // Whether the transition from between strings is valid
@@ -346,7 +348,7 @@ pub fn decode_plain_generic(
 
             // @NOTE: This is only valid because we initialize our inline View's to be zeroes on
             // non-included bytes.
-            for view in &target.views()[target.len() - num_seen..] {
+            for view in &target.views()[start_target_length..] {
                 all_inlined_are_ascii &= (view.length > View::MAX_INLINE_SIZE)
                     | (view.as_u128() & 0x0000_0000_8080_8080_8080_8080_8080_8080 == 0);
             }

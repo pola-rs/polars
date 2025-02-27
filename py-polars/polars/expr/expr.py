@@ -80,6 +80,7 @@ if TYPE_CHECKING:
         PolarsDataType,
         RankMethod,
         RollingInterpolationMethod,
+        SchemaDict,
         SearchSortedSide,
         SerializationFormat,
         TemporalLiteral,
@@ -1494,7 +1495,6 @@ class Expr:
         │ 1   ┆ 1       ┆ 1               │
         │ 2   ┆ 1       ┆ 2               │
         └─────┴─────────┴─────────────────┘
-
         """
         return self._from_pyexpr(self._pyexpr.cum_min(reverse))
 
@@ -2638,7 +2638,7 @@ class Expr:
             Number of indices to shift forward. If a negative value is passed, values
             are shifted in the opposite direction instead.
         fill_value
-            Fill the resulting null values with this value.
+            Fill the resulting null values with this scalar value.
 
         Notes
         -----
@@ -4216,7 +4216,7 @@ class Expr:
         constraints
             Column filters; use `name = value` to filter columns by the supplied value.
             Each constraint will behave the same as `pl.col(name).eq(value)`, and
-            will be implicitly joined with the other filter conditions using `&`.
+            be implicitly joined with the other filter conditions using `&`.
 
         Examples
         --------
@@ -4484,7 +4484,6 @@ class Expr:
         │ 0   ┆ 3   ┆ 0         │
         │ 3   ┆ 4   ┆ 12        │
         └─────┴─────┴───────────┘
-
         """
         if return_dtype is not None:
             return_dtype = parse_into_dtype(return_dtype)
@@ -10897,6 +10896,12 @@ class Expr:
         └─────┘
         """
         return ExprStructNameSpace(self)
+
+    def _skip_batch_predicate(self, schema: SchemaDict) -> Expr | None:
+        result = self._pyexpr.skip_batch_predicate(schema)
+        if result is None:
+            return None
+        return self._from_pyexpr(result)
 
 
 def _prepare_alpha(

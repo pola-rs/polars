@@ -3,7 +3,6 @@ use std::iter::Enumerate;
 use crate::array::BooleanArray;
 use crate::bitmap::utils::BitChunks;
 pub mod ewm;
-pub mod rolling;
 pub mod set;
 pub mod sort_partition;
 #[cfg(feature = "performant")]

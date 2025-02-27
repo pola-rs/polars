@@ -444,7 +444,7 @@ impl Bitmap {
 
     /// Creates a new [`Bitmap`] from a slice and length.
     /// # Panic
-    /// Panics iff `length <= bytes.len() * 8`
+    /// Panics iff `length > bytes.len() * 8`
     #[inline]
     pub fn from_u8_slice<T: AsRef<[u8]>>(slice: T, length: usize) -> Self {
         Bitmap::try_new(slice.as_ref().to_vec(), length).unwrap()

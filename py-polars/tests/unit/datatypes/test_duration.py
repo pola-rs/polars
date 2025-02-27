@@ -1,4 +1,5 @@
 from datetime import timedelta
+from typing import Any
 
 import pytest
 
@@ -169,6 +170,14 @@ def test_series_duration_var_overflow() -> None:
     s = pl.Series([timedelta(days=10), timedelta(days=20), timedelta(days=40)])
     with pytest.raises(OverflowError):
         s.var()
+
+
+@pytest.mark.parametrize("other", [24, pl.Series([24])])
+def test_series_duration_div_multiply(other: Any) -> None:
+    s = pl.Series([timedelta(hours=1)])
+    assert (s * other).to_list() == [timedelta(days=1)]
+    assert (other * s).to_list() == [timedelta(days=1)]
+    assert (s / other).to_list() == [timedelta(minutes=2, seconds=30)]
 
 
 def test_series_duration_units() -> None:

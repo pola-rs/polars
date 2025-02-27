@@ -9,7 +9,7 @@ use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
 
 use self::filter::Filter;
-use super::{BasicDecompressor, PredicateFilter};
+use super::{BasicDecompressor, InitNested, NestedState, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
@@ -403,6 +403,8 @@ pub struct PageDecoder<D: Decoder> {
     pub dtype: ArrowDataType,
     pub dict: Option<D::Dict>,
     pub decoder: D,
+
+    pub init_nested: Option<Vec<InitNested>>,
 }
 
 impl<D: Decoder> PageDecoder<D> {
@@ -410,6 +412,8 @@ impl<D: Decoder> PageDecoder<D> {
         mut iter: BasicDecompressor,
         dtype: ArrowDataType,
         mut decoder: D,
+
+        init_nested: Option<Vec<InitNested>>,
     ) -> ParquetResult<Self> {
         let dict_page = iter.read_dict_page()?;
         let dict = dict_page.map(|d| decoder.deserialize_dict(d)).transpose()?;
@@ -419,10 +423,27 @@ impl<D: Decoder> PageDecoder<D> {
             dtype,
             dict,
             decoder,
+
+            init_nested,
         })
     }
 
-    pub fn collect(mut self, mut filter: Option<Filter>) -> ParquetResult<(D::Output, Bitmap)> {
+    pub fn collect(
+        self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(Option<NestedState>, D::Output, Bitmap)> {
+        if self.init_nested.is_some() {
+            self.collect_nested(filter)
+                .map(|(nested, arr, ptm)| (Some(nested), arr, ptm))
+        } else {
+            self.collect_flat(filter).map(|(arr, ptm)| (None, arr, ptm))
+        }
+    }
+
+    pub fn collect_flat(
+        mut self,
+        mut filter: Option<Filter>,
+    ) -> ParquetResult<(D::Output, Bitmap)> {
         let mut num_rows_remaining = Filter::opt_num_rows(&filter, self.iter.total_num_values());
 
         // @TODO: Don't allocate if include_values == false
@@ -534,9 +555,13 @@ impl<D: Decoder> PageDecoder<D> {
         Ok((array, pred_true_mask.freeze()))
     }
 
-    pub fn collect_boxed(self, filter: Option<Filter>) -> ParquetResult<(Box<dyn Array>, Bitmap)> {
-        self.collect(filter)
-            .map(|(arr, ptm)| (arr.into_boxed(), ptm))
+    pub fn collect_boxed(
+        self,
+        filter: Option<Filter>,
+    ) -> ParquetResult<(Option<NestedState>, Box<dyn Array>, Bitmap)> {
+        use arrow::array::IntoBoxedArray;
+        let (nested, array, ptm) = self.collect(filter)?;
+        Ok((nested, array.into_boxed(), ptm))
     }
 }
 

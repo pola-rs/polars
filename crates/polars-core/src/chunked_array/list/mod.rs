@@ -44,9 +44,16 @@ impl ListChunked {
             return Cow::Borrowed(self);
         };
 
-        assert_eq!(self.chunks().len(), physical_repr.chunks().len());
+        let ca = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
+            // Physical repr got rechunked, rechunk self as well.
+            self.rechunk()
+        } else {
+            Cow::Borrowed(self)
+        };
 
-        let chunks: Vec<_> = self
+        assert_eq!(ca.chunks().len(), physical_repr.chunks().len());
+
+        let chunks: Vec<_> = ca
             .downcast_iter()
             .zip(physical_repr.into_chunks())
             .map(|(chunk, values)| {

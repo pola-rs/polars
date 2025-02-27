@@ -4,7 +4,7 @@ import sys
 import urllib.parse
 import warnings
 from collections import OrderedDict
-from datetime import datetime
+from datetime import date, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, Callable
@@ -108,6 +108,7 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
 
 
 @pytest.mark.write_disk
+@pytest.mark.may_fail_auto_streaming
 def test_hive_partitioned_predicate_pushdown_skips_correct_number_of_files(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -800,6 +801,7 @@ def test_hive_write_dates(tmp_path: Path) -> None:
 
 
 @pytest.mark.write_disk
+@pytest.mark.may_fail_auto_streaming
 def test_hive_predicate_dates_14712(
     tmp_path: Path, monkeypatch: Any, capfd: Any
 ) -> None:
@@ -888,3 +890,65 @@ def test_hive_auto_enables_when_unspecified_and_hive_schema_passed(
                 pl.Series("a", [1], dtype=pl.UInt8),
             ),
         )
+
+
+@pytest.mark.write_disk
+@pytest.mark.parametrize("force_single_thread", [True, False])
+def test_hive_parquet_prefiltered_20894_21327(
+    tmp_path: Path, force_single_thread: bool
+) -> None:
+    n_threads = 1 if force_single_thread else pl.thread_pool_size()
+
+    file_path = tmp_path / "date=2025-01-01/00000000.parquet"
+    file_path.parent.mkdir(exist_ok=True, parents=True)
+
+    data = pl.DataFrame(
+        {
+            "date": [date(2025, 1, 1), date(2025, 1, 1)],
+            "value": ["1", "2"],
+        }
+    )
+
+    data.write_parquet(file_path)
+
+    import base64
+    import subprocess
+
+    # For security, and for Windows backslashes.
+    scan_path_b64 = base64.b64encode(str(file_path.absolute()).encode()).decode()
+
+    # This is, the easiest way to control the threadpool size so that it is stable.
+    out = subprocess.check_output(
+        [
+            sys.executable,
+            "-c",
+            f"""\
+import os
+os.environ["POLARS_MAX_THREADS"] = "{n_threads}"
+
+import polars as pl
+import datetime
+import base64
+
+from polars.testing import assert_frame_equal
+
+assert pl.thread_pool_size() == {n_threads}
+
+tmp_path = base64.b64decode("{scan_path_b64}").decode()
+df = pl.scan_parquet(tmp_path, hive_partitioning=True).filter(pl.col("value") == "1").collect()
+# We need the str() to trigger panic on invalid state
+str(df)
+
+assert_frame_equal(df, pl.DataFrame(
+    [
+        pl.Series('date', [datetime.date(2025, 1, 1)], dtype=pl.Date),
+        pl.Series('value', ['1'], dtype=pl.String),
+    ]
+))
+
+print("OK", end="")
+""",
+        ],
+    )
+
+    assert out == b"OK"

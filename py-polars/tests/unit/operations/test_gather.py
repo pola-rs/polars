@@ -3,7 +3,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import ComputeError
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 
 def test_negative_index() -> None:
@@ -213,3 +213,72 @@ def test_gather_len_19561() -> None:
         "foo": ["baz"],
         "gather": [6],
     }
+
+
+def test_gather_agg_group_update_scalar() -> None:
+    # If `gather` doesn't update groups properly, `first` will try to access
+    # index 2 (the original index of the first element of group `1`), but gather
+    # outputs only two elements (one for each group), leading to an out of
+    # bounds access.
+    df = (
+        pl.DataFrame({"gid": [0, 0, 1, 1], "x": ["0:0", "0:1", "1:0", "1:1"]})
+        .lazy()
+        .group_by("gid", maintain_order=True)
+        .agg(x_at_gid=pl.col("x").gather(pl.col("gid").last()).first())
+        .collect(no_optimization=True, simplify_expression=False)
+    )
+    expected = pl.DataFrame({"gid": [0, 1], "x_at_gid": ["0:0", "1:1"]})
+    assert_frame_equal(df, expected)
+
+
+def test_gather_agg_group_update_literal() -> None:
+    # If `gather` doesn't update groups properly, `first` will try to access
+    # index 2 (the original index of the first element of group `1`), but gather
+    # outputs only two elements (one for each group), leading to an out of
+    # bounds access.
+    df = (
+        pl.DataFrame({"gid": [0, 0, 1], "x": ["0:0", "0:1", "1:0"]})
+        .lazy()
+        .group_by("gid", maintain_order=True)
+        .agg(x_at_0=pl.col("x").gather(0).first())
+        .collect(no_optimization=True, simplify_expression=False)
+    )
+    expected = pl.DataFrame({"gid": [0, 1], "x_at_0": ["0:0", "1:0"]})
+    assert_frame_equal(df, expected)
+
+
+def test_gather_agg_group_update_negative() -> None:
+    # If `gather` doesn't update groups properly, `first` will try to access
+    # index 2 (the original index of the first element of group `1`), but gather
+    # outputs only two elements (one for each group), leading to an out of
+    # bounds access.
+    df = (
+        pl.DataFrame({"gid": [0, 0, 1], "x": ["0:0", "0:1", "1:0"]})
+        .lazy()
+        .group_by("gid", maintain_order=True)
+        .agg(x_last=pl.col("x").gather(-1).first())
+        .collect(no_optimization=True, simplify_expression=False)
+    )
+    expected = pl.DataFrame({"gid": [0, 1], "x_last": ["0:1", "1:0"]})
+    assert_frame_equal(df, expected)
+
+
+def test_gather_agg_group_update_multiple() -> None:
+    # If `gather` doesn't update groups properly, `first` will try to access
+    # index 4 (the original index of the first element of group `1`), but gather
+    # outputs only four elements (two for each group), leading to an out of
+    # bounds access.
+    df = (
+        pl.DataFrame(
+            {
+                "gid": [0, 0, 0, 0, 1, 1],
+                "x": ["0:0", "0:1", "0:2", "0:3", "1:0", "1:1"],
+            }
+        )
+        .lazy()
+        .group_by("gid", maintain_order=True)
+        .agg(x_at_0=pl.col("x").gather([0, 1]).first())
+        .collect(no_optimization=True, simplify_expression=False)
+    )
+    expected = pl.DataFrame({"gid": [0, 1], "x_at_0": ["0:0", "1:0"]})
+    assert_frame_equal(df, expected)

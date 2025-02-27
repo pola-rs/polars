@@ -207,31 +207,34 @@ pub(super) fn fmt_len(fmt: &[u8]) -> Option<u16> {
 
     while let Some(&val) = iter.next() {
         match val {
-            b'%' => match iter.next().expect("invalid pattern") {
-                b'Y' => cnt += 4,
-                b'y' => cnt += 2,
-                b'd' => cnt += 2,
-                b'm' => cnt += 2,
-                b'b' => cnt += 3,
-                b'H' => cnt += 2,
-                b'M' => cnt += 2,
-                b'S' => cnt += 2,
-                b'9' => {
-                    cnt += 9;
-                    debug_assert_eq!(iter.next(), Some(&b'f'));
-                    return Some(cnt);
+            b'%' => match iter.next() {
+                Some(&next_val) => match next_val {
+                    b'Y' => cnt += 4,
+                    b'y' => cnt += 2,
+                    b'd' => cnt += 2,
+                    b'm' => cnt += 2,
+                    b'b' => cnt += 3,
+                    b'H' => cnt += 2,
+                    b'M' => cnt += 2,
+                    b'S' => cnt += 2,
+                    b'9' => {
+                        cnt += 9;
+                        debug_assert_eq!(iter.next(), Some(&b'f'));
+                        return Some(cnt);
+                    },
+                    b'6' => {
+                        cnt += 6;
+                        debug_assert_eq!(iter.next(), Some(&b'f'));
+                        return Some(cnt);
+                    },
+                    b'3' => {
+                        cnt += 3;
+                        debug_assert_eq!(iter.next(), Some(&b'f'));
+                        return Some(cnt);
+                    },
+                    _ => return None,
                 },
-                b'6' => {
-                    cnt += 6;
-                    debug_assert_eq!(iter.next(), Some(&b'f'));
-                    return Some(cnt);
-                },
-                b'3' => {
-                    cnt += 3;
-                    debug_assert_eq!(iter.next(), Some(&b'f'));
-                    return Some(cnt);
-                },
-                _ => return None,
+                None => return None,
             },
             _ => {
                 cnt += 1;

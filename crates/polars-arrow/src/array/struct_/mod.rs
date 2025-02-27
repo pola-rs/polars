@@ -2,6 +2,8 @@ use super::{new_empty_array, new_null_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -168,7 +170,7 @@ impl StructArray {
 
     /// Slices this [`StructArray`].
     /// # Panics
-    /// * `offset + length` must be smaller than `self.len()`.
+    /// panics iff `offset + length > self.len()`
     /// # Implementation
     /// This operation is `O(F)` where `F` is the number of fields.
     pub fn slice(&mut self, offset: usize, length: usize) {

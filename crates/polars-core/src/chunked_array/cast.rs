@@ -134,6 +134,7 @@ fn cast_single_to_struct(
     fields: &[Field],
     options: CastOptions,
 ) -> PolarsResult<Series> {
+    polars_ensure!(fields.len() == 1, InvalidOperation: "must specify one field in the struct");
     let mut new_fields = Vec::with_capacity(fields.len());
     // cast to first field dtype
     let mut fields = fields.iter();

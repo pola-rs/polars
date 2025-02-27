@@ -21,6 +21,7 @@ pub use builder_dsl::*;
 pub mod dt;
 mod expr;
 mod expr_dyn_fn;
+mod format;
 mod from;
 pub mod function_expr;
 pub mod functions;
@@ -33,6 +34,7 @@ mod options;
 pub mod python_dsl;
 #[cfg(feature = "random")]
 mod random;
+mod scan_sources;
 mod selector;
 mod statistics;
 #[cfg(feature = "strings")]
@@ -44,10 +46,10 @@ pub mod udf;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+mod plan;
 pub use arity::*;
 #[cfg(feature = "dtype-array")]
 pub use array::*;
-use arrow::legacy::prelude::QuantileMethod;
 pub use expr::*;
 pub use function_expr::schema::FieldsMapper;
 pub use function_expr::*;
@@ -57,6 +59,8 @@ pub use list::*;
 pub use meta::*;
 pub use name::*;
 pub use options::*;
+pub use plan::*;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
@@ -70,6 +74,9 @@ pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;
 pub use udf::UserDefinedFunction;
+mod file_scan;
+pub use file_scan::*;
+pub use scan_sources::{ScanSource, ScanSourceIter, ScanSourceRef, ScanSources};
 
 use crate::constants::MAP_LIST_NAME;
 pub use crate::plans::lit;
@@ -1383,6 +1390,7 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsDynamicWindow,
     ) -> Expr {
+        use polars_compute::rolling::{RollingFnParams, RollingQuantileParams};
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             method,
@@ -1459,6 +1467,8 @@ impl Expr {
         quantile: f64,
         mut options: RollingOptionsFixedWindow,
     ) -> Expr {
+        use polars_compute::rolling::{RollingFnParams, RollingQuantileParams};
+
         options.fn_params = Some(RollingFnParams::Quantile(RollingQuantileParams {
             prob: quantile,
             method,

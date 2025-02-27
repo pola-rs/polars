@@ -225,3 +225,9 @@ def test_serde_empty_df_lazy_frame() -> None:
     f.write(lf.serialize())
     f.seek(0)
     assert pl.LazyFrame.deserialize(f).collect().shape == (0, 0)
+
+
+def test_pickle_class_objects_21021() -> None:
+    assert isinstance(pickle.loads(pickle.dumps(pl.col))("A"), pl.Expr)
+    assert isinstance(pickle.loads(pickle.dumps(pl.DataFrame))(), pl.DataFrame)
+    assert isinstance(pickle.loads(pickle.dumps(pl.LazyFrame))(), pl.LazyFrame)

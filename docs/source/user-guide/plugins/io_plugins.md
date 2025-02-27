@@ -124,7 +124,7 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
                     break
                 rows.append(row)
 
-            df = pl.from_records(rows, schema=schema)
+            df = pl.from_records(rows, schema=schema, orient="row")
             n_rows -= df.height
 
             # If we would make a performant reader, we would not read these
@@ -139,7 +139,7 @@ def my_scan_csv(csv_str: str) -> pl.LazyFrame:
 
             yield df
 
-    return register_io_source(callable=source_generator, schema=schema)
+    return register_io_source(io_source=source_generator, schema=schema)
 ```
 
 ### Taking it for a (very slow) spin
@@ -174,10 +174,10 @@ shape: (4, 4)
 │ --- ┆ --- ┆ --- ┆ --- │
 │ str ┆ str ┆ str ┆ str │
 ╞═════╪═════╪═════╪═════╡
-│ 1   ┆ 9   ┆ 1   ┆ 1   │
-│ 2   ┆ 10  ┆ 2   ┆ 122 │
-│ 3   ┆ 11  ┆ 3   ┆ 3   │
-│ 4   ┆ 2   ┆ 4   ┆ 4   │
+│ 1   ┆ 2   ┆ 3   ┆ 4   │
+│ 9   ┆ 10  ┆ 11  ┆ 2   │
+│ 1   ┆ 2   ┆ 3   ┆ 4   │
+│ 1   ┆ 122 ┆ 3   ┆ 4   │
 └─────┴─────┴─────┴─────┘
 shape: (2, 2)
 ┌─────┬─────┐
@@ -185,8 +185,8 @@ shape: (2, 2)
 │ --- ┆ --- │
 │ str ┆ str │
 ╞═════╪═════╡
-│ 1   ┆ 9   │
-│ 2   ┆ 10  │
+│ 1   ┆ 2   │
+│ 9   ┆ 10  │
 └─────┴─────┘
 ```
 

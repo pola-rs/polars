@@ -29,7 +29,8 @@ pub fn prepare_cloud_plan(lf: PyLazyFrame, py: Python<'_>) -> PyResult<Bound<'_,
 pub fn _execute_ir_plan_with_gpu(ir_plan_ser: Vec<u8>, py: Python) -> PyResult<PyDataFrame> {
     // Deserialize into IRPlan.
     let mut ir_plan: IRPlan =
-        pl_serialize::deserialize_from_reader(ir_plan_ser.as_slice()).map_err(PyPolarsErr::from)?;
+        pl_serialize::deserialize_from_reader::<_, _, false>(ir_plan_ser.as_slice())
+            .map_err(PyPolarsErr::from)?;
 
     // Edit for use with GPU engine.
     gpu_post_opt(

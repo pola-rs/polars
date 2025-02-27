@@ -870,7 +870,7 @@ impl Duration {
 
     fn add_impl_month_week_or_day<F, G, J>(
         &self,
-        t: i64,
+        mut t: i64,
         tz: Option<&Tz>,
         nsecs_to_unit: F,
         timestamp_to_datetime: G,
@@ -882,7 +882,6 @@ impl Duration {
         J: Fn(NaiveDateTime) -> i64,
     {
         let d = self;
-        let mut new_t = t;
 
         if d.months > 0 {
             let ts = match tz {
@@ -894,7 +893,7 @@ impl Duration {
                 _ => timestamp_to_datetime(t),
             };
             let dt = Self::add_month(ts, d.months, d.negative);
-            new_t = match tz {
+            t = match tz {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => datetime_to_timestamp(
@@ -911,12 +910,11 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    new_t =
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    new_t += if d.negative { -t_weeks } else { t_weeks };
-                    new_t = datetime_to_timestamp(
+                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    t += if d.negative { -t_weeks } else { t_weeks };
+                    t = datetime_to_timestamp(
                         try_localize_datetime(
-                            timestamp_to_datetime(new_t),
+                            timestamp_to_datetime(t),
                             tz,
                             Ambiguous::Raise,
                             NonExistent::Raise,
@@ -924,7 +922,7 @@ impl Duration {
                         .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
-                _ => new_t += if d.negative { -t_weeks } else { t_weeks },
+                _ => t += if d.negative { -t_weeks } else { t_weeks },
             };
         }
 
@@ -934,12 +932,11 @@ impl Duration {
                 #[cfg(feature = "timezones")]
                 // for UTC, use fastpath below (same as naive)
                 Some(tz) if tz != &chrono_tz::UTC => {
-                    new_t =
-                        datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
-                    new_t += if d.negative { -t_days } else { t_days };
-                    new_t = datetime_to_timestamp(
+                    t = datetime_to_timestamp(unlocalize_datetime(timestamp_to_datetime(t), tz));
+                    t += if d.negative { -t_days } else { t_days };
+                    t = datetime_to_timestamp(
                         try_localize_datetime(
-                            timestamp_to_datetime(new_t),
+                            timestamp_to_datetime(t),
                             tz,
                             Ambiguous::Raise,
                             NonExistent::Raise,
@@ -947,11 +944,11 @@ impl Duration {
                         .expect("we didn't use Ambiguous::Null or NonExistent::Null"),
                     );
                 },
-                _ => new_t += if d.negative { -t_days } else { t_days },
+                _ => t += if d.negative { -t_days } else { t_days },
             };
         }
 
-        Ok(new_t)
+        Ok(t)
     }
 
     pub fn add_ns(&self, t: i64, tz: Option<&Tz>) -> PolarsResult<i64> {

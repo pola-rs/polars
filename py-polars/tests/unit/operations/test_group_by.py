@@ -11,6 +11,7 @@ import pytest
 import polars as pl
 import polars.selectors as cs
 from polars.exceptions import ColumnNotFoundError
+from polars.meta import get_index_type
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -1201,3 +1202,19 @@ def test_group_by_list_column() -> None:
     result = df.group_by("b").agg(pl.sum("a")).sort("b")
     expected = pl.DataFrame({"b": [[1, 2], [3]], "a": [4, 2]})
     assert_frame_equal(result, expected)
+
+
+def test_enum_perfect_group_by_21360() -> None:
+    dtype = pl.Enum(categories=["a", "b"])
+
+    assert_frame_equal(
+        pl.from_dicts([{"col": "a"}], schema={"col": dtype})
+        .group_by("col")
+        .agg(pl.len()),
+        pl.DataFrame(
+            [
+                pl.Series("col", ["a"], dtype),
+                pl.Series("len", [1], get_index_type()),
+            ]
+        ),
+    )

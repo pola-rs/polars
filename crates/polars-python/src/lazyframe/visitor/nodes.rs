@@ -85,6 +85,10 @@ impl PyFileOptions {
     fn hive_options(&self, _py: Python<'_>) -> PyResult<PyObject> {
         Err(PyNotImplementedError::new_err("hive options"))
     }
+    #[getter]
+    fn include_file_paths(&self, _py: Python<'_>) -> Option<&str> {
+        self.inner.include_file_paths.as_deref()
+    }
 }
 
 #[pyclass]

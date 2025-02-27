@@ -5,6 +5,7 @@ from datetime import date
 import pytest
 
 import polars as pl
+from polars.exceptions import ComputeError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 
@@ -119,3 +120,61 @@ def test_shift_fill_value_group_logicals() -> None:
     result = df.select(pl.col("d").shift(fill_value=pl.col("d").max(), n=-1).over("s"))
 
     assert result.dtypes == [pl.Date]
+
+
+def test_shift_n_null() -> None:
+    df = pl.DataFrame({"a": pl.Series([1, 2, 3], dtype=pl.Int32)})
+    out = df.shift(None)  # type: ignore[arg-type]
+    expected = pl.DataFrame({"a": pl.Series([None, None, None], dtype=pl.Int32)})
+    assert_frame_equal(out, expected)
+
+    out = df.shift(None, fill_value=1)  # type: ignore[arg-type]
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col("a").shift(None))  # type: ignore[arg-type]
+    assert_frame_equal(out, expected)
+
+    out = df.select(pl.col("a").shift(None, fill_value=1))  # type: ignore[arg-type]
+    assert_frame_equal(out, expected)
+
+
+def test_shift_n_nonscalar() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+    with pytest.raises(
+        ComputeError,
+        match="'n' must be scalar value",
+    ):
+        # Note: Expressions are not in the signature for `n`, but they work.
+        # We can still verify that n is scalar up-front.
+        df.shift(pl.col("b"), fill_value=1)  # type: ignore[arg-type]
+
+    with pytest.raises(
+        ComputeError,
+        match="'n' must be scalar value",
+    ):
+        df.select(pl.col("a").shift(pl.col("b"), fill_value=1))
+
+
+def test_shift_fill_value_nonscalar() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3],
+            "b": [4, 5, 6],
+        }
+    )
+    with pytest.raises(
+        ComputeError,
+        match="'fill_value' must be scalar value",
+    ):
+        df.shift(1, fill_value=pl.col("b"))
+
+    with pytest.raises(
+        ComputeError,
+        match="'fill_value' must be scalar value",
+    ):
+        df.select(pl.col("a").shift(1, fill_value=pl.col("b")))

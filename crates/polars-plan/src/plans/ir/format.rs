@@ -3,6 +3,7 @@ use std::fmt::{self, Display, Formatter};
 use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
+use polars_utils::format_list_truncated;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -272,16 +273,20 @@ impl<'a> IRDisplay<'a> {
                 ..
             } => {
                 let total_columns = schema.len();
-                let n_columns = if let Some(columns) = output_schema {
-                    columns.len().to_string()
+                let (n_columns, projected) = if let Some(schema) = output_schema {
+                    (
+                        format!("{}", schema.len()),
+                        format_list_truncated!(schema.iter_names(), 4, '"'),
+                    )
                 } else {
-                    "*".to_string()
+                    ("*".to_string(), "".to_string())
                 };
                 write!(
                     f,
-                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS",
+                    "{:indent$}DF {}; PROJECT{} {}/{} COLUMNS",
                     "",
-                    schema.iter_names().take(4).collect::<Vec<_>>(),
+                    format_list_truncated!(schema.iter_names(), 4, '"'),
+                    projected,
                     n_columns,
                     total_columns,
                 )

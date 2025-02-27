@@ -2,6 +2,7 @@ use std::any::Any;
 use std::borrow::Cow;
 
 use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_compute::rolling::QuantileMethod;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

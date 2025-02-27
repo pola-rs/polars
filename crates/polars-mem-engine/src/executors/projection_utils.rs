@@ -28,7 +28,7 @@ fn rolling_evaluate(
                 // clear the cache for every partitioned group
                 let state = state.split();
 
-                let (_time_key, _keys, groups) = df.rolling(vec![], options)?;
+                let (_time_key, groups) = df.rolling(None, options)?;
 
                 let groups_key = format!("{:?}", options);
                 // Set the groups so all expressions in partition can use it.

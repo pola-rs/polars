@@ -1672,6 +1672,25 @@ def test_to_physical() -> None:
     assert_series_equal(s.to_physical(), expected)
 
 
+def test_to_physical_rechunked_21285() -> None:
+    # A series with multiple chunks, dtype is array or list of structs with a
+    # null field (causes rechunking) and a field with a different physical and
+    # logical repr (causes the full body of `to_physical_repr` to run).
+    arr_dtype = pl.Array(pl.Struct({"f0": pl.Time, "f1": pl.Null}), shape=(1,))
+    s = pl.Series("a", [None], arr_dtype)  # content doesn't matter
+    s = s.append(s)
+    expected_arr_dtype = pl.Array(pl.Struct({"f0": Int64, "f1": pl.Null}), shape=(1,))
+    expected = pl.Series("a", [None, None], expected_arr_dtype)
+    assert_series_equal(s.to_physical(), expected)
+
+    list_dtype = pl.List(pl.Struct({"f0": pl.Time, "f1": pl.Null}))
+    s = pl.Series("a", [None], list_dtype)  # content doesn't matter
+    s = s.append(s)
+    expected_list_dtype = pl.List(pl.Struct({"f0": Int64, "f1": pl.Null}))
+    expected = pl.Series("a", [None, None], expected_list_dtype)
+    assert_series_equal(s.to_physical(), expected)
+
+
 def test_is_between_datetime() -> None:
     s = pl.Series("a", [datetime(2020, 1, 1, 10, 0, 0), datetime(2020, 1, 1, 20, 0, 0)])
     start = datetime(2020, 1, 1, 12, 0, 0)

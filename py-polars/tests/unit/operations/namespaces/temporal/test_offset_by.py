@@ -143,3 +143,24 @@ def test_offset_by_unique_29_feb_19608() -> None:
         schema_overrides={"t": pl.Datetime("ms", "UTC")},
     )
     assert_frame_equal(result, expected)
+
+
+def test_month_then_day_21283() -> None:
+    series_vienna = pl.Series(
+        [datetime(2024, 5, 15, 8, 0)], dtype=pl.Datetime(time_zone="Europe/Vienna")
+    )
+    result = series_vienna.dt.offset_by("2y1mo1q1h")[0]
+    expected = datetime.strptime("2026-09-15 11:00:00+02:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected
+    result = series_vienna.dt.offset_by("2y1mo1q1h1d")[0]
+    expected = datetime.strptime("2026-09-16 11:00:00+02:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected
+    series_utc = pl.Series(
+        [datetime(2024, 5, 15, 8, 0)], dtype=pl.Datetime(time_zone="UTC")
+    )
+    result = series_utc.dt.offset_by("2y1mo1q1h")[0]
+    expected = datetime.strptime("2026-09-15 09:00:00+00:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected
+    result = series_utc.dt.offset_by("2y1mo1q1h1d")[0]
+    expected = datetime.strptime("2026-09-16 09:00:00+00:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected

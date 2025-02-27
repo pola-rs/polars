@@ -6,6 +6,8 @@ mod ffi;
 pub(super) mod fmt;
 mod iterator;
 
+mod builder;
+pub use builder::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};

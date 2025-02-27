@@ -195,7 +195,13 @@ pub trait SeriesOpsTime: AsSeries {
         by: &Series,
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
-        let s = self.as_series().clone();
+        let mut s = self.as_series().clone();
+        if matches!(
+            s.dtype(),
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+        ) {
+            s = s.cast(&DataType::Int64).unwrap();
+        }
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg_by(
@@ -213,6 +219,11 @@ pub trait SeriesOpsTime: AsSeries {
         let mut s = self.as_series().clone();
         if options.weights.is_some() {
             s = s.to_float()?;
+        } else if matches!(
+            s.dtype(),
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+        ) {
+            s = s.cast(&DataType::Int64).unwrap();
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {

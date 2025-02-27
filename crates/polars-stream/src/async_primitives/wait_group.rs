@@ -38,34 +38,6 @@ impl WaitGroup {
     }
 }
 
-// Wait group with an associated index.
-pub struct IndexedWaitGroup {
-    index: usize,
-    wait_group: WaitGroup,
-}
-
-impl IndexedWaitGroup {
-    pub fn new(index: usize) -> Self {
-        Self {
-            index,
-            wait_group: Default::default(),
-        }
-    }
-
-    pub fn index(&self) -> usize {
-        self.index
-    }
-
-    pub fn token(&self) -> WaitToken {
-        self.wait_group.token()
-    }
-
-    pub async fn wait(self) -> Self {
-        self.wait_group.wait().await;
-        self
-    }
-}
-
 struct WaitGroupFuture<'a> {
     inner: &'a Arc<WaitGroupInner>,
 }

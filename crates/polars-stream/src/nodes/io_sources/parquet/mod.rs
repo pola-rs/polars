@@ -1,3 +1,4 @@
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use mem_prefetch_funcs::get_memory_prefetch_func;
@@ -5,22 +6,24 @@ use polars_core::config;
 use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
-use polars_error::PolarsResult;
+use polars_error::{polars_err, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
+use polars_io::RowIndex;
 use polars_parquet::read::read_metadata;
 use polars_parquet::read::schema::infer_schema_with_options;
+use polars_plan::dsl::{ScanSource, ScanSources};
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{FileInfo, ScanSource, ScanSources};
+use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{MorselOutput, SourceNode, SourceOutput};
+use super::multi_scan::MultiScanable;
+use super::{MorselOutput, RowRestriction, SourceNode, SourceOutput};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::wait_group::WaitGroup;
@@ -151,7 +154,7 @@ impl SourceNode for ParquetSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        _unresistricted_row_count: Option<PlSmallStr>,
+        unresistricted_row_count: Option<Arc<AtomicIdxSize>>,
     ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
             .map(|_| connector())
@@ -182,15 +185,25 @@ impl SourceNode for ParquetSourceNode {
             eprintln!("[ParquetSource]: {:?}", &self.config);
         }
 
+        let num_rows = self.first_metadata.as_ref().unwrap().num_rows;
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
         self.init_projected_arrow_schema();
 
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
-
-        let morsel_stream_starter = self.morsel_stream_starter.take().unwrap();
+        let mut morsel_stream_starter = self.morsel_stream_starter.take();
 
         join_handles.push(spawn(TaskPriority::Low, async move {
-            morsel_stream_starter.send(()).unwrap();
+            if let Some(rc) = unresistricted_row_count {
+                let num_rows = IdxSize::try_from(num_rows)
+                    .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))?;
+                rc.store(num_rows, Ordering::Relaxed);
+            }
+
+            if let Some(v) = morsel_stream_starter.take() {
+                if v.send(()).is_err() {
+                    return Ok(());
+                }
+            }
 
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {
@@ -259,27 +272,32 @@ impl MultiScanable for ParquetSourceNode {
 
     const BASE_NAME: &'static str = "parquet";
 
-    const DOES_PRED_PD: bool = true;
-    const DOES_SLICE_PD: bool = true;
-    const DOES_ROW_INDEX: bool = true;
+    const SPECIALIZED_PRED_PD: bool = true;
 
     async fn new(
         source: ScanSource,
         options: &Self::ReadOptions,
         cloud_options: Option<&CloudOptions>,
+        row_index: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         let source = source.into_sources();
         let memslice = source.at(0).to_memslice()?;
         let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
 
         let arrow_schema = infer_schema_with_options(&file_metadata, &None)?;
-        let schema = Arc::new(Schema::from_arrow_schema(&arrow_schema));
         let arrow_schema = Arc::new(arrow_schema);
+
+        let schema = Schema::from_arrow_schema(&arrow_schema);
+        let schema = Arc::new(schema);
 
         let mut options = options.clone();
         options.schema = Some(schema.clone());
 
-        let file_options = FileScanOptions::default();
+        let file_options = FileScanOptions {
+            row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
+            ..Default::default()
+        };
+
         let file_info = FileInfo::new(
             schema.clone(),
             Some(rayon::iter::Either::Left(arrow_schema.clone())),
@@ -298,38 +316,47 @@ impl MultiScanable for ParquetSourceNode {
     }
 
     fn with_projection(&mut self, projection: Option<&Bitmap>) {
-        self.file_options.with_columns = projection.map(|p| {
-            p.true_idx_iter()
-                .map(|idx| self.file_info.schema.get_at_index(idx).unwrap().0.clone())
-                .collect()
-        });
+        if let Some(projection) = projection {
+            let mut with_columns = Vec::with_capacity(
+                usize::from(self.file_options.row_index.is_some()) + projection.set_bits(),
+            );
+
+            if let Some(ri) = self.file_options.row_index.as_ref() {
+                with_columns.push(ri.name.clone());
+            }
+            with_columns.extend(
+                projection
+                    .true_idx_iter()
+                    .map(|idx| self.file_info.schema.get_at_index(idx).unwrap().0.clone())
+                    .collect::<Vec<_>>(),
+            );
+            self.file_options.with_columns = Some(with_columns.into());
+        }
     }
-    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
         self.predicate = None;
         self.file_options.slice = None;
 
         if let Some(row_restriction) = row_restriction {
             match row_restriction {
-                RowRestrication::Slice(slice) => {
-                    self.file_options.slice = Some((slice.start as i64, slice.len()))
+                RowRestriction::Slice(slice) => {
+                    self.file_options.slice = Some((slice.start as i64, slice.len()));
                 },
                 // @TODO: Cache
-                RowRestrication::Predicate(scan_predicate) => {
-                    self.predicate = Some(scan_predicate.to_io(None, &self.file_info.schema))
+                RowRestriction::Predicate(scan_predicate) => {
+                    self.predicate = Some(scan_predicate);
                 },
             }
         }
     }
-    fn with_row_index(&mut self, row_index: Option<PlSmallStr>) {
-        self.row_index = row_index.map(|name| Arc::new((name, AtomicIdxSize::new(0))));
+
+    async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
+        let num_rows = self.first_metadata.as_ref().unwrap().num_rows;
+        IdxSize::try_from(num_rows)
+            .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))
     }
 
-    async fn row_count(&mut self) -> PolarsResult<IdxSize> {
-        // @TODO: Overflow
-        Ok(self.first_metadata.as_ref().unwrap().num_rows as IdxSize)
-    }
-
-    async fn schema(&mut self) -> PolarsResult<SchemaRef> {
+    async fn physical_schema(&mut self) -> PolarsResult<SchemaRef> {
         Ok(self.file_info.schema.clone())
     }
 }

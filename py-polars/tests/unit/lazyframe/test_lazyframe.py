@@ -1488,3 +1488,13 @@ def test_type_coercion_cast_boolean_after_comparison() -> None:
     for op in [operator.and_, operator.or_, operator.xor]:
         e = op(pl.col("a"), pl.col("b")).cast(pl.Boolean)
         assert "cast" in lf.with_columns(e).explain()
+
+
+def test_unique_length_multiple_columns() -> None:
+    lf = pl.LazyFrame(
+        {
+            "a": [1, 1, 1, 2, 3],
+            "b": [100, 100, 200, 100, 300],
+        }
+    )
+    assert lf.unique().select(pl.len()).collect().item() == 4

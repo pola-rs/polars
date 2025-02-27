@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import pytest
@@ -384,3 +384,18 @@ def test_map_elements_list_return_dtype() -> None:
     )
     expected = pl.Series([[2], [3, 4]], dtype=return_dtype)
     assert_series_equal(result, expected)
+
+
+def test_map_elements_list_of_named_tuple_15425() -> None:
+    class Foo(NamedTuple):
+        x: int
+
+    df = pl.DataFrame({"a": [0, 1, 2]})
+    result = df.select(
+        pl.col("a").map_elements(
+            lambda x: [Foo(i) for i in range(x)],
+            return_dtype=pl.List(pl.Struct({"x": pl.Int64})),
+        )
+    )
+    expected = pl.DataFrame({"a": [[], [{"x": 0}], [{"x": 0}, {"x": 1}]]})
+    assert_frame_equal(result, expected)

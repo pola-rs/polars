@@ -90,7 +90,21 @@ impl ListFunction {
             ArgMin => mapper.with_dtype(IDX_DTYPE),
             ArgMax => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "diff")]
-            Diff { .. } => mapper.with_same_dtype(),
+            Diff { .. } => mapper.map_dtype(|dt| {
+                let inner_dt = match dt.inner_dtype().unwrap() {
+                    #[cfg(feature = "dtype-datetime")]
+                    DataType::Datetime(tu, _) => DataType::Duration(*tu),
+                    #[cfg(feature = "dtype-date")]
+                    DataType::Date => DataType::Duration(TimeUnit::Milliseconds),
+                    #[cfg(feature = "dtype-time")]
+                    DataType::Time => DataType::Duration(TimeUnit::Nanoseconds),
+                    DataType::UInt64 | DataType::UInt32 => DataType::Int64,
+                    DataType::UInt16 => DataType::Int32,
+                    DataType::UInt8 => DataType::Int16,
+                    inner_dt => inner_dt.clone(),
+                };
+                DataType::List(Box::new(inner_dt))
+            }),
             Sort(_) => mapper.with_same_dtype(),
             Reverse => mapper.with_same_dtype(),
             Unique(_) => mapper.with_same_dtype(),

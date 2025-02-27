@@ -87,6 +87,7 @@ def _get_dependency_list() -> list[str]:
         "numpy",
         "openpyxl",
         "pandas",
+        "polars_cloud",
         "pyarrow",
         "pydantic",
         "pyiceberg",

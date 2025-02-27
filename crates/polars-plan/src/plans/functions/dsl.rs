@@ -1,3 +1,4 @@
+use polars_compute::rolling::QuantileMethod;
 use strum_macros::IntoStaticStr;
 
 use super::*;

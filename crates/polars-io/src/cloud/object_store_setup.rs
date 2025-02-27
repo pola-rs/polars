@@ -63,7 +63,7 @@ fn url_and_creds_to_key(url: &Url, options: Option<&CloudOptions>) -> Vec<u8> {
 
     verbose_print_sensitive(|| format!("object store cache key: {} {:?}", url, &cache_key));
 
-    return pl_serialize::serialize_to_bytes(&cache_key).unwrap();
+    return pl_serialize::serialize_to_bytes::<_, false>(&cache_key).unwrap();
 
     #[derive(Clone, Debug, PartialEq, Hash, Eq)]
     #[cfg_attr(feature = "serde", derive(serde::Serialize))]

@@ -65,7 +65,7 @@ where
 {
     use polars_utils::pl_serialize::deserialize_map_bytes;
 
-    deserialize_map_bytes(deserializer, &mut |b| {
+    deserialize_map_bytes(deserializer, |b| {
         let mut b = b.as_ref();
         let mut protocol = TCompactInputProtocol::new(&mut b, usize::MAX);
         ColumnChunk::read_from_in_protocol(&mut protocol).map_err(D::Error::custom)

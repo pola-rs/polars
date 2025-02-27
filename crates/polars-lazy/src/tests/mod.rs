@@ -73,6 +73,16 @@ fn scan_foods_ipc() -> LazyFrame {
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn init_files() {
+    if std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/busy")
+        .is_err()
+    {
+        while !std::fs::exists("../../examples/datasets/finished").unwrap() {}
+        return;
+    }
+
     for path in &[
         "../../examples/datasets/foods1.csv",
         "../../examples/datasets/foods2.csv",
@@ -113,6 +123,12 @@ fn init_files() {
             }
         }
     }
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/finished")
+        .unwrap();
 }
 
 #[cfg(feature = "parquet")]

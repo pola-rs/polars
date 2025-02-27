@@ -16,9 +16,12 @@ from polars._utils.construction.dataframe import (
     sequence_to_pydf,
 )
 from polars._utils.construction.series import arrow_to_pyseries, pandas_to_pyseries
-from polars._utils.deprecation import deprecate_renamed_parameter
+from polars._utils.deprecation import (
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.pycapsule import is_pycapsule, pycapsule_to_frame
-from polars._utils.various import _cast_repr_strings_with_schema
+from polars._utils.various import _cast_repr_strings_with_schema, issue_warning
 from polars._utils.wrap import wrap_df, wrap_s
 from polars.datatypes import N_INFER_DEFAULT, Categorical, String
 from polars.dependencies import _check_for_pyarrow
@@ -839,35 +842,49 @@ def _from_series_repr(m: re.Match[str]) -> Series:
         ).to_series()
 
 
-def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataFrame:
+def from_dataframe(
+    df: SupportsInterchange | ArrowArrayExportable | ArrowStreamExportable,
+    *,
+    allow_copy: bool | None = None,
+    rechunk: bool = True,
+) -> DataFrame:
     """
-    Build a Polars DataFrame from any dataframe supporting the interchange protocol.
+    Build a Polars DataFrame from any dataframe supporting the PyCapsule Interface.
+
+    .. versionchanged:: 1.23.0
+
+       `from_dataframe` uses the PyCapsule Interface instead of the Dataframe
+       Interchange Protocol for conversion, only using the latter as a fallback.
 
     Parameters
     ----------
     df
-        Object supporting the dataframe interchange protocol, i.e. must have implemented
-        the `__dataframe__` method.
+        Object supporting the dataframe PyCapsule Interface.
     allow_copy
-        Allow memory to be copied to perform the conversion. If set to False, causes
+        Allow memory to be copied to perform the conversion. If set to False, may cause
         conversions that are not zero-copy to fail.
+
+        .. deprecated: 1.23.0
+            `allow_copy` is deprecated and will be removed in a future version.
+    rechunk : bool, default True
+        Make sure that all data is in contiguous memory.
 
     Notes
     -----
-    Details on the Python dataframe interchange protocol:
-    https://data-apis.org/dataframe-protocol/latest/index.html
-
-    Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is a more
-    efficient method of conversion.
+    - Details on the PyCapsule Interface:
+      https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html.
+    - Details on the Python dataframe interchange protocol:
+      https://data-apis.org/dataframe-protocol/latest/index.html.
+      Using a dedicated function like :func:`from_pandas` or :func:`from_arrow` is
+      a more efficient method of conversion.
 
     Examples
     --------
-    Convert a pandas dataframe to Polars through the interchange protocol.
+    Convert a pandas dataframe to Polars.
 
     >>> import pandas as pd
     >>> df_pd = pd.DataFrame({"a": [1, 2], "b": [3.0, 4.0], "c": ["x", "y"]})
-    >>> dfi = df_pd.__dataframe__()
-    >>> pl.from_dataframe(dfi)
+    >>> pl.from_dataframe(df_pd)
     shape: (2, 3)
     ┌─────┬─────┬─────┐
     │ a   ┆ b   ┆ c   │
@@ -878,6 +895,25 @@ def from_dataframe(df: SupportsInterchange, *, allow_copy: bool = True) -> DataF
     │ 2   ┆ 4.0 ┆ y   │
     └─────┴─────┴─────┘
     """
+    if allow_copy is not None:
+        issue_deprecation_warning(
+            "`allow_copy` is deprecated and will be removed in a future version.",
+            version="1.23",
+        )
+    else:
+        allow_copy = True
+    if is_pycapsule(df):
+        try:
+            return pycapsule_to_frame(df, rechunk=rechunk)
+        except Exception as exc:
+            issue_warning(
+                f"Failed to convert dataframe using PyCapsule Interface with exception: {exc!r}.\n"
+                "Falling back to Dataframe Interchange Protocol, which is known to be less robust.",
+                UserWarning,
+            )
     from polars.interchange.from_dataframe import from_dataframe
 
-    return from_dataframe(df, allow_copy=allow_copy)
+    result = from_dataframe(df, allow_copy=allow_copy)  # type: ignore[arg-type]
+    if rechunk:
+        return result.rechunk()
+    return result

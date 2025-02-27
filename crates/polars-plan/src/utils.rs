@@ -3,6 +3,7 @@ use std::iter::FlatMap;
 
 use polars_core::prelude::*;
 
+use self::visitor::{AexprNode, RewritingVisitor, TreeWalker};
 use crate::constants::get_len_name;
 use crate::prelude::*;
 
@@ -364,4 +365,36 @@ pub fn merge_schemas(schemas: &[SchemaRef]) -> PolarsResult<Schema> {
     }
 
     Ok(merged_schema)
+}
+
+/// Rename all reference to the column in `map` with their corresponding new name.
+pub fn rename_columns(
+    node: Node,
+    expr_arena: &mut Arena<AExpr>,
+    map: &PlIndexMap<PlSmallStr, PlSmallStr>,
+) -> Node {
+    struct RenameColumns<'a>(&'a PlIndexMap<PlSmallStr, PlSmallStr>);
+    impl RewritingVisitor for RenameColumns<'_> {
+        type Node = AexprNode;
+        type Arena = Arena<AExpr>;
+
+        fn mutate(
+            &mut self,
+            node: Self::Node,
+            arena: &mut Self::Arena,
+        ) -> PolarsResult<Self::Node> {
+            if let AExpr::Column(name) = arena.get(node.node()) {
+                if let Some(new_name) = self.0.get(name) {
+                    return Ok(AexprNode::new(arena.add(AExpr::Column(new_name.clone()))));
+                }
+            }
+
+            Ok(node)
+        }
+    }
+
+    AexprNode::new(node)
+        .rewrite(&mut RenameColumns(map), expr_arena)
+        .unwrap()
+        .node()
 }

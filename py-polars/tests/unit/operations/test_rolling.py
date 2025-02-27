@@ -444,7 +444,7 @@ def test_rolling_group_by_empty_groups_by_take_6330() -> None:
     ).agg(pl.len())
 
     assert result.to_dict(as_series=False) == {
-        "Event": ["Rain", "Rain", "Rain", "Rain", "Sun", "Sun", "Sun", "Sun"],
+        "Event": ["Sun", "Sun", "Sun", "Sun", "Rain", "Rain", "Rain", "Rain"],
         "Date": [1, 2, 3, 4, 1, 2, 3, 4],
         "len": [0, 1, 2, 2, 0, 1, 2, 2],
     }
