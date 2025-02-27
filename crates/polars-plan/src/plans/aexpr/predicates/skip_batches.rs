@@ -96,9 +96,9 @@ fn aexpr_to_skip_batch_predicate_rec(
             binexpr!(Gt, $l, $r)
         }};
     }
-    macro_rules! eq_missing {
+    macro_rules! eq {
         ($l:expr, $r:expr) => {{
-            binexpr!(EqValidity, $l, $r)
+            binexpr!(Eq, $l, $r)
         }};
     }
     macro_rules! null_count {
@@ -114,7 +114,7 @@ fn aexpr_to_skip_batch_predicate_rec(
         ($i:expr) => {{
             let expr = null_count!($i);
             let idx_zero = lv!(0);
-            eq_missing!(expr, idx_zero)
+            eq!(expr, idx_zero)
         }};
     }
     macro_rules! has_nulls {
@@ -243,7 +243,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                             } else {
                                 let col_nc = col!(null_count: col);
                                 let idx_zero = lv!(idx: 0);
-                                eq_missing!(col_nc, idx_zero)
+                                eq!(col_nc, idx_zero)
                             }
                         },
                         not_null: {
@@ -261,7 +261,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
                             let col_nc = col!(null_count: col);
                             let len = col!(len);
-                            let all_nulls = eq_missing!(col_nc, len);
+                            let all_nulls = eq!(col_nc, len);
 
                             or!(all_nulls, min_gt, max_lt)
                         }
@@ -292,18 +292,18 @@ fn aexpr_to_skip_batch_predicate_rec(
                             } else {
                                 let col_nc = col!(null_count: col);
                                 let len = col!(len);
-                                eq_missing!(col_nc, len)
+                                eq!(col_nc, len)
                             }
                         },
                         not_null: {
                             let col_min = col!(min: col);
                             let col_max = col!(max: col);
-                            let min_eq = eq_missing!(col_min, lv_node);
-                            let max_eq = eq_missing!(col_max, lv_node);
+                            let min_eq = eq!(col_min, lv_node);
+                            let max_eq = eq!(col_max, lv_node);
 
                             let col_nc = col!(null_count: col);
                             let idx_zero = lv!(idx: 0);
-                            let no_nulls = eq_missing!(col_nc, idx_zero);
+                            let no_nulls = eq!(col_nc, idx_zero);
 
                             and!(no_nulls, min_eq, max_eq)
                         }
@@ -443,7 +443,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
                             let col_nc = col!(null_count: col);
                             let idx_zero = lv!(idx: 0);
-                            let col_has_no_nulls = eq_missing!(col_nc, idx_zero);
+                            let col_has_no_nulls = eq!(col_nc, idx_zero);
 
                             let lv_has_not_nulls = has_no_nulls!(lv_node);
                             let null_case = or!(lv_has_not_nulls, col_has_no_nulls);
@@ -459,7 +459,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     // col(A).is_null() -> null_count(A) == 0
                     let col_nc = col!(null_count: col);
                     let idx_zero = lv!(idx: 0);
-                    Some(eq_missing!(col_nc, idx_zero))
+                    Some(eq!(col_nc, idx_zero))
                 },
                 BooleanFunction::IsNotNull => {
                     let col = into_column(input[0].node(), expr_arena, schema, 0)?;
@@ -467,7 +467,7 @@ fn aexpr_to_skip_batch_predicate_rec(
                     // col(A).is_not_null() -> null_count(A) == LEN
                     let col_nc = col!(null_count: col);
                     let len = col!(len);
-                    Some(eq_missing!(col_nc, len))
+                    Some(eq!(col_nc, len))
                 },
                 #[cfg(feature = "is_between")]
                 BooleanFunction::IsBetween { closed } => {
@@ -559,7 +559,7 @@ fn aexpr_to_skip_batch_predicate_rec(
 
         let min_is_max = binexpr!(Eq, col_min, col_max); // Eq so that (None == None) == None
         let idx_zero = lv!(idx: 0);
-        let has_no_nulls = eq_missing!(col_nc, idx_zero);
+        let has_no_nulls = eq!(col_nc, idx_zero);
 
         expr = and!(min_is_max, has_no_nulls, expr);
     }
