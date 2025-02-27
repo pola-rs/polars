@@ -1,5 +1,6 @@
 use std::borrow::{Borrow, Cow};
 
+use arrow_format::ipc;
 use arrow_format::ipc::planus::Builder;
 use polars_error::{polars_bail, polars_err, PolarsResult};
 
@@ -288,6 +289,42 @@ fn gc_bin_view<'a, T: ViewType + ?Sized>(
     }
 }
 
+pub fn encode_array(
+    array: &Box<dyn Array>,
+    options: &WriteOptions,
+    variadic_buffer_counts: &mut Vec<i64>,
+    buffers: &mut Vec<ipc::Buffer>,
+    arrow_data: &mut Vec<u8>,
+    nodes: &mut Vec<ipc::FieldNode>,
+    offset: &mut i64,
+) {
+    // We don't want to write all buffers in sliced arrays.
+    let array = match array.dtype() {
+        ArrowDataType::BinaryView => {
+            let concrete_arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+            gc_bin_view(array, concrete_arr)
+        },
+        ArrowDataType::Utf8View => {
+            let concrete_arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            gc_bin_view(array, concrete_arr)
+        },
+        _ => Cow::Borrowed(array),
+    };
+    let array = array.as_ref().as_ref();
+
+    set_variadic_buffer_counts(variadic_buffer_counts, array);
+
+    write(
+        array,
+        buffers,
+        arrow_data,
+        nodes,
+        offset,
+        is_native_little_endian(),
+        options.compression,
+    )
+}
+
 /// Write [`RecordBatchT`] into two sets of bytes, one for the header (ipc::Schema::Message) and the
 /// other for the batch's data
 pub fn encode_record_batch(
@@ -303,33 +340,37 @@ pub fn encode_record_batch(
     let mut offset = 0;
     let mut variadic_buffer_counts = vec![];
     for array in chunk.arrays() {
-        // We don't want to write all buffers in sliced arrays.
-        let array = match array.dtype() {
-            ArrowDataType::BinaryView => {
-                let concrete_arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
-                gc_bin_view(array, concrete_arr)
-            },
-            ArrowDataType::Utf8View => {
-                let concrete_arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
-                gc_bin_view(array, concrete_arr)
-            },
-            _ => Cow::Borrowed(array),
-        };
-        let array = array.as_ref().as_ref();
-
-        set_variadic_buffer_counts(&mut variadic_buffer_counts, array);
-
-        write(
+        encode_array(
             array,
+            options,
+            &mut variadic_buffer_counts,
             &mut buffers,
             &mut arrow_data,
             &mut nodes,
             &mut offset,
-            is_native_little_endian(),
-            options.compression,
-        )
+        );
     }
 
+    commit_encoded_arrays(
+        chunk.len(),
+        options,
+        variadic_buffer_counts,
+        buffers,
+        arrow_data,
+        nodes,
+        encoded_message,
+    );
+}
+
+pub fn commit_encoded_arrays(
+    array_len: usize,
+    options: &WriteOptions,
+    variadic_buffer_counts: Vec<i64>,
+    buffers: Vec<ipc::Buffer>,
+    arrow_data: Vec<u8>,
+    nodes: Vec<ipc::FieldNode>,
+    encoded_message: &mut EncodedData,
+) {
     let variadic_buffer_counts = if variadic_buffer_counts.is_empty() {
         None
     } else {
@@ -342,7 +383,7 @@ pub fn encode_record_batch(
         version: arrow_format::ipc::MetadataVersion::V5,
         header: Some(arrow_format::ipc::MessageHeader::RecordBatch(Box::new(
             arrow_format::ipc::RecordBatch {
-                length: chunk.len() as i64,
+                length: array_len as i64,
                 nodes: Some(nodes),
                 buffers: Some(buffers),
                 compression,
