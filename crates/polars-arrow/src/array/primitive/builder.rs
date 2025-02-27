@@ -2,7 +2,7 @@ use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
 
 use super::PrimitiveArray;
-use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::Array;
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;

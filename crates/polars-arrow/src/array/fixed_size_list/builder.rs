@@ -2,7 +2,6 @@ use polars_utils::IdxSize;
 
 use super::FixedSizeListArray;
 use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
-use crate::array::Array;
 use crate::bitmap::OptBitmapBuilder;
 use crate::datatypes::ArrowDataType;
 

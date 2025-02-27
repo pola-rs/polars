@@ -7,7 +7,7 @@ use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
 use crate::array::list::ListArrayBuilder;
 use crate::array::null::NullArrayBuilder;
 use crate::array::struct_::StructArrayBuilder;
-use crate::array::{Array, PrimitiveArrayBuilder, StaticArray};
+use crate::array::{Array, PrimitiveArrayBuilder};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::with_match_primitive_type_full;
 

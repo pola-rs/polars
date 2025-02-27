@@ -1,8 +1,7 @@
 use polars_utils::IdxSize;
 
 use super::FixedSizeBinaryArray;
-use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
-use crate::array::Array;
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
