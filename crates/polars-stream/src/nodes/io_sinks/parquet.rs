@@ -109,25 +109,17 @@ impl SinkNode for ParquetSinkNode {
                 .row_group_size
                 .unwrap_or(DEFAULT_ROW_GROUP_SIZE)
                 .max(1);
-            let mut stop_requested = false;
             let mut row_group_index = 0;
 
             while let Ok(input) = recv_ports_recv.recv().await {
                 let mut receiver = input.port.serial();
-                loop {
-                    match receiver.recv().await {
-                        Err(_) => stop_requested = true,
-                        Ok(morsel) => {
-                            let df = morsel.into_df();
 
-                            // @NOTE: This also performs schema validation.
-                            buffer.vstack_mut(&df)?;
-                        },
-                    }
+                while let Ok(morsel) = receiver.recv().await {
+                    let df = morsel.into_df();
+                    // @NOTE: This also performs schema validation.
+                    buffer.vstack_mut(&df)?;
 
-                    while (stop_requested && buffer.height() > 0)
-                        || buffer.height() >= row_group_size
-                    {
+                    while buffer.height() >= row_group_size {
                         let row_group;
 
                         (row_group, buffer) =
@@ -143,13 +135,23 @@ impl SinkNode for ParquetSinkNode {
 
                         row_group_index += 1;
                     }
-
-                    if stop_requested {
-                        break;
-                    }
                 }
 
                 input.outcome.stop();
+            }
+
+            // Flush the remaining rows.
+            while buffer.height() > 0 {
+                let row_group;
+
+                (row_group, buffer) = buffer.split_at(row_group_size.min(buffer.height()) as i64);
+                for (column_idx, column) in row_group.take_columns().into_iter().enumerate() {
+                    distribute
+                        .send((row_group_index, column_idx, column))
+                        .await
+                        .unwrap();
+                }
+                row_group_index += 1;
             }
 
             PolarsResult::Ok(())
