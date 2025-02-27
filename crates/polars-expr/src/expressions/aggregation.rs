@@ -566,6 +566,12 @@ impl PartitionedAggregation for AggregationExpr {
                         let count = &fields[1];
                         let (agg_count, agg_s) =
                             unsafe { POOL.join(|| count.agg_sum(groups), || sum.agg_sum(groups)) };
+
+                        let agg_count = agg_count.idx().unwrap();
+                        // Ensure that we don't divide by zero.
+                        let agg_count = agg_count
+                            .apply_values(|v| if v == 0 { 1 } else { v })
+                            .into_series();
                         let agg_s = &agg_s / &agg_count;
                         Ok(agg_s?.with_name(new_name).into_column())
                     },
