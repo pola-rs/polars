@@ -31,10 +31,9 @@ pub trait ArrayNameSpace: AsArray {
         let ca = self.as_array();
         IdxCa::from_iter_options(
             ca.name().clone(),
-            ca.iter().map(|opt_s| opt_s.map(|_| ca.width() as IdxSize))
+            ca.iter().map(|opt_s| opt_s.map(|_| ca.width() as IdxSize)),
         )
     }
-    
 
     fn array_max(&self) -> Series {
         let ca = self.as_array();
