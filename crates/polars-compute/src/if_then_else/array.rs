@@ -11,6 +11,7 @@ impl IfThenElseKernel for FixedSizeListArray {
         let inner_dt = if_true.dtype().inner_dtype().unwrap();
         let mut builder =
             FixedSizeListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,
@@ -30,6 +31,7 @@ impl IfThenElseKernel for FixedSizeListArray {
         let inner_dt = if_false.dtype().inner_dtype().unwrap();
         let mut builder =
             FixedSizeListArrayBuilder::new(if_false.dtype().clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,
@@ -49,6 +51,7 @@ impl IfThenElseKernel for FixedSizeListArray {
         let inner_dt = if_true.dtype().inner_dtype().unwrap();
         let mut builder =
             FixedSizeListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,
@@ -72,6 +75,7 @@ impl IfThenElseKernel for FixedSizeListArray {
             std::iter::once(if_false).collect_arr_trusted_with_dtype(dtype.clone());
         let inner_dt = dtype.inner_dtype().unwrap();
         let mut builder = FixedSizeListArrayBuilder::new(dtype.clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,

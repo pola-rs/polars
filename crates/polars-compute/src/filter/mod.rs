@@ -100,6 +100,7 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
         _ => {
             let iter = SlicesIterator::new(mask);
             let mut mutable = make_builder(array.dtype());
+            mutable.reserve(iter.slots());
             iter.for_each(|(start, len)| {
                 mutable.subslice_extend(array, start, len, ShareStrategy::Always)
             });

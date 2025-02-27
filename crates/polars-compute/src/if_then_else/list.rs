@@ -10,6 +10,7 @@ impl IfThenElseKernel for ListArray<i64> {
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
         let inner_dt = if_true.dtype().inner_dtype().unwrap();
         let mut builder = ListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,
@@ -28,6 +29,7 @@ impl IfThenElseKernel for ListArray<i64> {
             std::iter::once(if_true).collect_arr_trusted_with_dtype(if_false.dtype().clone());
         let inner_dt = if_false.dtype().inner_dtype().unwrap();
         let mut builder = ListArrayBuilder::new(if_false.dtype().clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,
@@ -46,6 +48,7 @@ impl IfThenElseKernel for ListArray<i64> {
             std::iter::once(if_false).collect_arr_trusted_with_dtype(if_true.dtype().clone());
         let inner_dt = if_true.dtype().inner_dtype().unwrap();
         let mut builder = ListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,
@@ -69,6 +72,7 @@ impl IfThenElseKernel for ListArray<i64> {
             std::iter::once(if_false).collect_arr_trusted_with_dtype(dtype.clone());
         let inner_dt = dtype.inner_dtype().unwrap();
         let mut builder = ListArrayBuilder::new(dtype.clone(), make_builder(inner_dt));
+        builder.reserve(mask.len());
         if_then_else_extend(
             &mut builder,
             mask,
