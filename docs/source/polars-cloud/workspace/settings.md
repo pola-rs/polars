@@ -19,8 +19,8 @@ processes within your workspace.
 
 - **Set Cluster Defaults**: Clicking this button lets you configure either a Resource based default
   or Instance based default.
-    - With Resource based custom amount of vCPUs, RAM, Storage and cluster size can be defined.
-    - Instance based allows to select a default instance type from the cloud service provider.
+  - With Resource based custom amount of vCPUs, RAM, Storage and cluster size can be defined.
+  - Instance based allows to select a default instance type from the cloud service provider.
 
 ## Query and compute labels
 
@@ -47,8 +47,8 @@ The Service Accounts section manages programmatic access to your workspace.
 - **Create New Service Account**: Allows you to generate new service accounts for API access and
   automation.
 
-You can find more information about using Service Accounts in your workflows
-in the "Use service accounts" section.
+You can find more information about using Service Accounts in your workflows in the "Use service
+accounts" section.
 
 ## Disable workspace
 
