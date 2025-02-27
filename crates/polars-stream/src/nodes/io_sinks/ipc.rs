@@ -108,9 +108,8 @@ impl SinkNode for IpcSinkNode {
                 .filter_map(|(i, f)| f.contains_dictionary().then_some(i))
                 .collect::<Vec<_>>();
 
-            while let Ok(input) = recv_ports_recv.recv().await {
-                let mut receiver = input.port.serial();
-
+            while let Ok((outcome, port)) = recv_ports_recv.recv().await {
+                let mut receiver = port.serial();
                 while let Ok(morsel) = receiver.recv().await {
                     let df = morsel.into_df();
                     // @NOTE: This also performs schema validation.
@@ -152,7 +151,7 @@ impl SinkNode for IpcSinkNode {
                     }
                 }
 
-                input.outcome.stop();
+                outcome.stopped();
             }
 
             // Flush the remaining rows.

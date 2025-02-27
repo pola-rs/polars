@@ -52,9 +52,7 @@ impl SinkNode for NDJsonSinkNode {
                 // allocations, we adjust to that over time.
                 let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
 
-                while let Ok((phase_consume_token, outcome, mut rx, mut sender)) =
-                    rx_receiver.recv().await
-                {
+                while let Ok((outcome, mut rx, mut sender)) = rx_receiver.recv().await {
                     while let Ok(morsel) = rx.recv().await {
                         let (df, seq, _, consume_token) = morsel.into_inner();
 
@@ -69,8 +67,7 @@ impl SinkNode for NDJsonSinkNode {
                                              // backpressure.
                     }
 
-                    outcome.stop();
-                    drop(phase_consume_token);
+                    outcome.stopped();
                 }
 
                 PolarsResult::Ok(())
@@ -94,12 +91,11 @@ impl SinkNode for NDJsonSinkNode {
                 .await
                 .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
 
-            while let Ok((consume_token, outcome, mut linearizer)) = rx_linearizer.recv().await {
+            while let Ok((outcome, mut linearizer)) = rx_linearizer.recv().await {
                 while let Some(Priority(_, buffer)) = linearizer.get().await {
                     file.write_all(&buffer).await?;
                 }
-                outcome.stop();
-                drop(consume_token);
+                outcome.stopped();
             }
 
             PolarsResult::Ok(())

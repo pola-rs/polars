@@ -4,13 +4,16 @@ use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 
-use super::io_sources::PhaseOutcomeToken;
-use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
+use super::{
+    ComputeNode, JoinHandle, Morsel, PhaseOutcome, PortState, RecvPort, SendPort, TaskScope,
+};
 use crate::async_executor::{spawn, AbortOnDropHandle};
 use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::distributor_channel;
 use crate::async_primitives::linearizer::{Inserter, Linearizer};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::nodes::TaskPriority;
+use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
 #[cfg(feature = "csv")]
 pub mod csv;
@@ -23,24 +26,16 @@ pub mod parquet;
 
 // This needs to be low to increase the backpressure.
 const DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: usize = 1;
+const DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: usize = 1;
 
 pub enum SinkInputPort {
     Serial(Receiver<Morsel>),
     Parallel(Vec<Receiver<Morsel>>),
 }
 
-pub struct SinkInput {
-    pub outcome: PhaseOutcomeToken,
-    pub port: SinkInputPort,
-
-    #[allow(unused)]
-    /// Dropping this indicates that the phase is done.
-    wait_token: WaitToken,
-}
-
 pub struct SinkRecvPort {
     num_pipelines: usize,
-    recv: Receiver<SinkInput>,
+    recv: Receiver<(PhaseOutcome, SinkInputPort)>,
 }
 
 impl SinkInputPort {
@@ -69,53 +64,47 @@ impl SinkRecvPort {
         mut self,
     ) -> (
         JoinHandle<PolarsResult<()>>,
-        Vec<Receiver<(WaitToken, PhaseOutcomeToken, Receiver<Morsel>, Inserter<T>)>>,
-        Receiver<(WaitToken, PhaseOutcomeToken, Linearizer<T>)>,
+        Vec<Receiver<(PhaseOutcome, Receiver<Morsel>, Inserter<T>)>>,
+        Receiver<(PhaseOutcome, Linearizer<T>)>,
     ) {
         let (mut rx_senders, rx_receivers) = (0..self.num_pipelines)
             .map(|_| connector())
             .collect::<(Vec<_>, Vec<_>)>();
         let (mut tx_linearizer, rx_linearizer) = connector();
         let handle = spawn(TaskPriority::High, async move {
+            let mut outcomes = Vec::with_capacity(self.num_pipelines + 1);
             let wg = WaitGroup::default();
 
-            while let Ok(input) = self.recv.recv().await {
-                let inputs = input.port.parallel();
+            while let Ok((phase_outcome, port)) = self.recv.recv().await {
+                let inputs = port.parallel();
 
                 let (linearizer, senders) =
                     Linearizer::<T>::new(self.num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
 
-                let mut outcomes = Vec::with_capacity(inputs.len());
                 for ((input, rx_sender), sender) in
                     inputs.into_iter().zip(rx_senders.iter_mut()).zip(senders)
                 {
-                    let outcome = PhaseOutcomeToken::new();
-                    if rx_sender
-                        .send((wg.token(), outcome.clone(), input, sender))
-                        .await
-                        .is_err()
-                    {
+                    let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
+                    if rx_sender.send((outcome, input, sender)).await.is_err() {
                         return Ok(());
                     }
-                    outcomes.push(outcome);
+                    outcomes.push(token);
                 }
-                let outcome = PhaseOutcomeToken::new();
-                if tx_linearizer
-                    .send((wg.token(), outcome.clone(), linearizer))
-                    .await
-                    .is_err()
-                {
+                let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
+                if tx_linearizer.send((outcome, linearizer)).await.is_err() {
                     return Ok(());
                 }
-                outcomes.push(outcome);
+                outcomes.push(token);
 
                 wg.wait().await;
-                for outcome in outcomes {
+                for outcome in &outcomes {
                     if outcome.did_finish() {
                         return Ok(());
                     }
                 }
-                input.outcome.stop();
+
+                phase_outcome.stopped();
+                outcomes.clear();
             }
 
             Ok(())
@@ -123,22 +112,99 @@ impl SinkRecvPort {
 
         (handle, rx_receivers, rx_linearizer)
     }
-    fn serial(self) -> Receiver<SinkInput> {
-        self.recv
+
+    /// Receive the [`RecvPort`] serially that distributes amongst workers then [`Linearize`] again
+    /// to the end.
+    ///
+    /// This is useful for sinks that process incoming [`Morsel`]s column-wise as the processing
+    /// of the columns can be done in parallel.
+    #[allow(clippy::type_complexity)]
+    pub fn serial_into_distribute<D, L>(
+        mut self,
+    ) -> (
+        JoinHandle<PolarsResult<()>>,
+        Receiver<(
+            PhaseOutcome,
+            Option<Receiver<Morsel>>,
+            distributor_channel::Sender<D>,
+        )>,
+        Vec<Receiver<(PhaseOutcome, distributor_channel::Receiver<D>, Inserter<L>)>>,
+        Receiver<(PhaseOutcome, Linearizer<L>)>,
+    )
+    where
+        D: Send + Sync + 'static,
+        L: Send + Sync + Ord + 'static,
+    {
+        let (mut tx_linearizer, rx_linearizer) = connector();
+        let (mut rx_senders, rx_receivers) = (0..self.num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+        let (mut tx_end, rx_end) = connector();
+        let handle = spawn(TaskPriority::High, async move {
+            let mut outcomes = Vec::with_capacity(self.num_pipelines + 2);
+            let wg = WaitGroup::default();
+
+            let mut stop = false;
+            while !stop {
+                let input = self.recv.recv().await;
+                stop |= input.is_err(); // We want to send one last message without receiver when
+                                        // the channel is dropped. This allows us to flush buffers.
+                let (phase_outcome, receiver) = match input {
+                    Ok((outcome, port)) => (Some(outcome), Some(port.serial())),
+                    Err(()) => (None, None),
+                };
+
+                let (dist_tx, dist_rxs) = distributor_channel::distributor_channel::<D>(
+                    self.num_pipelines,
+                    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
+                );
+                let (linearizer, senders) =
+                    Linearizer::<L>::new(self.num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+
+                let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
+                if tx_linearizer
+                    .send((outcome, receiver, dist_tx))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                outcomes.push(token);
+                for ((dist_rx, rx_sender), sender) in
+                    dist_rxs.into_iter().zip(rx_senders.iter_mut()).zip(senders)
+                {
+                    let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
+                    if rx_sender.send((outcome, dist_rx, sender)).await.is_err() {
+                        return Ok(());
+                    }
+                    outcomes.push(token);
+                }
+                let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
+                if tx_end.send((outcome, linearizer)).await.is_err() {
+                    return Ok(());
+                }
+                outcomes.push(token);
+
+                wg.wait().await;
+                for outcome in &outcomes {
+                    if outcome.did_finish() {
+                        return Ok(());
+                    }
+                }
+
+                if let Some(outcome) = phase_outcome {
+                    outcome.stopped()
+                }
+                outcomes.clear();
+            }
+
+            Ok(())
+        });
+
+        (handle, rx_linearizer, rx_receivers, rx_end)
     }
-}
-
-impl SinkInput {
-    pub fn from_port(port: SinkInputPort) -> (PhaseOutcomeToken, WaitGroup, Self) {
-        let outcome = PhaseOutcomeToken::new();
-        let wait_group = WaitGroup::default();
-
-        let input = Self {
-            outcome: outcome.clone(),
-            wait_token: wait_group.token(),
-            port,
-        };
-        (outcome, wait_group, input)
+    pub fn serial(self) -> Receiver<(PhaseOutcome, SinkInputPort)> {
+        self.recv
     }
 }
 
@@ -156,7 +222,7 @@ pub trait SinkNode {
 
 /// The state needed to manage a spawned [`SinkNode`].
 struct StartedSinkComputeNode {
-    input_send: Sender<SinkInput>,
+    input_send: Sender<(PhaseOutcome, SinkInputPort)>,
     join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
@@ -251,6 +317,7 @@ impl ComputeNode for SinkComputeNode {
             }
         });
 
+        let wait_group = WaitGroup::default();
         let recv = recv_ports[0].take().unwrap();
         let sink_input = if self.sink.is_sink_input_parallel() {
             SinkInputPort::Parallel(recv.parallel())
@@ -258,11 +325,11 @@ impl ComputeNode for SinkComputeNode {
             SinkInputPort::Serial(recv.serial())
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let (outcome, wait_group, sink_input) = SinkInput::from_port(sink_input);
-            if started.input_send.send(sink_input).await.is_ok() {
+            let (token, outcome) = PhaseOutcome::new_shared_wait(wait_group.token());
+            if started.input_send.send((outcome, sink_input)).await.is_ok() {
                 // Wait for the phase to finish.
                 wait_group.wait().await;
-                if !outcome.did_finish() {
+                if !token.did_finish() {
                     return Ok(());
                 }
 

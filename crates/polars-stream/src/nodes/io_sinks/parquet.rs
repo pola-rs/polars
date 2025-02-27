@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{ArrowSchema, CompatLevel};
+use polars_core::prelude::{ArrowSchema, Column, CompatLevel};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -21,10 +21,7 @@ use polars_utils::priority::Priority;
 
 use super::{SinkNode, SinkRecvPort};
 use crate::async_executor::spawn;
-use crate::async_primitives::distributor_channel::distributor_channel;
-use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::{JoinHandle, TaskPriority};
-use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 type Linearized = Priority<Reverse<(usize, usize)>, Vec<Vec<CompressedPage>>>;
 pub struct ParquetSinkNode {
@@ -75,19 +72,14 @@ impl SinkNode for ParquetSinkNode {
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
+        _num_pipelines: usize,
         recv_ports_recv: SinkRecvPort,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        // .. -> Buffer task
-        let mut recv_ports_recv = recv_ports_recv.serial();
-        // Buffer task -> Encode tasks
-        let (mut distribute, distribute_channels) =
-            distributor_channel(num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        // Encode tasks -> IO task
-        let (mut linearizer, senders) =
-            Linearizer::<Linearized>::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+        let (handle, mut buffer_rx, worker_rxs, mut io_rx) =
+            recv_ports_recv.serial_into_distribute::<(usize, usize, Column), Linearized>();
+        join_handles.push(handle);
 
         let input_schema = self.input_schema.clone();
         let write_options = self.write_options;
@@ -111,47 +103,62 @@ impl SinkNode for ParquetSinkNode {
                 .max(1);
             let mut row_group_index = 0;
 
-            while let Ok(input) = recv_ports_recv.recv().await {
-                let mut receiver = input.port.serial();
+            while let Ok((outcome, receiver, mut sender)) = buffer_rx.recv().await {
+                match receiver {
+                    None => {
+                        // Flush the remaining rows.
+                        while buffer.height() > 0 {
+                            let row_group;
 
-                while let Ok(morsel) = receiver.recv().await {
-                    let df = morsel.into_df();
-                    // @NOTE: This also performs schema validation.
-                    buffer.vstack_mut(&df)?;
-
-                    while buffer.height() >= row_group_size {
-                        let row_group;
-
-                        (row_group, buffer) =
-                            buffer.split_at(row_group_size.min(buffer.height()) as i64);
-
-                        for (column_idx, column) in row_group.take_columns().into_iter().enumerate()
-                        {
-                            distribute
-                                .send((row_group_index, column_idx, column))
-                                .await
-                                .unwrap();
+                            (row_group, buffer) =
+                                buffer.split_at(row_group_size.min(buffer.height()) as i64);
+                            for (column_idx, column) in
+                                row_group.take_columns().into_iter().enumerate()
+                            {
+                                if sender
+                                    .send((row_group_index, column_idx, column))
+                                    .await
+                                    .is_err()
+                                {
+                                    return Ok(());
+                                }
+                            }
+                            row_group_index += 1;
                         }
+                    },
+                    Some(mut receiver) => {
+                        while let Ok(morsel) = receiver.recv().await {
+                            let (df, _, _, consume_token) = morsel.into_inner();
+                            // @NOTE: This also performs schema validation.
+                            buffer.vstack_mut(&df)?;
 
-                        row_group_index += 1;
-                    }
+                            while buffer.height() >= row_group_size {
+                                let row_group;
+
+                                (row_group, buffer) =
+                                    buffer.split_at(row_group_size.min(buffer.height()) as i64);
+
+                                for (column_idx, column) in
+                                    row_group.take_columns().into_iter().enumerate()
+                                {
+                                    if sender
+                                        .send((row_group_index, column_idx, column))
+                                        .await
+                                        .is_err()
+                                    {
+                                        return Ok(());
+                                    }
+                                }
+
+                                row_group_index += 1;
+                            }
+                            drop(consume_token); // Keep the consume_token until here to increase
+                                                 // the backpressure.
+                        }
+                    },
                 }
 
-                input.outcome.stop();
-            }
-
-            // Flush the remaining rows.
-            while buffer.height() > 0 {
-                let row_group;
-
-                (row_group, buffer) = buffer.split_at(row_group_size.min(buffer.height()) as i64);
-                for (column_idx, column) in row_group.take_columns().into_iter().enumerate() {
-                    distribute
-                        .send((row_group_index, column_idx, column))
-                        .await
-                        .unwrap();
-                }
-                row_group_index += 1;
+                outcome.stopped();
             }
 
             PolarsResult::Ok(())
@@ -160,51 +167,58 @@ impl SinkNode for ParquetSinkNode {
         // Encode task.
         //
         // Task encodes the columns into their corresponding Parquet encoding.
-        for (mut receiver, mut sender) in distribute_channels.into_iter().zip(senders.into_iter()) {
+        for mut worker_rx in worker_rxs {
             let parquet_schema = self.parquet_schema.clone();
             let encodings = self.encodings.clone();
 
             join_handles.push(spawn(TaskPriority::High, async move {
-                while let Ok((rg_idx, col_idx, column)) = receiver.recv().await {
-                    let type_ = &parquet_schema.fields()[col_idx];
-                    let encodings = &encodings[col_idx];
+                while let Ok((outcome, mut dist_rx, mut lin_tx)) = worker_rx.recv().await {
+                    while let Ok((rg_idx, col_idx, column)) = dist_rx.recv().await {
+                        let type_ = &parquet_schema.fields()[col_idx];
+                        let encodings = &encodings[col_idx];
 
-                    let array = column.as_materialized_series().rechunk();
-                    let array = array.to_arrow(0, CompatLevel::newest());
+                        let array = column.as_materialized_series().rechunk();
+                        let array = array.to_arrow(0, CompatLevel::newest());
 
-                    // @TODO: This causes all structs fields to be handled on a single thread. It
-                    // would be preferable to split the encoding among multiple threads.
+                        // @TODO: This causes all structs fields to be handled on a single thread. It
+                        // would be preferable to split the encoding among multiple threads.
 
-                    // @NOTE: Since one Polars column might contain multiple Parquet columns (when
-                    // it has a struct datatype), we return a Vec<Vec<CompressedPage>>.
+                        // @NOTE: Since one Polars column might contain multiple Parquet columns (when
+                        // it has a struct datatype), we return a Vec<Vec<CompressedPage>>.
 
-                    // Array -> Parquet pages.
-                    let encoded_columns =
-                        array_to_columns(array, type_.clone(), options, encodings)?;
+                        // Array -> Parquet pages.
+                        let encoded_columns =
+                            array_to_columns(array, type_.clone(), options, encodings)?;
 
-                    // Compress the pages.
-                    let compressed_pages = encoded_columns
-                        .into_iter()
-                        .map(|encoded_pages| {
-                            Compressor::new_from_vec(
-                                encoded_pages.map(|result| {
-                                    result.map_err(|e| {
-                                        ParquetError::FeatureNotSupported(format!(
-                                            "reraised in polars: {e}",
-                                        ))
-                                    })
-                                }),
-                                options.compression,
-                                vec![],
-                            )
-                            .collect::<ParquetResult<Vec<_>>>()
-                        })
-                        .collect::<ParquetResult<Vec<_>>>()?;
+                        // Compress the pages.
+                        let compressed_pages = encoded_columns
+                            .into_iter()
+                            .map(|encoded_pages| {
+                                Compressor::new_from_vec(
+                                    encoded_pages.map(|result| {
+                                        result.map_err(|e| {
+                                            ParquetError::FeatureNotSupported(format!(
+                                                "reraised in polars: {e}",
+                                            ))
+                                        })
+                                    }),
+                                    options.compression,
+                                    vec![],
+                                )
+                                .collect::<ParquetResult<Vec<_>>>()
+                            })
+                            .collect::<ParquetResult<Vec<_>>>()?;
 
-                    sender
-                        .insert(Priority(Reverse((rg_idx, col_idx)), compressed_pages))
-                        .await
-                        .unwrap();
+                        if lin_tx
+                            .insert(Priority(Reverse((rg_idx, col_idx)), compressed_pages))
+                            .await
+                            .is_err()
+                        {
+                            return Ok(());
+                        }
+                    }
+
+                    outcome.stopped();
                 }
 
                 PolarsResult::Ok(())
@@ -250,23 +264,27 @@ impl SinkNode for ParquetSinkNode {
             let num_parquet_columns = writer.parquet_schema().leaves().len();
             let mut current_row_group = Vec::with_capacity(num_parquet_columns);
 
-            // Linearize from all the Encoder tasks.
-            while let Some(Priority(Reverse((_, col_idx)), compressed_pages)) =
-                linearizer.get().await
-            {
-                assert!(col_idx < input_schema.len());
-                current_row_group.extend(compressed_pages);
+            while let Ok((outcome, mut lin_rx)) = io_rx.recv().await {
+                // Linearize from all the Encoder tasks.
+                while let Some(Priority(Reverse((_, col_idx)), compressed_pages)) =
+                    lin_rx.get().await
+                {
+                    assert!(col_idx < input_schema.len());
+                    current_row_group.extend(compressed_pages);
 
-                // Only if it is the last column of the row group, write the row group to the file.
-                if current_row_group.len() < num_parquet_columns {
-                    continue;
+                    // Only if it is the last column of the row group, write the row group to the file.
+                    if current_row_group.len() < num_parquet_columns {
+                        continue;
+                    }
+
+                    // @TODO: At the moment this is a sync write, this is not ideal because we can only
+                    // have so many blocking threads in the tokio threadpool.
+                    assert_eq!(current_row_group.len(), num_parquet_columns);
+                    writer.write_row_group(&current_row_group)?;
+                    current_row_group.clear();
                 }
 
-                // @TODO: At the moment this is a sync write, this is not ideal because we can only
-                // have so many blocking threads in the tokio threadpool.
-                assert_eq!(current_row_group.len(), num_parquet_columns);
-                writer.write_row_group(&current_row_group)?;
-                current_row_group.clear();
+                outcome.stopped();
             }
 
             writer.finish()?;
