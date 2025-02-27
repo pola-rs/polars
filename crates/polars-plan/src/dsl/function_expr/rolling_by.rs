@@ -72,20 +72,10 @@ pub(super) fn rolling_sum_by(
     s: &[Column],
     options: RollingOptionsDynamicWindow,
 ) -> PolarsResult<Column> {
-    use DataType::*;
     // @scalar-opt
-    match s[0].dtype() {
-        Int8 | UInt8 | Int16 | UInt16 => s[0]
-            .as_materialized_series()
-            .cast(&Int64)
-            .unwrap()
-            .rolling_sum_by(s[1].as_materialized_series(), options)
-            .map(Column::from),
-        _ => s[0]
-            .as_materialized_series()
-            .rolling_sum_by(s[1].as_materialized_series(), options)
-            .map(Column::from),
-    }
+    s[0].as_materialized_series()
+        .rolling_sum_by(s[1].as_materialized_series(), options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_quantile_by(

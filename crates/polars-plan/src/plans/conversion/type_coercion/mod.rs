@@ -231,6 +231,54 @@ impl OptimizationRule for TypeCoercionRule {
                     options,
                 })
             },
+            // rolling_sum to upcast small int types to i64.
+            #[cfg(feature = "rolling_window")]
+            AExpr::Function {
+                function: FunctionExpr::RollingExpr(RollingFunction::Sum(ref rollopts)),
+                ref input,
+                options,
+            } => {
+                let rollopts = rollopts.clone();
+                let mut input = input.clone();
+                let e = &mut input[0];
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
+                if matches!(dtype, DataType::Int8 | DataType::Int16 | DataType::UInt8 | DataType::UInt16) {
+                    cast_expr_ir(e, &dtype, &DataType::Int64, expr_arena, CastOptions::Strict)?;
+                } else {
+                    return Ok(None);
+                }
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::RollingExpr(RollingFunction::Sum(rollopts)),
+                    input: input.to_vec(),
+                    options,
+                })
+            },
+            // rolling_sum_by to upcast small int types to i64.
+            #[cfg(feature = "rolling_window_by")]
+            AExpr::Function {
+                function: FunctionExpr::RollingExprBy(RollingFunctionBy::SumBy(ref rollopts)),
+                ref input,
+                options,
+            } => {
+                let rollopts = rollopts.clone();
+                let mut input = input.clone();
+                let e = &mut input[0];
+                let input_schema = get_schema(lp_arena, lp_node);
+                let (_, dtype) = unpack!(get_aexpr_and_type(expr_arena, e.node(), &input_schema));
+                if matches!(dtype, DataType::Int8 | DataType::Int16 | DataType::UInt8 | DataType::UInt16) {
+                    cast_expr_ir(e, &dtype, &DataType::Int64, expr_arena, CastOptions::Strict)?;
+                } else {
+                    return Ok(None);
+                }
+
+                Some(AExpr::Function {
+                    function: FunctionExpr::RollingExprBy(RollingFunctionBy::SumBy(rollopts)),
+                    input: input.to_vec(),
+                    options,
+                })
+            },
             // generic type coercion of any function.
             AExpr::Function {
                 // only for `DataType::Unknown` as it still has to be set.

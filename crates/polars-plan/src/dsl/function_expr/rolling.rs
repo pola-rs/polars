@@ -99,20 +99,10 @@ pub(super) fn rolling_mean(s: &Column, options: RollingOptionsFixedWindow) -> Po
 }
 
 pub(super) fn rolling_sum(s: &Column, options: RollingOptionsFixedWindow) -> PolarsResult<Column> {
-    use DataType::*;
     // @scalar-opt
-    match s.dtype() {
-        Int8 | UInt8 | Int16 | UInt16 => s
-            .as_materialized_series()
-            .cast(&Int64)
-            .unwrap()
-            .rolling_sum(options)
-            .map(Column::from),
-        _ => s
-            .as_materialized_series()
-            .rolling_sum(options)
-            .map(Column::from),
-    }
+    s.as_materialized_series()
+        .rolling_sum(options)
+        .map(Column::from)
 }
 
 pub(super) fn rolling_quantile(
