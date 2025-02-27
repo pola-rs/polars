@@ -11,14 +11,13 @@ significantly reduced, allowing users to process at scale.
 <!-- dprint-ignore-start -->
 
 !!! info "Distributed engine is in early stage"
-    The distributed engine is actively being developed and is labeled unstable. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Many operations are either unsupported or not yet optimized. Major performance improvements will be introduced in the near future.
+The distributed engine is actively being developed and is labeled unstable. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Many operations are either unsupported or not yet optimized. Major performance improvements will be introduced in the near future.
 
 <!-- dprint-ignore-end-->
 
 ## Using distributed engine
 
-To execute queries using the distributed engine, users can call `distributed()`. It is important to
-set `cluster_size` to a value larger than 1 in the `ComputeContext`.
+To execute queries using the distributed engine, users can call `distributed()`.
 
 ```python
 lf: LazyFrame
@@ -32,4 +31,25 @@ result = (
 
 ### Example
 
-{{code_block('polars-cloud/distributed','distributed',[])}}
+```python
+import polars as pl
+import polars_cloud as pc
+from datetime import date
+
+query = (
+    pl.scan_parquet("s3://dataset/")
+    .filter(pl.col("l_shipdate") <= date(1998, 9, 2))
+    .group_by("l_returnflag", "l_linestatus")
+    .agg(
+        avg_price=pl.mean("l_extendedprice"),
+        avg_disc=pl.mean("l_discount"),
+        count_order=pl.len(),
+    )
+)
+
+result = (
+    query.remote(pc.ComputeContext(cpus=16, memory=64, cluster_size=32))
+    .distributed()
+    .sink_parquet("s3://output/result.parquet")
+)
+```
