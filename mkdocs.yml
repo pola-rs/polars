@@ -117,6 +117,7 @@ nav:
                 - polars-cloud/run/service-accounts.md
           - Manage workspace:
                 - polars-cloud/workspace/settings.md
+                - polars-cloud/workspace/team.md
           - User Guide:
                 - polars-cloud/explain/authentication.md
           - Providers:
