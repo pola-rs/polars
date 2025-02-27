@@ -1,5 +1,7 @@
+use arrow::array::MutablePrimitiveArray;
+
 use super::*;
-use crate::array::MutablePrimitiveArray;
+use crate::rolling::quantile_filter::SealedRolling;
 
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
@@ -19,6 +21,7 @@ impl<
             + NumCast
             + One
             + Zero
+            + SealedRolling
             + PartialOrd
             + Sub<Output = T>,
     > RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
@@ -117,6 +120,7 @@ where
         + NumCast
         + One
         + Zero
+        + SealedRolling
         + PartialOrd
         + Sub<Output = T>,
 {
@@ -155,9 +159,10 @@ where
 
 #[cfg(test)]
 mod test {
+    use arrow::buffer::Buffer;
+    use arrow::datatypes::ArrowDataType;
+
     use super::*;
-    use crate::buffer::Buffer;
-    use crate::datatypes::ArrowDataType;
 
     #[test]
     fn test_rolling_median_nulls() {

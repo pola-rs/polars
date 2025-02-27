@@ -104,7 +104,6 @@
 //! use polars_core::prelude::*;
 //! use polars_core::df;
 //! use polars_lazy::prelude::*;
-//! use arrow::legacy::prelude::QuantileMethod;
 //!
 //! fn example() -> PolarsResult<DataFrame> {
 //!     let df = df!(

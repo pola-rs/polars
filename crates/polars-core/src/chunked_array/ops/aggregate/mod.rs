@@ -6,6 +6,7 @@ use arrow::types::NativeType;
 use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
+use polars_compute::rolling::QuantileMethod;
 use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
 use polars_utils::min_max::MinMax;
 use polars_utils::sync::SyncPtr;
@@ -657,6 +658,8 @@ impl<T: PolarsObject> ChunkAggSeries for ObjectChunked<T> {}
 
 #[cfg(test)]
 mod test {
+    use polars_compute::rolling::QuantileMethod;
+
     use crate::prelude::*;
 
     #[test]

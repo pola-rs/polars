@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use arrow::bitmap::BitmapBuilder;
 use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
+use polars_compute::rolling::QuantileMethod;
 use polars_error::PolarsResult;
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
@@ -753,6 +754,7 @@ impl Column {
         method: QuantileMethod,
     ) -> Self {
         // @scalar-opt
+
         unsafe {
             self.as_materialized_series()
                 .agg_quantile(groups, quantile, method)

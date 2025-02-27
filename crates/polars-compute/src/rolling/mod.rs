@@ -5,24 +5,38 @@ mod window;
 
 use std::ops::{Add, AddAssign, Div, Mul, Sub, SubAssign};
 
+use arrow::array::{ArrayRef, PrimitiveArray};
+use arrow::bitmap::{Bitmap, MutableBitmap};
+use arrow::types::NativeType;
 use num_traits::{Bounded, Float, NumCast, One, Zero};
 use polars_utils::float::IsFloat;
 use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 use window::*;
-
-use crate::array::{ArrayRef, PrimitiveArray};
-use crate::bitmap::{Bitmap, MutableBitmap};
-use crate::legacy::prelude::*;
-use crate::legacy::utils::CustomIterTools;
-use crate::types::NativeType;
 
 type Start = usize;
 type End = usize;
 type Idx = usize;
 type WindowSize = usize;
 type Len = usize;
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "snake_case")]
+pub enum QuantileMethod {
+    #[default]
+    Nearest,
+    Lower,
+    Higher,
+    Midpoint,
+    Linear,
+    Equiprobable,
+}
+
+#[deprecated(note = "use QuantileMethod instead")]
+pub type QuantileInterpolOptions = QuantileMethod;
 
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

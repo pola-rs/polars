@@ -5,21 +5,19 @@ mod sum;
 mod variance;
 use std::fmt::Debug;
 
+use arrow::array::PrimitiveArray;
+use arrow::datatypes::ArrowDataType;
+use arrow::legacy::error::PolarsResult;
+use arrow::legacy::utils::CustomIterTools;
+use arrow::types::NativeType;
 pub use mean::*;
 pub use min_max::*;
 use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 pub use sum::*;
 pub use variance::*;
 
 use super::*;
-use crate::array::PrimitiveArray;
-use crate::datatypes::ArrowDataType;
-use crate::legacy::error::PolarsResult;
-use crate::types::NativeType;
 
 pub trait RollingAggWindowNoNulls<'a, T: NativeType> {
     fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self;
@@ -69,22 +67,6 @@ where
     let arr = PrimitiveArray::from_trusted_len_iter(out);
     Ok(Box::new(arr))
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash, IntoStaticStr)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[strum(serialize_all = "snake_case")]
-pub enum QuantileMethod {
-    #[default]
-    Nearest,
-    Lower,
-    Higher,
-    Midpoint,
-    Linear,
-    Equiprobable,
-}
-
-#[deprecated(note = "use QuantileMethod instead")]
-pub type QuantileInterpolOptions = QuantileMethod;
 
 pub(super) fn rolling_apply_weights<T, Fo, Fa>(
     values: &[T],

@@ -30,6 +30,7 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
@@ -1036,7 +1037,6 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1942,7 +1942,6 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()

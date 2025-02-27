@@ -1,6 +1,7 @@
+use arrow::array::iterator::NonNullValuesIter;
+use arrow::bitmap::utils::count_zeros;
+
 use super::*;
-use crate::array::iterator::NonNullValuesIter;
-use crate::bitmap::utils::count_zeros;
 
 pub fn is_reverse_sorted_max_nulls<T: NativeType>(values: &[T], validity: &Bitmap) -> bool {
     let mut it = NonNullValuesIter::new(values, Some(validity));

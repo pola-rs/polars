@@ -4,6 +4,8 @@ use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
+use arrow::pushable::Pushable;
+use arrow::types::NativeType;
 use num_traits::NumCast;
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::nulls::IsNull;
@@ -11,9 +13,7 @@ use polars_utils::slice::SliceAble;
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
 
-use crate::legacy::prelude::QuantileMethod;
-use crate::pushable::Pushable;
-use crate::types::NativeType;
+use super::QuantileMethod;
 
 struct Block<'a, A> {
     k: usize,
@@ -527,6 +527,20 @@ pub(super) trait FinishLinear {
     fn finish_midpoint(lower: Self, upper: Self) -> Self;
 }
 
+pub trait SealedRolling {}
+
+impl SealedRolling for i8 {}
+impl SealedRolling for i16 {}
+impl SealedRolling for i32 {}
+impl SealedRolling for i64 {}
+impl SealedRolling for u8 {}
+impl SealedRolling for u16 {}
+impl SealedRolling for u32 {}
+impl SealedRolling for u64 {}
+impl SealedRolling for i128 {}
+impl SealedRolling for f32 {}
+impl SealedRolling for f64 {}
+
 impl<
         T: NativeType
             + NumCast
@@ -534,6 +548,7 @@ impl<
             + Sub<Output = T>
             + Div<Output = T>
             + Mul<Output = T>
+            + SealedRolling
             + Debug,
     > FinishLinear for T
 {
