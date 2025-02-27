@@ -1,3 +1,5 @@
+use polars_core::utils::get_supertype;
+
 use super::*;
 
 pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
@@ -14,7 +16,23 @@ pub(super) fn fill_null(s: &[Column]) -> PolarsResult<Column> {
     // default branch
     fn default(series: Column, fill_value: Column) -> PolarsResult<Column> {
         let mask = series.is_not_null();
-        series.zip_with_same_type(&mask, &fill_value)
+        if series.dtype() == fill_value.dtype() {
+            return series.zip_with_same_type(&mask, &fill_value);
+        }
+
+        // If one of the dtypes is e.g. Null, keeping the type of the series does not work.
+        if let Some(st) = get_supertype(series.dtype(), fill_value.dtype()) {
+            let series = series.cast(&st)?;
+            let fill_value = fill_value.cast(&st)?;
+            return series.zip_with_same_type(&mask, &fill_value);
+        }
+
+        // We could not combine the dtypes
+        polars_bail!(
+            ComputeError: "Series dtype ({:?}) and fill value dtype {:?} have no common supertype",
+            series.dtype(),
+            fill_value.dtype()
+        )
     }
 
     match series.dtype() {

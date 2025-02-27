@@ -102,3 +102,20 @@ def test_fill_null_with_list_10869() -> None:
     match = "failed to determine supertype"
     with pytest.raises(pl.exceptions.SchemaError, match=match):
         pl.Series([1, None]).fill_null([2])
+
+
+def test_fill_null_with_list_null_dtype_to_arrow_19738() -> None:
+    # Calling `to_arrow` on the result of `fill_null` should not crash, if
+    # the original series was of type List(None) and the fill value of a
+    # concrete type.
+    df = pl.DataFrame({"a": [None]}, schema={"a": pl.List(pl.Int32)})
+    df = df.select(
+        pl.col("*")  # select our column
+        .list.drop_nulls()  # needed to ensure the inner type is Null
+        .fill_null(pl.lit([]))  # changes the type but keeps the inner chunk
+    )
+
+    assert (
+        df.to_arrow()
+        == pl.DataFrame({"a": [[]]}, schema={"a": pl.List(pl.Int32)}).to_arrow()
+    )
