@@ -15,11 +15,41 @@ For this workflow, we define the following simple mocked dataset that will act a
 demonstrate the workflow. Here we will create the LazyFrame ourselves, but it could also be read as
 (remote) file.
 
-{{code_block('polars-cloud/workflow','dataset',[])}}
+```python
+import polars as pl
+
+lf = pl.DataFrame(
+    {
+        "region": [
+            "Australia",
+            "California",
+            "Benelux",
+            "Siberia",
+            "Mediterranean",
+            "Congo",
+            "Borneo",
+        ],
+        "temperature": [32.1, 28.5, 30.2, 22.7, 29.3, 31.8, 33.2],
+        "humidity": [40, 35, 75, 30, 45, 80, 70],
+        "burn_area": [120, 85, 30, 65, 95, 25, 40],
+        "vegetation_density": [0.6, 0.7, 0.9, 0.4, 0.5, 0.9, 0.8],
+    }
+)
+```
 
 A simple transformation will done to create a new column.
 
-{{code_block('polars-cloud/workflow','local-analysis',[])}}
+```python
+lf.with_columns(
+    [
+        (
+            (pl.col("temperature") / 10)
+            * (1 - pl.col("humidity") / 100)
+            * pl.col("vegetation_density")
+        ).alias("fire_risk"),
+    ]
+).filter(pl.col("humidity") < 70).sort(by="fire_risk", descending=True).collect()
+```
 
 ```text
 shape: (4, 6)
@@ -44,16 +74,52 @@ that the defined query correctly calculates the column we are looking for.
 With Polars Cloud, we can easily run the same query at scale. First, we make small changes to our
 query to point to our resources in the cloud.
 
-{{code_block('polars-cloud/workflow','cloud-query',[])}}
+```python
+lf = pl.scan_parquet("s3://climate-data/global/*.parquet")
+
+query = (
+    lf.with_columns(
+        [
+            (
+                (pl.col("temperature") / 10)
+                * (1 - pl.col("humidity") / 100)
+                * pl.col("vegetation_density")
+            ).alias("fire_risk"),
+        ]
+    )
+    .filter(pl.col("humidity") < 70)
+    .sort(by="fire_risk", descending=True)
+)
+```
 
 Next, we set our compute context and call `.remote(ctx)` on our query.
 
-{{code_block('polars-cloud/workflow','cloud-execution-batch',[])}}
+```python
+import polars_cloud as pc
+
+ctx = pc.ComputeContext(
+    workspace="environmental-analysis", memory=32, cpus=8, cluster_size=4
+)
+
+query.remote(ctx).sink_parquet("s3://bucket/result.parquet")
+```
 
 Running `.sink_parquet()` will write the results to the defined bucket on S3. Alternatively, we can
 take a more interactive approach by adding the parameter `interactive=True` to our compute context.
 
-{{code_block('polars-cloud/workflow','cloud-execution-interactive1',[])}}
+```python
+ctx = pc.ComputeContext(
+    workspace="environmental-analysis",
+    memory=32,
+    cpus=8,
+    cluster_size=4,
+    interactive=True,  # set interactive to True
+)
+
+result = query.remote(ctx).collect().await_result()
+
+print(result)
+```
 
 ```text
 total_stages: 1
@@ -76,6 +142,12 @@ head:
 We can call `.collect()` instead of `.sink_parquet()`. This will write your results to a temporary
 folder in your S3 environment, which is used to retrieve the intermediate results.
 
-{{code_block('polars-cloud/workflow','cloud-execution-interactive2',[])}}
+```python
+res2 = (
+    result.lazy()
+    .filter(pl.col("fire_risk") > 1)
+    .sink_parquet("s3://bucket/output-interactive.parquet")
+)
+```
 
 The results of your interactive workflow can be written to S3 to be used downstream.
