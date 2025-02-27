@@ -66,9 +66,7 @@ impl SinkNode for CsvSinkNode {
                 let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
                 let options = options.clone();
 
-                while let Ok((phase_consume_token, outcome, mut receiver, mut sender)) =
-                    rx_receiver.recv().await
-                {
+                while let Ok((outcome, mut receiver, mut sender)) = rx_receiver.recv().await {
                     while let Ok(morsel) = receiver.recv().await {
                         let (df, seq, _, consume_token) = morsel.into_inner();
 
@@ -97,8 +95,7 @@ impl SinkNode for CsvSinkNode {
                                              // backpressure.
                     }
 
-                    outcome.stop();
-                    drop(phase_consume_token);
+                    outcome.stopped();
                 }
 
                 PolarsResult::Ok(())
@@ -136,15 +133,11 @@ impl SinkNode for CsvSinkNode {
                 file = tokio::fs::File::from_std(std_file);
             }
 
-            while let Ok((phase_consume_token, outcome, mut linearizer)) =
-                recv_linearizer.recv().await
-            {
+            while let Ok((outcome, mut linearizer)) = recv_linearizer.recv().await {
                 while let Some(Priority(_, buffer)) = linearizer.get().await {
                     file.write_all(&buffer).await?;
                 }
-
-                outcome.stop();
-                drop(phase_consume_token);
+                outcome.stopped();
             }
 
             PolarsResult::Ok(())
