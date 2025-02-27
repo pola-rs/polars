@@ -77,8 +77,8 @@ impl VarState {
         // self.combine(&Self { weight: -1.0, mean: x, dp: 0.0 })
         let new_weight = self.weight - 1.0;
         let delta_mean = self.mean - x;
-        let new_mean = self.mean - delta_mean / new_weight;
-        self.dp += (new_mean - x) * delta_mean;
+        let new_mean = self.mean + delta_mean / new_weight;
+        self.dp -= (new_mean - x) * delta_mean;
         self.weight = new_weight;
         self.mean = new_mean;
     }
