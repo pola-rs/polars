@@ -1,5 +1,14 @@
 ![Image showing the Polars Cloud logo](assets/polars-cloud.svg)
 
+# Introducing Polars Cloud
+
+<!-- dprint-ignore-start -->
+
+!!! tip "Polars Cloud is in alpha stage"
+    Polars Cloud is currently available to a select group of individuals and companies for early-stage testing. You can learn more about Polars Cloud and its goals in [our recent announcement post](https://pola.rs/posts/polars-cloud-what-we-are-building/).
+
+<!-- dprint-ignore-end-->
+
 DataFrame implementations always differed from SQL and databases. SQL could run anywhere from
 embedded databases to massive data warehouses. Yet, DataFrame users have been forced to choose
 between a solution for local work or solutions geared towards distributed computing, each with their
