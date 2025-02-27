@@ -411,12 +411,12 @@ on startup."#.trim_start())
             $dtype,
         )
     };
-    (assert_eq = $lhs:expr, $rhs:expr) => {
+    (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(
-            AssertionError: "equality assertion failed: {} != {}",
-            $lhs, $rhs
+            AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",
+            $objects, $detail, $lhs, $rhs
         )
-    }
+    };
 }
 
 #[macro_export]
