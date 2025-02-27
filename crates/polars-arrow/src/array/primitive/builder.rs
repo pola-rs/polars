@@ -2,7 +2,7 @@ use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
 
 use super::PrimitiveArray;
-use crate::array::builder::{ArrayBuilder, ShareStrategy};
+use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::array::Array;
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
@@ -25,7 +25,9 @@ impl<T: NativeType> PrimitiveArrayBuilder<T> {
     }
 }
 
-impl<T: NativeType> ArrayBuilder for PrimitiveArrayBuilder<T> {
+impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
+    type Array = PrimitiveArray<T>;
+
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
@@ -35,15 +37,15 @@ impl<T: NativeType> ArrayBuilder for PrimitiveArrayBuilder<T> {
         self.validity.reserve(additional);
     }
 
-    fn freeze(self) -> Box<dyn Array> {
+    fn freeze(self) -> PrimitiveArray<T> {
         let values = Buffer::from(self.values);
         let validity = self.validity.into_opt_validity();
-        Box::new(PrimitiveArray::new(self.dtype, values, validity))
+        PrimitiveArray::new(self.dtype, values, validity)
     }
 
     fn subslice_extend(
         &mut self,
-        other: &dyn Array,
+        other: &PrimitiveArray<T>,
         start: usize,
         length: usize,
         _share: ShareStrategy,
@@ -55,7 +57,7 @@ impl<T: NativeType> ArrayBuilder for PrimitiveArrayBuilder<T> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
+    unsafe fn gather_extend(&mut self, other: &PrimitiveArray<T>, idxs: &[IdxSize], _share: ShareStrategy) {
         let other: &PrimitiveArray<T> = other.as_any().downcast_ref().unwrap();
         self.values.reserve(idxs.len());
         for idx in idxs {

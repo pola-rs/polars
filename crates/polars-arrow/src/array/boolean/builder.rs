@@ -1,8 +1,7 @@
 use polars_utils::IdxSize;
 
 use super::BooleanArray;
-use crate::array::builder::{ArrayBuilder, ShareStrategy};
-use crate::array::Array;
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::bitmap::{BitmapBuilder, OptBitmapBuilder};
 use crate::datatypes::ArrowDataType;
 
@@ -22,7 +21,9 @@ impl BooleanArrayBuilder {
     }
 }
 
-impl ArrayBuilder for BooleanArrayBuilder {
+impl StaticArrayBuilder for BooleanArrayBuilder {
+    type Array = BooleanArray;
+
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
@@ -32,28 +33,26 @@ impl ArrayBuilder for BooleanArrayBuilder {
         self.validity.reserve(additional);
     }
 
-    fn freeze(self) -> Box<dyn Array> {
+    fn freeze(self) -> BooleanArray {
         let values = self.values.freeze();
         let validity = self.validity.into_opt_validity();
-        Box::new(BooleanArray::try_new(self.dtype, values, validity).unwrap())
+        BooleanArray::try_new(self.dtype, values, validity).unwrap()
     }
 
     fn subslice_extend(
         &mut self,
-        other: &dyn Array,
+        other: &BooleanArray,
         start: usize,
         length: usize,
         _share: ShareStrategy,
     ) {
-        let other: &BooleanArray = other.as_any().downcast_ref().unwrap();
         self.values
             .subslice_extend_from_bitmap(other.values(), start, length);
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
-        let other: &BooleanArray = other.as_any().downcast_ref().unwrap();
+    unsafe fn gather_extend(&mut self, other: &BooleanArray, idxs: &[IdxSize], _share: ShareStrategy) {
         self.values.reserve(idxs.len());
         for idx in idxs {
             self.values

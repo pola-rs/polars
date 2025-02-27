@@ -7,7 +7,7 @@ use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
 use crate::array::list::ListArrayBuilder;
 use crate::array::null::NullArrayBuilder;
 use crate::array::struct_::StructArrayBuilder;
-use crate::array::{Array, PrimitiveArrayBuilder};
+use crate::array::{Array, PrimitiveArrayBuilder, StaticArray};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::with_match_primitive_type_full;
 
@@ -17,6 +17,76 @@ use crate::with_match_primitive_type_full;
 pub enum ShareStrategy {
     Never,
     Always,
+}
+
+pub trait StaticArrayBuilder {
+    type Array: Array;
+
+    fn dtype(&self) -> &ArrowDataType;
+    fn reserve(&mut self, additional: usize);
+
+    /// Consume this builder returning the built array.
+    fn freeze(self) -> Self::Array;
+
+    /// Extends this builder with the contents of the given array. May panic if
+    /// other does not match the dtype of this array.
+    fn extend(&mut self, other: &Self::Array, share: ShareStrategy) {
+        self.subslice_extend(other, 0, other.len(), share);
+    }
+
+    /// Extends this builder with the contents of the given array subslice. May
+    /// panic if other does not match the dtype of this array.
+    fn subslice_extend(
+        &mut self,
+        other: &Self::Array,
+        start: usize,
+        length: usize,
+        share: ShareStrategy,
+    );
+
+    /// Extends this builder with the contents of the given array at the given
+    /// indices. That is, other[idxs[i]] is appended to this array in order,
+    /// for each i=0..idxs.len(). May panic if other does not match the
+    /// dtype of this array.
+    ///
+    /// # Safety
+    /// The indices must be in-bounds.
+    unsafe fn gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy);
+}
+
+impl<T: StaticArrayBuilder> ArrayBuilder for T {
+    #[inline(always)]
+    fn dtype(&self) -> &ArrowDataType {
+        StaticArrayBuilder::dtype(self)
+    }
+
+    #[inline(always)]
+    fn reserve(&mut self, additional: usize) {
+        StaticArrayBuilder::reserve(self, additional)
+    }
+
+    #[inline(always)]
+    fn freeze(self) -> Box<dyn Array> {
+        Box::new(StaticArrayBuilder::freeze(self))
+    }
+
+    #[inline(always)]
+    fn subslice_extend(
+        &mut self,
+        other: &dyn Array,
+        start: usize,
+        length: usize,
+        share: ShareStrategy,
+    ) {
+        let other: &T::Array = other.as_any().downcast_ref().unwrap();
+        StaticArrayBuilder::subslice_extend(self, other, start, length, share);
+    }
+
+    #[inline(always)]
+    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
+        let other: &T::Array = other.as_any().downcast_ref().unwrap();
+        StaticArrayBuilder::gather_extend(self, other, idxs, share);
+    }
 }
 
 #[allow(private_bounds)]

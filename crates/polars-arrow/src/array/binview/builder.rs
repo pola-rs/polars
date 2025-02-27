@@ -7,7 +7,7 @@ use polars_utils::IdxSize;
 
 use super::BinaryViewArray;
 use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
-use crate::array::builder::{ArrayBuilder, ShareStrategy};
+use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
@@ -177,7 +177,9 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
     }
 }
 
-impl<V: ViewType + ?Sized> ArrayBuilder for BinaryViewArrayGenericBuilder<V> {
+impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<V> {
+    type Array = BinaryViewArrayGeneric<V>;
+
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
@@ -187,7 +189,7 @@ impl<V: ViewType + ?Sized> ArrayBuilder for BinaryViewArrayGenericBuilder<V> {
         self.validity.reserve(additional);
     }
 
-    fn freeze(mut self) -> Box<dyn Array> {
+    fn freeze(mut self) -> Self::Array {
         // Flush active buffer and/or remove extra placeholder buffer.
         if !self.active_buffer.is_empty() {
             self.buffer_set[self.active_buffer_idx as usize] = Buffer::from(self.active_buffer);
@@ -196,25 +198,24 @@ impl<V: ViewType + ?Sized> ArrayBuilder for BinaryViewArrayGenericBuilder<V> {
         }
 
         unsafe {
-            Box::new(BinaryViewArray::new_unchecked(
+            BinaryViewArrayGeneric::new_unchecked(
                 self.dtype,
                 Buffer::from(self.views),
                 Arc::from(self.buffer_set),
                 self.validity.into_opt_validity(),
                 self.total_bytes_len,
                 self.total_buffer_len,
-            ))
+            )
         }
     }
 
     fn subslice_extend(
         &mut self,
-        other: &dyn Array,
+        other: &Self::Array,
         start: usize,
         length: usize,
         share: ShareStrategy,
     ) {
-        let other: &BinaryViewArrayGeneric<V> = other.as_any().downcast_ref().unwrap();
         self.views.reserve(length);
 
         unsafe {
@@ -248,8 +249,7 @@ impl<V: ViewType + ?Sized> ArrayBuilder for BinaryViewArrayGenericBuilder<V> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
-        let other: &BinaryViewArrayGeneric<V> = other.as_any().downcast_ref().unwrap();
+    unsafe fn gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy) {
         self.views.reserve(idxs.len());
 
         unsafe {

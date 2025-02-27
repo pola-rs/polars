@@ -1,7 +1,7 @@
 use polars_utils::IdxSize;
 
 use super::FixedSizeListArray;
-use crate::array::builder::{ArrayBuilder, ShareStrategy};
+use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::array::Array;
 use crate::bitmap::OptBitmapBuilder;
 use crate::datatypes::ArrowDataType;
@@ -25,7 +25,9 @@ impl<B: ArrayBuilder> FixedSizeListArrayBuilder<B> {
     }
 }
 
-impl<B: ArrayBuilder> ArrayBuilder for FixedSizeListArrayBuilder<B> {
+impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
+    type Array = FixedSizeListArray;
+
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
@@ -35,25 +37,24 @@ impl<B: ArrayBuilder> ArrayBuilder for FixedSizeListArrayBuilder<B> {
         self.validity.reserve(additional);
     }
 
-    fn freeze(self) -> Box<dyn Array> {
+    fn freeze(self) -> FixedSizeListArray {
         let values = self.inner_builder.freeze();
         let validity = self.validity.into_opt_validity();
-        Box::new(FixedSizeListArray::new(
+        FixedSizeListArray::new(
             self.dtype,
             self.length,
             values,
             validity,
-        ))
+        )
     }
 
     fn subslice_extend(
         &mut self,
-        other: &dyn Array,
+        other: &FixedSizeListArray,
         start: usize,
         length: usize,
         share: ShareStrategy,
     ) {
-        let other: &FixedSizeListArray = other.as_any().downcast_ref().unwrap();
         self.inner_builder.subslice_extend(
             &**other.values(),
             start * self.size,
@@ -65,8 +66,7 @@ impl<B: ArrayBuilder> ArrayBuilder for FixedSizeListArrayBuilder<B> {
         self.length += length;
     }
 
-    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
-        let other: &FixedSizeListArray = other.as_any().downcast_ref().unwrap();
+    unsafe fn gather_extend(&mut self, other: &FixedSizeListArray, idxs: &[IdxSize], share: ShareStrategy) {
         let other_values = &**other.values();
         self.inner_builder.reserve(idxs.len() * self.size);
 

@@ -1,7 +1,7 @@
 use polars_utils::IdxSize;
 
 use super::ListArray;
-use crate::array::builder::{ArrayBuilder, ShareStrategy};
+use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::array::Array;
 use crate::bitmap::OptBitmapBuilder;
 use crate::datatypes::ArrowDataType;
@@ -26,7 +26,9 @@ impl<O: Offset, B: ArrayBuilder> ListArrayBuilder<O, B> {
     }
 }
 
-impl<O: Offset, B: ArrayBuilder> ArrayBuilder for ListArrayBuilder<O, B> {
+impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
+    type Array = ListArray<O>;
+
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
@@ -37,21 +39,20 @@ impl<O: Offset, B: ArrayBuilder> ArrayBuilder for ListArrayBuilder<O, B> {
         // No inner reserve, we have no idea how large it needs to be.
     }
 
-    fn freeze(self) -> Box<dyn Array> {
+    fn freeze(self) -> ListArray<O> {
         let offsets = OffsetsBuffer::from(self.offsets);
         let values = self.inner_builder.freeze();
         let validity = self.validity.into_opt_validity();
-        Box::new(ListArray::new(self.dtype, offsets, values, validity))
+        ListArray::new(self.dtype, offsets, values, validity)
     }
 
     fn subslice_extend(
         &mut self,
-        other: &dyn Array,
+        other: &ListArray<O>,
         start: usize,
         length: usize,
         share: ShareStrategy,
     ) {
-        let other: &ListArray<O> = other.as_any().downcast_ref().unwrap();
         let start_offset = other.offsets()[start].to_usize();
         let stop_offset = other.offsets()[start + length].to_usize();
         self.offsets
@@ -67,8 +68,7 @@ impl<O: Offset, B: ArrayBuilder> ArrayBuilder for ListArrayBuilder<O, B> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
-        let other: &ListArray<O> = other.as_any().downcast_ref().unwrap();
+    unsafe fn gather_extend(&mut self, other: &ListArray<O>, idxs: &[IdxSize], share: ShareStrategy) {
         let other_values = &**other.values();
         let other_offsets = other.offsets();
 

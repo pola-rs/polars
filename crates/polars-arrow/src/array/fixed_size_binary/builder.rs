@@ -1,7 +1,7 @@
 use polars_utils::IdxSize;
 
 use super::FixedSizeBinaryArray;
-use crate::array::builder::{ArrayBuilder, ShareStrategy};
+use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::array::Array;
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
@@ -23,7 +23,9 @@ impl FixedSizeBinaryArrayBuilder {
     }
 }
 
-impl ArrayBuilder for FixedSizeBinaryArrayBuilder {
+impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
+    type Array = FixedSizeBinaryArray;
+
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
@@ -34,20 +36,19 @@ impl ArrayBuilder for FixedSizeBinaryArrayBuilder {
         self.validity.reserve(additional);
     }
 
-    fn freeze(self) -> Box<dyn Array> {
+    fn freeze(self) -> FixedSizeBinaryArray {
         let values = Buffer::from(self.values);
         let validity = self.validity.into_opt_validity();
-        Box::new(FixedSizeBinaryArray::new(self.dtype, values, validity))
+        FixedSizeBinaryArray::new(self.dtype, values, validity)
     }
 
     fn subslice_extend(
         &mut self,
-        other: &dyn Array,
+        other: &FixedSizeBinaryArray,
         start: usize,
         length: usize,
         _share: ShareStrategy,
     ) {
-        let other: &FixedSizeBinaryArray = other.as_any().downcast_ref().unwrap();
         let other_slice = other.values().as_slice();
         let size = FixedSizeBinaryArray::get_size(&self.dtype);
         self.values
@@ -56,8 +57,7 @@ impl ArrayBuilder for FixedSizeBinaryArrayBuilder {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], _share: ShareStrategy) {
-        let other: &FixedSizeBinaryArray = other.as_any().downcast_ref().unwrap();
+    unsafe fn gather_extend(&mut self, other: &FixedSizeBinaryArray, idxs: &[IdxSize], _share: ShareStrategy) {
         let other_slice = other.values().as_slice();
         let size = FixedSizeBinaryArray::get_size(&self.dtype);
         self.values.reserve(idxs.len() * size);
