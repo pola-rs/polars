@@ -57,7 +57,12 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &PrimitiveArray<T>, idxs: &[IdxSize], _share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        other: &PrimitiveArray<T>,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
         let other: &PrimitiveArray<T> = other.as_any().downcast_ref().unwrap();
         self.values.reserve(idxs.len());
         for idx in idxs {

@@ -40,12 +40,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
     fn freeze(self) -> FixedSizeListArray {
         let values = self.inner_builder.freeze();
         let validity = self.validity.into_opt_validity();
-        FixedSizeListArray::new(
-            self.dtype,
-            self.length,
-            values,
-            validity,
-        )
+        FixedSizeListArray::new(self.dtype, self.length, values, validity)
     }
 
     fn subslice_extend(
@@ -66,7 +61,12 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         self.length += length;
     }
 
-    unsafe fn gather_extend(&mut self, other: &FixedSizeListArray, idxs: &[IdxSize], share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        other: &FixedSizeListArray,
+        idxs: &[IdxSize],
+        share: ShareStrategy,
+    ) {
         let other_values = &**other.values();
         self.inner_builder.reserve(idxs.len() * self.size);
 

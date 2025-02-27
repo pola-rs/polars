@@ -63,7 +63,12 @@ impl StaticArrayBuilder for StructArrayBuilder {
         self.length += length;
     }
 
-    unsafe fn gather_extend(&mut self, other: &StructArray, idxs: &[IdxSize], share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        other: &StructArray,
+        idxs: &[IdxSize],
+        share: ShareStrategy,
+    ) {
         for (builder, other_values) in self.inner_builders.iter_mut().zip(other.values()) {
             builder.gather_extend(&**other_values, idxs, share);
         }

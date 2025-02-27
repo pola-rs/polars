@@ -5,7 +5,6 @@ use hashbrown::hash_map::Entry;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::IdxSize;
 
-use super::BinaryViewArray;
 use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
 use crate::array::builder::{ArrayBuilder, ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
@@ -249,7 +248,12 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        other: &Self::Array,
+        idxs: &[IdxSize],
+        share: ShareStrategy,
+    ) {
         self.views.reserve(idxs.len());
 
         unsafe {

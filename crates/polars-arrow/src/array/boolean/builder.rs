@@ -52,7 +52,12 @@ impl StaticArrayBuilder for BooleanArrayBuilder {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &BooleanArray, idxs: &[IdxSize], _share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        other: &BooleanArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
         self.values.reserve(idxs.len());
         for idx in idxs {
             self.values

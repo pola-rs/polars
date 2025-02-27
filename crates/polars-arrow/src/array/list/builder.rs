@@ -68,7 +68,12 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &ListArray<O>, idxs: &[IdxSize], share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        other: &ListArray<O>,
+        idxs: &[IdxSize],
+        share: ShareStrategy,
+    ) {
         let other_values = &**other.values();
         let other_offsets = other.offsets();
 

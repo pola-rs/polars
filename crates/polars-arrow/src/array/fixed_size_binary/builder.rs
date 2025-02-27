@@ -57,7 +57,12 @@ impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
             .subslice_extend_from_opt_validity(other.validity(), start, length);
     }
 
-    unsafe fn gather_extend(&mut self, other: &FixedSizeBinaryArray, idxs: &[IdxSize], _share: ShareStrategy) {
+    unsafe fn gather_extend(
+        &mut self,
+        other: &FixedSizeBinaryArray,
+        idxs: &[IdxSize],
+        _share: ShareStrategy,
+    ) {
         let other_slice = other.values().as_slice();
         let size = FixedSizeBinaryArray::get_size(&self.dtype);
         self.values.reserve(idxs.len() * size);
