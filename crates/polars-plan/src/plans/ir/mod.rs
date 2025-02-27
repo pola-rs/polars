@@ -147,6 +147,10 @@ pub enum IR {
     Sink {
         input: Node,
         payload: SinkType,
+
+        /// Number of expressions this sink is partitioned over. If this is 0, it is not
+        /// partitioned.
+        num_partition_exprs: usize,
     },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {

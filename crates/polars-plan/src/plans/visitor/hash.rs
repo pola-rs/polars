@@ -178,8 +178,9 @@ impl Hash for HashableEqLP<'_> {
                     traverse_and_hash_aexpr(*node, self.expr_arena, state);
                 }
             },
-            IR::Sink { input: _, payload } => {
+            IR::Sink { input: _, payload, num_partition_exprs } => {
                 payload.hash(state);
+                num_partition_exprs.hash(state);
             },
             IR::Cache {
                 input: _,

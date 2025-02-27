@@ -1,6 +1,8 @@
 use std::cmp::Reverse;
+use std::future::Future;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 
 use polars_core::frame::DataFrame;
@@ -19,6 +21,7 @@ use polars_parquet::write::{
 };
 use polars_utils::priority::Priority;
 
+use super::partition::PartionableSinkNode;
 use super::{SinkNode, SinkRecvPort};
 use crate::async_executor::spawn;
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -114,20 +117,13 @@ impl SinkNode for ParquetSinkNode {
 
             while let Ok(input) = recv_ports_recv.recv().await {
                 let mut receiver = input.port.serial();
-                loop {
-                    match receiver.recv().await {
-                        Err(_) => stop_requested = true,
-                        Ok(morsel) => {
-                            let df = morsel.into_df();
+                while let Ok(morsel) = receiver.recv().await {
+                    let df = morsel.into_df();
 
-                            // @NOTE: This also performs schema validation.
-                            buffer.vstack_mut(&df)?;
-                        },
-                    }
+                    // @NOTE: This also performs schema validation.
+                    buffer.vstack_mut(&df)?;
 
-                    while (stop_requested && buffer.height() > 0)
-                        || buffer.height() >= row_group_size
-                    {
+                    while buffer.height() >= row_group_size {
                         let row_group;
 
                         (row_group, buffer) =
@@ -143,13 +139,26 @@ impl SinkNode for ParquetSinkNode {
 
                         row_group_index += 1;
                     }
-
-                    if stop_requested {
-                        break;
-                    }
                 }
 
                 input.outcome.stop();
+            }
+
+            while buffer.height() > 0 {
+                let row_group;
+
+                (row_group, buffer) =
+                    buffer.split_at(row_group_size.min(buffer.height()) as i64);
+
+                for (column_idx, column) in row_group.take_columns().into_iter().enumerate()
+                {
+                    distribute
+                        .send((row_group_index, column_idx, column))
+                        .await
+                        .unwrap();
+                }
+
+                row_group_index += 1;
             }
 
             PolarsResult::Ok(())
@@ -276,5 +285,30 @@ impl SinkNode for ParquetSinkNode {
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
+    }
+}
+
+impl PartionableSinkNode for ParquetSinkNode {
+    type SinkOptions = ParquetWriteOptions;
+
+    fn new(
+        path: &Path,
+        input_schema: &SchemaRef,
+        options: &Self::SinkOptions,
+    ) -> PolarsResult<Self> {
+        Self::new(input_schema.clone(), path, options)
+    }
+
+    fn key_to_path(
+        keys: &[polars_core::prelude::AnyValue<'static>],
+        options: &Self::SinkOptions,
+    ) -> PolarsResult<PathBuf> {
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+
+        // @Hack: Fix
+        let mut pb = PathBuf::new();
+        pb.push(&CTR.fetch_add(1, Ordering::Relaxed).to_string());
+        pb.set_extension("parquet");
+        Ok(pb)
     }
 }

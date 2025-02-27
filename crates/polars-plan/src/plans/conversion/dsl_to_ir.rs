@@ -915,10 +915,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 schema: Arc::new(schema),
             }
         },
-        DslPlan::Sink { input, payload } => {
+        DslPlan::Sink { input, payload, num_partition_exprs } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
-            IR::Sink { input, payload }
+            IR::Sink { input, payload, num_partition_exprs }
         },
         #[cfg(feature = "merge_sorted")]
         DslPlan::MergeSorted {

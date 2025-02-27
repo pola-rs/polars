@@ -13,7 +13,7 @@ use super::*;
 // (Major, Minor)
 // Add a field -> increment minor
 // Remove or modify a field -> increment major and reset minor
-pub static DSL_VERSION: (u16, u16) = (0, 0);
+pub static DSL_VERSION: (u16, u16) = (0, 1);
 static DSL_MAGIC_BYTES: &[u8] = b"DSL_VERSION";
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -120,6 +120,10 @@ pub enum DslPlan {
     Sink {
         input: Arc<DslPlan>,
         payload: SinkType,
+
+        /// Number of expressions this sink is partitioned over. If this is 0, it is not
+        /// partitioned.
+        num_partition_exprs: usize,
     },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {
@@ -161,7 +165,7 @@ impl Clone for DslPlan {
             Self::Union { inputs, args} => Self::Union { inputs: inputs.clone(), args: args.clone() },
             Self::HConcat { inputs, options } => Self::HConcat { inputs: inputs.clone(), options: options.clone() },
             Self::ExtContext { input, contexts, } => Self::ExtContext { input: input.clone(), contexts: contexts.clone() },
-            Self::Sink { input, payload } => Self::Sink { input: input.clone(), payload: payload.clone() },
+            Self::Sink { input, payload, num_partition_exprs } => Self::Sink { input: input.clone(), payload: payload.clone(), num_partition_exprs: *num_partition_exprs },
             #[cfg(feature = "merge_sorted")]
             Self::MergeSorted { input_left, input_right, key } => Self::MergeSorted { input_left: input_left.clone(), input_right: input_right.clone(), key: key.clone() },
             Self::IR {node, dsl, version} => Self::IR {node: *node, dsl: dsl.clone(), version: *version},

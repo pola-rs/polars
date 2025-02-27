@@ -136,9 +136,10 @@ impl IR {
                 contexts: inputs,
                 schema: schema.clone(),
             },
-            Sink { payload, .. } => Sink {
+            Sink { payload, num_partition_exprs, .. } => Sink {
                 input: inputs.pop().unwrap(),
                 payload: payload.clone(),
+                num_partition_exprs: *num_partition_exprs,
             },
             SimpleProjection { columns, .. } => SimpleProjection {
                 input: inputs.pop().unwrap(),

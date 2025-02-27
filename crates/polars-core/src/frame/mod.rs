@@ -3163,12 +3163,11 @@ impl DataFrame {
         cols: &[PlSmallStr],
         stable: bool,
         include_key: bool,
+        parallel: bool,
     ) -> PolarsResult<Vec<DataFrame>> {
-        let groups = if stable {
-            self.group_by_stable(cols.iter().cloned())?.take_groups()
-        } else {
-            self.group_by(cols.iter().cloned())?.take_groups()
-        };
+        let selected_keys = self.select_columns(cols.iter().cloned())?;
+        let groups = self.group_by_with_series(selected_keys, parallel, stable)?;
+        let groups = groups.take_groups();
 
         // drop key columns prior to calculation if requested
         let df = if include_key {
@@ -3179,14 +3178,41 @@ impl DataFrame {
 
         // don't parallelize this
         // there is a lot of parallelization in take and this may easily SO
-        POOL.install(|| {
+        if parallel {
+            POOL.install(|| {
+                match groups.as_ref() {
+                    GroupsType::Idx(idx) => {
+                        // Rechunk as the gather may rechunk for every group #17562.
+                        let mut df = df.clone();
+                        df.as_single_chunk_par();
+                        Ok(idx
+                            .into_par_iter()
+                            .map(|(_, group)| {
+                                // groups are in bounds
+                                unsafe {
+                                    df._take_unchecked_slice_sorted(
+                                        group,
+                                        false,
+                                        IsSorted::Ascending,
+                                    )
+                                }
+                            })
+                            .collect())
+                    },
+                    GroupsType::Slice { groups, .. } => Ok(groups
+                        .into_par_iter()
+                        .map(|[first, len]| df.slice(*first as i64, *len as usize))
+                        .collect()),
+                }
+            })
+        } else {
             match groups.as_ref() {
                 GroupsType::Idx(idx) => {
                     // Rechunk as the gather may rechunk for every group #17562.
                     let mut df = df.clone();
-                    df.as_single_chunk_par();
+                    df.as_single_chunk();
                     Ok(idx
-                        .into_par_iter()
+                        .into_iter()
                         .map(|(_, group)| {
                             // groups are in bounds
                             unsafe {
@@ -3196,11 +3222,11 @@ impl DataFrame {
                         .collect())
                 },
                 GroupsType::Slice { groups, .. } => Ok(groups
-                    .into_par_iter()
+                    .into_iter()
                     .map(|[first, len]| df.slice(*first as i64, *len as usize))
                     .collect()),
             }
-        })
+        }
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -3214,7 +3240,7 @@ impl DataFrame {
             .into_iter()
             .map(Into::into)
             .collect::<Vec<PlSmallStr>>();
-        self._partition_by_impl(cols.as_slice(), false, include_key)
+        self._partition_by_impl(cols.as_slice(), false, include_key, true)
     }
 
     /// Split into multiple DataFrames partitioned by groups
@@ -3233,7 +3259,7 @@ impl DataFrame {
             .into_iter()
             .map(Into::into)
             .collect::<Vec<PlSmallStr>>();
-        self._partition_by_impl(cols.as_slice(), true, include_key)
+        self._partition_by_impl(cols.as_slice(), true, include_key, true)
     }
 
     /// Unnest the given `Struct` columns. This means that the fields of the `Struct` type will be

@@ -235,6 +235,11 @@ impl<D> Schema<D> {
         Ok(())
     }
 
+    /// Remove the last element from the schema.
+    pub fn pop(&mut self) -> Option<(PlSmallStr, D)> {
+        self.fields.pop()
+    }
+
     /// Performs [`Schema::try_insert`] for every column.
     ///
     /// Raises DuplicateError if a column already exists in the schema.
