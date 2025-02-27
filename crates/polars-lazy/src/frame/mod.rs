@@ -1382,7 +1382,7 @@ impl LazyFrame {
             validation,
             suffix,
             slice,
-            join_nulls,
+            nulls_equal,
             coalesce,
             maintain_order,
         } = args;
@@ -1398,7 +1398,7 @@ impl LazyFrame {
             .right_on(right_on)
             .how(how)
             .validate(validation)
-            .join_nulls(join_nulls)
+            .join_nulls(nulls_equal)
             .coalesce(coalesce)
             .maintain_order(maintain_order);
 
@@ -2048,7 +2048,7 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<PlSmallStr>,
     validation: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
 }
@@ -2065,7 +2065,7 @@ impl JoinBuilder {
             force_parallel: false,
             suffix: None,
             validation: Default::default(),
-            join_nulls: false,
+            nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
         }
@@ -2127,8 +2127,8 @@ impl JoinBuilder {
     }
 
     /// Join on null values. By default null values will never produce matches.
-    pub fn join_nulls(mut self, join_nulls: bool) -> Self {
-        self.join_nulls = join_nulls;
+    pub fn join_nulls(mut self, nulls_equal: bool) -> Self {
+        self.nulls_equal = nulls_equal;
         self
     }
 
@@ -2169,7 +2169,7 @@ impl JoinBuilder {
             validation: self.validation,
             suffix: self.suffix,
             slice: None,
-            join_nulls: self.join_nulls,
+            nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
         };
@@ -2266,7 +2266,7 @@ impl JoinBuilder {
             validation: self.validation,
             suffix: self.suffix,
             slice: None,
-            join_nulls: self.join_nulls,
+            nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
         };

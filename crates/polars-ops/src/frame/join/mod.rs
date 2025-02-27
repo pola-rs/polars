@@ -284,7 +284,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     s_right,
                     args.slice,
                     true,
-                    args.join_nulls,
+                    args.nulls_equal,
                 ),
                 #[cfg(feature = "semi_anti_join")]
                 JoinType::Semi => left_df._semi_anti_join_from_series(
@@ -292,7 +292,7 @@ pub trait DataFrameJoinOps: IntoDf {
                     s_right,
                     args.slice,
                     false,
-                    args.join_nulls,
+                    args.nulls_equal,
                 ),
                 #[cfg(feature = "asof_join")]
                 JoinType::AsOf(options) => match (options.left_by, options.right_by) {
@@ -336,8 +336,8 @@ pub trait DataFrameJoinOps: IntoDf {
             };
         }
 
-        let lhs_keys = prepare_keys_multiple(&selected_left, args.join_nulls)?.into_series();
-        let rhs_keys = prepare_keys_multiple(&selected_right, args.join_nulls)?.into_series();
+        let lhs_keys = prepare_keys_multiple(&selected_left, args.nulls_equal)?.into_series();
+        let rhs_keys = prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series();
 
         let drop_names = if should_coalesce {
             selected_right
@@ -537,7 +537,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
         #[cfg(feature = "dtype-categorical")]
         _check_categorical_src(s_left.dtype(), s_right.dtype())?;
         let ((join_tuples_left, join_tuples_right), sorted) =
-            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.join_nulls)?;
+            _sort_or_hash_inner(s_left, s_right, verbose, args.validation, args.nulls_equal)?;
 
         let mut join_tuples_left = &*join_tuples_left;
         let mut join_tuples_right = &*join_tuples_right;
@@ -610,7 +610,7 @@ trait DataFrameJoinOpsPrivate: IntoDf {
 impl DataFrameJoinOps for DataFrame {}
 impl DataFrameJoinOpsPrivate for DataFrame {}
 
-fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryOffsetChunked> {
+fn prepare_keys_multiple(s: &[Series], nulls_equal: bool) -> PolarsResult<BinaryOffsetChunked> {
     let keys = s
         .iter()
         .map(|s| {
@@ -623,7 +623,7 @@ fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryO
         })
         .collect::<Vec<_>>();
 
-    if join_nulls {
+    if nulls_equal {
         encode_rows_vertical_par_unordered(&keys)
     } else {
         encode_rows_vertical_par_unordered_broadcast_nulls(&keys)
@@ -632,7 +632,7 @@ fn prepare_keys_multiple(s: &[Series], join_nulls: bool) -> PolarsResult<BinaryO
 pub fn private_left_join_multiple_keys(
     a: &DataFrame,
     b: &DataFrame,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<LeftJoinIds> {
     // @scalar-opt
     let a_cols = a
@@ -646,7 +646,7 @@ pub fn private_left_join_multiple_keys(
         .map(|c| c.as_materialized_series().clone())
         .collect::<Vec<_>>();
 
-    let a = prepare_keys_multiple(&a_cols, join_nulls)?.into_series();
-    let b = prepare_keys_multiple(&b_cols, join_nulls)?.into_series();
-    sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, join_nulls)
+    let a = prepare_keys_multiple(&a_cols, nulls_equal)?.into_series();
+    let b = prepare_keys_multiple(&b_cols, nulls_equal)?.into_series();
+    sort_or_hash_left(&a, &b, false, JoinValidation::ManyToMany, nulls_equal)
 }

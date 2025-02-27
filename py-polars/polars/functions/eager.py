@@ -325,7 +325,7 @@ def _alignment_join(
             how=how,
             on=align_on,
             suffix=f":{y_idx}",
-            join_nulls=True,
+            nulls_equal=True,
             coalesce=True,
             maintain_order="right_left",
         )
