@@ -43,7 +43,7 @@ pub trait StaticArrayBuilder {
         length: usize,
         share: ShareStrategy,
     );
-    
+
     /// The same as subslice_extend, but repeats the extension `repeats` times.
     fn subslice_extend_repeated(
         &mut self,
@@ -95,7 +95,7 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
         let other: &T::Array = other.as_any().downcast_ref().unwrap();
         StaticArrayBuilder::subslice_extend(self, other, start, length, share);
     }
-    
+
     fn subslice_extend_repeated(
         &mut self,
         other: &dyn Array,

@@ -249,7 +249,7 @@ impl StaticArrayBuilder for NullArrayBuilder {
     ) {
         self.length += length;
     }
-    
+
     fn subslice_extend_repeated(
         &mut self,
         _other: &NullArray,

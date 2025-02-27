@@ -1,4 +1,4 @@
-use arrow::array::builder::{make_builder, StaticArrayBuilder, ShareStrategy};
+use arrow::array::builder::{make_builder, ShareStrategy, StaticArrayBuilder};
 use arrow::array::{Array, ArrayCollectIterExt, FixedSizeListArray, FixedSizeListArrayBuilder};
 use arrow::bitmap::Bitmap;
 
@@ -9,7 +9,8 @@ impl IfThenElseKernel for FixedSizeListArray {
 
     fn if_then_else(mask: &Bitmap, if_true: &Self, if_false: &Self) -> Self {
         let inner_dt = if_true.dtype().inner_dtype().unwrap();
-        let mut builder = FixedSizeListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
+        let mut builder =
+            FixedSizeListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
         if_then_else_extend(
             &mut builder,
             mask,
@@ -27,7 +28,8 @@ impl IfThenElseKernel for FixedSizeListArray {
         let if_true_list: FixedSizeListArray =
             std::iter::once(if_true).collect_arr_trusted_with_dtype(if_false.dtype().clone());
         let inner_dt = if_false.dtype().inner_dtype().unwrap();
-        let mut builder = FixedSizeListArrayBuilder::new(if_false.dtype().clone(), make_builder(inner_dt));
+        let mut builder =
+            FixedSizeListArrayBuilder::new(if_false.dtype().clone(), make_builder(inner_dt));
         if_then_else_extend(
             &mut builder,
             mask,
@@ -45,12 +47,15 @@ impl IfThenElseKernel for FixedSizeListArray {
         let if_false_list: FixedSizeListArray =
             std::iter::once(if_false).collect_arr_trusted_with_dtype(if_true.dtype().clone());
         let inner_dt = if_true.dtype().inner_dtype().unwrap();
-        let mut builder = FixedSizeListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
+        let mut builder =
+            FixedSizeListArrayBuilder::new(if_true.dtype().clone(), make_builder(inner_dt));
         if_then_else_extend(
             &mut builder,
             mask,
             |b, off, len| b.subslice_extend(if_true, off, len, ShareStrategy::Always),
-            |b, _, len| b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always),
+            |b, _, len| {
+                b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always)
+            },
         );
         builder.freeze()
     }
@@ -67,12 +72,14 @@ impl IfThenElseKernel for FixedSizeListArray {
             std::iter::once(if_false).collect_arr_trusted_with_dtype(dtype.clone());
         let inner_dt = dtype.inner_dtype().unwrap();
         let mut builder = FixedSizeListArrayBuilder::new(dtype.clone(), make_builder(inner_dt));
-            if_then_else_extend(
-                &mut builder,
-                mask,
-                |b, _, len| b.subslice_extend_repeated(&if_true_list, 0, 1, len, ShareStrategy::Always),
-                |b, _, len| b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always),
-            );
-            builder.freeze()
+        if_then_else_extend(
+            &mut builder,
+            mask,
+            |b, _, len| b.subslice_extend_repeated(&if_true_list, 0, 1, len, ShareStrategy::Always),
+            |b, _, len| {
+                b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always)
+            },
+        );
+        builder.freeze()
     }
 }

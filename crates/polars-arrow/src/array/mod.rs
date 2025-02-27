@@ -681,19 +681,22 @@ mod values;
 
 pub use binary::{BinaryArray, BinaryValueIter, MutableBinaryArray, MutableBinaryValuesArray};
 pub use binview::{
-    validate_utf8_view, BinaryViewArray, BinaryViewArrayGeneric, MutableBinaryViewArray,
-    MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,
-    BinaryViewArrayGenericBuilder
+    validate_utf8_view, BinaryViewArray, BinaryViewArrayGeneric, BinaryViewArrayGenericBuilder,
+    MutableBinaryViewArray, MutablePlBinary, MutablePlString, Utf8ViewArray, View, ViewType,
 };
-pub use boolean::{BooleanArray, MutableBooleanArray, BooleanArrayBuilder};
+pub use boolean::{BooleanArray, BooleanArrayBuilder, MutableBooleanArray};
 pub use dictionary::{DictionaryArray, DictionaryKey, MutableDictionaryArray};
 pub use equal::equal;
-pub use fixed_size_binary::{FixedSizeBinaryArray, MutableFixedSizeBinaryArray, FixedSizeBinaryArrayBuilder};
-pub use fixed_size_list::{FixedSizeListArray, MutableFixedSizeListArray, FixedSizeListArrayBuilder};
+pub use fixed_size_binary::{
+    FixedSizeBinaryArray, FixedSizeBinaryArrayBuilder, MutableFixedSizeBinaryArray,
+};
+pub use fixed_size_list::{
+    FixedSizeListArray, FixedSizeListArrayBuilder, MutableFixedSizeListArray,
+};
 pub use fmt::{get_display, get_value_display};
 pub(crate) use iterator::ArrayAccessor;
 pub use iterator::ArrayValuesIter;
-pub use list::{ListArray, ListValuesIter, MutableListArray, ListArrayBuilder};
+pub use list::{ListArray, ListArrayBuilder, ListValuesIter, MutableListArray};
 pub use map::MapArray;
 pub use null::{MutableNullArray, NullArray, NullArrayBuilder};
 use polars_error::PolarsResult;

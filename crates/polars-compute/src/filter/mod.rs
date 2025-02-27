@@ -6,7 +6,7 @@ mod scalar;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx512;
 
-use arrow::array::builder::{make_builder, ShareStrategy, ArrayBuilder};
+use arrow::array::builder::{make_builder, ArrayBuilder, ShareStrategy};
 use arrow::array::{
     new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray,
 };
@@ -100,7 +100,9 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
         _ => {
             let iter = SlicesIterator::new(mask);
             let mut mutable = make_builder(array.dtype());
-            iter.for_each(|(start, len)| mutable.subslice_extend(array, start, len, ShareStrategy::Always));
+            iter.for_each(|(start, len)| {
+                mutable.subslice_extend(array, start, len, ShareStrategy::Always)
+            });
             mutable.freeze()
         },
     }

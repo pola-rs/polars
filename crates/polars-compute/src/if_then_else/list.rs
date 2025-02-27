@@ -50,7 +50,9 @@ impl IfThenElseKernel for ListArray<i64> {
             &mut builder,
             mask,
             |b, off, len| b.subslice_extend(if_true, off, len, ShareStrategy::Always),
-            |b, _, len| b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always),
+            |b, _, len| {
+                b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always)
+            },
         );
         builder.freeze()
     }
@@ -67,12 +69,14 @@ impl IfThenElseKernel for ListArray<i64> {
             std::iter::once(if_false).collect_arr_trusted_with_dtype(dtype.clone());
         let inner_dt = dtype.inner_dtype().unwrap();
         let mut builder = ListArrayBuilder::new(dtype.clone(), make_builder(inner_dt));
-            if_then_else_extend(
-                &mut builder,
-                mask,
-                |b, _, len| b.subslice_extend_repeated(&if_true_list, 0, 1, len, ShareStrategy::Always),
-                |b, _, len| b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always),
-            );
-            builder.freeze()
+        if_then_else_extend(
+            &mut builder,
+            mask,
+            |b, _, len| b.subslice_extend_repeated(&if_true_list, 0, 1, len, ShareStrategy::Always),
+            |b, _, len| {
+                b.subslice_extend_repeated(&if_false_list, 0, 1, len, ShareStrategy::Always)
+            },
+        );
+        builder.freeze()
     }
 }
