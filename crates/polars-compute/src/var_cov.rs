@@ -61,10 +61,21 @@ impl VarState {
         }
     }
 
-    pub fn add_one(&mut self, x: f64) {
+    pub fn insert_one(&mut self, x: f64) {
         // Just a specialized version of
         // self.combine(&Self { weight: 1.0, mean: x, dp: 0.0 })
         let new_weight = self.weight + 1.0;
+        let delta_mean = self.mean - x;
+        let new_mean = self.mean - delta_mean / new_weight;
+        self.dp += (new_mean - x) * delta_mean;
+        self.weight = new_weight;
+        self.mean = new_mean;
+    }
+
+    pub fn remove_one(&mut self, x: f64) {
+        // Just a specialized version of
+        // self.combine(&Self { weight: -1.0, mean: x, dp: 0.0 })
+        let new_weight = self.weight - 1.0;
         let delta_mean = self.mean - x;
         let new_mean = self.mean - delta_mean / new_weight;
         self.dp += (new_mean - x) * delta_mean;
