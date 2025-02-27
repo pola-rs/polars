@@ -381,14 +381,14 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         if self
             .validity
             .as_ref()
-            .is_none_or(|v| !v.get_bit_unchecked(i))
+            .is_none_or(|v| v.get_bit_unchecked(i))
         {
-            None
-        } else {
             let v = self.views.get_unchecked(i);
             Some(T::from_bytes_unchecked(
                 v.get_slice_unchecked(&self.buffers),
             ))
+        } else {
+            None
         }
     }
 
