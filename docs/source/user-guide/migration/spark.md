@@ -176,20 +176,22 @@ df.with_columns(
 )
 ```
 
-In PySpark however this is not allowed, as `shift`/`lag` is not a scalar (i.e. elementwise)
-function. To accomplish the same result, you need to split the computation into two steps.
+In PySpark however this is not allowed. They allow `F.mean(F.abs("price")).over(window)` because
+`F.abs` is an elementwise function, but not `F.mean(F.lag("price", 1)).over(window)`. To produce the
+same result, you need to use `over` for both `lag` and `mean`, with slightly different windows.
 
 ```python
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
-window = Window().partitionBy("store").orderBy("date").rowsBetween(-6, 0)
+window = Window().partitionBy("store").orderBy("date")
+rolling_window = Window().partitionBy("store").orderBy("date").rowsBetween(-6, 0)
 (
     df.withColumn("lagged_price", F.lag("price", 7).over(window)).withColumn(
         "feature",
         F.when(
-            F.count("lagged_price").over(window) >= 7,
-            F.mean("lagged_price").over(window),
+            F.count("lagged_price").over(rolling_window) >= 7,
+            F.mean("lagged_price").over(rolling_window),
         ),
     )
 )
