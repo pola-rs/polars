@@ -1,55 +1,90 @@
 use std::cmp::Reverse;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::json::BatchedWriter;
 use polars_utils::priority::Priority;
 
-use crate::async_primitives::linearizer::{Inserter, Linearizer};
-use crate::nodes::{ComputeNode, JoinHandle, MorselSeq, PortState, TaskPriority, TaskScope};
-use crate::pipe::{RecvPort, SendPort};
+use super::{SinkNode, SinkRecvPort};
+use crate::async_executor::spawn;
+use crate::async_primitives::linearizer::Linearizer;
+use crate::nodes::{JoinHandle, MorselSeq, TaskPriority};
 use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
 type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct NDJsonSinkNode {
     path: PathBuf,
-
-    // IO task related:
-    senders: Vec<Inserter<Linearized>>,
-    io_task: Option<tokio::task::JoinHandle<PolarsResult<()>>>,
 }
-
 impl NDJsonSinkNode {
-    pub fn new(path: &Path) -> PolarsResult<Self> {
-        Ok(Self {
-            path: path.to_path_buf(),
-
-            senders: Vec::new(),
-            io_task: None,
-        })
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
     }
 }
 
-impl ComputeNode for NDJsonSinkNode {
+impl SinkNode for NDJsonSinkNode {
     fn name(&self) -> &str {
         "ndjson_sink"
     }
 
-    fn initialize(&mut self, num_pipelines: usize) {
+    fn is_sink_input_parallel(&self) -> bool {
+        true
+    }
+
+    fn spawn_sink(
+        &mut self,
+        num_pipelines: usize,
+        recv_ports_recv: SinkRecvPort,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        let (handle, rx_receivers) = recv_ports_recv.parallel();
+        join_handles.push(handle);
+
         // Encode tasks -> IO task
         let (mut linearizer, senders) =
             Linearizer::<Linearized>::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
 
-        self.senders = senders;
+        // 16MB
+        const DEFAULT_ALLOCATION_SIZE: usize = 1 << 24;
+
+        // Encode task.
+        //
+        // Task encodes the columns into their corresponding JSON encoding.
+        join_handles.extend(rx_receivers.into_iter().zip(senders).map(
+            |(mut rx_receiver, mut sender)| {
+                spawn(TaskPriority::High, async move {
+                    // Amortize the allocations over time. If we see that we need to do way larger
+                    // allocations, we adjust to that over time.
+                    let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
+
+                    while let Ok((_token, outcome, mut rx)) = rx_receiver.recv().await {
+                        while let Ok(morsel) = rx.recv().await {
+                            let (df, seq, _, _) = morsel.into_inner();
+
+                            let mut buffer = Vec::with_capacity(allocation_size);
+                            let mut writer = BatchedWriter::new(&mut buffer);
+
+                            writer.write_batch(&df)?;
+
+                            allocation_size = allocation_size.max(buffer.len());
+                            sender.insert(Priority(Reverse(seq), buffer)).await.unwrap();
+                        }
+
+                        outcome.stop();
+                    }
+
+                    PolarsResult::Ok(())
+                })
+            },
+        ));
+
+        let path = self.path.clone();
 
         // IO task.
         //
         // Task that will actually do write to the target file.
-        let io_runtime = polars_io::pl_async::get_runtime();
-
-        let path = self.path.clone();
-        self.io_task = Some(io_runtime.spawn(async move {
+        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             use tokio::fs::OpenOptions;
             use tokio::io::AsyncWriteExt;
 
@@ -66,69 +101,11 @@ impl ComputeNode for NDJsonSinkNode {
             }
 
             PolarsResult::Ok(())
+        });
+        join_handles.push(spawn(TaskPriority::Low, async move {
+            io_task
+                .await
+                .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
-    }
-
-    fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
-        assert!(send.is_empty());
-        assert!(recv.len() == 1);
-
-        // We are always ready to receive, unless the sender is done, then we're
-        // also done.
-        if recv[0] != PortState::Done {
-            recv[0] = PortState::Ready;
-        } else if let Some(io_task) = self.io_task.take() {
-            // Stop the IO task from waiting for more morsels.
-            self.senders.clear();
-
-            polars_io::pl_async::get_runtime()
-                .block_on(io_task)
-                .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))?;
-        }
-
-        Ok(())
-    }
-
-    fn spawn<'env, 's>(
-        &'env mut self,
-        scope: &'s TaskScope<'s, 'env>,
-        recv_ports: &mut [Option<RecvPort<'_>>],
-        send_ports: &mut [Option<SendPort<'_>>],
-        _state: &'s ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        assert!(recv_ports.len() == 1);
-        assert!(send_ports.is_empty());
-
-        // .. -> Encode task
-        let receivers = recv_ports[0].take().unwrap().parallel();
-
-        // 16MB
-        const DEFAULT_ALLOCATION_SIZE: usize = 1 << 24;
-
-        // Encode task.
-        //
-        // Task encodes the columns into their corresponding JSON encoding.
-        for (mut receiver, sender) in receivers.into_iter().zip(self.senders.iter_mut()) {
-            join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                // Amortize the allocations over time. If we see that we need to do way larger
-                // allocations, we adjust to that over time.
-                let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
-
-                while let Ok(morsel) = receiver.recv().await {
-                    let (df, seq, _, _) = morsel.into_inner();
-
-                    let mut buffer = Vec::with_capacity(allocation_size);
-                    let mut writer = BatchedWriter::new(&mut buffer);
-
-                    writer.write_batch(&df)?;
-
-                    allocation_size = allocation_size.max(buffer.len());
-                    sender.insert(Priority(Reverse(seq), buffer)).await.unwrap();
-                }
-
-                PolarsResult::Ok(())
-            }));
-        }
     }
 }

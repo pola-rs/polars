@@ -9,7 +9,7 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::RowIndex;
 use polars_mem_engine::create_physical_plan;
-use polars_plan::dsl::{FileScan, ScanSource};
+use polars_plan::dsl::{FileScan, ScanFlags, ScanSource};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
 use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, LiteralValue, IR};
 use polars_plan::prelude::{FileType, GroupbyOptions, SinkType};
@@ -536,6 +536,55 @@ pub fn lower_ir(
                     }
                 }
 
+                let mut do_filter_after_scan = false;
+                if let Some(predicate) = predicate.as_ref() {
+                    // Predicates are an interesting case here. Predicates have a non-zero cost if
+                    // passed and it is sometimes easier or necessary to still filter afterwards.
+                    //
+                    // There are certain columns that are actually present in the file (physical
+                    // columns) and columns that are added by the readers (logical columns) for example
+                    // row index or file path.
+                    //
+                    // The following table describes what we do.
+                    //
+                    //                       | Logical & physical | Logical | Physical | Neither |
+                    //                       |                    |         |          |         |
+                    // Pass filter to reader |                yes |      no |      yes |      no |
+                    //                       |                    |         |          |         |
+                    // Filter after scan     |                yes |     yes |       no |     yes |
+                    //
+                    // Note that:
+                    // - `allow_missing_columns=True` makes all columns possibly logical.
+
+                    let mut live_columns = PlHashSet::new();
+                    live_columns.extend(polars_plan::utils::aexpr_to_leaf_names_iter(
+                        predicate.node(),
+                        expr_arena,
+                    ));
+
+                    let mut num_live_multiscan_columns = 0;
+                    num_live_multiscan_columns += usize::from(
+                        file_options
+                            .include_file_paths
+                            .as_ref()
+                            .is_some_and(|ifp| live_columns.contains(ifp)),
+                    );
+                    if let Some(hive_df) = hive_parts.as_ref() {
+                        for c in hive_df.df().get_columns() {
+                            num_live_multiscan_columns +=
+                                usize::from(live_columns.contains(c.name()));
+                        }
+                    }
+
+                    let pass_predicate_to_single_scan = scan_type
+                        .flags()
+                        .contains(ScanFlags::SPECIALIZED_PREDICATE_FILTER)
+                        && num_live_multiscan_columns < live_columns.len();
+                    do_filter_after_scan = file_options.allow_missing_columns
+                        || num_live_multiscan_columns > 0
+                        || !pass_predicate_to_single_scan;
+                }
+
                 // The schema afterwards only includes the projected columns.
                 let mut schema = if let Some(projection) = projection.as_ref() {
                     Arc::new(file_schema.as_ref().project_select(projection))
@@ -568,12 +617,16 @@ pub fn lower_ir(
                 schema = proj_schema;
 
                 if let Some(predicate) = predicate {
-                    let source_node = phys_sm.insert(PhysNode {
-                        output_schema: schema,
-                        kind: node,
-                    });
-                    let stream = PhysStream::first(source_node);
-                    return build_filter_stream(stream, predicate, expr_arena, phys_sm, expr_cache);
+                    if do_filter_after_scan {
+                        let source_node = phys_sm.insert(PhysNode {
+                            output_schema: schema,
+                            kind: node,
+                        });
+                        let stream = PhysStream::first(source_node);
+                        return build_filter_stream(
+                            stream, predicate, expr_arena, phys_sm, expr_cache,
+                        );
+                    }
                 }
 
                 node

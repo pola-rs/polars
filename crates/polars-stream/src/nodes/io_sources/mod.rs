@@ -166,16 +166,16 @@ impl PhaseOutcomeToken {
     }
 
     /// Indicate that the phase was stopped before finishing.
-    fn stop(&self) {
+    pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
 
     /// Returns whether the phase was stopped before finishing.
-    fn was_stopped(&self) -> bool {
+    pub fn was_stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
     }
     /// Returns whether the phase was finished completely.
-    fn did_finish(&self) -> bool {
+    pub fn did_finish(&self) -> bool {
         !self.was_stopped()
     }
 }

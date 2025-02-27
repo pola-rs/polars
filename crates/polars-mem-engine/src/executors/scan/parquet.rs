@@ -81,10 +81,12 @@ impl ParquetExec {
                 None
             }
         };
-        let predicate = self
-            .predicate
-            .as_ref()
-            .map(|p| p.to_io(self.skip_batch_predicate.as_ref(), &self.file_info.schema));
+        let predicate = self.predicate.as_ref().map(|p| {
+            p.to_io(
+                self.skip_batch_predicate.as_ref(),
+                self.file_info.schema.clone(),
+            )
+        });
         let mut base_row_index = self.file_options.row_index.take();
 
         // (offset, end)
@@ -294,7 +296,7 @@ impl ParquetExec {
             skip_batch_predicate: self
                 .skip_batch_predicate
                 .clone()
-                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref())),
+                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone())),
             column_predicates: Arc::new(Default::default()),
         });
         let mut base_row_index = self.file_options.row_index.take();

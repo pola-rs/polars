@@ -272,8 +272,7 @@ impl MultiScanable for ParquetSourceNode {
 
     const BASE_NAME: &'static str = "parquet";
 
-    const DOES_PRED_PD: bool = true;
-    const DOES_SLICE_PD: bool = true;
+    const SPECIALIZED_PRED_PD: bool = true;
 
     async fn new(
         source: ScanSource,

@@ -77,6 +77,7 @@ impl Display for ErrString {
 
 #[derive(Debug, Clone)]
 pub enum PolarsError {
+    AssertionError(ErrString),
     ColumnNotFound(ErrString),
     ComputeError(ErrString),
     Duplicate(ErrString),
@@ -113,6 +114,7 @@ impl Display for PolarsError {
             | SQLInterface(msg)
             | SQLSyntax(msg) => write!(f, "{msg}"),
 
+            AssertionError(msg) => write!(f, "assertion failed: {msg}"),
             ColumnNotFound(msg) => write!(f, "not found: {msg}"),
             Duplicate(msg) => write!(f, "duplicate: {msg}"),
             IO { error, msg } => match msg {
@@ -226,6 +228,7 @@ impl PolarsError {
     pub fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
         use PolarsError::*;
         match self {
+            AssertionError(msg) => AssertionError(func(msg).into()),
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),
@@ -408,6 +411,12 @@ on startup."#.trim_start())
             $dtype,
         )
     };
+    (assert_eq = $lhs:expr, $rhs:expr) => {
+        $crate::polars_err!(
+            AssertionError: "equality assertion failed: {} != {}",
+            $lhs, $rhs
+        )
+    }
 }
 
 #[macro_export]

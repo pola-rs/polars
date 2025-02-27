@@ -489,8 +489,7 @@ impl MultiScanable for IpcSourceNode {
 
     const BASE_NAME: &'static str = "ipc";
 
-    const DOES_PRED_PD: bool = false;
-    const DOES_SLICE_PD: bool = true;
+    const SPECIALIZED_PRED_PD: bool = false;
 
     async fn new(
         source: ScanSource,
