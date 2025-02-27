@@ -11,9 +11,7 @@ use polars_utils::priority::Priority;
 
 use super::{SinkNode, SinkRecvPort};
 use crate::async_executor::spawn;
-use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::{JoinHandle, MorselSeq, TaskPriority};
-use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
 type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct CsvSinkNode {
@@ -42,17 +40,15 @@ impl SinkNode for CsvSinkNode {
 
     fn spawn_sink(
         &mut self,
-        num_pipelines: usize,
+        _num_pipelines: usize,
         recv_ports_recv: SinkRecvPort,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         // .. -> Encode task
-        let (handle, recv_ports_recv) = recv_ports_recv.parallel();
+        let (handle, recv_ports_recv, mut recv_linearizer) =
+            recv_ports_recv.parallel_into_linearize::<Linearized>();
         join_handles.push(handle);
-        // Encode tasks -> IO task
-        let (mut linearizer, senders) =
-            Linearizer::<Linearized>::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
 
         // 16MB
         const DEFAULT_ALLOCATION_SIZE: usize = 1 << 24;
@@ -60,7 +56,7 @@ impl SinkNode for CsvSinkNode {
         // Encode task.
         //
         // Task encodes the columns into their corresponding CSV encoding.
-        for (mut rx_receiver, mut sender) in recv_ports_recv.into_iter().zip(senders.into_iter()) {
+        for mut rx_receiver in recv_ports_recv {
             let schema = self.schema.clone();
             let options = self.write_options.clone();
 
@@ -70,9 +66,11 @@ impl SinkNode for CsvSinkNode {
                 let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
                 let options = options.clone();
 
-                while let Ok((_token, outcome, mut receiver)) = rx_receiver.recv().await {
+                while let Ok((phase_consume_token, outcome, mut receiver, mut sender)) =
+                    rx_receiver.recv().await
+                {
                     while let Ok(morsel) = receiver.recv().await {
-                        let (df, seq, _, _) = morsel.into_inner();
+                        let (df, seq, _, consume_token) = morsel.into_inner();
 
                         let mut buffer = Vec::with_capacity(allocation_size);
                         let mut writer = CsvWriter::new(&mut buffer)
@@ -95,9 +93,12 @@ impl SinkNode for CsvSinkNode {
 
                         allocation_size = allocation_size.max(buffer.len());
                         sender.insert(Priority(Reverse(seq), buffer)).await.unwrap();
+                        drop(consume_token); // Keep the consume_token until here to increase the
+                                             // backpressure.
                     }
 
                     outcome.stop();
+                    drop(phase_consume_token);
                 }
 
                 PolarsResult::Ok(())
@@ -135,8 +136,15 @@ impl SinkNode for CsvSinkNode {
                 file = tokio::fs::File::from_std(std_file);
             }
 
-            while let Some(Priority(_, buffer)) = linearizer.get().await {
-                file.write_all(&buffer).await?;
+            while let Ok((phase_consume_token, outcome, mut linearizer)) =
+                recv_linearizer.recv().await
+            {
+                while let Some(Priority(_, buffer)) = linearizer.get().await {
+                    file.write_all(&buffer).await?;
+                }
+
+                outcome.stop();
+                drop(phase_consume_token);
             }
 
             PolarsResult::Ok(())

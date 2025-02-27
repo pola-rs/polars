@@ -8,6 +8,7 @@ use super::io_sources::PhaseOutcomeToken;
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
 use crate::async_executor::{spawn, AbortOnDropHandle};
 use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 use crate::nodes::TaskPriority;
 
@@ -19,6 +20,9 @@ pub mod ipc;
 pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+
+// This needs to be low to increase the backpressure.
+const DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: usize = 1;
 
 pub enum SinkInputPort {
     Serial(Receiver<Morsel>),
@@ -56,27 +60,38 @@ impl SinkInputPort {
 }
 
 impl SinkRecvPort {
+    /// Receive the [`RecvPort`] in parallel and create a [`Linearizer`] for each phase.
+    ///
+    /// This is useful for sinks that process incoming [`Morsel`]s row-wise as the processing can
+    /// be done in parallel and then be linearized into the actual sink.
     #[allow(clippy::type_complexity)]
-    pub fn parallel(
+    pub fn parallel_into_linearize<T: Send + Sync + Ord + 'static>(
         mut self,
     ) -> (
         JoinHandle<PolarsResult<()>>,
-        Vec<Receiver<(WaitToken, PhaseOutcomeToken, Receiver<Morsel>)>>,
+        Vec<Receiver<(WaitToken, PhaseOutcomeToken, Receiver<Morsel>, Inserter<T>)>>,
+        Receiver<(WaitToken, PhaseOutcomeToken, Linearizer<T>)>,
     ) {
         let (mut rx_senders, rx_receivers) = (0..self.num_pipelines)
             .map(|_| connector())
             .collect::<(Vec<_>, Vec<_>)>();
+        let (mut tx_linearizer, rx_linearizer) = connector();
         let handle = spawn(TaskPriority::High, async move {
             let wg = WaitGroup::default();
 
             while let Ok(input) = self.recv.recv().await {
                 let inputs = input.port.parallel();
 
+                let (linearizer, senders) =
+                    Linearizer::<T>::new(self.num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+
                 let mut outcomes = Vec::with_capacity(inputs.len());
-                for (input, rx_sender) in inputs.into_iter().zip(rx_senders.iter_mut()) {
+                for ((input, rx_sender), sender) in
+                    inputs.into_iter().zip(rx_senders.iter_mut()).zip(senders)
+                {
                     let outcome = PhaseOutcomeToken::new();
                     if rx_sender
-                        .send((wg.token(), outcome.clone(), input))
+                        .send((wg.token(), outcome.clone(), input, sender))
                         .await
                         .is_err()
                     {
@@ -84,6 +99,15 @@ impl SinkRecvPort {
                     }
                     outcomes.push(outcome);
                 }
+                let outcome = PhaseOutcomeToken::new();
+                if tx_linearizer
+                    .send((wg.token(), outcome.clone(), linearizer))
+                    .await
+                    .is_err()
+                {
+                    return Ok(());
+                }
+                outcomes.push(outcome);
 
                 wg.wait().await;
                 for outcome in outcomes {
@@ -97,7 +121,7 @@ impl SinkRecvPort {
             Ok(())
         });
 
-        (handle, rx_receivers)
+        (handle, rx_receivers, rx_linearizer)
     }
     fn serial(self) -> Receiver<SinkInput> {
         self.recv
