@@ -17,13 +17,12 @@ workspace.
 
 ### Invitation links
 
-The invitation link option is particularly useful for onboarding multiple team members
-simultaneously or giving access when an emailaddress is not directly available.
+With an invite link you can share the personal invitation link with an invitee.
 
 1. Click "Generate invite link" to create a shareable URL
-2. Copy and distribute this link through your preferred communication channels
+2. Copy and share the link to the invitee.
 
-Recipients can use this link to join the workspace without requiring an email invitation
+The invitee can use this link to join the workspace without requiring an email invitation.
 
 <!-- dprint-ignore-start -->
 

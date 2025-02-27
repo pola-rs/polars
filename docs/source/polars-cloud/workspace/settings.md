@@ -47,8 +47,8 @@ The Service Accounts section manages programmatic access to your workspace.
 - **Create New Service Account**: Allows you to generate new service accounts for API access and
   automation.
 
-You can find more information about using Service Accounts in your workflows
-[in the "Use service accounts" section]("service-accounts.md")
+You can find more information about using Service Accounts in your workflows in the "Use service
+accounts" section.
 
 ## Disable workspace
 
