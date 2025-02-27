@@ -27,6 +27,6 @@ The invitee can use this link to join the workspace without requiring an email i
 <!-- dprint-ignore-start -->
 
 !!! info "Inviting existing users"
-Users that are already part of another workspace will get a prompt to join the workspace they are invited for.
+    Users that are already part of another workspace will get a prompt to join the workspace they are invited for.
 
 <!-- dprint-ignore-end -->
