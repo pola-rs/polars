@@ -71,7 +71,7 @@ impl Default for StrptimeOptions {
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
     // Fused cross join and filter (only in in-memory engine)
     Cross { predicate: ExprIR },
 }
