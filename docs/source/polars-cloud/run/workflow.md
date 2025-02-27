@@ -98,11 +98,16 @@ Next, we set our compute context and call `.remote(ctx)` on our query.
 import polars_cloud as pc
 
 ctx = pc.ComputeContext(
-    workspace="environmental-analysis", memory=32, cpus=8, cluster_size=4
+    workspace="environmental-analysis",
+    memory=32,
+    cpus=8,
+    cluster_size=4
 )
 
 query.remote(ctx).sink_parquet("s3://bucket/result.parquet")
 ```
+
+### Continue analysis in interactive mode
 
 Running `.sink_parquet()` will write the results to the defined bucket on S3. Alternatively, we can
 take a more interactive approach by adding the parameter `interactive=True` to our compute context.
