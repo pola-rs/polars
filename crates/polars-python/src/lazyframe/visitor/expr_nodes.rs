@@ -1086,8 +1086,8 @@ pub(crate) fn into_py(py: Python<'_>, expr: &AExpr) -> PyResult<PyObject> {
                         (PyBooleanFunction::IsBetween, Into::<&str>::into(closed)).into_py_any(py)
                     },
                     #[cfg(feature = "is_in")]
-                    BooleanFunction::IsIn { propagate_nulls } => {
-                        (PyBooleanFunction::IsIn, propagate_nulls).into_py_any(py)
+                    BooleanFunction::IsIn { nulls_equal } => {
+                        (PyBooleanFunction::IsIn, nulls_equal).into_py_any(py)
                     },
                     BooleanFunction::AllHorizontal => {
                         (PyBooleanFunction::AllHorizontal,).into_py_any(py)

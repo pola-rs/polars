@@ -652,8 +652,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn is_in(&self, expr: Self, propagate_nulls: bool) -> Self {
-        self.inner.clone().is_in(expr.inner, propagate_nulls).into()
+    fn is_in(&self, expr: Self, nulls_equal: bool) -> Self {
+        self.inner.clone().is_in(expr.inner, nulls_equal).into()
     }
 
     #[cfg(feature = "repeat_by")]

@@ -257,7 +257,7 @@ pub(super) fn contains(args: &mut [Column]) -> PolarsResult<Option<Column>> {
     polars_ops::prelude::is_in(
         item.as_materialized_series(),
         list.as_materialized_series(),
-        false,
+        true,
     )
     .map(|mut ca| {
         ca.rename(list.name().clone());
