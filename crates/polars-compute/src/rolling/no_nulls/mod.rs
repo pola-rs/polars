@@ -14,9 +14,6 @@ pub use mean::*;
 pub use min_max::*;
 use num_traits::{Float, Num, NumCast};
 pub use quantile::*;
-#[cfg(feature = "serde")]
-use serde::{Deserialize, Serialize};
-use strum_macros::IntoStaticStr;
 pub use sum::*;
 pub use variance::*;
 

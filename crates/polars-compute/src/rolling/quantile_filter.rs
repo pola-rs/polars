@@ -527,19 +527,19 @@ pub(super) trait FinishLinear {
     fn finish_midpoint(lower: Self, upper: Self) -> Self;
 }
 
-pub trait Sealed {}
+pub trait SealedRolling {}
 
-impl Sealed for i8 {}
-impl Sealed for i16 {}
-impl Sealed for i32 {}
-impl Sealed for i64 {}
-impl Sealed for u8 {}
-impl Sealed for u16 {}
-impl Sealed for u32 {}
-impl Sealed for u64 {}
-impl Sealed for i128 {}
-impl Sealed for f32 {}
-impl Sealed for f64 {}
+impl SealedRolling for i8 {}
+impl SealedRolling for i16 {}
+impl SealedRolling for i32 {}
+impl SealedRolling for i64 {}
+impl SealedRolling for u8 {}
+impl SealedRolling for u16 {}
+impl SealedRolling for u32 {}
+impl SealedRolling for u64 {}
+impl SealedRolling for i128 {}
+impl SealedRolling for f32 {}
+impl SealedRolling for f64 {}
 
 impl<
         T: NativeType
@@ -548,7 +548,7 @@ impl<
             + Sub<Output = T>
             + Div<Output = T>
             + Mul<Output = T>
-            + Sealed
+            + SealedRolling
             + Debug,
     > FinishLinear for T
 {

@@ -20,8 +20,8 @@ num-traits = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 ryu = { workspace = true, optional = true }
-strength_reduce = { workspace = true }
 serde = { workspace = true, optional = true }
+strength_reduce = { workspace = true }
 strum_macros = { workspace = true }
 
 [dev-dependencies]

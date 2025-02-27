@@ -5,8 +5,8 @@ use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
-use polars_compute::rolling::quantile_filter::Sealed;
-use polars_compute::rolling::{self, RollingFnParams};
+use polars_compute::rolling::quantile_filter::SealedRolling;
+use polars_compute::rolling::RollingFnParams;
 
 use super::*;
 
@@ -350,7 +350,7 @@ pub(crate) fn rolling_quantile<T>(
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat + Sealed,
+    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat + SealedRolling,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]

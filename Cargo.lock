@@ -3009,7 +3009,9 @@ dependencies = [
  "polars-utils",
  "rand",
  "ryu",
+ "serde",
  "strength_reduce",
+ "strum_macros",
  "version_check",
 ]
 
@@ -3205,6 +3207,7 @@ dependencies = [
  "memchr",
  "once_cell",
  "polars-arrow",
+ "polars-compute",
  "polars-core",
  "polars-expr",
  "polars-io",

@@ -4,7 +4,7 @@ use polars_error::polars_ensure;
 
 use super::QuantileMethod::*;
 use super::*;
-use crate::rolling::quantile_filter::Sealed;
+use crate::rolling::quantile_filter::SealedRolling;
 
 pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
@@ -23,7 +23,7 @@ impl<
             + NumCast
             + One
             + Zero
-            + Sealed
+            + SealedRolling
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
@@ -118,7 +118,7 @@ where
         + NumCast
         + One
         + Zero
-        + Sealed
+        + SealedRolling
         + PartialOrd
         + Sub<Output = T>,
 {

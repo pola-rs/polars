@@ -17,7 +17,7 @@ use polars_compute::rolling::no_nulls::{
     MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
 };
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
-use polars_compute::rolling::quantile_filter::Sealed;
+use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
     self, quantile_filter, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams,
 };
@@ -345,7 +345,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::Sealed,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::SealedRolling,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -425,7 +425,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + Sealed,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + SealedRolling,
 {
     match groups {
         GroupsType::Idx(groups) => {

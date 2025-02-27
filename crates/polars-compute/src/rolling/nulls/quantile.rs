@@ -1,7 +1,7 @@
 use arrow::array::MutablePrimitiveArray;
 
 use super::*;
-use crate::rolling::quantile_filter::Sealed;
+use crate::rolling::quantile_filter::SealedRolling;
 
 pub struct QuantileWindow<'a, T: NativeType + IsFloat + PartialOrd> {
     sorted: SortedBufNulls<'a, T>,
@@ -21,7 +21,7 @@ impl<
             + NumCast
             + One
             + Zero
-            + Sealed
+            + SealedRolling
             + PartialOrd
             + Sub<Output = T>,
     > RollingAggWindowNulls<'a, T> for QuantileWindow<'a, T>
@@ -120,7 +120,7 @@ where
         + NumCast
         + One
         + Zero
-        + Sealed
+        + SealedRolling
         + PartialOrd
         + Sub<Output = T>,
 {
