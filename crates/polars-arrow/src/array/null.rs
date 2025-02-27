@@ -4,7 +4,7 @@ use polars_error::{polars_bail, PolarsResult};
 use polars_utils::IdxSize;
 
 use super::Splitable;
-use crate::array::builder::{ArrayBuilder, ShareStrategy};
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
 use crate::array::{Array, FromFfi, MutableArray, ToFfi};
 use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
@@ -227,20 +227,22 @@ impl NullArrayBuilder {
     }
 }
 
-impl ArrayBuilder for NullArrayBuilder {
+impl StaticArrayBuilder for NullArrayBuilder {
+    type Array = NullArray;
+
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
 
     fn reserve(&mut self, _additional: usize) {}
 
-    fn freeze(self) -> Box<dyn Array> {
-        NullArray::new(self.dtype, self.length).to_boxed()
+    fn freeze(self) -> NullArray {
+        NullArray::new(self.dtype, self.length)
     }
 
     fn subslice_extend(
         &mut self,
-        _other: &dyn Array,
+        _other: &NullArray,
         _start: usize,
         length: usize,
         _share: ShareStrategy,
@@ -248,9 +250,20 @@ impl ArrayBuilder for NullArrayBuilder {
         self.length += length;
     }
 
+    fn subslice_extend_repeated(
+        &mut self,
+        _other: &NullArray,
+        _start: usize,
+        length: usize,
+        repeats: usize,
+        _share: ShareStrategy,
+    ) {
+        self.length += length * repeats;
+    }
+
     unsafe fn gather_extend(
         &mut self,
-        _other: &dyn Array,
+        _other: &NullArray,
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
