@@ -167,7 +167,7 @@ Output:
 
 ### Example 3: Composing expressions
 
-Polars allow you compose expressions quite liberally. For example, if you want to find the rolling
+Polars allows you compose expressions quite liberally. For example, if you want to find the rolling
 mean of a lagged variable, you can write
 
 ```python
