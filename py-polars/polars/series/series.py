@@ -3787,15 +3787,15 @@ class Series:
         self,
         other: Series | Collection[Any],
         *,
-        missing: bool = False,
+        propagate_nulls: bool = True,
     ) -> Series:
         """
         Check if elements of this Series are in the other Series.
 
         Parameters
         ----------
-        missing : bool, default False
-            Treat null as a distinct value. Null values will not propagate.
+        propagate_nulls : bool, default True
+            if False, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -3814,8 +3814,8 @@ class Series:
                 false
                 null
         ]
-        >>> # when missing=True, None is treated as a distinct value
-        >>> s2.is_in(s, missing=True)
+        >>> # when propagate_nulls=False, None is treated as a distinct value
+        >>> s2.is_in(s, propagate_nulls=False)
         shape: (3,)
         Series: 'b' [bool]
         [

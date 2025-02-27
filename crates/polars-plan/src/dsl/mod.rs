@@ -1196,7 +1196,7 @@ impl Expr {
     /// Check if the values of the left expression are in the lists of the right expr.
     #[allow(clippy::wrong_self_convention)]
     #[cfg(feature = "is_in")]
-    pub fn is_in<E: Into<Expr>>(self, other: E, missing: bool) -> Self {
+    pub fn is_in<E: Into<Expr>>(self, other: E, propagate_nulls: bool) -> Self {
         let other = other.into();
         let has_literal = has_leaf_literal(&other);
 
@@ -1207,14 +1207,14 @@ impl Expr {
         // we don't have to apply on groups, so this is faster
         if has_literal {
             self.map_many_private(
-                BooleanFunction::IsIn { missing }.into(),
+                BooleanFunction::IsIn { propagate_nulls }.into(),
                 arguments,
                 returns_scalar,
                 Some(Default::default()),
             )
         } else {
             self.apply_many_private(
-                BooleanFunction::IsIn { missing }.into(),
+                BooleanFunction::IsIn { propagate_nulls }.into(),
                 arguments,
                 returns_scalar,
                 true,

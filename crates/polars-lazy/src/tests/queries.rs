@@ -355,7 +355,7 @@ fn test_lazy_query_8() -> PolarsResult<()> {
     let mut selection = vec![];
 
     for &c in &["A", "B", "C", "D", "E"] {
-        let e = when(col(c).is_in(col("E"), false))
+        let e = when(col(c).is_in(col("E"), true))
             .then(col("A"))
             .otherwise(Null {}.lit())
             .alias(c);
@@ -1761,7 +1761,7 @@ fn test_is_in() -> PolarsResult<()> {
         .clone()
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))), false)])
+        .agg([col("cars").is_in(col("cars").filter(col("cars").eq(lit("beetle"))), true)])
         .collect()?;
     let out = out.column("cars").unwrap();
     let out = out.explode()?;
@@ -1775,7 +1775,7 @@ fn test_is_in() -> PolarsResult<()> {
     let out = df
         .lazy()
         .group_by_stable([col("fruits")])
-        .agg([col("cars").is_in(lit(Series::new("a".into(), ["beetle", "vw"])), false)])
+        .agg([col("cars").is_in(lit(Series::new("a".into(), ["beetle", "vw"])), true)])
         .collect()?;
 
     let out = out.column("cars").unwrap();
