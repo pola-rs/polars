@@ -2,6 +2,8 @@ use super::{new_empty_array, new_null_array, Array, Splitable};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;

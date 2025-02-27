@@ -9,16 +9,15 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
-use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
+use crate::array::binview::{
+    BinaryViewArrayGeneric, ViewType, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+};
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
-
-const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
-const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
 // Invariants:
 //
