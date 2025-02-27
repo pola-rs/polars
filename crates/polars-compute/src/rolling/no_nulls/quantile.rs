@@ -1,8 +1,10 @@
+use arrow::legacy::utils::CustomIterTools;
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
 
 use super::QuantileMethod::*;
 use super::*;
+use crate::rolling::quantile_filter::Sealed;
 
 pub struct QuantileWindow<'a, T: NativeType> {
     sorted: SortedBuf<'a, T>,
@@ -21,6 +23,7 @@ impl<
             + NumCast
             + One
             + Zero
+            + Sealed
             + Sub<Output = T>,
     > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
@@ -115,6 +118,7 @@ where
         + NumCast
         + One
         + Zero
+        + Sealed
         + PartialOrd
         + Sub<Output = T>,
 {

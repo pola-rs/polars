@@ -4,6 +4,8 @@ use std::cmp::Ordering;
 use std::fmt::{Debug, Formatter};
 use std::ops::{Add, Div, Mul, Sub};
 
+use arrow::pushable::Pushable;
+use arrow::types::NativeType;
 use num_traits::NumCast;
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::nulls::IsNull;
@@ -11,9 +13,7 @@ use polars_utils::slice::SliceAble;
 use polars_utils::sort::arg_sort_ascending;
 use polars_utils::total_ord::TotalOrd;
 
-use crate::legacy::prelude::QuantileMethod;
-use crate::pushable::Pushable;
-use crate::types::NativeType;
+use super::QuantileMethod;
 
 struct Block<'a, A> {
     k: usize,
@@ -527,6 +527,20 @@ pub(super) trait FinishLinear {
     fn finish_midpoint(lower: Self, upper: Self) -> Self;
 }
 
+pub trait Sealed {}
+
+impl Sealed for i8 {}
+impl Sealed for i16 {}
+impl Sealed for i32 {}
+impl Sealed for i64 {}
+impl Sealed for u8 {}
+impl Sealed for u16 {}
+impl Sealed for u32 {}
+impl Sealed for u64 {}
+impl Sealed for i128 {}
+impl Sealed for f32 {}
+impl Sealed for f64 {}
+
 impl<
         T: NativeType
             + NumCast
@@ -534,6 +548,7 @@ impl<
             + Sub<Output = T>
             + Div<Output = T>
             + Mul<Output = T>
+            + Sealed
             + Debug,
     > FinishLinear for T
 {

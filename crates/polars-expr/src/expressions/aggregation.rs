@@ -4,6 +4,7 @@ use arrow::array::*;
 use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::{NoNull, _split_offsets};

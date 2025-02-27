@@ -8,17 +8,19 @@ use std::cmp::Ordering;
 
 pub use agg_list::*;
 use arrow::bitmap::{Bitmap, MutableBitmap};
-use arrow::legacy::kernels::rolling;
-use arrow::legacy::kernels::rolling::no_nulls::{
-    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
-};
-use arrow::legacy::kernels::rolling::nulls::RollingAggWindowNulls;
 use arrow::legacy::kernels::take_agg::*;
-use arrow::legacy::prelude::QuantileMethod;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use arrow::types::NativeType;
 use num_traits::pow::Pow;
 use num_traits::{Bounded, Float, Num, NumCast, ToPrimitive, Zero};
+use polars_compute::rolling::no_nulls::{
+    MaxWindow, MeanWindow, MinWindow, QuantileWindow, RollingAggWindowNoNulls, SumWindow, VarWindow,
+};
+use polars_compute::rolling::nulls::RollingAggWindowNulls;
+use polars_compute::rolling::quantile_filter::Sealed;
+use polars_compute::rolling::{
+    self, quantile_filter, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams,
+};
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::ord::{compare_fn_nan_max, compare_fn_nan_min};
@@ -343,7 +345,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + quantile_filter::Sealed,
 {
     let invalid_quantile = !(0.0..=1.0).contains(&quantile);
     if invalid_quantile {
@@ -423,7 +425,7 @@ where
     ChunkedArray<T>: QuantileDispatcher<K::Native>,
     ChunkedArray<K>: IntoSeries,
     K: PolarsNumericType,
-    <K as datatypes::PolarsNumericType>::Native: num_traits::Float,
+    <K as datatypes::PolarsNumericType>::Native: num_traits::Float + Sealed,
 {
     match groups {
         GroupsType::Idx(groups) => {

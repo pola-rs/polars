@@ -632,6 +632,7 @@ fn update_subgroups_idx(
 #[cfg(test)]
 mod test {
     use chrono::prelude::*;
+    use polars_compute::rolling::QuantileMethod;
     use polars_ops::prelude::*;
     use polars_utils::unitvec;
 

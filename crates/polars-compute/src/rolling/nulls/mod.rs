@@ -4,6 +4,7 @@ mod quantile;
 mod sum;
 mod variance;
 
+use arrow::legacy::utils::CustomIterTools;
 pub use mean::*;
 pub use min_max::*;
 pub use quantile::*;
@@ -90,10 +91,11 @@ where
 
 #[cfg(test)]
 mod test {
+    use arrow::array::{Array, Int32Array};
+    use arrow::buffer::Buffer;
+    use arrow::datatypes::ArrowDataType;
+
     use super::*;
-    use crate::array::{Array, Int32Array};
-    use crate::buffer::Buffer;
-    use crate::datatypes::ArrowDataType;
 
     fn get_null_arr() -> PrimitiveArray<f64> {
         // 1, None, -1, 4

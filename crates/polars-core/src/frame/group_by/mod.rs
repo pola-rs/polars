@@ -2,6 +2,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 
 use num_traits::NumCast;
+use polars_compute::rolling::QuantileMethod;
 use polars_utils::format_pl_smallstr;
 use polars_utils::hashing::DirtyHash;
 use rayon::prelude::*;
