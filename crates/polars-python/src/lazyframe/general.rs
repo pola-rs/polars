@@ -619,9 +619,7 @@ impl PyLazyFrame {
         py: Python,
         lambda_post_opt: Option<PyObject>,
     ) -> PyResult<(PyDataFrame, PyDataFrame)> {
-        // if we don't allow threads and we have udfs trying to acquire the gil from different
-        // threads we deadlock.
-        let (df, time_df) = py.allow_threads(|| {
+        py.enter_polars_df_pair(|| {
             let ldf = self.ldf.clone();
             if let Some(lambda) = lambda_post_opt {
                 ldf._profile_post_opt(|root, lp_arena, expr_arena| {
@@ -643,6 +641,7 @@ impl PyLazyFrame {
 
                         // Unpack the arena's.
                         // At this point the `nt` is useless.
+
                         std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
                         std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
 
@@ -652,9 +651,7 @@ impl PyLazyFrame {
             } else {
                 ldf.profile()
             }
-            .map_err(PyPolarsErr::from)
-        })?;
-        Ok((df.into(), time_df.into()))
+        })
     }
 
     #[pyo3(signature = (lambda_post_opt=None))]

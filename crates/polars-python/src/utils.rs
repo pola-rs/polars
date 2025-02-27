@@ -92,6 +92,16 @@ pub trait EnterPolarsExt {
     {
         self.enter_polars(f).map(|s| PySeries::new(s.into_series()))
     }
+
+    #[inline(always)]
+    fn enter_polars_df_pair<F>(self, f: F) -> PyResult<(PyDataFrame, PyDataFrame)>
+    where
+        Self: Sized,
+        F: Ungil + Send + FnOnce() -> PolarsResult<(DataFrame, DataFrame)>,
+    {
+        self.enter_polars(f)
+            .map(|(df1, df2)| (PyDataFrame::new(df1), PyDataFrame::new(df2)))
+    }
 }
 
 impl EnterPolarsExt for Python<'_> {

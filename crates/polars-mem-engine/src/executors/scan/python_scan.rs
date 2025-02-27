@@ -86,15 +86,46 @@ impl Executor for PythonScanExec {
             };
 
             let generator_init = if matches!(self.options.python_source, PythonScanSource::Cuda) {
-                let py_node_timer = PyNodeTimer::new(state.node_timer.clone());
                 let args = (
                     python_scan_function,
                     with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
                     predicate,
                     n_rows,
-                    Py::new(py, py_node_timer).unwrap(),
+                    true,
                 );
-                callable.call1(args).map_err(to_compute_err)
+                let result = callable.call1(args).map_err(to_compute_err).clone()?;
+
+                let df = result
+                    .get_item(0)
+                    .map_err(|_| polars_err!(ComputeError: "expected tuple got {:?}", result))?;
+
+                let timing_info = result
+                    .get_item(1)
+                    .map_err(|_| polars_err!(ComputeError: "expected tuple got {:?}", result))?;
+
+                let name: String = timing_info
+                .get_item(0)
+                .map_err(|_| polars_err!(ComputeError: "Failed to extract name got {:?}", timing_info))?
+                .extract::<String>()
+                .map_err(|_| polars_err!(ComputeError: "Failed to convert name to String {:?}", timing_info))?;
+
+                let start: u64 = timing_info
+                    .get_item(1)
+                    .map_err(|_| polars_err!(ComputeError: "Failed to extract start time"))?
+                    .extract::<u64>()
+                    .map_err(
+                        |_| polars_err!(ComputeError: "Failed to convert start time to u64"),
+                    )?;
+
+                let end: u64 = timing_info
+                    .get_item(2)
+                    .map_err(|_| polars_err!(ComputeError: "Failed to extract end time"))?
+                    .extract::<u64>()
+                    .map_err(|_| polars_err!(ComputeError: "Failed to convert end time to u64"))?;
+                if let Some(node_timer) = state.node_timer.as_ref() {
+                    node_timer.store_raw(start, end, name);
+                }
+                Ok(df)
             } else if matches!(self.options.python_source, PythonScanSource::Pyarrow) {
                 let args = (
                     python_scan_function,
