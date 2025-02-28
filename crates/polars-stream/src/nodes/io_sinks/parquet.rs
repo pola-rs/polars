@@ -3,8 +3,7 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-use polars_core::frame::DataFrame;
-use polars_core::prelude::{ArrowSchema, Column, CompatLevel};
+use polars_core::prelude::{ArrowSchema, CompatLevel};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -19,11 +18,16 @@ use polars_parquet::write::{
 };
 use polars_utils::priority::Priority;
 
-use super::{SinkNode, SinkRecvPort};
+use super::{
+    buffer_and_distribute_columns_task, SinkNode, SinkRecvPort,
+    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+};
 use crate::async_executor::spawn;
+use crate::async_primitives::connector::connector;
+use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::{JoinHandle, TaskPriority};
 
-type Linearized = Priority<Reverse<(usize, usize)>, Vec<Vec<CompressedPage>>>;
 pub struct ParquetSinkNode {
     path: PathBuf,
 
@@ -72,16 +76,22 @@ impl SinkNode for ParquetSinkNode {
 
     fn spawn_sink(
         &mut self,
-        _num_pipelines: usize,
+        num_pipelines: usize,
         recv_ports_recv: SinkRecvPort,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        let (handle, mut buffer_rx, worker_rxs, mut io_rx) =
-            recv_ports_recv.serial_into_distribute::<(usize, usize, Column), Linearized>();
-        join_handles.push(handle);
+        // .. -> Buffer task
+        let buffer_rx = recv_ports_recv.serial(join_handles);
+        // Buffer task -> Encode tasks
+        let (dist_tx, dist_rxs) =
+            distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
+        // Encode tasks -> Collect task
+        let (mut lin_rx, lin_txs) =
+            Linearizer::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+        // Collect task -> IO task
+        let (mut io_tx, mut io_rx) = connector::<Vec<Vec<CompressedPage>>>();
 
-        let input_schema = self.input_schema.clone();
         let write_options = self.write_options;
 
         let options = WriteOptions {
@@ -92,138 +102,124 @@ impl SinkNode for ParquetSinkNode {
         };
 
         // Buffer task.
-        //
-        // This task linearizes and buffers morsels until a given a maximum chunk size is reached
-        // and then sends the whole record batch to be encoded and written.
-        join_handles.push(spawn(TaskPriority::High, async move {
-            let mut buffer = DataFrame::empty_with_schema(input_schema.as_ref());
-            let row_group_size = write_options
+        join_handles.push(buffer_and_distribute_columns_task(
+            buffer_rx,
+            dist_tx,
+            write_options
                 .row_group_size
-                .unwrap_or(DEFAULT_ROW_GROUP_SIZE)
-                .max(1);
-            let mut row_group_index = 0;
-
-            while let Ok((outcome, receiver, mut sender)) = buffer_rx.recv().await {
-                match receiver {
-                    None => {
-                        // Flush the remaining rows.
-                        while buffer.height() > 0 {
-                            let row_group;
-
-                            (row_group, buffer) =
-                                buffer.split_at(row_group_size.min(buffer.height()) as i64);
-                            for (column_idx, column) in
-                                row_group.take_columns().into_iter().enumerate()
-                            {
-                                if sender
-                                    .send((row_group_index, column_idx, column))
-                                    .await
-                                    .is_err()
-                                {
-                                    return Ok(());
-                                }
-                            }
-                            row_group_index += 1;
-                        }
-                    },
-                    Some(mut receiver) => {
-                        while let Ok(morsel) = receiver.recv().await {
-                            let (df, _, _, consume_token) = morsel.into_inner();
-                            // @NOTE: This also performs schema validation.
-                            buffer.vstack_mut(&df)?;
-
-                            while buffer.height() >= row_group_size {
-                                let row_group;
-
-                                (row_group, buffer) =
-                                    buffer.split_at(row_group_size.min(buffer.height()) as i64);
-
-                                for (column_idx, column) in
-                                    row_group.take_columns().into_iter().enumerate()
-                                {
-                                    if sender
-                                        .send((row_group_index, column_idx, column))
-                                        .await
-                                        .is_err()
-                                    {
-                                        return Ok(());
-                                    }
-                                }
-
-                                row_group_index += 1;
-                            }
-                            drop(consume_token); // Keep the consume_token until here to increase
-                                                 // the backpressure.
-                        }
-                    },
-                }
-
-                outcome.stopped();
-            }
-
-            PolarsResult::Ok(())
-        }));
+                .unwrap_or(DEFAULT_ROW_GROUP_SIZE),
+            self.input_schema.clone(),
+        ));
 
         // Encode task.
         //
         // Task encodes the columns into their corresponding Parquet encoding.
-        for mut worker_rx in worker_rxs {
-            let parquet_schema = self.parquet_schema.clone();
-            let encodings = self.encodings.clone();
+        join_handles.extend(
+            dist_rxs
+                .into_iter()
+                .zip(lin_txs)
+                .map(|(mut dist_rx, mut lin_tx)| {
+                    let parquet_schema = self.parquet_schema.clone();
+                    let encodings = self.encodings.clone();
 
-            join_handles.push(spawn(TaskPriority::High, async move {
-                while let Ok((outcome, mut dist_rx, mut lin_tx)) = worker_rx.recv().await {
-                    while let Ok((rg_idx, col_idx, column)) = dist_rx.recv().await {
-                        let type_ = &parquet_schema.fields()[col_idx];
-                        let encodings = &encodings[col_idx];
+                    spawn(TaskPriority::High, async move {
+                        while let Ok((rg_idx, col_idx, column)) = dist_rx.recv().await {
+                            let type_ = &parquet_schema.fields()[col_idx];
+                            let encodings = &encodings[col_idx];
 
-                        let array = column.as_materialized_series().rechunk();
-                        let array = array.to_arrow(0, CompatLevel::newest());
+                            let array = column.as_materialized_series().rechunk();
+                            let array = array.to_arrow(0, CompatLevel::newest());
 
-                        // @TODO: This causes all structs fields to be handled on a single thread. It
-                        // would be preferable to split the encoding among multiple threads.
+                            // @TODO: This causes all structs fields to be handled on a single thread. It
+                            // would be preferable to split the encoding among multiple threads.
 
-                        // @NOTE: Since one Polars column might contain multiple Parquet columns (when
-                        // it has a struct datatype), we return a Vec<Vec<CompressedPage>>.
+                            // @NOTE: Since one Polars column might contain multiple Parquet columns (when
+                            // it has a struct datatype), we return a Vec<Vec<CompressedPage>>.
 
-                        // Array -> Parquet pages.
-                        let encoded_columns =
-                            array_to_columns(array, type_.clone(), options, encodings)?;
+                            // Array -> Parquet pages.
+                            let encoded_columns =
+                                array_to_columns(array, type_.clone(), options, encodings)?;
 
-                        // Compress the pages.
-                        let compressed_pages = encoded_columns
-                            .into_iter()
-                            .map(|encoded_pages| {
-                                Compressor::new_from_vec(
-                                    encoded_pages.map(|result| {
-                                        result.map_err(|e| {
-                                            ParquetError::FeatureNotSupported(format!(
-                                                "reraised in polars: {e}",
-                                            ))
-                                        })
-                                    }),
-                                    options.compression,
-                                    vec![],
-                                )
-                                .collect::<ParquetResult<Vec<_>>>()
-                            })
-                            .collect::<ParquetResult<Vec<_>>>()?;
+                            // Compress the pages.
+                            let compressed_pages = encoded_columns
+                                .into_iter()
+                                .map(|encoded_pages| {
+                                    Compressor::new_from_vec(
+                                        encoded_pages.map(|result| {
+                                            result.map_err(|e| {
+                                                ParquetError::FeatureNotSupported(format!(
+                                                    "reraised in polars: {e}",
+                                                ))
+                                            })
+                                        }),
+                                        options.compression,
+                                        vec![],
+                                    )
+                                    .collect::<ParquetResult<Vec<_>>>()
+                                })
+                                .collect::<ParquetResult<Vec<_>>>()?;
 
-                        if lin_tx
-                            .insert(Priority(Reverse((rg_idx, col_idx)), compressed_pages))
-                            .await
-                            .is_err()
-                        {
-                            return Ok(());
+                            if lin_tx
+                                .insert(Priority(Reverse(rg_idx), (col_idx, compressed_pages)))
+                                .await
+                                .is_err()
+                            {
+                                return Ok(());
+                            }
                         }
-                    }
 
-                    outcome.stopped();
+                        PolarsResult::Ok(())
+                    })
+                }),
+        );
+
+        // Collect Task.
+        //
+        // Collects all the encoded data and packs it together for the IO task to write it.
+        let input_schema = self.input_schema.clone();
+        let num_parquet_columns = self.parquet_schema.leaves().len();
+        join_handles.push(spawn(TaskPriority::High, async move {
+            struct Current {
+                seq: usize,
+                num_columns_seen: usize,
+                columns: Vec<Option<Vec<Vec<CompressedPage>>>>,
+            }
+
+            let mut current = Current {
+                seq: 0,
+                num_columns_seen: 0,
+                columns: (0..input_schema.len()).map(|_| None).collect(),
+            };
+
+            // Linearize from all the Encoder tasks.
+            while let Some(Priority(Reverse(seq), (i, compressed_pages))) = lin_rx.get().await {
+                if current.num_columns_seen == 0 {
+                    current.seq = seq;
                 }
 
-                PolarsResult::Ok(())
-            }));
-        }
+                debug_assert_eq!(current.seq, seq);
+                debug_assert!(current.columns[i].is_none());
+                current.columns[i] = Some(compressed_pages);
+                current.num_columns_seen += 1;
+
+                if current.num_columns_seen == input_schema.len() {
+                    // @Optimize: Keep track of these sizes so we can correctly preallocate
+                    // them.
+                    let mut current_row_group: Vec<Vec<CompressedPage>> =
+                        Vec::with_capacity(num_parquet_columns);
+                    for column in current.columns.iter_mut() {
+                        current_row_group.extend(column.take().unwrap());
+                    }
+
+                    if io_tx.send(current_row_group).await.is_err() {
+                        return Ok(());
+                    }
+                    current.num_columns_seen = 0;
+                }
+            }
+
+            Ok(())
+        }));
 
         // IO task.
         //
@@ -231,7 +227,6 @@ impl SinkNode for ParquetSinkNode {
         // spawned once.
         let path = self.path.clone();
         let write_options = self.write_options;
-        let input_schema = self.input_schema.clone();
         let arrow_schema = self.arrow_schema.clone();
         let parquet_schema = self.parquet_schema.clone();
         let encodings = self.encodings.clone();
@@ -262,29 +257,11 @@ impl SinkNode for ParquetSinkNode {
             let mut writer = BatchedWriter::new(file_writer, encodings, options, false);
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();
-            let mut current_row_group = Vec::with_capacity(num_parquet_columns);
-
-            while let Ok((outcome, mut lin_rx)) = io_rx.recv().await {
-                // Linearize from all the Encoder tasks.
-                while let Some(Priority(Reverse((_, col_idx)), compressed_pages)) =
-                    lin_rx.get().await
-                {
-                    assert!(col_idx < input_schema.len());
-                    current_row_group.extend(compressed_pages);
-
-                    // Only if it is the last column of the row group, write the row group to the file.
-                    if current_row_group.len() < num_parquet_columns {
-                        continue;
-                    }
-
-                    // @TODO: At the moment this is a sync write, this is not ideal because we can only
-                    // have so many blocking threads in the tokio threadpool.
-                    assert_eq!(current_row_group.len(), num_parquet_columns);
-                    writer.write_row_group(&current_row_group)?;
-                    current_row_group.clear();
-                }
-
-                outcome.stopped();
+            while let Ok(current_row_group) = io_rx.recv().await {
+                // @TODO: At the moment this is a sync write, this is not ideal because we can only
+                // have so many blocking threads in the tokio threadpool.
+                assert_eq!(current_row_group.len(), num_parquet_columns);
+                writer.write_row_group(&current_row_group)?;
             }
 
             writer.finish()?;

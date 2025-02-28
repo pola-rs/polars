@@ -1,19 +1,21 @@
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::config;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::Column;
+use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 
+use super::io_sources::PhaseOutcomeToken;
 use super::{
     ComputeNode, JoinHandle, Morsel, PhaseOutcome, PortState, RecvPort, SendPort, TaskScope,
 };
 use crate::async_executor::{spawn, AbortOnDropHandle};
 use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::distributor_channel;
-use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::nodes::TaskPriority;
-use crate::DEFAULT_LINEARIZER_BUFFER_SIZE;
 
 #[cfg(feature = "csv")]
 pub mod csv;
@@ -55,62 +57,57 @@ impl SinkInputPort {
 }
 
 impl SinkRecvPort {
-    /// Receive the [`RecvPort`] in parallel and create a [`Linearizer`] for each phase.
-    ///
-    /// This is useful for sinks that process incoming [`Morsel`]s row-wise as the processing can
-    /// be done in parallel and then be linearized into the actual sink.
-    #[allow(clippy::type_complexity)]
-    pub fn parallel_into_linearize<T: Send + Sync + Ord + 'static>(
+    pub fn parallel(
         mut self,
-    ) -> (
-        JoinHandle<PolarsResult<()>>,
-        Vec<Receiver<(PhaseOutcome, Receiver<Morsel>, Inserter<T>)>>,
-        Receiver<(PhaseOutcome, Linearizer<T>)>,
-    ) {
-        let (mut rx_senders, rx_receivers) = (0..self.num_pipelines)
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) -> Vec<Receiver<Morsel>> {
+        let (txs, rxs) = (0..self.num_pipelines)
             .map(|_| connector())
             .collect::<(Vec<_>, Vec<_>)>();
-        let (mut tx_linearizer, rx_linearizer) = connector();
-        let handle = spawn(TaskPriority::High, async move {
-            let mut outcomes = Vec::with_capacity(self.num_pipelines + 1);
-            let wg = WaitGroup::default();
+        let (mut pass_txs, pass_rxs) = (0..self.num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+        let mut outcomes = Vec::<PhaseOutcomeToken>::with_capacity(self.num_pipelines);
+        let wg = WaitGroup::default();
 
-            while let Ok((phase_outcome, port)) = self.recv.recv().await {
-                let inputs = port.parallel();
-
-                let (linearizer, senders) =
-                    Linearizer::<T>::new(self.num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
-
-                for ((input, rx_sender), sender) in
-                    inputs.into_iter().zip(rx_senders.iter_mut()).zip(senders)
-                {
+        join_handles.push(spawn(TaskPriority::High, async move {
+            while let Ok((outcome, port_rxs)) = self.recv.recv().await {
+                let port_rxs = port_rxs.parallel();
+                for (pass_tx, port_rx) in pass_txs.iter_mut().zip(port_rxs) {
                     let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
-                    if rx_sender.send((outcome, input, sender)).await.is_err() {
+                    if pass_tx.send((outcome, port_rx)).await.is_err() {
                         return Ok(());
                     }
                     outcomes.push(token);
                 }
-                let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
-                if tx_linearizer.send((outcome, linearizer)).await.is_err() {
-                    return Ok(());
-                }
-                outcomes.push(token);
 
                 wg.wait().await;
-                for outcome in &outcomes {
-                    if outcome.did_finish() {
+                for outcome_token in &outcomes {
+                    if outcome_token.did_finish() {
                         return Ok(());
                     }
                 }
-
-                phase_outcome.stopped();
                 outcomes.clear();
+                outcome.stopped();
             }
 
             Ok(())
-        });
+        }));
+        join_handles.extend(pass_rxs.into_iter().zip(txs).map(|(mut pass_rx, mut tx)| {
+            spawn(TaskPriority::High, async move {
+                while let Ok((outcome, mut rx)) = pass_rx.recv().await {
+                    while let Ok(morsel) = rx.recv().await {
+                        if tx.send(morsel).await.is_err() {
+                            return Ok(());
+                        }
+                    }
+                    outcome.stopped();
+                }
+                Ok(())
+            })
+        }));
 
-        (handle, rx_receivers, rx_linearizer)
+        rxs
     }
 
     /// Serialize the input and allow for long lived lasts to listen to a constant channel.
@@ -133,97 +130,52 @@ impl SinkRecvPort {
         }));
         rx
     }
+}
 
-    /// Receive the [`RecvPort`] serially that distributes amongst workers then [`Linearize`] again
-    /// to the end.
-    ///
-    /// This is useful for sinks that process incoming [`Morsel`]s column-wise as the processing
-    /// of the columns can be done in parallel.
-    #[allow(clippy::type_complexity)]
-    pub fn serial_into_distribute<D, L>(
-        mut self,
-    ) -> (
-        JoinHandle<PolarsResult<()>>,
-        Receiver<(
-            PhaseOutcome,
-            Option<Receiver<Morsel>>,
-            distributor_channel::Sender<D>,
-        )>,
-        Vec<Receiver<(PhaseOutcome, distributor_channel::Receiver<D>, Inserter<L>)>>,
-        Receiver<(PhaseOutcome, Linearizer<L>)>,
-    )
-    where
-        D: Send + Sync + 'static,
-        L: Send + Sync + Ord + 'static,
-    {
-        let (mut tx_linearizer, rx_linearizer) = connector();
-        let (mut rx_senders, rx_receivers) = (0..self.num_pipelines)
-            .map(|_| connector())
-            .collect::<(Vec<_>, Vec<_>)>();
-        let (mut tx_end, rx_end) = connector();
-        let handle = spawn(TaskPriority::High, async move {
-            let mut outcomes = Vec::with_capacity(self.num_pipelines + 2);
-            let wg = WaitGroup::default();
+/// Spawn a task that linearizes and buffers morsels until a given a maximum chunk size is reached
+/// and then distributes the columns amongst worker tasks.
+fn buffer_and_distribute_columns_task(
+    mut rx: Receiver<Morsel>,
+    mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
+    chunk_size: usize,
+    schema: SchemaRef,
+) -> JoinHandle<PolarsResult<()>> {
+    spawn(TaskPriority::High, async move {
+        let mut seq = 0usize;
+        let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
-            let mut stop = false;
-            while !stop {
-                let input = self.recv.recv().await;
-                stop |= input.is_err(); // We want to send one last message without receiver when
-                                        // the channel is dropped. This allows us to flush buffers.
-                let (phase_outcome, receiver) = match input {
-                    Ok((outcome, port)) => (Some(outcome), Some(port.serial())),
-                    Err(()) => (None, None),
-                };
+        while let Ok(morsel) = rx.recv().await {
+            let (df, _, _, consume_token) = morsel.into_inner();
+            // @NOTE: This also performs schema validation.
+            buffer.vstack_mut(&df)?;
 
-                let (dist_tx, dist_rxs) = distributor_channel::distributor_channel::<D>(
-                    self.num_pipelines,
-                    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
-                );
-                let (linearizer, senders) =
-                    Linearizer::<L>::new(self.num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
+            while buffer.height() >= chunk_size {
+                let df;
+                (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
-                let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
-                if tx_linearizer
-                    .send((outcome, receiver, dist_tx))
-                    .await
-                    .is_err()
-                {
-                    return Ok(());
-                }
-                outcomes.push(token);
-                for ((dist_rx, rx_sender), sender) in
-                    dist_rxs.into_iter().zip(rx_senders.iter_mut()).zip(senders)
-                {
-                    let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
-                    if rx_sender.send((outcome, dist_rx, sender)).await.is_err() {
-                        return Ok(());
-                    }
-                    outcomes.push(token);
-                }
-                let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
-                if tx_end.send((outcome, linearizer)).await.is_err() {
-                    return Ok(());
-                }
-                outcomes.push(token);
-
-                wg.wait().await;
-                for outcome in &outcomes {
-                    if outcome.did_finish() {
+                for (i, column) in df.take_columns().into_iter().enumerate() {
+                    if dist_tx.send((seq, i, column)).await.is_err() {
                         return Ok(());
                     }
                 }
-
-                if let Some(outcome) = phase_outcome {
-                    outcome.stopped()
-                }
-                outcomes.clear();
+                seq += 1;
             }
+            drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
+                                 // morsel has started encoding in its entirety. This still
+                                 // allows for parallelism of Morsels, but prevents large
+                                 // bunches of Morsels from stacking up here.
+        }
 
-            Ok(())
-        });
+        // Flush the remaining rows.
+        assert!(buffer.height() <= chunk_size);
+        for (i, column) in buffer.take_columns().into_iter().enumerate() {
+            if dist_tx.send((seq, i, column)).await.is_err() {
+                return Ok(());
+            }
+        }
 
-        (handle, rx_linearizer, rx_receivers, rx_end)
-    }
+        PolarsResult::Ok(())
+    })
 }
 
 pub trait SinkNode {
