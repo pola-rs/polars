@@ -47,6 +47,10 @@ use crate::frame::cached_arenas::CachedArena;
 use crate::physical_plan::streaming::insert_streaming_nodes;
 use crate::prelude::*;
 
+// Function called after logical plan optimization that can potentially change the plan.
+type PostOptFn =
+    Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>, Option<std::time::Duration>) -> PolarsResult<()>;
+
 pub trait IntoLazy {
     fn lazy(self) -> LazyFrame;
 }
@@ -668,18 +672,23 @@ impl LazyFrame {
     fn prepare_collect_post_opt<P>(
         mut self,
         check_sink: bool,
-        post_opt: P,
-    ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)>
-    where
-        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
-    {
+        query_start: Option<std::time::Instant>,
+        post_opt: PostOptFn,
+    ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
 
         let mut scratch = vec![];
         let lp_top =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
 
-        post_opt(lp_top, &mut lp_arena, &mut expr_arena)?;
+        post_opt(
+            lp_top,
+            &mut lp_arena,
+            &mut expr_arena,
+            // Post optimization callback gets the time since the
+            // query was started as its "base" timepoint.
+            query_start.map(|s| s.elapsed()),
+        )?;
 
         // sink should be replaced
         let no_file_sink = if check_sink {
@@ -694,11 +703,9 @@ impl LazyFrame {
     }
 
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
-    pub fn _collect_post_opt<P>(self, post_opt: P) -> PolarsResult<DataFrame>
-    where
-        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
-    {
-        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
+    pub fn _collect_post_opt<P>(self, post_opt: PostOptFn) -> PolarsResult<DataFrame> {
+        let (mut state, mut physical_plan, _) =
+            self.prepare_collect_post_opt(false, None, post_opt)?;
         physical_plan.execute(&mut state)
     }
 
@@ -706,8 +713,9 @@ impl LazyFrame {
     fn prepare_collect(
         self,
         check_sink: bool,
+        query_start: Option<std::time::Instant>,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        self.prepare_collect_post_opt(check_sink, |_, _, _| Ok(()))
+        self.prepare_collect_post_opt(check_sink, query_start, |_, _, _, _| Ok(()))
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
@@ -745,7 +753,19 @@ impl LazyFrame {
             physical_plan.execute(&mut state)
         }
         #[cfg(not(feature = "new_streaming"))]
-        self._collect_post_opt(|_, _, _| Ok(()))
+        self._collect_post_opt(|_, _, _, _| Ok(()))
+    }
+
+    // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
+    // This version does profiling of the node execution.
+    pub fn _profile_post_opt<P>(self, post_opt: PostOptFn) -> PolarsResult<(DataFrame, DataFrame)> {
+        let query_start = std::time::Instant::now();
+        let (mut state, mut physical_plan, _) =
+            self.prepare_collect_post_opt(false, Some(query_start), post_opt)?;
+        state.time_nodes(query_start);
+        let out = physical_plan.execute(&mut state)?;
+        let timer_df = state.finish_timer()?;
+        Ok((out, timer_df))
     }
 
     /// Profile a LazyFrame.
@@ -756,11 +776,7 @@ impl LazyFrame {
     ///
     /// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
-        state.time_nodes();
-        let out = physical_plan.execute(&mut state)?;
-        let timer_df = state.finish_timer()?;
-        Ok((out, timer_df))
+        self._profile_post_opt(|_, _, _, _| Ok(()))
     }
 
     /// Stream a query result into a parquet file. This is useful if the final result doesn't fit
@@ -919,7 +935,7 @@ impl LazyFrame {
             payload,
         };
         self.opt_state |= OptFlags::STREAMING;
-        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true, None)?;
         polars_ensure!(
             is_streaming,
             ComputeError: format!("cannot run the whole query in a streaming order; \
