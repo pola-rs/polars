@@ -14,7 +14,6 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use super::mem_prefetch_funcs;
 use super::row_group_decode::SharedFileState;
 use crate::utils::task_handles_ext;
 
@@ -161,70 +160,70 @@ impl RowGroupDataFetcher {
                 let current_max_row_group_height = self.current_max_row_group_height;
 
                 let handle = io_runtime.spawn(async move {
-                    let fetched_bytes = if let DynByteSource::MemSlice(mem_slice) =
-                        current_byte_source.as_ref()
-                    {
-                        // Skip byte range calculation for `no_prefetch`.
-                        if memory_prefetch_func as usize != mem_prefetch_funcs::no_prefetch as usize
-                        {
-                            let slice = mem_slice.0.as_ref();
+                    let fetched_bytes =
+                        if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
+                            // Skip byte range calculation for `no_prefetch`.
+                            if memory_prefetch_func as usize
+                                != polars_utils::mem::prefetch::no_prefetch as usize
+                            {
+                                let slice = mem_slice.0.as_ref();
 
-                            if let Some(columns) = projection.as_ref() {
-                                for range in get_row_group_byte_ranges_for_projection(
-                                    &row_group_metadata,
-                                    columns.as_ref(),
-                                ) {
+                                if let Some(columns) = projection.as_ref() {
+                                    for range in get_row_group_byte_ranges_for_projection(
+                                        &row_group_metadata,
+                                        columns.as_ref(),
+                                    ) {
+                                        memory_prefetch_func(unsafe { slice.get_unchecked(range) })
+                                    }
+                                } else {
+                                    let range = row_group_metadata.full_byte_range();
+                                    let range = range.start as usize..range.end as usize;
+
                                     memory_prefetch_func(unsafe { slice.get_unchecked(range) })
-                                }
-                            } else {
-                                let range = row_group_metadata.full_byte_range();
-                                let range = range.start as usize..range.end as usize;
+                                };
+                            }
 
-                                memory_prefetch_func(unsafe { slice.get_unchecked(range) })
-                            };
-                        }
-
-                        // We have a mmapped or in-memory slice representing the entire
-                        // file that can be sliced directly, so we can skip the byte-range
-                        // calculations and HashMap allocation.
-                        let mem_slice = mem_slice.0.clone();
-                        FetchedBytes::MemSlice {
-                            offset: 0,
-                            mem_slice,
-                        }
-                    } else if let Some(columns) = projection.as_ref() {
-                        let mut ranges = get_row_group_byte_ranges_for_projection(
-                            &row_group_metadata,
-                            columns.as_ref(),
-                        )
-                        .collect::<Vec<_>>();
-
-                        let n_ranges = ranges.len();
-
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
-
-                        assert_eq!(bytes_map.len(), n_ranges);
-
-                        FetchedBytes::BytesMap(bytes_map)
-                    } else {
-                        // We still prefer `get_ranges()` over a single `get_range()` for downloading
-                        // the entire row group, as it can have less memory-copying. A single `get_range()`
-                        // would naively concatenate the memory blocks of the entire row group, while
-                        // `get_ranges()` can skip concatenation since the downloaded blocks are
-                        // aligned to the columns.
-                        let mut ranges = row_group_metadata
-                            .byte_ranges_iter()
-                            .map(|x| x.start as usize..x.end as usize)
+                            // We have a mmapped or in-memory slice representing the entire
+                            // file that can be sliced directly, so we can skip the byte-range
+                            // calculations and HashMap allocation.
+                            let mem_slice = mem_slice.0.clone();
+                            FetchedBytes::MemSlice {
+                                offset: 0,
+                                mem_slice,
+                            }
+                        } else if let Some(columns) = projection.as_ref() {
+                            let mut ranges = get_row_group_byte_ranges_for_projection(
+                                &row_group_metadata,
+                                columns.as_ref(),
+                            )
                             .collect::<Vec<_>>();
 
-                        let n_ranges = ranges.len();
+                            let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
 
-                        assert_eq!(bytes_map.len(), n_ranges);
+                            assert_eq!(bytes_map.len(), n_ranges);
 
-                        FetchedBytes::BytesMap(bytes_map)
-                    };
+                            FetchedBytes::BytesMap(bytes_map)
+                        } else {
+                            // We still prefer `get_ranges()` over a single `get_range()` for downloading
+                            // the entire row group, as it can have less memory-copying. A single `get_range()`
+                            // would naively concatenate the memory blocks of the entire row group, while
+                            // `get_ranges()` can skip concatenation since the downloaded blocks are
+                            // aligned to the columns.
+                            let mut ranges = row_group_metadata
+                                .byte_ranges_iter()
+                                .map(|x| x.start as usize..x.end as usize)
+                                .collect::<Vec<_>>();
+
+                            let n_ranges = ranges.len();
+
+                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+
+                            assert_eq!(bytes_map.len(), n_ranges);
+
+                            FetchedBytes::BytesMap(bytes_map)
+                        };
 
                     PolarsResult::Ok(RowGroupData {
                         fetched_bytes,

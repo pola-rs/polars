@@ -253,15 +253,7 @@ impl<'a> CoreJsonReader<'a> {
 
     fn count(mut self) -> PolarsResult<usize> {
         let bytes = self.reader_bytes.take().unwrap();
-        let n_threads = self.n_threads.unwrap_or(POOL.current_num_threads());
-        let file_chunks = get_file_chunks_json(bytes.as_ref(), n_threads);
-
-        let iter = file_chunks.par_iter().map(|(start_pos, stop_at_nbytes)| {
-            let bytes = &bytes[*start_pos..*stop_at_nbytes];
-            let iter = json_lines(bytes);
-            iter.count()
-        });
-        Ok(POOL.install(|| iter.sum()))
+        Ok(super::count_rows_par(&bytes))
     }
 
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
@@ -304,13 +296,11 @@ impl<'a> CoreJsonReader<'a> {
             file_chunks
                 .into_par_iter()
                 .map(|(start_pos, stop_at_nbytes)| {
-                    let mut buffers = init_buffers(&self.schema, capacity, self.ignore_errors)?;
-                    parse_lines(&bytes[start_pos..stop_at_nbytes], &mut buffers)?;
-                    let mut local_df = DataFrame::new(
-                        buffers
-                            .into_values()
-                            .map(|buf| buf.into_series().into_column())
-                            .collect::<_>(),
+                    let mut local_df = parse_ndjson(
+                        &bytes[start_pos..stop_at_nbytes],
+                        Some(capacity),
+                        &self.schema,
+                        self.ignore_errors,
                     )?;
 
                     let prepredicate_height = local_df.height() as IdxSize;
@@ -394,7 +384,7 @@ struct Scratch {
     buffers: simd_json::Buffers,
 }
 
-fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+pub fn json_lines(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     // This previously used `serde_json`'s `RawValue` to deserialize chunks without really deserializing them.
     // However, this convenience comes at a cost. serde_json allocates and parses and does UTF-8 validation, all
     // things we don't need since we use simd_json for them. Also, `serde_json::StreamDeserializer` has a more
@@ -415,6 +405,41 @@ fn parse_lines(bytes: &[u8], buffers: &mut PlIndexMap<BufferKey, Buffer>) -> Pol
         parse_impl(bytes, buffers, &mut scratch)?;
     }
     Ok(())
+}
+
+pub fn parse_ndjson(
+    bytes: &[u8],
+    n_rows_hint: Option<usize>,
+    schema: &Schema,
+    ignore_errors: bool,
+) -> PolarsResult<DataFrame> {
+    let capacity = n_rows_hint.unwrap_or_else(|| {
+        // Default to total len divided by max len of first and last non-empty lines or 1.
+        bytes
+            .split(|&c| c == b'\n')
+            .find(|x| !x.is_empty())
+            .map_or(1, |x| {
+                bytes.len().div_ceil(
+                    x.len().max(
+                        bytes
+                            .rsplit(|&c| c == b'\n')
+                            .find(|x| !x.is_empty())
+                            .unwrap()
+                            .len(),
+                    ),
+                )
+            })
+    });
+
+    let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
+    parse_lines(bytes, &mut buffers)?;
+
+    DataFrame::new(
+        buffers
+            .into_values()
+            .map(|buf| buf.into_series().into_column())
+            .collect::<_>(),
+    )
 }
 
 /// Find the nearest next line position.
