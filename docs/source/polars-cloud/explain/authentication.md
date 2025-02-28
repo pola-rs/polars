@@ -1,4 +1,4 @@
-# Authentication
+# Logging in 
 
 Polars cloud allows authentication through short-lived authentication tokens. There are two ways you
 can obtain an access token:

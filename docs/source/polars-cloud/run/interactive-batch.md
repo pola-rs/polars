@@ -1,4 +1,4 @@
-# Run in interactive or batch mode
+# Interactive or batch mode
 
 In Polars Cloud a user can define two types of compute modes: batch & interactive. Batch mode is
 designed for job-style queries. These kinds of queries are typically scheduled and run once in a
@@ -31,11 +31,7 @@ The query you execute in batch mode runs in your cloud environment. The data and
 query are not sent to Polars Cloud, ensuring that your data and output remain secure.
 
 ```python
-print(lf.remote(ctx).sink_parquet("s3://bucket/output.parquet"))
-```
-
-```text
-<polars_cloud.query.query.BatchQuery object at 0x124e0d910>
+lf.remote(ctx).sink_parquet("s3://bucket/output.parquet")
 ```
 
 ## Interactive
@@ -45,23 +41,22 @@ a more ad-hoc nature that evolves as insights are discovered. It is often used b
 explore new features for their models or by data analysts to uncover patterns.
 
 The difference with batch data workflows is that the user expects a shorter feedback cycle, as they
-want to inspect the result and continue their exploration. Polars Cloud supports this interactive
-workflow by supporting an interactive mode. In this mode, users can start one or more compute
-machine(s) to explore larger datasets that do not fit on their local development machine.
+want to inspect the result and continue their exploration. Polars Cloud supports this 
+workflow with interactive mode. In interactive mode you directly communicate with the compute nodes. 
 
 Because this mode will is used for exploratory use cases and short feedback cycles, the queries are
 not logged to Polars Cloud and will not be available for later inspection.
 
 {{code_block('polars-cloud/interactive-batch','interactive',['ComputeContext'])}}
 
-The initial query remaims the same. In the compute context the parameter `interactive` should be set
+The initial query remains the same. In the compute context the parameter `interactive` should be set
 to `True`.
 
 When calling `.collect()` on your remote query execution, the output is written to a temporary
-folder in S3. These intermediate result files are automatically deleted after several hours. You can
+location. These intermediate result files are automatically deleted after several hours. You can
 see the location of this folder when printing the query results.
 
-Users can call `.lazy()` on the result and continu working with the previous result.
+Users can call `.lazy()` on the result and continue working with the previous result.
 
 ```python
 print(res1)

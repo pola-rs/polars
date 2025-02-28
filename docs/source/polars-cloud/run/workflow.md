@@ -144,8 +144,8 @@ head:
 └───────────────┴─────────────┴──────────┴───────────┴────────────────────┴───────────┘
 ```
 
-We can call `.collect()` instead of `.sink_parquet()`. This will write your results to a temporary
-folder in your S3 environment, which is used to retrieve the intermediate results.
+We can call `.collect()` instead of `.sink_parquet()`. This will write store your results to a temporary location which can be used to further iterate upon.
+To continue on the result from `collect` simply call `lazy` and you can get back a `LazyFrame` for further analysis.
 
 ```python
 res2 = (
@@ -155,4 +155,4 @@ res2 = (
 )
 ```
 
-The results of your interactive workflow can be written to S3 to be used downstream.
+Finally, the results of your interactive workflow can be written to S3.

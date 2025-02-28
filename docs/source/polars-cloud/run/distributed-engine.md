@@ -11,13 +11,13 @@ significantly reduced, allowing users to process at scale.
 <!-- dprint-ignore-start -->
 
 !!! info "Distributed engine is in early stage"
-The distributed engine is actively being developed and is labeled unstable. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Many operations are either unsupported or not yet optimized. Major performance improvements will be introduced in the near future.
+    The distributed engine is actively being developed and is labeled unstable. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Many operations are either unsupported or not yet optimized. Major performance improvements will be introduced in the near future.
 
 <!-- dprint-ignore-end-->
 
 ## Using distributed engine
 
-To execute queries using the distributed engine, users can call `distributed()`.
+To execute queries using the distributed engine, you can call `distributed()`.
 
 ```python
 lf: LazyFrame
