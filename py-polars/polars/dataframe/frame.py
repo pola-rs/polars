@@ -4293,18 +4293,23 @@ class DataFrame:
             msg = f"unrecognised connection type {connection!r}"
             raise TypeError(msg)
 
+    @unstable()
     def write_iceberg(
         self,
-        table: pyiceberg.table.Table,
+        target: str | pyiceberg.table.Table,
         mode: Literal["append", "overwrite"],
     ) -> None:
         """
         Write DataFrame to an Iceberg table.
 
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
         Parameters
         ----------
-        table
-            The pyiceberg.table.Table object representing an Iceberg table.
+        target
+            Name of the table or the Table object representing an Iceberg table.
         mode : {'append', 'overwrite'}
             How to handle existing data.
 
@@ -4312,7 +4317,15 @@ class DataFrame:
             - If 'overwrite', will replace table with new data.
 
         """
-        data = self.to_arrow()
+        from pyiceberg.catalog import load_catalog
+
+        if isinstance(target, str):
+            catalog = load_catalog()
+            table = catalog.load_table(target)
+        else:
+            table = target
+
+        data = self.to_arrow(compat_level=CompatLevel.oldest())
 
         if mode == "append":
             table.append(data)

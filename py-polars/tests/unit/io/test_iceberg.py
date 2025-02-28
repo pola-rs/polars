@@ -191,12 +191,15 @@ class TestIcebergExpressions:
 @pytest.mark.slow
 @pytest.mark.write_disk
 @pytest.mark.filterwarnings("ignore:Delete operation did not match any records")
+@pytest.mark.filterwarnings(
+    "ignore:Iceberg does not have a dictionary type. <class 'pyarrow.lib.DictionaryType'> will be inferred as large_string on read."
+)
 def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
     from pyiceberg.catalog.sql import SqlCatalog
 
     # time64[ns] type is currently not supported in pyiceberg.
     # https://github.com/apache/iceberg-python/issues/1169
-    df = df.drop("time")
+    df = df.drop("time", "cat", "enum")
 
     # in-memory catalog
     catalog = SqlCatalog(
@@ -210,13 +213,14 @@ def test_write_iceberg(df: pl.DataFrame, tmp_path: Path) -> None:
 
     df.write_iceberg(table, mode="overwrite")
     actual = pl.scan_iceberg(table).collect()
+    print(df, actual)
 
-    # Enum & Categorical types are not currently supported in pyiceberg.
-    assert_frame_equal(df, actual, check_dtypes=False)
+    assert_frame_equal(df, actual)
 
     # append on top of already written data, expecting twice the data
     df.write_iceberg(table, mode="append")
     # double the `df` by vertically stacking the dataframe on top of itself
     expected = df.vstack(df)
     actual = pl.scan_iceberg(table).collect()
+    print(expected, actual)
     assert_frame_equal(expected, actual, check_dtypes=False)
