@@ -174,7 +174,7 @@ fn replace_by_multiple(
         JoinArgs {
             how: JoinType::Left,
             coalesce: JoinCoalesce::CoalesceColumns,
-            join_nulls: true,
+            nulls_equal: true,
             ..Default::default()
         },
         None,
@@ -216,7 +216,7 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
         JoinArgs {
             how: JoinType::Left,
             coalesce: JoinCoalesce::CoalesceColumns,
-            join_nulls: true,
+            nulls_equal: true,
             ..Default::default()
         },
         None,

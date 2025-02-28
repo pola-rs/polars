@@ -7495,6 +7495,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
     def join(
         self,
         other: DataFrame,
@@ -7505,7 +7506,7 @@ class DataFrame:
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
-        join_nulls: bool = False,
+        nulls_equal: bool = False,
         coalesce: bool | None = None,
         maintain_order: MaintainOrderJoin | None = None,
     ) -> DataFrame:
@@ -7560,7 +7561,7 @@ class DataFrame:
             .. note::
                 This is currently not supported by the streaming engine.
 
-        join_nulls
+        nulls_equal
             Join on null values. By default null values will never produce matches.
         coalesce
             Coalescing behavior (merging of join columns).
@@ -7716,7 +7717,7 @@ class DataFrame:
                 how=how,
                 suffix=suffix,
                 validate=validate,
-                join_nulls=join_nulls,
+                nulls_equal=nulls_equal,
                 coalesce=coalesce,
                 maintain_order=maintain_order,
             )

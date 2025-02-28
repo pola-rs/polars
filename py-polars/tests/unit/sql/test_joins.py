@@ -699,24 +699,24 @@ ON left.a = right.a
         )
 
 
-def test_join_nulls_19624() -> None:
+def test_nulls_equal_19624() -> None:
     df1 = pl.DataFrame({"a": [1, 2, None, None]})
     df2 = pl.DataFrame({"a": [1, 1, 2, 2, None], "b": [0, 1, 2, 3, 4]})
 
     # left join
-    result_df = df1.join(df2, how="left", on="a", join_nulls=False, validate="1:m")
+    result_df = df1.join(df2, how="left", on="a", nulls_equal=False, validate="1:m")
     expected_df = pl.DataFrame(
         {"a": [1, 1, 2, 2, None, None], "b": [0, 1, 2, 3, None, None]}
     )
     assert_frame_equal(result_df, expected_df)
-    result_df = df2.join(df1, how="left", on="a", join_nulls=False, validate="m:1")
+    result_df = df2.join(df1, how="left", on="a", nulls_equal=False, validate="m:1")
     expected_df = pl.DataFrame({"a": [1, 1, 2, 2, None], "b": [0, 1, 2, 3, 4]})
     assert_frame_equal(result_df, expected_df)
 
     # inner join
-    result_df = df1.join(df2, how="inner", on="a", join_nulls=False, validate="1:m")
+    result_df = df1.join(df2, how="inner", on="a", nulls_equal=False, validate="1:m")
     expected_df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [0, 1, 2, 3]})
     assert_frame_equal(result_df, expected_df)
-    result_df = df2.join(df1, how="inner", on="a", join_nulls=False, validate="m:1")
+    result_df = df2.join(df1, how="inner", on="a", nulls_equal=False, validate="m:1")
     expected_df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [0, 1, 2, 3]})
     assert_frame_equal(result_df, expected_df)

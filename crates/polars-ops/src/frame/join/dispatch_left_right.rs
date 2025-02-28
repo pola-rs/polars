@@ -79,8 +79,13 @@ pub fn materialize_left_join_from_series(
         s_right = s_right.rechunk();
     }
 
-    let (left_idx, right_idx) =
-        sort_or_hash_left(&s_left, &s_right, verbose, args.validation, args.join_nulls)?;
+    let (left_idx, right_idx) = sort_or_hash_left(
+        &s_left,
+        &s_right,
+        verbose,
+        args.validation,
+        args.nulls_equal,
+    )?;
 
     let right = if let Some(drop_names) = drop_names {
         right.drop_many(drop_names)

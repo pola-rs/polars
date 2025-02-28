@@ -145,10 +145,10 @@ def test_join_null_matches(streaming: bool) -> None:
         }
     )
     # Semi
-    assert df_a.join(df_b, on="a", how="semi", join_nulls=True).collect(
+    assert df_a.join(df_b, on="a", how="semi", nulls_equal=True).collect(
         streaming=streaming
     )["idx_a"].to_list() == [0, 1, 2]
-    assert df_a.join(df_b, on="a", how="semi", join_nulls=False).collect(
+    assert df_a.join(df_b, on="a", how="semi", nulls_equal=False).collect(
         streaming=streaming
     )["idx_a"].to_list() == [1, 2]
 

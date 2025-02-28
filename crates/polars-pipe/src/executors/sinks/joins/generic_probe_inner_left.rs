@@ -47,7 +47,7 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     /// cached output names
     output_names: Option<Vec<PlSmallStr>>,
     args: JoinArgs,
-    join_nulls: bool,
+    nulls_equal: bool,
     row_values: RowValues,
 }
 
@@ -66,7 +66,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         amortized_hashes: Vec<u64>,
         context: &PExecutionContext,
         args: JoinArgs,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> Self {
         if swapped_or_left && args.should_coalesce() {
             let tmp = DataChunk {
@@ -100,7 +100,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
             swapped_or_left,
             output_names: None,
             args,
-            join_nulls,
+            nulls_equal,
             row_values: RowValues::new(join_columns_right, !swapped_or_left),
         }
     }
@@ -188,10 +188,10 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_left(iter);
         } else {
@@ -253,10 +253,10 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_inner(iter);
         } else {

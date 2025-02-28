@@ -247,7 +247,7 @@ fn visualize_plan_rec(
                 escape_graphviz(&format!("{:?}", args.how))
             )
             .unwrap();
-            if args.join_nulls {
+            if args.nulls_equal {
                 write!(label, r"\njoin-nulls").unwrap();
             }
             (label, &[*input_left, *input_right][..])
