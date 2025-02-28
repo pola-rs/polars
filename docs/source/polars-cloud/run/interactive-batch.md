@@ -41,8 +41,8 @@ a more ad-hoc nature that evolves as insights are discovered. It is often used b
 explore new features for their models or by data analysts to uncover patterns.
 
 The difference with batch data workflows is that the user expects a shorter feedback cycle, as they
-want to inspect the result and continue their exploration. Polars Cloud supports this 
-workflow with interactive mode. In interactive mode you directly communicate with the compute nodes. 
+want to inspect the result and continue their exploration. Polars Cloud supports this workflow with
+interactive mode. In interactive mode you directly communicate with the compute nodes.
 
 Because this mode will is used for exploratory use cases and short feedback cycles, the queries are
 not logged to Polars Cloud and will not be available for later inspection.
@@ -53,8 +53,8 @@ The initial query remains the same. In the compute context the parameter `intera
 to `True`.
 
 When calling `.collect()` on your remote query execution, the output is written to a temporary
-location. These intermediate result files are automatically deleted after several hours. You can
-see the location of this folder when printing the query results.
+location. These intermediate result files are automatically deleted after several hours. You can see
+the location of this folder when printing the query results.
 
 Users can call `.lazy()` on the result and continue working with the previous result.
 

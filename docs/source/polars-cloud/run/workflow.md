@@ -144,8 +144,9 @@ head:
 └───────────────┴─────────────┴──────────┴───────────┴────────────────────┴───────────┘
 ```
 
-We can call `.collect()` instead of `.sink_parquet()`. This will write store your results to a temporary location which can be used to further iterate upon.
-To continue on the result from `collect` simply call `lazy` and you can get back a `LazyFrame` for further analysis.
+We can call `.collect()` instead of `.sink_parquet()`. This will write store your results to a
+temporary location which can be used to further iterate upon. To continue on the result from
+`collect` simply call `lazy` and you can get back a `LazyFrame` for further analysis.
 
 ```python
 res2 = (
