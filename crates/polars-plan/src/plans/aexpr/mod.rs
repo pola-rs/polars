@@ -1,14 +1,18 @@
+mod evaluate;
 #[cfg(feature = "cse")]
 mod hash;
+mod minterm_iter;
+pub mod predicates;
 mod scalar;
 mod schema;
 mod traverse;
-mod utils;
 
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "cse")]
 pub(super) use hash::traverse_and_hash_aexpr;
+pub use minterm_iter::MintermIter;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::prelude::*;
 use polars_core::utils::{get_time_units, try_get_supertype};
@@ -18,7 +22,8 @@ pub use scalar::is_scalar_ae;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 pub use traverse::*;
-pub use utils::*;
+mod properties;
+pub use properties::*;
 
 use crate::constants::LEN;
 use crate::plans::Context;
@@ -44,9 +49,10 @@ pub enum IRAggExpr {
     Quantile {
         expr: Node,
         quantile: Node,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Sum(Node),
+    // include_nulls
     Count(Node, bool),
     Std(Node, u8),
     Var(Node, u8),
@@ -60,7 +66,9 @@ impl Hash for IRAggExpr {
             Self::Min { propagate_nans, .. } | Self::Max { propagate_nans, .. } => {
                 propagate_nans.hash(state)
             },
-            Self::Quantile { interpol, .. } => interpol.hash(state),
+            Self::Quantile {
+                method: interpol, ..
+            } => interpol.hash(state),
             Self::Std(_, v) | Self::Var(_, v) => v.hash(state),
             _ => {},
         }
@@ -88,7 +96,7 @@ impl IRAggExpr {
                     propagate_nans: r, ..
                 },
             ) => l == r,
-            (Quantile { interpol: l, .. }, Quantile { interpol: r, .. }) => l == r,
+            (Quantile { method: l, .. }, Quantile { method: r, .. }) => l == r,
             (Std(_, l), Std(_, r)) => l == r,
             (Var(_, l), Var(_, r)) => l == r,
             _ => std::mem::discriminant(self) == std::mem::discriminant(other),
@@ -174,7 +182,7 @@ pub enum AExpr {
     },
     AnonymousFunction {
         input: Vec<ExprIR>,
-        function: SpecialEq<Arc<dyn SeriesUdf>>,
+        function: OpaqueColumnUdf,
         output_type: GetOutput,
         options: FunctionOptions,
     },
@@ -182,7 +190,7 @@ pub enum AExpr {
         /// Function arguments
         /// Some functions rely on aliases,
         /// for instance assignment of struct fields.
-        /// Therefor we need `[ExprIr]`.
+        /// Therefor we need [`ExprIr`].
         input: Vec<ExprIR>,
         /// function to apply
         function: FunctionExpr,
@@ -208,37 +216,6 @@ impl AExpr {
     pub(crate) fn col(name: PlSmallStr) -> Self {
         AExpr::Column(name)
     }
-    /// Any expression that is sensitive to the number of elements in a group
-    /// - Aggregations
-    /// - Sorts
-    /// - Counts
-    /// - ..
-    pub(crate) fn groups_sensitive(&self) -> bool {
-        use AExpr::*;
-        match self {
-            Function { options, .. } | AnonymousFunction { options, .. } => {
-                options.is_groups_sensitive()
-            }
-            Sort { .. }
-            | SortBy { .. }
-            | Agg { .. }
-            | Window { .. }
-            | Len
-            | Slice { .. }
-            | Gather { .. }
-             => true,
-            Alias(_, _)
-            | Explode(_)
-            | Column(_)
-            | Literal(_)
-            // a caller should traverse binary and ternary
-            // to determine if the whole expr. is group sensitive
-            | BinaryExpr { .. }
-            | Ternary { .. }
-            | Cast { .. }
-            | Filter { .. } => false,
-        }
-    }
 
     /// This should be a 1 on 1 copy of the get_type method of Expr until Expr is completely phased out.
     pub fn get_type(
@@ -249,9 +226,5 @@ impl AExpr {
     ) -> PolarsResult<DataType> {
         self.to_field(schema, ctxt, arena)
             .map(|f| f.dtype().clone())
-    }
-
-    pub(crate) fn is_leaf(&self) -> bool {
-        matches!(self, AExpr::Column(_) | AExpr::Literal(_) | AExpr::Len)
     }
 }

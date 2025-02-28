@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use apache_avro::types::{Record, Value};
 use apache_avro::{Codec, Days, Duration, Millis, Months, Schema as AvroSchema, Writer};
 use arrow::array::*;
@@ -110,19 +112,23 @@ pub(super) fn data() -> RecordBatchT<Box<dyn Array>> {
         array.into_box(),
         StructArray::new(
             ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 2.0]).boxed()],
             None,
         )
         .boxed(),
         StructArray::new(
             ArrowDataType::Struct(vec![Field::new("e".into(), ArrowDataType::Float64, false)]),
+            2,
             vec![PrimitiveArray::<f64>::from_slice([1.0, 0.0]).boxed()],
             Some([true, false].into()),
         )
         .boxed(),
     ];
 
-    RecordBatchT::try_new(columns).unwrap()
+    let (_, schema) = schema();
+
+    RecordBatchT::try_new(2, Arc::new(schema), columns).unwrap()
 }
 
 pub(super) fn write_avro(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
@@ -248,7 +254,7 @@ fn read_snappy() -> PolarsResult<()> {
 #[test]
 fn test_projected() -> PolarsResult<()> {
     let expected = data();
-    let (_, expected_schema) = schema();
+    let expected_schema = expected.schema();
 
     let avro = write_avro(Codec::Null).unwrap();
 
@@ -256,14 +262,21 @@ fn test_projected() -> PolarsResult<()> {
         let mut projection = vec![false; expected_schema.len()];
         projection[i] = true;
 
-        let expected = expected
+        let length = expected.first().map_or(0, |arr| arr.len());
+        let (expected_schema_2, expected_arrays) = expected.clone().into_schema_and_arrays();
+        let expected_schema_2 = expected_schema_2
+            .as_ref()
             .clone()
-            .into_arrays()
             .into_iter()
             .zip(projection.iter())
             .filter_map(|x| if *x.1 { Some(x.0) } else { None })
             .collect();
-        let expected = RecordBatchT::new(expected);
+        let expected_arrays = expected_arrays
+            .into_iter()
+            .zip(projection.iter())
+            .filter_map(|x| if *x.1 { Some(x.0) } else { None })
+            .collect();
+        let expected = RecordBatchT::new(length, Arc::new(expected_schema_2), expected_arrays);
 
         let expected_schema = expected_schema
             .clone()
@@ -324,9 +337,11 @@ pub(super) fn data_list() -> RecordBatchT<Box<dyn Array>> {
     );
     array.try_extend(data).unwrap();
 
+    let length = array.len();
+    let (_, schema) = schema_list();
     let columns = vec![array.into_box()];
 
-    RecordBatchT::try_new(columns).unwrap()
+    RecordBatchT::try_new(length, Arc::new(schema), columns).unwrap()
 }
 
 pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
@@ -352,11 +367,11 @@ pub(super) fn write_list(codec: Codec) -> Result<Vec<u8>, apache_avro::Error> {
 fn test_list() -> PolarsResult<()> {
     let avro = write_list(Codec::Null).unwrap();
     let expected = data_list();
-    let (_, expected_schema) = schema_list();
+    let expected_schema = expected.schema();
 
     let (result, schema) = read_avro(&avro, None)?;
 
-    assert_eq!(schema, expected_schema);
+    assert_eq!(&schema, expected_schema);
     assert_eq!(result, expected);
     Ok(())
 }

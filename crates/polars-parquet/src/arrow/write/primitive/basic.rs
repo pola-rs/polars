@@ -38,7 +38,7 @@ where
                 let mut iter = validity.iter();
                 let values = array.values().as_slice();
 
-                buffer.reserve(std::mem::size_of::<P::Bytes>() * (array.len() - null_count));
+                buffer.reserve(size_of::<P::Bytes>() * (array.len() - null_count));
 
                 let mut offset = 0;
                 let mut remaining_valid = array.len() - null_count;
@@ -61,7 +61,7 @@ where
         }
     }
 
-    buffer.reserve(std::mem::size_of::<P>() * array.len());
+    buffer.reserve(size_of::<P>() * array.len());
     buffer.extend(
         array
             .values()

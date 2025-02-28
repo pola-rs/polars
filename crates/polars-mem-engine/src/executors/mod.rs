@@ -8,6 +8,9 @@ mod group_by_partitioned;
 pub(super) mod group_by_rolling;
 mod hconcat;
 mod join;
+#[cfg(feature = "merge_sorted")]
+mod merge_sorted;
+mod multi_file_scan;
 mod projection;
 mod projection_simple;
 mod projection_utils;
@@ -39,6 +42,9 @@ pub(super) use self::group_by_partitioned::*;
 pub(super) use self::group_by_rolling::GroupByRollingExec;
 pub(super) use self::hconcat::*;
 pub(super) use self::join::*;
+#[cfg(feature = "merge_sorted")]
+pub(super) use self::merge_sorted::*;
+pub(super) use self::multi_file_scan::*;
 pub(super) use self::projection::*;
 pub(super) use self::projection_simple::*;
 pub(super) use self::scan::*;

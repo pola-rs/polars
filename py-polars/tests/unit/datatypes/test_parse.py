@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+import enum
 from datetime import date, datetime
 from typing import (
     TYPE_CHECKING,
     Any,
-    Dict,
     ForwardRef,
-    List,
     NamedTuple,
     Optional,
-    Tuple,
     Union,
 )
 
@@ -46,6 +44,27 @@ def test_parse_into_dtype(input: Any, expected: PolarsDataType) -> None:
     assert_dtype_equal(result, expected)
 
 
+def test_parse_into_dtype_enum_19724() -> None:
+    class PythonEnum(str, enum.Enum):
+        CAT1 = "A"
+        CAT2 = "B"
+        CAT3 = "C"
+
+    result = parse_into_dtype(PythonEnum)
+    expected = pl.Enum(["A", "B", "C"])
+    assert_dtype_equal(result, expected)
+
+
+def test_parse_into_dtype_enum_ints_19724() -> None:
+    class PythonEnum(int, enum.Enum):
+        CAT1 = 1
+        CAT2 = 2
+        CAT3 = 3
+
+    with pytest.raises(TypeError, match="Enum categories must be strings"):
+        parse_into_dtype(PythonEnum)
+
+
 @pytest.mark.parametrize(
     ("input", "expected"),
     [
@@ -63,9 +82,9 @@ def test_parse_py_type_into_dtype(input: Any, expected: PolarsDataType) -> None:
 @pytest.mark.parametrize(
     ("input", "expected"),
     [
-        (List[int], pl.List(pl.Int64())),
-        (Tuple[str, ...], pl.List(pl.String())),
-        (Tuple[datetime, datetime], pl.List(pl.Datetime("us"))),
+        (list[int], pl.List(pl.Int64())),
+        (tuple[str, ...], pl.List(pl.String())),
+        (tuple[datetime, datetime], pl.List(pl.Datetime("us"))),
     ],
 )
 def test_parse_generic_into_dtype(input: Any, expected: PolarsDataType) -> None:
@@ -76,9 +95,9 @@ def test_parse_generic_into_dtype(input: Any, expected: PolarsDataType) -> None:
 @pytest.mark.parametrize(
     "input",
     [
-        Dict[str, float],
-        Tuple[int, str],
-        Tuple[int, float, float],
+        dict[str, float],
+        tuple[int, str],
+        tuple[int, float, float],
     ],
 )
 def test_parse_generic_into_dtype_invalid(input: Any) -> None:

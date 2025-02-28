@@ -16,11 +16,9 @@ from itertools import count, zip_longest
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
-    AbstractSet,
     Any,
     Callable,
     ClassVar,
-    Iterator,
     Literal,
     NamedTuple,
     Union,
@@ -29,6 +27,8 @@ from typing import (
 from polars._utils.various import re_escape
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from collections.abc import Set as AbstractSet
     from dis import Instruction
 
     if sys.version_info >= (3, 10):
@@ -102,6 +102,7 @@ class OpNames:
         | set(SYNTHETIC)
         | LOAD_VALUES
     )
+    MATCHABLE_OPS = PARSEABLE_OPS | set(BINARY) | LOAD_ATTR | CALL
     UNARY_VALUES = frozenset(UNARY.values())
 
 
@@ -183,11 +184,15 @@ _PYTHON_METHODS_MAP = {
     "endswith": "str.ends_with",
     "lower": "str.to_lowercase",
     "lstrip": "str.strip_chars_start",
+    "removeprefix": "str.strip_prefix",
+    "removesuffix": "str.strip_suffix",
+    "replace": "str.replace",
     "rstrip": "str.strip_chars_end",
     "startswith": "str.starts_with",
     "strip": "str.strip_chars",
     "title": "str.to_titlecase",
     "upper": "str.to_uppercase",
+    "zfill": "str.zfill",
     # temporal
     "date": "dt.date",
     "isoweekday": "dt.weekday",
@@ -330,7 +335,7 @@ class BytecodeParser:
     _map_target_name: str | None = None
     _caller_variables: dict[str, Any] | None = None
 
-    def __init__(self, function: Callable[[Any], Any], map_target: MapTarget):
+    def __init__(self, function: Callable[[Any], Any], map_target: MapTarget) -> None:
         """
         Initialize BytecodeParser instance and prepare to introspect UDFs.
 
@@ -745,15 +750,22 @@ class RewrittenInstructions:
         instructions: Iterator[Instruction],
         function: Callable[[Any], Any],
         caller_variables: dict[str, Any] | None,
-    ):
+    ) -> None:
         self._function = function
         self._caller_variables = caller_variables
         self._original_instructions = list(instructions)
-        self._rewritten_instructions = self._rewrite(
-            self._upgrade_instruction(inst)
-            for inst in self._unpack_superinstructions(self._original_instructions)
-            if inst.opname not in self._ignored_ops
-        )
+
+        normalised_instructions = []
+
+        for inst in self._unpack_superinstructions(self._original_instructions):
+            if inst.opname not in self._ignored_ops:
+                if inst.opname not in OpNames.MATCHABLE_OPS:
+                    self._rewritten_instructions = []
+                    return
+                upgraded_inst = self._upgrade_instruction(inst)
+                normalised_instructions.append(upgraded_inst)
+
+        self._rewritten_instructions = self._rewrite(normalised_instructions)
 
     def __len__(self) -> int:
         return len(self._rewritten_instructions)
@@ -806,7 +818,7 @@ class RewrittenInstructions:
             return instructions
         return []
 
-    def _rewrite(self, instructions: Iterator[Instruction]) -> list[Instruction]:
+    def _rewrite(self, instructions: list[Instruction]) -> list[Instruction]:
         """
         Apply rewrite rules, potentially injecting synthetic operations.
 
@@ -814,7 +826,7 @@ class RewrittenInstructions:
         it as needed, pushing updates into "updated_instructions" and
         returning True/False to indicate if any changes were made.
         """
-        self._instructions = list(instructions)
+        self._instructions = instructions
         updated_instructions: list[Instruction] = []
         idx = 0
         while idx < len(self._instructions):
@@ -983,7 +995,7 @@ class RewrittenInstructions:
         """Replace python method calls with synthetic POLARS_EXPRESSION op."""
         LOAD_METHOD = OpNames.LOAD_ATTR if _MIN_PY312 else {"LOAD_METHOD"}
         if matching_instructions := (
-            # method call with one basic arg, eg: "s.endswith('!')"
+            # method call with one arg, eg: "s.endswith('!')"
             self._matches(
                 idx,
                 opnames=[LOAD_METHOD, {"LOAD_CONST"}, OpNames.CALL],
@@ -1012,6 +1024,47 @@ class RewrittenInstructions:
                     expr = f"str.contains(r{q}{starts}({rx}){ends}{q})"
                 else:
                     expr += f"({param_value!r})"
+
+            px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
+            updated_instructions.append(px)
+
+        elif matching_instructions := (
+            # method call with three args, eg: "s.replace('!','?',count=2)"
+            self._matches(
+                idx,
+                opnames=[
+                    LOAD_METHOD,
+                    {"LOAD_CONST"},
+                    {"LOAD_CONST"},
+                    {"LOAD_CONST"},
+                    OpNames.CALL,
+                ],
+                argvals=[_PYTHON_METHODS_MAP],
+            )
+            or
+            # method call with two args, eg: "s.replace('!','?')"
+            self._matches(
+                idx,
+                opnames=[LOAD_METHOD, {"LOAD_CONST"}, {"LOAD_CONST"}, OpNames.CALL],
+                argvals=[_PYTHON_METHODS_MAP],
+            )
+        ):
+            inst = matching_instructions[0]
+            expr = _PYTHON_METHODS_MAP[inst.argval]
+
+            param_values = [
+                i.argval
+                for i in matching_instructions[1 : len(matching_instructions) - 1]
+            ]
+            if expr == "str.replace":
+                if len(param_values) == 3:
+                    old, new, count = param_values
+                    expr += f"({old!r},{new!r},n={count},literal=True)"
+                else:
+                    old, new = param_values
+                    expr = f"str.replace_all({old!r},{new!r},literal=True)"
+            else:
+                expr += f"({','.join(repr(v) for v in param_values)})"
 
             px = inst._replace(opname="POLARS_EXPRESSION", argval=expr, argrepr=expr)
             updated_instructions.append(px)

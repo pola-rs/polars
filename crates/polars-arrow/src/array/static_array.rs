@@ -2,7 +2,8 @@ use bytemuck::Zeroable;
 use polars_utils::no_call_const;
 
 use crate::array::binview::BinaryViewValueIter;
-use crate::array::growable::{Growable, GrowableFixedSizeList};
+use crate::array::builder::{make_builder, ShareStrategy, StaticArrayBuilder};
+use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
     Array, ArrayValuesIter, BinaryArray, BinaryValueIter, BinaryViewArray, BooleanArray,
@@ -394,10 +395,11 @@ impl StaticArray for FixedSizeListArray {
     }
 
     fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
-        let singular_arr = FixedSizeListArray::new(dtype, value, None);
-        let mut arr = GrowableFixedSizeList::new(vec![&singular_arr], false, length);
-        unsafe { arr.extend_copies(0, 0, 1, length) }
-        arr.into()
+        let singular_arr = FixedSizeListArray::new(dtype.clone(), 1, value, None);
+        let inner_dt = dtype.inner_dtype().unwrap();
+        let mut builder = FixedSizeListArrayBuilder::new(dtype.clone(), make_builder(inner_dt));
+        builder.subslice_extend_repeated(&singular_arr, 0, 1, length, ShareStrategy::Always);
+        builder.freeze()
     }
 }
 

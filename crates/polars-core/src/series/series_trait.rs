@@ -1,12 +1,12 @@
 use std::any::Any;
 use std::borrow::Cow;
-use std::sync::RwLockReadGuard;
 
+use arrow::bitmap::{Bitmap, BitmapBuilder};
+use polars_compute::rolling::QuantileMethod;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataTrait;
 #[cfg(feature = "object")]
 use crate::chunked_array::object::PolarsObjectSafe;
 use crate::prelude::*;
@@ -30,16 +30,6 @@ impl IsSorted {
     }
 }
 
-macro_rules! invalid_operation_panic {
-    ($op:ident, $s:expr) => {
-        panic!(
-            "`{}` operation not supported for dtype `{}`",
-            stringify!($op),
-            $s._dtype()
-        )
-    };
-}
-
 pub enum BitRepr {
     Small(UInt32Chunked),
     Large(UInt64Chunked),
@@ -47,7 +37,7 @@ pub enum BitRepr {
 
 pub(crate) mod private {
     use super::*;
-    use crate::chunked_array::metadata::MetadataFlags;
+    use crate::chunked_array::flags::StatisticsFlags;
     use crate::chunked_array::ops::compare_inner::{TotalEqInner, TotalOrdInner};
 
     pub trait PrivateSeriesNumeric {
@@ -75,9 +65,9 @@ pub(crate) mod private {
 
         fn compute_len(&mut self);
 
-        fn _get_flags(&self) -> MetadataFlags;
+        fn _get_flags(&self) -> StatisticsFlags;
 
-        fn _set_flags(&mut self, flags: MetadataFlags);
+        fn _set_flags(&mut self, flags: StatisticsFlags);
 
         unsafe fn equal_element(
             &self,
@@ -87,14 +77,11 @@ pub(crate) mod private {
         ) -> bool {
             invalid_operation_panic!(equal_element, self)
         }
-        #[allow(clippy::wrong_self_convention)]
-        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
-            invalid_operation_panic!(into_total_eq_inner, self)
-        }
-        #[allow(clippy::wrong_self_convention)]
-        fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
-            invalid_operation_panic!(into_total_ord_inner, self)
-        }
+        #[expect(clippy::wrong_self_convention)]
+        fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a>;
+        #[expect(clippy::wrong_self_convention)]
+        fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a>;
+
         fn vec_hash(&self, _build_hasher: PlRandomState, _buf: &mut Vec<u64>) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash, self._dtype());
         }
@@ -105,30 +92,70 @@ pub(crate) mod private {
         ) -> PolarsResult<()> {
             polars_bail!(opq = vec_hash_combine, self._dtype());
         }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_min(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_min(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_max(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_max(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
         /// If the [`DataType`] is one of `{Int8, UInt8, Int16, UInt16}` the `Series` is
         /// first cast to `Int64` to prevent overflow issues.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_sum(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_sum(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_std(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        unsafe fn agg_std(&self, groups: &GroupsType, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_var(&self, groups: &GroupsProxy, _ddof: u8) -> Series {
+        unsafe fn agg_var(&self, groups: &GroupsType, _ddof: u8) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
         #[cfg(feature = "algorithm_group_by")]
-        unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+        unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_and(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_or(&self, groups: &GroupsType) -> Series {
+            Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
+        }
+
+        /// # Safety
+        ///
+        /// Does no bounds checks, groups must be correct.
+        #[cfg(feature = "bitwise")]
+        unsafe fn agg_xor(&self, groups: &GroupsType) -> Series {
             Series::full_null(self._field().name().clone(), groups.len(), self._dtype())
         }
 
@@ -148,7 +175,7 @@ pub(crate) mod private {
             polars_bail!(opq = remainder, self._dtype());
         }
         #[cfg(feature = "algorithm_group_by")]
-        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsProxy> {
+        fn group_tuples(&self, _multithreaded: bool, _sorted: bool) -> PolarsResult<GroupsType> {
             polars_bail!(opq = group_tuples, self._dtype());
         }
         #[cfg(feature = "zip_with")]
@@ -163,7 +190,7 @@ pub(crate) mod private {
         #[allow(unused_variables)]
         fn arg_sort_multiple(
             &self,
-            by: &[Series],
+            by: &[Column],
             _options: &SortMultipleOptions,
         ) -> PolarsResult<IdxCa> {
             polars_bail!(opq = arg_sort_multiple, self._dtype());
@@ -176,22 +203,6 @@ pub trait SeriesTrait:
 {
     /// Rename the Series.
     fn rename(&mut self, name: PlSmallStr);
-
-    fn bitand(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitand, self._dtype());
-    }
-
-    fn bitor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitor, self._dtype());
-    }
-
-    fn bitxor(&self, _other: &Series) -> PolarsResult<Series> {
-        polars_bail!(opq = bitxor, self._dtype());
-    }
-
-    fn get_metadata(&self) -> Option<RwLockReadGuard<dyn MetadataTrait>> {
-        None
-    }
 
     /// Get the lengths of the underlying chunks
     fn chunk_lengths(&self) -> ChunkLenIter;
@@ -245,8 +256,8 @@ pub trait SeriesTrait:
     /// end of the array
     fn split_at(&self, _offset: i64) -> (Series, Series);
 
-    #[doc(hidden)]
-    fn append(&mut self, _other: &Series) -> PolarsResult<()>;
+    fn append(&mut self, other: &Series) -> PolarsResult<()>;
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()>;
 
     #[doc(hidden)]
     fn extend(&mut self, _other: &Series) -> PolarsResult<()>;
@@ -254,19 +265,27 @@ pub trait SeriesTrait:
     /// Filter by boolean mask. This operation clones data.
     fn filter(&self, _filter: &BooleanChunked) -> PolarsResult<Series>;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
+    ///
+    /// This operation is clone.
     fn take(&self, _indices: &IdxCa) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// Null values in `idx` because null values in the output array.
     ///
     /// # Safety
     /// This doesn't check any bounds.
     unsafe fn take_unchecked(&self, _idx: &IdxCa) -> Series;
 
-    /// Take by index. This operation is clone.
+    /// Take from `self` at the indexes given by `idx`.
+    ///
+    /// This operation is clone.
     fn take_slice(&self, _indices: &[IdxSize]) -> PolarsResult<Series>;
 
-    /// Take by index.
+    /// Take from `self` at the indexes given by `idx`.
     ///
     /// # Safety
     /// This doesn't check any bounds.
@@ -282,6 +301,26 @@ pub trait SeriesTrait:
 
     /// Aggregate all chunks to a contiguous array of memory.
     fn rechunk(&self) -> Series;
+
+    fn rechunk_validity(&self) -> Option<Bitmap> {
+        if self.chunks().len() == 1 {
+            return self.chunks()[0].validity().cloned();
+        }
+
+        if !self.has_nulls() || self.is_empty() {
+            return None;
+        }
+
+        let mut bm = BitmapBuilder::with_capacity(self.len());
+        for arr in self.chunks() {
+            if let Some(v) = arr.validity() {
+                bm.extend_from_bitmap(v);
+            } else {
+                bm.extend_constant(arr.len(), true);
+            }
+        }
+        bm.into_opt_validity()
+    }
 
     /// Drop all null values and return a new Series.
     fn drop_nulls(&self) -> Series {
@@ -337,7 +376,12 @@ pub trait SeriesTrait:
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
-    fn get(&self, _index: usize) -> PolarsResult<AnyValue>;
+    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
+        polars_ensure!(index < self.len(), oob = index, self.len());
+        // SAFETY: Just did bounds check
+        let value = unsafe { self.get_unchecked(index) };
+        Ok(value)
+    }
 
     /// Get a single value by index. Don't use this operation for loops as a runtime cast is
     /// needed for every iteration.
@@ -346,9 +390,7 @@ pub trait SeriesTrait:
     ///
     /// # Safety
     /// Does not do any bounds checking
-    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue {
-        invalid_operation_panic!(get_unchecked, self)
-    }
+    unsafe fn get_unchecked(&self, _index: usize) -> AnyValue;
 
     fn sort_with(&self, _options: SortOptions) -> PolarsResult<Series> {
         polars_bail!(opq = sort_with, self._dtype());
@@ -363,7 +405,7 @@ pub trait SeriesTrait:
     /// Count the null values.
     fn null_count(&self) -> usize;
 
-    /// Return if any the chunks in this `[ChunkedArray]` have nulls.
+    /// Return if any the chunks in this [`ChunkedArray`] have nulls.
     fn has_nulls(&self) -> bool;
 
     /// Get unique values in the Series.
@@ -454,12 +496,50 @@ pub trait SeriesTrait:
         polars_bail!(opq = std, self._dtype());
     }
     /// Get the quantile of the ChunkedArray as a new Series of length 1.
-    fn quantile_reduce(
-        &self,
-        _quantile: f64,
-        _interpol: QuantileInterpolOptions,
-    ) -> PolarsResult<Scalar> {
+    fn quantile_reduce(&self, _quantile: f64, _method: QuantileMethod) -> PolarsResult<Scalar> {
         polars_bail!(opq = quantile, self._dtype());
+    }
+    /// Get the bitwise AND of the Series as a new Series of length 1,
+    fn and_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = and_reduce, self._dtype());
+    }
+    /// Get the bitwise OR of the Series as a new Series of length 1,
+    fn or_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = or_reduce, self._dtype());
+    }
+    /// Get the bitwise XOR of the Series as a new Series of length 1,
+    fn xor_reduce(&self) -> PolarsResult<Scalar> {
+        polars_bail!(opq = xor_reduce, self._dtype());
+    }
+
+    /// Get the first element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn first(&self) -> Scalar {
+        let dt = self.dtype();
+        let av = self.get(0).map_or(AnyValue::Null, AnyValue::into_static);
+
+        Scalar::new(dt.clone(), av)
+    }
+
+    /// Get the last element of the [`Series`] as a [`Scalar`]
+    ///
+    /// If the [`Series`] is empty, a [`Scalar`] with a [`AnyValue::Null`] is returned.
+    fn last(&self) -> Scalar {
+        let dt = self.dtype();
+        let av = if self.len() == 0 {
+            AnyValue::Null
+        } else {
+            // SAFETY: len-1 < len if len != 0
+            unsafe { self.get_unchecked(self.len() - 1) }.into_static()
+        };
+
+        Scalar::new(dt.clone(), av)
+    }
+
+    #[cfg(feature = "approx_unique")]
+    fn approx_n_unique(&self) -> PolarsResult<IdxSize> {
+        polars_bail!(opq = approx_n_unique, self._dtype());
     }
 
     /// Clone inner ChunkedArray and wrap in a new Arc
@@ -484,14 +564,15 @@ pub trait SeriesTrait:
         invalid_operation_panic!(get_object_chunked_unchecked, self)
     }
 
-    /// Get a hold to self as `Any` trait reference.
+    /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait
+    /// reference.
     fn as_any(&self) -> &dyn Any;
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        invalid_operation_panic!(as_any_mut, self)
-    }
+    /// Get a hold of the [`ChunkedArray`], [`Logical`] or `NullChunked` as an `Any` trait mutable
+    /// reference.
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync>;
 
     #[cfg(feature = "checked_arithmetic")]
     fn checked_div(&self, _rhs: &Series) -> PolarsResult<Series> {
@@ -510,10 +591,10 @@ pub trait SeriesTrait:
     }
 }
 
-impl<'a> (dyn SeriesTrait + 'a) {
+impl (dyn SeriesTrait + '_) {
     pub fn unpack<N>(&self) -> PolarsResult<&ChunkedArray<N>>
     where
-        N: 'static + PolarsDataType,
+        N: 'static + PolarsDataType<IsLogical = FalseT>,
     {
         polars_ensure!(&N::get_dtype() == self.dtype(), unpack);
         Ok(self.as_ref())

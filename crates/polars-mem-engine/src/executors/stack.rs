@@ -8,9 +8,10 @@ pub struct StackExec {
     pub(crate) has_windows: bool,
     pub(crate) exprs: Vec<Arc<dyn PhysicalExpr>>,
     pub(crate) input_schema: SchemaRef,
+    pub(crate) output_schema: SchemaRef,
     pub(crate) options: ProjectionOptions,
     // Can run all operations elementwise
-    pub(crate) streamable: bool,
+    pub(crate) allow_vertical_parallelism: bool,
 }
 
 impl StackExec {
@@ -19,11 +20,11 @@ impl StackExec {
         state: &ExecutionState,
         mut df: DataFrame,
     ) -> PolarsResult<DataFrame> {
-        let schema = &*self.input_schema;
+        let schema = &*self.output_schema;
 
         // Vertical and horizontal parallelism.
-        let df = if self.streamable
-            && df.n_chunks() > 1
+        let df = if self.allow_vertical_parallelism
+            && df.first_col_n_chunks() > 1
             && df.height() > 0
             && self.options.run_parallel
         {
@@ -37,7 +38,7 @@ impl StackExec {
                     self.options.run_parallel,
                 )?;
                 // We don't have to do a broadcast check as cse is not allowed to hit this.
-                df._add_columns(res, schema)?;
+                df._add_columns(res.into_iter().collect(), schema)?;
                 Ok(df)
             });
 
@@ -64,9 +65,9 @@ impl StackExec {
                 // new, unique column names. It is immediately
                 // followed by a projection which pulls out the
                 // possibly mismatching column lengths.
-                unsafe { df.get_columns_mut().extend(res) };
+                unsafe { df.column_extend_unchecked(res) };
             } else {
-                let height = df.height();
+                let (df_height, df_width) = df.shape();
 
                 // When we have CSE we cannot verify scalars yet.
                 let verify_scalar = if !df.get_columns().is_empty() {
@@ -78,15 +79,23 @@ impl StackExec {
                 };
                 for (i, c) in res.iter().enumerate() {
                     let len = c.len();
-                    if verify_scalar && len != height && len == 1 {
-                        polars_ensure!(self.exprs[i].is_scalar(),
-                            InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
-                            If you want this Series to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
-                            c.name(), len, height
-                        );
+                    if verify_scalar && len != df_height && len == 1 && df_width > 0 {
+                        #[allow(clippy::collapsible_if)]
+                        if !self.exprs[i].is_scalar()
+                            && std::env::var("POLARS_ALLOW_NON_SCALAR_EXP").as_deref() != Ok("1")
+                        {
+                            let identifier = match self.exprs[i].as_expression() {
+                                Some(e) => format!("expression: {}", e),
+                                None => "this Series".to_string(),
+                            };
+                            polars_bail!(InvalidOperation: "Series {}, length {} doesn't match the DataFrame height of {}\n\n\
+                                If you want {} to be broadcasted, ensure it is a scalar (for instance by adding '.first()').",
+                                c.name(), len, df_height, identifier
+                            );
+                        }
                     }
                 }
-                df._add_columns(res, schema)?;
+                df._add_columns(res.into_iter().collect(), schema)?;
             }
             df
         };

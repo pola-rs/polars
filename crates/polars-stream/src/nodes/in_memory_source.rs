@@ -9,14 +9,16 @@ pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
     morsel_size: usize,
     seq: AtomicU64,
+    seq_offset: MorselSeq,
 }
 
 impl InMemorySourceNode {
-    pub fn new(source: Arc<DataFrame>) -> Self {
+    pub fn new(source: Arc<DataFrame>, seq_offset: MorselSeq) -> Self {
         InMemorySourceNode {
             source: Some(source),
             morsel_size: 0,
             seq: AtomicU64::new(0),
+            seq_offset,
         }
     }
 }
@@ -38,14 +40,16 @@ impl ComputeNode for InMemorySourceNode {
         assert!(recv.is_empty());
         assert!(send.len() == 1);
 
-        let exhausted = self
-            .source
-            .as_ref()
-            .map(|s| {
-                self.seq.load(Ordering::Relaxed) * self.morsel_size as u64 >= s.height() as u64
-            })
-            .unwrap_or(true);
-
+        // As a temporary hack for some nodes (like the FunctionIR::FastCount)
+        // node that rely on an empty input, always ensure we send at least one
+        // morsel.
+        // TODO: remove this hack.
+        let exhausted = if let Some(src) = &self.source {
+            let seq = self.seq.load(Ordering::Relaxed);
+            seq > 0 && seq * self.morsel_size as u64 >= src.height() as u64
+        } else {
+            true
+        };
         if send[0] == PortState::Done || exhausted {
             send[0] = PortState::Done;
             self.source = None;
@@ -58,30 +62,35 @@ impl ComputeNode for InMemorySourceNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         _state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        assert!(recv.is_empty() && send.len() == 1);
-        let senders = send[0].take().unwrap().parallel();
+        assert!(recv_ports.is_empty() && send_ports.len() == 1);
+        let senders = send_ports[0].take().unwrap().parallel();
         let source = self.source.as_ref().unwrap();
 
         // TODO: can this just be serial, using the work distributor?
+        let source_token = SourceToken::new();
         for mut send in senders {
             let slf = &*self;
+            let source_token = source_token.clone();
             join_handles.push(scope.spawn_task(TaskPriority::Low, async move {
                 let wait_group = WaitGroup::default();
-                let source_token = SourceToken::new();
                 loop {
                     let seq = slf.seq.fetch_add(1, Ordering::Relaxed);
                     let offset = (seq as usize * slf.morsel_size) as i64;
                     let df = source.slice(offset, slf.morsel_size);
-                    if df.is_empty() {
+
+                    // TODO: remove this 'always sent at least one morsel'
+                    // condition, see update_state.
+                    if df.is_empty() && seq > 0 {
                         break;
                     }
 
-                    let mut morsel = Morsel::new(df, MorselSeq::new(seq), source_token.clone());
+                    let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
+                    let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
                     if send.send(morsel).await.is_err() {
                         break;

@@ -1,4 +1,4 @@
-use polars::export::chrono::NaiveDate;
+use chrono::NaiveDate;
 use polars::prelude::*;
 use polars_ops::pivot::{pivot, pivot_stable, PivotAgg};
 
@@ -56,9 +56,9 @@ fn test_pivot_date_() -> PolarsResult<()> {
 
 #[test]
 fn test_pivot_old() {
-    let s0 = Series::new("index".into(), ["A", "A", "B", "B", "C"].as_ref());
-    let s2 = Series::new("columns".into(), ["k", "l", "m", "m", "l"].as_ref());
-    let s1 = Series::new("values".into(), [1, 2, 2, 4, 2].as_ref());
+    let s0 = Column::new("index".into(), ["A", "A", "B", "B", "C"].as_ref());
+    let s2 = Column::new("columns".into(), ["k", "l", "m", "m", "l"].as_ref());
+    let s1 = Column::new("values".into(), [1, 2, 2, 4, 2].as_ref());
     let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
     let pvt = pivot(

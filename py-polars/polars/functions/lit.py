@@ -4,10 +4,11 @@ import contextlib
 import enum
 from datetime import date, datetime, time, timedelta, timezone
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import polars._reexport as pl
 from polars._utils.wrap import wrap_expr
-from polars.datatypes import Date, Datetime, Duration, Enum
+from polars.datatypes import Date, Datetime, Duration
 from polars.dependencies import _check_for_numpy
 from polars.dependencies import numpy as np
 
@@ -42,11 +43,11 @@ def lit(
     -----
     Expected datatypes:
 
-    - `pl.lit([])` -> empty  Series Float32
-    - `pl.lit([1, 2, 3])` -> Series Int64
-    - `pl.lit([[]])`-> empty  Series List<Null>
-    - `pl.lit([[1, 2, 3]])` -> Series List<i64>
-    - `pl.lit(None)` -> Series Null
+    - `pl.lit([])` -> empty List<Null>
+    - `pl.lit([1, 2, 3])` -> List<i64>
+    - `pl.lit(pl.Series([]))`-> empty Series Null
+    - `pl.lit(pl.Series([1, 2, 3]))` -> Series Int64
+    - `pl.lit(None)` -> Null
 
     Examples
     --------
@@ -87,12 +88,25 @@ def lit(
         if value_tz is None:
             tz = dtype_tz
         else:
+            # value has time zone, but dtype does not: keep value time zone
             if dtype_tz is None:
-                # value has time zone, but dtype does not: keep value time zone
-                tz = str(value_tz)
+                if isinstance(value_tz, ZoneInfo):
+                    # named timezone
+                    tz = str(value_tz)
+                else:
+                    # fixed offset from UTC (eg: +4:00)
+                    value = value.astimezone(timezone.utc)
+                    tz = "UTC"
+
+            # dtype and value both have same time zone
             elif str(value_tz) == dtype_tz:
-                # dtype and value both have same time zone
                 tz = str(value_tz)
+
+            # given a fixed offset from UTC that matches the dtype tz offset
+            elif hasattr(value_tz, "utcoffset") and getattr(
+                ZoneInfo(dtype_tz).utcoffset(value), "seconds", 0
+            ) == getattr(value_tz.utcoffset(value), "seconds", 1):
+                tz = dtype_tz
             else:
                 # value has time zone that differs from dtype time zone
                 msg = (
@@ -150,10 +164,7 @@ def lit(
         )
 
     elif isinstance(value, enum.Enum):
-        lit_value = value.value
-        if dtype is None and isinstance(value, str):
-            dtype = Enum(m.value for m in type(value))
-        return lit(lit_value, dtype=dtype)
+        return lit(value.value, dtype=dtype)
 
     if dtype:
         return wrap_expr(plr.lit(value, allow_object, is_scalar=True)).cast(dtype)

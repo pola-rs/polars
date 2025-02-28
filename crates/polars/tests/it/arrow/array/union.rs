@@ -4,6 +4,10 @@ use arrow::datatypes::*;
 use arrow::scalar::{new_scalar, PrimitiveScalar, Scalar, UnionScalar, Utf8Scalar};
 use polars_error::PolarsResult;
 
+pub fn union_type(fields: Vec<Field>, ids: Option<Vec<i32>>, mode: UnionMode) -> ArrowDataType {
+    ArrowDataType::Union(Box::new(UnionType { fields, ids, mode }))
+}
+
 fn next_unwrap<T, I>(iter: &mut I) -> T
 where
     I: Iterator<Item = Box<dyn Scalar>>,
@@ -23,7 +27,7 @@ fn sparse_debug() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
@@ -43,7 +47,7 @@ fn dense_debug() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = union_type(fields, None, UnionMode::Dense);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
@@ -64,7 +68,7 @@ fn slice() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::LargeUtf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
@@ -92,7 +96,7 @@ fn iter_sparse() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
     let fields = vec![
         Int32Array::from(&[Some(1), None, Some(2)]).boxed(),
@@ -125,7 +129,7 @@ fn iter_dense() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = union_type(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
     let offsets = Buffer::<i32>::from(vec![0, 1, 0]);
     let fields = vec![
@@ -159,7 +163,7 @@ fn iter_sparse_slice() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let types = Buffer::from(vec![0, 0, 1]);
     let fields = vec![
         Int32Array::from(&[Some(1), Some(3), Some(2)]).boxed(),
@@ -185,7 +189,7 @@ fn iter_dense_slice() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = union_type(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
     let offsets = Buffer::<i32>::from(vec![0, 1, 0]);
     let fields = vec![
@@ -212,7 +216,7 @@ fn scalar() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = union_type(fields, None, UnionMode::Dense);
     let types = Buffer::from(vec![0, 0, 1]);
     let offsets = Buffer::<i32>::from(vec![0, 1, 0]);
     let fields = vec![
@@ -269,7 +273,7 @@ fn dense_without_offsets_is_error() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Dense);
+    let dtype = union_type(fields, None, UnionMode::Dense);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
@@ -285,7 +289,7 @@ fn fields_must_match() {
         Field::new("a".into(), ArrowDataType::Int64, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let types = vec![0, 0, 1].into();
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
@@ -301,7 +305,7 @@ fn sparse_with_offsets_is_error() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
@@ -319,7 +323,7 @@ fn offsets_must_be_in_bounds() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
@@ -338,7 +342,7 @@ fn sparse_with_wrong_offsets1_is_error() {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),
@@ -357,7 +361,7 @@ fn types_must_be_in_bounds() -> PolarsResult<()> {
         Field::new("a".into(), ArrowDataType::Int32, true),
         Field::new("b".into(), ArrowDataType::Utf8, true),
     ];
-    let dtype = ArrowDataType::Union(fields, None, UnionMode::Sparse);
+    let dtype = union_type(fields, None, UnionMode::Sparse);
     let fields = vec![
         Int32Array::from([Some(1), Some(3), Some(2)]).boxed(),
         Utf8Array::<i32>::from([Some("a"), Some("b"), Some("c")]).boxed(),

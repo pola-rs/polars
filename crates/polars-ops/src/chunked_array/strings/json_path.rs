@@ -87,7 +87,7 @@ pub trait Utf8JsonPathImpl: AsString {
             .take(number_of_rows.unwrap_or(ca.len()));
 
         polars_json::ndjson::infer_iter(values_iter)
-            .map(|d| DataType::from(&d))
+            .map(|d| DataType::from_arrow_dtype(&d))
             .map_err(|e| polars_err!(ComputeError: "error inferring JSON: {}", e))
     }
 
@@ -98,6 +98,8 @@ pub trait Utf8JsonPathImpl: AsString {
         infer_schema_len: Option<usize>,
     ) -> PolarsResult<Series> {
         let ca = self.as_string();
+        // Ignore extra fields instead of erroring if the dtype was explicitly given.
+        let allow_extra_fields_in_struct = dtype.is_some();
         let dtype = match dtype {
             Some(dt) => dt,
             None => ca.json_infer(infer_schema_len)?,
@@ -110,6 +112,7 @@ pub trait Utf8JsonPathImpl: AsString {
             dtype.to_arrow(CompatLevel::newest()),
             buf_size,
             ca.len(),
+            allow_extra_fields_in_struct,
         )
         .map_err(|e| polars_err!(ComputeError: "error deserializing JSON: {}", e))?;
         Series::try_from((PlSmallStr::EMPTY, array))
@@ -138,6 +141,8 @@ impl Utf8JsonPathImpl for StringChunked {}
 
 #[cfg(test)]
 mod tests {
+    use arrow::bitmap::Bitmap;
+
     use super::*;
 
     #[test]
@@ -204,13 +209,15 @@ mod tests {
 
         let expected_series = StructChunked::from_series(
             "".into(),
-            &[
+            4,
+            [
                 Series::new("a".into(), &[None, Some(1), Some(2), None]),
                 Series::new("b".into(), &[None, Some("hello"), Some("goodbye"), None]),
-            ],
+            ]
+            .iter(),
         )
         .unwrap()
-        .with_outer_validity_chunked(BooleanChunked::new("".into(), [false, true, true, false]))
+        .with_outer_validity(Some(Bitmap::from_iter([false, true, true, false])))
         .into_series();
         let expected_dtype = expected_series.dtype().clone();
 

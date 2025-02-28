@@ -2,14 +2,16 @@ use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 
 /// Get the lengths of runs of identical values.
-pub fn rle(s: &Series) -> PolarsResult<Series> {
+pub fn rle(s: &Column) -> PolarsResult<Column> {
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
-    let s_neq = s1.not_equal_missing(&s2)?;
+    let s_neq = s1
+        .as_materialized_series()
+        .not_equal_missing(s2.as_materialized_series())?;
     let n_runs = s_neq.sum().ok_or_else(|| polars_err!(InvalidOperation: "could not evaluate 'rle_id' on series of dtype: {}", s.dtype()))? + 1;
 
     let mut lengths = Vec::<IdxSize>::with_capacity(n_runs as usize);
     lengths.push(1);
-    let mut vals = Series::new_empty(PlSmallStr::from_static("value"), s.dtype());
+    let mut vals = Column::new_empty(PlSmallStr::from_static("value"), s.dtype());
     let vals = vals.extend(&s.head(Some(1)))?.extend(&s2.filter(&s_neq)?)?;
     let mut idx = 0;
 
@@ -26,19 +28,21 @@ pub fn rle(s: &Series) -> PolarsResult<Series> {
     }
 
     let outvals = vec![
-        Series::from_vec(PlSmallStr::from_static("len"), lengths),
+        Series::from_vec(PlSmallStr::from_static("len"), lengths).into(),
         vals.to_owned(),
     ];
-    Ok(StructChunked::from_series(s.name().clone(), &outvals)?.into_series())
+    Ok(StructChunked::from_columns(s.name().clone(), vals.len(), &outvals)?.into_column())
 }
 
 /// Similar to `rle`, but maps values to run IDs.
-pub fn rle_id(s: &Series) -> PolarsResult<Series> {
-    if s.len() == 0 {
-        return Ok(Series::new_empty(s.name().clone(), &IDX_DTYPE));
+pub fn rle_id(s: &Column) -> PolarsResult<Column> {
+    if s.is_empty() {
+        return Ok(Column::new_empty(s.name().clone(), &IDX_DTYPE));
     }
     let (s1, s2) = (s.slice(0, s.len() - 1), s.slice(1, s.len()));
-    let s_neq = s1.not_equal_missing(&s2)?;
+    let s_neq = s1
+        .as_materialized_series()
+        .not_equal_missing(s2.as_materialized_series())?;
 
     let mut out = Vec::<IdxSize>::with_capacity(s.len());
     let mut last = 0;
@@ -52,5 +56,5 @@ pub fn rle_id(s: &Series) -> PolarsResult<Series> {
     }
     Ok(IdxCa::from_vec(s.name().clone(), out)
         .with_sorted_flag(IsSorted::Ascending)
-        .into_series())
+        .into_column())
 }

@@ -7,14 +7,13 @@ use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
 use crate::pipeline::morsels_per_sink;
 
-/// THIS CODE DOESN'T MAKE SENSE
-/// it is a remnant of OOC, but will be rewritten to use the generic OOC
-/// Table
+// THIS CODE DOESN'T MAKE SENSE
+// It is a remnant of OOC, but will be rewritten to use the generic OOC Table.
 
 pub(super) struct OocState {
     // OOC
     // Stores available memory in the system at the start of this sink.
-    // and stores the memory used by this this sink.
+    // and stores the memory used by this sink.
     _mem_track: MemTracker,
     // sort in-memory or out-of-core
     pub(super) ooc: bool,

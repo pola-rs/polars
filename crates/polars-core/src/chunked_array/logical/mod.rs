@@ -16,6 +16,8 @@ mod duration;
 pub use duration::*;
 #[cfg(feature = "dtype-categorical")]
 pub mod categorical;
+#[cfg(feature = "dtype-categorical")]
+pub mod enum_;
 #[cfg(feature = "dtype-time")]
 mod time;
 
@@ -37,6 +39,12 @@ pub struct Logical<Logical: PolarsDataType, Physical: PolarsDataType>(
     PhantomData<Logical>,
     pub Option<DataType>,
 );
+
+impl<K: PolarsDataType, T: PolarsDataType> Default for Logical<K, T> {
+    fn default() -> Self {
+        Self(Default::default(), Default::default(), Default::default())
+    }
+}
 
 impl<K: PolarsDataType, T: PolarsDataType> Clone for Logical<K, T> {
     fn clone(&self) -> Self {

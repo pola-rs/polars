@@ -14,9 +14,9 @@ fn test_lazy_agg() {
         ],
         "%Y-%m-%d",
     )
-    .into_series();
-    let s1 = Series::new("temp".into(), [20, 10, 7, 9, 1].as_ref());
-    let s2 = Series::new("rain".into(), [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
+    .into_column();
+    let s1 = Column::new("temp".into(), [20, 10, 7, 9, 1].as_ref());
+    let s2 = Column::new("rain".into(), [0.2, 0.1, 0.3, 0.1, 0.01].as_ref());
     let df = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
     let lf = df
@@ -26,42 +26,12 @@ fn test_lazy_agg() {
             col("rain").min().alias("min"),
             col("rain").sum().alias("sum"),
             col("rain")
-                .quantile(lit(0.5), QuantileInterpolOptions::default())
+                .quantile(lit(0.5), QuantileMethod::default())
                 .alias("median_rain"),
         ])
         .sort(["date"], Default::default());
 
     let new = lf.collect().unwrap();
     let min = new.column("min").unwrap();
-    assert_eq!(min, &Series::new("min".into(), [0.1f64, 0.01, 0.1]));
-}
-
-#[test]
-#[should_panic(expected = "hardcoded error")]
-/// Test where apply_multiple returns an error
-fn test_apply_multiple_error() {
-    fn issue() -> Expr {
-        apply_multiple(
-            move |_| polars_bail!(ComputeError: "hardcoded error"),
-            &[col("x"), col("y")],
-            GetOutput::from_type(DataType::Float64),
-            true,
-        )
-    }
-
-    let df = df![
-        "rf" => ["App", "App", "Gg", "App"],
-        "x" => ["Hey", "There", "Ante", "R"],
-        "y" => [Some(-1.11), Some(2.),None, Some(3.4)],
-        "z" => [Some(-1.11), Some(2.),None, Some(3.4)],
-    ]
-    .unwrap();
-
-    let _res = df
-        .lazy()
-        .with_streaming(false)
-        .group_by_stable([col("rf")])
-        .agg([issue()])
-        .collect()
-        .unwrap();
+    assert_eq!(min, &Column::new("min".into(), [0.1f64, 0.01, 0.1]));
 }

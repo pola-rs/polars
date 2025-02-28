@@ -386,7 +386,7 @@ def test_fast_explode_merge_right_16923() -> None:
         rechunk=True,
     ).explode("foo")
 
-    assert len(df) == 4
+    assert df.height == 4
 
 
 def test_fast_explode_merge_left_16923() -> None:
@@ -399,7 +399,7 @@ def test_fast_explode_merge_left_16923() -> None:
         rechunk=True,
     ).explode("foo")
 
-    assert len(df) == 4
+    assert df.height == 4
 
 
 @pytest.mark.parametrize(

@@ -35,8 +35,8 @@ mod private {
     #[derive(Clone, Debug)]
     #[allow(unused)]
     enum MemSliceInner {
-        Bytes(bytes::Bytes),
-        Mmap(Arc<MMapSemaphore>),
+        Bytes(bytes::Bytes), // Separate because it does atomic refcounting internally
+        Arc(Arc<dyn std::fmt::Debug + Send + Sync>),
     }
 
     impl Deref for MemSlice {
@@ -58,6 +58,12 @@ mod private {
     impl Default for MemSlice {
         fn default() -> Self {
             Self::from_bytes(bytes::Bytes::new())
+        }
+    }
+
+    impl From<Vec<u8>> for MemSlice {
+        fn from(value: Vec<u8>) -> Self {
+            Self::from_vec(value)
         }
     }
 
@@ -91,7 +97,18 @@ mod private {
                 slice: unsafe {
                     std::mem::transmute::<&[u8], &'static [u8]>(mmap.as_ref().as_ref())
                 },
-                inner: MemSliceInner::Mmap(mmap),
+                inner: MemSliceInner::Arc(mmap),
+            }
+        }
+
+        #[inline]
+        pub fn from_arc<T>(slice: &[u8], arc: Arc<T>) -> Self
+        where
+            T: std::fmt::Debug + Send + Sync + 'static,
+        {
+            Self {
+                slice: unsafe { std::mem::transmute::<&[u8], &'static [u8]>(slice) },
+                inner: MemSliceInner::Arc(arc),
             }
         }
 
@@ -124,10 +141,18 @@ mod private {
             out
         }
     }
+
+    impl From<bytes::Bytes> for MemSlice {
+        fn from(value: bytes::Bytes) -> Self {
+            Self::from_bytes(value)
+        }
+    }
 }
 
 use memmap::MmapOptions;
-use polars_error::{polars_bail, PolarsResult};
+#[cfg(target_family = "unix")]
+use polars_error::polars_bail;
+use polars_error::PolarsResult;
 pub use private::MemSlice;
 
 /// A cursor over a [`MemSlice`].
@@ -263,6 +288,8 @@ impl MMapSemaphore {
 
         #[cfg(target_family = "unix")]
         {
+            // FIXME: We aren't handling the case where the file is already open in write-mode here.
+
             use std::os::unix::fs::MetadataExt;
             let metadata = file.metadata()?;
 
@@ -310,13 +337,16 @@ impl Drop for MMapSemaphore {
     }
 }
 
-pub fn ensure_not_mapped(#[allow(unused)] file: &File) -> PolarsResult<()> {
+pub fn ensure_not_mapped(
+    #[cfg_attr(not(target_family = "unix"), allow(unused))] file_md: &std::fs::Metadata,
+) -> PolarsResult<()> {
+    // TODO: We need to actually register that this file has been write-opened and prevent
+    // read-opening this file based on that.
     #[cfg(target_family = "unix")]
     {
         use std::os::unix::fs::MetadataExt;
         let guard = MEMORY_MAPPED_FILES.lock().unwrap();
-        let metadata = file.metadata()?;
-        if guard.contains_key(&(metadata.dev(), metadata.ino())) {
+        if guard.contains_key(&(file_md.dev(), file_md.ino())) {
             polars_bail!(ComputeError: "cannot write to file: already memory mapped");
         }
     }

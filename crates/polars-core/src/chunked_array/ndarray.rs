@@ -76,15 +76,15 @@ impl ListChunked {
 
 impl DataFrame {
     /// Create a 2D [`ndarray::Array`] from this [`DataFrame`]. This requires all columns in the
-    /// [`DataFrame`] to be non-null and numeric. They will be casted to the same data type
+    /// [`DataFrame`] to be non-null and numeric. They will be cast to the same data type
     /// (if they aren't already).
     ///
     /// For floating point data we implicitly convert `None` to `NaN` without failure.
     ///
     /// ```rust
     /// use polars_core::prelude::*;
-    /// let a = UInt32Chunked::new("a".into(), &[1, 2, 3]).into_series();
-    /// let b = Float64Chunked::new("b".into(), &[10., 8., 6.]).into_series();
+    /// let a = UInt32Chunked::new("a".into(), &[1, 2, 3]).into_column();
+    /// let b = Float64Chunked::new("b".into(), &[10., 8., 6.]).into_column();
     ///
     /// let df = DataFrame::new(vec![a, b]).unwrap();
     /// let ndarray = df.to_ndarray::<Float64Type>(IndexOrder::Fortran).unwrap();
@@ -108,7 +108,7 @@ impl DataFrame {
         let columns = self.get_columns();
         POOL.install(|| {
             columns.par_iter().enumerate().try_for_each(|(col_idx, s)| {
-                let s = s.cast(&N::get_dtype())?;
+                let s = s.as_materialized_series().cast(&N::get_dtype())?;
                 let s = match s.dtype() {
                     DataType::Float32 => {
                         let ca = s.f32().unwrap();

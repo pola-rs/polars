@@ -78,12 +78,6 @@ def test_duration_aggs() -> None:
     }
 
 
-def test_mean_horizontal_with_str_column() -> None:
-    assert pl.DataFrame(
-        {"int": [1, 2, 3], "bool": [True, True, None], "str": ["a", "b", "c"]}
-    ).mean_horizontal().to_list() == [1.0, 1.5, 3.0]
-
-
 def test_list_aggregation_that_filters_all_data_6017() -> None:
     out = (
         pl.DataFrame({"col_to_group_by": [2], "flt": [1672740910.967138], "col3": [1]})
@@ -748,3 +742,30 @@ def test_sort_by_over_multiple_nulls_last() -> None:
         }
     )
     assert_frame_equal(out, expected)
+
+
+def test_slice_after_agg_raises() -> None:
+    with pytest.raises(
+        InvalidOperationError, match=r"cannot slice\(\) an aggregated scalar value"
+    ):
+        pl.select(a=1, b=1).group_by("a").agg(pl.col("b").first().slice(99, 0))
+
+
+def test_agg_scalar_empty_groups_20115() -> None:
+    assert_frame_equal(
+        (
+            pl.DataFrame({"key": [123], "value": [456]})
+            .group_by("key")
+            .agg(pl.col("value").slice(1, 1).first())
+        ),
+        pl.select(key=pl.lit(123, pl.Int64), value=pl.lit(None, pl.Int64)),
+    )
+
+
+def test_agg_expr_returns_list_type_15574() -> None:
+    assert (
+        pl.LazyFrame({"a": [1, None], "b": [1, 2]})
+        .group_by("b")
+        .agg(pl.col("a").drop_nulls())
+        .collect_schema()
+    ) == {"b": pl.Int64, "a": pl.List(pl.Int64)}

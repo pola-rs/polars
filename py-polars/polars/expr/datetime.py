@@ -1,18 +1,19 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, Iterable
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.convert import parse_as_duration_string
-from polars._utils.deprecation import deprecate_function
-from polars._utils.parse import parse_into_expression
-from polars._utils.unstable import unstable
+from polars._utils.deprecation import deprecate_function, deprecate_nonkeyword_arguments
+from polars._utils.parse import parse_into_expression, parse_into_list_of_expressions
 from polars._utils.wrap import wrap_expr
 from polars.datatypes import DTYPE_TEMPORAL_UNITS, Date, Int32
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import Expr
     from polars._typing import (
         Ambiguous,
@@ -30,9 +31,10 @@ class ExprDateTimeNameSpace:
 
     _accessor = "dt"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self", "n"], version="1.12.0")
     def add_business_days(
         self,
         n: int | IntoExpr,
@@ -95,7 +97,9 @@ class ExprDateTimeNameSpace:
         You can pass a custom weekend - for example, if you only take Sunday off:
 
         >>> week_mask = (True, True, True, True, True, True, False)
-        >>> df.with_columns(result=pl.col("start").dt.add_business_days(5, week_mask))
+        >>> df.with_columns(
+        ...     result=pl.col("start").dt.add_business_days(5, week_mask=week_mask)
+        ... )
         shape: (2, 2)
         ┌────────────┬────────────┐
         │ start      ┆ result     │
@@ -275,14 +279,9 @@ class ExprDateTimeNameSpace:
         every = parse_into_expression(every, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_truncate(every))
 
-    @unstable()
     def round(self, every: str | dt.timedelta | IntoExprColumn) -> Expr:
         """
         Divide the date/datetime range into buckets.
-
-        .. warning::
-            This functionality is considered **unstable**. It may be changed
-            at any point without it being considered a breaking change.
 
         - Each date/datetime in the first half of the interval
           is mapped to the start of its bucket.
@@ -385,6 +384,100 @@ class ExprDateTimeNameSpace:
         every = parse_into_expression(every, str_as_lit=True)
         return wrap_expr(self._pyexpr.dt_round(every))
 
+    def replace(
+        self,
+        *,
+        year: int | IntoExpr | None = None,
+        month: int | IntoExpr | None = None,
+        day: int | IntoExpr | None = None,
+        hour: int | IntoExpr | None = None,
+        minute: int | IntoExpr | None = None,
+        second: int | IntoExpr | None = None,
+        microsecond: int | IntoExpr | None = None,
+        ambiguous: Ambiguous | Expr = "raise",
+    ) -> Expr:
+        """
+        Replace time unit.
+
+        Parameters
+        ----------
+        year
+            Column or literal.
+        month
+            Column or literal, ranging from 1-12.
+        day
+            Column or literal, ranging from 1-31.
+        hour
+            Column or literal, ranging from 0-23.
+        minute
+            Column or literal, ranging from 0-59.
+        second
+            Column or literal, ranging from 0-59.
+        microsecond
+            Column or literal, ranging from 0-999999.
+        ambiguous
+            Determine how to deal with ambiguous datetimes:
+
+            - `'raise'` (default): raise
+            - `'earliest'`: use the earliest datetime
+            - `'latest'`: use the latest datetime
+            - `'null'`: set to null
+
+        Returns
+        -------
+        Expr
+            Expression of data type :class:`Date` or :class:`Datetime` with the
+            specified time units replaced.
+
+        Examples
+        --------
+        >>> from datetime import date
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "date": [date(2024, 4, 1), date(2025, 3, 16)],
+        ...         "new_day": [10, 15],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("date").dt.replace(day="new_day").alias("replaced"))
+        shape: (2, 3)
+        ┌────────────┬─────────┬────────────┐
+        │ date       ┆ new_day ┆ replaced   │
+        │ ---        ┆ ---     ┆ ---        │
+        │ date       ┆ i64     ┆ date       │
+        ╞════════════╪═════════╪════════════╡
+        │ 2024-04-01 ┆ 10      ┆ 2024-04-10 │
+        │ 2025-03-16 ┆ 15      ┆ 2025-03-15 │
+        └────────────┴─────────┴────────────┘
+        >>> df.with_columns(pl.col("date").dt.replace(year=1800).alias("replaced"))
+        shape: (2, 3)
+        ┌────────────┬─────────┬────────────┐
+        │ date       ┆ new_day ┆ replaced   │
+        │ ---        ┆ ---     ┆ ---        │
+        │ date       ┆ i64     ┆ date       │
+        ╞════════════╪═════════╪════════════╡
+        │ 2024-04-01 ┆ 10      ┆ 1800-04-01 │
+        │ 2025-03-16 ┆ 15      ┆ 1800-03-16 │
+        └────────────┴─────────┴────────────┘
+        """
+        day, month, year, hour, minute, second, microsecond = (
+            parse_into_list_of_expressions(
+                day, month, year, hour, minute, second, microsecond
+            )
+        )
+        ambiguous_expr = parse_into_expression(ambiguous, str_as_lit=True)
+        return wrap_expr(
+            self._pyexpr.dt_replace(
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                microsecond,
+                ambiguous_expr,
+            )
+        )
+
     def combine(self, time: dt.time | Expr, time_unit: TimeUnit = "us") -> Expr:
         """
         Create a naive Datetime from an existing Date/Datetime expression and a Time.
@@ -445,66 +538,161 @@ class ExprDateTimeNameSpace:
         time = parse_into_expression(time)
         return wrap_expr(self._pyexpr.dt_combine(time, time_unit))
 
-    def to_string(self, format: str) -> Expr:
+    def to_string(self, format: str | None = None) -> Expr:
         """
         Convert a Date/Time/Datetime column into a String column with the given format.
 
-        Similar to `cast(pl.String)`, but this method allows you to customize the
-        formatting of the resulting string.
+        .. versionchanged:: 1.15.0
+            Added support for the use of "iso:strict" as a format string.
+        .. versionchanged:: 1.14.0
+            Added support for the `Duration` dtype, and use of "iso" as a format string.
 
         Parameters
         ----------
         format
-            Format to use, refer to the `chrono strftime documentation
-            <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
-            for specification. Example: `"%y-%m-%d"`.
+            * Format to use, refer to the `chrono strftime documentation
+              <https://docs.rs/chrono/latest/chrono/format/strftime/index.html>`_
+              for specification. Example: `"%y-%m-%d"`.
+
+            * If no format is provided, the appropriate ISO format for the underlying
+              data type is used. This can be made explicit by passing `"iso"` or
+              `"iso:strict"` as the format string (see notes below for details).
+
+        Notes
+        -----
+        * Similar to `cast(pl.String)`, but this method allows you to customize
+          the formatting of the resulting string; if no format is provided, the
+          appropriate ISO format for the underlying data type is used.
+
+        * Datetime dtype expressions distinguish between "iso" and "iso:strict"
+          format strings. The difference is in the inclusion of a "T" separator
+          between the date and time components ("iso" results in ISO compliant
+          date and time components, separated with a space; "iso:strict" returns
+          the same components separated with a "T"). All other temporal types
+          return the same value for both format strings.
+
+        * Duration dtype expressions cannot be formatted with `strftime`. Instead,
+          only "iso" and "polars" are supported as format strings. The "iso" format
+          string results in ISO8601 duration string output, and "polars" results
+          in the same form seen in the frame `repr`.
 
         Examples
         --------
-        >>> from datetime import datetime
+        >>> from datetime import datetime, date, timedelta, time
         >>> df = pl.DataFrame(
         ...     {
-        ...         "datetime": [
-        ...             datetime(2020, 3, 1),
-        ...             datetime(2020, 4, 1),
-        ...             datetime(2020, 5, 1),
-        ...         ]
+        ...         "dt": [
+        ...             date(1999, 3, 1),
+        ...             date(2020, 5, 3),
+        ...             date(2077, 7, 5),
+        ...         ],
+        ...         "dtm": [
+        ...             datetime(1980, 8, 10, 0, 10, 20),
+        ...             datetime(2010, 10, 20, 8, 25, 35),
+        ...             datetime(2040, 12, 30, 16, 40, 50),
+        ...         ],
+        ...         "tm": [
+        ...             time(1, 2, 3, 456789),
+        ...             time(23, 59, 9, 101),
+        ...             time(0, 0, 0, 100),
+        ...         ],
+        ...         "td": [
+        ...             timedelta(days=-1, seconds=-42),
+        ...             timedelta(days=14, hours=-10, microseconds=100),
+        ...             timedelta(seconds=0),
+        ...         ],
         ...     }
         ... )
-        >>> df.with_columns(
-        ...     pl.col("datetime")
-        ...     .dt.to_string("%Y/%m/%d %H:%M:%S")
-        ...     .alias("datetime_string")
+
+        Default format for temporal dtypes is ISO8601:
+
+        >>> import polars.selectors as cs
+        >>> df.select(cs.temporal().dt.to_string().name.prefix("s_"))
+        shape: (3, 4)
+        ┌────────────┬────────────────────────────┬─────────────────┬─────────────────┐
+        │ s_dt       ┆ s_dtm                      ┆ s_tm            ┆ s_td            │
+        │ ---        ┆ ---                        ┆ ---             ┆ ---             │
+        │ str        ┆ str                        ┆ str             ┆ str             │
+        ╞════════════╪════════════════════════════╪═════════════════╪═════════════════╡
+        │ 1999-03-01 ┆ 1980-08-10 00:10:20.000000 ┆ 01:02:03.456789 ┆ -P1DT42S        │
+        │ 2020-05-03 ┆ 2010-10-20 08:25:35.000000 ┆ 23:59:09.000101 ┆ P13DT14H0.0001S │
+        │ 2077-07-05 ┆ 2040-12-30 16:40:50.000000 ┆ 00:00:00.000100 ┆ PT0S            │
+        └────────────┴────────────────────────────┴─────────────────┴─────────────────┘
+
+        For `Datetime` specifically you can choose between "iso" (where the date and
+        time components are ISO, separated by a space) and "iso:strict" (where these
+        components are separated by a "T"):
+
+        >>> df.select(
+        ...     pl.col("dtm").dt.to_string("iso").alias("dtm_iso"),
+        ...     pl.col("dtm").dt.to_string("iso:strict").alias("dtm_iso_strict"),
         ... )
         shape: (3, 2)
-        ┌─────────────────────┬─────────────────────┐
-        │ datetime            ┆ datetime_string     │
-        │ ---                 ┆ ---                 │
-        │ datetime[μs]        ┆ str                 │
-        ╞═════════════════════╪═════════════════════╡
-        │ 2020-03-01 00:00:00 ┆ 2020/03/01 00:00:00 │
-        │ 2020-04-01 00:00:00 ┆ 2020/04/01 00:00:00 │
-        │ 2020-05-01 00:00:00 ┆ 2020/05/01 00:00:00 │
-        └─────────────────────┴─────────────────────┘
+        ┌────────────────────────────┬────────────────────────────┐
+        │ dtm_iso                    ┆ dtm_iso_strict             │
+        │ ---                        ┆ ---                        │
+        │ str                        ┆ str                        │
+        ╞════════════════════════════╪════════════════════════════╡
+        │ 1980-08-10 00:10:20.000000 ┆ 1980-08-10T00:10:20.000000 │
+        │ 2010-10-20 08:25:35.000000 ┆ 2010-10-20T08:25:35.000000 │
+        │ 2040-12-30 16:40:50.000000 ┆ 2040-12-30T16:40:50.000000 │
+        └────────────────────────────┴────────────────────────────┘
 
-        If you're interested in the day name / month name, you can use
-        `'%A'` / `'%B'`:
+        All temporal types (aside from `Duration`) support strftime formatting:
 
-        >>> df.with_columns(
-        ...     day_name=pl.col("datetime").dt.to_string("%A"),
-        ...     month_name=pl.col("datetime").dt.to_string("%B"),
+        >>> df.select(
+        ...     pl.col("dtm"),
+        ...     s_dtm=pl.col("dtm").dt.to_string("%Y/%m/%d (%H.%M.%S)"),
+        ... )
+        shape: (3, 2)
+        ┌─────────────────────┬───────────────────────┐
+        │ dtm                 ┆ s_dtm                 │
+        │ ---                 ┆ ---                   │
+        │ datetime[μs]        ┆ str                   │
+        ╞═════════════════════╪═══════════════════════╡
+        │ 1980-08-10 00:10:20 ┆ 1980/08/10 (00.10.20) │
+        │ 2010-10-20 08:25:35 ┆ 2010/10/20 (08.25.35) │
+        │ 2040-12-30 16:40:50 ┆ 2040/12/30 (16.40.50) │
+        └─────────────────────┴───────────────────────┘
+
+        The Polars Duration string format (as seen in the frame repr) is also available:
+
+        >>> df.select(
+        ...     pl.col("td"),
+        ...     s_td=pl.col("td").dt.to_string("polars"),
+        ... )
+        shape: (3, 2)
+        ┌───────────────┬───────────────┐
+        │ td            ┆ s_td          │
+        │ ---           ┆ ---           │
+        │ duration[μs]  ┆ str           │
+        ╞═══════════════╪═══════════════╡
+        │ -1d -42s      ┆ -1d -42s      │
+        │ 13d 14h 100µs ┆ 13d 14h 100µs │
+        │ 0µs           ┆ 0µs           │
+        └───────────────┴───────────────┘
+
+        If you're interested in extracting the day or month names, you can use
+        the `'%A'` and `'%B'` strftime specifiers:
+
+        >>> df.select(
+        ...     pl.col("dt"),
+        ...     day_name=pl.col("dtm").dt.to_string("%A"),
+        ...     month_name=pl.col("dtm").dt.to_string("%B"),
         ... )
         shape: (3, 3)
-        ┌─────────────────────┬───────────┬────────────┐
-        │ datetime            ┆ day_name  ┆ month_name │
-        │ ---                 ┆ ---       ┆ ---        │
-        │ datetime[μs]        ┆ str       ┆ str        │
-        ╞═════════════════════╪═══════════╪════════════╡
-        │ 2020-03-01 00:00:00 ┆ Sunday    ┆ March      │
-        │ 2020-04-01 00:00:00 ┆ Wednesday ┆ April      │
-        │ 2020-05-01 00:00:00 ┆ Friday    ┆ May        │
-        └─────────────────────┴───────────┴────────────┘
+        ┌────────────┬───────────┬────────────┐
+        │ dt         ┆ day_name  ┆ month_name │
+        │ ---        ┆ ---       ┆ ---        │
+        │ date       ┆ str       ┆ str        │
+        ╞════════════╪═══════════╪════════════╡
+        │ 1999-03-01 ┆ Sunday    ┆ August     │
+        │ 2020-05-03 ┆ Wednesday ┆ October    │
+        │ 2077-07-05 ┆ Sunday    ┆ December   │
+        └────────────┴───────────┴────────────┘
         """
+        if format is None:
+            format = "iso"
         return wrap_expr(self._pyexpr.dt_to_string(format))
 
     def strftime(self, format: str) -> Expr:

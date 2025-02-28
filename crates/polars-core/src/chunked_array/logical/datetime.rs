@@ -19,13 +19,13 @@ impl LogicalType for DatetimeChunked {
     fn get_any_value(&self, i: usize) -> PolarsResult<AnyValue<'_>> {
         self.0
             .get_any_value(i)
-            .map(|av| av.as_datetime(self.time_unit(), self.time_zone()))
+            .map(|av| av.as_datetime(self.time_unit(), self.time_zone().as_ref()))
     }
 
     unsafe fn get_any_value_unchecked(&self, i: usize) -> AnyValue<'_> {
         self.0
             .get_any_value_unchecked(i)
-            .as_datetime(self.time_unit(), self.time_zone())
+            .as_datetime(self.time_unit(), self.time_zone().as_ref())
     }
 
     fn cast_with_options(
@@ -101,7 +101,9 @@ impl LogicalType for DatetimeChunked {
                     .into_time()
                     .into_series());
             },
-            dt if dt.is_numeric() => return self.0.cast_with_options(dtype, cast_options),
+            dt if dt.is_primitive_numeric() => {
+                return self.0.cast_with_options(dtype, cast_options)
+            },
             dt => {
                 polars_bail!(
                     InvalidOperation:

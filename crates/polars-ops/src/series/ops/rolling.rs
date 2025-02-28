@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {
     crate::series::ops::moment::MomentSeries,
-    polars_core::export::num::{self, Float, FromPrimitive},
+    num_traits::{pow::Pow, Float, FromPrimitive},
     polars_core::utils::with_unstable_series,
     std::ops::SubAssign,
 };
@@ -18,7 +18,7 @@ fn rolling_skew<T>(
 where
     ChunkedArray<T>: IntoSeries,
     T: PolarsFloatType,
-    T::Native: Float + SubAssign + num::pow::Pow<T::Native, Output = T::Native>,
+    T::Native: Float + SubAssign + Pow<T::Native, Output = T::Native>,
 {
     with_unstable_series(ca.dtype(), |us| {
         ca.rolling_map_float(window_size, |arr| {
@@ -51,7 +51,7 @@ pub trait RollingSeries: SeriesSealed {
                 let ca = s.f32().unwrap();
                 rolling_skew(ca, window_size, bias).map(|ca| ca.into_series())
             },
-            dt if dt.is_numeric() => {
+            dt if dt.is_primitive_numeric() => {
                 let s = s.cast(&DataType::Float64).unwrap();
                 s.rolling_skew(window_size, bias)
             },

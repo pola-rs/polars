@@ -163,13 +163,13 @@ pub(crate) fn insert_streaming_nodes(
         execution_id += 1;
         match lp_arena.get(root) {
             Filter { input, predicate }
-                if is_streamable(predicate.node(), expr_arena, Context::Default) =>
+                if is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena) =>
             {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
-            HStack { input, exprs, .. } if all_streamable(exprs, expr_arena, Context::Default) => {
+            HStack { input, exprs, .. } if all_elementwise(exprs, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -194,7 +194,7 @@ pub(crate) fn insert_streaming_nodes(
                 state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
-            Select { input, expr, .. } if all_streamable(expr, expr_arena, Context::Default) => {
+            Select { input, expr, .. } if all_elementwise(expr, expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
@@ -202,11 +202,6 @@ pub(crate) fn insert_streaming_nodes(
             SimpleProjection { input, .. } => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
-                stack.push(StackFrame::new(*input, state, current_idx))
-            },
-            Reduce { input, .. } => {
-                state.streamable = true;
-                state.operators_sinks.push(PipelineNode::Sink(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
             },
             // Rechunks are ignored
@@ -361,6 +356,7 @@ pub(crate) fn insert_streaming_nodes(
                         DataType::Unknown(_) => false,
                         #[cfg(feature = "dtype-decimal")]
                         DataType::Decimal(_, _) => false,
+                        DataType::Int128 => false,
                         _ => true,
                     }
                 }

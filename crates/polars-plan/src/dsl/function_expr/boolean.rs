@@ -36,7 +36,9 @@ pub enum BooleanFunction {
         closed: ClosedInterval,
     },
     #[cfg(feature = "is_in")]
-    IsIn,
+    IsIn {
+        nulls_equal: bool,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -84,7 +86,7 @@ impl Display for BooleanFunction {
             #[cfg(feature = "is_between")]
             IsBetween { .. } => "is_between",
             #[cfg(feature = "is_in")]
-            IsIn => "is_in",
+            IsIn { .. } => "is_in",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",
@@ -93,7 +95,7 @@ impl Display for BooleanFunction {
     }
 }
 
-impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<BooleanFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: BooleanFunction) -> Self {
         use BooleanFunction::*;
         match func {
@@ -116,7 +118,7 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "is_between")]
             IsBetween { closed } => map_as_slice!(is_between, closed),
             #[cfg(feature = "is_in")]
-            IsIn => wrap!(is_in),
+            IsIn { nulls_equal } => wrap!(is_in, nulls_equal),
             Not => map!(not),
             AllHorizontal => map_as_slice!(all_horizontal),
             AnyHorizontal => map_as_slice!(any_horizontal),
@@ -130,89 +132,100 @@ impl From<BooleanFunction> for FunctionExpr {
     }
 }
 
-fn any(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
+fn any(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
     let ca = s.bool()?;
     if ignore_nulls {
-        Ok(Series::new(s.name().clone(), [ca.any()]))
+        Ok(Column::new(s.name().clone(), [ca.any()]))
     } else {
-        Ok(Series::new(s.name().clone(), [ca.any_kleene()]))
+        Ok(Column::new(s.name().clone(), [ca.any_kleene()]))
     }
 }
 
-fn all(s: &Series, ignore_nulls: bool) -> PolarsResult<Series> {
+fn all(s: &Column, ignore_nulls: bool) -> PolarsResult<Column> {
     let ca = s.bool()?;
     if ignore_nulls {
-        Ok(Series::new(s.name().clone(), [ca.all()]))
+        Ok(Column::new(s.name().clone(), [ca.all()]))
     } else {
-        Ok(Series::new(s.name().clone(), [ca.all_kleene()]))
+        Ok(Column::new(s.name().clone(), [ca.all_kleene()]))
     }
 }
 
-fn is_null(s: &Series) -> PolarsResult<Series> {
-    Ok(s.is_null().into_series())
+fn is_null(s: &Column) -> PolarsResult<Column> {
+    Ok(s.is_null().into_column())
 }
 
-fn is_not_null(s: &Series) -> PolarsResult<Series> {
-    Ok(s.is_not_null().into_series())
+fn is_not_null(s: &Column) -> PolarsResult<Column> {
+    Ok(s.is_not_null().into_column())
 }
 
-fn is_finite(s: &Series) -> PolarsResult<Series> {
-    s.is_finite().map(|ca| ca.into_series())
+fn is_finite(s: &Column) -> PolarsResult<Column> {
+    s.is_finite().map(|ca| ca.into_column())
 }
 
-fn is_infinite(s: &Series) -> PolarsResult<Series> {
-    s.is_infinite().map(|ca| ca.into_series())
+fn is_infinite(s: &Column) -> PolarsResult<Column> {
+    s.is_infinite().map(|ca| ca.into_column())
 }
 
-pub(super) fn is_nan(s: &Series) -> PolarsResult<Series> {
-    s.is_nan().map(|ca| ca.into_series())
+pub(super) fn is_nan(s: &Column) -> PolarsResult<Column> {
+    s.is_nan().map(|ca| ca.into_column())
 }
 
-pub(super) fn is_not_nan(s: &Series) -> PolarsResult<Series> {
-    s.is_not_nan().map(|ca| ca.into_series())
+pub(super) fn is_not_nan(s: &Column) -> PolarsResult<Column> {
+    s.is_not_nan().map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "is_first_distinct")]
-fn is_first_distinct(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_first_distinct(s).map(|ca| ca.into_series())
+fn is_first_distinct(s: &Column) -> PolarsResult<Column> {
+    polars_ops::prelude::is_first_distinct(s.as_materialized_series()).map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "is_last_distinct")]
-fn is_last_distinct(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_last_distinct(s).map(|ca| ca.into_series())
+fn is_last_distinct(s: &Column) -> PolarsResult<Column> {
+    polars_ops::prelude::is_last_distinct(s.as_materialized_series()).map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "is_unique")]
-fn is_unique(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_unique(s).map(|ca| ca.into_series())
+fn is_unique(s: &Column) -> PolarsResult<Column> {
+    polars_ops::prelude::is_unique(s.as_materialized_series()).map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "is_unique")]
-fn is_duplicated(s: &Series) -> PolarsResult<Series> {
-    polars_ops::prelude::is_duplicated(s).map(|ca| ca.into_series())
+fn is_duplicated(s: &Column) -> PolarsResult<Column> {
+    polars_ops::prelude::is_duplicated(s.as_materialized_series()).map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "is_between")]
-fn is_between(s: &[Series], closed: ClosedInterval) -> PolarsResult<Series> {
+fn is_between(s: &[Column], closed: ClosedInterval) -> PolarsResult<Column> {
     let ser = &s[0];
     let lower = &s[1];
     let upper = &s[2];
-    polars_ops::prelude::is_between(ser, lower, upper, closed).map(|ca| ca.into_series())
+    polars_ops::prelude::is_between(
+        ser.as_materialized_series(),
+        lower.as_materialized_series(),
+        upper.as_materialized_series(),
+        closed,
+    )
+    .map(|ca| ca.into_column())
 }
 
 #[cfg(feature = "is_in")]
-fn is_in(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Option<Column>> {
     let left = &s[0];
     let other = &s[1];
-    polars_ops::prelude::is_in(left, other).map(|ca| Some(ca.into_series()))
+    polars_ops::prelude::is_in(
+        left.as_materialized_series(),
+        other.as_materialized_series(),
+        nulls_equal,
+    )
+    .map(|ca| Some(ca.into_column()))
 }
 
-fn not(s: &Series) -> PolarsResult<Series> {
-    polars_ops::series::negate_bitwise(s)
+fn not(s: &Column) -> PolarsResult<Column> {
+    polars_ops::series::negate_bitwise(s.as_materialized_series()).map(Column::from)
 }
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
-fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
+fn any_horizontal(s: &[Column]) -> PolarsResult<Column> {
     let out = POOL
         .install(|| {
             s.par_iter()
@@ -230,11 +243,11 @@ fn any_horizontal(s: &[Series]) -> PolarsResult<Series> {
                 )
         })?
         .with_name(s[0].name().clone());
-    Ok(out.into_series())
+    Ok(out.into_column())
 }
 
 // We shouldn't hit these often only on very wide dataframes where we don't reduce to & expressions.
-fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
+fn all_horizontal(s: &[Column]) -> PolarsResult<Column> {
     let out = POOL
         .install(|| {
             s.par_iter()
@@ -252,5 +265,5 @@ fn all_horizontal(s: &[Series]) -> PolarsResult<Series> {
                 )
         })?
         .with_name(s[0].name().clone());
-    Ok(out.into_series())
+    Ok(out.into_column())
 }

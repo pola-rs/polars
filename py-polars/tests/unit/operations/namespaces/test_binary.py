@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+import struct
 from typing import TYPE_CHECKING
 
 import pytest
@@ -50,7 +52,7 @@ def test_contains() -> None:
             expected == df.select(pl.col("bin").bin.contains(pattern))["bin"].to_list()
         )
         # frame filter
-        assert sum([e for e in expected if e is True]) == len(
+        assert sum(e for e in expected if e is True) == len(
             df.filter(pl.col("bin").bin.contains(pattern))
         )
 
@@ -164,3 +166,109 @@ def test_binary_size(sz: int, unit: SizeUnit, expected: int | float) -> None:
         df["data"].bin.size(unit).item(),  # series
     ):
         assert sz == expected
+
+
+@pytest.mark.parametrize(
+    ("dtype", "type_size", "struct_type"),
+    [
+        (pl.Int8, 1, "b"),
+        (pl.UInt8, 1, "B"),
+        (pl.Int16, 2, "h"),
+        (pl.UInt16, 2, "H"),
+        (pl.Int32, 4, "i"),
+        (pl.UInt32, 4, "I"),
+        (pl.Int64, 8, "q"),
+        (pl.UInt64, 8, "Q"),
+        (pl.Float32, 4, "f"),
+        (pl.Float64, 8, "d"),
+    ],
+)
+def test_reinterpret(
+    dtype: pl.DataType,
+    type_size: int,
+    struct_type: str,
+) -> None:
+    # Make test reproducible
+    random.seed(42)
+
+    byte_arr = [random.randbytes(type_size) for _ in range(3)]
+    df = pl.DataFrame({"x": byte_arr})
+
+    for endianness in ["little", "big"]:
+        # So that mypy doesn't complain
+        struct_endianness = "<" if endianness == "little" else ">"
+        expected = [
+            struct.unpack_from(f"{struct_endianness}{struct_type}", elem_bytes)[0]
+            for elem_bytes in byte_arr
+        ]
+        expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
+
+        result = df.select(
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
+
+        assert_frame_equal(result, expected_df)
+
+
+@pytest.mark.parametrize(
+    ("dtype", "type_size"),
+    [
+        (pl.Int128, 16),
+    ],
+)
+def test_reinterpret_int(
+    dtype: pl.DataType,
+    type_size: int,
+) -> None:
+    # Function used for testing integers that `struct` or `numpy`
+    # doesn't support parsing from bytes.
+    # Rather than creating bytes directly, create integer and view it as bytes
+    is_signed = dtype.is_signed_integer()
+
+    if is_signed:
+        min_val = -(2 ** (type_size - 1))
+        max_val = 2 ** (type_size - 1) - 1
+    else:
+        min_val = 0
+        max_val = 2**type_size - 1
+
+    # Make test reproducible
+    random.seed(42)
+
+    expected = [random.randint(min_val, max_val) for _ in range(3)]
+    expected_df = pl.DataFrame({"x": expected}, schema={"x": dtype})
+
+    for endianness in ["little", "big"]:
+        byte_arr = [
+            val.to_bytes(type_size, byteorder=endianness, signed=is_signed)  # type: ignore[arg-type]
+            for val in expected
+        ]
+        df = pl.DataFrame({"x": byte_arr})
+
+        result = df.select(
+            pl.col("x").bin.reinterpret(dtype=dtype, endianness=endianness)  # type: ignore[arg-type]
+        )
+
+        assert_frame_equal(result, expected_df)
+
+
+def test_reinterpret_invalid() -> None:
+    # Fails because buffer has more than 4 bytes
+    df = pl.DataFrame({"x": [b"d3d3a"]})
+    print(struct.unpack_from("<i", b"d3d3a"))
+    assert_frame_equal(
+        df.select(pl.col("x").bin.reinterpret(dtype=pl.Int32)),
+        pl.DataFrame({"x": [None]}, schema={"x": pl.Int32}),
+    )
+
+    # Fails because buffer has less than 4 bytes
+    df = pl.DataFrame({"x": [b"d3"]})
+    print(df.select(pl.col("x").bin.reinterpret(dtype=pl.Int32)))
+    assert_frame_equal(
+        df.select(pl.col("x").bin.reinterpret(dtype=pl.Int32)),
+        pl.DataFrame({"x": [None]}, schema={"x": pl.Int32}),
+    )
+
+    # Fails because dtype is invalid
+    with pytest.raises(pl.exceptions.InvalidOperationError):
+        df.select(pl.col("x").bin.reinterpret(dtype=pl.String))

@@ -6,20 +6,18 @@ use std::sync::Arc;
 use hashbrown::hash_map::Entry;
 use polars_error::PolarsResult;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
-use polars_utils::slice::GetSaferUnchecked;
 
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
-use crate::array::binview::{BinaryViewArrayGeneric, ViewType};
+use crate::array::binview::{
+    BinaryViewArrayGeneric, ViewType, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+};
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 use crate::legacy::trusted_len::TrustedLenPush;
 use crate::trusted_len::TrustedLen;
-
-const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
-const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
 
 // Invariants:
 //
@@ -187,9 +185,9 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.views.push_unchecked(v)
         } else {
             self.total_buffer_len += len as usize;
-            let data = buffers.get_unchecked_release(v.buffer_idx as usize);
+            let data = buffers.get_unchecked(v.buffer_idx as usize);
             let offset = v.offset as usize;
-            let bytes = data.get_unchecked_release(offset..offset + len as usize);
+            let bytes = data.get_unchecked(offset..offset + len as usize);
             let t = T::from_bytes_unchecked(bytes);
             self.push_value_ignore_validity(t)
         }
@@ -206,7 +204,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         if len <= 12 {
             self.views.push_unchecked(v);
         } else {
-            let buffer = buffers.get_unchecked_release(v.buffer_idx as usize);
+            let buffer = buffers.get_unchecked(v.buffer_idx as usize);
             let idx = match self.stolen_buffers.entry(buffer.deref().as_ptr() as usize) {
                 Entry::Occupied(entry) => *entry.get(),
                 Entry::Vacant(entry) => {
@@ -509,7 +507,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         Self::from_iterator(slice.as_ref().iter().map(|opt_v| opt_v.as_ref()))
     }
 
-    fn finish_in_progress(&mut self) -> bool {
+    pub fn finish_in_progress(&mut self) -> bool {
         if !self.in_progress_buffer.is_empty() {
             self.completed_buffers
                 .push(std::mem::take(&mut self.in_progress_buffer).into());
@@ -529,6 +527,10 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
         let mut arr: BinaryViewArrayGeneric<T> = self.into();
         arr.dtype = dtype;
         arr
+    }
+
+    pub fn take(self) -> (Vec<View>, Vec<Buffer<u8>>) {
+        (self.views, self.completed_buffers)
     }
 
     #[inline]
@@ -571,7 +573,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             let data = if buffer_idx == self.completed_buffers.len() {
                 self.in_progress_buffer.as_slice()
             } else {
-                self.completed_buffers.get_unchecked_release(buffer_idx)
+                self.completed_buffers.get_unchecked(buffer_idx)
             };
 
             let offset = offset as usize;
@@ -583,6 +585,44 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
     /// Returns an iterator of `&[u8]` over every element of this array, ignoring the validity
     pub fn values_iter(&self) -> MutableBinaryViewValueIter<T> {
         MutableBinaryViewValueIter::new(self)
+    }
+
+    pub fn extend_from_array(&mut self, other: &BinaryViewArrayGeneric<T>) {
+        let slf_len = self.len();
+        match (&mut self.validity, other.validity()) {
+            (None, None) => {},
+            (Some(v), None) => v.extend_constant(other.len(), true),
+            (v @ None, Some(other)) => {
+                let mut bm = MutableBitmap::with_capacity(slf_len + other.len());
+                bm.extend_constant(slf_len, true);
+                bm.extend_from_bitmap(other);
+                *v = Some(bm);
+            },
+            (Some(slf), Some(other)) => slf.extend_from_bitmap(other),
+        }
+
+        if other.total_buffer_len() == 0 {
+            self.views.extend(other.views().iter().copied());
+        } else {
+            self.finish_in_progress();
+
+            let buffer_offset = self.completed_buffers().len() as u32;
+            self.completed_buffers
+                .extend(other.data_buffers().iter().cloned());
+
+            self.views.extend(other.views().iter().map(|view| {
+                let mut view = *view;
+                if view.length > View::MAX_INLINE_SIZE {
+                    view.buffer_idx += buffer_offset;
+                }
+                view
+            }));
+
+            let new_total_buffer_len = self.total_buffer_len() + other.total_buffer_len();
+            self.total_buffer_len = new_total_buffer_len;
+        }
+
+        self.total_bytes_len = self.total_bytes_len() + other.total_bytes_len();
     }
 }
 

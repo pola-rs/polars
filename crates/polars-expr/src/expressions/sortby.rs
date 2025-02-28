@@ -46,7 +46,7 @@ fn prepare_bool_vec(values: &[bool], by_len: usize) -> Vec<bool> {
 
 static ERR_MSG: &str = "expressions in 'sort_by' produced a different number of groups";
 
-fn check_groups(a: &GroupsProxy, b: &GroupsProxy) -> PolarsResult<()> {
+fn check_groups(a: &GroupsType, b: &GroupsType) -> PolarsResult<()> {
     polars_ensure!(a.iter().zip(b.iter()).all(|(a, b)| {
         a.len() == b.len()
     }), ComputeError: ERR_MSG);
@@ -54,10 +54,10 @@ fn check_groups(a: &GroupsProxy, b: &GroupsProxy) -> PolarsResult<()> {
 }
 
 pub(super) fn update_groups_sort_by(
-    groups: &GroupsProxy,
+    groups: &GroupsType,
     sort_by_s: &Series,
     options: &SortOptions,
-) -> PolarsResult<GroupsProxy> {
+) -> PolarsResult<GroupsType> {
     // Will trigger a gather for every group, so rechunk before.
     let sort_by_s = sort_by_s.rechunk();
     let groups = POOL.install(|| {
@@ -67,7 +67,7 @@ pub(super) fn update_groups_sort_by(
             .collect::<PolarsResult<_>>()
     })?;
 
-    Ok(GroupsProxy::Idx(groups))
+    Ok(GroupsType::Idx(groups))
 }
 
 fn sort_by_groups_single_by(
@@ -133,8 +133,8 @@ fn sort_by_groups_no_match_single<'a>(
             })
             .collect_ca_with_dtype(PlSmallStr::EMPTY, dtype)
     });
-    let s = ca?.with_name(s_in.name().clone()).into_series();
-    ac_in.with_series(s, true, Some(expr))?;
+    let c = ca?.with_name(s_in.name().clone()).into_column();
+    ac_in.with_values(c, true, Some(expr))?;
     Ok(ac_in)
 }
 
@@ -152,6 +152,7 @@ fn sort_by_groups_multiple_by(
             let groups = sort_by_s
                 .iter()
                 .map(|s| unsafe { s.take_slice_unchecked(idx) })
+                .map(Column::from)
                 .collect::<Vec<_>>();
 
             let options = SortMultipleOptions {
@@ -159,15 +160,20 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
+                limit: None,
             };
 
-            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
+            let sorted_idx = groups[0]
+                .as_materialized_series()
+                .arg_sort_multiple(&groups[1..], &options)
+                .unwrap();
             map_sorted_indices_to_group_idx(&sorted_idx, idx)
         },
         GroupsIndicator::Slice([first, len]) => {
             let groups = sort_by_s
                 .iter()
                 .map(|s| s.slice(first as i64, len as usize))
+                .map(Column::from)
                 .collect::<Vec<_>>();
 
             let options = SortMultipleOptions {
@@ -175,8 +181,12 @@ fn sort_by_groups_multiple_by(
                 nulls_last: nulls_last.to_owned(),
                 multithreaded,
                 maintain_order,
+                limit: None,
             };
-            let sorted_idx = groups[0].arg_sort_multiple(&groups[1..], &options).unwrap();
+            let sorted_idx = groups[0]
+                .as_materialized_series()
+                .arg_sort_multiple(&groups[1..], &options)
+                .unwrap();
             map_sorted_indices_to_group_slice(&sorted_idx, first)
         },
     };
@@ -191,8 +201,13 @@ impl PhysicalExpr for SortByExpr {
     fn as_expression(&self) -> Option<&Expr> {
         Some(&self.expr)
     }
-    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Series> {
+
+    fn evaluate(&self, df: &DataFrame, state: &ExecutionState) -> PolarsResult<Column> {
         let series_f = || self.input.evaluate(df, state);
+        if self.by.is_empty() {
+            // Sorting by 0 columns returns input unchanged.
+            return series_f();
+        }
         let (series, sorted_idx) = if self.by.len() == 1 {
             let sorted_idx_f = || {
                 let s_sort_by = self.by[0].evaluate(df, state)?;
@@ -204,17 +219,51 @@ impl PhysicalExpr for SortByExpr {
             let nulls_last = prepare_bool_vec(&self.sort_options.nulls_last, self.by.len());
 
             let sorted_idx_f = || {
-                let s_sort_by = self
+                let mut needs_broadcast = false;
+                let mut broadcast_length = 1;
+
+                let mut s_sort_by = self
                     .by
                     .iter()
-                    .map(|e| {
-                        e.evaluate(df, state).map(|s| match s.dtype() {
+                    .enumerate()
+                    .map(|(i, e)| {
+                        let column = e.evaluate(df, state).map(|c| match c.dtype() {
                             #[cfg(feature = "dtype-categorical")]
-                            DataType::Categorical(_, _) | DataType::Enum(_, _) => s,
-                            _ => s.to_physical_repr().into_owned(),
-                        })
+                            DataType::Categorical(_, _) | DataType::Enum(_, _) => c,
+                            _ => c.to_physical_repr(),
+                        })?;
+
+                        if column.len() == 1 && broadcast_length != 1 {
+                            polars_ensure!(
+                                e.is_scalar(),
+                                ShapeMismatch: "non-scalar expression produces broadcasting column",
+                            );
+
+                            return Ok(column.new_from_index(0, broadcast_length));
+                        }
+
+                        if broadcast_length != column.len() {
+                            polars_ensure!(
+                                broadcast_length == 1, ShapeMismatch:
+                                "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
+                                broadcast_length, column.len()
+                            );
+
+                            needs_broadcast |= i > 0;
+                            broadcast_length = column.len();
+                        }
+
+                        Ok(column)
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
+
+                if needs_broadcast {
+                    for c in s_sort_by.iter_mut() {
+                        if c.len() != broadcast_length {
+                            *c = c.new_from_index(0, broadcast_length);
+                        }
+                    }
+                }
 
                 let options = self
                     .sort_options
@@ -222,23 +271,16 @@ impl PhysicalExpr for SortByExpr {
                     .with_order_descending_multi(descending)
                     .with_nulls_last_multi(nulls_last);
 
-                for i in 1..s_sort_by.len() {
-                    polars_ensure!(
-                        s_sort_by[0].len() == s_sort_by[i].len(),
-                        expr = self.expr, ComputeError:
-                        "`sort_by` produced different length ({}) than earlier Series' length in `by` ({})",
-                        s_sort_by[0].len(), s_sort_by[i].len()
-                    );
-                }
-
-                s_sort_by[0].arg_sort_multiple(&s_sort_by[1..], &options)
+                s_sort_by[0]
+                    .as_materialized_series()
+                    .arg_sort_multiple(&s_sort_by[1..], &options)
             };
             POOL.install(|| rayon::join(series_f, sorted_idx_f))
         };
         let (sorted_idx, series) = (sorted_idx?, series?);
         polars_ensure!(
             sorted_idx.len() == series.len(),
-            expr = self.expr, ComputeError:
+            expr = self.expr, ShapeMismatch:
             "`sort_by` produced different length ({}) than the Series that has to be sorted ({})",
             sorted_idx.len(), series.len()
         );
@@ -251,7 +293,7 @@ impl PhysicalExpr for SortByExpr {
     fn evaluate_on_groups<'a>(
         &self,
         df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let mut ac_in = self.input.evaluate_on_groups(df, groups, state)?;
@@ -265,12 +307,16 @@ impl PhysicalExpr for SortByExpr {
             .collect::<PolarsResult<Vec<_>>>()?;
         let mut sort_by_s = ac_sort_by
             .iter()
-            .map(|s| {
-                let s = s.flat_naive();
-                match s.dtype() {
+            .map(|c| {
+                let c = c.flat_naive();
+                match c.dtype() {
                     #[cfg(feature = "dtype-categorical")]
-                    DataType::Categorical(_, _) | DataType::Enum(_, _) => s.into_owned(),
-                    _ => s.to_physical_repr().into_owned(),
+                    DataType::Categorical(_, _) | DataType::Enum(_, _) => {
+                        c.as_materialized_series().clone()
+                    },
+                    // @scalar-opt
+                    // @partition-opt
+                    _ => c.to_physical_repr().take_materialized_series(),
                 }
             })
             .collect::<Vec<_>>();
@@ -340,17 +386,17 @@ impl PhysicalExpr for SortByExpr {
                     })
                     .collect::<PolarsResult<_>>()
             });
-            GroupsProxy::Idx(groups?)
+            GroupsType::Idx(groups?)
         };
 
         // If the rhs is already aggregated once, it is reordered by the
         // group_by operation - we must ensure that we are as well.
         if ordered_by_group_operation {
             let s = ac_in.aggregated();
-            ac_in.with_series(s.explode().unwrap(), false, None)?;
+            ac_in.with_values(s.explode().unwrap(), false, None)?;
         }
 
-        ac_in.with_groups(groups);
+        ac_in.with_groups(groups.into_sliceable());
         Ok(ac_in)
     }
 

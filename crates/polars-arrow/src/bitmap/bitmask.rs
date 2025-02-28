@@ -3,6 +3,8 @@ use std::simd::{LaneCount, Mask, MaskElement, SupportedLaneCount};
 
 use polars_utils::slice::load_padded_le_u64;
 
+use super::iterator::FastU56BitmapIter;
+use super::utils::{count_zeros, fmt, BitmapIter};
 use crate::bitmap::Bitmap;
 
 /// Returns the nth set bit in w, if n+1 bits are set. The indexing is
@@ -14,7 +16,7 @@ fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
     // We use this by setting the first argument to 1 << n, which means the
     // first n-1 zero bits of it will spread to the first n-1 one bits of w,
     // after which the one bit will exactly get copied to the nth one bit of w.
-    #[cfg(target_feature = "bmi2")]
+    #[cfg(all(not(miri), target_feature = "bmi2"))]
     {
         if n >= 32 {
             return None;
@@ -28,7 +30,7 @@ fn nth_set_bit_u32(w: u32, n: u32) -> Option<u32> {
         Some(nth_set_bit.trailing_zeros())
     }
 
-    #[cfg(not(target_feature = "bmi2"))]
+    #[cfg(any(miri, not(target_feature = "bmi2")))]
     {
         // Each block of 2/4/8/16 bits contains how many set bits there are in that block.
         let set_per_2 = w - ((w >> 1) & 0x55555555);
@@ -77,9 +79,26 @@ pub struct BitMask<'a> {
     len: usize,
 }
 
+impl std::fmt::Debug for BitMask<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Self { bytes, offset, len } = self;
+        let offset_num_bytes = offset / 8;
+        let offset_in_byte = offset % 8;
+        fmt(&bytes[offset_num_bytes..], offset_in_byte, *len, f)
+    }
+}
+
 impl<'a> BitMask<'a> {
     pub fn from_bitmap(bitmap: &'a Bitmap) -> Self {
         let (bytes, offset, len) = bitmap.as_slice();
+        Self::new(bytes, offset, len)
+    }
+
+    pub fn inner(&self) -> (&[u8], usize, usize) {
+        (self.bytes, self.offset, self.len)
+    }
+
+    pub fn new(bytes: &'a [u8], offset: usize, len: usize) -> Self {
         // Check length so we can use unsafe access in our get.
         assert!(bytes.len() * 8 >= len + offset);
         Self { bytes, offset, len }
@@ -88,6 +107,13 @@ impl<'a> BitMask<'a> {
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    #[inline]
+    pub fn advance_by(&mut self, idx: usize) {
+        assert!(idx <= self.len);
+        self.offset += idx;
+        self.len -= idx;
     }
 
     #[inline]
@@ -108,6 +134,39 @@ impl<'a> BitMask<'a> {
             ..*self
         };
         (left, right)
+    }
+
+    #[inline]
+    pub fn sliced(&self, offset: usize, length: usize) -> Self {
+        assert!(offset.checked_add(length).unwrap() <= self.len);
+        unsafe { self.sliced_unchecked(offset, length) }
+    }
+
+    /// # Safety
+    /// The index must be in-bounds.
+    #[inline]
+    pub unsafe fn sliced_unchecked(&self, offset: usize, length: usize) -> Self {
+        if cfg!(debug_assertions) {
+            assert!(offset.checked_add(length).unwrap() <= self.len);
+        }
+
+        Self {
+            bytes: self.bytes,
+            offset: self.offset + offset,
+            len: length,
+        }
+    }
+
+    pub fn unset_bits(&self) -> usize {
+        count_zeros(self.bytes, self.offset, self.len)
+    }
+
+    pub fn set_bits(&self) -> usize {
+        self.len - self.unset_bits()
+    }
+
+    pub fn fast_iter_u56(&self) -> FastU56BitmapIter {
+        FastU56BitmapIter::new(self.bytes, self.offset, self.len)
     }
 
     #[cfg(feature = "simd")]
@@ -162,7 +221,7 @@ impl<'a> BitMask<'a> {
 
     /// Computes the index of the nth set bit after start.
     ///
-    /// Both are zero-indexed, so nth_set_bit_idx(0, 0) finds the index of the
+    /// Both are zero-indexed, so `nth_set_bit_idx(0, 0)` finds the index of the
     /// first bit set (which can be 0 as well). The returned index is absolute,
     /// not relative to start.
     pub fn nth_set_bit_idx(&self, mut n: usize, mut start: usize) -> Option<usize> {
@@ -244,6 +303,10 @@ impl<'a> BitMask<'a> {
         } else {
             false
         }
+    }
+
+    pub fn iter(&self) -> BitmapIter {
+        BitmapIter::new(self.bytes, self.offset, self.len)
     }
 }
 

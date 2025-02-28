@@ -10,6 +10,7 @@ from hypothesis import given
 import polars as pl
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
+from tests.unit.conftest import INTEGER_DTYPES, SIGNED_INTEGER_DTYPES
 
 
 @given(
@@ -65,9 +66,9 @@ def test_df_getitem_row_slice(df: pl.DataFrame) -> None:
         sliced_py_data = py_data[s]
         sliced_df_data = df[s].rows()
 
-        assert (
-            sliced_py_data == sliced_df_data
-        ), f"slice [{start}:{stop}:{step}] failed on df w/len={len(df)}"
+        assert sliced_py_data == sliced_df_data, (
+            f"slice [{start}:{stop}:{step}] failed on df w/len={df.height}"
+        )
 
 
 def test_df_getitem_col_single_name() -> None:
@@ -294,7 +295,58 @@ def test_df_getitem() -> None:
     # empty list with column selector drops rows but keeps columns
     assert_frame_equal(df[empty, :], df[:0])
 
-    # numpy array: assumed to be row indices if integers, or columns if strings
+    # sequences (lists or tuples; tuple only if length != 2)
+    # if strings or list of expressions, assumed to be column names
+    # if bools, assumed to be a row mask
+    # if integers, assumed to be row indices
+    assert_frame_equal(df[["a", "b"]], df)
+    assert_frame_equal(df.select([pl.col("a"), pl.col("b")]), df)
+    assert_frame_equal(
+        df[[1, -4, -1, 2, 1]],
+        pl.DataFrame({"a": [2.0, 1.0, 4.0, 3.0, 2.0], "b": [4, 3, 6, 5, 4]}),
+    )
+
+    # pl.Series: strings for column selections.
+    assert_frame_equal(df[pl.Series("", ["a", "b"])], df)
+
+    # pl.Series: positive idxs or empty idxs for row selection.
+    for pl_dtype in INTEGER_DTYPES:
+        assert_frame_equal(
+            df[pl.Series("", [1, 0, 3, 2, 3, 0], dtype=pl_dtype)],
+            pl.DataFrame(
+                {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
+            ),
+        )
+        assert df[pl.Series("", [], dtype=pl_dtype)].columns == ["a", "b"]
+
+    # pl.Series: positive and negative idxs for row selection.
+    for pl_dtype in SIGNED_INTEGER_DTYPES:
+        assert_frame_equal(
+            df[pl.Series("", [-1, 0, -3, -2, 3, -4], dtype=pl_dtype)],
+            pl.DataFrame(
+                {"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]}
+            ),
+        )
+
+    # Boolean masks for rows not supported
+    with pytest.raises(TypeError):
+        df[[True, False, True], [False, True]]
+    with pytest.raises(TypeError):
+        df[pl.Series([True, False, True]), "b"]
+
+    assert_frame_equal(df[np.array([True, False])], df[:, :1])
+
+    # wrong length boolean mask for column selection
+    with pytest.raises(
+        ValueError,
+        match=f"expected {df.width} values when selecting columns by boolean mask",
+    ):
+        df[:, [True, False, True]]
+
+
+def test_df_getitem_numpy() -> None:
+    # nupmy getitem: assumed to be row indices if integers, or columns if strings
+    df = pl.DataFrame({"a": [1.0, 2.0, 3.0, 4.0], "b": [3, 4, 5, 6]})
 
     # numpy array: positive idxs and empty idx
     for np_dtype in (
@@ -324,75 +376,25 @@ def test_df_getitem() -> None:
             ),
         )
 
-    # note that we cannot use floats (even if they could be casted to integer without
-    # loss)
-    with pytest.raises(TypeError):
+    # zero-dimensional array indexing is equivalent to int row selection
+    assert_frame_equal(df[np.array(0)], pl.DataFrame({"a": [1.0], "b": [3]}))
+    assert_frame_equal(df[np.array(1)], pl.DataFrame({"a": [2.0], "b": [4]}))
+
+    # note that we cannot use floats (even if they could be cast to int without loss)
+    with pytest.raises(
+        TypeError,
+        match="cannot select columns using NumPy array of type float",
+    ):
         _ = df[np.array([1.0])]
 
     with pytest.raises(
-        TypeError, match="multi-dimensional NumPy arrays not supported as index"
+        TypeError,
+        match="multi-dimensional NumPy arrays not supported as index",
     ):
         df[np.array([[0], [1]])]
 
-    # sequences (lists or tuples; tuple only if length != 2)
-    # if strings or list of expressions, assumed to be column names
-    # if bools, assumed to be a row mask
-    # if integers, assumed to be row indices
-    assert_frame_equal(df[["a", "b"]], df)
-    assert_frame_equal(df.select([pl.col("a"), pl.col("b")]), df)
-    assert_frame_equal(
-        df[[1, -4, -1, 2, 1]],
-        pl.DataFrame({"a": [2.0, 1.0, 4.0, 3.0, 2.0], "b": [4, 3, 6, 5, 4]}),
-    )
 
-    # pl.Series: strings for column selections.
-    assert_frame_equal(df[pl.Series("", ["a", "b"])], df)
-
-    # pl.Series: positive idxs or empty idxs for row selection.
-    for pl_dtype in (
-        pl.Int8,
-        pl.Int16,
-        pl.Int32,
-        pl.Int64,
-        pl.UInt8,
-        pl.UInt16,
-        pl.UInt32,
-        pl.UInt64,
-    ):
-        assert_frame_equal(
-            df[pl.Series("", [1, 0, 3, 2, 3, 0], dtype=pl_dtype)],
-            pl.DataFrame(
-                {"a": [2.0, 1.0, 4.0, 3.0, 4.0, 1.0], "b": [4, 3, 6, 5, 6, 3]}
-            ),
-        )
-        assert df[pl.Series("", [], dtype=pl_dtype)].columns == ["a", "b"]
-
-    # pl.Series: positive and negative idxs for row selection.
-    for pl_dtype in (pl.Int8, pl.Int16, pl.Int32, pl.Int64):
-        assert_frame_equal(
-            df[pl.Series("", [-1, 0, -3, -2, 3, -4], dtype=pl_dtype)],
-            pl.DataFrame(
-                {"a": [4.0, 1.0, 2.0, 3.0, 4.0, 1.0], "b": [6, 3, 4, 5, 6, 3]}
-            ),
-        )
-
-    # Boolean masks for rows not supported
-    with pytest.raises(TypeError):
-        df[[True, False, True], [False, True]]
-    with pytest.raises(TypeError):
-        df[pl.Series([True, False, True]), "b"]
-
-    assert_frame_equal(df[np.array([True, False])], df[:, :1])
-
-    # wrong length boolean mask for column selection
-    with pytest.raises(
-        ValueError,
-        match=f"expected {df.width} values when selecting columns by boolean mask",
-    ):
-        df[:, [True, False, True]]
-
-
-def test_df_getitem2() -> None:
+def test_df_getitem_extended() -> None:
     df = pl.DataFrame({"a": [1, 2, 3], "b": [1.0, 2.0, 3.0], "c": ["a", "b", "c"]})
 
     # select columns by mask
@@ -479,3 +481,9 @@ def test_df_getitem_5343() -> None:
     assert df[4, 5] == 1024
     assert_frame_equal(df[4, [2]], pl.DataFrame({"foo2": [16]}))
     assert_frame_equal(df[4, [5]], pl.DataFrame({"foo5": [1024]}))
+
+
+def test_no_deadlock_19358() -> None:
+    s = pl.Series(["text"] * 100 + [1] * 100, dtype=pl.Object)
+    result = s.to_frame()[[0, -1]]
+    assert result[""].to_list() == ["text", 1]

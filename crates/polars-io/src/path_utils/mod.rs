@@ -14,28 +14,120 @@ mod hugging_face;
 use crate::cloud::CloudOptions;
 
 pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
-    let path = std::env::var("POLARS_TEMP_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            PathBuf::from(std::env::temp_dir().to_string_lossy().as_ref()).join("polars/")
-        })
+    (|| {
+        let verbose = config::verbose();
+
+        let path = if let Ok(v) = std::env::var("POLARS_TEMP_DIR").map(PathBuf::from) {
+            if verbose {
+                eprintln!("init_temp_dir: sourced from POLARS_TEMP_DIR")
+            }
+            v
+        } else if cfg!(target_family = "unix") {
+            let id = std::env::var("USER")
+                .inspect(|_| {
+                    if verbose {
+                        eprintln!("init_temp_dir: sourced $USER")
+                    }
+                })
+                .or_else(|_e| {
+                    // We shouldn't hit here, but we can fallback to hashing $HOME if blake3 is
+                    // available (it is available when file_cache is activated).
+                    #[cfg(feature = "file_cache")]
+                    {
+                        std::env::var("HOME")
+                            .inspect(|_| {
+                                if verbose {
+                                    eprintln!("init_temp_dir: sourced $HOME")
+                                }
+                            })
+                            .map(|x| blake3::hash(x.as_bytes()).to_hex()[..32].to_string())
+                    }
+                    #[cfg(not(feature = "file_cache"))]
+                    {
+                        Err(_e)
+                    }
+                });
+
+            if let Ok(v) = id {
+                std::env::temp_dir().join(format!("polars-{}/", v))
+            } else {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "could not load $USER or $HOME environment variables",
+                ));
+            }
+        } else if cfg!(target_family = "windows") {
+            // Setting permissions on Windows is not as easy compared to Unix, but fortunately
+            // the default temporary directory location is underneath the user profile, so we
+            // shouldn't need to do anything.
+            std::env::temp_dir().join("polars/")
+        } else {
+            std::env::temp_dir().join("polars/")
+        }
         .into_boxed_path();
 
-    if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
-        if !path.is_dir() {
-            panic!(
-                "failed to create temporary directory: path = {}, err = {}",
-                path.to_str().unwrap(),
-                err
-            );
+        if let Err(err) = std::fs::create_dir_all(path.as_ref()) {
+            if !path.is_dir() {
+                panic!(
+                    "failed to create temporary directory: {} (path = {:?})",
+                    err,
+                    path.as_ref()
+                );
+            }
         }
-    }
 
-    path
+        #[cfg(target_family = "unix")]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let result = (|| {
+                std::fs::set_permissions(path.as_ref(), std::fs::Permissions::from_mode(0o700))?;
+                let perms = std::fs::metadata(path.as_ref())?.permissions();
+
+                if (perms.mode() % 0o1000) != 0o700 {
+                    std::io::Result::Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!("permission mismatch: {:?}", perms),
+                    ))
+                } else {
+                    std::io::Result::Ok(())
+                }
+            })()
+            .map_err(|e| {
+                std::io::Error::new(
+                    e.kind(),
+                    format!(
+                        "error setting temporary directory permissions: {} (path = {:?})",
+                        e,
+                        path.as_ref()
+                    ),
+                )
+            });
+
+            if std::env::var("POLARS_ALLOW_UNSECURED_TEMP_DIR").as_deref() != Ok("1") {
+                result?;
+            }
+        }
+
+        std::io::Result::Ok(path)
+    })()
+    .map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!(
+                "error initializing temporary directory: {} \
+                 consider explicitly setting POLARS_TEMP_DIR",
+                e
+            ),
+        )
+    })
+    .unwrap()
 });
 
 /// Replaces a "~" in the Path with the home directory.
-pub fn resolve_homedir(path: &Path) -> PathBuf {
+pub fn resolve_homedir(path: &dyn AsRef<Path>) -> PathBuf {
+    let path = path.as_ref();
+
     if path.starts_with("~") {
         // home crate does not compile on wasm https://github.com/rust-lang/cargo/issues/12297
         #[cfg(not(target_family = "wasm"))]
@@ -77,9 +169,9 @@ pub fn expanded_from_single_directory<P: AsRef<std::path::Path>>(
             !is_cloud_url(paths[0].as_ref()) && paths[0].as_ref().is_dir()
         )
         || (
-            // Otherwise we check the output path is different from the input path, so that we also
-            // handle the case of a directory containing a single file.
-            !expanded_paths.is_empty() && (paths[0].as_ref() != expanded_paths[0].as_ref())
+            // For cloud paths, we determine that the input path isn't a file by checking that the
+            // output path differs.
+            expanded_paths.is_empty() || (paths[0].as_ref() != expanded_paths[0].as_ref())
         )
     }
 }
@@ -99,7 +191,7 @@ struct HiveIdxTracker<'a> {
     check_directory_level: bool,
 }
 
-impl<'a> HiveIdxTracker<'a> {
+impl HiveIdxTracker<'_> {
     fn update(&mut self, i: usize, path_idx: usize) -> PolarsResult<()> {
         let check_directory_level = self.check_directory_level;
         let paths = self.paths;
@@ -270,22 +362,31 @@ pub fn expand_paths_hive(
                         let cloud_location = &cloud_location;
 
                         let mut paths = store
-                            .list(Some(&prefix))
-                            .try_filter_map(|x| async move {
-                                let out = (x.size > 0).then(|| {
-                                    PathBuf::from({
-                                        format_path(
-                                            &cloud_location.scheme,
-                                            &cloud_location.bucket,
-                                            x.location.as_ref(),
-                                        )
-                                    })
-                                });
-                                Ok(out)
+                            .try_exec_rebuild_on_err(|store| {
+                                let st = store.clone();
+
+                                async {
+                                    let store = st;
+                                    store
+                                        .list(Some(&prefix))
+                                        .try_filter_map(|x| async move {
+                                            let out = (x.size > 0).then(|| {
+                                                PathBuf::from({
+                                                    format_path(
+                                                        &cloud_location.scheme,
+                                                        &cloud_location.bucket,
+                                                        x.location.as_ref(),
+                                                    )
+                                                })
+                                            });
+                                            Ok(out)
+                                        })
+                                        .try_collect::<Vec<_>>()
+                                        .await
+                                        .map_err(to_compute_err)
+                                }
                             })
-                            .try_collect::<Vec<_>>()
-                            .await
-                            .map_err(to_compute_err)?;
+                            .await?;
 
                         paths.sort_unstable();
                         (

@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, NamedTuple, cast
 import pyarrow as pa
 import pytest
 import sqlalchemy
-from sqlalchemy import Integer, MetaData, Table, create_engine, func, select
+from sqlalchemy import Integer, MetaData, Table, create_engine, func, select, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.sql.expression import cast as alchemy_cast
 
@@ -20,7 +20,7 @@ import polars as pl
 from polars._utils.various import parse_version
 from polars.exceptions import DuplicateError, UnsuitableSQLError
 from polars.io.database._arrow_registry import ARROW_DRIVER_REGISTRY
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import (
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
 
 def adbc_sqlite_connect(*args: Any, **kwargs: Any) -> Any:
-    with suppress(ModuleNotFoundError):  # not available on 3.8/windows
+    with suppress(ModuleNotFoundError):  # not available on windows
         from adbc_driver_sqlite.dbapi import connect
 
         args = tuple(str(a) if isinstance(a, Path) else a for a in args)
@@ -108,7 +108,7 @@ class MockResultSet:
         batched: bool,
         exact_batch_size: bool,
         repeat_batch_calls: bool = False,
-    ):
+    ) -> None:
         self.test_data = test_data
         self.repeat_batched_calls = repeat_batch_calls
         self.exact_batch_size = exact_batch_size
@@ -190,8 +190,8 @@ class ExceptionTestParams(NamedTuple):
                 schema_overrides={"id": pl.UInt8},
             ),
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="uri: adbc",
         ),
@@ -256,8 +256,8 @@ class ExceptionTestParams(NamedTuple):
                 expected_dates=["2020-01-01", "2021-12-31"],
             ),
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (fetchall)",
         ),
@@ -275,8 +275,8 @@ class ExceptionTestParams(NamedTuple):
                 batch_size=1,
             ),
             marks=pytest.mark.skipif(
-                sys.version_info < (3, 9) or sys.platform == "win32",
-                reason="adbc_driver_sqlite not available below Python 3.9 / on Windows",
+                sys.platform == "win32",
+                reason="adbc_driver_sqlite not available on Windows",
             ),
             id="conn: adbc (batched)",
         ),
@@ -292,17 +292,18 @@ def test_read_database(
     tmp_sqlite_db: Path,
 ) -> None:
     if read_method == "read_database_uri":
+        connect_using = cast("DbReadEngine", connect_using)
         # instantiate the connection ourselves, using connectorx/adbc
         df = pl.read_database_uri(
             uri=f"sqlite:///{tmp_sqlite_db}",
             query="SELECT * FROM test_data",
-            engine=str(connect_using),  # type: ignore[arg-type]
+            engine=connect_using,
             schema_overrides=schema_overrides,
         )
         df_empty = pl.read_database_uri(
             uri=f"sqlite:///{tmp_sqlite_db}",
             query="SELECT * FROM test_data WHERE name LIKE '%polars%'",
-            engine=str(connect_using),  # type: ignore[arg-type]
+            engine=connect_using,
             schema_overrides=schema_overrides,
         )
     elif "adbc" in os.environ["PYTEST_CURRENT_TEST"]:
@@ -382,6 +383,41 @@ def test_read_database_alchemy_selectable(tmp_sqlite_db: Path) -> None:
     assert_frame_equal(batches[0], expected)
 
 
+def test_read_database_alchemy_textclause(tmp_sqlite_db: Path) -> None:
+    # various flavours of alchemy connection
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    alchemy_session: ConnectionOrCursor = sessionmaker(bind=alchemy_engine)()
+    alchemy_conn: ConnectionOrCursor = alchemy_engine.connect()
+
+    # establish sqlalchemy "textclause" and validate usage
+    textclause_query = text(
+        """
+                SELECT CAST(STRFTIME('%Y',"date") AS INT) as "year", name, value
+                FROM test_data
+                WHERE value < 0
+            """
+    )
+
+    expected = pl.DataFrame({"year": [2021], "name": ["other"], "value": [-99.5]})
+
+    for conn in (alchemy_session, alchemy_engine, alchemy_conn):
+        assert_frame_equal(
+            pl.read_database(textclause_query, connection=conn),
+            expected,
+        )
+
+    batches = list(
+        pl.read_database(
+            textclause_query,
+            connection=conn,
+            iter_batches=True,
+            batch_size=1,
+        )
+    )
+    assert len(batches) == 1
+    assert_frame_equal(batches[0], expected)
+
+
 def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
     # raw cursor "execute" only takes positional params, alchemy cursor takes kwargs
     alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
@@ -427,8 +463,7 @@ def test_read_database_parameterised(tmp_sqlite_db: Path) -> None:
     ],
 )
 @pytest.mark.skipif(
-    sys.version_info < (3, 9) or sys.platform == "win32",
-    reason="adbc_driver_sqlite not available on py3.8/windows",
+    sys.platform == "win32", reason="adbc_driver_sqlite not available on Windows"
 )
 def test_read_database_parameterised_uri(
     param: str, param_value: Any, tmp_sqlite_db: Path
@@ -703,18 +738,14 @@ def test_read_database_duplicate_column_error(tmp_sqlite_db: Path, query: str) -
     ],
 )
 def test_read_database_cx_credentials(uri: str) -> None:
-    if sys.version_info > (3, 9, 4):
-        # slightly different error on more recent Python versions
-        with pytest.raises(RuntimeError, match=r"Source.*not supported"):
-            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
-    else:
-        # check that we masked the potential credentials leak; this isn't really
-        # our responsibility (ideally would be handled by connectorx), but we
-        # can reasonably mitigate the issue.
-        with pytest.raises(BaseException, match=r"fakedb://\*\*\*:\*\*\*@\w+"):
-            pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
+    with pytest.raises(RuntimeError, match=r"Source.*not supported"):
+        pl.read_database_uri("SELECT * FROM data", uri=uri, engine="connectorx")
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="kuzu segfaults on windows: https://github.com/pola-rs/polars/actions/runs/12502055945/job/34880479875?pr=20462",
+)
 @pytest.mark.write_disk
 def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
     import kuzu
@@ -781,3 +812,25 @@ def test_read_kuzu_graph_database(tmp_path: Path, io_files_path: Path) -> None:
             schema={"a.name": pl.Utf8, "f.since": pl.Int64, "b.name": pl.Utf8}
         ),
     )
+
+
+def test_sqlalchemy_row_init(tmp_sqlite_db: Path) -> None:
+    expected_frame = pl.DataFrame(
+        {
+            "id": [1, 2],
+            "name": ["misc", "other"],
+            "value": [100.0, -99.5],
+            "date": ["2020-01-01", "2021-12-31"],
+        }
+    )
+    expected_series = expected_frame.to_struct()
+
+    alchemy_engine = create_engine(f"sqlite:///{tmp_sqlite_db}")
+    with alchemy_engine.connect() as conn:
+        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
+        df = pl.DataFrame(list(query_result))
+        assert_frame_equal(expected_frame, df)
+
+        query_result = conn.execute(text("SELECT * FROM test_data ORDER BY name"))
+        s = pl.Series(list(query_result))
+        assert_series_equal(expected_series, s)

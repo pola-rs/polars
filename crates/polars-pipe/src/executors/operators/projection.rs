@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
+use polars_core::frame::column::{Column, IntoColumn};
 use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_plan::prelude::ProjectionOptions;
@@ -70,7 +71,7 @@ impl Operator for ProjectionOperator {
                 has_literals |= s.len() == 1;
                 has_empty |= s.len() == 0;
 
-                Ok(s)
+                Ok(s.into_column())
             })
             .collect::<PolarsResult<Vec<_>>>()?;
 
@@ -88,7 +89,8 @@ impl Operator for ProjectionOperator {
             }
         }
 
-        let chunk = chunk.with_data(unsafe { DataFrame::new_no_checks(projected) });
+        let chunk =
+            chunk.with_data(unsafe { DataFrame::new_no_checks_height_from_first(projected) });
         Ok(OperatorResult::Finished(chunk))
     }
     fn split(&self, _thread_no: usize) -> Box<dyn Operator> {
@@ -117,11 +119,14 @@ impl Operator for HstackOperator {
         let projected = self
             .exprs
             .iter()
-            .map(|e| e.evaluate(chunk, &context.execution_state))
+            .map(|e| {
+                e.evaluate(chunk, &context.execution_state)
+                    .map(Column::from)
+            })
             .collect::<PolarsResult<Vec<_>>>()?;
 
         let columns = chunk.data.get_columns()[..width].to_vec();
-        let mut df = unsafe { DataFrame::new_no_checks(columns) };
+        let mut df = unsafe { DataFrame::new_no_checks_height_from_first(columns) };
 
         let schema = &*self.input_schema;
         if self.options.should_broadcast {

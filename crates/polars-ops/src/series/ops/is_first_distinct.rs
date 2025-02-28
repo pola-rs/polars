@@ -42,7 +42,7 @@ fn is_first_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
         out.set(0, true);
     } else {
         let ca = ca.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
+        let arr = ca.downcast_as_array();
         if ca.null_count() == 0 {
             let (true_index, false_index) =
                 find_first_true_false_no_null(arr.values().chunks::<u64>());
@@ -127,7 +127,7 @@ pub fn is_first_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
             let s = s.cast(&Binary).unwrap();
             return is_first_distinct(&s);
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
                 let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                 is_first_distinct_numeric(ca)

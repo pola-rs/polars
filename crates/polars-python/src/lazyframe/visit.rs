@@ -1,12 +1,13 @@
 use std::sync::{Arc, Mutex};
 
+use polars::prelude::python_dsl::PythonScanSource;
 use polars::prelude::PolarsError;
 use polars_plan::plans::{to_aexpr, Context, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
-use polars_plan::prelude::{AExpr, PythonOptions, PythonScanSource};
+use polars_plan::prelude::{AExpr, PythonOptions};
 use polars_utils::arena::{Arena, Node};
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 
 use super::visitor::{expr_nodes, nodes};
 use super::PyLazyFrame;
@@ -43,7 +44,7 @@ impl From<&ExprIR> for PyExprIR {
 type Version = (u16, u16);
 
 #[pyclass]
-pub(crate) struct NodeTraverser {
+pub struct NodeTraverser {
     root: Node,
     lp_arena: Arc<Mutex<Arena<IR>>>,
     expr_arena: Arc<Mutex<Arena<AExpr>>>,
@@ -57,9 +58,9 @@ impl NodeTraverser {
     // Increment major on breaking changes to the IR (e.g. renaming
     // fields, reordering tuples), minor on backwards compatible
     // changes (e.g. exposing a new expression node).
-    const VERSION: Version = (2, 0);
+    const VERSION: Version = (6, 0);
 
-    pub(crate) fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
+    pub fn new(root: Node, lp_arena: Arena<IR>, expr_arena: Arena<AExpr>) -> Self {
         Self {
             root,
             lp_arena: Arc::new(Mutex::new(lp_arena)),
@@ -71,7 +72,7 @@ impl NodeTraverser {
     }
 
     #[allow(clippy::type_complexity)]
-    pub(crate) fn get_arenas(&self) -> (Arc<Mutex<Arena<IR>>>, Arc<Mutex<Arena<AExpr>>>) {
+    pub fn get_arenas(&self) -> (Arc<Mutex<Arena<IR>>>, Arc<Mutex<Arena<AExpr>>>) {
         (self.lp_arena.clone(), self.expr_arena.clone())
     }
 
@@ -89,37 +90,32 @@ impl NodeTraverser {
         this_node.copy_exprs(&mut self.expr_scratch);
     }
 
-    fn scratch_to_list(&mut self) -> PyObject {
-        Python::with_gil(|py| {
-            PyList::new_bound(py, self.scratch.drain(..).map(|node| node.0)).to_object(py)
-        })
+    fn scratch_to_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        PyList::new(py, self.scratch.drain(..).map(|node| node.0))
     }
 
-    fn expr_to_list(&mut self) -> PyObject {
-        Python::with_gil(|py| {
-            PyList::new_bound(
-                py,
-                self.expr_scratch
-                    .drain(..)
-                    .map(|e| PyExprIR::from(e).into_py(py)),
-            )
-            .to_object(py)
-        })
+    fn expr_to_list<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        PyList::new(
+            py,
+            self.expr_scratch
+                .drain(..)
+                .map(|e| PyExprIR::from(e).into_pyobject(py).unwrap()),
+        )
     }
 }
 
 #[pymethods]
 impl NodeTraverser {
     /// Get expression nodes
-    fn get_exprs(&mut self) -> PyObject {
+    fn get_exprs<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         self.fill_expressions();
-        self.expr_to_list()
+        self.expr_to_list(py)
     }
 
     /// Get input nodes
-    fn get_inputs(&mut self) -> PyObject {
+    fn get_inputs<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
         self.fill_inputs();
-        self.scratch_to_list()
+        self.scratch_to_list(py)
     }
 
     /// The current version of the IR
@@ -128,14 +124,14 @@ impl NodeTraverser {
     }
 
     /// Get Schema of current node as python dict<str, pl.DataType>
-    fn get_schema(&self, py: Python<'_>) -> PyObject {
+    fn get_schema<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
-        Wrap(&**schema).into_py(py)
+        Wrap(&**schema).into_pyobject(py)
     }
 
     /// Get expression dtype of expr_node, the schema used is that of the current root node
-    fn get_dtype(&self, expr_node: usize, py: Python<'_>) -> PyResult<PyObject> {
+    fn get_dtype<'py>(&self, expr_node: usize, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let expr_node = Node(expr_node);
         let lp_arena = self.lp_arena.lock().unwrap();
         let schema = lp_arena.get(self.root).schema(&lp_arena);
@@ -144,7 +140,7 @@ impl NodeTraverser {
             .get(expr_node)
             .to_field(&schema, Context::Default, &expr_arena)
             .map_err(PyPolarsErr::from)?;
-        Ok(Wrap(field.dtype).to_object(py))
+        Wrap(field.dtype).into_pyobject(py)
     }
 
     /// Set the current node in the plan.

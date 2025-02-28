@@ -116,3 +116,41 @@ def test_lf_serde_scan(tmp_path: Path) -> None:
     result = pl.LazyFrame.deserialize(io.BytesIO(ser))
     assert_frame_equal(result, lf)
     assert_frame_equal(result.collect(), df)
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
+def test_lf_serde_version_specific_lambda() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).select(
+        pl.col("a").map_elements(lambda x: x + 1, return_dtype=pl.Int64)
+    )
+    ser = lf.serialize()
+
+    result = pl.LazyFrame.deserialize(io.BytesIO(ser))
+    expected = pl.LazyFrame({"a": [2, 3, 4]})
+    assert_frame_equal(result, expected)
+
+
+def custom_function(x: pl.Series) -> pl.Series:
+    return x + 1
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
+def test_lf_serde_version_specific_named_function() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).select(
+        pl.col("a").map_batches(custom_function, return_dtype=pl.Int64)
+    )
+    ser = lf.serialize()
+
+    result = pl.LazyFrame.deserialize(io.BytesIO(ser))
+    expected = pl.LazyFrame({"a": [2, 3, 4]})
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.filterwarnings("ignore::polars.exceptions.PolarsInefficientMapWarning")
+def test_lf_serde_map_batches_on_lazyframe() -> None:
+    lf = pl.LazyFrame({"a": [1, 2, 3]}).map_batches(lambda x: x + 1)
+    ser = lf.serialize()
+
+    result = pl.LazyFrame.deserialize(io.BytesIO(ser))
+    expected = pl.LazyFrame({"a": [2, 3, 4]})
+    assert_frame_equal(result, expected)

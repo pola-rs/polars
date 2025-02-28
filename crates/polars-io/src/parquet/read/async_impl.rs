@@ -19,9 +19,9 @@ use crate::cloud::{
 };
 use crate::parquet::metadata::FileMetadataRef;
 use crate::pl_async::get_runtime;
-use crate::predicates::PhysicalIoExpr;
+use crate::predicates::ScanIOPredicate;
 
-type DownloadedRowGroup = Vec<(u64, Bytes)>;
+type DownloadedRowGroup = PlHashMap<u64, Bytes>;
 type QueuePayload = (usize, DownloadedRowGroup);
 type QueueSend = Arc<Sender<PolarsResult<QueuePayload>>>;
 
@@ -42,21 +42,15 @@ impl ParquetObjectStore {
         let path = object_path_from_str(&prefix)?;
 
         Ok(ParquetObjectStore {
-            store: PolarsObjectStore::new(store),
+            store,
             path,
             length: None,
             metadata,
         })
     }
 
-    async fn get_range(&self, start: usize, length: usize) -> PolarsResult<Bytes> {
-        self.store
-            .get_range(&self.path, start..start + length)
-            .await
-    }
-
-    async fn get_ranges(&self, ranges: &[Range<usize>]) -> PolarsResult<Vec<Bytes>> {
-        self.store.get_ranges(&self.path, ranges).await
+    async fn get_ranges(&self, ranges: &mut [Range<usize>]) -> PolarsResult<PlHashMap<u64, Bytes>> {
+        self.store.get_ranges_sort(&self.path, ranges).await
     }
 
     /// Initialize the length property of the object, unless it has already been fetched.
@@ -178,12 +172,15 @@ async fn download_projection(
     let mut offsets = Vec::with_capacity(fields.len());
     fields.iter().for_each(|name| {
         // A single column can have multiple matches (structs).
-        let iter = row_group.columns_under_root_iter(name).map(|meta| {
-            let byte_range = meta.byte_range();
-            let offset = byte_range.start;
-            let byte_range = byte_range.start as usize..byte_range.end as usize;
-            (offset, byte_range)
-        });
+        let iter = row_group
+            .columns_under_root_iter(name)
+            .unwrap()
+            .map(|meta| {
+                let byte_range = meta.byte_range();
+                let offset = byte_range.start;
+                let byte_range = byte_range.start as usize..byte_range.end as usize;
+                (offset, byte_range)
+            });
 
         for (offset, range) in iter {
             offsets.push(offset);
@@ -191,16 +188,10 @@ async fn download_projection(
         }
     });
 
-    let result = async_reader.get_ranges(&ranges).await.map(|bytes| {
-        (
-            rg_index,
-            bytes
-                .into_iter()
-                .zip(offsets)
-                .map(|(bytes, offset)| (offset, bytes))
-                .collect::<Vec<_>>(),
-        )
-    });
+    let result = async_reader
+        .get_ranges(&mut ranges)
+        .await
+        .map(|bytes_map| (rg_index, bytes_map));
     sender.send(result).await.is_ok()
 }
 
@@ -214,33 +205,20 @@ async fn download_row_group(
         return true;
     }
 
-    let full_byte_range = rg.full_byte_range();
-    let full_byte_range = full_byte_range.start as usize..full_byte_range.end as usize;
+    let mut ranges = rg
+        .byte_ranges_iter()
+        .map(|x| x.start as usize..x.end as usize)
+        .collect::<Vec<_>>();
 
-    let result = async_reader
-        .get_range(
-            full_byte_range.start,
-            full_byte_range.end - full_byte_range.start,
+    sender
+        .send(
+            async_reader
+                .get_ranges(&mut ranges)
+                .await
+                .map(|bytes_map| (rg_index, bytes_map)),
         )
         .await
-        .map(|bytes| {
-            (
-                rg_index,
-                rg.byte_ranges_iter()
-                    .map(|range| {
-                        (
-                            range.start,
-                            bytes.slice(
-                                range.start as usize - full_byte_range.start
-                                    ..range.end as usize - full_byte_range.start,
-                            ),
-                        )
-                    })
-                    .collect::<DownloadedRowGroup>(),
-            )
-        });
-
-    sender.send(result).await.is_ok()
+        .is_ok()
 }
 
 pub struct FetchRowGroupsFromObjectStore {
@@ -253,7 +231,7 @@ impl FetchRowGroupsFromObjectStore {
         reader: ParquetObjectStore,
         schema: ArrowSchemaRef,
         projection: Option<&[usize]>,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        predicate: Option<ScanIOPredicate>,
         row_group_range: Range<usize>,
         row_groups: &[RowGroupMetadata],
     ) -> PolarsResult<Self> {
@@ -266,7 +244,7 @@ impl FetchRowGroupsFromObjectStore {
 
         let mut prefetched: PlHashMap<usize, DownloadedRowGroup> = PlHashMap::new();
 
-        let mut row_groups = if let Some(pred) = predicate.as_deref() {
+        let mut row_groups = if let Some(pred) = predicate.as_ref() {
             row_group_range
                 .filter_map(|i| {
                     let rg = &row_groups[i];

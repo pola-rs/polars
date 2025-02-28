@@ -1,7 +1,10 @@
+#[cfg(feature = "timezones")]
+use polars_core::chunked_array::temporal::validate_time_zone;
+
 use super::*;
 use crate::{map, map_as_slice};
 
-impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<TemporalFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: TemporalFunction) -> Self {
         use TemporalFunction::*;
         match func {
@@ -55,6 +58,7 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
             #[cfg(feature = "timezones")]
             DSTOffset => map!(datetime::dst_offset),
             Round => map_as_slice!(datetime::round),
+            Replace => map_as_slice!(datetime::replace),
             #[cfg(feature = "timezones")]
             ReplaceTimeZone(tz, non_existent) => {
                 map_as_slice!(dispatch::replace_time_zone, tz.as_deref(), non_existent)
@@ -70,13 +74,36 @@ impl From<TemporalFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
+#[cfg(feature = "dtype-datetime")]
 pub(super) fn datetime(
-    s: &[Series],
+    s: &[Column],
     time_unit: &TimeUnit,
     time_zone: Option<&str>,
-) -> PolarsResult<Series> {
-    use polars_core::export::chrono::NaiveDate;
-    use polars_core::utils::CustomIterTools;
+) -> PolarsResult<Column> {
+    let col_name = PlSmallStr::from_static("datetime");
+
+    if s.iter().any(|s| s.is_empty()) {
+        return Ok(Column::new_empty(
+            col_name,
+            &DataType::Datetime(
+                time_unit.to_owned(),
+                match time_zone {
+                    #[cfg(feature = "timezones")]
+                    Some(time_zone) => {
+                        validate_time_zone(time_zone)?;
+                        Some(PlSmallStr::from_str(time_zone))
+                    },
+                    _ => {
+                        assert!(
+                            time_zone.is_none(),
+                            "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
+                        );
+                        None
+                    },
+                },
+            ),
+        ));
+    }
 
     let year = &s[0];
     let month = &s[1];
@@ -95,94 +122,56 @@ pub(super) fn datetime(
     }
     let year = year.i32()?;
 
-    let mut month = month.cast(&DataType::UInt32)?;
+    let mut month = month.cast(&DataType::Int8)?;
     if month.len() < max_len {
         month = month.new_from_index(0, max_len);
     }
-    let month = month.u32()?;
+    let month = month.i8()?;
 
-    let mut day = day.cast(&DataType::UInt32)?;
+    let mut day = day.cast(&DataType::Int8)?;
     if day.len() < max_len {
         day = day.new_from_index(0, max_len);
     }
-    let day = day.u32()?;
+    let day = day.i8()?;
 
-    let mut hour = hour.cast(&DataType::UInt32)?;
+    let mut hour = hour.cast(&DataType::Int8)?;
     if hour.len() < max_len {
         hour = hour.new_from_index(0, max_len);
     }
-    let hour = hour.u32()?;
+    let hour = hour.i8()?;
 
-    let mut minute = minute.cast(&DataType::UInt32)?;
+    let mut minute = minute.cast(&DataType::Int8)?;
     if minute.len() < max_len {
         minute = minute.new_from_index(0, max_len);
     }
-    let minute = minute.u32()?;
+    let minute = minute.i8()?;
 
-    let mut second = second.cast(&DataType::UInt32)?;
+    let mut second = second.cast(&DataType::Int8)?;
     if second.len() < max_len {
         second = second.new_from_index(0, max_len);
     }
-    let second = second.u32()?;
+    let second = second.i8()?;
 
-    let mut microsecond = microsecond.cast(&DataType::UInt32)?;
-    if microsecond.len() < max_len {
-        microsecond = microsecond.new_from_index(0, max_len);
+    let mut nanosecond = microsecond.cast(&DataType::Int32)? * 1_000;
+    if nanosecond.len() < max_len {
+        nanosecond = nanosecond.new_from_index(0, max_len);
     }
-    let microsecond = microsecond.u32()?;
+    let nanosecond = nanosecond.i32()?;
+
     let mut _ambiguous = ambiguous.cast(&DataType::String)?;
     if _ambiguous.len() < max_len {
         _ambiguous = _ambiguous.new_from_index(0, max_len);
     }
-    let _ambiguous = _ambiguous.str()?;
+    let ambiguous = _ambiguous.str()?;
 
-    let ca: Int64Chunked = year
-        .into_iter()
-        .zip(month)
-        .zip(day)
-        .zip(hour)
-        .zip(minute)
-        .zip(second)
-        .zip(microsecond)
-        .map(|((((((y, m), d), h), mnt), s), us)| {
-            if let (Some(y), Some(m), Some(d), Some(h), Some(mnt), Some(s), Some(us)) =
-                (y, m, d, h, mnt, s, us)
-            {
-                NaiveDate::from_ymd_opt(y, m, d)
-                    .and_then(|nd| nd.and_hms_micro_opt(h, mnt, s, us))
-                    .map(|ndt| match time_unit {
-                        TimeUnit::Milliseconds => ndt.and_utc().timestamp_millis(),
-                        TimeUnit::Microseconds => ndt.and_utc().timestamp_micros(),
-                        TimeUnit::Nanoseconds => ndt.and_utc().timestamp_nanos_opt().unwrap(),
-                    })
-            } else {
-                None
-            }
-        })
-        .collect_trusted();
-
-    let ca = match time_zone {
-        #[cfg(feature = "timezones")]
-        Some(_) => {
-            let mut ca = ca.into_datetime(*time_unit, None);
-            ca = replace_time_zone(&ca, time_zone, _ambiguous, NonExistent::Raise)?;
-            ca
-        },
-        _ => {
-            polars_ensure!(
-                time_zone.is_none(),
-                ComputeError: "cannot make use of the `time_zone` argument without the 'timezones' feature enabled."
-            );
-            ca.into_datetime(*time_unit, None)
-        },
-    };
-
-    let mut s = ca.into_series();
-    s.rename(PlSmallStr::from_static("datetime"));
-    Ok(s)
+    let ca = DatetimeChunked::new_from_parts(
+        year, month, day, hour, minute, second, nanosecond, ambiguous, time_unit, time_zone,
+        col_name,
+    );
+    ca.map(|s| s.into_column())
 }
 
-pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
+pub(super) fn combine(s: &[Column], tu: TimeUnit) -> PolarsResult<Column> {
     let date = &s[0];
     let time = &s[1];
 
@@ -207,7 +196,7 @@ pub(super) fn combine(s: &[Series], tu: TimeUnit) -> PolarsResult<Series> {
             &StringChunked::from_iter(std::iter::once("raise")),
             NonExistent::Raise,
         )?
-        .into()),
+        .into_column()),
         _ => result_naive,
     }
 }

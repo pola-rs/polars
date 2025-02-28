@@ -16,11 +16,14 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
     __register_startup_deps()
 
+from typing import Any
+
 from polars import api, exceptions, plugins, selectors
 from polars._utils.polars_version import get_polars_version as _get_polars_version
 
 # TODO: remove need for importing wrap utils at top level
 from polars._utils.wrap import wrap_df, wrap_s  # noqa: F401
+from polars.catalog.unity import Catalog
 from polars.config import Config
 from polars.convert import (
     from_arrow,
@@ -52,6 +55,7 @@ from polars.datatypes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Null,
     Object,
@@ -84,6 +88,7 @@ from polars.functions import (
     collect_all,
     collect_all_async,
     concat,
+    concat_arr,
     concat_list,
     concat_str,
     corr,
@@ -102,6 +107,7 @@ from polars.functions import (
     datetime_ranges,
     duration,
     element,
+    escape_regex,
     exclude,
     field,
     first,
@@ -115,6 +121,8 @@ from polars.functions import (
     int_ranges,
     last,
     len,
+    linear_space,
+    linear_spaces,
     lit,
     map_batches,
     map_groups,
@@ -174,6 +182,14 @@ from polars.io import (
     scan_parquet,
     scan_pyarrow_dataset,
 )
+from polars.io.cloud import (
+    CredentialProvider,
+    CredentialProviderAWS,
+    CredentialProviderAzure,
+    CredentialProviderFunction,
+    CredentialProviderFunctionReturn,
+    CredentialProviderGCP,
+)
 from polars.lazyframe import GPUEngine, LazyFrame
 from polars.meta import (
     build_info,
@@ -228,6 +244,7 @@ __all__ = [
     "Int16",
     "Int32",
     "Int64",
+    "Int128",
     "List",
     "Null",
     "Object",
@@ -264,6 +281,14 @@ __all__ = [
     "scan_ndjson",
     "scan_parquet",
     "scan_pyarrow_dataset",
+    "Catalog",
+    # polars.io.cloud
+    "CredentialProvider",
+    "CredentialProviderAWS",
+    "CredentialProviderAzure",
+    "CredentialProviderFunction",
+    "CredentialProviderFunctionReturn",
+    "CredentialProviderGCP",
     # polars.stringcache
     "StringCache",
     "disable_string_cache",
@@ -288,6 +313,7 @@ __all__ = [
     "time_range",
     "time_ranges",
     "zeros",
+    "escape_regex",
     # polars.functions.aggregation
     "all",
     "all_horizontal",
@@ -312,6 +338,7 @@ __all__ = [
     "col",
     "collect_all",
     "collect_all_async",
+    "concat_arr",
     "concat_list",
     "concat_str",
     "corr",
@@ -335,6 +362,8 @@ __all__ = [
     "int_range",
     "int_ranges",
     "last",
+    "linear_space",
+    "linear_spaces",
     "lit",
     "map_batches",
     "map_groups",
@@ -380,7 +409,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):  # type: ignore[no-untyped-def]
+def __getattr__(name: str) -> Any:
     # Deprecate re-export of exceptions at top-level
     if name in dir(exceptions):
         from polars._utils.deprecation import issue_deprecation_warning

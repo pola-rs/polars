@@ -15,11 +15,12 @@ pub use super::read_impl::BatchedParquetReader;
 use super::read_impl::{compute_row_group_range, read_parquet, FetchRowGroupsFromMmapReader};
 #[cfg(feature = "cloud")]
 use super::utils::materialize_empty_df;
+use super::utils::{ensure_matching_dtypes_if_found, projected_arrow_schema_to_projection_indices};
 #[cfg(feature = "cloud")]
 use crate::cloud::CloudOptions;
 use crate::mmap::MmapBytesReader;
 use crate::parquet::metadata::FileMetadataRef;
-use crate::predicates::PhysicalIoExpr;
+use crate::predicates::ScanIOPredicate;
 use crate::prelude::*;
 use crate::RowIndex;
 
@@ -36,7 +37,7 @@ pub struct ParquetReader<R: Read + Seek> {
     row_index: Option<RowIndex>,
     low_memory: bool,
     metadata: Option<FileMetadataRef>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
     hive_partition_columns: Option<Vec<Series>>,
     include_file_path: Option<(PlSmallStr, Arc<str>)>,
     use_statistics: bool,
@@ -80,21 +81,67 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
-    /// Ensure the schema of the file matches the given schema. Calling this
-    /// after setting the projection will ensure only the projected indices
-    /// are checked.
-    pub fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
-        let self_schema = self.schema()?;
-        let self_schema = self_schema.as_ref();
+    /// Checks that the file contains all the columns in `projected_arrow_schema` with the same
+    /// dtype, and sets the projection indices.
+    pub fn with_arrow_schema_projection(
+        mut self,
+        first_schema: &Arc<ArrowSchema>,
+        projected_arrow_schema: Option<&ArrowSchema>,
+        allow_missing_columns: bool,
+    ) -> PolarsResult<Self> {
+        let slf_schema = self.schema()?;
+        let slf_schema_width = slf_schema.len();
 
-        if let Some(projection) = self.projection.as_deref() {
-            ensure_matching_schema(
-                &schema.try_project_indices(projection)?,
-                &self_schema.try_project_indices(projection)?,
+        if allow_missing_columns {
+            // Must check the dtypes
+            ensure_matching_dtypes_if_found(
+                projected_arrow_schema.unwrap_or(first_schema.as_ref()),
+                self.schema()?.as_ref(),
             )?;
-        } else {
-            ensure_matching_schema(schema, self_schema)?;
+            self.schema = Some(Arc::new(
+                first_schema
+                    .iter()
+                    .map(|(name, field)| {
+                        (name.clone(), slf_schema.get(name).unwrap_or(field).clone())
+                    })
+                    .collect(),
+            ));
         }
+
+        let schema = self.schema()?;
+
+        (|| {
+            if let Some(projected_arrow_schema) = projected_arrow_schema {
+                self.projection = projected_arrow_schema_to_projection_indices(
+                    schema.as_ref(),
+                    projected_arrow_schema,
+                )?;
+            } else {
+                if slf_schema_width > first_schema.len() {
+                    polars_bail!(
+                       SchemaMismatch:
+                       "parquet file contained extra columns and no selection was given"
+                    )
+                }
+
+                self.projection =
+                    projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
+            };
+            Ok(())
+        })()
+        .map_err(|e| {
+            if !allow_missing_columns && matches!(e, PolarsError::ColumnNotFound(_)) {
+                e.wrap_msg(|s| {
+                    format!(
+                        "error with column selection, \
+                        consider enabling `allow_missing_columns`: {}",
+                        s
+                    )
+                })
+            } else {
+                e
+            }
+        })?;
 
         Ok(self)
     }
@@ -138,6 +185,10 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         self
     }
 
+    pub fn set_metadata(&mut self, metadata: FileMetadataRef) {
+        self.metadata = Some(metadata);
+    }
+
     pub fn get_metadata(&mut self) -> PolarsResult<&FileMetadataRef> {
         if self.metadata.is_none() {
             self.metadata = Some(Arc::new(read::read_metadata(&mut self.reader)?));
@@ -145,7 +196,7 @@ impl<R: MmapBytesReader> ParquetReader<R> {
         Ok(self.metadata.as_ref().unwrap())
     }
 
-    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+    pub fn with_predicate(mut self, predicate: Option<ScanIOPredicate>) -> Self {
         self.predicate = predicate;
         self
     }
@@ -205,7 +256,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
     fn finish(mut self) -> PolarsResult<DataFrame> {
         let schema = self.schema()?;
         let metadata = self.get_metadata()?.clone();
-        let n_rows = metadata.num_rows;
+        let n_rows = metadata.num_rows.min(self.slice.0 + self.slice.1);
 
         if let Some(cols) = &self.columns {
             self.projection = Some(columns_to_projection(cols, schema.as_ref())?);
@@ -217,7 +268,7 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
             self.projection.as_deref(),
             &schema,
             Some(metadata),
-            self.predicate.as_deref(),
+            self.predicate.as_ref(),
             self.parallel,
             self.row_index,
             self.use_statistics,
@@ -230,14 +281,14 @@ impl<R: MmapBytesReader> SerReader<R> for ParquetReader<R> {
 
         if let Some((col, value)) = &self.include_file_path {
             unsafe {
-                df.with_column_unchecked(
-                    StringChunked::full(
-                        col.clone(),
-                        value,
-                        if df.width() > 0 { df.height() } else { n_rows },
-                    )
-                    .into_series(),
-                )
+                df.with_column_unchecked(Column::new_scalar(
+                    col.clone(),
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(value.as_ref().into()),
+                    ),
+                    if df.width() > 0 { df.height() } else { n_rows },
+                ))
             };
         }
 
@@ -253,7 +304,7 @@ pub struct ParquetAsyncReader {
     slice: (usize, usize),
     rechunk: bool,
     projection: Option<Vec<usize>>,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    predicate: Option<ScanIOPredicate>,
     row_index: Option<RowIndex>,
     use_statistics: bool,
     hive_partition_columns: Option<Vec<Series>>,
@@ -284,18 +335,65 @@ impl ParquetAsyncReader {
         })
     }
 
-    pub async fn check_schema(mut self, schema: &ArrowSchema) -> PolarsResult<Self> {
-        let self_schema = self.schema().await?;
-        let self_schema = self_schema.as_ref();
+    pub async fn with_arrow_schema_projection(
+        mut self,
+        first_schema: &Arc<ArrowSchema>,
+        projected_arrow_schema: Option<&ArrowSchema>,
+        allow_missing_columns: bool,
+    ) -> PolarsResult<Self> {
+        let slf_schema = self.schema().await?;
+        let slf_schema_width = slf_schema.len();
 
-        if let Some(projection) = self.projection.as_deref() {
-            ensure_matching_schema(
-                &schema.try_project_indices(projection)?,
-                &self_schema.try_project_indices(projection)?,
+        if allow_missing_columns {
+            // Must check the dtypes
+            ensure_matching_dtypes_if_found(
+                projected_arrow_schema.unwrap_or(first_schema.as_ref()),
+                self.schema().await?.as_ref(),
             )?;
-        } else {
-            ensure_matching_schema(schema, self_schema)?;
+            self.schema = Some(Arc::new(
+                first_schema
+                    .iter()
+                    .map(|(name, field)| {
+                        (name.clone(), slf_schema.get(name).unwrap_or(field).clone())
+                    })
+                    .collect(),
+            ));
         }
+
+        let schema = self.schema().await?;
+
+        (|| {
+            if let Some(projected_arrow_schema) = projected_arrow_schema {
+                self.projection = projected_arrow_schema_to_projection_indices(
+                    schema.as_ref(),
+                    projected_arrow_schema,
+                )?;
+            } else {
+                if slf_schema_width > first_schema.len() {
+                    polars_bail!(
+                       SchemaMismatch:
+                       "parquet file contained extra columns and no selection was given"
+                    )
+                }
+
+                self.projection =
+                    projected_arrow_schema_to_projection_indices(schema.as_ref(), first_schema)?;
+            };
+            Ok(())
+        })()
+        .map_err(|e| {
+            if !allow_missing_columns && matches!(e, PolarsError::ColumnNotFound(_)) {
+                e.wrap_msg(|s| {
+                    format!(
+                        "error with column selection, \
+                        consider enabling `allow_missing_columns`: {}",
+                        s
+                    )
+                })
+            } else {
+                e
+            }
+        })?;
 
         Ok(self)
     }
@@ -339,7 +437,7 @@ impl ParquetAsyncReader {
         self
     }
 
-    pub fn with_predicate(mut self, predicate: Option<Arc<dyn PhysicalIoExpr>>) -> Self {
+    pub fn with_predicate(mut self, predicate: Option<ScanIOPredicate>) -> Self {
         self.predicate = predicate;
         self
     }

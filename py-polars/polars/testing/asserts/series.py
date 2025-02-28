@@ -12,7 +12,7 @@ from polars.datatypes import (
     unpack_dtypes,
 )
 from polars.datatypes.group import FLOAT_DTYPES
-from polars.exceptions import ComputeError, InvalidOperationError
+from polars.exceptions import ComputeError, InvalidOperationError, ShapeError
 from polars.series import Series
 from polars.testing.asserts.utils import raise_assertion_error
 
@@ -155,6 +155,14 @@ def _assert_series_values_equal(
             "incompatible data types",
             left=left.dtype,
             right=right.dtype,
+            cause=exc,
+        )
+    except ShapeError as exc:
+        raise_assertion_error(
+            "Series",
+            "incompatible lengths",
+            left=left,
+            right=right,
             cause=exc,
         )
 
@@ -311,9 +319,11 @@ def _assert_series_values_within_tolerance(
 
     difference = (left_unequal - right_unequal).abs()
     tolerance = atol + rtol * right_unequal.abs()
-    exceeds_tolerance = difference > tolerance
+    within_tolerance = (difference <= tolerance) & right_unequal.is_finite() | (
+        left_unequal == right_unequal
+    )
 
-    if exceeds_tolerance.any():
+    if not within_tolerance.all():
         raise_assertion_error(
             "Series",
             "value mismatch",

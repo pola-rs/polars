@@ -22,23 +22,23 @@ fallible-streaming-iterator = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 hashbrown = { workspace = true }
 num-traits = { workspace = true }
-polars-compute = { workspace = true }
+polars-compute = { workspace = true, features = ["approx_unique", "cast"] }
 polars-error = { workspace = true }
+polars-parquet-format = "0.1"
 polars-utils = { workspace = true, features = ["mmap"] }
 simdutf8 = { workspace = true }
 
-parquet-format-safe = "0.2"
 streaming-decompression = "0.1"
 
 async-stream = { version = "0.3.3", optional = true }
 
-brotli = { version = "^6.0", optional = true }
+brotli = { version = "^7.0", optional = true }
 flate2 = { workspace = true, optional = true }
 lz4 = { version = "1.24", optional = true }
 lz4_flex = { version = "0.11", optional = true }
 serde = { workspace = true, optional = true }
 snap = { version = "^1.1", optional = true }
-zstd = { version = "^0.13", optional = true, default-features = false }
+zstd = { workspace = true, optional = true }
 
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
@@ -47,20 +47,20 @@ rand = "0.8"
 
 [features]
 compression = [
-  "zstd",
-  "gzip",
-  "snappy",
-  "lz4",
   "brotli",
+  "gzip",
+  "lz4",
+  "snappy",
+  "zstd",
 ]
 
 # compression backends
 snappy = ["snap"]
-gzip = ["flate2/rust_backend"]
-gzip_zlib_ng = ["flate2/zlib-ng"]
+gzip = ["flate2/zlib-rs"]
 lz4 = ["dep:lz4"]
 lz4_flex = ["dep:lz4_flex"]
 
-async = ["async-stream", "futures", "parquet-format-safe/async"]
+async = ["async-stream", "futures", "polars-parquet-format/async"]
 bloom_filter = ["xxhash-rust"]
 serde_types = ["serde"]
+simd = ["polars-compute/simd"]

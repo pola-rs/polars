@@ -1,3 +1,4 @@
+use self::sort::arg_sort_row_fmt;
 use super::*;
 use crate::chunked_array::comparison::*;
 #[cfg(feature = "algorithm_group_by")]
@@ -14,10 +15,10 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.ref_field().dtype()
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
 
@@ -31,17 +32,38 @@ impl private::PrivateSeries for SeriesWrap<ListChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
-        IntoGroupsProxy::group_tuples(&self.0, multithreaded, sorted)
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
+        IntoGroupsType::group_tuples(&self.0, multithreaded, sorted)
     }
 
     fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         (&self.0).into_total_eq_inner()
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        invalid_operation_panic!(into_total_ord_inner, self)
+    }
+
+    fn add_to(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.add_to(rhs)
+    }
+
+    fn subtract(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.subtract(rhs)
+    }
+
+    fn multiply(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.multiply(rhs)
+    }
+    fn divide(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.divide(rhs)
+    }
+    fn remainder(&self, rhs: &Series) -> PolarsResult<Series> {
+        self.0.remainder(rhs)
     }
 }
 
@@ -75,6 +97,23 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
         );
     }
 
+    fn arg_sort(&self, options: SortOptions) -> IdxCa {
+        let slf = (*self).clone();
+        let slf = slf.into_column();
+        arg_sort_row_fmt(
+            &[slf],
+            options.descending,
+            options.nulls_last,
+            options.multithreaded,
+        )
+        .unwrap()
+    }
+
+    fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {
+        let idxs = self.arg_sort(options);
+        Ok(unsafe { self.take_unchecked(&idxs) })
+    }
+
     fn slice(&self, offset: i64, length: usize) -> Series {
         self.0.slice(offset, length).into_series()
     }
@@ -87,6 +126,10 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.as_ref().as_ref())
+    }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -119,7 +162,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.0.rechunk().into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
@@ -128,10 +171,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, cast_options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]
@@ -149,7 +188,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn unique(&self) -> PolarsResult<Series> {
-        if !self.inner_dtype().is_numeric() {
+        if !self.inner_dtype().is_primitive_numeric() {
             polars_bail!(opq = unique, self.dtype());
         }
         // this can be called in aggregation, so this fast path can be worth a lot
@@ -165,9 +204,6 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn n_unique(&self) -> PolarsResult<usize> {
-        if !self.inner_dtype().is_numeric() {
-            polars_bail!(opq = n_unique, self.dtype());
-        }
         // this can be called in aggregation, so this fast path can be worth a lot
         match self.len() {
             0 => Ok(0),
@@ -182,7 +218,7 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
 
     #[cfg(feature = "algorithm_group_by")]
     fn arg_unique(&self) -> PolarsResult<IdxCa> {
-        if !self.inner_dtype().is_numeric() {
+        if !self.inner_dtype().is_primitive_numeric() {
             polars_bail!(opq = arg_unique, self.dtype());
         }
         // this can be called in aggregation, so this fast path can be worth a lot
@@ -219,13 +255,16 @@ impl SeriesTrait for SeriesWrap<ListChunked> {
     fn clone_inner(&self) -> Arc<dyn SeriesTrait> {
         Arc::new(SeriesWrap(Clone::clone(&self.0)))
     }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
     }
 
-    /// Get a hold to self as `Any` trait reference.
-    /// Only implemented for ObjectType
     fn as_any_mut(&mut self) -> &mut dyn Any {
         &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }

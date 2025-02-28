@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path("../..").resolve()))
 
 project = "Polars"
 author = "Ritchie Vink"
-copyright = f"2020, {author}"
+copyright = f"2025, {author}"
 
 
 # -- General configuration ---------------------------------------------------
@@ -54,6 +54,7 @@ extensions = [
 default_role = "code"
 
 maximum_signature_line_length = 88
+
 
 # Below setting is used by
 # sphinx-autosummary-accessors - build docs for namespace accessors like `Series.str`
@@ -145,9 +146,14 @@ html_theme_options = {
             "icon": "fa-brands fa-discord",
         },
         {
-            "name": "Twitter",
-            "url": "https://twitter.com/DataPolars",
-            "icon": "fa-brands fa-twitter",
+            "name": "X/Twitter",
+            "url": "https://x.com/datapolars",
+            "icon": "fa-brands fa-x-twitter",
+        },
+        {
+            "name": "Bluesky",
+            "url": "https://bsky.app/profile/pola.rs",
+            "icon": "fa-brands fa-bluesky",
         },
     ],
     "logo": {
@@ -205,7 +211,7 @@ def linkcode_resolve(domain: str, info: dict[str, Any]) -> str | None:
                 # Accessing deprecated objects will generate noisy warnings
                 warnings.simplefilter("ignore", FutureWarning)
                 obj = getattr(obj, part)
-        except AttributeError:
+        except AttributeError:  # noqa: PERF203
             return None
 
     try:

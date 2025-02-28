@@ -4,9 +4,9 @@ use std::sync::atomic::AtomicU64;
 use std::sync::{Arc, Mutex};
 
 use fs4::fs_std::FileExt;
+use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
-use polars_utils::flatten;
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
 use super::file_fetcher::{FileFetcher, RemoteMetadata};
@@ -152,13 +152,45 @@ impl Inner {
                 .truncate(true)
                 .open(data_file_path)
                 .map_err(PolarsError::from)?;
+
+            // * Some(true)   => always raise
+            // * Some(false)  => never raise
+            // * None         => do not raise if fallocate() is not permitted, otherwise raise.
+            static RAISE_ALLOC_ERROR: Lazy<Option<bool>> = Lazy::new(|| {
+                let v = match std::env::var("POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR").as_deref() {
+                    Ok("1") => Some(false),
+                    Ok("0") => Some(true),
+                    Err(_) => None,
+                    Ok(v) => panic!(
+                        "invalid value {} for POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR",
+                        v
+                    ),
+                };
+                if config::verbose() {
+                    eprintln!("[file_cache]: RAISE_ALLOC_ERROR: {:?}", v);
+                }
+                v
+            });
+
+            // Initialize it to get the verbose print
+            let raise_alloc_err = *RAISE_ALLOC_ERROR;
+
             file.lock_exclusive().unwrap();
-            if file.allocate(remote_metadata.size).is_err() {
-                polars_bail!(
-                    ComputeError: "failed to allocate {} bytes to download uri = {}",
+            if let Err(e) = file.allocate(remote_metadata.size) {
+                let msg = format!(
+                    "failed to reserve {} bytes on disk to download uri = {}: {:?}",
                     remote_metadata.size,
-                    self.uri.as_ref()
+                    self.uri.as_ref(),
+                    e
                 );
+
+                if raise_alloc_err == Some(true)
+                    || (raise_alloc_err.is_none() && file.allocate(1).is_ok())
+                {
+                    polars_bail!(ComputeError: msg)
+                } else if config::verbose() {
+                    eprintln!("[file_cache]: warning: {}", msg)
+                }
             }
         }
         self.file_fetcher.fetch(data_file_path)?;
@@ -354,7 +386,7 @@ fn finish_open<F: FileLockAnyGuard>(data_file_path: &Path, _metadata_guard: &F) 
         }
     };
     update_last_accessed(&file);
-    if file.try_lock_shared().is_err() {
+    if FileExt::try_lock_shared(&file).is_err() {
         panic!(
             "finish_open: could not acquire shared lock on data file at {}",
             data_file_path.to_str().unwrap()
@@ -370,32 +402,26 @@ fn get_data_file_path(
     remote_version: &FileVersion,
 ) -> PathBuf {
     let owned;
-    let path = flatten(
-        &[
-            path_prefix,
-            &[b'/', DATA_PREFIX, b'/'],
-            uri_hash,
-            match remote_version {
-                FileVersion::Timestamp(v) => {
-                    owned = Some(format!("{:013x}", v));
-                    owned.as_deref().unwrap()
-                },
-                FileVersion::ETag(v) => v.as_str(),
-                FileVersion::Uninitialized => panic!("impl error: version not initialized"),
-            }
-            .as_bytes(),
-        ],
-        None,
-    );
-    PathBuf::from(std::str::from_utf8(&path).unwrap())
+    let path = [
+        path_prefix,
+        &[b'/', DATA_PREFIX, b'/'],
+        uri_hash,
+        match remote_version {
+            FileVersion::Timestamp(v) => {
+                owned = Some(format!("{:013x}", v));
+                owned.as_deref().unwrap()
+            },
+            FileVersion::ETag(v) => v.as_str(),
+            FileVersion::Uninitialized => panic!("impl error: version not initialized"),
+        }
+        .as_bytes(),
+    ]
+    .concat();
+    PathBuf::from(String::from_utf8(path).unwrap())
 }
 
 /// `[prefix]/m/[uri hash]`
 fn get_metadata_file_path(path_prefix: &[u8], uri_hash: &[u8]) -> PathBuf {
-    let bytes = flatten(
-        &[path_prefix, &[b'/', METADATA_PREFIX, b'/'], uri_hash],
-        None,
-    );
-    let s = std::str::from_utf8(bytes.as_slice()).unwrap();
-    PathBuf::from(s)
+    let bytes = [path_prefix, &[b'/', METADATA_PREFIX, b'/'], uri_hash].concat();
+    PathBuf::from(String::from_utf8(bytes).unwrap())
 }

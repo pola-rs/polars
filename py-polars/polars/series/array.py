@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Sequence
+from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.wrap import wrap_s
 from polars.series.utils import expr_dispatch
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from datetime import date, datetime, time
 
     from polars import Series
@@ -16,11 +17,11 @@ if TYPE_CHECKING:
 
 @expr_dispatch
 class ArrayNameSpace:
-    """Namespace for list related methods."""
+    """Namespace for array related methods."""
 
     _accessor = "arr"
 
-    def __init__(self, series: Series):
+    def __init__(self, series: Series) -> None:
         self._s: PySeries = series._s
 
     def min(self) -> Series:

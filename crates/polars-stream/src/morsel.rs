@@ -16,6 +16,11 @@ pub fn get_ideal_morsel_size() -> usize {
     })
 }
 
+/// A token indicating the order of morsels in a stream.
+///
+/// The sequence tokens going through a pipe are monotonely non-decreasing and are allowed to be
+/// discontinuous. Consequently, `1 -> 1 -> 2` and `1 -> 3 -> 5` are valid streams of sequence
+/// tokens.
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Debug, Default)]
 pub struct MorselSeq(u64);
 
@@ -40,6 +45,13 @@ impl MorselSeq {
 
     pub fn to_u64(self) -> u64 {
         self.0
+    }
+
+    /// # Safety
+    ///
+    /// One should pay attention that the LSB is properly set
+    pub unsafe fn from_u64(v: u64) -> Self {
+        Self(v)
     }
 }
 

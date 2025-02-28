@@ -55,10 +55,10 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     fn _dtype(&self) -> &DataType {
         self.0.dtype()
     }
-    fn _get_flags(&self) -> MetadataFlags {
+    fn _get_flags(&self) -> StatisticsFlags {
         self.0.get_flags()
     }
-    fn _set_flags(&mut self, flags: MetadataFlags) {
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
         self.0.set_flags(flags)
     }
 
@@ -79,6 +79,9 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
             self.0.physical().into_total_ord_inner()
         }
     }
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        invalid_operation_panic!(into_total_eq_inner, self)
+    }
 
     fn vec_hash(&self, random_state: PlRandomState, buf: &mut Vec<u64>) -> PolarsResult<()> {
         self.0.physical().vec_hash(random_state, buf)?;
@@ -95,7 +98,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         // we cannot cast and dispatch as the inner type of the list would be incorrect
         let list = self.0.physical().agg_list(groups);
         let mut list = list.list().unwrap().clone();
@@ -104,7 +107,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         #[cfg(feature = "performant")]
         {
             Ok(self.0.group_tuples_perfect(multithreaded, sorted))
@@ -117,7 +120,7 @@ impl private::PrivateSeries for SeriesWrap<CategoricalChunked> {
 
     fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         self.0.arg_sort_multiple(by, options)
@@ -160,6 +163,15 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn append(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.categorical().unwrap())
+    }
+    fn append_owned(&mut self, mut other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        let other = other
+            ._get_inner_mut()
+            .as_any_mut()
+            .downcast_mut::<CategoricalChunked>()
+            .unwrap();
+        self.0.append_owned(std::mem::take(other))
     }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
@@ -211,20 +223,17 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        self.with_state(true, |ca| ca.rechunk()).into_series()
+        self.with_state(true, |ca| ca.rechunk().into_owned())
+            .into_series()
     }
 
     fn new_from_index(&self, index: usize, length: usize) -> Series {
-        self.with_state(true, |cats| cats.new_from_index(index, length))
+        self.with_state(false, |cats| cats.new_from_index(index, length))
             .into_series()
     }
 
     fn cast(&self, dtype: &DataType, options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     #[inline]
@@ -294,8 +303,17 @@ impl SeriesTrait for SeriesWrap<CategoricalChunked> {
     fn max_reduce(&self) -> PolarsResult<Scalar> {
         Ok(ChunkAggSeries::max_reduce(&self.0))
     }
+
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 }
 

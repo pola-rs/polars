@@ -107,7 +107,7 @@ pub unsafe fn take_agg_bin_iter_unchecked<
     indices: I,
     f: F,
     len: IdxSize,
-) -> Option<&[u8]> {
+) -> Option<&'a [u8]> {
     let mut null_count = 0 as IdxSize;
     let validity = arr.validity().unwrap();
 
@@ -147,7 +147,7 @@ pub unsafe fn take_agg_bin_iter_unchecked_no_null<
     arr: &'a BinaryViewArray,
     indices: I,
     f: F,
-) -> Option<&[u8]> {
+) -> Option<&'a [u8]> {
     indices
         .into_iter()
         .map(|idx| arr.value_unchecked(idx))

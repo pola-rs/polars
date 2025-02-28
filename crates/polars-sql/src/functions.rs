@@ -1,21 +1,25 @@
 use std::ops::Sub;
 
 use polars_core::chunked_array::ops::{SortMultipleOptions, SortOptions};
-use polars_core::export::regex;
-use polars_core::prelude::{polars_bail, polars_err, DataType, PolarsResult, Schema, TimeUnit};
+use polars_core::prelude::{
+    polars_bail, polars_err, DataType, PolarsResult, QuantileMethod, Schema, TimeUnit,
+};
 use polars_lazy::dsl::Expr;
 #[cfg(feature = "list_eval")]
 use polars_lazy::dsl::ListNameSpaceExtension;
+use polars_ops::chunked_array::UnicodeForm;
 use polars_plan::dsl::{coalesce, concat_str, len, max_horizontal, min_horizontal, when};
 use polars_plan::plans::{typed_lit, LiteralValue};
 use polars_plan::prelude::LiteralValue::Null;
 use polars_plan::prelude::{col, cols, lit, StrptimeOptions};
 use polars_utils::pl_str::PlSmallStr;
+use sqlparser::ast::helpers::attached_token::AttachedToken;
 use sqlparser::ast::{
     DateTimeField, DuplicateTreatment, Expr as SQLExpr, Function as SQLFunction, FunctionArg,
     FunctionArgExpr, FunctionArgumentClause, FunctionArgumentList, FunctionArguments, Ident,
     OrderByExpr, Value as SQLValue, WindowSpec, WindowType,
 };
+use sqlparser::tokenizer::Span;
 
 use crate::sql_expr::{adjust_one_indexed_param, parse_extract_date_part, parse_sql_expr};
 use crate::SQLContext;
@@ -29,10 +33,39 @@ pub(crate) struct SQLFunctionVisitor<'a> {
 /// SQL functions that are supported by Polars
 pub(crate) enum PolarsSQLFunctions {
     // ----
+    // Bitwise functions
+    // ----
+    /// SQL 'bit_and' function.
+    /// Returns the bitwise AND of the input expressions.
+    /// ```sql
+    /// SELECT BIT_AND(column_1, column_2) FROM df;
+    /// ```
+    BitAnd,
+    /// SQL 'bit_count' function.
+    /// Returns the number of set bits in the input expression.
+    /// ```sql
+    /// SELECT BIT_COUNT(column_1) FROM df;
+    /// ```
+    #[cfg(feature = "bitwise")]
+    BitCount,
+    /// SQL 'bit_or' function.
+    /// Returns the bitwise OR of the input expressions.
+    /// ```sql
+    /// SELECT BIT_OR(column_1, column_2) FROM df;
+    /// ```
+    BitOr,
+    /// SQL 'bit_xor' function.
+    /// Returns the bitwise XOR of the input expressions.
+    /// ```sql
+    /// SELECT BIT_XOR(column_1, column_2) FROM df;
+    /// ```
+    BitXor,
+
+    // ----
     // Math functions
     // ----
     /// SQL 'abs' function
-    /// Returns the absolute value of the input column.
+    /// Returns the absolute value of the input expression.
     /// ```sql
     /// SELECT ABS(column_1) FROM df;
     /// ```
@@ -140,97 +173,97 @@ pub(crate) enum PolarsSQLFunctions {
     // Trig functions
     // ----
     /// SQL 'cos' function
-    /// Compute the cosine sine of the input column (in radians).
+    /// Compute the cosine sine of the input expression (in radians).
     /// ```sql
     /// SELECT COS(column_1) FROM df;
     /// ```
     Cos,
     /// SQL 'cot' function
-    /// Compute the cotangent of the input column (in radians).
+    /// Compute the cotangent of the input expression (in radians).
     /// ```sql
     /// SELECT COT(column_1) FROM df;
     /// ```
     Cot,
     /// SQL 'sin' function
-    /// Compute the sine of the input column (in radians).
+    /// Compute the sine of the input expression (in radians).
     /// ```sql
     /// SELECT SIN(column_1) FROM df;
     /// ```
     Sin,
     /// SQL 'tan' function
-    /// Compute the tangent of the input column (in radians).
+    /// Compute the tangent of the input expression (in radians).
     /// ```sql
     /// SELECT TAN(column_1) FROM df;
     /// ```
     Tan,
     /// SQL 'cosd' function
-    /// Compute the cosine sine of the input column (in degrees).
+    /// Compute the cosine sine of the input expression (in degrees).
     /// ```sql
     /// SELECT COSD(column_1) FROM df;
     /// ```
     CosD,
     /// SQL 'cotd' function
-    /// Compute cotangent of the input column (in degrees).
+    /// Compute cotangent of the input expression (in degrees).
     /// ```sql
     /// SELECT COTD(column_1) FROM df;
     /// ```
     CotD,
     /// SQL 'sind' function
-    /// Compute the sine of the input column (in degrees).
+    /// Compute the sine of the input expression (in degrees).
     /// ```sql
     /// SELECT SIND(column_1) FROM df;
     /// ```
     SinD,
     /// SQL 'tand' function
-    /// Compute the tangent of the input column (in degrees).
+    /// Compute the tangent of the input expression (in degrees).
     /// ```sql
     /// SELECT TAND(column_1) FROM df;
     /// ```
     TanD,
     /// SQL 'acos' function
-    /// Compute inverse cosinus of the input column (in radians).
+    /// Compute inverse cosine of the input expression (in radians).
     /// ```sql
     /// SELECT ACOS(column_1) FROM df;
     /// ```
     Acos,
     /// SQL 'asin' function
-    /// Compute inverse sine of the input column (in radians).
+    /// Compute inverse sine of the input expression (in radians).
     /// ```sql
     /// SELECT ASIN(column_1) FROM df;
     /// ```
     Asin,
     /// SQL 'atan' function
-    /// Compute inverse tangent of the input column (in radians).
+    /// Compute inverse tangent of the input expression (in radians).
     /// ```sql
     /// SELECT ATAN(column_1) FROM df;
     /// ```
     Atan,
     /// SQL 'atan2' function
-    /// Compute the inverse tangent of column_2/column_1 (in radians).
+    /// Compute the inverse tangent of column_1/column_2 (in radians).
     /// ```sql
     /// SELECT ATAN2(column_1, column_2) FROM df;
     /// ```
     Atan2,
     /// SQL 'acosd' function
-    /// Compute inverse cosinus of the input column (in degrees).
+    /// Compute inverse cosine of the input expression (in degrees).
     /// ```sql
     /// SELECT ACOSD(column_1) FROM df;
     /// ```
     AcosD,
     /// SQL 'asind' function
-    /// Compute inverse sine of the input column (in degrees).
+    /// Compute inverse sine of the input expression (in degrees).
     /// ```sql
     /// SELECT ASIND(column_1) FROM df;
     /// ```
     AsinD,
     /// SQL 'atand' function
-    /// Compute inverse tangent of the input column (in degrees).
+    /// Compute inverse tangent of the input expression (in degrees).
     /// ```sql
     /// SELECT ATAND(column_1) FROM df;
     /// ```
     AtanD,
     /// SQL 'atan2d' function
-    /// Compute the inverse tangent of column_2/column_1 (in degrees).
+    /// Compute the inverse tangent of column_1/column_2 (in degrees).
     /// ```sql
     /// SELECT ATAN2D(column_1) FROM df;
     /// ```
@@ -343,6 +376,13 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT LTRIM(column_1) FROM df;
     /// ```
     LTrim,
+    /// SQL 'normalize' function
+    /// Convert string to Unicode normalization form
+    /// (one of NFC, NFKC, NFD, or NFKD - unquoted).
+    /// ```sql
+    /// SELECT NORMALIZE(column_1, NFC) FROM df;
+    /// ```
+    Normalize,
     /// SQL 'octet_length' function
     /// Returns the length of a given string in bytes.
     /// ```sql
@@ -358,7 +398,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// SQL 'replace' function
     /// Replace a given substring with another string.
     /// ```sql
-    /// SELECT REPLACE(column_1,'old','new') FROM df;
+    /// SELECT REPLACE(column_1, 'old', 'new') FROM df;
     /// ```
     Replace,
     /// SQL 'reverse' function
@@ -393,7 +433,7 @@ pub(crate) enum PolarsSQLFunctions {
     /// ```
     StrPos,
     /// SQL 'substr' function
-    /// Returns a portion of the data (first character = 0) in the range.
+    /// Returns a portion of the data (first character = 1) in the range.
     ///   \[start, start + length]
     /// ```sql
     /// SELECT SUBSTR(column_1, 3, 5) FROM df;
@@ -504,6 +544,20 @@ pub(crate) enum PolarsSQLFunctions {
     /// SELECT MEDIAN(column_1) FROM df;
     /// ```
     Median,
+    /// SQL 'quantile_cont' function
+    /// Returns the continuous quantile element from the grouping
+    /// (interpolated value between two closest values).
+    /// ```sql
+    /// SELECT QUANTILE_CONT(column_1) FROM df;
+    /// ```
+    QuantileCont,
+    /// SQL 'quantile_disc' function
+    /// Divides the [0, 1] interval into equal-length subintervals, each corresponding to a value,
+    /// and returns the value associated with the subinterval where the quantile value falls.
+    /// ```sql
+    /// SELECT QUANTILE_DISC(column_1) FROM df;
+    /// ```
+    QuantileDisc,
     /// SQL 'min' function
     /// Returns the smallest (minimum) of all the elements in the grouping.
     /// ```sql
@@ -640,7 +694,11 @@ impl PolarsSQLFunctions {
             "atan2d",
             "atand",
             "avg",
+            "bit_and",
+            "bit_count",
             "bit_length",
+            "bit_or",
+            "bit_xor",
             "cbrt",
             "ceil",
             "ceiling",
@@ -679,6 +737,7 @@ impl PolarsSQLFunctions {
             "ltrim",
             "max",
             "median",
+            "quantile_disc",
             "min",
             "mod",
             "nullif",
@@ -686,6 +745,8 @@ impl PolarsSQLFunctions {
             "pi",
             "pow",
             "power",
+            "quantile_cont",
+            "quantile_disc",
             "radians",
             "regexp_like",
             "replace",
@@ -722,6 +783,15 @@ impl PolarsSQLFunctions {
     fn try_from_sql(function: &'_ SQLFunction, ctx: &'_ SQLContext) -> PolarsResult<Self> {
         let function_name = function.name.0[0].value.to_lowercase();
         Ok(match function_name.as_str() {
+            // ----
+            // Bitwise functions
+            // ----
+            "bit_and" | "bitand" => Self::BitAnd,
+            #[cfg(feature = "bitwise")]
+            "bit_count" | "bitcount" => Self::BitCount,
+            "bit_or" | "bitor" => Self::BitOr,
+            "bit_xor" | "bitxor" | "xor" => Self::BitXor,
+
             // ----
             // Math functions
             // ----
@@ -796,6 +866,7 @@ impl PolarsSQLFunctions {
             "left" => Self::Left,
             "lower" => Self::Lower,
             "ltrim" => Self::LTrim,
+            "normalize" => Self::Normalize,
             "octet_length" => Self::OctetLength,
             "strpos" => Self::StrPos,
             "regexp_like" => Self::RegexpLike,
@@ -818,6 +889,8 @@ impl PolarsSQLFunctions {
             "last" => Self::Last,
             "max" => Self::Max,
             "median" => Self::Median,
+            "quantile_cont" => Self::QuantileCont,
+            "quantile_disc" => Self::QuantileDisc,
             "min" => Self::Min,
             "stdev" | "stddev" | "stdev_samp" | "stddev_samp" => Self::StdDev,
             "sum" => Self::Sum,
@@ -873,6 +946,15 @@ impl SQLFunctionVisitor<'_> {
         }
 
         match function_name {
+            // ----
+            // Bitwise functions
+            // ----
+            BitAnd => self.visit_binary::<Expr>(Expr::and),
+            #[cfg(feature = "bitwise")]
+            BitCount => self.visit_unary(Expr::bitwise_count_ones),
+            BitOr => self.visit_binary::<Expr>(Expr::or),
+            BitXor => self.visit_binary::<Expr>(Expr::xor),
+
             // ----
             // Math functions
             // ----
@@ -986,6 +1068,7 @@ impl SQLFunctionVisitor<'_> {
                             &DateTimeField::Custom(Ident {
                                 value: p.to_string(),
                                 quote_style: None,
+                                span: Span::empty(),
                             }),
                         )
                     },
@@ -1074,6 +1157,36 @@ impl SQLFunctionVisitor<'_> {
                     2 => self.visit_binary(|e, s| e.str().strip_chars_start(s)),
                     _ => {
                         polars_bail!(SQLSyntax: "LTRIM expects 1-2 arguments (found {})", args.len())
+                    },
+                }
+            },
+            Normalize => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    1 => self.visit_unary(|e| e.str().normalize(UnicodeForm::NFC)),
+                    2 => {
+                        let form = if let FunctionArgExpr::Expr(SQLExpr::Identifier(Ident {
+                            value: s,
+                            quote_style: None,
+                            span: _,
+                        })) = args[1]
+                        {
+                            match s.to_uppercase().as_str() {
+                                "NFC" => UnicodeForm::NFC,
+                                "NFD" => UnicodeForm::NFD,
+                                "NFKC" => UnicodeForm::NFKC,
+                                "NFKD" => UnicodeForm::NFKD,
+                                _ => {
+                                    polars_bail!(SQLSyntax: "invalid 'form' for NORMALIZE (found {})", s)
+                                },
+                            }
+                        } else {
+                            polars_bail!(SQLSyntax: "invalid 'form' for NORMALIZE (found {})", args[1])
+                        };
+                        self.try_visit_binary(|e, _form: Expr| Ok(e.str().normalize(form.clone())))
+                    },
+                    _ => {
+                        polars_bail!(SQLSyntax: "NORMALIZE expects 1-2 arguments (found {})", args.len())
                     },
                 }
             },
@@ -1243,6 +1356,58 @@ impl SQLFunctionVisitor<'_> {
             Last => self.visit_unary(Expr::last),
             Max => self.visit_unary_with_opt_cumulative(Expr::max, Expr::cum_max),
             Median => self.visit_unary(Expr::median),
+            QuantileCont => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.try_visit_binary(|e, q| {
+                        let value = match q {
+                            Expr::Literal(LiteralValue::Float(f)) => {
+                                if (0.0..=1.0).contains(&f) {
+                                    Expr::from(f)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            Expr::Literal(LiteralValue::Int(n)) => {
+                                if (0..=1).contains(&n) {
+                                    Expr::from(n as f64)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_CONT value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_CONT ({})", args[1])
+                        };
+                        Ok(e.quantile(value, QuantileMethod::Linear))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "QUANTILE_CONT expects 2 arguments (found {})", args.len()),
+                }
+            },
+            QuantileDisc => {
+                let args = extract_args(function)?;
+                match args.len() {
+                    2 => self.try_visit_binary(|e, q| {
+                        let value = match q {
+                            Expr::Literal(LiteralValue::Float(f)) => {
+                                if (0.0..=1.0).contains(&f) {
+                                    Expr::from(f)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            Expr::Literal(LiteralValue::Int(n)) => {
+                                if (0..=1).contains(&n) {
+                                    Expr::from(n as f64)
+                                } else {
+                                    polars_bail!(SQLSyntax: "QUANTILE_DISC value must be between 0 and 1 ({})", args[1])
+                                }
+                            },
+                            _ => polars_bail!(SQLSyntax: "invalid value for QUANTILE_DISC ({})", args[1])
+                        };
+                        Ok(e.quantile(value, QuantileMethod::Equiprobable))
+                    }),
+                    _ => polars_bail!(SQLSyntax: "QUANTILE_DISC expects 2 arguments (found {})", args.len()),
+                }
+            },
             Min => self.visit_unary_with_opt_cumulative(Expr::min, Expr::cum_min),
             StdDev => self.visit_unary(|e| e.std(1)),
             Sum => self.visit_unary_with_opt_cumulative(Expr::sum, Expr::cum_sum),
@@ -1387,7 +1552,7 @@ impl SQLFunctionVisitor<'_> {
                 f(parse_sql_expr(sql_expr, self.ctx, self.active_schema)?)
             },
             [FunctionArgExpr::Wildcard] => f(parse_sql_expr(
-                &SQLExpr::Wildcard,
+                &SQLExpr::Wildcard(AttachedToken::empty()),
                 self.ctx,
                 self.active_schema,
             )?),
@@ -1689,6 +1854,7 @@ fn _extract_func_args(
                     .iter()
                     .map(|arg| match arg {
                         FunctionArg::Named { arg, .. } => arg,
+                        FunctionArg::ExprNamed { arg, .. } => arg,
                         FunctionArg::Unnamed(arg) => arg,
                     })
                     .collect();

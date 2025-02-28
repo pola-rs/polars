@@ -10,7 +10,6 @@ pub mod chunked_array;
 pub mod config;
 pub mod datatypes;
 pub mod error;
-pub mod export;
 pub mod fmt;
 pub mod frame;
 pub mod functions;
@@ -31,6 +30,7 @@ mod tests;
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+pub use datatypes::SchemaExtPl;
 pub use hashing::IdBuildHasher;
 use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
@@ -64,8 +64,22 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
         .expect("could not spawn threads")
 });
 
-#[cfg(target_family = "wasm")] // instead use this on wasm targets
+#[cfg(all(target_os = "emscripten", target_family = "wasm"))] // Use 1 rayon thread on emscripten
+pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
+    ThreadPoolBuilder::new()
+        .num_threads(1)
+        .use_current_thread()
+        .build()
+        .expect("could not create pool")
+});
+
+#[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))] // use this on other wasm targets
 pub static POOL: Lazy<polars_utils::wasm::Pool> = Lazy::new(|| polars_utils::wasm::Pool);
 
 // utility for the tests to ensure a single thread can execute
 pub static SINGLE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+/// Default length for a `.head()` call
+pub(crate) const HEAD_DEFAULT_LENGTH: usize = 10;
+/// Default length for a `.tail()` call
+pub(crate) const TAIL_DEFAULT_LENGTH: usize = 10;

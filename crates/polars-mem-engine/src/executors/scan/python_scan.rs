@@ -2,33 +2,16 @@ use polars_core::error::to_compute_err;
 use polars_core::utils::accumulate_dataframes_vertical;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
-use pyo3::{intern, PyTypeInfo};
+use pyo3::types::{PyBytes, PyNone};
+use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
 
+use self::python_dsl::PythonScanSource;
 use super::*;
 
 pub(crate) struct PythonScanExec {
     pub(crate) options: PythonOptions,
     pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
     pub(crate) predicate_serialized: Option<Vec<u8>>,
-}
-
-fn python_df_to_rust(py: Python, df: Bound<PyAny>) -> PolarsResult<DataFrame> {
-    let err = |_| polars_err!(ComputeError: "expected a polars.DataFrame; got {}", df);
-    let pydf = df.getattr(intern!(py, "_df")).map_err(err)?;
-    let raw_parts = pydf
-        .call_method0(intern!(py, "into_raw_parts"))
-        .map_err(err)?;
-    let raw_parts = raw_parts.extract::<(usize, usize, usize)>().unwrap();
-
-    let (ptr, len, cap) = raw_parts;
-    unsafe {
-        Ok(DataFrame::new_no_checks(Vec::from_raw_parts(
-            ptr as *mut Series,
-            len,
-            cap,
-        )))
-    }
 }
 
 impl Executor for PythonScanExec {
@@ -43,23 +26,27 @@ impl Executor for PythonScanExec {
         let with_columns = self.options.with_columns.take();
         let n_rows = self.options.n_rows.take();
         Python::with_gil(|py| {
-            let pl = PyModule::import_bound(py, intern!(py, "polars")).unwrap();
+            let pl = PyModule::import(py, intern!(py, "polars")).unwrap();
             let utils = pl.getattr(intern!(py, "_utils")).unwrap();
             let callable = utils.getattr(intern!(py, "_execute_from_rust")).unwrap();
 
             let python_scan_function = self.options.scan_fn.take().unwrap().0;
 
             let with_columns = with_columns.map(|cols| cols.iter().cloned().collect::<Vec<_>>());
+            let mut could_serialize_predicate = true;
 
             let predicate = match &self.options.predicate {
-                PythonPredicate::PyArrow(s) => s.into_py(py),
-                PythonPredicate::None => None::<()>.into_py(py),
+                PythonPredicate::PyArrow(s) => s.into_bound_py_any(py).unwrap(),
+                PythonPredicate::None => None::<()>.into_bound_py_any(py).unwrap(),
                 PythonPredicate::Polars(_) => {
                     assert!(self.predicate.is_some(), "should be set");
 
                     match &self.predicate_serialized {
-                        None => None::<()>.into_py(py),
-                        Some(buf) => PyBytes::new_bound(py, buf).to_object(py),
+                        None => {
+                            could_serialize_predicate = false;
+                            PyNone::get(py).to_owned().into_any()
+                        },
+                        Some(buf) => PyBytes::new(py, buf).into_any(),
                     }
                 },
             };
@@ -114,7 +101,7 @@ impl Executor for PythonScanExec {
                 .map_err(|_| polars_err!(ComputeError: "expected tuple got {}", generator))?;
             let can_parse_predicate = can_parse_predicate.extract::<bool>().map_err(
                 |_| polars_err!(ComputeError: "expected bool got {}", can_parse_predicate),
-            )?;
+            )? && could_serialize_predicate;
 
             let mut chunks = vec![];
             loop {
@@ -127,7 +114,7 @@ impl Executor for PythonScanExec {
                         }
                         chunks.push(df)
                     },
-                    Err(err) if err.matches(py, PyStopIteration::type_object_bound(py)) => break,
+                    Err(err) if err.matches(py, PyStopIteration::type_object(py))? => break,
                     Err(err) => {
                         polars_bail!(ComputeError: "caught exception during execution of a Python source, exception: {}", err)
                     },

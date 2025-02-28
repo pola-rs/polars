@@ -42,7 +42,7 @@ impl NodeTimer {
         polars_ensure!(!ticks.is_empty(), ComputeError: "no data to time");
         let start = ticks[0].0;
         ticks.push((self.query_start, start));
-        let nodes_s = Series::new(PlSmallStr::from_static("node"), nodes);
+        let nodes_s = Column::new(PlSmallStr::from_static("node"), nodes);
         let start: NoNull<UInt64Chunked> = ticks
             .iter()
             .map(|(start, _)| (start.duration_since(self.query_start)).as_micros() as u64)
@@ -57,8 +57,9 @@ impl NodeTimer {
         let mut end = end.into_inner();
         end.rename(PlSmallStr::from_static("end"));
 
-        let columns = vec![nodes_s, start.into_series(), end.into_series()];
-        let df = unsafe { DataFrame::new_no_checks(columns) };
+        let height = nodes_s.len();
+        let columns = vec![nodes_s, start.into_column(), end.into_column()];
+        let df = unsafe { DataFrame::new_no_checks(height, columns) };
         df.sort(vec!["start"], SortMultipleOptions::default())
     }
 }

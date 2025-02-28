@@ -16,14 +16,10 @@ use pyo3::types::PyCapsule;
 /// Arrow array to Python.
 pub(crate) fn to_py_array(
     array: ArrayRef,
-    py: Python,
+    field: &ArrowField,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
-    let schema = Box::new(ffi::export_field_to_c(&ArrowField::new(
-        PlSmallStr::EMPTY,
-        array.dtype().clone(),
-        true,
-    )));
+    let schema = Box::new(ffi::export_field_to_c(field));
     let array = Box::new(ffi::export_array_to_c(array));
 
     let schema_ptr: *const ffi::ArrowSchema = &*schema;
@@ -34,28 +30,38 @@ pub(crate) fn to_py_array(
         (array_ptr as Py_uintptr_t, schema_ptr as Py_uintptr_t),
     )?;
 
-    Ok(array.to_object(py))
+    Ok(array.unbind())
 }
 
 /// RecordBatch to Python.
 pub(crate) fn to_py_rb(
     rb: &RecordBatch,
-    names: &[&str],
     py: Python,
     pyarrow: &Bound<PyModule>,
 ) -> PyResult<PyObject> {
-    let mut arrays = Vec::with_capacity(rb.len());
+    let mut arrays = Vec::with_capacity(rb.width());
 
-    for array in rb.columns() {
-        let array_object = to_py_array(array.clone(), py, pyarrow)?;
+    for (array, field) in rb.columns().iter().zip(rb.schema().iter_values()) {
+        let array_object = to_py_array(array.clone(), field, pyarrow)?;
         arrays.push(array_object);
     }
 
+    let schema = Box::new(ffi::export_field_to_c(&ArrowField {
+        name: PlSmallStr::EMPTY,
+        dtype: ArrowDataType::Struct(rb.schema().iter_values().cloned().collect()),
+        is_nullable: false,
+        metadata: None,
+    }));
+    let schema_ptr: *const ffi::ArrowSchema = &*schema;
+
+    let schema = pyarrow
+        .getattr("Schema")?
+        .call_method1("_import_from_c", (schema_ptr as Py_uintptr_t,))?;
     let record = pyarrow
         .getattr("RecordBatch")?
-        .call_method1("from_arrays", (arrays, names.to_vec()))?;
+        .call_method1("from_arrays", (arrays, py.None(), schema))?;
 
-    Ok(record.to_object(py))
+    Ok(record.unbind())
 }
 
 /// Export a series to a C stream via a PyCapsule according to the Arrow PyCapsule Interface
@@ -68,7 +74,7 @@ pub(crate) fn series_to_stream<'py>(
     let iter = Box::new(series.chunks().clone().into_iter().map(Ok)) as _;
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
+    PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
 pub(crate) fn dataframe_to_stream<'py>(
@@ -79,7 +85,7 @@ pub(crate) fn dataframe_to_stream<'py>(
     let field = iter.field();
     let stream = ffi::export_iterator(iter, field);
     let stream_capsule_name = CString::new("arrow_array_stream").unwrap();
-    PyCapsule::new_bound(py, stream, Some(stream_capsule_name))
+    PyCapsule::new(py, stream, Some(stream_capsule_name))
 }
 
 pub struct DataFrameStreamIterator {
@@ -95,10 +101,14 @@ impl DataFrameStreamIterator {
         let dtype = ArrowDataType::Struct(schema.into_iter_values().collect());
 
         Self {
-            columns: df.get_columns().to_vec(),
+            columns: df
+                .get_columns()
+                .iter()
+                .map(|v| v.as_materialized_series().clone())
+                .collect(),
             dtype,
             idx: 0,
-            n_chunks: df.n_chunks(),
+            n_chunks: df.first_col_n_chunks(),
         }
     }
 
@@ -119,10 +129,15 @@ impl Iterator for DataFrameStreamIterator {
                 .columns
                 .iter()
                 .map(|s| s.to_arrow(self.idx, CompatLevel::newest()))
-                .collect();
+                .collect::<Vec<_>>();
             self.idx += 1;
 
-            let array = arrow::array::StructArray::new(self.dtype.clone(), batch_cols, None);
+            let array = arrow::array::StructArray::new(
+                self.dtype.clone(),
+                batch_cols[0].len(),
+                batch_cols,
+                None,
+            );
             Some(Ok(Box::new(array)))
         }
     }

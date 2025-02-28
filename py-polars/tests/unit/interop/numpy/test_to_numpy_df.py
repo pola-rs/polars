@@ -36,6 +36,7 @@ def assert_zero_copy(s: pl.Series, arr: np.ndarray[Any, Any]) -> None:
         allow_chunks=False,
     )
 )
+@pytest.mark.may_fail_auto_streaming
 def test_df_to_numpy_zero_copy(s: pl.Series) -> None:
     df = pl.DataFrame({"a": s[:3], "b": s[3:]})
 
@@ -153,12 +154,13 @@ def test_df_to_numpy_zero_copy_path() -> None:
     assert str(x[0, :]) == "[1. 2. 1. 1. 1.]"
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_df_to_numpy_zero_copy_path_temporal() -> None:
     values = [datetime(1970 + i, 1, 1) for i in range(12)]
     s = pl.Series(values)
     df = pl.DataFrame({"a": s[:4], "b": s[4:8], "c": s[8:]})
 
-    result = df.to_numpy(allow_copy=False)
+    result: npt.NDArray[np.generic] = df.to_numpy(allow_copy=False)
     assert result.flags.f_contiguous is True
     assert result.flags.writeable is False
     assert result.tolist() == [list(row) for row in df.iter_rows()]

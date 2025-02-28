@@ -33,8 +33,9 @@ impl PyExpr {
             .clone()
             .map(
                 |s| {
-                    s.timestamp(TimeUnit::Milliseconds)
-                        .map(|ca| Some((ca / 1000).into_series()))
+                    s.take_materialized_series()
+                        .timestamp(TimeUnit::Milliseconds)
+                        .map(|ca| Some((ca / 1000).into_column()))
                 },
                 GetOutput::from_type(DataType::Int64),
             )
@@ -96,6 +97,33 @@ impl PyExpr {
 
     fn dt_round(&self, every: Self) -> Self {
         self.inner.clone().dt().round(every.inner).into()
+    }
+
+    fn dt_replace(
+        &self,
+        year: Self,
+        month: Self,
+        day: Self,
+        hour: Self,
+        minute: Self,
+        second: Self,
+        microsecond: Self,
+        ambiguous: Self,
+    ) -> Self {
+        self.inner
+            .clone()
+            .dt()
+            .replace(
+                year.inner,
+                month.inner,
+                day.inner,
+                hour.inner,
+                minute.inner,
+                second.inner,
+                microsecond.inner,
+                ambiguous.inner,
+            )
+            .into()
     }
 
     fn dt_combine(&self, time: Self, time_unit: Wrap<TimeUnit>) -> Self {

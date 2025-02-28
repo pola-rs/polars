@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import tempfile
 from collections import OrderedDict
 from pathlib import Path
@@ -366,6 +367,7 @@ def test_file_list_schema_mismatch(
         assert_frame_equal(out, expect)
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize("streaming", [True, False])
 def test_file_list_schema_supertype(tmp_path: Path, streaming: bool) -> None:
     tmp_path.mkdir(exist_ok=True)
@@ -438,3 +440,11 @@ def test_scan_csv_with_column_names_nonexistent_file() -> None:
     # Upon collection, it should fail
     with pytest.raises(FileNotFoundError):
         result.collect()
+
+
+def test_select_nonexistent_column() -> None:
+    csv = "a\n1"
+    f = io.StringIO(csv)
+
+    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+        pl.scan_csv(f).select("b").collect()

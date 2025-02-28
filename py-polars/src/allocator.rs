@@ -1,53 +1,22 @@
+#[global_allocator]
 #[cfg(all(
-    target_family = "unix",
-    not(allocator = "default"),
     not(allocator = "mimalloc"),
-))]
-use jemallocator::Jemalloc;
-#[cfg(all(
-    not(debug_assertions),
     not(allocator = "default"),
-    any(not(target_family = "unix"), allocator = "mimalloc"),
-))]
-use mimalloc::MiMalloc;
-
-#[cfg(all(
-    debug_assertions,
     target_family = "unix",
-    not(allocator = "default"),
-    not(allocator = "mimalloc"),
+    not(target_os = "emscripten"),
 ))]
-use crate::memory::TracemallocAllocator;
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[global_allocator]
 #[cfg(all(
-    not(debug_assertions),
-    not(allocator = "mimalloc"),
     not(allocator = "default"),
-    target_family = "unix",
+    any(
+        not(target_family = "unix"),
+        target_os = "emscripten",
+        allocator = "mimalloc"
+    ),
 ))]
-static ALLOC: Jemalloc = Jemalloc;
-
-#[global_allocator]
-#[cfg(all(
-    not(debug_assertions),
-    not(allocator = "default"),
-    any(not(target_family = "unix"), allocator = "mimalloc"),
-))]
-static ALLOC: MiMalloc = MiMalloc;
-
-// On Windows tracemalloc does work. However, we build abi3 wheels, and the
-// relevant C APIs are not part of the limited stable CPython API. As a result,
-// linking breaks on Windows if we use tracemalloc C APIs. So we only use this
-// on Unix for now.
-#[global_allocator]
-#[cfg(all(
-    debug_assertions,
-    target_family = "unix",
-    not(allocator = "default"),
-    not(allocator = "mimalloc"),
-))]
-static ALLOC: TracemallocAllocator<Jemalloc> = TracemallocAllocator::new(Jemalloc);
+static ALLOC: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use std::alloc::Layout;
 use std::ffi::{c_char, c_void};

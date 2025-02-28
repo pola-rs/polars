@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Iterator
+from textwrap import dedent
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -10,6 +11,9 @@ import polars as pl
 import polars.polars as plr
 from polars._utils.unstable import issue_unstable_warning
 from polars.config import _POLARS_CFG_ENV_VARS
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 @pytest.fixture(autouse=True)
@@ -20,19 +24,24 @@ def _environ() -> Iterator[None]:
 
 
 def test_ascii_tables() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6], "c": [7, 8, 9]})
+    df = pl.DataFrame(
+        {
+            "a": [1, 2],
+            "b": [4, 5],
+            "c": [[list(range(1, 26))], [list(range(1, 76))]],
+        }
+    )
 
     ascii_table_repr = (
-        "shape: (3, 3)\n"
-        "+-----+-----+-----+\n"
-        "| a   | b   | c   |\n"
-        "| --- | --- | --- |\n"
-        "| i64 | i64 | i64 |\n"
-        "+=================+\n"
-        "| 1   | 4   | 7   |\n"
-        "| 2   | 5   | 8   |\n"
-        "| 3   | 6   | 9   |\n"
-        "+-----+-----+-----+"
+        "shape: (2, 3)\n"
+        "+-----+-----+------------------+\n"
+        "| a   | b   | c                |\n"
+        "| --- | --- | ---              |\n"
+        "| i64 | i64 | list[list[i64]]  |\n"
+        "+==============================+\n"
+        "| 1   | 4   | [[1, 2, ... 25]] |\n"
+        "| 2   | 5   | [[1, 2, ... 75]] |\n"
+        "+-----+-----+------------------+"
     )
     # note: expect to render ascii only within the given scope
     with pl.Config(set_ascii_tables=True):
@@ -40,16 +49,15 @@ def test_ascii_tables() -> None:
 
     # confirm back to utf8 default after scope-exit
     assert (
-        repr(df) == "shape: (3, 3)\n"
-        "┌─────┬─────┬─────┐\n"
-        "│ a   ┆ b   ┆ c   │\n"
-        "│ --- ┆ --- ┆ --- │\n"
-        "│ i64 ┆ i64 ┆ i64 │\n"
-        "╞═════╪═════╪═════╡\n"
-        "│ 1   ┆ 4   ┆ 7   │\n"
-        "│ 2   ┆ 5   ┆ 8   │\n"
-        "│ 3   ┆ 6   ┆ 9   │\n"
-        "└─────┴─────┴─────┘"
+        repr(df) == "shape: (2, 3)\n"
+        "┌─────┬─────┬─────────────────┐\n"
+        "│ a   ┆ b   ┆ c               │\n"
+        "│ --- ┆ --- ┆ ---             │\n"
+        "│ i64 ┆ i64 ┆ list[list[i64]] │\n"
+        "╞═════╪═════╪═════════════════╡\n"
+        "│ 1   ┆ 4   ┆ [[1, 2, … 25]]  │\n"
+        "│ 2   ┆ 5   ┆ [[1, 2, … 75]]  │\n"
+        "└─────┴─────┴─────────────────┘"
     )
 
     @pl.Config(set_ascii_tables=True)
@@ -123,7 +131,7 @@ def test_set_tbl_rows() -> None:
         "│ …   ┆ …   ┆ …   │\n"
         "└─────┴─────┴─────┘"
     )
-    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t…\n]"
 
     pl.Config.set_tbl_rows(1)
     assert (
@@ -137,7 +145,7 @@ def test_set_tbl_rows() -> None:
         "│ …   ┆ …   ┆ …   │\n"
         "└─────┴─────┴─────┘"
     )
-    assert str(ser) == "shape: (5,)\n" "Series: 'ser' [i64]\n" "[\n" "\t1\n" "\t…\n" "]"
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t…\n]"
 
     pl.Config.set_tbl_rows(2)
     assert (
@@ -152,15 +160,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t…\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t…\n\t5\n]"
 
     pl.Config.set_tbl_rows(3)
     assert (
@@ -176,16 +176,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t…\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t…\n\t5\n]"
 
     pl.Config.set_tbl_rows(4)
     assert (
@@ -201,17 +192,7 @@ def test_set_tbl_rows() -> None:
         "│ 4   ┆ 8   ┆ 12  │\n"
         "└─────┴─────┴─────┘"
     )
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t…\n"
-        "\t4\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t…\n\t4\n\t5\n]"
 
     df = pl.DataFrame(
         {
@@ -237,17 +218,7 @@ def test_set_tbl_rows() -> None:
     )
 
     pl.Config.set_tbl_rows(-1)
-    assert (
-        str(ser) == "shape: (5,)\n"
-        "Series: 'ser' [i64]\n"
-        "[\n"
-        "\t1\n"
-        "\t2\n"
-        "\t3\n"
-        "\t4\n"
-        "\t5\n"
-        "]"
-    )
+    assert str(ser) == "shape: (5,)\nSeries: 'ser' [i64]\n[\n\t1\n\t2\n\t3\n\t4\n\t5\n]"
 
     pl.Config.set_tbl_hide_dtype_separator(True)
     assert (
@@ -362,6 +333,15 @@ def test_set_tbl_width_chars() -> None:
 
     with pl.Config(tbl_width_chars=87):
         assert max(len(line) for line in str(df).split("\n")) == 87
+
+    # check that -1 is interpreted as no limit
+    df = pl.DataFrame({str(i): ["a" * 25] for i in range(5)})
+    for tbl_width_chars, expected_width in [
+        (None, 100),
+        (-1, 141),
+    ]:
+        with pl.Config(tbl_width_chars=tbl_width_chars):
+            assert max(len(line) for line in str(df).split("\n")) == expected_width
 
 
 def test_shape_below_table_and_inlined_dtype() -> None:
@@ -479,7 +459,7 @@ def test_shape_format_for_big_numbers() -> None:
 
     pl.Config.set_tbl_rows(0)
     ser = pl.Series("ser", range(1000))
-    assert str(ser) == "shape: (1_000,)\n" "Series: 'ser' [i64]\n" "[\n" "\t…\n" "]"
+    assert str(ser) == "shape: (1_000,)\nSeries: 'ser' [i64]\n[\n\t…\n]"
 
     pl.Config.set_tbl_rows(1)
     pl.Config.set_tbl_cols(1)
@@ -492,6 +472,16 @@ def test_shape_format_for_big_numbers() -> None:
         "╞═════════╪═══╡\n"
         "│ 1       ┆ … │\n"
         "╰─────────┴───╯"
+    )
+
+    pl.Config.set_tbl_formatting("ASCII_FULL_CONDENSED")
+    assert (
+        str(df) == "shape: (1, 1_000)\n"
+        "+---------+-----+\n"
+        "| 0 (i64) | ... |\n"
+        "+===============+\n"
+        "| 1       | ... |\n"
+        "+---------+-----+"
     )
 
 
@@ -706,6 +696,94 @@ def test_config_load_save_context() -> None:
     assert os.environ["POLARS_VERBOSE"]
 
 
+def test_config_instances() -> None:
+    # establish two config instances that defer setting their options
+    cfg_markdown = pl.Config(
+        tbl_formatting="MARKDOWN",
+        apply_on_context_enter=True,
+    )
+    cfg_compact = pl.Config(
+        tbl_rows=4,
+        tbl_cols=4,
+        tbl_column_data_type_inline=True,
+        apply_on_context_enter=True,
+    )
+
+    # check instance (in)equality
+    assert cfg_markdown != cfg_compact
+    assert cfg_markdown == pl.Config(
+        tbl_formatting="MARKDOWN", apply_on_context_enter=True
+    )
+
+    # confirm that the options have not been applied yet
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    # confirm that the deferred options are applied when the instance context
+    # is entered into, and that they can be re-used without leaking state
+    @cfg_markdown
+    def fn1() -> str | None:
+        return os.environ.get("POLARS_FMT_TABLE_FORMATTING")
+
+    assert fn1() == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    with cfg_markdown:  # can re-use instance as decorator and context
+        assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    @cfg_markdown
+    def fn2() -> str | None:
+        return os.environ.get("POLARS_FMT_TABLE_FORMATTING")
+
+    assert fn2() == "MARKDOWN"
+    assert os.environ.get("POLARS_FMT_TABLE_FORMATTING") is None
+
+    df = pl.DataFrame({f"c{idx}": [idx] * 10 for idx in range(10)})
+
+    @cfg_compact
+    def fn3(df: pl.DataFrame) -> str:
+        return repr(df)
+
+    # reuse config instance and confirm state does not leak between invocations
+    for _ in range(3):
+        assert (
+            fn3(df)
+            == dedent("""
+            shape: (10, 10)
+            ┌──────────┬──────────┬───┬──────────┬──────────┐
+            │ c0 (i64) ┆ c1 (i64) ┆ … ┆ c8 (i64) ┆ c9 (i64) │
+            ╞══════════╪══════════╪═══╪══════════╪══════════╡
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ …        ┆ …        ┆ … ┆ …        ┆ …        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            │ 0        ┆ 1        ┆ … ┆ 8        ┆ 9        │
+            └──────────┴──────────┴───┴──────────┴──────────┘""").lstrip()
+        )
+
+        assert (
+            repr(df)
+            == dedent("""
+            shape: (10, 10)
+            ┌─────┬─────┬─────┬─────┬───┬─────┬─────┬─────┬─────┐
+            │ c0  ┆ c1  ┆ c2  ┆ c3  ┆ … ┆ c6  ┆ c7  ┆ c8  ┆ c9  │
+            │ --- ┆ --- ┆ --- ┆ --- ┆   ┆ --- ┆ --- ┆ --- ┆ --- │
+            │ i64 ┆ i64 ┆ i64 ┆ i64 ┆   ┆ i64 ┆ i64 ┆ i64 ┆ i64 │
+            ╞═════╪═════╪═════╪═════╪═══╪═════╪═════╪═════╪═════╡
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            │ 0   ┆ 1   ┆ 2   ┆ 3   ┆ … ┆ 6   ┆ 7   ┆ 8   ┆ 9   │
+            └─────┴─────┴─────┴─────┴───┴─────┴─────┴─────┴─────┘""").lstrip()
+        )
+
+
 def test_config_scope() -> None:
     pl.Config.set_verbose(False)
     pl.Config.set_tbl_cols(8)
@@ -736,7 +814,7 @@ def test_config_scope() -> None:
 
 
 def test_config_raise_error_if_not_exist() -> None:
-    with pytest.raises(AttributeError), pl.Config(i_do_not_exist=True):
+    with pytest.raises(AttributeError), pl.Config(i_do_not_exist=True):  # type: ignore[call-arg]
         pass
 
 
@@ -766,6 +844,79 @@ def test_set_fmt_str_lengths_invalid_length() -> None:
             cfg.set_fmt_str_lengths(0)
         with pytest.raises(ValueError):
             cfg.set_fmt_str_lengths(-2)
+
+
+def test_truncated_rows_cols_values_ascii() -> None:
+    df = pl.DataFrame({f"c{n}": list(range(-n, 100 - n)) for n in range(10)})
+
+    pl.Config.set_tbl_formatting("UTF8_BORDERS_ONLY", rounded_corners=True)
+    assert (
+        str(df) == "shape: (100, 10)\n"
+        "╭───────────────────────────────────────────────────╮\n"
+        "│ c0    c1    c2    c3    …   c6    c7    c8    c9  │\n"
+        "│ ---   ---   ---   ---       ---   ---   ---   --- │\n"
+        "│ i64   i64   i64   i64       i64   i64   i64   i64 │\n"
+        "╞═══════════════════════════════════════════════════╡\n"
+        "│ 0     -1    -2    -3    …   -6    -7    -8    -9  │\n"
+        "│ 1     0     -1    -2    …   -5    -6    -7    -8  │\n"
+        "│ 2     1     0     -1    …   -4    -5    -6    -7  │\n"
+        "│ 3     2     1     0     …   -3    -4    -5    -6  │\n"
+        "│ 4     3     2     1     …   -2    -3    -4    -5  │\n"
+        "│ …     …     …     …     …   …     …     …     …   │\n"
+        "│ 95    94    93    92    …   89    88    87    86  │\n"
+        "│ 96    95    94    93    …   90    89    88    87  │\n"
+        "│ 97    96    95    94    …   91    90    89    88  │\n"
+        "│ 98    97    96    95    …   92    91    90    89  │\n"
+        "│ 99    98    97    96    …   93    92    91    90  │\n"
+        "╰───────────────────────────────────────────────────╯"
+    )
+    with pl.Config(tbl_formatting="ASCII_FULL_CONDENSED"):
+        assert (
+            str(df) == "shape: (100, 10)\n"
+            "+-----+-----+-----+-----+-----+-----+-----+-----+-----+\n"
+            "| c0  | c1  | c2  | c3  | ... | c6  | c7  | c8  | c9  |\n"
+            "| --- | --- | --- | --- |     | --- | --- | --- | --- |\n"
+            "| i64 | i64 | i64 | i64 |     | i64 | i64 | i64 | i64 |\n"
+            "+=====================================================+\n"
+            "| 0   | -1  | -2  | -3  | ... | -6  | -7  | -8  | -9  |\n"
+            "| 1   | 0   | -1  | -2  | ... | -5  | -6  | -7  | -8  |\n"
+            "| 2   | 1   | 0   | -1  | ... | -4  | -5  | -6  | -7  |\n"
+            "| 3   | 2   | 1   | 0   | ... | -3  | -4  | -5  | -6  |\n"
+            "| 4   | 3   | 2   | 1   | ... | -2  | -3  | -4  | -5  |\n"
+            "| ... | ... | ... | ... | ... | ... | ... | ... | ... |\n"
+            "| 95  | 94  | 93  | 92  | ... | 89  | 88  | 87  | 86  |\n"
+            "| 96  | 95  | 94  | 93  | ... | 90  | 89  | 88  | 87  |\n"
+            "| 97  | 96  | 95  | 94  | ... | 91  | 90  | 89  | 88  |\n"
+            "| 98  | 97  | 96  | 95  | ... | 92  | 91  | 90  | 89  |\n"
+            "| 99  | 98  | 97  | 96  | ... | 93  | 92  | 91  | 90  |\n"
+            "+-----+-----+-----+-----+-----+-----+-----+-----+-----+"
+        )
+
+    with pl.Config(tbl_formatting="MARKDOWN"):
+        df = pl.DataFrame({"b": [b"0tigohij1prisdfj1gs2io3fbjg0pfihodjgsnfbbmfgnd8j"]})
+        assert (
+            str(df)
+            == dedent("""
+            shape: (1, 1)
+            | b                               |
+            | ---                             |
+            | binary                          |
+            |---------------------------------|
+            | b"0tigohij1prisdfj1gs2io3fbjg0… |""").lstrip()
+        )
+
+    with pl.Config(tbl_formatting="ASCII_MARKDOWN"):
+        df = pl.DataFrame({"b": [b"0tigohij1prisdfj1gs2io3fbjg0pfihodjgsnfbbmfgnd8j"]})
+        assert (
+            str(df)
+            == dedent("""
+            shape: (1, 1)
+            | b                                 |
+            | ---                               |
+            | binary                            |
+            |-----------------------------------|
+            | b"0tigohij1prisdfj1gs2io3fbjg0... |""").lstrip()
+        )
 
 
 def test_warn_unstable(recwarn: pytest.WarningsRecorder) -> None:

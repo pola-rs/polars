@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta, timezone
 from itertools import permutations
 from typing import TYPE_CHECKING, Any, cast
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -18,11 +19,7 @@ from tests.unit.conftest import (
 )
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import PolarsDataType
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 def test_arg_true() -> None:
@@ -289,6 +286,7 @@ def test_power_by_expression() -> None:
     assert out["pow_op_left"].to_list() == [2.0, 4.0, None, 16.0, None, 64.0]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_expression_appends() -> None:
     df = pl.DataFrame({"a": [1, 1, 2]})
 
@@ -644,3 +642,11 @@ def test_slice() -> None:
     result = df.select(pl.all().slice(1, 1))
     expected = pl.DataFrame({"a": data["a"][1:2], "b": data["b"][1:2]})
     assert_frame_equal(result, expected)
+
+
+def test_function_expr_scalar_identification_18755() -> None:
+    # The function uses `ApplyOptions::GroupWise`, however the input is scalar.
+    assert_frame_equal(
+        pl.DataFrame({"a": [1, 2]}).with_columns(pl.lit(5).shrink_dtype().alias("b")),
+        pl.DataFrame({"a": [1, 2], "b": pl.Series([5, 5], dtype=pl.Int8)}),
+    )

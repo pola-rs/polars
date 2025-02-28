@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import inspect
 from typing import TYPE_CHECKING, Callable
 
-from polars.dataframe.plotting import _add_tooltip
 from polars.dependencies import altair as alt
 
 if TYPE_CHECKING:
@@ -42,7 +42,7 @@ class SeriesPlot:
         `Altair <https://altair-viz.github.io/>`_.
 
         `s.plot.hist(**kwargs)` is shorthand for
-        `alt.Chart(s.to_frame()).mark_bar().encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`,
+        `alt.Chart(s.to_frame()).mark_bar(tooltip=True).encode(x=alt.X(f'{s.name}:Q', bin=True), y='count()', **kwargs).interactive()`,
         and is provided for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -69,9 +69,11 @@ class SeriesPlot:
             "x": alt.X(f"{self._series_name}:Q", bin=True),
             "y": "count()",
         }
-        _add_tooltip(encodings, **kwargs)
         return (
-            alt.Chart(self._df).mark_bar().encode(**encodings, **kwargs).interactive()
+            alt.Chart(self._df)
+            .mark_bar(tooltip=True)
+            .encode(**encodings, **kwargs)
+            .interactive()
         )
 
     def kde(
@@ -86,7 +88,7 @@ class SeriesPlot:
         `Altair <https://altair-viz.github.io/>`_.
 
         `s.plot.kde(**kwargs)` is shorthand for
-        `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area().encode(x=s.name, y='density:Q', **kwargs).interactive()`,
+        `alt.Chart(s.to_frame()).transform_density(s.name, as_=[s.name, 'density']).mark_area(tooltip=True).encode(x=s.name, y='density:Q', **kwargs).interactive()`,
         and is provided for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -110,11 +112,10 @@ class SeriesPlot:
             msg = "Cannot use `plot.kde` when Series name is `'density'`"
             raise ValueError(msg)
         encodings: Encodings = {"x": self._series_name, "y": "density:Q"}
-        _add_tooltip(encodings, **kwargs)
         return (
             alt.Chart(self._df)
             .transform_density(self._series_name, as_=[self._series_name, "density"])
-            .mark_area()
+            .mark_area(tooltip=True)
             .encode(**encodings, **kwargs)
             .interactive()
         )
@@ -131,7 +132,7 @@ class SeriesPlot:
         `Altair <https://altair-viz.github.io/>`_.
 
         `s.plot.line(**kwargs)` is shorthand for
-        `alt.Chart(s.to_frame().with_row_index()).mark_line().encode(x='index', y=s.name, **kwargs).interactive()`,
+        `alt.Chart(s.to_frame().with_row_index()).mark_line(tooltip=True).encode(x='index', y=s.name, **kwargs).interactive()`,
         and is provided for convenience - for full customisatibility, use a plotting
         library directly.
 
@@ -149,35 +150,42 @@ class SeriesPlot:
         Examples
         --------
         >>> s = pl.Series("price", [1, 3, 3, 3, 5, 2, 6, 5, 5, 5, 7])
-        >>> s.plot.kde()  # doctest: +SKIP
+        >>> s.plot.line()  # doctest: +SKIP
         """  # noqa: W505
         if self._series_name == "index":
             msg = "Cannot call `plot.line` when Series name is 'index'"
             raise ValueError(msg)
         encodings: Encodings = {"x": "index", "y": self._series_name}
-        _add_tooltip(encodings, **kwargs)
         return (
             alt.Chart(self._df.with_row_index())
-            .mark_line()
+            .mark_line(tooltip=True)
             .encode(**encodings, **kwargs)
             .interactive()
         )
 
     def __getattr__(self, attr: str) -> Callable[..., alt.Chart]:
         if self._series_name == "index":
-            msg = "Cannot call `plot.{attr}` when Series name is 'index'"
+            msg = f"Cannot call `plot.{attr}` when Series name is 'index'"
             raise ValueError(msg)
         if attr == "scatter":
             # alias `scatter` to `point` because of how common it is
             attr = "point"
         method = getattr(alt.Chart(self._df.with_row_index()), f"mark_{attr}", None)
         if method is None:
-            msg = "Altair has no method 'mark_{attr}'"
+            msg = f"Altair has no method 'mark_{attr}'"
             raise AttributeError(msg)
         encodings: Encodings = {"x": "index", "y": self._series_name}
 
-        def func(**kwargs: EncodeKwds) -> alt.Chart:
-            _add_tooltip(encodings, **kwargs)
-            return method().encode(**encodings, **kwargs).interactive()
+        accepts_tooltip_argument = "tooltip" in {
+            value.name for value in inspect.signature(method).parameters.values()
+        }
+        if accepts_tooltip_argument:
+
+            def func(**kwargs: EncodeKwds) -> alt.Chart:
+                return method(tooltip=True).encode(**encodings, **kwargs).interactive()
+        else:
+
+            def func(**kwargs: EncodeKwds) -> alt.Chart:
+                return method().encode(**encodings, **kwargs).interactive()
 
         return func

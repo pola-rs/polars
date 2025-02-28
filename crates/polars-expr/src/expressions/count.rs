@@ -21,22 +21,19 @@ impl PhysicalExpr for CountExpr {
         Some(&self.expr)
     }
 
-    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Series> {
-        Ok(Series::new(
-            PlSmallStr::from_static("len"),
-            [df.height() as IdxSize],
-        ))
+    fn evaluate(&self, df: &DataFrame, _state: &ExecutionState) -> PolarsResult<Column> {
+        Ok(Series::new(PlSmallStr::from_static("len"), [df.height() as IdxSize]).into_column())
     }
 
     fn evaluate_on_groups<'a>(
         &self,
         _df: &DataFrame,
-        groups: &'a GroupsProxy,
+        groups: &'a GroupPositions,
         _state: &ExecutionState,
     ) -> PolarsResult<AggregationContext<'a>> {
         let ca = groups.group_count().with_name(PlSmallStr::from_static(LEN));
-        let s = ca.into_series();
-        Ok(AggregationContext::new(s, Cow::Borrowed(groups), true))
+        let c = ca.into_column();
+        Ok(AggregationContext::new(c, Cow::Borrowed(groups), true))
     }
 
     fn to_field(&self, _input_schema: &Schema) -> PolarsResult<Field> {
@@ -57,21 +54,21 @@ impl PartitionedAggregation for CountExpr {
     fn evaluate_partitioned(
         &self,
         df: &DataFrame,
-        groups: &GroupsProxy,
+        groups: &GroupPositions,
         state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         self.evaluate_on_groups(df, groups, state)
-            .map(|mut ac| ac.aggregated())
+            .map(|mut ac| ac.aggregated().into_column())
     }
 
     /// Called to merge all the partitioned results in a final aggregate.
     #[allow(clippy::ptr_arg)]
     fn finalize(
         &self,
-        partitioned: Series,
-        groups: &GroupsProxy,
+        partitioned: Column,
+        groups: &GroupPositions,
         _state: &ExecutionState,
-    ) -> PolarsResult<Series> {
+    ) -> PolarsResult<Column> {
         // SAFETY: groups are in bounds.
         let agg = unsafe { partitioned.agg_sum(groups) };
         Ok(agg.with_name(PlSmallStr::from_static(LEN)))

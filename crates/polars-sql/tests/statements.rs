@@ -3,8 +3,8 @@ use polars_lazy::prelude::*;
 use polars_sql::*;
 
 fn create_ctx() -> SQLContext {
-    let a = Series::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
-    let b = Series::new("b".into(), 1..10i64);
+    let a = Column::new("a".into(), (1..10i64).map(|i| i / 100).collect::<Vec<_>>());
+    let b = Column::new("b".into(), 1..10i64);
     let df = DataFrame::new(vec![a, b]).unwrap().lazy();
     let mut ctx = SQLContext::new();
     ctx.register("df", df);
@@ -604,14 +604,11 @@ fn test_join_utf8() {
 }
 
 #[test]
-fn test_table() {}
-
-#[test]
 #[should_panic]
 fn test_compound_invalid_1() {
     let mut ctx = prepare_compound_join_context();
     let sql = "SELECT * FROM df1 OUTER JOIN df2 ON a AND b";
-    ctx.execute(sql).unwrap().collect().unwrap();
+    let _ = ctx.execute(sql).unwrap();
 }
 
 #[test]
@@ -619,7 +616,7 @@ fn test_compound_invalid_1() {
 fn test_compound_invalid_2() {
     let mut ctx = prepare_compound_join_context();
     let sql = "SELECT * FROM df1 LEFT JOIN df2 ON df1.a = df2.a AND b = b";
-    ctx.execute(sql).unwrap().collect().unwrap();
+    let _ = ctx.execute(sql).unwrap();
 }
 
 #[test]
@@ -627,5 +624,5 @@ fn test_compound_invalid_2() {
 fn test_compound_invalid_3() {
     let mut ctx = prepare_compound_join_context();
     let sql = "SELECT * FROM df1 INNER JOIN df2 ON df1.a = df2.a AND b";
-    ctx.execute(sql).unwrap().collect().unwrap();
+    let _ = ctx.execute(sql).unwrap();
 }

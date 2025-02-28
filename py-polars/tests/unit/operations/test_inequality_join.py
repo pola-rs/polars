@@ -10,6 +10,7 @@ from hypothesis import given
 
 import polars as pl
 from polars.testing import assert_frame_equal
+from polars.testing.parametric.strategies import series
 
 if TYPE_CHECKING:
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -68,7 +69,9 @@ def test_basic_ie_join() -> None:
     )
 
     actual = east.join_where(
-        west, pl.col("dur") < pl.col("time"), pl.col("rev") > pl.col("cost")
+        west,
+        pl.col("dur") < pl.col("time"),
+        pl.col("rev") > pl.col("cost"),
     )
 
     expected = pl.DataFrame(
@@ -110,7 +113,9 @@ def test_ie_join_with_slice(offset: int, length: int) -> None:
 
     actual = (
         east.join_where(
-            west, pl.col("dur") < pl.col("time"), pl.col("rev") < pl.col("cost")
+            west,
+            pl.col("dur") < pl.col("time"),
+            pl.col("rev") < pl.col("cost"),
         )
         .slice(offset, length)
         .collect()
@@ -176,7 +181,21 @@ def test_ie_join_with_expressions() -> None:
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
 
 
-def test_join_where_predicates() -> None:
+@pytest.mark.parametrize(
+    "range_constraint",
+    [
+        [
+            # can write individual components
+            pl.col("time") >= pl.col("start_time"),
+            pl.col("time") < pl.col("end_time"),
+        ],
+        [
+            # or a single `is_between` expression
+            pl.col("time").is_between("start_time", "end_time", closed="left")
+        ],
+    ],
+)
+def test_join_where_predicates(range_constraint: list[pl.Expr]) -> None:
     left = pl.DataFrame(
         {
             "id": [0, 1, 2, 3, 4, 5],
@@ -208,11 +227,7 @@ def test_join_where_predicates() -> None:
         }
     )
 
-    actual = left.join_where(
-        right,
-        pl.col("time") >= pl.col("start_time"),
-        pl.col("time") < pl.col("end_time"),
-    ).select("id", "id_right")
+    actual = left.join_where(right, *range_constraint).select("id", "id_right")
 
     expected = pl.DataFrame(
         {
@@ -226,9 +241,8 @@ def test_join_where_predicates() -> None:
         left.lazy()
         .join_where(
             right.lazy(),
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
             pl.col("group_right") == pl.col("group"),
+            *range_constraint,
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -241,11 +255,7 @@ def test_join_where_predicates() -> None:
 
     expected = (
         left.join(right, how="cross")
-        .filter(
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") == pl.col("group_right"),
-        )
+        .filter(pl.col("group") == pl.col("group_right"), *range_constraint)
         .select("id", "id_right", "group")
         .sort("id")
     )
@@ -255,9 +265,8 @@ def test_join_where_predicates() -> None:
         left.lazy()
         .join_where(
             right.lazy(),
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
             pl.col("group") != pl.col("group_right"),
+            *range_constraint,
         )
         .select("id", "id_right", "group")
         .sort("id")
@@ -270,11 +279,7 @@ def test_join_where_predicates() -> None:
 
     expected = (
         left.join(right, how="cross")
-        .filter(
-            pl.col("time") >= pl.col("start_time"),
-            pl.col("time") < pl.col("end_time"),
-            pl.col("group") != pl.col("group_right"),
-        )
+        .filter(pl.col("group") != pl.col("group_right"), *range_constraint)
         .select("id", "id_right", "group")
         .sort("id")
     )
@@ -292,8 +297,7 @@ def test_join_where_predicates() -> None:
     )
 
     explained = q.explain()
-    assert "CROSS" in explained
-    assert "FILTER" in explained
+    assert "NESTED LOOP" in explained
     actual = q.collect()
     assert actual.to_dict(as_series=False) == {
         "group": [0, 0, 0, 0, 0, 0, 1, 1, 1],
@@ -406,7 +410,7 @@ def test_ie_join(east: pl.DataFrame, west: pl.DataFrame, op1: str, op2: str) -> 
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.join_where(west, expr0, expr1)
+    actual = east.join_where(west, expr0 & expr1)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -424,7 +428,7 @@ def test_ie_join_with_nulls(
     expr0 = _inequality_expression("dur", op1, "time")
     expr1 = _inequality_expression("rev", op2, "cost")
 
-    actual = east.join_where(west, expr0, expr1)
+    actual = east.join_where(west, expr0 & expr1)
 
     expected = east.join(west, how="cross").filter(expr0 & expr1)
     assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
@@ -450,21 +454,19 @@ def test_ie_join_with_floats(
 
 def test_raise_on_ambiguous_name() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'join_where' predicate only refers to columns from a single table",
+    ):
         df.join_where(df, pl.col("id") >= pl.col("id"))
-
-
-def test_raise_on_multiple_binary_comparisons() -> None:
-    df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
-        df.join_where(
-            df, (pl.col("id") < pl.col("id")) & (pl.col("id") >= pl.col("id"))
-        )
 
 
 def test_raise_invalid_input_join_where() -> None:
     df = pl.DataFrame({"id": [1, 2]})
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="expected join keys/predicates",
+    ):
         df.join_where(df)
 
 
@@ -482,3 +484,201 @@ def test_ie_join_use_keys_multiple() -> None:
         "b": [2, 2, 2],
         "x_right": [1, 3, 7],
     }
+
+
+@given(
+    left=series(
+        dtype=pl.Int64,
+        strategy=st.integers(min_value=0, max_value=10) | st.none(),
+        max_size=10,
+    ),
+    right=series(
+        dtype=pl.Int64,
+        strategy=st.integers(min_value=-10, max_value=10) | st.none(),
+        max_size=10,
+    ),
+    op=operators(),
+)
+def test_single_inequality(left: pl.Series, right: pl.Series, op: str) -> None:
+    expr = _inequality_expression("x", op, "y")
+
+    left_df = pl.DataFrame(
+        {
+            "id": np.arange(len(left)),
+            "x": left,
+        }
+    )
+    right_df = pl.DataFrame(
+        {
+            "id": np.arange(len(right)),
+            "y": right,
+        }
+    )
+
+    actual = left_df.join_where(right_df, expr)
+
+    expected = left_df.join(right_df, how="cross").filter(expr)
+    assert_frame_equal(actual, expected, check_row_order=False, check_exact=True)
+
+
+@given(
+    offset=st.integers(-6, 5),
+    length=st.integers(0, 6),
+)
+def test_single_inequality_with_slice(offset: int, length: int) -> None:
+    left = pl.DataFrame(
+        {
+            "id": list(range(8)),
+            "x": [0, 1, 1, 2, 3, 5, 5, 7],
+        }
+    )
+    right = pl.DataFrame(
+        {
+            "id": list(range(6)),
+            "y": [-1, 2, 4, 4, 6, 9],
+        }
+    )
+
+    expr = pl.col("x") > pl.col("y")
+    actual = left.join_where(right, expr).slice(offset, length)
+
+    expected_full = left.join(right, how="cross").filter(expr)
+
+    assert len(actual) == len(expected_full.slice(offset, length))
+
+    expected_rows = set(expected_full.iter_rows())
+    for row in actual.iter_rows():
+        assert row in expected_rows, f"{row} not in expected rows"
+
+
+def test_ie_join_projection_pd_19005() -> None:
+    lf = pl.LazyFrame({"a": [1, 2], "b": [3, 4]}).with_row_index()
+    q = (
+        lf.join_where(
+            lf,
+            pl.col.index < pl.col.index_right,
+            pl.col.index.cast(pl.Int64) + pl.col.a > pl.col.a_right,
+        )
+        .group_by(pl.col.index)
+        .agg(pl.col.index_right)
+    )
+
+    out = q.collect()
+    assert out.schema == pl.Schema(
+        [("index", pl.get_index_type()), ("index_right", pl.List(pl.get_index_type()))]
+    )
+    assert out.shape == (0, 2)
+
+
+def test_raise_invalid_predicate() -> None:
+    left = pl.LazyFrame({"a": [1, 2]}).with_row_index()
+    right = pl.LazyFrame({"b": [1, 2]}).with_row_index()
+
+    with pytest.raises(
+        pl.exceptions.InvalidOperationError,
+        match="'join_where' predicate only refers to columns from a single table",
+    ):
+        left.join_where(right, pl.col.index >= pl.col.a).collect()
+
+
+def test_join_on_strings() -> None:
+    df = pl.LazyFrame(
+        {
+            "a": ["a", "b", "c"],
+            "b": ["b", "b", "b"],
+        }
+    )
+
+    q = df.join_where(df, pl.col("a").ge(pl.col("a_right")))
+
+    assert "NESTED LOOP JOIN" in q.explain()
+    # Note: Output is flaky without sort when POLARS_MAX_THREADS=1
+    assert q.collect().sort(pl.all()).to_dict(as_series=False) == {
+        "a": ["a", "b", "b", "c", "c", "c"],
+        "b": ["b", "b", "b", "b", "b", "b"],
+        "a_right": ["a", "a", "b", "a", "b", "c"],
+        "b_right": ["b", "b", "b", "b", "b", "b"],
+    }
+
+
+def test_join_partial_column_name_overlap_19119() -> None:
+    left = pl.LazyFrame({"a": [1], "b": [2]})
+    right = pl.LazyFrame({"a": [2], "d": [0]})
+
+    q = left.join_where(right, pl.col("a") > pl.col("d"))
+
+    assert q.collect().to_dict(as_series=False) == {
+        "a": [1],
+        "b": [2],
+        "a_right": [2],
+        "d": [0],
+    }
+
+
+def test_join_predicate_pushdown_19580() -> None:
+    left = pl.LazyFrame(
+        {
+            "a": [1, 2, 3, 1],
+            "b": [1, 2, 3, 4],
+            "c": [2, 3, 4, 5],
+        }
+    )
+
+    right = pl.LazyFrame({"a": [1, 3], "c": [2, 4], "d": [6, 3]})
+
+    q = left.join_where(
+        right,
+        pl.col("b") < pl.col("c_right"),
+        pl.col("a") < pl.col("a_right"),
+        pl.col("a") < pl.col("d"),
+    )
+
+    expect = (
+        left.join(right, how="cross")
+        .collect()
+        .filter(
+            (pl.col("a") < pl.col("d"))
+            & (pl.col("b") < pl.col("c_right"))
+            & (pl.col("a") < pl.col("a_right"))
+        )
+    )
+
+    assert_frame_equal(expect, q.collect(), check_row_order=False)
+
+
+def test_join_where_literal_20061() -> None:
+    df_left = pl.DataFrame(
+        {"id": [1, 2, 3], "value_left": [10, 20, 30], "flag": [1, 0, 1]}
+    )
+
+    df_right = pl.DataFrame(
+        {
+            "id": [1, 2, 3],
+            "value_right": [5, 5, 25],
+            "flag": [1, 0, 1],
+        }
+    )
+
+    assert df_left.join_where(
+        df_right,
+        pl.col("value_left") > pl.col("value_right"),
+        pl.col("flag_right") == pl.lit(1, dtype=pl.Int8),
+    ).sort(pl.all()).to_dict(as_series=False) == {
+        "id": [1, 2, 3, 3],
+        "value_left": [10, 20, 30, 30],
+        "flag": [1, 0, 1, 1],
+        "id_right": [1, 1, 1, 3],
+        "value_right": [5, 5, 5, 25],
+        "flag_right": [1, 1, 1, 1],
+    }
+
+
+def test_boolean_predicate_join_where() -> None:
+    urls = pl.LazyFrame({"url": "abcd.com/page"})
+    categories = pl.LazyFrame({"base_url": "abcd.com", "category": "landing page"})
+    assert (
+        "NESTED LOOP JOIN"
+        in urls.join_where(
+            categories, pl.col("url").str.starts_with(pl.col("base_url"))
+        ).explain()
+    )

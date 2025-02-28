@@ -23,7 +23,7 @@ mod numpy_ufunc;
 #[cfg(feature = "pymethods")]
 mod scatter;
 
-use polars::prelude::Series;
+use polars::prelude::{Column, Series};
 use pyo3::pyclass;
 
 #[pyclass]
@@ -64,5 +64,16 @@ impl ToPySeries for Vec<Series> {
     fn to_pyseries(self) -> Vec<PySeries> {
         // SAFETY: repr is transparent.
         unsafe { std::mem::transmute(self) }
+    }
+}
+
+impl ToPySeries for Vec<Column> {
+    fn to_pyseries(self) -> Vec<PySeries> {
+        // @scalar-opt
+        let series: Vec<Series> = self
+            .into_iter()
+            .map(|c| c.take_materialized_series())
+            .collect();
+        series.to_pyseries()
     }
 }

@@ -8,8 +8,6 @@ use crate::scalar::{new_scalar, Scalar};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -42,7 +40,7 @@ pub unsafe trait DictionaryKey: NativeType + TryInto<usize> + TryFrom<usize> + H
     /// Represents this key as a `usize`.
     ///
     /// # Safety
-    /// The caller _must_ have checked that the value can be casted to `usize`.
+    /// The caller _must_ have checked that the value can be cast to `usize`.
     #[inline]
     unsafe fn as_usize(self) -> usize {
         match self.try_into() {
@@ -82,6 +80,10 @@ unsafe impl DictionaryKey for i32 {
 unsafe impl DictionaryKey for i64 {
     const KEY_TYPE: IntegerType = IntegerType::Int64;
     const MAX_USIZE_VALUE: usize = i64::MAX as usize;
+}
+unsafe impl DictionaryKey for i128 {
+    const KEY_TYPE: IntegerType = IntegerType::Int128;
+    const MAX_USIZE_VALUE: usize = i128::MAX as usize;
 }
 unsafe impl DictionaryKey for u8 {
     const KEY_TYPE: IntegerType = IntegerType::UInt8;
@@ -402,6 +404,10 @@ impl<K: DictionaryKey> DictionaryArray<K> {
                 polars_bail!(ComputeError: "Dictionaries must be initialized with DataType::Dictionary")
             },
         })
+    }
+
+    pub fn take(self) -> (ArrowDataType, PrimitiveArray<K>, Box<dyn Array>) {
+        (self.dtype, self.keys, self.values)
     }
 }
 

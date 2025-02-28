@@ -116,7 +116,11 @@ fn schema_to_field(
                     .iter()
                     .map(|s| schema_to_field(s, None, Metadata::default()))
                     .collect::<PolarsResult<Vec<Field>>>()?;
-                ArrowDataType::Union(fields, None, UnionMode::Dense)
+                ArrowDataType::Union(Box::new(UnionType {
+                    fields,
+                    ids: None,
+                    mode: UnionMode::Dense,
+                }))
             }
         },
         AvroSchema::Record(Record { fields, .. }) => {

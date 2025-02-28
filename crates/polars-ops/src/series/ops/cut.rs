@@ -1,3 +1,4 @@
+use polars_compute::rolling::QuantileMethod;
 use polars_core::prelude::*;
 use polars_utils::format_pl_smallstr;
 
@@ -57,24 +58,24 @@ fn map_cats(
                 },
             });
 
-        let outvals = vec![
-            brk_vals.finish().into_series(),
+        let outvals = [brk_vals.finish().into_series(), unsafe {
             bld.finish()
                 ._with_fast_unique(label_has_value.iter().all(bool::clone))
-                .into_series(),
-        ];
-        Ok(StructChunked::from_series(out_name, &outvals)?.into_series())
+                .into_series()
+        }];
+        Ok(StructChunked::from_series(out_name, outvals[0].len(), outvals.iter())?.into_series())
     } else {
-        Ok(bld
-            .drain_iter_and_finish(s_iter.map(|opt| {
+        Ok(unsafe {
+            bld.drain_iter_and_finish(s_iter.map(|opt| {
                 opt.filter(|x| !x.is_nan()).map(|x| {
                     let pt = sorted_breaks.partition_point(|v| op(&x, v));
-                    unsafe { *label_has_value.get_unchecked_mut(pt) = true };
-                    unsafe { labels.get_unchecked(pt).as_str() }
+                    *label_has_value.get_unchecked_mut(pt) = true;
+                    labels.get_unchecked(pt).as_str()
                 })
             }))
             ._with_fast_unique(label_has_value.iter().all(bool::clone))
-            .into_series())
+        }
+        .into_series())
     }
 }
 
@@ -144,11 +145,7 @@ pub fn qcut(
     let s2 = s.sort(SortOptions::default())?;
     let ca = s2.f64()?;
 
-    let f = |&p| {
-        ca.quantile(p, QuantileInterpolOptions::Linear)
-            .unwrap()
-            .unwrap()
-    };
+    let f = |&p| ca.quantile(p, QuantileMethod::Linear).unwrap().unwrap();
     let mut qbreaks: Vec<_> = probs.iter().map(f).collect();
     qbreaks.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
 

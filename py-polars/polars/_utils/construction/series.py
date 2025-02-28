@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Generator, Iterator
 from datetime import date, datetime, time, timedelta
+from enum import Enum as PyEnum
 from itertools import islice
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Generator,
-    Iterable,
-    Iterator,
-    Sequence,
 )
 
 import polars._reexport as pl
@@ -20,6 +18,7 @@ from polars._utils.construction.utils import (
     is_namedtuple,
     is_pydantic_model,
     is_simple_numpy_backed_pandas_series,
+    is_sqlalchemy,
 )
 from polars._utils.various import (
     range_to_series,
@@ -65,6 +64,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PySeries
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Sequence
+
     from polars import DataFrame, Series
     from polars._typing import PolarsDataType
     from polars.dependencies import pandas as pd
@@ -104,6 +105,7 @@ def sequence_to_pyseries(
             dataclasses.is_dataclass(value)
             or is_pydantic_model(value)
             or is_namedtuple(value.__class__)
+            or is_sqlalchemy(value)
         ) and dtype != Object:
             return pl.DataFrame(values).to_struct(name)._s
         elif isinstance(value, range) and dtype is None:
@@ -120,6 +122,14 @@ def sequence_to_pyseries(
                 dtype in pl_temporal_types or type(dtype) in pl_temporal_types
             ) and not isinstance(value, int):
                 python_dtype = dtype_to_py_type(dtype)  # type: ignore[arg-type]
+
+    # if values are enums, infer and load the appropriate dtype/values
+    if issubclass(type(value), PyEnum):
+        if dtype is None and python_dtype is None:
+            with contextlib.suppress(TypeError):
+                dtype = Enum(type(value))
+        if not isinstance(value, (str, int)):
+            values = [v.value for v in values]
 
     # physical branch
     # flat data
@@ -207,13 +217,10 @@ def sequence_to_pyseries(
             s = wrap_s(py_series).dt.cast_time_unit(time_unit)
 
         if (values_dtype == Date) & (dtype == Datetime):
-            result = s.cast(Datetime(time_unit or "us"))
-            if time_zone is not None:
-                result = result.dt.convert_time_zone(time_zone)
-            return result._s
+            s = s.cast(Datetime(time_unit or "us"))
 
-        if (dtype == Datetime) and (value.tzinfo is not None or time_zone is not None):
-            return s.dt.convert_time_zone(time_zone or "UTC")._s
+        if dtype == Datetime and time_zone is not None:
+            return s.dt.convert_time_zone(time_zone)._s
         return s._s
 
     elif (
@@ -307,8 +314,18 @@ def _construct_series_with_fallbacks(
     """Construct Series, with fallbacks for basic type mismatch (eg: bool/int)."""
     try:
         return constructor(name, values, strict)
-    except TypeError:
-        if dtype is None:
+    except (TypeError, OverflowError) as e:
+        # # This retry with i64 is related to https://github.com/pola-rs/polars/issues/17231
+        # # Essentially, when given a [0, u64::MAX] then it would Overflow.
+        if (
+            isinstance(e, OverflowError)
+            and dtype is None
+            and constructor == PySeries.new_opt_i64
+        ):
+            return _construct_series_with_fallbacks(
+                PySeries.new_opt_u64, name, values, dtype, strict=strict
+            )
+        elif dtype is None:
             return PySeries.new_from_any_values(name, values, strict=strict)
         else:
             return PySeries.new_from_any_values_and_dtype(
@@ -455,25 +472,19 @@ def numpy_to_pyseries(
         return constructor(
             name, values, nan_to_null if dtype in (np.float32, np.float64) else strict
         )
-    elif sum(values.shape) == 0:
-        # Optimize by ingesting 1D and reshaping in Rust
-        original_shape = values.shape
-        values = values.reshape(-1)
-        py_s = numpy_to_pyseries(
-            name,
-            values,
-            strict=strict,
-            nan_to_null=nan_to_null,
-        )
-        return wrap_s(py_s).reshape(original_shape)._s
     else:
         original_shape = values.shape
-        values = values.reshape(-1)
-        py_s = numpy_to_pyseries(
-            name,
-            values,
-            strict=strict,
-            nan_to_null=nan_to_null,
+        values_1d = values.reshape(-1)
+
+        from polars.series.utils import _with_no_check_length
+
+        py_s = _with_no_check_length(
+            lambda: numpy_to_pyseries(
+                name,
+                values_1d,
+                strict=strict,
+                nan_to_null=nan_to_null,
+            )
         )
         return wrap_s(py_s).reshape(original_shape)._s
 

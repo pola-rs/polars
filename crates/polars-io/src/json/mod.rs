@@ -143,7 +143,7 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        df.align_chunks();
+        df.align_chunks_par();
         let fields = df
             .iter()
             .map(|s| {
@@ -236,7 +236,7 @@ pub fn remove_bom(bytes: &[u8]) -> PolarsResult<&[u8]> {
         Ok(bytes)
     }
 }
-impl<'a, R> SerReader<R> for JsonReader<'a, R>
+impl<R> SerReader<R> for JsonReader<'_, R>
 where
     R: MmapBytesReader,
 {
@@ -281,6 +281,13 @@ where
                 } else {
                     simd_json::to_borrowed_value(owned).map_err(to_compute_err)?
                 };
+                if let BorrowedValue::Array(array) = &json_value {
+                    if array.is_empty() & self.schema.is_none() & self.schema_overwrite.is_none() {
+                        return Ok(DataFrame::empty());
+                    }
+                }
+
+                let allow_extra_fields_in_struct = self.schema.is_some();
 
                 // struct type
                 let dtype = if let Some(mut schema) = self.schema {
@@ -333,7 +340,11 @@ where
                     dtype
                 };
 
-                let arr = polars_json::json::deserialize(&json_value, dtype)?;
+                let arr = polars_json::json::deserialize(
+                    &json_value,
+                    dtype,
+                    allow_extra_fields_in_struct,
+                )?;
                 let arr = arr.as_any().downcast_ref::<StructArray>().ok_or_else(
                     || polars_err!(ComputeError: "can only deserialize json objects"),
                 )?;

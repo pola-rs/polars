@@ -1,13 +1,18 @@
 from __future__ import annotations
 
+import enum
 import sys
 from collections import OrderedDict
-from typing import Any, Iterator, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
 import polars as pl
 from polars.exceptions import DataOrientationWarning, InvalidOperationError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def test_df_mixed_dtypes_string() -> None:
@@ -37,16 +42,16 @@ def test_df_object() -> None:
         def __init__(self, value: int) -> None:
             self._value = value
 
-        def __eq__(self, other: Any) -> bool:
+        def __eq__(self, other: object) -> bool:
             return issubclass(other.__class__, self.__class__) and (
-                self._value == other._value
+                self._value == other._value  # type: ignore[attr-defined]
             )
 
         def __repr__(self) -> str:
             return f"{self.__class__.__name__}({self._value})"
 
     df = pl.DataFrame({"a": [Foo(1), Foo(2)]})
-    assert df["a"].dtype == pl.Object
+    assert df["a"].dtype.is_object()
     assert df.rows() == [(Foo(1),), (Foo(2),)]
 
 
@@ -55,7 +60,7 @@ def test_df_init_from_generator_dict_view() -> None:
     data = {
         "keys": d.keys(),
         "vals": d.values(),
-        "itms": d.items(),
+        "items": d.items(),
     }
     with pytest.raises(TypeError, match="unexpected value"):
         pl.DataFrame(data, strict=True)
@@ -64,12 +69,12 @@ def test_df_init_from_generator_dict_view() -> None:
     assert df.schema == {
         "keys": pl.Int64,
         "vals": pl.String,
-        "itms": pl.List(pl.String),
+        "items": pl.List(pl.String),
     }
     assert df.to_dict(as_series=False) == {
         "keys": [0, 1, 2],
         "vals": ["x", "y", "z"],
-        "itms": [["0", "x"], ["1", "y"], ["2", "z"]],
+        "items": [["0", "x"], ["1", "y"], ["2", "z"]],
     }
 
 
@@ -82,19 +87,19 @@ def test_df_init_from_generator_reversed_dict_view() -> None:
     data = {
         "rev_keys": reversed(d.keys()),
         "rev_vals": reversed(d.values()),
-        "rev_itms": reversed(d.items()),
+        "rev_items": reversed(d.items()),
     }
-    df = pl.DataFrame(data, schema_overrides={"rev_itms": pl.Object})
+    df = pl.DataFrame(data, schema_overrides={"rev_items": pl.Object})
 
     assert df.schema == {
         "rev_keys": pl.Int64,
         "rev_vals": pl.String,
-        "rev_itms": pl.Object,
+        "rev_items": pl.Object,
     }
     assert df.to_dict(as_series=False) == {
         "rev_keys": [2, 1, 0],
         "rev_vals": ["z", "y", "x"],
-        "rev_itms": [(2, "z"), (1, "y"), (0, "x")],
+        "rev_items": [(2, "z"), (1, "y"), (0, "x")],
     }
 
 
@@ -147,18 +152,6 @@ def test_df_init_nested_mixed_types() -> None:
     assert df.to_dicts() == [{"key": [{"value": 1.0}, {"value": 1.0}]}]
 
 
-def test_unit_and_empty_construction_15896() -> None:
-    # This is still incorrect.
-    # We should raise, but currently for len 1 dfs,
-    # we cannot tell if they come from a literal or expression.
-    assert "shape: (0, 2)" in str(
-        pl.DataFrame({"A": [0]}).select(
-            C="A",
-            A=pl.int_range("A"),  # creates empty series
-        )
-    )
-
-
 class CustomSchema(Mapping[str, Any]):
     """Dummy schema object for testing compatibility with Mapping."""
 
@@ -202,3 +195,13 @@ def test_df_init_schema_object() -> None:
 def test_df_init_data_orientation_inference_warning() -> None:
     with pytest.warns(DataOrientationWarning):
         pl.from_records([[1, 2, 3], [4, 5, 6]], schema=["a", "b", "c"])
+
+
+def test_df_init_enum_dtype() -> None:
+    class PythonEnum(str, enum.Enum):
+        A = "A"
+        B = "B"
+        C = "C"
+
+    df = pl.DataFrame({"Col 1": ["A", "B", "C"]}, schema={"Col 1": PythonEnum})
+    assert df.dtypes[0] == pl.Enum(["A", "B", "C"])

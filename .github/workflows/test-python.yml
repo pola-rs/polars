@@ -5,7 +5,7 @@ on:
     paths:
       - Cargo.lock
       - py-polars/**
-      - docs/src/python/**
+      - docs/source/src/python/**
       - crates/**
       - .github/workflows/test-python.yml
   push:
@@ -14,7 +14,7 @@ on:
     paths:
       - Cargo.lock
       - crates/**
-      - docs/src/python/**
+      - docs/source/src/python/**
       - py-polars/**
       - .github/workflows/test-python.yml
 
@@ -39,10 +39,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ['3.8', '3.11', '3.12']
+        python-version: ['3.9', '3.12', '3.13']
         include:
           - os: windows-latest
-            python-version: '3.12'
+            python-version: '3.13'
 
     steps:
       - uses: actions/checkout@v4
@@ -70,8 +70,7 @@ jobs:
           # doesn't have an up-to-date typing-extensions, see
           # https://github.com/astral-sh/uv/issues/6028#issuecomment-2287232150
           uv pip install -U typing-extensions
-          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose
-
+          uv pip install --compile-bytecode -r requirements-dev.txt -r requirements-ci.txt --verbose --index-strategy=unsafe-best-match
       - name: Set up Rust
         run: rustup show
 
@@ -85,7 +84,7 @@ jobs:
         run: maturin develop
 
       - name: Run doctests
-        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
+        if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
         run: |
           python tests/docs/run_doctest.py
           pytest tests/docs/test_user_guide.py -m docs
@@ -94,14 +93,20 @@ jobs:
         if: github.ref_name != 'main'
         run: pytest -n auto --dist loadgroup -m "not release and not benchmark and not docs"
 
+      - name: Run tests with new streaming engine
+        if: github.ref_name != 'main'
+        env:
+          POLARS_AUTO_NEW_STREAMING: 1
+        run: pytest -n auto --dist loadgroup -m "not may_fail_auto_streaming and not slow and not write_disk and not release and not docs and not hypothesis and not benchmark and not ci_only"
+
       - name: Run tests async reader tests
         if: github.ref_name != 'main' && matrix.os != 'windows-latest'
         env:
           POLARS_FORCE_ASYNC: 1
-        run: pytest -m "not release and not benchmark and not docs" tests/unit/io/
+        run: pytest -n auto -m "not release and not benchmark and not docs" tests/unit/io/
 
       - name: Check import without optional dependencies
-        if: github.ref_name != 'main' && matrix.python-version == '3.12' && matrix.os == 'ubuntu-latest'
+        if: github.ref_name != 'main' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest'
         run: |
           declare -a deps=("pandas"
           "pyarrow"

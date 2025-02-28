@@ -1,11 +1,11 @@
 use std::hash::Hash;
 
-use polars_core::export::_boost_hash_combine;
-use polars_core::export::rayon::prelude::*;
 use polars_core::series::BitRepr;
 use polars_core::utils::NoNull;
 use polars_core::{with_match_physical_float_polars_type, POOL};
+use polars_utils::hashing::_boost_hash_combine;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
+use rayon::prelude::*;
 
 use super::*;
 
@@ -45,7 +45,7 @@ where
 }
 
 pub(crate) fn hash(ca: &mut ListChunked, build_hasher: PlRandomState) -> UInt64Chunked {
-    if !ca.inner_dtype().to_physical().is_numeric() {
+    if !ca.inner_dtype().to_physical().is_primitive_numeric() {
         panic!(
             "Hashing a list with a non-numeric inner type not supported. Got dtype: {:?}",
             ca.dtype()

@@ -1,9 +1,9 @@
-use parquet_format_safe::SchemaElement;
+use polars_parquet_format::SchemaElement;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde_types")]
 use serde::{Deserialize, Serialize};
 
-use super::column_descriptor::{ColumnDescriptor, Descriptor};
+use super::column_descriptor::{BaseType, ColumnDescriptor, Descriptor};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::io_message::from_message;
 use crate::parquet::schema::types::{FieldInfo, ParquetType};
@@ -29,7 +29,7 @@ impl SchemaDescriptor {
         let mut leaves = vec![];
         for f in &fields {
             let mut path = vec![];
-            build_tree(f, f, 0, 0, &mut leaves, &mut path);
+            build_tree(f, BaseType::Owned(f.clone()), 0, 0, &mut leaves, &mut path);
         }
 
         Self {
@@ -55,6 +55,11 @@ impl SchemaDescriptor {
     /// The schemas' fields.
     pub fn fields(&self) -> &[ParquetType] {
         &self.fields
+    }
+
+    /// The schemas' leaves.
+    pub fn leaves(&self) -> &[ColumnDescriptor] {
+        &self.leaves
     }
 
     pub(crate) fn into_thrift(self) -> Vec<SchemaElement> {
@@ -94,7 +99,7 @@ impl SchemaDescriptor {
 
 fn build_tree<'a>(
     tp: &'a ParquetType,
-    base_tp: &ParquetType,
+    base_tp: BaseType,
     mut max_rep_level: i16,
     mut max_def_level: i16,
     leaves: &mut Vec<ColumnDescriptor>,
@@ -122,14 +127,15 @@ fn build_tree<'a>(
                     max_rep_level,
                 },
                 path_in_schema,
-                base_tp.clone(),
+                base_tp,
             ));
         },
         ParquetType::GroupType { ref fields, .. } => {
+            let base_tp = base_tp.into_arc();
             for f in fields {
                 build_tree(
                     f,
-                    base_tp,
+                    base_tp.clone(),
                     max_rep_level,
                     max_def_level,
                     leaves,

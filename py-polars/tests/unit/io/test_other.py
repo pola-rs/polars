@@ -84,6 +84,7 @@ def test_copy() -> None:
     assert_series_equal(copy.deepcopy(a), a)
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_round_trip() -> None:
     df = pl.DataFrame({"ints": [1, 2, 3], "cat": ["a", "b", "c"]})
     df = df.with_columns(pl.col("cat").cast(pl.Categorical))
@@ -119,9 +120,9 @@ def test_unit_io_subdir_has_no_init() -> None:
     # --------------------------------------------------------------------------------
     io_dir = Path(__file__).parent
     assert io_dir.parts[-2:] == ("unit", "io")
-    assert not (
-        io_dir / "__init__.py"
-    ).exists(), "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
+    assert not (io_dir / "__init__.py").exists(), (
+        "Found undesirable '__init__.py' in the 'unit.io' tests subdirectory"
+    )
 
 
 @pytest.mark.write_disk

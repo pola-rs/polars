@@ -1,20 +1,24 @@
-use arrow::array::BooleanArray;
+use arrow::array::{BooleanArray, Splitable};
+use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::utils::BitmapIter;
-use arrow::bitmap::MutableBitmap;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
+use polars_compute::filter::filter_boolean_kernel;
 
-use super::utils::{self, extend_from_decoder, freeze_validity, Decoder, ExactSize};
-use crate::parquet::encoding::hybrid_rle::gatherer::HybridRleGatherer;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use super::dictionary_encoded::{append_validity, constrain_page_validity};
+use super::utils::{
+    self, decode_hybrid_rle_into_bitmap, filter_from_range, freeze_validity, Decoded, Decoder,
+};
+use super::{Filter, PredicateFilter};
+use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::encoding::Encoding;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{split_buffer, DataPage, DictPage};
-use crate::read::deserialize::utils::{BatchableCollector, PageValidity};
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum StateTranslation<'a> {
-    Plain(BitmapIter<'a>),
+    Plain(BitMask<'a>),
     Rle(HybridRleDecoder<'a>),
 }
 
@@ -25,7 +29,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
         _decoder: &BooleanDecoder,
         page: &'a DataPage,
         _dict: Option<&'a <BooleanDecoder as Decoder>::Dict>,
-        page_validity: Option<&PageValidity<'a>>,
+        page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
         let values = split_buffer(page)?.values;
 
@@ -44,7 +48,7 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
                     usize::min(page.num_values(), max_num_values)
                 };
 
-                Ok(Self::Plain(BitmapIter::new(values, 0, num_values)))
+                Ok(Self::Plain(BitMask::new(values, 0, num_values)))
             },
             Encoding::Rle => {
                 // @NOTE: For a nullable list, we might very well overestimate the amount of
@@ -63,132 +67,228 @@ impl<'a> utils::StateTranslation<'a, BooleanDecoder> for StateTranslation<'a> {
             _ => Err(utils::not_implemented(page)),
         }
     }
-
-    fn len_when_not_nullable(&self) -> usize {
+    fn num_rows(&self) -> usize {
         match self {
-            Self::Plain(v) => v.len(),
-            Self::Rle(v) => v.len(),
+            Self::Plain(m) => m.len(),
+            Self::Rle(m) => m.len(),
         }
     }
+}
 
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        if n == 0 {
-            return Ok(());
-        }
+fn decode_required_rle(
+    values: HybridRleDecoder<'_>,
+    limit: Option<usize>,
+    target: &mut BitmapBuilder,
+) -> ParquetResult<()> {
+    decode_hybrid_rle_into_bitmap(values, limit, target)?;
+    Ok(())
+}
 
-        // @TODO: Add a skip_in_place on BitmapIter
-        match self {
-            Self::Plain(t) => _ = t.nth(n - 1),
-            Self::Rle(t) => t.skip_in_place(n)?,
-        }
+fn decode_optional_rle(
+    values: HybridRleDecoder<'_>,
+    target: &mut BitmapBuilder,
+    page_validity: &Bitmap,
+) -> ParquetResult<()> {
+    debug_assert!(page_validity.set_bits() <= values.len());
 
-        Ok(())
+    if page_validity.unset_bits() == 0 {
+        return decode_required_rle(values, Some(page_validity.len()), target);
     }
 
-    fn extend_from_state(
-        &mut self,
-        decoder: &mut BooleanDecoder,
-        decoded: &mut <BooleanDecoder as Decoder>::DecodedState,
-        is_optional: bool,
-        page_validity: &mut Option<PageValidity<'a>>,
-        _: Option<&'a <BooleanDecoder as Decoder>::Dict>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        match self {
-            Self::Plain(page_values) => decoder.decode_plain_encoded(
-                decoded,
-                page_values,
-                is_optional,
-                page_validity.as_mut(),
-                additional,
-            )?,
-            Self::Rle(page_values) => {
-                let (values, validity) = decoded;
-                match page_validity {
-                    None => {
-                        page_values.gather_n_into(values, additional, &BitmapGatherer)?;
+    target.reserve(page_validity.len());
 
-                        if is_optional {
-                            validity.extend_constant(additional, true);
-                        }
-                    },
-                    Some(page_validity) => utils::extend_from_decoder(
-                        validity,
-                        page_validity,
-                        Some(additional),
-                        values,
-                        BitmapCollector(page_values),
-                    )?,
+    let mut validity_mask = BitMask::from_bitmap(page_validity);
+
+    for chunk in values.into_chunk_iter() {
+        let chunk = chunk?;
+
+        match chunk {
+            HybridRleChunk::Rle(value, size) => {
+                let offset = validity_mask
+                    .nth_set_bit_idx(size, 0)
+                    .unwrap_or(validity_mask.len());
+
+                let t;
+                (t, validity_mask) = validity_mask.split_at(offset);
+
+                target.extend_constant(t.len(), value != 0);
+            },
+            HybridRleChunk::Bitpacked(decoder) => {
+                let decoder_slice = decoder.as_slice();
+                let offset = validity_mask
+                    .nth_set_bit_idx(decoder.len(), 0)
+                    .unwrap_or(validity_mask.len());
+
+                let decoder_validity;
+                (decoder_validity, validity_mask) = validity_mask.split_at(offset);
+
+                let mut offset = 0;
+                let mut validity_iter = decoder_validity.iter();
+                while validity_iter.num_remaining() > 0 {
+                    let num_valid = validity_iter.take_leading_ones();
+                    target.extend_from_slice(decoder_slice, offset, num_valid);
+                    offset += num_valid;
+
+                    let num_invalid = validity_iter.take_leading_zeros();
+                    target.extend_constant(num_invalid, false);
                 }
             },
         }
-
-        Ok(())
     }
+
+    if cfg!(debug_assertions) {
+        assert_eq!(validity_mask.set_bits(), 0);
+    }
+    target.extend_constant(validity_mask.len(), false);
+
+    Ok(())
 }
 
-struct BitmapGatherer;
-impl HybridRleGatherer<u32> for BitmapGatherer {
-    type Target = MutableBitmap;
+fn decode_masked_required_rle(
+    values: HybridRleDecoder<'_>,
+    target: &mut BitmapBuilder,
+    mask: &Bitmap,
+) -> ParquetResult<()> {
+    debug_assert!(mask.len() <= values.len());
 
-    fn target_reserve(&self, target: &mut Self::Target, n: usize) {
-        target.reserve(n);
+    if mask.unset_bits() == 0 {
+        return decode_required_rle(values, Some(mask.len()), target);
     }
 
-    fn target_num_elements(&self, target: &Self::Target) -> usize {
-        target.len()
-    }
+    let mut im_target = BitmapBuilder::new();
+    decode_required_rle(values, Some(mask.len()), &mut im_target)?;
 
-    fn hybridrle_to_target(&self, value: u32) -> ParquetResult<u32> {
-        Ok(value)
-    }
+    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), mask));
 
-    fn gather_one(&self, target: &mut Self::Target, value: u32) -> ParquetResult<()> {
-        target.push(value != 0);
-        Ok(())
-    }
-
-    fn gather_repeated(
-        &self,
-        target: &mut Self::Target,
-        value: u32,
-        n: usize,
-    ) -> ParquetResult<()> {
-        target.extend_constant(n, value != 0);
-        Ok(())
-    }
-
-    // @TODO: The slice impl here can speed some stuff up
-}
-struct BitmapCollector<'a, 'b>(&'b mut HybridRleDecoder<'a>);
-impl<'a, 'b> BatchableCollector<u32, MutableBitmap> for BitmapCollector<'a, 'b> {
-    fn reserve(target: &mut MutableBitmap, n: usize) {
-        target.reserve(n);
-    }
-
-    fn push_n(&mut self, target: &mut MutableBitmap, n: usize) -> ParquetResult<()> {
-        self.0.gather_n_into(target, n, &BitmapGatherer)
-    }
-
-    fn push_n_nulls(&mut self, target: &mut MutableBitmap, n: usize) -> ParquetResult<()> {
-        target.extend_constant(n, false);
-        Ok(())
-    }
-
-    fn skip_in_place(&mut self, n: usize) -> ParquetResult<()> {
-        self.0.skip_in_place(n)
-    }
+    Ok(())
 }
 
-impl ExactSize for (MutableBitmap, MutableBitmap) {
+fn decode_masked_optional_rle(
+    values: HybridRleDecoder<'_>,
+    target: &mut BitmapBuilder,
+    page_validity: &Bitmap,
+    mask: &Bitmap,
+) -> ParquetResult<()> {
+    debug_assert_eq!(page_validity.len(), mask.len());
+    debug_assert!(mask.len() <= values.len());
+
+    if mask.unset_bits() == 0 {
+        return decode_optional_rle(values, target, page_validity);
+    }
+
+    if page_validity.unset_bits() == 0 {
+        return decode_masked_required_rle(values, target, mask);
+    }
+
+    let mut im_target = BitmapBuilder::new();
+    decode_optional_rle(values, &mut im_target, page_validity)?;
+
+    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), mask));
+
+    Ok(())
+}
+
+fn decode_required_plain(values: BitMask<'_>, target: &mut BitmapBuilder) -> ParquetResult<()> {
+    target.extend_from_bitmask(values);
+    Ok(())
+}
+
+fn decode_optional_plain(
+    mut values: BitMask<'_>,
+    target: &mut BitmapBuilder,
+    mut page_validity: Bitmap,
+) -> ParquetResult<()> {
+    debug_assert!(page_validity.set_bits() <= values.len());
+
+    if page_validity.unset_bits() == 0 {
+        return decode_required_plain(values.sliced(0, page_validity.len()), target);
+    }
+
+    target.reserve(page_validity.len());
+
+    while !page_validity.is_empty() {
+        let num_valid = page_validity.take_leading_ones();
+        let iv;
+        (iv, values) = values.split_at(num_valid);
+        target.extend_from_bitmask(iv);
+
+        let num_invalid = page_validity.take_leading_zeros();
+        target.extend_constant(num_invalid, false);
+    }
+
+    Ok(())
+}
+
+fn decode_masked_required_plain(
+    mut values: BitMask,
+    target: &mut BitmapBuilder,
+    mut mask: Bitmap,
+) -> ParquetResult<()> {
+    debug_assert!(mask.len() <= values.len());
+
+    let leading_zeros = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+
+    values = values.sliced(leading_zeros, mask.len());
+
+    if mask.unset_bits() == 0 {
+        return decode_required_plain(values, target);
+    }
+
+    let mut im_target = BitmapBuilder::new();
+    decode_required_plain(values, &mut im_target)?;
+
+    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), &mask));
+
+    Ok(())
+}
+
+fn decode_masked_optional_plain(
+    mut values: BitMask<'_>,
+    target: &mut BitmapBuilder,
+    mut page_validity: Bitmap,
+    mut mask: Bitmap,
+) -> ParquetResult<()> {
+    debug_assert_eq!(page_validity.len(), mask.len());
+    debug_assert!(page_validity.set_bits() <= values.len());
+
+    let leading_zeros = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+
+    let (skipped, truncated);
+    (skipped, page_validity) = page_validity.split_at(leading_zeros);
+    (page_validity, truncated) = page_validity.split_at(mask.len());
+
+    let skipped_values = skipped.set_bits();
+    let truncated_values = truncated.set_bits();
+    values = values.sliced(
+        skipped_values,
+        values.len() - skipped_values - truncated_values,
+    );
+
+    if mask.unset_bits() == 0 {
+        return decode_optional_plain(values, target, page_validity);
+    }
+
+    if page_validity.unset_bits() == 0 {
+        return decode_masked_required_plain(values, target, mask);
+    }
+
+    let mut im_target = BitmapBuilder::new();
+    decode_optional_plain(values, &mut im_target, page_validity)?;
+
+    target.extend_from_bitmap(&filter_boolean_kernel(&im_target.freeze(), &mask));
+
+    Ok(())
+}
+
+impl Decoded for (BitmapBuilder, BitmapBuilder) {
     fn len(&self) -> usize {
         self.0.len()
     }
-}
-
-impl ExactSize for () {
-    fn len(&self) -> usize {
-        0
+    fn extend_nulls(&mut self, n: usize) {
+        self.0.extend_constant(n, false);
+        self.1.extend_constant(n, false);
     }
 }
 
@@ -196,55 +296,19 @@ pub(crate) struct BooleanDecoder;
 
 impl Decoder for BooleanDecoder {
     type Translation<'a> = StateTranslation<'a>;
-    type Dict = ();
-    type DecodedState = (MutableBitmap, MutableBitmap);
+    type Dict = BooleanArray;
+    type DecodedState = (BitmapBuilder, BitmapBuilder);
     type Output = BooleanArray;
 
     fn with_capacity(&self, capacity: usize) -> Self::DecodedState {
         (
-            MutableBitmap::with_capacity(capacity),
-            MutableBitmap::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
+            BitmapBuilder::with_capacity(capacity),
         )
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
-        Ok(())
-    }
-
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        (values, validity): &mut Self::DecodedState,
-        page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        is_optional: bool,
-        page_validity: Option<&mut PageValidity<'a>>,
-        limit: usize,
-    ) -> ParquetResult<()> {
-        match page_validity {
-            None => {
-                page_values.collect_n_into(values, limit);
-
-                if is_optional {
-                    validity.extend_constant(limit, true);
-                }
-            },
-            Some(page_validity) => {
-                extend_from_decoder(validity, page_validity, Some(limit), values, page_values)?
-            },
-        }
-
-        Ok(())
-    }
-
-    fn decode_dictionary_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut HybridRleDecoder<'a>,
-        _is_optional: bool,
-        _page_validity: Option<&mut PageValidity<'a>>,
-        _dict: &Self::Dict,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unimplemented!()
+    fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(BooleanArray::new_empty(ArrowDataType::Boolean))
     }
 
     fn finalize(
@@ -254,25 +318,139 @@ impl Decoder for BooleanDecoder {
         (values, validity): Self::DecodedState,
     ) -> ParquetResult<Self::Output> {
         let validity = freeze_validity(validity);
-        Ok(BooleanArray::new(dtype, values.into(), validity))
-    }
-}
-
-impl utils::NestedDecoder for BooleanDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        (_, validity): &mut Self::DecodedState,
-        value: bool,
-        n: usize,
-    ) {
-        validity.extend_constant(n, value);
+        Ok(BooleanArray::new(dtype, values.freeze(), validity))
     }
 
-    fn values_extend_nulls(
-        _: &mut utils::State<'_, Self>,
-        (values, _): &mut Self::DecodedState,
-        n: usize,
-    ) {
-        values.extend_constant(n, false);
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        // @TODO: This can be enabled for the fast paths
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional.as_any().downcast_ref::<BooleanArray>().unwrap();
+        decoded.0.extend_from_bitmap(additional.values());
+        match additional.validity() {
+            Some(v) => decoded.1.extend_from_bitmap(v),
+            None if is_optional => decoded.1.extend_constant(additional.len(), true),
+            None => {},
+        }
+
+        Ok(())
+    }
+
+    fn extend_filtered_with_state(
+        &mut self,
+        state: utils::State<'_, Self>,
+        (target, validity): &mut Self::DecodedState,
+        _pred_true_mask: &mut BitmapBuilder,
+        filter: Option<super::Filter>,
+    ) -> ParquetResult<()> {
+        match state.translation {
+            StateTranslation::Plain(values) => {
+                if state.is_optional {
+                    append_validity(
+                        state.page_validity.as_ref(),
+                        filter.as_ref(),
+                        validity,
+                        values.len(),
+                    );
+                }
+
+                let page_validity = constrain_page_validity(
+                    values.len(),
+                    state.page_validity.as_ref(),
+                    filter.as_ref(),
+                );
+
+                match (filter, page_validity) {
+                    (None, None) => decode_required_plain(values, target),
+                    (Some(Filter::Range(rng)), None) => {
+                        decode_required_plain(values.sliced(rng.start, rng.len()), target)
+                    },
+                    (None, Some(page_validity)) => {
+                        decode_optional_plain(values, target, page_validity)
+                    },
+                    (Some(Filter::Range(rng)), Some(mut page_validity)) => {
+                        let (skipped, truncated);
+                        (skipped, page_validity) = page_validity.split_at(rng.start);
+                        (page_validity, truncated) = page_validity.split_at(rng.len());
+
+                        let skipped_values = skipped.set_bits();
+                        let truncated_values = truncated.set_bits();
+                        let values = values.sliced(
+                            skipped_values,
+                            values.len() - skipped_values - truncated_values,
+                        );
+
+                        decode_optional_plain(values, target, page_validity)
+                    },
+                    (Some(Filter::Mask(mask)), None) => {
+                        decode_masked_required_plain(values, target, mask)
+                    },
+                    (Some(Filter::Mask(mask)), Some(page_validity)) => {
+                        decode_masked_optional_plain(values, target, page_validity, mask)
+                    },
+                    (Some(Filter::Predicate(_)), _) => todo!(),
+                }?;
+
+                Ok(())
+            },
+            StateTranslation::Rle(values) => {
+                if state.is_optional {
+                    append_validity(
+                        state.page_validity.as_ref(),
+                        filter.as_ref(),
+                        validity,
+                        values.len(),
+                    );
+                }
+
+                let page_validity = constrain_page_validity(
+                    values.len(),
+                    state.page_validity.as_ref(),
+                    filter.as_ref(),
+                );
+
+                match (filter, page_validity) {
+                    (None, None) => decode_required_rle(values, None, target),
+                    (Some(Filter::Range(rng)), None) if rng.start == 0 => {
+                        decode_required_rle(values, Some(rng.end), target)
+                    },
+                    (None, Some(page_validity)) => {
+                        decode_optional_rle(values, target, &page_validity)
+                    },
+                    (Some(Filter::Range(rng)), Some(page_validity)) if rng.start == 0 => {
+                        decode_optional_rle(values, target, &page_validity)
+                    },
+                    (Some(Filter::Mask(filter)), None) => {
+                        decode_masked_required_rle(values, target, &filter)
+                    },
+                    (Some(Filter::Mask(filter)), Some(page_validity)) => {
+                        decode_masked_optional_rle(values, target, &page_validity, &filter)
+                    },
+                    (Some(Filter::Range(rng)), None) => {
+                        decode_masked_required_rle(values, target, &filter_from_range(rng.clone()))
+                    },
+                    (Some(Filter::Range(rng)), Some(page_validity)) => decode_masked_optional_rle(
+                        values,
+                        target,
+                        &page_validity,
+                        &filter_from_range(rng.clone()),
+                    ),
+                    (Some(Filter::Predicate(_)), _) => todo!(),
+                }?;
+
+                Ok(())
+            },
+        }
     }
 }

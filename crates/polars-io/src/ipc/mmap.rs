@@ -96,9 +96,11 @@ impl ArrowReader for MMapChunkIter<'_> {
             let chunk = match &self.projection {
                 None => chunk,
                 Some(proj) => {
-                    let cols = chunk.into_arrays();
+                    let length = chunk.len();
+                    let (schema, cols) = chunk.into_schema_and_arrays();
+                    let schema = schema.try_project_indices(proj).unwrap();
                     let arrays = proj.iter().map(|i| cols[*i].clone()).collect();
-                    RecordBatch::new(arrays)
+                    RecordBatch::new(length, Arc::new(schema), arrays)
                 },
             };
             Ok(Some(chunk))

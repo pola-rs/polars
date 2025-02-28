@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Iterable
+from typing import TYPE_CHECKING, Callable
 
 from polars import functions as F
 from polars._utils.deprecation import deprecate_renamed_function
@@ -8,6 +8,8 @@ from polars._utils.parse import parse_into_list_of_expressions
 from polars._utils.wrap import wrap_ldf
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from polars import DataFrame, LazyFrame
     from polars._typing import IntoExpr, RollingInterpolationMethod, SchemaDict
     from polars.polars import PyLazyGroupBy

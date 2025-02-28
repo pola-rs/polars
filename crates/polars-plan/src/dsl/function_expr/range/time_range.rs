@@ -9,10 +9,10 @@ use super::utils::{
 const CAPACITY_FACTOR: usize = 5;
 
 pub(super) fn time_range(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
     let name = start.name();
@@ -26,14 +26,14 @@ pub(super) fn time_range(
         .ok_or_else(|| polars_err!(ComputeError: "end is an out-of-range time."))?;
 
     let out = time_range_impl(name.clone(), start, end, interval, closed)?;
-    Ok(out.cast(&dtype).unwrap().into_series())
+    Ok(out.cast(&dtype).unwrap().into_column())
 }
 
 pub(super) fn time_ranges(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let start = &s[0];
     let end = &s[1];
 

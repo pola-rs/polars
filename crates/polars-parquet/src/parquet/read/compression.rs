@@ -1,4 +1,4 @@
-use parquet_format_safe::DataPageHeaderV2;
+use polars_parquet_format::DataPageHeaderV2;
 
 use super::PageReader;
 use crate::parquet::compression::{self, Compression};
@@ -210,6 +210,10 @@ pub struct DataPageItem {
 impl DataPageItem {
     pub fn num_values(&self) -> usize {
         self.page.num_values()
+    }
+
+    pub fn page(&self) -> &CompressedDataPage {
+        &self.page
     }
 
     pub fn decompress(self, decompressor: &mut BasicDecompressor) -> ParquetResult<DataPage> {

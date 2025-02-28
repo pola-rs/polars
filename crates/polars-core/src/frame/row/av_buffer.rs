@@ -1,8 +1,8 @@
+use std::hint::unreachable_unchecked;
+
+use arrow::bitmap::BitmapBuilder;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::pl_str::PlSmallStr;
-#[cfg(feature = "dtype-struct")]
-use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::unreachable_unchecked_release;
 
 use super::*;
 use crate::chunked_array::builder::NullChunkedBuilder;
@@ -90,18 +90,23 @@ impl<'a> AnyValueBuffer<'a> {
             #[cfg(feature = "dtype-date")]
             (Date(builder), AnyValue::Date(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-date")]
-            (Date(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Date(builder), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-datetime")]
             (Datetime(builder, _, _), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder, tu_l, _), AnyValue::Datetime(v, tu_r, _)) => {
+            (
+                Datetime(builder, tu_l, _),
+                AnyValue::Datetime(v, tu_r, _) | AnyValue::DatetimeOwned(v, tu_r, _),
+            ) => {
                 // we convert right tu to left tu
                 // so we swap.
                 let v = convert_time_units(v, tu_r, *tu_l);
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-datetime")]
-            (Datetime(builder, _, _), val) if val.is_numeric() => {
+            (Datetime(builder, _, _), val) if val.is_primitive_numeric() => {
                 builder.append_value(val.extract()?)
             },
             #[cfg(feature = "dtype-duration")]
@@ -112,13 +117,17 @@ impl<'a> AnyValueBuffer<'a> {
                 builder.append_value(v)
             },
             #[cfg(feature = "dtype-duration")]
-            (Duration(builder, _), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Duration(builder, _), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Time(v)) => builder.append_value(v),
             #[cfg(feature = "dtype-time")]
             (Time(builder), AnyValue::Null) => builder.append_null(),
             #[cfg(feature = "dtype-time")]
-            (Time(builder), val) if val.is_numeric() => builder.append_value(val.extract()?),
+            (Time(builder), val) if val.is_primitive_numeric() => {
+                builder.append_value(val.extract()?)
+            },
             (Null(builder), AnyValue::Null) => builder.append_null(),
             // Struct and List can be recursive so use AnyValues for that
             (All(_, vals), v) => vals.push(v),
@@ -335,7 +344,7 @@ pub enum AnyValueBufferTrusted<'a> {
     String(StringChunkedBuilder),
     #[cfg(feature = "dtype-struct")]
     // not the trusted variant!
-    Struct(Vec<(AnyValueBuffer<'a>, PlSmallStr)>),
+    Struct(BitmapBuilder, Vec<(AnyValueBuffer<'a>, PlSmallStr)>),
     Null(NullChunkedBuilder),
     All(DataType, Vec<AnyValue<'a>>),
 }
@@ -366,7 +375,8 @@ impl<'a> AnyValueBufferTrusted<'a> {
             Float64(builder) => builder.append_null(),
             String(builder) => builder.append_null(),
             #[cfg(feature = "dtype-struct")]
-            Struct(builders) => {
+            Struct(outer_validity, builders) => {
+                outer_validity.push(false);
                 for (b, _) in builders.iter_mut() {
                     b.add(AnyValue::Null);
                 }
@@ -382,83 +392,81 @@ impl<'a> AnyValueBufferTrusted<'a> {
         match self {
             Boolean(builder) => {
                 let AnyValue::Boolean(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-i8")]
             Int8(builder) => {
                 let AnyValue::Int8(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-i16")]
             Int16(builder) => {
                 let AnyValue::Int16(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Int32(builder) => {
                 let AnyValue::Int32(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Int64(builder) => {
                 let AnyValue::Int64(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-u8")]
             UInt8(builder) => {
                 let AnyValue::UInt8(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             #[cfg(feature = "dtype-u16")]
             UInt16(builder) => {
                 let AnyValue::UInt16(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             UInt32(builder) => {
                 let AnyValue::UInt32(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             UInt64(builder) => {
                 let AnyValue::UInt64(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Float32(builder) => {
                 let AnyValue::Float32(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Float64(builder) => {
                 let AnyValue::Float64(v) = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_value(*v)
             },
             Null(builder) => {
                 let AnyValue::Null = val else {
-                    unreachable_unchecked_release!()
+                    unreachable_unchecked()
                 };
                 builder.append_null()
             },
-            _ => {
-                unreachable_unchecked_release!()
-            },
+            _ => unreachable_unchecked(),
         }
     }
 
@@ -478,28 +486,29 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 match self {
                     String(builder) => {
                         let AnyValue::StringOwned(v) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         builder.append_value(v.as_str())
                     },
                     #[cfg(feature = "dtype-struct")]
-                    Struct(builders) => {
+                    Struct(outer_validity, builders) => {
                         let AnyValue::StructOwned(payload) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         let avs = &*payload.0;
                         // amortize loop counter
                         for i in 0..avs.len() {
                             unsafe {
-                                let (builder, _) = builders.get_unchecked_release_mut(i);
-                                let av = avs.get_unchecked_release(i).clone();
+                                let (builder, _) = builders.get_unchecked_mut(i);
+                                let av = avs.get_unchecked(i).clone();
                                 // lifetime is bound to 'a
                                 let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
                                 builder.add(av.clone());
                             }
                         }
+                        outer_validity.push(true);
                     },
-                    All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
                 }
             },
@@ -517,36 +526,38 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 match self {
                     String(builder) => {
                         let AnyValue::String(v) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         builder.append_value(v)
                     },
                     #[cfg(feature = "dtype-struct")]
-                    Struct(builders) => {
+                    Struct(outer_validity, builders) => {
                         let AnyValue::Struct(idx, arr, fields) = val else {
-                            unreachable_unchecked_release!()
+                            unreachable_unchecked()
                         };
                         let arrays = arr.values();
                         // amortize loop counter
                         for i in 0..fields.len() {
                             unsafe {
-                                let array = arrays.get_unchecked_release(i);
-                                let field = fields.get_unchecked_release(i);
-                                let (builder, _) = builders.get_unchecked_release_mut(i);
+                                let array = arrays.get_unchecked(i);
+                                let field = fields.get_unchecked(i);
+                                let (builder, _) = builders.get_unchecked_mut(i);
                                 let av = arr_to_any_value(&**array, *idx, &field.dtype);
                                 // lifetime is bound to 'a
                                 let av = std::mem::transmute::<AnyValue<'_>, AnyValue<'a>>(av);
                                 builder.add(av);
                             }
                         }
+                        outer_validity.push(true);
                     },
-                    All(_, vals) => vals.push(val.clone().into_static().unwrap()),
+                    All(_, vals) => vals.push(val.clone().into_static()),
                     _ => self.add_physical(val),
                 }
             },
         }
     }
 
+    /// Clear `self` and give `capacity`, returning the old contents as a [`Series`].
     pub fn reset(&mut self, capacity: usize) -> Series {
         use AnyValueBufferTrusted::*;
         match self {
@@ -615,17 +626,39 @@ impl<'a> AnyValueBufferTrusted<'a> {
                 new.finish().into_series()
             },
             #[cfg(feature = "dtype-struct")]
-            Struct(b) => {
+            Struct(outer_validity, b) => {
+                // @Q? Maybe we need to add a length parameter here for ZFS's. I am not very happy
+                // with just setting the length to zero for that case.
+                if b.is_empty() {
+                    return StructChunked::from_series(PlSmallStr::EMPTY, 0, [].iter())
+                        .unwrap()
+                        .into_series();
+                }
+
+                let mut min_len = usize::MAX;
+                let mut max_len = usize::MIN;
+
                 let v = b
                     .iter_mut()
                     .map(|(b, name)| {
                         let mut s = b.reset(capacity);
+
+                        min_len = min_len.min(s.len());
+                        max_len = max_len.max(s.len());
+
                         s.rename(name.clone());
                         s
                     })
                     .collect::<Vec<_>>();
-                StructChunked::from_series(PlSmallStr::EMPTY, &v)
+
+                let length = if min_len == 0 { 0 } else { max_len };
+
+                let old_outer_validity = core::mem::take(outer_validity);
+                outer_validity.reserve(capacity);
+
+                StructChunked::from_series(PlSmallStr::EMPTY, length, v.iter())
                     .unwrap()
+                    .with_outer_validity(Some(old_outer_validity.freeze()))
                     .into_series()
             },
             Null(b) => {
@@ -694,6 +727,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
             },
             #[cfg(feature = "dtype-struct")]
             Struct(fields) => {
+                let outer_validity = BitmapBuilder::with_capacity(len);
                 let buffers = fields
                     .iter()
                     .map(|field| {
@@ -702,7 +736,7 @@ impl From<(&DataType, usize)> for AnyValueBufferTrusted<'_> {
                         (buffer, field.name.clone())
                     })
                     .collect::<Vec<_>>();
-                AnyValueBufferTrusted::Struct(buffers)
+                AnyValueBufferTrusted::Struct(outer_validity, buffers)
             },
             // List can be recursive so use AnyValues for that
             dt => AnyValueBufferTrusted::All(dt.clone(), Vec::with_capacity(len)),

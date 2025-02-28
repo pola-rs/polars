@@ -7,7 +7,7 @@ import pandas as pd
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, PanicException
+from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
@@ -21,18 +21,13 @@ def test_date_range() -> None:
 
 
 def test_date_range_invalid_time_unit() -> None:
-    with pytest.raises(PanicException, match="'x' not supported"):
+    with pytest.raises(InvalidOperationError, match="'x' not supported"):
         pl.date_range(
             start=date(2021, 12, 16),
             end=date(2021, 12, 18),
             interval="1X",
             eager=True,
         )
-
-
-def test_date_range_invalid_time() -> None:
-    with pytest.raises(ComputeError, match="end is an out-of-range time"):
-        pl.date_range(pl.date(2024, 1, 1), pl.date(2024, 2, 30), eager=True)
 
 
 def test_date_range_lazy_with_literals() -> None:

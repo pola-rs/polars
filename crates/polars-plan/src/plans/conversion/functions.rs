@@ -26,21 +26,21 @@ pub(super) fn convert_functions(
         // Don't exceed 128 expressions as we might stackoverflow.
         FunctionExpr::Boolean(BooleanFunction::AllHorizontal) => {
             if input.len() < 128 {
-                let expr = input
-                    .into_iter()
-                    .reduce(|l, r| l.logical_and(r))
-                    .unwrap()
-                    .cast(DataType::Boolean);
+                let single = input.len() == 1;
+                let mut expr = input.into_iter().reduce(|l, r| l.logical_and(r)).unwrap();
+                if single {
+                    expr = expr.cast(DataType::Boolean)
+                }
                 return to_aexpr_impl(expr, arena, state);
             }
         },
         FunctionExpr::Boolean(BooleanFunction::AnyHorizontal) => {
             if input.len() < 128 {
-                let expr = input
-                    .into_iter()
-                    .reduce(|l, r| l.logical_or(r))
-                    .unwrap()
-                    .cast(DataType::Boolean);
+                let single = input.len() == 1;
+                let mut expr = input.into_iter().reduce(|l, r| l.logical_or(r)).unwrap();
+                if single {
+                    expr = expr.cast(DataType::Boolean)
+                }
                 return to_aexpr_impl(expr, arena, state);
             }
         },
@@ -48,6 +48,12 @@ pub(super) fn convert_functions(
     }
 
     let e = to_expr_irs(input, arena)?;
+
+    // Validate inputs.
+    if function == FunctionExpr::ShiftAndFill {
+        polars_ensure!(&e[1].is_scalar(arena), ComputeError: "'n' must be scalar value");
+        polars_ensure!(&e[2].is_scalar(arena), ComputeError: "'fill_value' must be scalar value");
+    }
 
     if state.output_name.is_none() {
         // Handles special case functions like `struct.field`.

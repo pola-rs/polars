@@ -177,7 +177,7 @@ impl Window {
         tu: TimeUnit,
         tz: Option<&'a Tz>,
         start_by: StartBy,
-    ) -> PolarsResult<BoundsIter> {
+    ) -> PolarsResult<BoundsIter<'a>> {
         BoundsIter::new(*self, closed_window, boundary, tu, tz, start_by)
     }
 }
@@ -316,7 +316,7 @@ impl<'a> BoundsIter<'a> {
     }
 }
 
-impl<'a> Iterator for BoundsIter<'a> {
+impl Iterator for BoundsIter<'_> {
     type Item = Bounds;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -327,15 +327,15 @@ impl<'a> Iterator for BoundsIter<'a> {
                 // Issue is that `next` needs to return `Option`.
                 TimeUnit::Nanoseconds => {
                     self.bi.start = self.window.every.add_ns(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.every.add_ns(self.bi.stop, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_ns(self.bi.start, self.tz).unwrap();
                 },
                 TimeUnit::Microseconds => {
                     self.bi.start = self.window.every.add_us(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.every.add_us(self.bi.stop, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_us(self.bi.start, self.tz).unwrap();
                 },
                 TimeUnit::Milliseconds => {
                     self.bi.start = self.window.every.add_ms(self.bi.start, self.tz).unwrap();
-                    self.bi.stop = self.window.every.add_ms(self.bi.stop, self.tz).unwrap();
+                    self.bi.stop = self.window.period.add_ms(self.bi.start, self.tz).unwrap();
                 },
             }
             Some(out)

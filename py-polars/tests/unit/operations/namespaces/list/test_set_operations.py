@@ -40,7 +40,11 @@ def test_list_set_operations_float() -> None:
 
 def test_list_set_operations() -> None:
     df = pl.DataFrame(
-        {"a": [[1, 2, 3], [1, 1, 1], [4]], "b": [[4, 2, 1], [2, 1, 12], [4]]}
+        {
+            "a": [[1, 2, 3], [1, 1, 1], [4]],
+            "b": [[4, 2, 1], [2, 1, 12], [4]],
+            "c": [[1, 2], [2, 1, 76], [8, 9]],
+        }
     )
 
     assert df.select(pl.col("a").list.set_union("b"))["a"].to_list() == [
@@ -63,6 +67,24 @@ def test_list_set_operations() -> None:
         [2, 12],
         [],
     ]
+
+    # check expansion of columns
+    assert df.select(pl.col("a", "b").list.set_intersection("c")).to_dict(
+        as_series=False
+    ) == {"a": [[1, 2], [1], []], "b": [[2, 1], [2, 1], []]}
+
+    assert df.select(pl.col("a", "b").list.set_union("c")).to_dict(as_series=False) == {
+        "a": [[1, 2, 3], [1, 2, 76], [4, 8, 9]],
+        "b": [[4, 2, 1], [2, 1, 12, 76], [4, 8, 9]],
+    }
+
+    assert df.select(pl.col("a", "b").list.set_difference("c")).to_dict(
+        as_series=False
+    ) == {"a": [[3], [], [4]], "b": [[4], [12], [4]]}
+
+    assert df.select(pl.col("a", "b").list.set_symmetric_difference("c")).to_dict(
+        as_series=False
+    ) == {"a": [[3], [2, 76], [4, 8, 9]], "b": [[4], [12, 76], [4, 8, 9]]}
 
     # check logical types
     dtype = pl.List(pl.Date)
@@ -161,6 +183,28 @@ def test_list_set_operations_binary() -> None:
         [b"2", b"12"],
         [],
     ]
+
+
+def test_list_set_operations_broadcast_binary() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [["2", "3", "3"], ["3", "1"], ["1", "2", "3"]],
+            "b": [["1", "2"], ["4"], ["5"]],
+        }
+    )
+
+    assert df.select(pl.col("a").list.set_intersection(pl.col.b.first())).to_dict(
+        as_series=False
+    ) == {"a": [["2"], ["1"], ["1", "2"]]}
+    assert df.select(pl.col("a").list.set_union(pl.col.b.first())).to_dict(
+        as_series=False
+    ) == {"a": [["2", "3", "1"], ["3", "1", "2"], ["1", "2", "3"]]}
+    assert df.select(pl.col("a").list.set_difference(pl.col.b.first())).to_dict(
+        as_series=False
+    ) == {"a": [["3"], ["3"], ["3"]]}
+    assert df.select(pl.col.b.first().list.set_difference("a")).to_dict(
+        as_series=False
+    ) == {"b": [["1"], ["2"], []]}
 
 
 def test_set_operations_14290() -> None:

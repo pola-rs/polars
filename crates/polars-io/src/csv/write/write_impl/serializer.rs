@@ -242,9 +242,9 @@ fn bool_serializer<const QUOTE_NON_NULL: bool>(array: &BooleanArray) -> impl Ser
 fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serializer {
     let trim_zeros = arrow::compute::decimal::get_trim_decimal_zeros();
 
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
-        let value = arrow::compute::decimal::format_decimal(item, scale, trim_zeros);
-        buf.extend_from_slice(value.as_str().as_bytes());
+        buf.extend_from_slice(fmt_buf.format(item, scale, trim_zeros).as_bytes());
     };
 
     make_serializer::<_, _, false>(f, array.iter(), |array| {
@@ -264,7 +264,7 @@ fn decimal_serializer(array: &PrimitiveArray<i128>, scale: usize) -> impl Serial
 fn callback_serializer<'a, T: NativeType, const QUOTE_NON_NULL: bool>(
     array: &'a PrimitiveArray<T>,
     mut callback: impl FnMut(T, &mut Vec<u8>) + 'a,
-) -> impl Serializer + 'a {
+) -> impl Serializer<'a> {
     let f = move |&item, buf: &mut Vec<u8>, _options: &SerializeOptions| {
         callback(item, buf);
     };
@@ -535,6 +535,7 @@ pub(super) fn serializer_for<'a>(
         DataType::UInt32 => quote_if_always!(integer_serializer::<u32>),
         DataType::Int64 => quote_if_always!(integer_serializer::<i64>),
         DataType::UInt64 => quote_if_always!(integer_serializer::<u64>),
+        DataType::Int128 => quote_if_always!(integer_serializer::<i128>),
         DataType::Float32 => match options.float_precision {
             Some(precision) => match options.float_scientific {
                 Some(true) => {
@@ -686,17 +687,11 @@ pub(super) fn serializer_for<'a>(
         },
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(_, scale) => {
-            let array = array.as_any().downcast_ref().unwrap();
-            match options.quote_style {
-                QuoteStyle::Never => Box::new(decimal_serializer(array, scale.unwrap_or(0)))
-                    as Box<dyn Serializer + Send>,
-                _ => Box::new(quote_serializer(decimal_serializer(
-                    array,
-                    scale.unwrap_or(0),
-                ))),
-            }
+            quote_if_always!(decimal_serializer, scale.unwrap_or(0))
         },
-        _ => polars_bail!(ComputeError: "datatype {dtype} cannot be written to csv"),
+        _ => {
+            polars_bail!(ComputeError: "datatype {dtype} cannot be written to CSV\n\nConsider using JSON or a binary format.")
+        },
     };
     Ok(serializer)
 }

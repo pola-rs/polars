@@ -3,9 +3,8 @@ use std::sync::atomic::Ordering;
 use arrow::array::{Array, BinaryArray, MutablePrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::_coalesce_full_join;
+use polars_ops::prelude::{TakeChunked, _coalesce_full_join};
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::executors::sinks::joins::generic_build::*;
@@ -40,7 +39,7 @@ pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     // amortize allocations
     // in inner join these are the left table
     // in left join there are the right table
-    join_tuples_a: Vec<NullableChunkId>,
+    join_tuples_a: Vec<ChunkId>,
     // in inner join these are the right table
     // in left join there are the left table
     join_tuples_b: MutablePrimitiveArray<IdxSize>,
@@ -49,7 +48,7 @@ pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     swapped: bool,
     // cached output names
     output_names: Option<Vec<PlSmallStr>>,
-    join_nulls: bool,
+    nulls_equal: bool,
     coalesce: bool,
     thread_no: usize,
     row_values: RowValues,
@@ -69,7 +68,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         swapped: bool,
         // Re-use the hashes allocation of the build side.
         amortized_hashes: Vec<u64>,
-        join_nulls: bool,
+        nulls_equal: bool,
         coalesce: bool,
         key_names_left: Arc<[PlSmallStr]>,
         key_names_right: Arc<[PlSmallStr]>,
@@ -86,7 +85,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
             hashes: amortized_hashes,
             swapped,
             output_names: None,
-            join_nulls,
+            nulls_equal,
             coalesce,
             thread_no: 0,
             row_values: RowValues::new(join_columns_right, false),
@@ -121,6 +120,9 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
                     left_df
                         .get_columns_mut()
                         .extend_from_slice(right_df.get_columns());
+
+                    // @TODO: Is this actually the case?
+                    // SAFETY: output_names should be unique.
                     left_df
                         .get_columns_mut()
                         .iter_mut()
@@ -128,6 +130,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
                         .for_each(|(s, name)| {
                             s.rename(name.clone());
                         });
+                    left_df.clear_schema();
                     left_df
                 },
             })
@@ -205,10 +208,10 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_outer(iter);
         } else {
@@ -223,7 +226,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                ._take_opt_chunked_unchecked_seq(&self.join_tuples_a)
+                .take_opt_chunked_unchecked(&self.join_tuples_a, false)
         };
         let right_df = unsafe {
             self.join_tuples_b.with_freeze(|idx| {
@@ -257,7 +260,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not, false)
         };
 
         let size = left_df.height();
@@ -265,10 +268,11 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
 
         let right_df = unsafe {
             DataFrame::new_no_checks(
+                size,
                 right_df
                     .get_columns()
                     .iter()
-                    .map(|s| Series::full_null(s.name().clone(), size, s.dtype()))
+                    .map(|s| Column::full_null(s.name().clone(), size, s.dtype()))
                     .collect(),
             )
         };

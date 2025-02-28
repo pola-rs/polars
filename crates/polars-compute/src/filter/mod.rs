@@ -6,11 +6,14 @@ mod scalar;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx512;
 
-use arrow::array::growable::make_growable;
-use arrow::array::{new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray};
+use arrow::array::builder::{make_builder, ArrayBuilder, ShareStrategy};
+use arrow::array::{
+    new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray,
+};
 use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::Bitmap;
 use arrow::with_match_primitive_type_full;
+pub use boolean::filter_boolean_kernel;
 
 pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
     assert_eq!(array.len(), mask.len());
@@ -25,6 +28,20 @@ pub fn filter(array: &dyn Array, mask: &BooleanArray) -> Box<dyn Array> {
 }
 
 pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
+    // Many filters involve filtering values in a subsection of the array. When we trim the leading
+    // and trailing filtered items, we can close in on those items and not have to perform and
+    // thinking about those. The overhead for when there are no leading or trailing filtered values
+    // is very minimal: only a clone of the mask and the array.
+    //
+    // This also allows dispatching to the fast paths way, way, way more often.
+    let mut mask = mask.clone();
+    let leading_zeros = mask.take_leading_zeros();
+    mask.take_trailing_zeros();
+    let array = array.sliced(leading_zeros, mask.len());
+
+    let mask = &mask;
+    let array = array.as_ref();
+
     // Fast-path: completely empty or completely full mask.
     let false_count = mask.unset_bits();
     if false_count == mask.len() {
@@ -63,17 +80,31 @@ pub fn filter_with_bitmap(array: &dyn Array, mask: &Bitmap) -> Box<dyn Array> {
             }
             .boxed()
         },
-        // Should go via BinaryView
         Utf8View => {
-            unreachable!()
+            let array = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+            let views = array.views();
+            let validity = array.validity();
+            let (views, validity) = primitive::filter_values_and_validity(views, validity, mask);
+            unsafe {
+                BinaryViewArray::new_unchecked_unknown_md(
+                    arrow::datatypes::ArrowDataType::BinaryView,
+                    views.into(),
+                    array.data_buffers().clone(),
+                    validity,
+                    Some(array.total_buffer_len()),
+                )
+                .to_utf8view_unchecked()
+            }
+            .boxed()
         },
         _ => {
             let iter = SlicesIterator::new(mask);
-            let mut mutable = make_growable(&[array], false, iter.slots());
-            // SAFETY:
-            // we are in bounds
-            iter.for_each(|(start, len)| unsafe { mutable.extend(0, start, len) });
-            mutable.as_box()
+            let mut mutable = make_builder(array.dtype());
+            mutable.reserve(iter.slots());
+            iter.for_each(|(start, len)| {
+                mutable.subslice_extend(array, start, len, ShareStrategy::Always)
+            });
+            mutable.freeze()
         },
     }
 }

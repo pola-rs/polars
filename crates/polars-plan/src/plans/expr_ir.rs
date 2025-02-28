@@ -2,6 +2,7 @@ use std::borrow::Borrow;
 use std::hash::Hash;
 #[cfg(feature = "cse")]
 use std::hash::Hasher;
+use std::sync::OnceLock;
 
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "ir_serde")]
@@ -28,15 +29,19 @@ pub enum OutputName {
 }
 
 impl OutputName {
-    pub fn unwrap(&self) -> &PlSmallStr {
+    pub fn get(&self) -> Option<&PlSmallStr> {
         match self {
-            OutputName::Alias(name) => name,
-            OutputName::ColumnLhs(name) => name,
-            OutputName::LiteralLhs(name) => name,
+            OutputName::Alias(name) => Some(name),
+            OutputName::ColumnLhs(name) => Some(name),
+            OutputName::LiteralLhs(name) => Some(name),
             #[cfg(feature = "dtype-struct")]
-            OutputName::Field(name) => name,
-            OutputName::None => panic!("no output name set"),
+            OutputName::Field(name) => Some(name),
+            OutputName::None => None,
         }
+    }
+
+    pub fn unwrap(&self) -> &PlSmallStr {
+        self.get().expect("no output name set")
     }
 
     pub(crate) fn is_none(&self) -> bool {
@@ -44,14 +49,40 @@ impl OutputName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 pub struct ExprIR {
     /// Output name of this expression.
     output_name: OutputName,
+    /// Output dtype of this expression
     /// Reduced expression.
     /// This expression is pruned from `alias` and already expanded.
     node: Node,
+    #[cfg_attr(feature = "ir_serde", serde(skip))]
+    output_dtype: OnceLock<DataType>,
+}
+
+impl Eq for ExprIR {}
+
+impl PartialEq for ExprIR {
+    fn eq(&self, other: &Self) -> bool {
+        self.node == other.node && self.output_name == other.output_name
+    }
+}
+
+impl Clone for ExprIR {
+    fn clone(&self) -> Self {
+        let output_dtype = OnceLock::new();
+        if let Some(dt) = self.output_dtype.get() {
+            output_dtype.set(dt.clone()).unwrap()
+        }
+
+        ExprIR {
+            output_name: self.output_name.clone(),
+            node: self.node,
+            output_dtype,
+        }
+    }
 }
 
 impl Borrow<Node> for ExprIR {
@@ -63,13 +94,27 @@ impl Borrow<Node> for ExprIR {
 impl ExprIR {
     pub fn new(node: Node, output_name: OutputName) -> Self {
         debug_assert!(!output_name.is_none());
-        ExprIR { output_name, node }
+        ExprIR {
+            output_name,
+            node,
+            output_dtype: OnceLock::new(),
+        }
+    }
+
+    pub fn with_dtype(self, dtype: DataType) -> Self {
+        let _ = self.output_dtype.set(dtype);
+        self
+    }
+
+    pub(crate) fn set_dtype(&mut self, dtype: DataType) {
+        self.output_dtype = OnceLock::from(dtype);
     }
 
     pub fn from_node(node: Node, arena: &Arena<AExpr>) -> Self {
         let mut out = Self {
             node,
             output_name: OutputName::None,
+            output_dtype: OnceLock::new(),
         };
         out.node = node;
         for (_, ae) in arena.iter(node) {
@@ -145,11 +190,19 @@ impl ExprIR {
 
     pub(crate) fn set_node(&mut self, node: Node) {
         self.node = node;
+        self.output_dtype = OnceLock::new();
     }
 
-    #[cfg(feature = "cse")]
     pub(crate) fn set_alias(&mut self, name: PlSmallStr) {
         self.output_name = OutputName::Alias(name)
+    }
+
+    pub(crate) fn set_columnlhs(&mut self, name: PlSmallStr) {
+        debug_assert!(matches!(
+            self.output_name,
+            OutputName::ColumnLhs(_) | OutputName::None
+        ));
+        self.output_name = OutputName::ColumnLhs(name)
     }
 
     pub fn output_name_inner(&self) -> &OutputName {
@@ -176,17 +229,6 @@ impl ExprIR {
         }
     }
 
-    /// Gets any name except one deriving from `Column`.
-    pub(crate) fn get_non_projected_name(&self) -> Option<&PlSmallStr> {
-        match &self.output_name {
-            OutputName::Alias(name) => Some(name),
-            #[cfg(feature = "dtype-struct")]
-            OutputName::Field(name) => Some(name),
-            OutputName::LiteralLhs(name) => Some(name),
-            _ => None,
-        }
-    }
-
     // Utility for debugging.
     #[cfg(debug_assertions)]
     #[allow(dead_code)]
@@ -208,6 +250,35 @@ impl ExprIR {
 
     pub fn is_scalar(&self, expr_arena: &Arena<AExpr>) -> bool {
         is_scalar_ae(self.node, expr_arena)
+    }
+
+    pub fn dtype(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        expr_arena: &Arena<AExpr>,
+    ) -> PolarsResult<&DataType> {
+        match self.output_dtype.get() {
+            Some(dtype) => Ok(dtype),
+            None => {
+                let dtype = expr_arena
+                    .get(self.node)
+                    .to_dtype(schema, ctxt, expr_arena)?;
+                let _ = self.output_dtype.set(dtype);
+                Ok(self.output_dtype.get().unwrap())
+            },
+        }
+    }
+
+    pub fn field(
+        &self,
+        schema: &Schema,
+        ctxt: Context,
+        expr_arena: &Arena<AExpr>,
+    ) -> PolarsResult<Field> {
+        let dtype = self.dtype(schema, ctxt, expr_arena)?;
+        let name = self.output_name();
+        Ok(Field::new(name.clone(), dtype.clone()))
     }
 }
 

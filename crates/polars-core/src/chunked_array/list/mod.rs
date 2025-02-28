@@ -1,6 +1,8 @@
 //! Special list utility methods
 pub(super) mod iterator;
 
+use std::borrow::Cow;
+
 use crate::prelude::*;
 
 impl ListChunked {
@@ -36,6 +38,93 @@ impl ListChunked {
         fld.coerce(DataType::List(Box::new(inner_dtype)))
     }
 
+    /// Convert the datatype of the list into the physical datatype.
+    pub fn to_physical_repr(&self) -> Cow<ListChunked> {
+        let Cow::Owned(physical_repr) = self.get_inner().to_physical_repr() else {
+            return Cow::Borrowed(self);
+        };
+
+        let ca = if physical_repr.chunks().len() == 1 && self.chunks().len() > 1 {
+            // Physical repr got rechunked, rechunk self as well.
+            self.rechunk()
+        } else {
+            Cow::Borrowed(self)
+        };
+
+        assert_eq!(ca.chunks().len(), physical_repr.chunks().len());
+
+        let chunks: Vec<_> = ca
+            .downcast_iter()
+            .zip(physical_repr.into_chunks())
+            .map(|(chunk, values)| {
+                LargeListArray::new(
+                    ArrowDataType::LargeList(Box::new(ArrowField::new(
+                        PlSmallStr::from_static("item"),
+                        values.dtype().clone(),
+                        true,
+                    ))),
+                    chunk.offsets().clone(),
+                    values,
+                    chunk.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect();
+
+        let name = self.name().clone();
+        let dtype = DataType::List(Box::new(self.inner_dtype().to_physical()));
+        Cow::Owned(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
+    }
+
+    /// Convert a non-logical [`ListChunked`] back into a logical [`ListChunked`] without casting.
+    ///
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn from_physical_unchecked(
+        &self,
+        to_inner_dtype: DataType,
+    ) -> PolarsResult<ListChunked> {
+        debug_assert!(!self.inner_dtype().is_logical());
+
+        let inner_chunks = self
+            .downcast_iter()
+            .map(|chunk| chunk.values())
+            .cloned()
+            .collect();
+
+        let inner = unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                PlSmallStr::EMPTY,
+                inner_chunks,
+                self.inner_dtype(),
+            )
+        };
+        let inner = unsafe { inner.from_physical_unchecked(&to_inner_dtype) }?;
+
+        let chunks: Vec<_> = self
+            .downcast_iter()
+            .zip(inner.into_chunks())
+            .map(|(chunk, values)| {
+                LargeListArray::new(
+                    ArrowDataType::LargeList(Box::new(ArrowField::new(
+                        PlSmallStr::from_static("item"),
+                        values.dtype().clone(),
+                        true,
+                    ))),
+                    chunk.offsets().clone(),
+                    values,
+                    chunk.validity().cloned(),
+                )
+                .to_boxed()
+            })
+            .collect();
+
+        let name = self.name().clone();
+        let dtype = DataType::List(Box::new(to_inner_dtype));
+        Ok(unsafe { ListChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) })
+    }
+
     /// Get the inner values as [`Series`], ignoring the list offsets.
     pub fn get_inner(&self) -> Series {
         let chunks: Vec<_> = self.downcast_iter().map(|c| c.values().clone()).collect();
@@ -46,25 +135,6 @@ impl ListChunked {
         }
     }
 
-    /// Returns an iterator over the offsets of this chunked array.
-    ///
-    /// The offsets are returned as though the array consisted of a single chunk.
-    pub fn iter_offsets(&self) -> impl Iterator<Item = i64> + '_ {
-        let mut offsets = self.downcast_iter().map(|arr| arr.offsets().iter());
-        let first_iter = offsets.next().unwrap();
-
-        // The first offset doesn't have to be 0, it can be sliced to `n` in the array.
-        // So we must correct for this.
-        let correction = first_iter.clone().next().unwrap();
-
-        OffsetsIterator {
-            current_offsets_iter: first_iter,
-            current_adjusted_offset: 0,
-            offset_adjustment: -correction,
-            offsets_iters: offsets,
-        }
-    }
-
     /// Ignore the list indices and apply `func` to the inner type as [`Series`].
     pub fn apply_to_inner(
         &self,
@@ -72,7 +142,7 @@ impl ListChunked {
     ) -> PolarsResult<ListChunked> {
         // generated Series will have wrong length otherwise.
         let ca = self.rechunk();
-        let arr = ca.downcast_iter().next().unwrap();
+        let arr = ca.downcast_as_array();
 
         // SAFETY:
         // Inner dtype is passed correctly
@@ -110,33 +180,14 @@ impl ListChunked {
             )
         })
     }
-}
 
-pub struct OffsetsIterator<'a, N>
-where
-    N: Iterator<Item = std::slice::Iter<'a, i64>>,
-{
-    offsets_iters: N,
-    current_offsets_iter: std::slice::Iter<'a, i64>,
-    current_adjusted_offset: i64,
-    offset_adjustment: i64,
-}
-
-impl<'a, N> Iterator for OffsetsIterator<'a, N>
-where
-    N: Iterator<Item = std::slice::Iter<'a, i64>>,
-{
-    type Item = i64;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if let Some(offset) = self.current_offsets_iter.next() {
-            self.current_adjusted_offset = offset + self.offset_adjustment;
-            Some(self.current_adjusted_offset)
-        } else {
-            self.current_offsets_iter = self.offsets_iters.next()?;
-            let first = self.current_offsets_iter.next().unwrap();
-            self.offset_adjustment = self.current_adjusted_offset - first;
-            self.next()
-        }
+    pub fn rechunk_and_trim_to_normalized_offsets(&self) -> Self {
+        Self::with_chunk(
+            self.name().clone(),
+            self.rechunk()
+                .downcast_get(0)
+                .unwrap()
+                .trim_to_normalized_offsets_recursive(),
+        )
     }
 }

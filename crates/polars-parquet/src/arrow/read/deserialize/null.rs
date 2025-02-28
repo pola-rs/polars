@@ -2,64 +2,56 @@
 //! The implementation mostly stubs all the function and just keeps track of the length in the
 //! `DecodedState`.
 
-use arrow::array::{Array, NullArray};
+use arrow::array::NullArray;
+use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 
-use super::utils;
 use super::utils::filter::Filter;
-use crate::parquet::encoding::hybrid_rle;
+use super::utils::{self};
+use super::PredicateFilter;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 
 pub(crate) struct NullDecoder;
+pub(crate) struct NullTranslation {
+    num_rows: usize,
+}
+
 #[derive(Debug)]
 pub(crate) struct NullArrayLength {
     length: usize,
 }
 
-impl utils::ExactSize for NullArrayLength {
+impl utils::Decoded for NullArrayLength {
     fn len(&self) -> usize {
         self.length
     }
+    fn extend_nulls(&mut self, n: usize) {
+        self.length += n;
+    }
 }
 
-impl<'a> utils::StateTranslation<'a, NullDecoder> for () {
+impl<'a> utils::StateTranslation<'a, NullDecoder> for NullTranslation {
     type PlainDecoder = ();
 
     fn new(
         _decoder: &NullDecoder,
-        _page: &'a DataPage,
+        page: &'a DataPage,
         _dict: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
-        _page_validity: Option<&utils::PageValidity<'a>>,
+        _page_validity: Option<&Bitmap>,
     ) -> ParquetResult<Self> {
-        Ok(())
+        Ok(NullTranslation {
+            num_rows: page.num_values(),
+        })
     }
-
-    fn len_when_not_nullable(&self) -> usize {
-        usize::MAX
-    }
-
-    fn skip_in_place(&mut self, _: usize) -> ParquetResult<()> {
-        Ok(())
-    }
-
-    fn extend_from_state(
-        &mut self,
-        _decoder: &mut NullDecoder,
-        decoded: &mut <NullDecoder as utils::Decoder>::DecodedState,
-        _is_optional: bool,
-        _page_validity: &mut Option<utils::PageValidity<'a>>,
-        _: Option<&'a <NullDecoder as utils::Decoder>::Dict>,
-        additional: usize,
-    ) -> ParquetResult<()> {
-        decoded.length += additional;
-        Ok(())
+    fn num_rows(&self) -> usize {
+        self.num_rows
     }
 }
 
 impl utils::Decoder for NullDecoder {
-    type Translation<'a> = ();
-    type Dict = ();
+    type Translation<'a> = NullTranslation;
+    type Dict = NullArray;
     type DecodedState = NullArrayLength;
     type Output = NullArray;
 
@@ -68,31 +60,29 @@ impl utils::Decoder for NullDecoder {
         NullArrayLength { length: 0 }
     }
 
-    fn deserialize_dict(&self, _: DictPage) -> ParquetResult<Self::Dict> {
+    fn deserialize_dict(&mut self, _: DictPage) -> ParquetResult<Self::Dict> {
+        Ok(NullArray::new_empty(ArrowDataType::Null))
+    }
+
+    fn has_predicate_specialization(
+        &self,
+        _state: &utils::State<'_, Self>,
+        _predicate: &PredicateFilter,
+    ) -> ParquetResult<bool> {
+        // @TODO: This can be enabled for the fast paths
+        Ok(false)
+    }
+
+    fn extend_decoded(
+        &self,
+        decoded: &mut Self::DecodedState,
+        additional: &dyn arrow::array::Array,
+        _is_optional: bool,
+    ) -> ParquetResult<()> {
+        let additional = additional.as_any().downcast_ref::<NullArray>().unwrap();
+        decoded.length += additional.len();
+
         Ok(())
-    }
-
-    fn decode_plain_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut <Self::Translation<'a> as utils::StateTranslation<'a, Self>>::PlainDecoder,
-        _is_optional: bool,
-        _page_validity: Option<&mut utils::PageValidity<'a>>,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unimplemented!()
-    }
-
-    fn decode_dictionary_encoded<'a>(
-        &mut self,
-        _decoded: &mut Self::DecodedState,
-        _page_values: &mut hybrid_rle::HybridRleDecoder<'a>,
-        _is_optional: bool,
-        _page_validity: Option<&mut utils::PageValidity<'a>>,
-        _dict: &Self::Dict,
-        _limit: usize,
-    ) -> ParquetResult<()> {
-        unimplemented!()
     }
 
     fn finalize(
@@ -103,61 +93,24 @@ impl utils::Decoder for NullDecoder {
     ) -> ParquetResult<Self::Output> {
         Ok(NullArray::new(dtype, decoded.length))
     }
-}
 
-impl utils::NestedDecoder for NullDecoder {
-    fn validity_extend(
-        _: &mut utils::State<'_, Self>,
-        _: &mut Self::DecodedState,
-        _value: bool,
-        _n: usize,
-    ) {
-    }
-
-    fn values_extend_nulls(
-        _state: &mut utils::State<'_, Self>,
+    fn extend_filtered_with_state(
+        &mut self,
+        state: utils::State<'_, Self>,
         decoded: &mut Self::DecodedState,
-        n: usize,
-    ) {
-        decoded.length += n;
-    }
-}
-
-use super::BasicDecompressor;
-
-/// Converts [`PagesIter`] to an [`ArrayIter`]
-pub fn iter_to_arrays(
-    mut iter: BasicDecompressor,
-    dtype: ArrowDataType,
-    mut filter: Option<Filter>,
-) -> ParquetResult<Box<dyn Array>> {
-    _ = iter.read_dict_page()?;
-
-    let num_rows = Filter::opt_num_rows(&filter, iter.total_num_values());
-
-    let mut len = 0usize;
-
-    while len < num_rows {
-        let Some(page) = iter.next() else {
-            break;
-        };
-        let page = page?;
-
-        let state_filter;
-        (state_filter, filter) = Filter::opt_split_at(&filter, page.num_values());
-
-        // Skip the whole page if we don't need any rows from it
-        if state_filter.as_ref().is_some_and(|f| f.num_rows() == 0) {
-            continue;
+        _pred_true_mask: &mut BitmapBuilder,
+        filter: Option<Filter>,
+    ) -> ParquetResult<()> {
+        if matches!(filter, Some(Filter::Predicate(_))) {
+            todo!()
         }
 
-        let num_rows = match state_filter {
-            None => page.num_values(),
-            Some(filter) => filter.num_rows(),
+        let num_rows = match filter {
+            Some(f) => f.num_rows(0),
+            None => state.translation.num_rows,
         };
+        decoded.length += num_rows;
 
-        len = (len + num_rows).min(num_rows);
+        Ok(())
     }
-
-    Ok(Box::new(NullArray::new(dtype, len)))
 }

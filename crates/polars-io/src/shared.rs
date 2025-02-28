@@ -5,6 +5,7 @@ use arrow::array::new_empty_array;
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
 
+use crate::cloud::CloudOptions;
 use crate::options::RowIndex;
 #[cfg(any(feature = "ipc", feature = "avro", feature = "ipc_streaming",))]
 use crate::predicates::PhysicalIoExpr;
@@ -13,7 +14,7 @@ pub trait SerReader<R>
 where
     R: Read,
 {
-    /// Create a new instance of the `[SerReader]`
+    /// Create a new instance of the [`SerReader`]
     fn new(reader: R) -> Self;
 
     /// Make sure that all columns are contiguous in memory by
@@ -41,7 +42,12 @@ where
 }
 
 pub trait WriteDataFrameToFile {
-    fn write_df_to_file<W: std::io::Write>(&self, df: DataFrame, file: W) -> PolarsResult<()>;
+    fn write_df_to_file(
+        &self,
+        df: &mut DataFrame,
+        path: &str,
+        cloud_options: Option<&CloudOptions>,
+    ) -> PolarsResult<()>;
 }
 
 pub trait ArrowReader {
@@ -98,7 +104,10 @@ pub(crate) fn finish_reader<R: ArrowReader>(
             // Create an empty dataframe with the correct data types
             let empty_cols = arrow_schema
                 .iter_values()
-                .map(|fld| Series::try_from((fld.name.clone(), new_empty_array(fld.dtype.clone()))))
+                .map(|fld| {
+                    Series::try_from((fld.name.clone(), new_empty_array(fld.dtype.clone())))
+                        .map(Column::from)
+                })
                 .collect::<PolarsResult<_>>()?;
             DataFrame::new(empty_cols)?
         } else {
@@ -113,7 +122,7 @@ pub(crate) fn finish_reader<R: ArrowReader>(
     Ok(df)
 }
 
-pub(crate) fn schema_to_arrow_checked(
+pub fn schema_to_arrow_checked(
     schema: &Schema,
     compat_level: CompatLevel,
     _file_name: &str,

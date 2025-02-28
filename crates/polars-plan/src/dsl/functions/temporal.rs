@@ -208,21 +208,23 @@ pub fn datetime(args: DatetimeArgs) -> Expr {
         ambiguous,
     ];
 
-    Expr::Function {
-        input,
-        function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
-            time_unit,
-            time_zone,
+    Expr::Alias(
+        Arc::new(Expr::Function {
+            input,
+            function: FunctionExpr::TemporalExpr(TemporalFunction::DatetimeFunction {
+                time_unit,
+                time_zone,
+            }),
+            options: FunctionOptions {
+                collect_groups: ApplyOptions::ElementWise,
+                flags: FunctionFlags::default() | FunctionFlags::ALLOW_RENAME,
+                fmt_str: "datetime",
+                ..Default::default()
+            },
         }),
-        options: FunctionOptions {
-            collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default()
-                | FunctionFlags::INPUT_WILDCARD_EXPANSION
-                | FunctionFlags::ALLOW_RENAME,
-            fmt_str: "datetime",
-            ..Default::default()
-        },
-    }
+        // TODO: follow left-hand rule in Polars 2.0.
+        PlSmallStr::from_static("datetime"),
+    )
 }
 
 /// Arguments used by `duration` in order to produce an [`Expr`] of [`Duration`]
@@ -423,7 +425,7 @@ pub fn duration(args: DurationArgs) -> Expr {
         function: FunctionExpr::TemporalExpr(TemporalFunction::Duration(args.time_unit)),
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            flags: FunctionFlags::default(),
             ..Default::default()
         },
     }

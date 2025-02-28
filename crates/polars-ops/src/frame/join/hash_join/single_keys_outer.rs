@@ -111,7 +111,7 @@ fn probe_outer<T, F, G, H>(
     swap_fn_no_match: G,
     // Function that get index_b from the build table that did not match any in A and pushes to result
     swap_fn_drain: H,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) where
     T: TotalHash + TotalEq + ToTotalOrd,
     <T as ToTotalOrd>::TotalOrdItem: Hash + Eq + IsNull,
@@ -139,7 +139,7 @@ fn probe_outer<T, F, G, H>(
             match entry {
                 // match and remove
                 RawEntryMut::Occupied(mut occupied) => {
-                    if key.is_null() && !join_nulls {
+                    if key.is_null() && !nulls_equal {
                         let (l, r) = swap_fn_no_match(idx_a);
                         results.0.push(l);
                         results.1.push(r);
@@ -182,7 +182,7 @@ pub(super) fn hash_join_tuples_outer<T, I, J>(
     build: Vec<J>,
     swapped: bool,
     validate: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
 ) -> PolarsResult<(PrimitiveArray<IdxSize>, PrimitiveArray<IdxSize>)>
 where
     I: IntoIterator<Item = T>,
@@ -231,6 +231,7 @@ where
     let (probe_hashes, _) = create_hash_and_keys_threaded_vectorized(probe, Some(random_state));
 
     let n_tables = hash_tbls.len();
+    try_raise_keyboard_interrupt();
 
     // probe the hash table.
     // Note: indexes from b that are not matched will be None, Some(idx_b)
@@ -246,7 +247,7 @@ where
             |idx_a, idx_b| (Some(idx_b), Some(idx_a)),
             |idx_a| (None, Some(idx_a)),
             |idx_b| (Some(idx_b), None),
-            join_nulls,
+            nulls_equal,
         )
     } else {
         probe_outer(
@@ -257,7 +258,7 @@ where
             |idx_a, idx_b| (Some(idx_a), Some(idx_b)),
             |idx_a| (Some(idx_a), None),
             |idx_b| (None, Some(idx_b)),
-            join_nulls,
+            nulls_equal,
         )
     }
     Ok((results.0.into(), results.1.into()))

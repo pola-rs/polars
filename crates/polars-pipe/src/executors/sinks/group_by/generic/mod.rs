@@ -17,8 +17,6 @@ use hashbrown::hash_map::{RawEntryMut, RawVacantEntryMut};
 use polars_core::frame::row::AnyValueBufferTrusted;
 use polars_core::series::SeriesPhysIter;
 use polars_core::IdBuildHasher;
-use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 pub(crate) use sink::GenericGroupby2;
 use thread_local::ThreadLocalTable;
 
@@ -74,24 +72,27 @@ impl SpillPayload {
         debug_assert_eq!(self.hashes.len(), self.chunk_idx.len());
         debug_assert_eq!(self.hashes.len(), self.keys.len());
 
+        let height = self.hashes.len();
+
         let hashes =
-            UInt64Chunked::from_vec(PlSmallStr::from_static(HASH_COL), self.hashes).into_series();
+            UInt64Chunked::from_vec(PlSmallStr::from_static(HASH_COL), self.hashes).into_column();
         let chunk_idx =
-            IdxCa::from_vec(PlSmallStr::from_static(INDEX_COL), self.chunk_idx).into_series();
+            IdxCa::from_vec(PlSmallStr::from_static(INDEX_COL), self.chunk_idx).into_column();
         let keys = BinaryOffsetChunked::with_chunk(PlSmallStr::from_static(KEYS_COL), self.keys)
-            .into_series();
+            .into_column();
 
         let mut cols = Vec::with_capacity(self.aggs.len() + 3);
         cols.push(hashes);
         cols.push(chunk_idx);
         cols.push(keys);
-        cols.extend(self.aggs);
-        unsafe { DataFrame::new_no_checks(cols) }
+        // @scalar-opt
+        cols.extend(self.aggs.into_iter().map(Column::from));
+        unsafe { DataFrame::new_no_checks(height, cols) }
     }
 
     fn spilled_to_columns(
         spilled: &DataFrame,
-    ) -> (&[u64], &[IdxSize], &BinaryArray<i64>, &[Series]) {
+    ) -> (&[u64], &[IdxSize], &BinaryArray<i64>, &[Column]) {
         let cols = spilled.get_columns();
         let hashes = cols[0].u64().unwrap();
         let hashes = hashes.cont_slice().unwrap();

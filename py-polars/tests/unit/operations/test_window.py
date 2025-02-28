@@ -487,12 +487,14 @@ def test_window_order_by_8662() -> None:
     assert df.with_columns(
         x_lag0=pl.col("x").shift(1).over("g"),
         x_lag1=pl.col("x").shift(1).over("g", order_by="t"),
+        x_lag2=pl.col("x").shift(1).over("g", order_by="t", descending=True),
     ).to_dict(as_series=False) == {
         "g": [1, 1, 1, 1, 2, 2, 2, 2],
         "t": [1, 2, 3, 4, 4, 1, 2, 3],
         "x": [10, 20, 30, 40, 10, 20, 30, 40],
         "x_lag0": [None, 10, 20, 30, None, 10, 20, 30],
         "x_lag1": [None, 10, 20, 30, 40, None, 20, 30],
+        "x_lag2": [20, 30, 40, None, None, 30, 40, 10],
     }
 
 
@@ -518,3 +520,27 @@ def test_lit_window_broadcast() -> None:
     assert pl.DataFrame({"a": [1, 1, 2]}).select(pl.lit(0).over("a").alias("a"))[
         "a"
     ].to_list() == [0, 0, 0]
+
+
+def test_order_by_sorted_keys_18943() -> None:
+    df = pl.DataFrame(
+        {
+            "g": [1, 1, 1, 1],
+            "t": [4, 3, 2, 1],
+            "x": [10, 20, 30, 40],
+        }
+    )
+
+    expect = pl.DataFrame({"x": [100, 90, 70, 40]})
+
+    out = df.select(pl.col("x").cum_sum().over("g", order_by="t"))
+    assert_frame_equal(out, expect)
+
+    out = df.set_sorted("g").select(pl.col("x").cum_sum().over("g", order_by="t"))
+    assert_frame_equal(out, expect)
+
+
+def test_nested_window_keys() -> None:
+    df = pl.DataFrame({"x": 1, "y": "two"})
+    assert df.select(pl.col("y").first().over(pl.struct("x").implode())).item() == "two"
+    assert df.select(pl.col("y").first().over(pl.struct("x"))).item() == "two"

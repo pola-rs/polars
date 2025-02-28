@@ -11,7 +11,7 @@ from polars.testing import assert_frame_equal
 def test_custom_df_namespace() -> None:
     @pl.api.register_dataframe_namespace("split")
     class SplitFrame:
-        def __init__(self, df: pl.DataFrame):
+        def __init__(self, df: pl.DataFrame) -> None:
             self._df = df
 
         def by_first_letter_of_column_names(self) -> list[pl.DataFrame]:
@@ -47,7 +47,7 @@ def test_custom_df_namespace() -> None:
 def test_custom_expr_namespace() -> None:
     @pl.api.register_expr_namespace("power")
     class PowersOfN:
-        def __init__(self, expr: pl.Expr):
+        def __init__(self, expr: pl.Expr) -> None:
             self._expr = expr
 
         def next(self, p: int) -> pl.Expr:
@@ -76,7 +76,7 @@ def test_custom_expr_namespace() -> None:
 def test_custom_lazy_namespace() -> None:
     @pl.api.register_lazyframe_namespace("split")
     class SplitFrame:
-        def __init__(self, lf: pl.LazyFrame):
+        def __init__(self, lf: pl.LazyFrame) -> None:
             self._lf = lf
 
         def by_column_dtypes(self) -> list[pl.LazyFrame]:
@@ -109,7 +109,7 @@ def test_custom_lazy_namespace() -> None:
 def test_custom_series_namespace() -> None:
     @pl.api.register_series_namespace("math")
     class CustomMath:
-        def __init__(self, s: pl.Series):
+        def __init__(self, s: pl.Series) -> None:
             self._s = s
 
         def square(self) -> pl.Series:
@@ -141,9 +141,9 @@ def test_class_namespaces_are_registered(pcls: Any) -> None:
 
                 if obj.__class__.__name__.endswith("NameSpace"):
                     ns = obj._accessor
-                    assert (
-                        ns in namespaces
-                    ), f"{ns!r} should be registered in {pcls.__name__}._accessors"
+                    assert ns in namespaces, (
+                        f"{ns!r} should be registered in {pcls.__name__}._accessors"
+                    )
 
 
 def test_namespace_cannot_override_builtin() -> None:
@@ -151,19 +151,19 @@ def test_namespace_cannot_override_builtin() -> None:
 
         @pl.api.register_dataframe_namespace("dt")
         class CustomDt:
-            def __init__(self, df: pl.DataFrame):
+            def __init__(self, df: pl.DataFrame) -> None:
                 self._df = df
 
 
 def test_namespace_warning_on_override() -> None:
     @pl.api.register_dataframe_namespace("math")
     class CustomMath:
-        def __init__(self, df: pl.DataFrame):
+        def __init__(self, df: pl.DataFrame) -> None:
             self._df = df
 
     with pytest.raises(UserWarning):
 
         @pl.api.register_dataframe_namespace("math")
         class CustomMath2:
-            def __init__(self, df: pl.DataFrame):
+            def __init__(self, df: pl.DataFrame) -> None:
                 self._df = df

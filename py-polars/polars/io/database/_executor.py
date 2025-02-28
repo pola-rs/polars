@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Coroutine
+from collections.abc import Coroutine, Sequence
 from contextlib import suppress
 from inspect import Parameter, signature
-from typing import TYPE_CHECKING, Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any
 
 from polars import functions as F
 from polars._utils.various import parse_version
@@ -22,31 +22,23 @@ from polars.io.database._utils import _run_async
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Iterable, Iterator
     from types import TracebackType
 
     import pyarrow as pa
 
     from polars.io.database._arrow_registry import ArrowDriverProperties
 
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
-
     if sys.version_info >= (3, 11):
         from typing import Self
     else:
         from typing_extensions import Self
 
+    from sqlalchemy.sql.elements import TextClause
+    from sqlalchemy.sql.expression import Selectable
+
     from polars import DataFrame
     from polars._typing import ConnectionOrCursor, Cursor, SchemaDict
-
-    try:
-        from sqlalchemy.sql.expression import Selectable
-    except ImportError:
-        Selectable: TypeAlias = Any  # type: ignore[no-redef]
-
-    from sqlalchemy.sql.elements import TextClause
 
 _INVALID_QUERY_TYPES = {
     "ALTER",
@@ -70,7 +62,7 @@ class CloseAfterFrameIter:
         self._iter_frames = frames
         self._cursor = cursor
 
-    def __iter__(self) -> Iterable[DataFrame]:
+    def __iter__(self) -> Iterator[DataFrame]:
         yield from self._iter_frames
 
         if hasattr(self._cursor, "close"):
@@ -177,24 +169,24 @@ class ConnectionExecutor:
                     yield arrow
 
     @staticmethod
-    def _fetchall_rows(result: Cursor) -> Iterable[Sequence[Any]]:
+    def _fetchall_rows(result: Cursor, *, is_alchemy: bool) -> Iterable[Sequence[Any]]:
         """Fetch row data in a single call, returning the complete result set."""
         rows = result.fetchall()
         return (
-            [tuple(row) for row in rows]
-            if rows and not isinstance(rows[0], (list, tuple, dict))
-            else rows
+            rows
+            if rows and (is_alchemy or isinstance(rows[0], (list, tuple, dict)))
+            else [tuple(row) for row in rows]
         )
 
     def _fetchmany_rows(
-        self, result: Cursor, batch_size: int | None
+        self, result: Cursor, *, batch_size: int | None, is_alchemy: bool
     ) -> Iterable[Sequence[Any]]:
         """Fetch row data incrementally, yielding over the complete result set."""
         while True:
             rows = result.fetchmany(batch_size)
             if not rows:
                 break
-            elif isinstance(rows[0], (list, tuple, dict)):
+            elif is_alchemy or isinstance(rows[0], (list, tuple, dict)):
                 yield rows
             else:
                 yield [tuple(row) for row in rows]
@@ -206,7 +198,7 @@ class ConnectionExecutor:
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
         infer_schema_length: int | None,
-    ) -> DataFrame | Iterable[DataFrame] | None:
+    ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data in Arrow format for frame init."""
         from polars import DataFrame
 
@@ -252,7 +244,7 @@ class ConnectionExecutor:
         iter_batches: bool,
         schema_overrides: SchemaDict | None,
         infer_schema_length: int | None,
-    ) -> DataFrame | Iterable[DataFrame] | None:
+    ) -> DataFrame | Iterator[DataFrame] | None:
         """Return resultset data row-wise for frame init."""
         from polars import DataFrame
 
@@ -266,7 +258,7 @@ class ConnectionExecutor:
             self.result = _run_async(self.result)
         try:
             if hasattr(self.result, "fetchall"):
-                if self.driver_name == "sqlalchemy":
+                if is_alchemy := (self.driver_name == "sqlalchemy"):
                     if hasattr(self.result, "cursor"):
                         cursor_desc = [
                             (d[0], d[1:]) for d in self.result.cursor.description
@@ -296,9 +288,13 @@ class ConnectionExecutor:
                         orient="row",
                     )
                     for rows in (
-                        self._fetchmany_rows(self.result, batch_size)
+                        self._fetchmany_rows(
+                            self.result,
+                            batch_size=batch_size,
+                            is_alchemy=is_alchemy,
+                        )
                         if iter_batches
-                        else [self._fetchall_rows(self.result)]  # type: ignore[list-item]
+                        else [self._fetchall_rows(self.result, is_alchemy=is_alchemy)]  # type: ignore[list-item]
                     )
                 )
                 return frames if iter_batches else next(frames)  # type: ignore[arg-type]
@@ -337,7 +333,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_async(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is SQLALchemy async."""
         try:
             from sqlalchemy.ext.asyncio import (
                 AsyncConnection,
@@ -351,7 +347,7 @@ class ConnectionExecutor:
 
     @staticmethod
     def _is_alchemy_engine(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is a SQLAlchemy Engine."""
         from sqlalchemy.engine import Engine
 
         if isinstance(conn, Engine):
@@ -364,8 +360,13 @@ class ConnectionExecutor:
             return False
 
     @staticmethod
+    def _is_alchemy_object(conn: Any) -> bool:
+        """Check if the given connection is a SQLAlchemy object (of any kind)."""
+        return type(conn).__module__.split(".", 1)[0] == "sqlalchemy"
+
+    @staticmethod
     def _is_alchemy_session(conn: Any) -> bool:
-        """Check if the cursor/connection/session object is async."""
+        """Check if the given connection is a SQLAlchemy Session object."""
         from sqlalchemy.ext.asyncio import AsyncSession
         from sqlalchemy.orm import Session, sessionmaker
 
@@ -391,7 +392,7 @@ class ConnectionExecutor:
                     return conn.engine.raw_connection().cursor()
                 elif conn.engine.driver == "duckdb_engine":
                     self.driver_name = "duckdb"
-                    return conn.engine.raw_connection().driver_connection
+                    return conn
                 elif self._is_alchemy_engine(conn):
                     # note: if we create it, we can close it
                     self.can_close_cursor = True
@@ -416,7 +417,7 @@ class ConnectionExecutor:
         """Execute a query using an async SQLAlchemy connection."""
         is_session = self._is_alchemy_session(self.cursor)
         cursor = self.cursor.begin() if is_session else self.cursor  # type: ignore[attr-defined]
-        async with cursor as conn:
+        async with cursor as conn:  # type: ignore[union-attr]
             if is_session and not hasattr(conn, "execute"):
                 conn = conn.session
             result = await conn.execute(query, **options)
@@ -481,7 +482,7 @@ class ConnectionExecutor:
 
         options = options or {}
 
-        if self.driver_name == "sqlalchemy":
+        if self._is_alchemy_object(self.cursor):
             cursor_execute, options, query = self._sqlalchemy_setup(query, options)
         else:
             cursor_execute = self.cursor.execute
@@ -504,8 +505,11 @@ class ConnectionExecutor:
             )
             result = cursor_execute(query, *positional_options)
 
-        # note: some cursors execute in-place
-        result = self.cursor if result is None else result
+        # note: some cursors execute in-place, some access results via a property
+        result = self.cursor if (result is None or result is True) else result
+        if self.driver_name == "duckdb":
+            result = result.cursor
+
         self.result = result
         return self
 
@@ -516,7 +520,7 @@ class ConnectionExecutor:
         batch_size: int | None = None,
         schema_overrides: SchemaDict | None = None,
         infer_schema_length: int | None = N_INFER_DEFAULT,
-    ) -> DataFrame | Iterable[DataFrame]:
+    ) -> DataFrame | Iterator[DataFrame]:
         """
         Convert the result set to a DataFrame.
 
@@ -546,7 +550,7 @@ class ConnectionExecutor:
                 if defer_cursor_close:
                     frame = (
                         df
-                        for df in CloseAfterFrameIter(  # type: ignore[attr-defined]
+                        for df in CloseAfterFrameIter(
                             frame,
                             cursor=self.result,
                         )

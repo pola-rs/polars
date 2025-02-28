@@ -5,18 +5,23 @@ import os
 import re
 import sys
 import warnings
-from collections.abc import MappingView, Sized
+from collections import Counter
+from collections.abc import (
+    Collection,
+    Generator,
+    Iterable,
+    MappingView,
+    Sequence,
+    Sized,
+)
 from enum import Enum
+from io import BytesIO
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
     Callable,
-    Collection,
-    Generator,
-    Iterable,
     Literal,
-    Sequence,
     TypeVar,
     overload,
 )
@@ -34,11 +39,11 @@ from polars.datatypes import (
     Time,
 )
 from polars.datatypes.group import FLOAT_DTYPES, INTEGER_DTYPES
-from polars.dependencies import _check_for_numpy
+from polars.dependencies import _check_for_numpy, import_optional, subprocess
 from polars.dependencies import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator, Reversible
+    from collections.abc import Iterator, MutableMapping, Reversible
 
     from polars import DataFrame, Expr
     from polars._typing import PolarsDataType, SizeUnit
@@ -99,7 +104,11 @@ def is_path_or_str_sequence(
         return np.issubdtype(val.dtype, np.str_)
     elif include_series and isinstance(val, pl.Series):
         return val.dtype == pl.String
-    return isinstance(val, Sequence) and _is_iterable_of(val, (Path, str))
+    return (
+        not isinstance(val, bytes)
+        and isinstance(val, Sequence)
+        and _is_iterable_of(val, (Path, str))
+    )
 
 
 def is_bool_sequence(
@@ -128,9 +137,8 @@ def is_sequence(
     val: object, *, include_series: bool = False
 ) -> TypeGuard[Sequence[Any]]:
     """Check whether the given input is a numpy array or python sequence."""
-    return (
-        (_check_for_numpy(val) and isinstance(val, np.ndarray))
-        or isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
+    return (_check_for_numpy(val) and isinstance(val, np.ndarray)) or (
+        isinstance(val, (pl.Series, Sequence) if include_series else Sequence)
         and not isinstance(val, str)
     )
 
@@ -240,6 +248,16 @@ def ordered_unique(values: Sequence[Any]) -> list[Any]:
     return [v for v in values if not (v in seen or add_(v))]
 
 
+def deduplicate_names(names: Iterable[str]) -> list[str]:
+    """Ensure name uniqueness by appending a counter to subsequent duplicates."""
+    seen: MutableMapping[str, int] = Counter()
+    deduped = []
+    for nm in names:
+        deduped.append(f"{nm}{seen[nm] - 1}" if nm in seen else nm)
+        seen[nm] += 1
+    return deduped
+
+
 @overload
 def scale_bytes(sz: int, unit: SizeUnit) -> int | float: ...
 
@@ -289,6 +307,8 @@ def _cast_repr_strings_with_schema(
             if tp != String:
                 msg = f"DataFrame should contain only String repr data; found {tp!r}"
                 raise TypeError(msg)
+
+    special_floats = {"-inf", "+inf", "inf", "nan"}
 
     # duration string scaling
     ns_sec = 1_000_000_000
@@ -359,8 +379,11 @@ def _cast_repr_strings_with_schema(
                 integer_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$1")
                 fractional_part = F.col(c).str.replace(r"^(.*)\D(\d*)$", "$2")
                 cast_cols[c] = (
-                    # check for empty string and/or integer format
-                    pl.when(F.col(c).str.contains(r"^[+-]?\d*$"))
+                    # check for empty string, special floats, or integer format
+                    pl.when(
+                        F.col(c).str.contains(r"^[+-]?\d*$")
+                        | F.col(c).str.to_lowercase().is_in(special_floats)
+                    )
                     .then(pl.when(F.col(c).str.len_bytes() > 0).then(F.col(c)))
                     # check for scientific notation
                     .when(F.col(c).str.contains("[eE]"))
@@ -423,7 +446,7 @@ NoDefault = Literal[_NoDefault.no_default]
 
 def find_stacklevel() -> int:
     """
-    Find the first place in the stack that is not inside polars.
+    Find the first place in the stack that is not inside Polars.
 
     Taken from:
     https://github.com/pandas-dev/pandas/blob/ab89c53f48df67709a533b6a95ce3d911871a0a8/pandas/util/_exceptions.py#L30-L51
@@ -627,3 +650,55 @@ def re_escape(s: str) -> str:
     # escapes _only_ those metachars with meaning to the rust regex crate
     re_rust_metachars = r"\\?()|\[\]{}^$#&~.+*-"
     return re.sub(f"([{re_rust_metachars}])", r"\\\1", s)
+
+
+# Don't rename or move. This is used by polars cloud
+def display_dot_graph(
+    *,
+    dot: str,
+    show: bool = True,
+    output_path: str | Path | None = None,
+    raw_output: bool = False,
+    figsize: tuple[float, float] = (16.0, 12.0),
+) -> str | None:
+    if raw_output:
+        # we do not show a graph, nor save a graph to disk
+        return dot
+
+    output_type = "svg" if _in_notebook() else "png"
+
+    try:
+        graph = subprocess.check_output(
+            ["dot", "-Nshape=box", "-T" + output_type], input=f"{dot}".encode()
+        )
+    except (ImportError, FileNotFoundError):
+        msg = (
+            "The graphviz `dot` binary should be on your PATH."
+            "(If not installed you can download here: https://graphviz.org/download/)"
+        )
+        raise ImportError(msg) from None
+
+    if output_path:
+        Path(output_path).write_bytes(graph)
+
+    if not show:
+        return None
+
+    if _in_notebook():
+        from IPython.display import SVG, display
+
+        return display(SVG(graph))
+    else:
+        import_optional(
+            "matplotlib",
+            err_prefix="",
+            err_suffix="should be installed to show graphs",
+        )
+        import matplotlib.image as mpimg
+        import matplotlib.pyplot as plt
+
+        plt.figure(figsize=figsize)
+        img = mpimg.imread(BytesIO(graph))
+        plt.imshow(img)
+        plt.show()
+        return None

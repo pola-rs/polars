@@ -9,7 +9,7 @@ repository = { workspace = true }
 description = "Core of the Polars DataFrame library"
 
 [dependencies]
-polars-compute = { workspace = true }
+polars-compute = { workspace = true, features = ["gather"] }
 polars-error = { workspace = true }
 polars-row = { workspace = true }
 polars-schema = { workspace = true }
@@ -17,7 +17,6 @@ polars-utils = { workspace = true }
 
 ahash = { workspace = true }
 arrow = { workspace = true }
-arrow-array = { workspace = true, optional = true }
 bitflags = { workspace = true }
 bytemuck = { workspace = true }
 chrono = { workspace = true, optional = true }
@@ -25,7 +24,9 @@ chrono-tz = { workspace = true, optional = true }
 comfy-table = { version = "7.1.1", default-features = false, optional = true }
 either = { workspace = true }
 hashbrown = { workspace = true }
+hashbrown_old_nightly_hack = { workspace = true }
 indexmap = { workspace = true }
+itoa = { workspace = true }
 ndarray = { workspace = true, optional = true }
 num-traits = { workspace = true }
 once_cell = { workspace = true }
@@ -36,11 +37,11 @@ regex = { workspace = true, optional = true }
 # activate if you want serde support for Series and DataFrames
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
-thiserror = { workspace = true }
+strum_macros = { workspace = true }
 xxhash-rust = { workspace = true }
 
 [dev-dependencies]
-bincode = { version = "1" }
+bincode = { workspace = true }
 serde_json = { workspace = true }
 
 [build-dependencies]
@@ -48,7 +49,7 @@ version_check = { workspace = true }
 
 [features]
 simd = ["arrow/simd", "polars-compute/simd"]
-nightly = ["simd", "hashbrown/nightly", "polars-utils/nightly", "arrow/nightly"]
+nightly = ["simd", "hashbrown/nightly", "hashbrown_old_nightly_hack/nightly", "polars-utils/nightly", "arrow/nightly"]
 avx512 = []
 docs = []
 temporal = ["regex", "chrono", "polars-error/regex"]
@@ -75,6 +76,8 @@ fmt_no_tty = ["comfy-table"]
 rows = []
 
 # operations
+approx_unique = ["polars-compute/approx_unique"]
+bitwise = ["algorithm_group_by"]
 zip_with = []
 round_series = []
 checked_arithmetic = []
@@ -97,7 +100,8 @@ partition_by = ["algorithm_group_by"]
 describe = []
 timezones = ["temporal", "chrono", "chrono-tz", "arrow/chrono-tz", "arrow/timezones"]
 dynamic_group_by = ["dtype-datetime", "dtype-date"]
-arrow_rs = ["arrow-array", "arrow/arrow_rs"]
+list_arithmetic = []
+array_arithmetic = ["dtype-array"]
 
 # opt-in datatypes for Series
 dtype-date = ["temporal"]
@@ -107,7 +111,8 @@ dtype-time = ["temporal"]
 dtype-array = ["arrow/dtype-array", "polars-compute/dtype-array"]
 dtype-i8 = []
 dtype-i16 = []
-dtype-decimal = ["arrow/dtype-decimal"]
+dtype-i128 = ["polars-compute/dtype-i128"]
+dtype-decimal = ["arrow/dtype-decimal", "polars-compute/cast", "polars-compute/dtype-decimal", "dtype-i128"]
 dtype-u8 = []
 dtype-u16 = []
 dtype-categorical = []
@@ -117,7 +122,15 @@ dtype-struct = []
 bigidx = ["arrow/bigidx", "polars-utils/bigidx"]
 python = []
 
-serde = ["dep:serde", "bitflags/serde", "polars-schema/serde", "polars-utils/serde"]
+serde = [
+  "dep:serde",
+  "bitflags/serde",
+  "polars-schema/serde",
+  "polars-utils/serde",
+  "arrow/io_ipc",
+  "arrow/io_ipc_compression",
+  "serde_json",
+]
 serde-lazy = ["serde", "arrow/serde", "indexmap/serde", "chrono/serde"]
 
 docs-selection = [
@@ -137,6 +150,7 @@ docs-selection = [
   "row_hash",
   "rolling_window",
   "rolling_window_by",
+  "serde",
   "dtype-categorical",
   "dtype-decimal",
   "diagonal_concat",
@@ -145,6 +159,8 @@ docs-selection = [
   "describe",
   "partition_by",
   "algorithm_group_by",
+  "list_arithmetic",
+  "array_arithmetic",
 ]
 
 [package.metadata.docs.rs]

@@ -154,6 +154,9 @@ def test_sink_csv_with_options() -> None:
             null_value="BOOM",
             quote_style="always",
             maintain_order=False,
+            storage_options=None,
+            credential_provider="auto",
+            retries=2,
         )
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
@@ -172,6 +175,9 @@ def test_sink_csv_with_options() -> None:
             null_value="BOOM",
             quote_style="always",
             maintain_order=False,
+            cloud_options=None,
+            credential_provider=None,
+            retries=2,
         )
 
 
@@ -248,7 +254,10 @@ def test_sink_ndjson_should_write_same_data(
 
 
 @pytest.mark.write_disk
-def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> None:
+@pytest.mark.parametrize("streaming", [False, True])
+def test_parquet_eq_statistics(
+    monkeypatch: Any, capfd: Any, tmp_path: Path, streaming: bool
+) -> None:
     tmp_path.mkdir(exist_ok=True)
 
     monkeypatch.setenv("POLARS_VERBOSE", "1")
@@ -262,29 +271,23 @@ def test_parquet_eq_statistics(monkeypatch: Any, capfd: Any, tmp_path: Path) -> 
     file_path = tmp_path / "stats.parquet"
     df.write_parquet(file_path, statistics=True, use_pyarrow=False)
 
-    file_path = tmp_path / "stats.parquet"
-    df.write_parquet(file_path, statistics=True, use_pyarrow=False)
+    for pred in [
+        pl.col("idx") == 50,
+        pl.col("idx") == 150,
+        pl.col("idx") == 210,
+    ]:
+        result = pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
+        assert_frame_equal(result, df.filter(pred))
 
-    for streaming in [False, True]:
-        for pred in [
-            pl.col("idx") == 50,
-            pl.col("idx") == 150,
-            pl.col("idx") == 210,
-        ]:
-            result = (
-                pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
-            )
-            assert_frame_equal(result, df.filter(pred))
-
-        captured = capfd.readouterr().err
-        assert (
-            "parquet file must be read, statistics not sufficient for predicate."
-            in captured
-        )
-        assert (
-            "parquet file can be skipped, the statistics were sufficient"
-            " to apply the predicate." in captured
-        )
+    captured = capfd.readouterr().err
+    assert (
+        "parquet row group must be read, statistics not sufficient for predicate."
+        in captured
+    )
+    assert (
+        "parquet row group can be skipped, the statistics were sufficient"
+        " to apply the predicate." in captured
+    )
 
 
 @pytest.mark.write_disk
@@ -297,6 +300,7 @@ def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     assert q.join(q2, on="a").collect(streaming=True).shape == (0, 1)
 
 
+@pytest.mark.may_fail_auto_streaming
 @pytest.mark.parametrize(
     "method",
     ["parquet", "csv"],
@@ -318,3 +322,13 @@ def test_nyi_scan_in_memory(method: str) -> None:
         match="not yet implemented: Streaming scanning of in-memory buffers",
     ):
         (getattr(pl, f"scan_{method}"))(f).collect(streaming=True)
+
+
+def test_empty_sink_parquet_join_14863(tmp_path: Path) -> None:
+    file_path = tmp_path / "empty.parquet"
+    lf = pl.LazyFrame(schema=["a", "b", "c"]).cast(pl.String)
+    lf.sink_parquet(file_path)
+    assert_frame_equal(
+        pl.LazyFrame({"a": ["uno"]}).join(pl.scan_parquet(file_path), on="a").collect(),
+        lf.collect(),
+    )

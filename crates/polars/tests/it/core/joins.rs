@@ -19,14 +19,15 @@ fn test_chunked_left_join() -> PolarsResult<()> {
     let band_instruments =
         accumulate_dataframes_vertical(split_df(&mut band_instruments, 2, false))?;
     let band_members = accumulate_dataframes_vertical(split_df(&mut band_members, 2, false))?;
-    assert_eq!(band_instruments.n_chunks(), 2);
-    assert_eq!(band_members.n_chunks(), 2);
+    assert_eq!(band_instruments.first_col_n_chunks(), 2);
+    assert_eq!(band_members.first_col_n_chunks(), 2);
 
     let out = band_instruments.join(
         &band_members,
         ["name"],
         ["name"],
         JoinArgs::new(JoinType::Left),
+        None,
     )?;
     let expected = df![
         "name" => ["john", "paul", "keith"],
@@ -39,13 +40,13 @@ fn test_chunked_left_join() -> PolarsResult<()> {
 }
 
 fn create_frames() -> (DataFrame, DataFrame) {
-    let s0 = Series::new("days".into(), &[0, 1, 2]);
-    let s1 = Series::new("temp".into(), &[22.1, 19.9, 7.]);
-    let s2 = Series::new("rain".into(), &[0.2, 0.1, 0.3]);
+    let s0 = Column::new("days".into(), &[0, 1, 2]);
+    let s1 = Column::new("temp".into(), &[22.1, 19.9, 7.]);
+    let s2 = Column::new("rain".into(), &[0.2, 0.1, 0.3]);
     let temp = DataFrame::new(vec![s0, s1, s2]).unwrap();
 
-    let s0 = Series::new("days".into(), &[1, 2, 3, 1]);
-    let s1 = Series::new("rain".into(), &[0.1, 0.2, 0.3, 0.4]);
+    let s0 = Column::new("days".into(), &[1, 2, 3, 1]);
+    let s1 = Column::new("rain".into(), &[0.1, 0.2, 0.3, 0.4]);
     let rain = DataFrame::new(vec![s0, s1]).unwrap();
     (temp, rain)
 }
@@ -59,10 +60,10 @@ fn test_inner_join() {
         std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
         let joined = temp.inner_join(&rain, ["days"], ["days"]).unwrap();
 
-        let join_col_days = Series::new("days".into(), &[1, 2, 1]);
-        let join_col_temp = Series::new("temp".into(), &[19.9, 7., 19.9]);
-        let join_col_rain = Series::new("rain".into(), &[0.1, 0.3, 0.1]);
-        let join_col_rain_right = Series::new("rain_right".into(), [0.1, 0.2, 0.4].as_ref());
+        let join_col_days = Column::new("days".into(), &[1, 2, 1]);
+        let join_col_temp = Column::new("temp".into(), &[19.9, 7., 19.9]);
+        let join_col_rain = Column::new("rain".into(), &[0.1, 0.3, 0.1]);
+        let join_col_rain_right = Column::new("rain_right".into(), [0.1, 0.2, 0.4].as_ref());
         let true_df = DataFrame::new(vec![
             join_col_days,
             join_col_temp,
@@ -81,31 +82,45 @@ fn test_inner_join() {
 fn test_left_join() {
     for i in 1..8 {
         std::env::set_var("POLARS_MAX_THREADS", format!("{}", i));
-        let s0 = Series::new("days".into(), &[0, 1, 2, 3, 4]);
-        let s1 = Series::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
+        let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
+        let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
 
-        let s0 = Series::new("days".into(), &[1, 2]);
-        let s1 = Series::new("rain".into(), &[0.1, 0.2]);
+        let s0 = Column::new("days".into(), &[1, 2]);
+        let s1 = Column::new("rain".into(), &[0.1, 0.2]);
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
         assert_eq!(
-            (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
+            (joined
+                .column("rain")
+                .unwrap()
+                .as_materialized_series()
+                .sum::<f32>()
+                .unwrap()
+                * 10.)
+                .round(),
             3.
         );
         assert_eq!(joined.column("rain").unwrap().null_count(), 3);
 
         // test join on string
-        let s0 = Series::new("days".into(), &["mo", "tue", "wed", "thu", "fri"]);
-        let s1 = Series::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
+        let s0 = Column::new("days".into(), &["mo", "tue", "wed", "thu", "fri"]);
+        let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
         let temp = DataFrame::new(vec![s0, s1]).unwrap();
 
-        let s0 = Series::new("days".into(), &["tue", "wed"]);
-        let s1 = Series::new("rain".into(), &[0.1, 0.2]);
+        let s0 = Column::new("days".into(), &["tue", "wed"]);
+        let s1 = Column::new("rain".into(), &[0.1, 0.2]);
         let rain = DataFrame::new(vec![s0, s1]).unwrap();
         let joined = temp.left_join(&rain, ["days"], ["days"]).unwrap();
         assert_eq!(
-            (joined.column("rain").unwrap().sum::<f32>().unwrap() * 10.).round(),
+            (joined
+                .column("rain")
+                .unwrap()
+                .as_materialized_series()
+                .sum::<f32>()
+                .unwrap()
+                * 10.)
+                .round(),
             3.
         );
         assert_eq!(joined.column("rain").unwrap().null_count(), 3);
@@ -121,9 +136,17 @@ fn test_full_outer_join() -> PolarsResult<()> {
         ["days"],
         ["days"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(joined.height(), 5);
-    assert_eq!(joined.column("days")?.sum::<i32>().unwrap(), 7);
+    assert_eq!(
+        joined
+            .column("days")?
+            .as_materialized_series()
+            .sum::<i32>()
+            .unwrap(),
+        7
+    );
 
     let df_left = df!(
             "a"=> ["a", "b", "a", "z"],
@@ -141,6 +164,7 @@ fn test_full_outer_join() -> PolarsResult<()> {
         ["a"],
         ["a"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(out.column("c_right")?.null_count(), 1);
 
@@ -153,15 +177,15 @@ fn test_join_with_nulls() {
     let dts = &[20, 21, 22, 23, 24, 25, 27, 28];
     let vals = &[1.2, 2.4, 4.67, 5.8, 4.4, 3.6, 7.6, 6.5];
     let df = DataFrame::new(vec![
-        Series::new("date".into(), dts),
-        Series::new("val".into(), vals),
+        Column::new("date".into(), dts),
+        Column::new("val".into(), vals),
     ])
     .unwrap();
 
     let vals2 = &[Some(1.1), None, Some(3.3), None, None];
     let df2 = DataFrame::new(vec![
-        Series::new("date".into(), &dts[3..]),
-        Series::new("val2".into(), vals2),
+        Column::new("date".into(), &dts[3..]),
+        Column::new("val2".into(), vals2),
     ])
     .unwrap();
 
@@ -239,13 +263,25 @@ fn test_join_multiple_columns() {
 
     // now check the join with multiple columns
     let joined = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Left.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Left.into(),
+            None,
+        )
         .unwrap();
     let ca = joined.column("ham").unwrap().str().unwrap();
     assert_eq!(Vec::from(ca), correct_ham);
     let joined_inner_hack = df_a.inner_join(&df_b, ["dummy"], ["dummy"]).unwrap();
     let joined_inner = df_a
-        .join(&df_b, ["a", "b"], ["foo", "bar"], JoinType::Inner.into())
+        .join(
+            &df_b,
+            ["a", "b"],
+            ["foo", "bar"],
+            JoinType::Inner.into(),
+            None,
+        )
         .unwrap();
 
     assert!(joined_inner_hack
@@ -260,6 +296,7 @@ fn test_join_multiple_columns() {
             ["a", "b"],
             ["foo", "bar"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
     assert!(joined_full_outer_hack
@@ -288,7 +325,7 @@ fn test_join_categorical() {
     .unwrap();
 
     let out = df_a
-        .join(&df_b, ["b"], ["bar"], JoinType::Left.into())
+        .join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None)
         .unwrap();
     assert_eq!(out.shape(), (6, 5));
     let correct_ham = &[
@@ -306,7 +343,7 @@ fn test_join_categorical() {
 
     // test dispatch
     for jt in [JoinType::Left, JoinType::Inner, JoinType::Full] {
-        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into()).unwrap();
+        let out = df_a.join(&df_b, ["b"], ["bar"], jt.into(), None).unwrap();
         let out = out.column("b").unwrap();
         assert_eq!(
             out.dtype(),
@@ -329,7 +366,7 @@ fn test_join_categorical() {
         s.cast(&DataType::Categorical(None, Default::default()))
     })
     .unwrap();
-    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into());
+    let out = df_a.join(&df_b, ["b"], ["bar"], JoinType::Left.into(), None);
     assert!(out.is_err());
 }
 
@@ -338,14 +375,14 @@ fn test_join_categorical() {
 fn test_empty_df_join() -> PolarsResult<()> {
     let empty: Vec<String> = vec![];
     let empty_df = DataFrame::new(vec![
-        Series::new("key".into(), &empty),
-        Series::new("eval".into(), &empty),
+        Column::new("key".into(), &empty),
+        Column::new("eval".into(), &empty),
     ])
     .unwrap();
 
     let df = DataFrame::new(vec![
-        Series::new("key".into(), &["foo"]),
-        Series::new("aval".into(), &[4]),
+        Column::new("key".into(), &["foo"]),
+        Column::new("aval".into(), &[4]),
     ])
     .unwrap();
 
@@ -361,8 +398,8 @@ fn test_empty_df_join() -> PolarsResult<()> {
 
     let empty: Vec<String> = vec![];
     let _empty_df = DataFrame::new(vec![
-        Series::new("key".into(), &empty),
-        Series::new("eval".into(), &empty),
+        Column::new("key".into(), &empty),
+        Column::new("eval".into(), &empty),
     ])
     .unwrap();
 
@@ -374,9 +411,9 @@ fn test_empty_df_join() -> PolarsResult<()> {
     // https://github.com/pola-rs/polars/issues/1824
     let empty: Vec<i32> = vec![];
     let empty_df = DataFrame::new(vec![
-        Series::new("key".into(), &empty),
-        Series::new("1val".into(), &empty),
-        Series::new("2val".into(), &empty),
+        Column::new("key".into(), &empty),
+        Column::new("1val".into(), &empty),
+        Column::new("2val".into(), &empty),
     ])?;
 
     let out = df.left_join(&empty_df, ["key"], ["key"])?;
@@ -423,7 +460,13 @@ fn test_join_err() -> PolarsResult<()> {
 
     // dtypes don't match, error
     assert!(df1
-        .join(&df2, vec!["a", "b"], vec!["a", "b"], JoinType::Left.into())
+        .join(
+            &df2,
+            vec!["a", "b"],
+            vec!["a", "b"],
+            JoinType::Left.into(),
+            None
+        )
         .is_err());
     Ok(())
 }
@@ -469,6 +512,7 @@ fn test_joins_with_duplicates() -> PolarsResult<()> {
             ["col1"],
             ["join_col1"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
 
@@ -511,6 +555,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinType::Inner.into(),
+            None,
         )
         .unwrap();
 
@@ -526,6 +571,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinType::Left.into(),
+            None,
         )
         .unwrap();
 
@@ -541,6 +587,7 @@ fn test_multi_joins_with_duplicates() -> PolarsResult<()> {
             ["col1", "join_col2"],
             ["join_col1", "col2"],
             JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+            None,
         )
         .unwrap();
 
@@ -573,6 +620,7 @@ fn test_join_floats() -> PolarsResult<()> {
         vec!["a", "c"],
         vec!["foo", "bar"],
         JoinType::Left.into(),
+        None,
     )?;
     assert_eq!(
         Vec::from(out.column("ham")?.str()?),
@@ -584,6 +632,7 @@ fn test_join_floats() -> PolarsResult<()> {
         vec!["a", "c"],
         vec!["foo", "bar"],
         JoinArgs::new(JoinType::Full).with_coalesce(JoinCoalesce::CoalesceColumns),
+        None,
     )?;
     assert_eq!(
         out.dtypes(),
@@ -610,7 +659,7 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
         .collect::<Int64Chunked>();
     left_a.rename("a".into());
     left_b.rename("b".into());
-    let left_df = DataFrame::new(vec![left_a.into_series(), left_b.into_series()])?;
+    let left_df = DataFrame::new(vec![left_a.into_column(), left_b.into_column()])?;
 
     let i = 1;
     let len = 8;
@@ -622,7 +671,7 @@ fn test_4_threads_bit_offset() -> PolarsResult<()> {
     right_a.rename("a".into());
     right_b.rename("b".into());
 
-    let right_df = DataFrame::new(vec![right_a.into_series(), right_b.into_series()])?;
+    let right_df = DataFrame::new(vec![right_a.into_column(), right_b.into_column()])?;
     let out = JoinBuilder::new(left_df.lazy())
         .with(right_df.lazy())
         .on([col("a"), col("b")])

@@ -1,7 +1,8 @@
 use std::path::Path;
 
+use polars_plan::dsl::ScanSources;
 pub(crate) use polars_plan::plans::ArenaLpIter;
-use polars_plan::plans::{ScanSources, IR};
+use polars_plan::plans::IR;
 use polars_utils::aliases::PlHashSet;
 use polars_utils::arena::{Arena, Node};
 

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import copy
-from typing import TYPE_CHECKING, Any, Callable, Sequence
+import warnings
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.parse import parse_into_expression
+from polars._utils.various import find_stacklevel
 from polars._utils.wrap import wrap_expr
 
 if TYPE_CHECKING:
@@ -15,8 +18,8 @@ if TYPE_CHECKING:
     from polars._typing import (
         IntoExpr,
         IntoExprColumn,
+        ListToStructWidthStrategy,
         NullBehavior,
-        ToStructStrategy,
     )
 
 
@@ -25,7 +28,7 @@ class ExprListNameSpace:
 
     _accessor = "list"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def __getitem__(self, item: int) -> Expr:
@@ -1091,9 +1094,11 @@ class ExprListNameSpace:
 
     def to_struct(
         self,
-        n_field_strategy: ToStructStrategy = "first_non_null",
+        n_field_strategy: ListToStructWidthStrategy = "first_non_null",
         fields: Sequence[str] | Callable[[int], str] | None = None,
         upper_bound: int = 0,
+        *,
+        _eager: bool = False,
     ) -> Expr:
         """
         Convert the Series of type `List` to a Series of type `Struct`.
@@ -1124,6 +1129,11 @@ class ExprListNameSpace:
 
         Notes
         -----
+        It is recommended to set 'upper_bound' to the correct output size of the struct.
+        If this is not set, Polars will not know the output type of this operation and
+        will set it to 'Unknown' which can lead to errors because Polars is not able
+        to resolve the query.
+
         For performance reasons, the length of the first non-null sublist is used
         to determine the number of output fields. If the sublists can be of different
         lengths then `n_field_strategy="max_width"` must be used to obtain the expected
@@ -1134,9 +1144,7 @@ class ExprListNameSpace:
         Convert list to struct with default field name assignment:
 
         >>> df = pl.DataFrame({"n": [[0, 1], [0, 1, 2]]})
-        >>> df.with_columns(
-        ...     struct=pl.col("n").list.to_struct()
-        ... )  # doctest: +IGNORE_RESULT
+        >>> df.with_columns(struct=pl.col("n").list.to_struct())  # doctest: +SKIP
         shape: (2, 2)
         ┌───────────┬───────────┐
         │ n         ┆ struct    │
@@ -1152,7 +1160,7 @@ class ExprListNameSpace:
 
         >>> df.with_columns(
         ...     struct=pl.col("n").list.to_struct(n_field_strategy="max_width")
-        ... )  # doctest: +IGNORE_RESULT
+        ... )  # doctest: +SKIP
         shape: (2, 2)
         ┌───────────┬────────────┐
         │ n         ┆ struct     │
@@ -1168,7 +1176,7 @@ class ExprListNameSpace:
         >>> df = pl.DataFrame({"n": [[0, 1], [2, 3]]})
         >>> df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
         ...     named=True
-        ... )
+        ... )  # doctest: +SKIP
         [{'n': {'n0': 0, 'n1': 1}}, {'n': {'n0': 2, 'n1': 3}}]
 
         Convert list to struct with field name assignment by index from a list of names:
@@ -1179,10 +1187,16 @@ class ExprListNameSpace:
         [{'n': {'one': 0, 'two': 1}}, {'n': {'one': 2, 'two': 3}}]
         """
         if isinstance(fields, Sequence):
-            field_names = list(fields)
-            pyexpr = self._pyexpr.list_to_struct(n_field_strategy, None, upper_bound)
-            return wrap_expr(pyexpr).struct.rename_fields(field_names)
+            pyexpr = self._pyexpr.list_to_struct_fixed_width(fields)
+            return wrap_expr(pyexpr)
         else:
+            if not _eager:
+                msg = (
+                    "`to_struct()` should be passed a list of field names to avoid "
+                    "query errors in subsequent operations (e.g. <struct operation> "
+                    "not supported for dtype Unknown)"
+                )
+                warnings.warn(msg, stacklevel=find_stacklevel())
             pyexpr = self._pyexpr.list_to_struct(n_field_strategy, fields, upper_bound)
             return wrap_expr(pyexpr)
 

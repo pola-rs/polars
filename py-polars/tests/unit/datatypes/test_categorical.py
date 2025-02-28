@@ -66,12 +66,13 @@ def test_categorical_full_outer_join() -> None:
         ]
     )
 
-    df = dfa.join(dfb, on="key", how="full")
+    df = dfa.join(dfb, on="key", how="full", maintain_order="right_left")
     # the cast is important to test the rev map
     assert df["key"].cast(pl.String).to_list() == ["bar", None, "foo"]
     assert df["key_right"].cast(pl.String).to_list() == ["bar", "baz", None]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_read_csv_categorical() -> None:
     f = io.BytesIO()
     f.write(b"col1,col2,col3,col4,col5,col6\n'foo',2,3,4,5,6\n'bar',8,9,10,11,12")
@@ -80,6 +81,7 @@ def test_read_csv_categorical() -> None:
     assert df["col1"].dtype == pl.Categorical
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_cat_to_dummies() -> None:
     df = pl.DataFrame({"foo": [1, 2, 3, 4], "bar": ["a", "b", "a", "c"]})
     df = df.with_columns(pl.col("bar").cast(pl.Categorical))
@@ -94,7 +96,7 @@ def test_cat_to_dummies() -> None:
     }
 
 
-@StringCache()
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_is_in_list() -> None:
     # this requires type coercion to cast.
     # we should not cast within the function as this would be expensive within a
@@ -110,7 +112,7 @@ def test_categorical_is_in_list() -> None:
     }
 
 
-@StringCache()
+@pytest.mark.usefixtures("test_global_and_local")
 def test_unset_sorted_on_append() -> None:
     df1 = pl.DataFrame(
         [
@@ -137,6 +139,7 @@ def test_unset_sorted_on_append() -> None:
         (pl.Series.eq_missing, pl.Series([True, True, True, False, False, False])),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_equality(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -272,6 +275,7 @@ def test_categorical_global_ordering_broadcast_lhs(
         (operator.gt, pl.Series([False, False, False, True, False, False])),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_ordering(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -289,6 +293,7 @@ def test_categorical_ordering(
         (operator.gt, pl.Series([None, False, False, False, False, False])),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_compare_categorical(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -311,6 +316,7 @@ def test_compare_categorical(
         (pl.Series.ne_missing, pl.Series([True, True, False, True, False, True])),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_compare_categorical_single(
     op: Callable[[pl.Series, pl.Series], pl.Series], expected: pl.Series
 ) -> None:
@@ -400,6 +406,7 @@ def test_categorical_error_on_local_cmp() -> None:
         df_cat.filter(pl.col("a_cat") == pl.col("b_cat"))
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_cast_null_to_categorical() -> None:
     assert pl.DataFrame().with_columns(
         pl.lit(None).cast(pl.Categorical).alias("nullable_enum")
@@ -454,6 +461,7 @@ def test_nested_cache_composition() -> None:
     assert pl.using_string_cache() is False
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_in_struct_nulls() -> None:
     s = pl.Series(
         "job", ["doctor", "waiter", None, None, None, "doctor"], pl.Categorical
@@ -466,6 +474,7 @@ def test_categorical_in_struct_nulls() -> None:
     assert s[2] == {"job": "waiter", "count": 1}
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_cast_inner_categorical() -> None:
     dtype = pl.List(pl.Categorical)
     out = pl.Series("foo", [["a"], ["a", "b"]]).cast(dtype)
@@ -501,6 +510,7 @@ def test_stringcache() -> None:
         (pl.Categorical("lexical"), ["bar", "baz", "foo"]),
     ],
 )
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_sort_order_by_parameter(
     dtype: PolarsDataType, outcome: list[str]
 ) -> None:
@@ -557,12 +567,14 @@ def test_err_on_categorical_asof_join_by_arg() -> None:
         df1.join_asof(df2, on=pl.col("time").set_sorted(), by="cat")
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_list_get_item() -> None:
     out = pl.Series([["a"]]).cast(pl.List(pl.Categorical)).item()
     assert isinstance(out, pl.Series)
     assert out.dtype == pl.Categorical
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_nested_categorical_aggregation_7848() -> None:
     # a double categorical aggregation
     assert pl.DataFrame(
@@ -580,6 +592,7 @@ def test_nested_categorical_aggregation_7848() -> None:
     }
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_nested_categorical_cast() -> None:
     values = [["x"], ["y"], ["x"]]
     dtype = pl.List(pl.Categorical)
@@ -588,6 +601,7 @@ def test_nested_categorical_cast() -> None:
     assert s.to_list() == values
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_struct_categorical_nesting() -> None:
     # this triggers a lot of materialization
     df = pl.DataFrame(
@@ -610,7 +624,8 @@ def test_categorical_fill_null_existing_category() -> None:
     assert result.to_dict(as_series=False) == expected
 
 
-@StringCache()
+@pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_categorical_fill_null_stringcache() -> None:
     df = pl.LazyFrame(
         {"index": [1, 2, 3], "cat": ["a", "b", None]},
@@ -622,6 +637,7 @@ def test_categorical_fill_null_stringcache() -> None:
     assert a.dtypes == [pl.Categorical]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_fast_unique_flag_from_arrow() -> None:
     df = pl.DataFrame(
         {
@@ -633,6 +649,7 @@ def test_fast_unique_flag_from_arrow() -> None:
     assert pl.from_arrow(filtered).select(pl.col("colB").n_unique()).item() == 4  # type: ignore[union-attr]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_construct_with_null() -> None:
     # Example from https://github.com/pola-rs/polars/issues/7188
     df = pl.from_dicts([{"A": None}, {"A": "foo"}], schema={"A": pl.Categorical})
@@ -663,6 +680,7 @@ def test_list_builder_different_categorical_rev_maps() -> None:
     }
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_collect_11408() -> None:
     df = pl.DataFrame(
         data={"groups": ["a", "b", "c"], "cats": ["a", "b", "c"], "amount": [1, 2, 3]},
@@ -677,6 +695,7 @@ def test_categorical_collect_11408() -> None:
     }
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_nested_cast_unchecked() -> None:
     s = pl.Series("cat", [["cat"]]).cast(pl.List(pl.Categorical))
     assert pl.Series([s]).to_list() == [[["cat"]]]
@@ -751,6 +770,7 @@ def test_categorical_vstack_with_local_different_rev_map() -> None:
     assert df3.get_column("a").cast(pl.UInt32).to_list() == [0, 1, 2, 3, 4, 5]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_shift_over_13041() -> None:
     df = pl.DataFrame(
         {
@@ -768,6 +788,7 @@ def test_shift_over_13041() -> None:
 
 @pytest.mark.parametrize("context", [pl.StringCache(), contextlib.nullcontext()])
 @pytest.mark.parametrize("ordering", ["physical", "lexical"])
+@pytest.mark.usefixtures("test_global_and_local")
 def test_sort_categorical_retain_none(
     context: contextlib.AbstractContextManager,  # type: ignore[type-arg]
     ordering: Literal["physical", "lexical"],
@@ -799,6 +820,7 @@ def test_sort_categorical_retain_none(
             ]
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_cast_from_cat_to_numeric() -> None:
     cat_series = pl.Series(
         "cat_series",
@@ -811,12 +833,14 @@ def test_cast_from_cat_to_numeric() -> None:
     assert s.cast(pl.UInt8).sum() == 6
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_cat_preserve_lexical_ordering_on_clear() -> None:
     s = pl.Series("a", ["a", "b"], dtype=pl.Categorical(ordering="lexical"))
     s2 = s.clear()
     assert s.dtype == s2.dtype
 
 
+@pytest.mark.usefixtures("test_global_and_local")
 def test_cat_preserve_lexical_ordering_on_concat() -> None:
     dtype = pl.Categorical(ordering="lexical")
 
@@ -825,6 +849,8 @@ def test_cat_preserve_lexical_ordering_on_concat() -> None:
     assert df2["x"].dtype == dtype
 
 
+@pytest.mark.usefixtures("test_global_and_local")
+@pytest.mark.may_fail_auto_streaming
 def test_cat_append_lexical_sorted_flag() -> None:
     df = pl.DataFrame({"x": [0, 1, 1], "y": ["B", "B", "A"]}).with_columns(
         pl.col("y").cast(pl.Categorical(ordering="lexical"))
@@ -833,11 +859,31 @@ def test_cat_append_lexical_sorted_flag() -> None:
 
     assert not (df2["y"].is_sorted())
 
+    s = pl.Series("a", ["z", "k", "a"], pl.Categorical("lexical"))
+    s1 = s[[0]]
+    s2 = s[[1]]
+    s3 = s[[2]]
+    s1.append(s2)
+    s1.append(s3)
 
+    assert not (s1.is_sorted())
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_cast_physical_lexical_sorted_flag_20864() -> None:
+    df = pl.DataFrame({"s": ["b", "a"], "v": [1, 2]})
+    sorted_physically = df.cast({"s": pl.Categorical("physical")}).sort("s")
+    sorted_lexically = sorted_physically.cast({"s": pl.Categorical("lexical")}).sort(
+        "s"
+    )
+    assert sorted_lexically["s"].to_list() == ["a", "b"]
+
+
+@pytest.mark.usefixtures("test_global_and_local")
 def test_get_cat_categories_multiple_chunks() -> None:
     df = pl.DataFrame(
         [
-            pl.Series("e", ["a", "b"], pl.Enum(["a", "b"])),
+            pl.Series("e", ["a", "b"], pl.Categorical),
         ]
     )
     df = pl.concat(
@@ -845,3 +891,120 @@ def test_get_cat_categories_multiple_chunks() -> None:
     )
     df_cat = df.lazy().select(pl.col("e").cat.get_categories()).collect()
     assert len(df_cat) == 2
+
+
+@pytest.mark.parametrize(
+    "f",
+    [
+        lambda x: (pl.List(pl.Categorical), [x]),
+        lambda x: (pl.Struct({"a": pl.Categorical}), {"a": x}),
+    ],
+)
+def test_nested_categorical_concat(
+    f: Callable[[str], tuple[pl.DataType, list[str] | dict[str, str]]],
+) -> None:
+    dt, va = f("a")
+    _, vb = f("b")
+    a = pl.DataFrame({"x": [va]}, schema={"x": dt})
+    b = pl.DataFrame({"x": [vb]}, schema={"x": dt})
+
+    with pytest.raises(pl.exceptions.StringCacheMismatchError):
+        pl.concat([a, b])
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_perfect_group_by_19452() -> None:
+    n = 40
+    df2 = pl.DataFrame(
+        {
+            "a": pl.int_range(n, eager=True).cast(pl.String).cast(pl.Categorical),
+            "b": pl.int_range(n, eager=True),
+        }
+    )
+
+    assert df2.with_columns(a=(pl.col("b")).over(pl.col("a")))["a"].is_sorted()
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_perfect_group_by_19950() -> None:
+    dtype = pl.Enum(categories=["a", "b", "c"])
+
+    left = pl.DataFrame({"x": "a"}).cast(dtype)
+    right = pl.DataFrame({"x": "a", "y": "b"}).cast(dtype)
+    assert left.join(right, on="x").group_by("y").first().to_dict(as_series=False) == {
+        "y": ["b"],
+        "x": ["a"],
+    }
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_categorical_unique() -> None:
+    s = pl.Series(["a", "b", None], dtype=pl.Categorical)
+    assert s.n_unique() == 3
+    assert s.unique().sort().to_list() == [None, "a", "b"]
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_categorical_unique_20539() -> None:
+    df = pl.DataFrame({"number": [1, 1, 2, 2, 3], "letter": ["a", "b", "b", "c", "c"]})
+
+    result = (
+        df.cast({"letter": pl.Categorical})
+        .group_by("number")
+        .agg(
+            unique=pl.col("letter").unique(maintain_order=True),
+            unique_with_order=pl.col("letter").unique(maintain_order=True),
+        )
+    )
+
+    assert result.sort("number").to_dict(as_series=False) == {
+        "number": [1, 2, 3],
+        "unique": [["a", "b"], ["b", "c"], ["c"]],
+        "unique_with_order": [["a", "b"], ["b", "c"], ["c"]],
+    }
+
+
+@pytest.mark.usefixtures("test_global_and_local")
+def test_categorical_prefill() -> None:
+    # https://github.com/pola-rs/polars/pull/20547#issuecomment-2569473443
+    # test_compare_categorical_single
+    assert (pl.Series(["a"], dtype=pl.Categorical) < "a").to_list() == [False]
+
+    # test_unique_categorical
+    a = pl.Series(["a"], dtype=pl.Categorical)
+    assert a.unique().to_list() == ["a"]
+
+    s = pl.Series(["1", "2", "3"], dtype=pl.Categorical)
+    s = s.filter([True, False, True])
+    assert s.n_unique() == 2
+
+
+@pytest.mark.may_fail_auto_streaming  # not implemented
+def test_categorical_min_max() -> None:
+    schema = pl.Schema(
+        {
+            "a": pl.Categorical("physical"),
+            "b": pl.Categorical("lexical"),
+            "c": pl.Enum(["foo", "bar"]),
+        }
+    )
+    lf = pl.LazyFrame(
+        {
+            "a": ["foo", "bar"],
+            "b": ["foo", "bar"],
+            "c": ["foo", "bar"],
+        },
+        schema=schema,
+    )
+
+    q = lf.select(pl.all().min())
+    result = q.collect()
+    assert q.collect_schema() == schema
+    assert result.schema == schema
+    assert result.to_dict(as_series=False) == {"a": ["foo"], "b": ["bar"], "c": ["foo"]}
+
+    q = lf.select(pl.all().max())
+    result = q.collect()
+    assert q.collect_schema() == schema
+    assert result.schema == schema
+    assert result.to_dict(as_series=False) == {"a": ["bar"], "b": ["foo"], "c": ["bar"]}

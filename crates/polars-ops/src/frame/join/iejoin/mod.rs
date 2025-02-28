@@ -1,19 +1,21 @@
 mod filtered_bit_array;
 mod l1_l2;
 
+use std::cmp::min;
+
 use filtered_bit_array::FilteredBitArray;
 use l1_l2::*;
 use polars_core::chunked_array::ChunkedArray;
 use polars_core::datatypes::{IdxCa, NumericNative, PolarsNumericType};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 use polars_core::utils::{_set_partition_size, split};
 use polars_core::{with_match_physical_numeric_polars_type, POOL};
 use polars_error::{polars_err, PolarsResult};
 use polars_utils::binary_search::ExponentialSearch;
 use polars_utils::itertools::Itertools;
-use polars_utils::slice::GetSaferUnchecked;
-use polars_utils::total_ord::TotalEq;
+use polars_utils::total_ord::{TotalEq, TotalOrd};
 use polars_utils::IdxSize;
 use rayon::prelude::*;
 #[cfg(feature = "serde")]
@@ -40,7 +42,7 @@ impl InequalityOperator {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct IEJoinOptions {
     pub operator1: InequalityOperator,
-    pub operator2: InequalityOperator,
+    pub operator2: Option<InequalityOperator>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -61,10 +63,7 @@ fn ie_join_impl_t<T: PolarsNumericType>(
     let mut left_row_idx: Vec<IdxSize> = vec![];
     let mut right_row_idx: Vec<IdxSize> = vec![];
 
-    let slice_end = match slice {
-        Some((offset, len)) if offset >= 0 => Some(offset.saturating_add_unsigned(len as u64)),
-        _ => None,
-    };
+    let slice_end = slice_end_index(slice);
     let mut match_count = 0;
 
     let ca: &ChunkedArray<T> = x.as_ref().as_ref();
@@ -102,12 +101,12 @@ fn ie_join_impl_t<T: PolarsNumericType>(
         for i in 0..l2_array.len() {
             // Elide bound checks
             unsafe {
-                let item = l2_array.get_unchecked_release(i);
+                let item = l2_array.get_unchecked(i);
                 let p = item.l1_index;
                 l1_array.mark_visited(p as usize, &mut bit_array);
 
                 if item.run_end {
-                    for l2_item in l2_array.get_unchecked_release(run_start..i + 1) {
+                    for l2_item in l2_array.get_unchecked(run_start..i + 1) {
                         let p = l2_item.l1_index;
                         match_count += l1_array.process_lhs_entry(
                             p as usize,
@@ -127,6 +126,78 @@ fn ie_join_impl_t<T: PolarsNumericType>(
             }
         }
     }
+    Ok((left_row_idx, right_row_idx))
+}
+
+fn piecewise_merge_join_impl_t<T, P>(
+    slice: Option<(i64, usize)>,
+    left_order: Option<&[IdxSize]>,
+    right_order: Option<&[IdxSize]>,
+    left_ordered: Series,
+    right_ordered: Series,
+    mut pred: P,
+) -> PolarsResult<(Vec<IdxSize>, Vec<IdxSize>)>
+where
+    T: PolarsNumericType,
+    P: FnMut(&T::Native, &T::Native) -> bool,
+{
+    let slice_end = slice_end_index(slice);
+
+    let mut left_row_idx: Vec<IdxSize> = vec![];
+    let mut right_row_idx: Vec<IdxSize> = vec![];
+
+    let left_ca: &ChunkedArray<T> = left_ordered.as_ref().as_ref();
+    let right_ca: &ChunkedArray<T> = right_ordered.as_ref().as_ref();
+
+    debug_assert!(left_order.is_none_or(|order| order.len() == left_ca.len()));
+    debug_assert!(right_order.is_none_or(|order| order.len() == right_ca.len()));
+
+    let mut left_idx = 0;
+    let mut right_idx = 0;
+    let mut match_count = 0;
+
+    while left_idx < left_ca.len() {
+        debug_assert!(left_ca.get(left_idx).is_some());
+        let left_val = unsafe { left_ca.value_unchecked(left_idx) };
+        while right_idx < right_ca.len() {
+            debug_assert!(right_ca.get(right_idx).is_some());
+            let right_val = unsafe { right_ca.value_unchecked(right_idx) };
+            if pred(&left_val, &right_val) {
+                // If the predicate is true, then it will also be true for all
+                // remaining rows from the right side.
+                let left_row = match left_order {
+                    None => left_idx as IdxSize,
+                    Some(order) => order[left_idx],
+                };
+                let right_end_idx = match slice_end {
+                    None => right_ca.len(),
+                    Some(end) => min(right_ca.len(), (end as usize) - match_count + right_idx),
+                };
+                for included_right_row_idx in right_idx..right_end_idx {
+                    let right_row = match right_order {
+                        None => included_right_row_idx as IdxSize,
+                        Some(order) => order[included_right_row_idx],
+                    };
+                    left_row_idx.push(left_row);
+                    right_row_idx.push(right_row);
+                }
+                match_count += right_end_idx - right_idx;
+                break;
+            } else {
+                right_idx += 1;
+            }
+        }
+        if right_idx == right_ca.len() {
+            // We've reached the end of the right side
+            // so there can be no more matches for LHS rows
+            break;
+        }
+        if slice_end.is_some_and(|end| match_count >= end as usize) {
+            break;
+        }
+        left_idx += 1;
+    }
+
     Ok((left_row_idx, right_row_idx))
 }
 
@@ -206,7 +277,7 @@ pub(super) fn iejoin_par(
         };
 
         if include_block {
-            let (l, r) = unsafe {
+            let (mut l, mut r) = unsafe {
                 (
                     selected_left
                         .iter()
@@ -218,9 +289,21 @@ pub(super) fn iejoin_par(
                         .collect_vec(),
                 )
             };
+            let sorted_flag = if l1_descending {
+                IsSorted::Descending
+            } else {
+                IsSorted::Ascending
+            };
+            // We sorted using the first series
+            l[0].set_sorted_flag(sorted_flag);
+            r[0].set_sorted_flag(sorted_flag);
 
             // Compute the row indexes
-            let (idx_l, idx_r) = iejoin_tuples(l, r, options, None)?;
+            let (idx_l, idx_r) = if options.operator2.is_some() {
+                iejoin_tuples(l, r, options, None)
+            } else {
+                piecewise_merge_join_tuples(l, r, options, None)
+            }?;
 
             if idx_l.is_empty() {
                 return Ok(None);
@@ -264,8 +347,11 @@ pub(super) fn iejoin(
     suffix: Option<PlSmallStr>,
     slice: Option<(i64, usize)>,
 ) -> PolarsResult<DataFrame> {
-    let (left_row_idx, right_row_idx) =
-        iejoin_tuples(selected_left, selected_right, options, slice)?;
+    let (left_row_idx, right_row_idx) = if options.operator2.is_some() {
+        iejoin_tuples(selected_left, selected_right, options, slice)
+    } else {
+        piecewise_merge_join_tuples(selected_left, selected_right, options, slice)
+    }?;
     unsafe { materialize_join(left, right, &left_row_idx, &right_row_idx, suffix) }
 }
 
@@ -276,6 +362,7 @@ unsafe fn materialize_join(
     right_row_idx: &IdxCa,
     suffix: Option<PlSmallStr>,
 ) -> PolarsResult<DataFrame> {
+    try_raise_keyboard_interrupt();
     let (join_left, join_right) = {
         POOL.join(
             || left.take_unchecked(left_row_idx),
@@ -308,7 +395,12 @@ fn iejoin_tuples(
     };
 
     let op1 = options.operator1;
-    let op2 = options.operator2;
+    let op2 = match options.operator2 {
+        None => {
+            return Err(polars_err!(ComputeError: "IEJoin requires two inequality operators"));
+        },
+        Some(op2) => op2,
+    };
 
     // Determine the sort order based on the comparison operators used.
     // We want to sort L1 so that "x[i] op1 x[j]" is true for j > i,
@@ -347,14 +439,12 @@ fn iejoin_tuples(
         .with_order_descending(l2_descending);
     // Get the indexes into l1, ordered by y values.
     // l2_order is the same as "p" from Khayyat et al.
-    let l2_order = y_ordered_by_x
-        .arg_sort(l2_sort_options)
-        .slice(
-            y_ordered_by_x.null_count() as i64,
-            y_ordered_by_x.len() - y_ordered_by_x.null_count(),
-        )
-        .rechunk();
-    let l2_order = l2_order.downcast_get(0).unwrap().values().as_slice();
+    let l2_order = y_ordered_by_x.arg_sort(l2_sort_options).slice(
+        y_ordered_by_x.null_count() as i64,
+        y_ordered_by_x.len() - y_ordered_by_x.null_count(),
+    );
+    let l2_order = l2_order.rechunk();
+    let l2_order = l2_order.downcast_as_array().values().as_slice();
 
     let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(x.dtype(), |$T| {
          ie_join_impl_t::<$T>(
@@ -380,4 +470,141 @@ fn iejoin_tuples(
         ),
     };
     Ok((left_row_idx, right_row_idx))
+}
+
+/// Piecewise merge join, for joins with only a single inequality.
+fn piecewise_merge_join_tuples(
+    selected_left: Vec<Series>,
+    selected_right: Vec<Series>,
+    options: &IEJoinOptions,
+    slice: Option<(i64, usize)>,
+) -> PolarsResult<(IdxCa, IdxCa)> {
+    if selected_left.len() != 1 {
+        return Err(
+            polars_err!(ComputeError: "Piecewise merge join requires exactly one expression from the left DataFrame"),
+        );
+    };
+    if selected_right.len() != 1 {
+        return Err(
+            polars_err!(ComputeError: "Piecewise merge join requires exactly one expression from the right DataFrame"),
+        );
+    };
+    if options.operator2.is_some() {
+        return Err(
+            polars_err!(ComputeError: "Piecewise merge join expects only one inequality operator"),
+        );
+    }
+
+    let op = options.operator1;
+    // The left side is sorted such that if the condition is false, it will also
+    // be false for the same RHS row and all following LHS rows.
+    // The right side is sorted such that if the condition is true then it is also
+    // true for the same LHS row and all following RHS rows.
+    // The desired sort order should match the l1 order used in iejoin_par
+    // so we don't need to re-sort slices when doing a parallel join.
+    let descending = matches!(op, InequalityOperator::Gt | InequalityOperator::GtEq);
+
+    let left = selected_left[0].to_physical_repr().into_owned();
+    let mut right = selected_right[0].to_physical_repr().into_owned();
+    let must_cast = right.dtype().matches_schema_type(left.dtype())?;
+    if must_cast {
+        right = right.cast(left.dtype())?;
+    }
+
+    fn get_sorted(series: Series, descending: bool) -> (Series, Option<IdxCa>) {
+        let expected_flag = if descending {
+            IsSorted::Descending
+        } else {
+            IsSorted::Ascending
+        };
+        if (series.is_sorted_flag() == expected_flag || series.len() <= 1) && !series.has_nulls() {
+            // Fast path, no need to re-sort
+            (series, None)
+        } else {
+            let sort_options = SortOptions::default()
+                .with_nulls_last(false)
+                .with_order_descending(descending);
+
+            // Get order and slice to ignore any null values, which cannot be match results
+            let mut order = series.arg_sort(sort_options).slice(
+                series.null_count() as i64,
+                series.len() - series.null_count(),
+            );
+            order.rechunk_mut();
+            let ordered = unsafe { series.take_unchecked(&order) };
+            (ordered, Some(order))
+        }
+    }
+
+    let (left_ordered, left_order) = get_sorted(left, descending);
+    debug_assert!(left_order
+        .as_ref()
+        .is_none_or(|order| order.chunks().len() == 1));
+    let left_order = left_order
+        .as_ref()
+        .map(|order| order.downcast_get(0).unwrap().values().as_slice());
+
+    let (right_ordered, right_order) = get_sorted(right, descending);
+    debug_assert!(right_order
+        .as_ref()
+        .is_none_or(|order| order.chunks().len() == 1));
+    let right_order = right_order
+        .as_ref()
+        .map(|order| order.downcast_get(0).unwrap().values().as_slice());
+
+    let (left_row_idx, right_row_idx) = with_match_physical_numeric_polars_type!(left_ordered.dtype(), |$T| {
+        match op {
+            InequalityOperator::Lt => piecewise_merge_join_impl_t::<$T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_lt(r),
+            ),
+            InequalityOperator::LtEq => piecewise_merge_join_impl_t::<$T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_le(r),
+            ),
+            InequalityOperator::Gt => piecewise_merge_join_impl_t::<$T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_gt(r),
+            ),
+            InequalityOperator::GtEq => piecewise_merge_join_impl_t::<$T, _>(
+                slice,
+                left_order,
+                right_order,
+                left_ordered,
+                right_ordered,
+                |l, r| l.tot_ge(r),
+            ),
+        }
+    })?;
+
+    debug_assert_eq!(left_row_idx.len(), right_row_idx.len());
+    let left_row_idx = IdxCa::from_vec("".into(), left_row_idx);
+    let right_row_idx = IdxCa::from_vec("".into(), right_row_idx);
+    let (left_row_idx, right_row_idx) = match slice {
+        None => (left_row_idx, right_row_idx),
+        Some((offset, len)) => (
+            left_row_idx.slice(offset, len),
+            right_row_idx.slice(offset, len),
+        ),
+    };
+    Ok((left_row_idx, right_row_idx))
+}
+
+fn slice_end_index(slice: Option<(i64, usize)>) -> Option<i64> {
+    match slice {
+        Some((offset, len)) if offset >= 0 => Some(offset.saturating_add_unsigned(len as u64)),
+        _ => None,
+    }
 }

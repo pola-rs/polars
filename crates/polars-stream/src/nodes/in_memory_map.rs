@@ -56,7 +56,10 @@ impl ComputeNode for InMemoryMapNode {
         {
             if recv[0] == PortState::Done {
                 let df = sink_node.get_output()?;
-                let mut source_node = InMemorySourceNode::new(Arc::new(map.call_udf(df.unwrap())?));
+                let mut source_node = InMemorySourceNode::new(
+                    Arc::new(map.call_udf(df.unwrap())?),
+                    MorselSeq::default(),
+                );
                 source_node.initialize(*num_pipelines);
                 *self = Self::Source(source_node);
             }
@@ -86,16 +89,16 @@ impl ComputeNode for InMemoryMapNode {
     fn spawn<'env, 's>(
         &'env mut self,
         scope: &'s TaskScope<'s, 'env>,
-        recv: &mut [Option<RecvPort<'_>>],
-        send: &mut [Option<SendPort<'_>>],
+        recv_ports: &mut [Option<RecvPort<'_>>],
+        send_ports: &mut [Option<SendPort<'_>>],
         state: &'s ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         match self {
             Self::Sink { sink_node, .. } => {
-                sink_node.spawn(scope, recv, &mut [], state, join_handles)
+                sink_node.spawn(scope, recv_ports, &mut [], state, join_handles)
             },
-            Self::Source(source) => source.spawn(scope, &mut [], send, state, join_handles),
+            Self::Source(source) => source.spawn(scope, &mut [], send_ports, state, join_handles),
             Self::Done => unreachable!(),
         }
     }

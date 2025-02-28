@@ -12,6 +12,8 @@ description = "Physical expression implementation of the Polars project."
 ahash = { workspace = true }
 arrow = { workspace = true }
 bitflags = { workspace = true }
+hashbrown = { workspace = true }
+num-traits = { workspace = true }
 once_cell = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random"] }
@@ -19,8 +21,10 @@ polars-io = { workspace = true, features = ["lazy"] }
 polars-json = { workspace = true, optional = true }
 polars-ops = { workspace = true, features = ["chunked_ids"] }
 polars-plan = { workspace = true }
+polars-row = { workspace = true }
 polars-time = { workspace = true, optional = true }
 polars-utils = { workspace = true }
+rand = { workspace = true }
 rayon = { workspace = true }
 
 [features]
@@ -45,6 +49,7 @@ dtype-full = [
   "dtype-decimal",
   "dtype-duration",
   "dtype-i16",
+  "dtype-i128",
   "dtype-i8",
   "dtype-struct",
   "dtype-time",
@@ -55,10 +60,11 @@ dtype-array = ["polars-plan/dtype-array", "polars-ops/dtype-array"]
 dtype-categorical = ["polars-plan/dtype-categorical"]
 dtype-date = ["polars-plan/dtype-date", "polars-time/dtype-date", "temporal"]
 dtype-datetime = ["polars-plan/dtype-datetime", "polars-time/dtype-datetime", "temporal"]
-dtype-decimal = ["polars-plan/dtype-decimal"]
+dtype-decimal = ["polars-plan/dtype-decimal", "dtype-i128"]
 dtype-duration = ["polars-plan/dtype-duration", "polars-time/dtype-duration", "temporal"]
 dtype-i16 = ["polars-plan/dtype-i16"]
 dtype-i8 = ["polars-plan/dtype-i8"]
+dtype-i128 = ["polars-plan/dtype-i128"]
 dtype-struct = ["polars-plan/dtype-struct", "polars-ops/dtype-struct"]
 dtype-time = ["polars-plan/dtype-time", "polars-time/dtype-time", "temporal"]
 dtype-u16 = ["polars-plan/dtype-u16"]
@@ -68,8 +74,8 @@ dtype-u8 = ["polars-plan/dtype-u8"]
 approx_unique = ["polars-plan/approx_unique"]
 is_in = ["polars-plan/is_in", "polars-ops/is_in"]
 
+bitwise = ["polars-core/bitwise", "polars-plan/bitwise"]
 round_series = ["polars-plan/round_series", "polars-ops/round_series"]
 is_between = ["polars-plan/is_between"]
 dynamic_group_by = ["polars-plan/dynamic_group_by", "polars-time", "temporal"]
-propagate_nans = ["polars-plan/propagate_nans"]
-panic_on_schema = ["polars-plan/panic_on_schema"]
+propagate_nans = ["polars-plan/propagate_nans", "polars-ops/propagate_nans"]

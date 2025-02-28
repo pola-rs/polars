@@ -142,7 +142,7 @@ impl Display for StructFunction {
     }
 }
 
-impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
+impl From<StructFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
     fn from(func: StructFunction) -> Self {
         use StructFunction::*;
         match func {
@@ -159,12 +159,12 @@ impl From<StructFunction> for SpecialEq<Arc<dyn SeriesUdf>> {
     }
 }
 
-pub(super) fn get_by_name(s: &Series, name: &str) -> PolarsResult<Series> {
+pub(super) fn get_by_name(s: &Column, name: &str) -> PolarsResult<Column> {
     let ca = s.struct_()?;
-    ca.field_by_name(name)
+    ca.field_by_name(name).map(Column::from)
 }
 
-pub(super) fn rename_fields(s: &Series, names: Arc<[PlSmallStr]>) -> PolarsResult<Series> {
+pub(super) fn rename_fields(s: &Column, names: Arc<[PlSmallStr]>) -> PolarsResult<Column> {
     let ca = s.struct_()?;
     let fields = ca
         .fields_as_series()
@@ -176,12 +176,12 @@ pub(super) fn rename_fields(s: &Series, names: Arc<[PlSmallStr]>) -> PolarsResul
             s
         })
         .collect::<Vec<_>>();
-    let mut out = StructChunked::from_series(ca.name().clone(), &fields)?;
+    let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())?;
     out.zip_outer_validity(ca);
-    Ok(out.into_series())
+    Ok(out.into_column())
 }
 
-pub(super) fn prefix_fields(s: &Series, prefix: &str) -> PolarsResult<Series> {
+pub(super) fn prefix_fields(s: &Column, prefix: &str) -> PolarsResult<Column> {
     let ca = s.struct_()?;
     let fields = ca
         .fields_as_series()
@@ -193,12 +193,12 @@ pub(super) fn prefix_fields(s: &Series, prefix: &str) -> PolarsResult<Series> {
             s
         })
         .collect::<Vec<_>>();
-    let mut out = StructChunked::from_series(ca.name().clone(), &fields)?;
+    let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())?;
     out.zip_outer_validity(ca);
-    Ok(out.into_series())
+    Ok(out.into_column())
 }
 
-pub(super) fn suffix_fields(s: &Series, suffix: &str) -> PolarsResult<Series> {
+pub(super) fn suffix_fields(s: &Column, suffix: &str) -> PolarsResult<Column> {
     let ca = s.struct_()?;
     let fields = ca
         .fields_as_series()
@@ -210,25 +210,25 @@ pub(super) fn suffix_fields(s: &Series, suffix: &str) -> PolarsResult<Series> {
             s
         })
         .collect::<Vec<_>>();
-    let mut out = StructChunked::from_series(ca.name().clone(), &fields)?;
+    let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())?;
     out.zip_outer_validity(ca);
-    Ok(out.into_series())
+    Ok(out.into_column())
 }
 
 #[cfg(feature = "json")]
-pub(super) fn to_json(s: &Series) -> PolarsResult<Series> {
+pub(super) fn to_json(s: &Column) -> PolarsResult<Column> {
     let ca = s.struct_()?;
     let dtype = ca.dtype().to_arrow(CompatLevel::newest());
 
     let iter = ca.chunks().iter().map(|arr| {
-        let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
+        let arr = polars_compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
         polars_json::json::write::serialize_to_utf8(arr.as_ref())
     });
 
-    Ok(StringChunked::from_chunk_iter(ca.name().clone(), iter).into_series())
+    Ok(StringChunked::from_chunk_iter(ca.name().clone(), iter).into_column())
 }
 
-pub(super) fn with_fields(args: &[Series]) -> PolarsResult<Series> {
+pub(super) fn with_fields(args: &[Column]) -> PolarsResult<Column> {
     let s = &args[0];
 
     let ca = s.struct_()?;
@@ -241,11 +241,11 @@ pub(super) fn with_fields(args: &[Series]) -> PolarsResult<Series> {
     }
 
     for field in &args[1..] {
-        fields.insert(field.name(), field);
+        fields.insert(field.name(), field.as_materialized_series());
     }
 
     let new_fields = fields.into_values().cloned().collect::<Vec<_>>();
-    let mut out = StructChunked::from_series(ca.name().clone(), &new_fields)?;
+    let mut out = StructChunked::from_series(ca.name().clone(), ca.len(), new_fields.iter())?;
     out.zip_outer_validity(ca);
-    Ok(out.into_series())
+    Ok(out.into_column())
 }

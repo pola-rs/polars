@@ -30,12 +30,16 @@ hex = { workspace = true, optional = true }
 indexmap = { workspace = true }
 memchr = { workspace = true }
 num-traits = { workspace = true }
+once_cell = { workspace = true }
 rand = { workspace = true, optional = true, features = ["small_rng", "std"] }
 rand_distr = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
+regex-syntax = { workspace = true }
 serde = { workspace = true, optional = true }
 serde_json = { workspace = true, optional = true }
+strum_macros = { workspace = true }
+unicode-normalization = { workspace = true, optional = true }
 unicode-reverse = { workspace = true, optional = true }
 
 [dependencies.jsonpath_lib]
@@ -61,9 +65,10 @@ dtype-struct = ["polars-core/dtype-struct", "polars-core/temporal"]
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
+dtype-i128 = ["polars-core/dtype-i128"]
 dtype-i16 = ["polars-core/dtype-i16"]
 dtype-array = ["polars-core/dtype-array"]
-dtype-decimal = ["polars-core/dtype-decimal"]
+dtype-decimal = ["polars-core/dtype-decimal", "dtype-i128"]
 object = ["polars-core/object"]
 propagate_nans = []
 performant = ["polars-core/performant", "fused"]
@@ -90,6 +95,7 @@ binary_encoding = ["base64", "hex"]
 string_encoding = ["base64", "hex"]
 
 # ops
+bitwise = ["polars-core/bitwise"]
 to_dummies = []
 interpolate = []
 interpolate_by = []
@@ -100,6 +106,7 @@ diff = []
 pct_change = ["diff"]
 strings = ["polars-core/strings"]
 string_pad = ["polars-core/strings"]
+string_normalize = ["polars-core/strings", "unicode-normalization"]
 string_reverse = ["polars-core/strings", "unicode-reverse"]
 string_to_integer = ["polars-core/strings"]
 extract_jsonpath = ["serde_json", "jsonpath_lib", "polars-json"]
@@ -110,6 +117,7 @@ rolling_window = ["polars-core/rolling_window"]
 rolling_window_by = ["polars-core/rolling_window_by"]
 moment = []
 mode = []
+index_of = []
 search_sorted = []
 merge_sorted = []
 top_k = []

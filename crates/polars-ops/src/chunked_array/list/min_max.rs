@@ -55,6 +55,7 @@ fn min_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
                 Int16 => dispatch_min::<i16>(values, offsets, arr.validity()),
                 Int32 => dispatch_min::<i32>(values, offsets, arr.validity()),
                 Int64 => dispatch_min::<i64>(values, offsets, arr.validity()),
+                Int128 => dispatch_min::<i128>(values, offsets, arr.validity()),
                 UInt8 => dispatch_min::<u8>(values, offsets, arr.validity()),
                 UInt16 => dispatch_min::<u16>(values, offsets, arr.validity()),
                 UInt32 => dispatch_min::<u32>(values, offsets, arr.validity()),
@@ -77,18 +78,18 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().min()));
                 Ok(out.into_series())
             },
-            dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(dt, |$T| {
-
-                    let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
+            dt if dt.to_physical().is_primitive_numeric() => {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
+                    let out: ChunkedArray<$T> = ca.to_physical_repr().apply_amortized_generic(|opt_s| {
                             let s = opt_s?;
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.min()
                     });
-                    Ok(out.into_series())
+                    // restore logical type
+                    unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            _ => Ok(ca
+            dt => ca
                 .try_apply_amortized(|s| {
                     let s = s.as_ref();
                     let sc = s.min_reduce()?;
@@ -96,7 +97,8 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
                 })?
                 .explode()
                 .unwrap()
-                .into_series()),
+                .into_series()
+                .cast(dt),
         }
     }
 
@@ -105,7 +107,7 @@ pub(super) fn list_min_function(ca: &ListChunked) -> PolarsResult<Series> {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => Ok(min_list_numerical(ca, dt)),
+        dt if dt.is_primitive_numeric() => Ok(min_list_numerical(ca, dt)),
         _ => inner(ca),
     }
 }
@@ -164,6 +166,7 @@ fn max_list_numerical(ca: &ListChunked, inner_type: &DataType) -> Series {
                 Int16 => dispatch_max::<i16>(values, offsets, arr.validity()),
                 Int32 => dispatch_max::<i32>(values, offsets, arr.validity()),
                 Int64 => dispatch_max::<i64>(values, offsets, arr.validity()),
+                Int128 => dispatch_max::<i128>(values, offsets, arr.validity()),
                 UInt8 => dispatch_max::<u8>(values, offsets, arr.validity()),
                 UInt16 => dispatch_max::<u16>(values, offsets, arr.validity()),
                 UInt32 => dispatch_max::<u32>(values, offsets, arr.validity()),
@@ -186,19 +189,18 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                     .apply_amortized_generic(|s| s.and_then(|s| s.as_ref().bool().unwrap().max()));
                 Ok(out.into_series())
             },
-            dt if dt.is_numeric() => {
-                with_match_physical_numeric_polars_type!(dt, |$T| {
-
-                    let out: ChunkedArray<$T> = ca.apply_amortized_generic(|opt_s| {
+            dt if dt.to_physical().is_primitive_numeric() => {
+                with_match_physical_numeric_polars_type!(dt.to_physical(), |$T| {
+                    let out: ChunkedArray<$T> = ca.to_physical_repr().apply_amortized_generic(|opt_s| {
                             let s = opt_s?;
                             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
                             ca.max()
                     });
-                    Ok(out.into_series())
-
+                    // restore logical type
+                    unsafe { out.into_series().from_physical_unchecked(dt) }
                 })
             },
-            _ => Ok(ca
+            dt => ca
                 .try_apply_amortized(|s| {
                     let s = s.as_ref();
                     let sc = s.max_reduce()?;
@@ -206,7 +208,8 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
                 })?
                 .explode()
                 .unwrap()
-                .into_series()),
+                .into_series()
+                .cast(dt),
         }
     }
 
@@ -215,7 +218,7 @@ pub(super) fn list_max_function(ca: &ListChunked) -> PolarsResult<Series> {
     };
 
     match ca.inner_dtype() {
-        dt if dt.is_numeric() => Ok(max_list_numerical(ca, dt)),
+        dt if dt.is_primitive_numeric() => Ok(max_list_numerical(ca, dt)),
         _ => inner(ca),
     }
 }

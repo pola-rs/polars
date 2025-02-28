@@ -220,7 +220,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     where
         I: TrustedLen<Item = T>,
     {
-        unsafe { self.extend_trusted_len_values_unchecked(iterator) }
+        unsafe { self.extend_values(iterator) }
     }
 
     /// Extends the [`MutablePrimitiveArray`] from an iterator of values of trusted len.
@@ -229,7 +229,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
     /// # Safety
     /// The iterator must be trusted len.
     #[inline]
-    pub unsafe fn extend_trusted_len_values_unchecked<I>(&mut self, iterator: I)
+    pub fn extend_values<I>(&mut self, iterator: I)
     where
         I: Iterator<Item = T>,
     {
@@ -370,7 +370,7 @@ impl<T: NativeType> MutablePrimitiveArray<T> {
 
     /// Sets values.
     /// # Panic
-    /// Panics iff the values' length is not equal to the existing validity's len.
+    /// Panics iff the values' length is not equal to the existing values' len.
     pub fn set_values(&mut self, values: Vec<T>) {
         assert_eq!(values.len(), self.values.len());
         self.values = values;

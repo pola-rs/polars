@@ -11,7 +11,7 @@ class ExprNameNameSpace:
 
     _accessor = "name"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._from_pyexpr = expr._from_pyexpr
         self._pyexpr = expr._pyexpr
 
@@ -102,7 +102,9 @@ class ExprNameNameSpace:
         ...     }
         ... )
         >>> df.with_columns(
-        ...     pl.all().reverse().name.map(lambda c: c.rstrip("_reverse").lower())
+        ...     pl.all()
+        ...     .reverse()
+        ...     .name.map(lambda c: c.removesuffix("_reverse").lower())
         ... )
         shape: (3, 4)
         ┌───────────┬───────────┬─────┬─────┐

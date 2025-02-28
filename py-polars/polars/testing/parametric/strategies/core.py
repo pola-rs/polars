@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Collection, Mapping, Sequence, overload
+from typing import TYPE_CHECKING, Any, overload
 
 import hypothesis.strategies as st
 from hypothesis.errors import InvalidArgument
 
+from polars import select, when
 from polars._utils.deprecation import issue_deprecation_warning
 from polars.dataframe import DataFrame
-from polars.datatypes import DataType, DataTypeClass, Null
+from polars.datatypes import Array, Boolean, DataType, DataTypeClass, List, Null, Struct
 from polars.series import Series
 from polars.string_cache import StringCache
 from polars.testing.parametric.strategies._utils import flexhash
@@ -16,6 +18,7 @@ from polars.testing.parametric.strategies.data import data
 from polars.testing.parametric.strategies.dtype import _instantiate_dtype, dtypes
 
 if TYPE_CHECKING:
+    from collections.abc import Collection, Sequence
     from typing import Literal
 
     from hypothesis.strategies import DrawFn, SearchStrategy
@@ -29,7 +32,7 @@ _COL_LIMIT = 5  # max number of generated cols
 
 
 @st.composite
-def series(  # noqa: D417
+def series(
     draw: DrawFn,
     /,
     *,
@@ -40,6 +43,7 @@ def series(  # noqa: D417
     strategy: SearchStrategy[Any] | None = None,
     allow_null: bool = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     unique: bool = False,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
@@ -72,6 +76,8 @@ def series(  # noqa: D417
         Allow nulls as possible values and allow the `Null` data type by default.
     allow_chunks : bool
         Allow the Series to contain multiple chunks.
+    allow_masked_out : bool
+        Allow the nulls to contain masked out elements.
     unique : bool, optional
         indicate whether Series values should all be distinct.
     allowed_dtypes : {list,set}, optional
@@ -198,6 +204,13 @@ def series(  # noqa: D417
     if isinstance(name, st.SearchStrategy):
         name = draw(name)
 
+    do_mask_out = (
+        allow_masked_out
+        and allow_null
+        and isinstance(dtype, (List, Array, Struct))
+        and draw(st.booleans())
+    )
+
     if size == 0:
         values = []
     else:
@@ -205,7 +218,7 @@ def series(  # noqa: D417
         if strategy is None:
             strategy = data(
                 dtype,  # type: ignore[arg-type]
-                allow_null=allow_null,
+                allow_null=allow_null and not do_mask_out,
                 **kwargs,
             )
 
@@ -219,6 +232,20 @@ def series(  # noqa: D417
         )
 
     s = Series(name=name, values=values, dtype=dtype)
+
+    # Apply masking out of values
+    if do_mask_out:
+        values = draw(
+            st.lists(
+                st.booleans(),
+                min_size=size,
+                max_size=size,
+                unique_by=(flexhash if unique else None),
+            )
+        )
+
+        mask = Series(name=None, values=values, dtype=Boolean)
+        s = select(when(mask).then(s).alias(s.name)).to_series()
 
     # Apply chunking
     if allow_chunks and size > 1 and draw(st.booleans()):
@@ -240,6 +267,7 @@ def dataframes(
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     allow_time_zones: bool = True,
@@ -259,6 +287,7 @@ def dataframes(
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     allow_time_zones: bool = True,
@@ -267,7 +296,7 @@ def dataframes(
 
 
 @st.composite
-def dataframes(  # noqa: D417
+def dataframes(
     draw: DrawFn,
     /,
     cols: int | column | Sequence[column] | None = None,
@@ -280,6 +309,7 @@ def dataframes(  # noqa: D417
     include_cols: Sequence[column] | column | None = None,
     allow_null: bool | Mapping[str, bool] = True,
     allow_chunks: bool = True,
+    allow_masked_out: bool = True,
     allowed_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     excluded_dtypes: Collection[PolarsDataType] | PolarsDataType | None = None,
     allow_time_zones: bool = True,
@@ -319,6 +349,8 @@ def dataframes(  # noqa: D417
         Accepts either a boolean or a mapping of column names to booleans.
     allow_chunks : bool
         Allow the DataFrame to contain multiple chunks.
+    allow_masked_out : bool
+        Allow the nulls to contain masked out elements.
     allowed_dtypes : {list,set}, optional
         when automatically generating data, allow only these dtypes.
     excluded_dtypes : {list,set}, optional
@@ -473,6 +505,7 @@ def dataframes(  # noqa: D417
                     strategy=c.strategy,
                     allow_null=c.allow_null,  # type: ignore[arg-type]
                     allow_chunks=allow_series_chunks,
+                    allow_masked_out=allow_masked_out,
                     unique=c.unique,
                     allowed_dtypes=allowed_dtypes,
                     excluded_dtypes=excluded_dtypes,

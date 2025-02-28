@@ -6,7 +6,7 @@ use super::PySeries;
 use crate::error::PyPolarsErr;
 use crate::map::series::{call_lambda_and_extract, ApplyLambda};
 use crate::prelude::*;
-use crate::py_modules::SERIES;
+use crate::py_modules::pl_series;
 use crate::{apply_method_all_arrow_series2, raise_err};
 
 #[pymethods]
@@ -73,20 +73,27 @@ impl PySeries {
                     | DataType::Binary
                     | DataType::Array(_, _)
                     | DataType::Time
+                    | DataType::Decimal(_, _)
             ) || !skip_nulls
             {
                 let mut avs = Vec::with_capacity(self.series.len());
                 let s = self.series.rechunk();
-                let iter = s.iter().map(|av| match (skip_nulls, av) {
-                    (true, AnyValue::Null) => AnyValue::Null,
-                    (_, av) => {
-                        let input = Wrap(av);
-                        call_lambda_and_extract::<_, Wrap<AnyValue>>(py, function, input)
-                            .unwrap()
-                            .0
-                    },
-                });
-                avs.extend(iter);
+
+                for av in s.iter() {
+                    let out = match (skip_nulls, av) {
+                        (true, AnyValue::Null) => AnyValue::Null,
+                        (_, av) => {
+                            let av: Option<Wrap<AnyValue>> =
+                                call_lambda_and_extract(py, function, Wrap(av))?;
+                            match av {
+                                None => AnyValue::Null,
+                                Some(av) => av.0,
+                            }
+                        },
+                    };
+                    avs.push(out)
+                }
+
                 return Ok(Series::new(self.series.name().clone(), &avs).into());
             }
 
@@ -126,6 +133,17 @@ impl PySeries {
                 },
                 Some(DataType::Int64) => {
                     let ca: Int64Chunked = dispatch_apply!(
+                        series,
+                        apply_lambda_with_primitive_out_type,
+                        py,
+                        function,
+                        0,
+                        None
+                    )?;
+                    ca.into_series()
+                },
+                Some(DataType::Int128) => {
+                    let ca: Int128Chunked = dispatch_apply!(
                         series,
                         apply_lambda_with_primitive_out_type,
                         py,
@@ -226,16 +244,17 @@ impl PySeries {
                 },
                 Some(DataType::List(inner)) => {
                     // Make sure the function returns a Series of the correct data type.
-                    let function_owned = function.to_object(py);
-                    let dtype_py = Wrap((*inner).clone()).to_object(py);
+                    let function_owned = function.clone().unbind();
+                    let dtype_py = Wrap((*inner).clone());
                     let function_wrapped =
-                        PyCFunction::new_closure_bound(py, None, None, move |args, _kwargs| {
+                        PyCFunction::new_closure(py, None, None, move |args, _kwargs| {
                             Python::with_gil(|py| {
                                 let out = function_owned.call1(py, args)?;
-                                SERIES.call1(py, ("", out, dtype_py.clone()))
+                                pl_series(py).call1(py, ("", out, &dtype_py))
                             })
                         })?
-                        .to_object(py);
+                        .into_any()
+                        .unbind();
 
                     let ca = dispatch_apply!(
                         series,

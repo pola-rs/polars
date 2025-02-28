@@ -12,10 +12,8 @@ fn new_null_count(input: &[ExprIR]) -> AExpr {
         function: FunctionExpr::NullCount,
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
-            fmt_str: "",
-            cast_to_supertypes: None,
-            check_lengths: UnsafeBool::default(),
             flags: FunctionFlags::ALLOW_GROUP_AWARE | FunctionFlags::RETURNS_SCALAR,
+            ..Default::default()
         },
     }
 }
@@ -152,7 +150,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(true))
             ) && in_filter =>
             {
-                // Only in filter as we we might change the name from "literal"
+                // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
                 return Ok(Some(expr_arena.get(*right).clone()));
             },
@@ -210,7 +208,7 @@ impl OptimizationRule for SimplifyBooleanRule {
                 AExpr::Literal(LiteralValue::Boolean(false))
             ) && in_filter =>
             {
-                // Only in filter as we we might change the name from "literal"
+                // Only in filter as we might change the name from "literal"
                 // to whatever lhs columns is.
                 return Ok(Some(expr_arena.get(*right).clone()));
             },

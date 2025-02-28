@@ -48,7 +48,7 @@ fn test_issue_2472() -> PolarsResult<()> {
         .extract(lit(r"(\d+-){4}(\w+)-"), 2)
         .cast(DataType::Int32)
         .alias("age");
-    let predicate = col("age").is_in(lit(Series::new("".into(), [2i32])));
+    let predicate = col("age").is_in(lit(Series::new("".into(), [2i32])), false);
 
     let out = base
         .clone()
@@ -72,7 +72,7 @@ fn test_pass_unrelated_apply() -> PolarsResult<()> {
     let q = df
         .lazy()
         .with_column(col("A").map(
-            |s| Ok(Some(s.is_null().into_series())),
+            |s| Ok(Some(s.is_null().into_column())),
             GetOutput::from_type(DataType::Boolean),
         ))
         .filter(col("B").gt(lit(10i32)));

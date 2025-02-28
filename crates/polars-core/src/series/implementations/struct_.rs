@@ -26,11 +26,13 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
         self.0.compute_len()
     }
 
-    fn _get_flags(&self) -> MetadataFlags {
-        MetadataFlags::empty()
+    fn _get_flags(&self) -> StatisticsFlags {
+        self.0.get_flags()
     }
 
-    fn _set_flags(&mut self, _flags: MetadataFlags) {}
+    fn _set_flags(&mut self, flags: StatisticsFlags) {
+        self.0.set_flags(flags);
+    }
 
     // TODO! remove this. Very slow. Asof join should use row-encoding.
     unsafe fn equal_element(&self, idx_self: usize, idx_other: usize, other: &Series) -> bool {
@@ -43,7 +45,7 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
     }
 
     #[cfg(feature = "algorithm_group_by")]
-    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsProxy> {
+    fn group_tuples(&self, multithreaded: bool, sorted: bool) -> PolarsResult<GroupsType> {
         let ca = self.0.get_row_encoded(Default::default())?;
         ca.group_tuples(multithreaded, sorted)
     }
@@ -55,8 +57,15 @@ impl PrivateSeries for SeriesWrap<StructChunked> {
             .map(|ca| ca.into_series())
     }
 
+    fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
+        invalid_operation_panic!(into_total_eq_inner, self)
+    }
+    fn into_total_ord_inner<'a>(&'a self) -> Box<dyn TotalOrdInner + 'a> {
+        invalid_operation_panic!(into_total_ord_inner, self)
+    }
+
     #[cfg(feature = "algorithm_group_by")]
-    unsafe fn agg_list(&self, groups: &GroupsProxy) -> Series {
+    unsafe fn agg_list(&self, groups: &GroupsType) -> Series {
         self.0.agg_list(groups)
     }
 
@@ -107,6 +116,10 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
         polars_ensure!(self.0.dtype() == other.dtype(), append);
         self.0.append(other.as_ref().as_ref())
     }
+    fn append_owned(&mut self, other: Series) -> PolarsResult<()> {
+        polars_ensure!(self.0.dtype() == other.dtype(), append);
+        self.0.append_owned(other.take_inner())
+    }
 
     fn extend(&mut self, other: &Series) -> PolarsResult<()> {
         polars_ensure!(self.0.dtype() == other.dtype(), extend);
@@ -138,8 +151,7 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn rechunk(&self) -> Series {
-        let ca = self.0.rechunk();
-        ca.into_series()
+        self.0.rechunk().into_owned().into_series()
     }
 
     fn new_from_index(&self, _index: usize, _length: usize) -> Series {
@@ -148,10 +160,6 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn cast(&self, dtype: &DataType, cast_options: CastOptions) -> PolarsResult<Series> {
         self.0.cast_with_options(dtype, cast_options)
-    }
-
-    fn get(&self, index: usize) -> PolarsResult<AnyValue> {
-        self.0.get_any_value(index)
     }
 
     unsafe fn get_unchecked(&self, index: usize) -> AnyValue {
@@ -232,7 +240,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
     }
 
     fn reverse(&self) -> Series {
-        self.0._apply_fields(|s| s.reverse()).unwrap().into_series()
+        let validity = self
+            .rechunk_validity()
+            .map(|x| x.into_iter().rev().collect::<Bitmap>());
+        self.0
+            ._apply_fields(|s| s.reverse())
+            .unwrap()
+            .with_outer_validity(validity)
+            .into_series()
     }
 
     fn shift(&self, periods: i64) -> Series {
@@ -245,6 +260,14 @@ impl SeriesTrait for SeriesWrap<StructChunked> {
 
     fn as_any(&self) -> &dyn Any {
         &self.0
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        &mut self.0
+    }
+
+    fn as_arc_any(self: Arc<Self>) -> Arc<dyn Any + Send + Sync> {
+        self as _
     }
 
     fn sort_with(&self, options: SortOptions) -> PolarsResult<Series> {

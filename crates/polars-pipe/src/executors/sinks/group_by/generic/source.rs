@@ -67,7 +67,7 @@ impl Source for GroupBySource {
                 let file = polars_utils::open_file(&spilled)?;
                 let reader = IpcReader::new(file);
                 let spilled = reader.finish().unwrap();
-                if spilled.n_chunks() > 1 {
+                if spilled.first_col_n_chunks() > 1 {
                     for spilled in flatten_df_iter(&spilled) {
                         self.global_table
                             .process_partition_from_dumped(partition, &spilled)

@@ -1,8 +1,13 @@
+use std::sync::Arc;
+
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 use super::{ArrowDataType, Metadata};
+
+pub static DTYPE_ENUM_VALUES: &str = "_PL_ENUM_VALUES";
+pub static DTYPE_CATEGORICAL: &str = "_PL_CATEGORICAL";
 
 /// Represents Arrow's metadata of a "column".
 ///
@@ -22,7 +27,7 @@ pub struct Field {
     /// Its nullability
     pub is_nullable: bool,
     /// Additional custom (opaque) metadata.
-    pub metadata: Metadata,
+    pub metadata: Option<Arc<Metadata>>,
 }
 
 /// Support for `ArrowSchema::from_iter([field, ..])`
@@ -46,11 +51,14 @@ impl Field {
     /// Creates a new [`Field`] with metadata.
     #[inline]
     pub fn with_metadata(self, metadata: Metadata) -> Self {
+        if metadata.is_empty() {
+            return self;
+        }
         Self {
             name: self.name,
             dtype: self.dtype,
             is_nullable: self.is_nullable,
-            metadata,
+            metadata: Some(Arc::new(metadata)),
         }
     }
 
@@ -59,61 +67,20 @@ impl Field {
     pub fn dtype(&self) -> &ArrowDataType {
         &self.dtype
     }
-}
 
-#[cfg(feature = "arrow_rs")]
-impl From<Field> for arrow_schema::Field {
-    fn from(value: Field) -> Self {
-        Self::new(
-            value.name.to_string(),
-            value.dtype.into(),
-            value.is_nullable,
-        )
-        .with_metadata(
-            value
-                .metadata
-                .into_iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect(),
-        )
+    pub fn is_enum(&self) -> bool {
+        if let Some(md) = &self.metadata {
+            md.get(DTYPE_ENUM_VALUES).is_some()
+        } else {
+            false
+        }
     }
-}
 
-#[cfg(feature = "arrow_rs")]
-impl From<arrow_schema::Field> for Field {
-    fn from(value: arrow_schema::Field) -> Self {
-        (&value).into()
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<&arrow_schema::Field> for Field {
-    fn from(value: &arrow_schema::Field) -> Self {
-        let dtype = value.data_type().clone().into();
-        let metadata = value
-            .metadata()
-            .iter()
-            .map(|(k, v)| (PlSmallStr::from_str(k), PlSmallStr::from_str(v)))
-            .collect();
-        Self::new(
-            PlSmallStr::from_str(value.name().as_str()),
-            dtype,
-            value.is_nullable(),
-        )
-        .with_metadata(metadata)
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<arrow_schema::FieldRef> for Field {
-    fn from(value: arrow_schema::FieldRef) -> Self {
-        value.as_ref().into()
-    }
-}
-
-#[cfg(feature = "arrow_rs")]
-impl From<&arrow_schema::FieldRef> for Field {
-    fn from(value: &arrow_schema::FieldRef) -> Self {
-        value.as_ref().into()
+    pub fn is_categorical(&self) -> bool {
+        if let Some(md) = &self.metadata {
+            md.get(DTYPE_CATEGORICAL).is_some()
+        } else {
+            false
+        }
     }
 }

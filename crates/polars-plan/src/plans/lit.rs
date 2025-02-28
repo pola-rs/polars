@@ -1,7 +1,7 @@
 use std::hash::{Hash, Hasher};
 
 #[cfg(feature = "temporal")]
-use polars_core::export::chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
+use chrono::{Duration as ChronoDuration, NaiveDate, NaiveDateTime};
 use polars_core::prelude::*;
 use polars_core::utils::materialize_dyn_int;
 use polars_utils::hashing::hash_to_partition;
@@ -41,6 +41,9 @@ pub enum LiteralValue {
     Int32(i32),
     /// A 64-bit integer number.
     Int64(i64),
+    #[cfg(feature = "dtype-i128")]
+    /// A 128-bit integer number.
+    Int128(i128),
     /// A 32-bit floating point number.
     Float32(f32),
     /// A 64-bit floating point number.
@@ -92,18 +95,14 @@ impl LiteralValue {
         match self {
             LiteralValue::Int(_) | LiteralValue::Float(_) | LiteralValue::StrCat(_) => {
                 let av = self.to_any_value().unwrap();
-                av.try_into().unwrap()
+                av.into()
             },
             lv => lv,
         }
     }
 
-    pub(crate) fn projects_as_scalar(&self) -> bool {
-        match self {
-            LiteralValue::Range { low, high, .. } => high.saturating_sub(*low) == 1,
-            LiteralValue::Series(s) => s.len() == 1,
-            _ => true,
-        }
+    pub fn is_scalar(&self) -> bool {
+        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
     }
 
     pub fn to_any_value(&self) -> Option<AnyValue> {
@@ -123,6 +122,8 @@ impl LiteralValue {
             Int16(v) => AnyValue::Int16(*v),
             Int32(v) => AnyValue::Int32(*v),
             Int64(v) => AnyValue::Int64(*v),
+            #[cfg(feature = "dtype-i128")]
+            Int128(v) => AnyValue::Int128(*v),
             Float32(v) => AnyValue::Float32(*v),
             Float64(v) => AnyValue::Float64(*v),
             #[cfg(feature = "dtype-decimal")]
@@ -133,7 +134,7 @@ impl LiteralValue {
             #[cfg(feature = "dtype-date")]
             Date(v) => AnyValue::Date(*v),
             #[cfg(feature = "dtype-datetime")]
-            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz),
+            DateTime(v, tu, tz) => AnyValue::Datetime(*v, *tu, tz.as_ref()),
             #[cfg(feature = "dtype-time")]
             Time(v) => AnyValue::Time(*v),
             Series(_) => return None,
@@ -196,6 +197,8 @@ impl LiteralValue {
             LiteralValue::Int16(_) => DataType::Int16,
             LiteralValue::Int32(_) => DataType::Int32,
             LiteralValue::Int64(_) => DataType::Int64,
+            #[cfg(feature = "dtype-i128")]
+            LiteralValue::Int128(_) => DataType::Int128,
             LiteralValue::Float32(_) => DataType::Float32,
             LiteralValue::Float64(_) => DataType::Float64,
             #[cfg(feature = "dtype-decimal")]
@@ -220,7 +223,7 @@ impl LiteralValue {
         }
     }
 
-    pub(crate) fn new_idxsize(value: IdxSize) -> Self {
+    pub fn new_idxsize(value: IdxSize) -> Self {
         #[cfg(feature = "bigidx")]
         {
             LiteralValue::UInt64(value)
@@ -231,8 +234,13 @@ impl LiteralValue {
         }
     }
 
-    pub fn is_scalar(&self) -> bool {
-        !matches!(self, LiteralValue::Series(_) | LiteralValue::Range { .. })
+    pub fn is_null(&self) -> bool {
+        match self {
+            Self::Null => true,
+            Self::OtherScalar(sc) => sc.is_null(),
+            Self::Series(s) => s.len() == 1 && s.null_count() == 1,
+            _ => false,
+        }
     }
 }
 
@@ -266,7 +274,7 @@ impl Literal for String {
     }
 }
 
-impl<'a> Literal for &'a str {
+impl Literal for &str {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::String(PlSmallStr::from_str(self)))
     }
@@ -278,61 +286,62 @@ impl Literal for Vec<u8> {
     }
 }
 
-impl<'a> Literal for &'a [u8] {
+impl Literal for &[u8] {
     fn lit(self) -> Expr {
         Expr::Literal(LiteralValue::Binary(self.to_vec()))
     }
 }
 
-impl TryFrom<AnyValue<'_>> for LiteralValue {
-    type Error = PolarsError;
-    fn try_from(value: AnyValue) -> PolarsResult<Self> {
+impl From<AnyValue<'_>> for LiteralValue {
+    fn from(value: AnyValue) -> Self {
         match value {
-            AnyValue::Null => Ok(Self::Null),
-            AnyValue::Boolean(b) => Ok(Self::Boolean(b)),
-            AnyValue::String(s) => Ok(Self::String(PlSmallStr::from_str(s))),
-            AnyValue::Binary(b) => Ok(Self::Binary(b.to_vec())),
+            AnyValue::Null => Self::Null,
+            AnyValue::Boolean(b) => Self::Boolean(b),
+            AnyValue::String(s) => Self::String(PlSmallStr::from_str(s)),
+            AnyValue::Binary(b) => Self::Binary(b.to_vec()),
             #[cfg(feature = "dtype-u8")]
-            AnyValue::UInt8(u) => Ok(Self::UInt8(u)),
+            AnyValue::UInt8(u) => Self::UInt8(u),
             #[cfg(feature = "dtype-u16")]
-            AnyValue::UInt16(u) => Ok(Self::UInt16(u)),
-            AnyValue::UInt32(u) => Ok(Self::UInt32(u)),
-            AnyValue::UInt64(u) => Ok(Self::UInt64(u)),
+            AnyValue::UInt16(u) => Self::UInt16(u),
+            AnyValue::UInt32(u) => Self::UInt32(u),
+            AnyValue::UInt64(u) => Self::UInt64(u),
             #[cfg(feature = "dtype-i8")]
-            AnyValue::Int8(i) => Ok(Self::Int8(i)),
+            AnyValue::Int8(i) => Self::Int8(i),
             #[cfg(feature = "dtype-i16")]
-            AnyValue::Int16(i) => Ok(Self::Int16(i)),
-            AnyValue::Int32(i) => Ok(Self::Int32(i)),
-            AnyValue::Int64(i) => Ok(Self::Int64(i)),
-            AnyValue::Float32(f) => Ok(Self::Float32(f)),
-            AnyValue::Float64(f) => Ok(Self::Float64(f)),
+            AnyValue::Int16(i) => Self::Int16(i),
+            AnyValue::Int32(i) => Self::Int32(i),
+            AnyValue::Int64(i) => Self::Int64(i),
+            AnyValue::Float32(f) => Self::Float32(f),
+            AnyValue::Float64(f) => Self::Float64(f),
             #[cfg(feature = "dtype-decimal")]
-            AnyValue::Decimal(v, scale) => Ok(Self::Decimal(v, scale)),
+            AnyValue::Decimal(v, scale) => Self::Decimal(v, scale),
             #[cfg(feature = "dtype-date")]
-            AnyValue::Date(v) => Ok(LiteralValue::Date(v)),
+            AnyValue::Date(v) => LiteralValue::Date(v),
             #[cfg(feature = "dtype-datetime")]
-            AnyValue::Datetime(value, tu, tz) => Ok(LiteralValue::DateTime(value, tu, tz.clone())),
+            AnyValue::Datetime(value, tu, tz) => LiteralValue::DateTime(value, tu, tz.cloned()),
+            #[cfg(feature = "dtype-datetime")]
+            AnyValue::DatetimeOwned(value, tu, tz) => {
+                LiteralValue::DateTime(value, tu, tz.as_ref().map(AsRef::as_ref).cloned())
+            },
             #[cfg(feature = "dtype-duration")]
-            AnyValue::Duration(value, tu) => Ok(LiteralValue::Duration(value, tu)),
+            AnyValue::Duration(value, tu) => LiteralValue::Duration(value, tu),
             #[cfg(feature = "dtype-time")]
-            AnyValue::Time(v) => Ok(LiteralValue::Time(v)),
-            AnyValue::List(l) => Ok(Self::Series(SpecialEq::new(l))),
-            AnyValue::StringOwned(o) => Ok(Self::String(o)),
+            AnyValue::Time(v) => LiteralValue::Time(v),
+            AnyValue::List(l) => Self::Series(SpecialEq::new(l)),
+            AnyValue::StringOwned(o) => Self::String(o),
             #[cfg(feature = "dtype-categorical")]
             AnyValue::Categorical(c, rev_mapping, arr) | AnyValue::Enum(c, rev_mapping, arr) => {
                 if arr.is_null() {
-                    Ok(Self::String(PlSmallStr::from_str(rev_mapping.get(c))))
+                    Self::String(PlSmallStr::from_str(rev_mapping.get(c)))
                 } else {
                     unsafe {
-                        Ok(Self::String(PlSmallStr::from_str(
+                        Self::String(PlSmallStr::from_str(
                             arr.deref_unchecked().value(c as usize),
-                        )))
+                        ))
                     }
                 }
             },
-            v => polars_bail!(
-                ComputeError: "cannot convert any-value {:?} to literal", v
-            ),
+            _ => LiteralValue::OtherScalar(Scalar::new(value.dtype(), value.into_static())),
         }
     }
 }
@@ -445,6 +454,11 @@ impl Literal for ChronoDuration {
 #[cfg(feature = "dtype-duration")]
 impl Literal for Duration {
     fn lit(self) -> Expr {
+        assert!(
+            self.months() == 0,
+            "Cannot create literal duration that is not of fixed length; found {}",
+            self
+        );
         let ns = self.duration_ns();
         Expr::Literal(LiteralValue::Duration(
             if self.negative() { -ns } else { ns },

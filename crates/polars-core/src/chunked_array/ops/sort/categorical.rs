@@ -53,6 +53,7 @@ impl CategoricalChunked {
             descending,
             multithreaded: true,
             maintain_order: false,
+            limit: None,
         })
     }
 
@@ -66,17 +67,18 @@ impl CategoricalChunked {
                 options,
                 self.physical().null_count(),
                 self.len(),
+                IsSorted::Not,
+                false,
             )
         } else {
             self.physical().arg_sort(options)
         }
     }
 
-    /// Retrieve the indexes need to sort this and the other arrays.
-
+    /// Retrieve the indices needed to sort this and the other arrays.
     pub(crate) fn arg_sort_multiple(
         &self,
-        by: &[Series],
+        by: &[Column],
         options: &SortMultipleOptions,
     ) -> PolarsResult<IdxCa> {
         if self.uses_lexical_ordering() {
@@ -177,7 +179,7 @@ mod test {
                 SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
-            let cat = out.categorical()?;
+            let cat = out.as_materialized_series().categorical()?;
             assert_order(cat, &["a", "a", "b", "c"]);
 
             let out = df.sort(
@@ -185,7 +187,7 @@ mod test {
                 SortMultipleOptions::default().with_order_descending_multi([false, false]),
             )?;
             let out = out.column("cat")?;
-            let cat = out.categorical()?;
+            let cat = out.as_materialized_series().categorical()?;
             assert_order(cat, &["b", "c", "a", "a"]);
         }
         Ok(())

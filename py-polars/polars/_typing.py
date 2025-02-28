@@ -1,17 +1,14 @@
 from __future__ import annotations
 
+from collections.abc import Collection, Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import (
+    IO,
     TYPE_CHECKING,
     Any,
-    Collection,
-    Iterable,
-    List,
+    Callable,
     Literal,
-    Mapping,
     Protocol,
-    Sequence,
-    Tuple,
-    Type,
     TypedDict,
     TypeVar,
     Union,
@@ -55,29 +52,29 @@ class ArrowStreamExportable(Protocol):
 
 # Data types
 PolarsDataType: TypeAlias = Union["DataTypeClass", "DataType"]
-PolarsTemporalType: TypeAlias = Union[Type["TemporalType"], "TemporalType"]
-PolarsIntegerType: TypeAlias = Union[Type["IntegerType"], "IntegerType"]
+PolarsTemporalType: TypeAlias = Union[type["TemporalType"], "TemporalType"]
+PolarsIntegerType: TypeAlias = Union[type["IntegerType"], "IntegerType"]
 OneOrMoreDataTypes: TypeAlias = Union[PolarsDataType, Iterable[PolarsDataType]]
 PythonDataType: TypeAlias = Union[
-    Type[int],
-    Type[float],
-    Type[bool],
-    Type[str],
-    Type["date"],
-    Type["time"],
-    Type["datetime"],
-    Type["timedelta"],
-    Type[List[Any]],
-    Type[Tuple[Any, ...]],
-    Type[bytes],
-    Type[object],
-    Type["Decimal"],
-    Type[None],
+    type[int],
+    type[float],
+    type[bool],
+    type[str],
+    type["date"],
+    type["time"],
+    type["datetime"],
+    type["timedelta"],
+    type[list[Any]],
+    type[tuple[Any, ...]],
+    type[bytes],
+    type[object],
+    type["Decimal"],
+    type[None],
 ]
 
 SchemaDefinition: TypeAlias = Union[
-    Mapping[str, Union[PolarsDataType, PythonDataType]],
-    Sequence[Union[str, Tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
+    Mapping[str, Union[PolarsDataType, PythonDataType, None]],
+    Sequence[Union[str, tuple[str, Union[PolarsDataType, PythonDataType, None]]]],
 ]
 SchemaDict: TypeAlias = Mapping[str, PolarsDataType]
 
@@ -85,7 +82,7 @@ NumericLiteral: TypeAlias = Union[int, float, "Decimal"]
 TemporalLiteral: TypeAlias = Union["date", "time", "datetime", "timedelta"]
 NonNestedLiteral: TypeAlias = Union[NumericLiteral, TemporalLiteral, str, bool, bytes]
 # Python literal types (can convert into a `lit` expression)
-PythonLiteral: TypeAlias = Union[NonNestedLiteral, List[Any]]
+PythonLiteral: TypeAlias = Union[NonNestedLiteral, list[Any]]
 # Inputs that can convert into a `col` expression
 IntoExprColumn: TypeAlias = Union["Expr", "Series", str]
 # Inputs that can convert into an expression
@@ -112,6 +109,9 @@ IndexOrder: TypeAlias = Literal["c", "fortran"]
 IpcCompression: TypeAlias = Literal["uncompressed", "lz4", "zstd"]
 JoinValidation: TypeAlias = Literal["m:m", "m:1", "1:m", "1:1"]
 Label: TypeAlias = Literal["left", "right", "datapoint"]
+MaintainOrderJoin: TypeAlias = Literal[
+    "none", "left", "right", "left_right", "right_left"
+]
 NonExistent: TypeAlias = Literal["raise", "null"]
 NullBehavior: TypeAlias = Literal["ignore", "drop"]
 ParallelStrategy: TypeAlias = Literal[
@@ -126,6 +126,7 @@ PivotAgg: TypeAlias = Literal[
 RankMethod: TypeAlias = Literal["average", "min", "max", "dense", "ordinal", "random"]
 Roll: TypeAlias = Literal["raise", "forward", "backward"]
 SerializationFormat: TypeAlias = Literal["binary", "json"]
+Endianness: TypeAlias = Literal["little", "big"]
 SizeUnit: TypeAlias = Literal[
     "b",
     "kb",
@@ -150,6 +151,7 @@ StartBy: TypeAlias = Literal[
     "sunday",
 ]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
+UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
 UnstackDirection: TypeAlias = Literal["vertical", "horizontal"]
 MapElementsStrategy: TypeAlias = Literal["thread_local", "threading"]
@@ -164,9 +166,7 @@ JoinStrategy: TypeAlias = Literal[
 RollingInterpolationMethod: TypeAlias = Literal[
     "nearest", "higher", "lower", "midpoint", "linear"
 ]  # QuantileInterpolOptions
-ToStructStrategy: TypeAlias = Literal[
-    "first_non_null", "max_width"
-]  # ListToStructWidthStrategy
+ListToStructWidthStrategy: TypeAlias = Literal["first_non_null", "max_width"]
 
 # The following have no equivalent on the Rust side
 ConcatMethod = Literal[
@@ -176,6 +176,10 @@ ConcatMethod = Literal[
     "diagonal_relaxed",
     "horizontal",
     "align",
+    "align_full",
+    "align_inner",
+    "align_left",
+    "align_right",
 ]
 CorrelationMethod: TypeAlias = Literal["pearson", "spearman"]
 DbReadEngine: TypeAlias = Literal["adbc", "connectorx"]
@@ -204,7 +208,7 @@ FrameInitTypes: TypeAlias = Union[
 # Excel IO
 ColumnFormatDict: TypeAlias = Mapping[
     # dict of colname(s) or selector(s) to format string or dict
-    Union[ColumnNameOrSelector, Tuple[ColumnNameOrSelector, ...]],
+    Union[ColumnNameOrSelector, tuple[ColumnNameOrSelector, ...]],
     Union[str, Mapping[str, str]],
 ]
 ConditionalFormatDict: TypeAlias = Mapping[
@@ -214,12 +218,12 @@ ConditionalFormatDict: TypeAlias = Mapping[
 ]
 ColumnTotalsDefinition: TypeAlias = Union[
     # dict of colname(s) to str, a collection of str, or a boolean
-    Mapping[Union[ColumnNameOrSelector, Tuple[ColumnNameOrSelector]], str],
+    Mapping[Union[ColumnNameOrSelector, tuple[ColumnNameOrSelector]], str],
     Sequence[str],
     bool,
 ]
 ColumnWidthsDefinition: TypeAlias = Union[
-    Mapping[ColumnNameOrSelector, Union[Tuple[str, ...], int]], int
+    Mapping[ColumnNameOrSelector, Union[tuple[str, ...], int]], int
 ]
 RowTotalsDefinition: TypeAlias = Union[
     # dict of colname to str(s), a collection of str, or a boolean
@@ -234,10 +238,10 @@ ParametricProfileNames: TypeAlias = Literal["fast", "balanced", "expensive"]
 # typevars for core polars types
 PolarsType = TypeVar("PolarsType", "DataFrame", "LazyFrame", "Series", "Expr")
 FrameType = TypeVar("FrameType", "DataFrame", "LazyFrame")
-BufferInfo: TypeAlias = Tuple[int, int, int]
+BufferInfo: TypeAlias = tuple[int, int, int]
 
 # type alias for supported spreadsheet engines
-ExcelSpreadsheetEngine: TypeAlias = Literal["xlsx2csv", "openpyxl", "calamine"]
+ExcelSpreadsheetEngine: TypeAlias = Literal["calamine", "openpyxl", "xlsx2csv"]
 
 
 class SeriesBuffers(TypedDict):
@@ -300,3 +304,16 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[Literal["cpu", "gpu"], "GPUEngine"]
+
+FileSource: TypeAlias = Union[
+    str,
+    Path,
+    IO[bytes],
+    bytes,
+    list[str],
+    list[Path],
+    list[IO[bytes]],
+    list[bytes],
+]
+
+JSONEncoder = Union[Callable[[Any], bytes], Callable[[Any], str]]

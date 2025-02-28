@@ -47,7 +47,7 @@ where
 /// Returns whether the data type supports creating a NumPy view.
 pub(super) fn dtype_supports_view(dtype: &DataType) -> bool {
     match dtype {
-        dt if dt.is_numeric() => true,
+        dt if dt.is_primitive_numeric() => true,
         DataType::Datetime(_, _) | DataType::Duration(_) => true,
         DataType::Array(inner, _) => dtype_supports_view(inner.as_ref()),
         _ => false,
@@ -74,26 +74,22 @@ pub(super) fn reshape_numpy_array(
     arr: PyObject,
     height: usize,
     width: usize,
-) -> PyObject {
+) -> PyResult<PyObject> {
     let shape = arr
-        .getattr(py, intern!(py, "shape"))
-        .unwrap()
-        .extract::<Vec<usize>>(py)
-        .unwrap();
+        .getattr(py, intern!(py, "shape"))?
+        .extract::<Vec<usize>>(py)?;
 
     if shape.len() == 1 {
         // In this case, we can avoid allocating a Vec.
         let new_shape = (height, width);
         arr.call_method1(py, intern!(py, "reshape"), new_shape)
-            .unwrap()
     } else {
         let mut new_shape_vec = vec![height, width];
         for v in &shape[1..] {
             new_shape_vec.push(*v)
         }
-        let new_shape = PyTuple::new_bound(py, new_shape_vec);
+        let new_shape = PyTuple::new(py, new_shape_vec)?;
         arr.call_method1(py, intern!(py, "reshape"), new_shape)
-            .unwrap()
     }
 }
 
@@ -105,23 +101,21 @@ pub(super) fn polars_dtype_to_np_temporal_dtype<'a>(
     use numpy::datetime::{units, Datetime, Timedelta};
     match dtype {
         DataType::Datetime(TimeUnit::Milliseconds, _) => {
-            Datetime::<units::Milliseconds>::get_dtype_bound(py)
+            Datetime::<units::Milliseconds>::get_dtype(py)
         },
         DataType::Datetime(TimeUnit::Microseconds, _) => {
-            Datetime::<units::Microseconds>::get_dtype_bound(py)
+            Datetime::<units::Microseconds>::get_dtype(py)
         },
         DataType::Datetime(TimeUnit::Nanoseconds, _) => {
-            Datetime::<units::Nanoseconds>::get_dtype_bound(py)
+            Datetime::<units::Nanoseconds>::get_dtype(py)
         },
         DataType::Duration(TimeUnit::Milliseconds) => {
-            Timedelta::<units::Milliseconds>::get_dtype_bound(py)
+            Timedelta::<units::Milliseconds>::get_dtype(py)
         },
         DataType::Duration(TimeUnit::Microseconds) => {
-            Timedelta::<units::Microseconds>::get_dtype_bound(py)
+            Timedelta::<units::Microseconds>::get_dtype(py)
         },
-        DataType::Duration(TimeUnit::Nanoseconds) => {
-            Timedelta::<units::Nanoseconds>::get_dtype_bound(py)
-        },
+        DataType::Duration(TimeUnit::Nanoseconds) => Timedelta::<units::Nanoseconds>::get_dtype(py),
         _ => panic!("only Datetime/Duration inputs supported, got {}", dtype),
     }
 }

@@ -4,21 +4,24 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::path_utils::is_cloud_url;
-use polars_io::predicates::apply_predicate;
+use polars_io::predicates::{apply_predicate, SkipBatchPredicate};
 use polars_utils::mmap::MemSlice;
+use polars_utils::open_file;
 use rayon::prelude::*;
 
 use super::*;
+use crate::ScanPredicate;
 
 pub struct IpcExec {
     pub(crate) sources: ScanSources,
     pub(crate) file_info: FileInfo,
-    pub(crate) predicate: Option<Arc<dyn PhysicalExpr>>,
+    pub(crate) predicate: Option<ScanPredicate>,
     #[allow(dead_code)]
     pub(crate) options: IpcScanOptions,
     pub(crate) file_options: FileScanOptions,
     pub(crate) hive_parts: Option<Arc<Vec<HivePartitions>>>,
     pub(crate) cloud_options: Option<CloudOptions>,
+    pub(crate) metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
 }
 
 impl IpcExec {
@@ -38,7 +41,12 @@ impl IpcExec {
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
             })
         } else {
-            self.read_sync()?
+            self.read_sync().map_err(|e| match &self.sources {
+                ScanSources::Paths(paths) => {
+                    e.context(format!("reading paths {:?} failed", paths.as_ref()).into())
+                },
+                _ => e,
+            })?
         };
 
         if self.file_options.rechunk {
@@ -77,14 +85,14 @@ impl IpcExec {
             let memslice = match source {
                 ScanSourceRef::Path(path) => {
                     let file = match idx_to_cached_file(index) {
-                        None => std::fs::File::open(path)?,
+                        None => open_file(path)?,
                         Some(f) => f?,
                     };
 
                     MemSlice::from_file(&file)?
                 },
                 ScanSourceRef::File(file) => MemSlice::from_file(file)?,
-                ScanSourceRef::Buffer(buff) => MemSlice::from_bytes(buff.clone()),
+                ScanSourceRef::Buffer(buff) => buff.clone(),
             };
 
             IpcReader::new(std::io::Cursor::new(memslice))
@@ -146,7 +154,7 @@ impl IpcExec {
         };
 
         let dfs = if let Some(predicate) = self.predicate.clone() {
-            let predicate = phys_expr_to_io_expr(predicate);
+            let predicate = phys_expr_to_io_expr(predicate.predicate);
             let predicate = Some(predicate.as_ref());
 
             POOL.install(|| {
@@ -188,6 +196,75 @@ impl IpcExec {
 
             self.read_impl(|i| Some(cache_entries[i].try_open_check_latest()))
         })
+    }
+}
+
+impl ScanExec for IpcExec {
+    fn read(
+        &mut self,
+        with_columns: Option<Arc<[PlSmallStr]>>,
+        slice: Option<(usize, usize)>,
+        predicate: Option<ScanPredicate>,
+        _skip_batch_predicate: Option<Arc<dyn SkipBatchPredicate>>,
+        row_index: Option<polars_io::RowIndex>,
+    ) -> PolarsResult<DataFrame> {
+        self.file_options.with_columns = with_columns;
+        self.file_options.slice = slice.map(|(s, l)| (s as i64, l));
+        self.predicate = predicate;
+        self.file_options.row_index = row_index;
+
+        if self.file_info.reader_schema.is_none() {
+            self.schema()?;
+        }
+        self.read()
+    }
+
+    fn schema(&mut self) -> PolarsResult<&SchemaRef> {
+        if self.file_info.reader_schema.is_some() {
+            return Ok(&self.file_info.schema);
+        }
+
+        let arrow_schema = match &self.metadata {
+            None => {
+                // @TODO!: Cache the memslice here.
+                let memslice = self
+                    .sources
+                    .at(0)
+                    .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
+                IpcReader::new(std::io::Cursor::new(memslice)).schema()?
+            },
+            Some(md) => md.schema.clone(),
+        };
+        self.file_info.schema =
+            Arc::new(Schema::from_iter(arrow_schema.iter().map(
+                |(name, field)| (name.clone(), DataType::from_arrow_field(field)),
+            )));
+        self.file_info.reader_schema = Some(arrow::Either::Left(arrow_schema));
+
+        Ok(&self.file_info.schema)
+    }
+
+    fn num_unfiltered_rows(&mut self) -> PolarsResult<IdxSize> {
+        let (lb, ub) = self.file_info.row_estimation;
+        if lb.is_some_and(|lb| lb == ub) {
+            return Ok(ub as IdxSize);
+        }
+
+        // @TODO!: Cache the memslice here.
+        let memslice = self
+            .sources
+            .at(0)
+            .to_memslice_async_assume_latest(self.sources.is_cloud_url())?;
+        let mut reader = std::io::Cursor::new(memslice);
+
+        let num_unfiltered_rows = match &self.metadata {
+            None => arrow::io::ipc::read::get_row_count(&mut reader)?,
+            Some(md) => arrow::io::ipc::read::get_row_count_from_blocks(&mut reader, &md.blocks)?,
+        } as usize;
+
+        self.file_info.row_estimation = (Some(num_unfiltered_rows), num_unfiltered_rows);
+
+        Ok(num_unfiltered_rows as IdxSize)
     }
 }
 

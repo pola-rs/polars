@@ -4,9 +4,10 @@ import contextlib
 import functools
 import re
 import sys
+from collections.abc import Collection
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal as PyDecimal
-from typing import TYPE_CHECKING, Any, Collection, Optional, Union
+from typing import TYPE_CHECKING, Any, Optional, Union
 
 from polars.datatypes.classes import (
     Array,
@@ -27,6 +28,7 @@ from polars.datatypes.classes import (
     Int16,
     Int32,
     Int64,
+    Int128,
     List,
     Null,
     Object,
@@ -64,10 +66,14 @@ if TYPE_CHECKING:
 
 
 def is_polars_dtype(
-    dtype: Any, *, include_unknown: bool = False
+    dtype: Any,
+    *,
+    include_unknown: bool = False,
+    require_instantiated: bool = False,
 ) -> TypeGuard[PolarsDataType]:
     """Indicate whether the given input is a Polars dtype, or dtype specialization."""
-    is_dtype = isinstance(dtype, (DataType, DataTypeClass))
+    check_classes = DataType if require_instantiated else (DataType, DataTypeClass)
+    is_dtype = isinstance(dtype, check_classes)
 
     if not include_unknown:
         return is_dtype and dtype != Unknown
@@ -144,6 +150,7 @@ class _DataTypeMappings:
             Duration: "duration",
             Float32: "f32",
             Float64: "f64",
+            Int128: "i128",
             Int16: "i16",
             Int32: "i32",
             Int64: "i64",
@@ -172,6 +179,7 @@ class _DataTypeMappings:
             Duration: timedelta,
             Float32: float,
             Float64: float,
+            Int128: int,
             Int16: int,
             Int32: int,
             Int64: int,
@@ -198,6 +206,7 @@ class _DataTypeMappings:
             # (np.dtype().kind, np.dtype().itemsize)
             ("M", 8): Datetime,
             ("b", 1): Boolean,
+            ("f", 2): Float32,
             ("f", 4): Float32,
             ("f", 8): Float64,
             ("i", 1): Int8,
@@ -318,7 +327,7 @@ def numpy_char_code_to_dtype(dtype_char: str) -> PolarsDataType:
         return Binary
     try:
         return DataTypeMappings.NUMPY_KIND_AND_ITEMSIZE_TO_DTYPE[
-            (dtype.kind, dtype.itemsize)
+            dtype.kind, dtype.itemsize
         ]
     except KeyError:  # pragma: no cover
         msg = f"cannot parse numpy data type {dtype!r} into Polars data type"

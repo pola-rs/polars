@@ -1,13 +1,16 @@
 use polars::prelude::*;
 use polars_core::utils::arrow::array::Utf8ViewArray;
+use polars_lazy::dsl;
 use pyo3::prelude::*;
 
+use crate::error::PyPolarsErr;
 #[cfg(feature = "object")]
 use crate::object::OBJECT_NAME;
-use crate::Wrap;
+use crate::{PyExpr, Wrap};
 
 // Don't change the order of these!
 #[repr(u8)]
+#[derive(Clone)]
 pub(crate) enum PyDataType {
     Int8,
     Int16,
@@ -34,6 +37,7 @@ pub(crate) enum PyDataType {
     Decimal(Option<usize>, usize),
     Array(usize),
     Enum(Utf8ViewArray),
+    Int128,
 }
 
 impl From<&DataType> for PyDataType {
@@ -44,6 +48,7 @@ impl From<&DataType> for PyDataType {
             DataType::Int16 => Int16,
             DataType::Int32 => Int32,
             DataType::Int64 => Int64,
+            DataType::Int128 => Int128,
             DataType::UInt8 => UInt8,
             DataType::UInt16 => UInt16,
             DataType::UInt32 => UInt32,
@@ -107,6 +112,7 @@ impl From<PyDataType> for DataType {
             PyDataType::Struct => Struct(vec![]),
             PyDataType::Decimal(p, s) => Decimal(p, Some(s)),
             PyDataType::Array(width) => Array(DataType::Null.into(), width),
+            PyDataType::Int128 => Int128,
         }
     }
 }
@@ -116,4 +122,16 @@ impl<'py> FromPyObject<'py> for PyDataType {
         let dt = ob.extract::<Wrap<DataType>>()?;
         Ok(dt.0.into())
     }
+}
+
+#[pyfunction]
+pub fn _get_dtype_max(dt: Wrap<DataType>) -> PyResult<PyExpr> {
+    let v = dt.0.max().map_err(PyPolarsErr::from)?;
+    Ok(dsl::lit(v).into())
+}
+
+#[pyfunction]
+pub fn _get_dtype_min(dt: Wrap<DataType>) -> PyResult<PyExpr> {
+    let v = dt.0.min().map_err(PyPolarsErr::from)?;
+    Ok(dsl::lit(v).into())
 }

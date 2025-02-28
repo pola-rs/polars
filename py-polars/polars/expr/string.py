@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import warnings
-from typing import TYPE_CHECKING, Mapping
+from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import polars._reexport as pl
 from polars import functions as F
 from polars._utils.deprecation import (
     deprecate_function,
+    deprecate_nonkeyword_arguments,
     issue_deprecation_warning,
 )
 from polars._utils.parse import parse_into_expression
@@ -27,6 +29,7 @@ if TYPE_CHECKING:
         PolarsTemporalType,
         TimeUnit,
         TransferEncoding,
+        UnicodeForm,
     )
     from polars._utils.various import NoDefault
 
@@ -36,7 +39,7 @@ class ExprStringNameSpace:
 
     _accessor = "str"
 
-    def __init__(self, expr: Expr):
+    def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
     def to_date(
@@ -312,6 +315,7 @@ class ExprStringNameSpace:
             msg = "`dtype` must be of type {Date, Datetime, Time}"
             raise ValueError(msg)
 
+    @deprecate_nonkeyword_arguments(allowed_args=["self"], version="1.20.0")
     def to_decimal(
         self,
         inference_length: int = 100,
@@ -523,7 +527,7 @@ class ExprStringNameSpace:
         """
         return wrap_expr(self._pyexpr.str_to_titlecase())
 
-    def strip_chars(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading and trailing characters.
 
@@ -580,7 +584,7 @@ class ExprStringNameSpace:
         characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars(characters))
 
-    def strip_chars_start(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars_start(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove leading characters.
 
@@ -649,7 +653,7 @@ class ExprStringNameSpace:
         characters = parse_into_expression(characters, str_as_lit=True)
         return wrap_expr(self._pyexpr.str_strip_chars_start(characters))
 
-    def strip_chars_end(self, characters: IntoExprColumn | None = None) -> Expr:
+    def strip_chars_end(self, characters: IntoExpr = None) -> Expr:
         r"""
         Remove trailing characters.
 
@@ -994,7 +998,7 @@ class ExprStringNameSpace:
         self, pattern: str | Expr, *, literal: bool = False, strict: bool = True
     ) -> Expr:
         """
-        Return the index position of the first substring matching a pattern.
+        Return the bytes offset of the first substring matching a pattern.
 
         If the pattern is not found, returns None.
 
@@ -1231,8 +1235,8 @@ class ExprStringNameSpace:
 
         See Also
         --------
-        json_path_match : Extract the first match of json string with provided JSONPath
-            expression.
+        json_path_match : Extract the first match from a JSON string using the provided
+            JSONPath.
 
         Examples
         --------
@@ -1258,19 +1262,18 @@ class ExprStringNameSpace:
 
     def json_path_match(self, json_path: IntoExprColumn) -> Expr:
         """
-        Extract the first match of JSON string with the provided JSONPath expression.
+        Extract the first match from a JSON string using the provided JSONPath.
 
-        Throws errors if invalid JSON strings are encountered.
-        All return values will be cast to :class:`String` regardless of the original
-        value.
+        Throws errors if invalid JSON strings are encountered. All return values
+        are cast to :class:`String`, regardless of the original value.
 
-        Documentation on JSONPath standard can be found
+        Documentation on the JSONPath standard can be found
         `here <https://goessner.net/articles/JsonPath/>`_.
 
         Parameters
         ----------
         json_path
-            A valid JSON path query string.
+            A valid JSONPath query string.
 
         Returns
         -------
@@ -1907,13 +1910,36 @@ class ExprStringNameSpace:
 
         Notes
         -----
-        The dollar sign (`$`) is a special character related to capture groups.
-        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+        * To modify regular expression behaviour (such as case-sensitivity) with flags,
+          use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+          `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+          for additional information about the use of inline expression modifiers.
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
-        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
-        for additional information about the use of inline expression modifiers.
+        * The dollar sign (`$`) is a special character related to capture groups; if you
+          want to replace some target pattern with characters that include a literal `$`
+          you should escape it by doubling it up as `$$`, or set `literal=True` if you
+          do not need a full regular expression pattern match. Otherwise, you will be
+          referencing a (potentially non-existent) capture group.
+
+          In the example below we need to double up `$` (to represent a literal dollar
+          sign, and then refer to the capture group using `$n` or `${n}`, hence the
+          three consecutive `$` characters in the replacement value:
+
+          .. code-block:: python
+
+              >>> df = pl.DataFrame({"cost": ["#12.34", "#56.78"]})
+              >>> df.with_columns(
+              ...     cost_usd=pl.col("cost").str.replace(r"#(\d+)", "$$${1}")
+              ... )
+              shape: (2, 2)
+              ┌────────┬──────────┐
+              │ cost   ┆ cost_usd │
+              │ ---    ┆ ---      │
+              │ str    ┆ str      │
+              ╞════════╪══════════╡
+              │ #12.34 ┆ $12.34   │
+              │ #56.78 ┆ $56.78   │
+              └────────┴──────────┘
 
         Examples
         --------
@@ -1929,9 +1955,9 @@ class ExprStringNameSpace:
         │ 2   ┆ abc456 │
         └─────┴────────┘
 
-        Capture groups are supported. Use `${1}` in the `value` string to refer to the
-        first capture group in the `pattern`, `${2}` to refer to the second capture
-        group, and so on. You can also use named capture groups.
+        Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
+        to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
+        second capture group, and so on. You can also use *named* capture groups.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
@@ -1998,13 +2024,39 @@ class ExprStringNameSpace:
 
         Notes
         -----
-        The dollar sign (`$`) is a special character related to capture groups.
-        To refer to a literal dollar sign, use `$$` instead or set `literal` to `True`.
+        * To modify regular expression behaviour (such as case-sensitivity) with flags,
+          use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
+          `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
+          for additional information about the use of inline expression modifiers.
 
-        To modify regular expression behaviour (such as case-sensitivity) with flags,
-        use the inline `(?iLmsuxU)` syntax. See the regex crate's section on
-        `grouping and flags <https://docs.rs/regex/latest/regex/#grouping-and-flags>`_
-        for additional information about the use of inline expression modifiers.
+        * The dollar sign (`$`) is a special character related to capture groups; if you
+          want to replace some target pattern with characters that include a literal `$`
+          you should escape it by doubling it up as `$$`, or set `literal=True` if you
+          do not need a full regular expression pattern match. Otherwise, you will be
+          referencing a (potentially non-existent) capture group.
+
+          In the example below we need to double up `$` to represent a literal dollar
+          sign, otherwise we are referring to a capture group (which may or may not
+          exist):
+
+          .. code-block:: python
+
+              >>> df = pl.DataFrame({"text": ["ab12cd34ef", "gh45ij67kl"]})
+              >>> df.with_columns(
+              ...     # the replacement pattern refers back to the capture group
+              ...     text1=pl.col("text").str.replace_all(r"(?<N>\d{2,})", "$N$"),
+              ...     # doubling-up the `$` results in it appearing as a literal value
+              ...     text2=pl.col("text").str.replace_all(r"(?<N>\d{2,})", "$$N$$"),
+              ... )
+              shape: (2, 3)
+              ┌────────────┬──────────────┬──────────────┐
+              │ text       ┆ text1        ┆ text2        │
+              │ ---        ┆ ---          ┆ ---          │
+              │ str        ┆ str          ┆ str          │
+              ╞════════════╪══════════════╪══════════════╡
+              │ ab12cd34ef ┆ ab12$cd34$ef ┆ ab$N$cd$N$ef │
+              │ gh45ij67kl ┆ gh45$ij67$kl ┆ gh$N$ij$N$kl │
+              └────────────┴──────────────┴──────────────┘
 
         Examples
         --------
@@ -2020,9 +2072,9 @@ class ExprStringNameSpace:
         │ 2   ┆ 123-123 │
         └─────┴─────────┘
 
-        Capture groups are supported. Use `${1}` in the `value` string to refer to the
-        first capture group in the `pattern`, `${2}` to refer to the second capture
-        group, and so on. You can also use named capture groups.
+        Capture groups are supported. Use `$1` or `${1}` in the `value` string to refer
+        to the first capture group in the `pattern`, `$2` or `${2}` to refer to the
+        second capture group, and so on. You can also use *named* capture groups.
 
         >>> df = pl.DataFrame({"word": ["hat", "hut"]})
         >>> df.with_columns(
@@ -2672,13 +2724,90 @@ class ExprStringNameSpace:
         │ ["disco"]       │
         │ ["rhap", "ody"] │
         └─────────────────┘
-
         """
         patterns = parse_into_expression(
             patterns, str_as_lit=False, list_as_series=True
         )
         return wrap_expr(
             self._pyexpr.str_extract_many(patterns, ascii_case_insensitive, overlapping)
+        )
+
+    @unstable()
+    def find_many(
+        self,
+        patterns: IntoExpr,
+        *,
+        ascii_case_insensitive: bool = False,
+        overlapping: bool = False,
+    ) -> Expr:
+        """
+        Use the Aho-Corasick algorithm to find many matches.
+
+        The function will return the bytes offset of the start of each match.
+        The return type will be `List<UInt32>`
+
+        Parameters
+        ----------
+        patterns
+            String patterns to search.
+        ascii_case_insensitive
+            Enable ASCII-aware case-insensitive matching.
+            When this option is enabled, searching will be performed without respect
+            to case for ASCII letters (a-z and A-Z) only.
+        overlapping
+            Whether matches may overlap.
+
+        Notes
+        -----
+        This method supports matching on string literals only, and does not support
+        regular expression matching.
+
+        Examples
+        --------
+        >>> _ = pl.Config.set_fmt_str_lengths(100)
+        >>> df = pl.DataFrame({"values": ["discontent"]})
+        >>> patterns = ["winter", "disco", "onte", "discontent"]
+        >>> df.with_columns(
+        ...     pl.col("values")
+        ...     .str.extract_many(patterns, overlapping=False)
+        ...     .alias("matches"),
+        ...     pl.col("values")
+        ...     .str.extract_many(patterns, overlapping=True)
+        ...     .alias("matches_overlapping"),
+        ... )
+        shape: (1, 3)
+        ┌────────────┬───────────┬─────────────────────────────────┐
+        │ values     ┆ matches   ┆ matches_overlapping             │
+        │ ---        ┆ ---       ┆ ---                             │
+        │ str        ┆ list[str] ┆ list[str]                       │
+        ╞════════════╪═══════════╪═════════════════════════════════╡
+        │ discontent ┆ ["disco"] ┆ ["disco", "onte", "discontent"] │
+        └────────────┴───────────┴─────────────────────────────────┘
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "values": ["discontent", "rhapsody"],
+        ...         "patterns": [
+        ...             ["winter", "disco", "onte", "discontent"],
+        ...             ["rhap", "ody", "coalesce"],
+        ...         ],
+        ...     }
+        ... )
+        >>> df.select(pl.col("values").str.find_many("patterns"))
+        shape: (2, 1)
+        ┌───────────┐
+        │ values    │
+        │ ---       │
+        │ list[u32] │
+        ╞═══════════╡
+        │ [0]       │
+        │ [0, 5]    │
+        └───────────┘
+        """
+        patterns = parse_into_expression(
+            patterns, str_as_lit=False, list_as_series=True
+        )
+        return wrap_expr(
+            self._pyexpr.str_find_many(patterns, ascii_case_insensitive, overlapping)
         )
 
     def join(self, delimiter: str = "", *, ignore_nulls: bool = True) -> Expr:
@@ -2779,6 +2908,69 @@ class ExprStringNameSpace:
             )
             delimiter = "-"
         return self.join(delimiter, ignore_nulls=ignore_nulls)
+
+    def escape_regex(self) -> Expr:
+        r"""
+        Returns string values with all regular expression meta characters escaped.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["abc", "def", None, "abc(\\w+)"]})
+        >>> df.with_columns(pl.col("text").str.escape_regex().alias("escaped"))
+         shape: (4, 2)
+        ┌──────────┬──────────────┐
+        │ text     ┆ escaped      │
+        │ ---      ┆ ---          │
+        │ str      ┆ str          │
+        ╞══════════╪══════════════╡
+        │ abc      ┆ abc          │
+        │ def      ┆ def          │
+        │ null     ┆ null         │
+        │ abc(\w+) ┆ abc\(\\w\+\) │
+        └──────────┴──────────────┘
+        """
+        return wrap_expr(self._pyexpr.str_escape_regex())
+
+    def normalize(self, form: UnicodeForm = "NFC") -> Expr:
+        """
+        Returns the Unicode normal form of the string values.
+
+        This uses the forms described in Unicode Standard Annex 15: <https://www.unicode.org/reports/tr15/>.
+
+        Parameters
+        ----------
+        form : {'NFC', 'NFKC', 'NFD', 'NFKD'}
+            Unicode form to use.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame({"text": ["01²", "ＫＡＤＯＫＡＷＡ"]})
+        >>> new = df.with_columns(
+        ...     nfc=pl.col("text").str.normalize("NFC"),
+        ...     nfkc=pl.col("text").str.normalize("NFKC"),
+        ... )
+        >>> new
+        shape: (2, 3)
+        ┌──────────────────┬──────────────────┬──────────┐
+        │ text             ┆ nfc              ┆ nfkc     │
+        │ ---              ┆ ---              ┆ ---      │
+        │ str              ┆ str              ┆ str      │
+        ╞══════════════════╪══════════════════╪══════════╡
+        │ 01²              ┆ 01²              ┆ 012      │
+        │ ＫＡＤＯＫＡＷＡ    ┆ ＫＡＤＯＫＡＷＡ    ┆ KADOKAWA │
+        └──────────────────┴──────────────────┴──────────┘
+        >>> new.select(pl.all().str.len_bytes())
+        shape: (2, 3)
+        ┌──────┬─────┬──────┐
+        │ text ┆ nfc ┆ nfkc │
+        │ ---  ┆ --- ┆ ---  │
+        │ u32  ┆ u32 ┆ u32  │
+        ╞══════╪═════╪══════╡
+        │ 4    ┆ 4   ┆ 3    │
+        │ 24   ┆ 24  ┆ 8    │
+        └──────┴─────┴──────┘
+        """  # noqa: RUF002
+        return wrap_expr(self._pyexpr.str_normalize(form))
 
 
 def _validate_format_argument(format: str | None) -> None:

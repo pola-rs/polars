@@ -158,7 +158,7 @@ fn test_read_ndjson_iss_5875() {
     );
     schema.with_column("float".into(), DataType::Float64);
 
-    assert_eq!(schema, df.unwrap().schema());
+    assert_eq!(&schema, &(**df.unwrap().schema()));
 }
 
 #[test]

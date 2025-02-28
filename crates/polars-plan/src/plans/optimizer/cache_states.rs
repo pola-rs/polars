@@ -123,6 +123,7 @@ pub(super) fn set_cache_states(
     scratch: &mut Vec<Node>,
     expr_eval: ExprEval<'_>,
     verbose: bool,
+    new_streaming: bool,
 ) -> PolarsResult<()> {
     let mut stack = Vec::with_capacity(4);
     let mut names_scratch = vec![];
@@ -289,8 +290,8 @@ pub(super) fn set_cache_states(
     // and finally remove that last projection and stitch the subplan
     // back to the cache node again
     if !cache_schema_and_children.is_empty() {
-        let mut proj_pd = ProjectionPushDown::new();
-        let pred_pd = PredicatePushDown::new(expr_eval).block_at_cache(false);
+        let mut proj_pd = ProjectionPushDown::new(new_streaming);
+        let mut pred_pd = PredicatePushDown::new(expr_eval, new_streaming).block_at_cache(false);
         for (_cache_id, v) in cache_schema_and_children {
             // # CHECK IF WE NEED TO REMOVE CACHES
             // If we encounter multiple predicates we remove the cache nodes completely as we don't
@@ -348,17 +349,23 @@ pub(super) fn set_cache_states(
 
                     let lp = IRBuilder::new(new_child, expr_arena, lp_arena)
                         .project_simple(projection)
-                        .unwrap()
+                        .expect("unique names")
                         .build();
 
                     let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                    // Remove the projection added by the optimization.
-                    let lp =
-                        if let IR::Select { input, .. } | IR::SimpleProjection { input, .. } = lp {
-                            lp_arena.take(input)
+                    // Optimization can lead to a double projection. Only take the last.
+                    let lp = if let IR::SimpleProjection { input, columns } = lp {
+                        let input = if let IR::SimpleProjection { input: input2, .. } =
+                            lp_arena.get(input)
+                        {
+                            *input2
                         } else {
-                            lp
+                            input
                         };
+                        IR::SimpleProjection { input, columns }
+                    } else {
+                        lp
+                    };
                     lp_arena.replace(child, lp);
                 }
             } else {

@@ -163,7 +163,7 @@ fn upsample_impl(
         Ok(out)
     } else if by.is_empty() {
         let index_column = source.column(index_column)?;
-        upsample_single_impl(source, index_column, every)
+        upsample_single_impl(source, index_column.as_materialized_series(), every)
     } else {
         let gb = if stable {
             source.group_by_stable(by)
@@ -173,7 +173,7 @@ fn upsample_impl(
         // don't parallelize this, this may SO on large data.
         gb?.apply(|df| {
             let index_column = df.column(index_column)?;
-            upsample_single_impl(&df, index_column, every)
+            upsample_single_impl(&df, index_column.as_materialized_series(), every)
         })
     }
 }
@@ -216,6 +216,7 @@ fn upsample_single_impl(
                         [index_col_name.clone()],
                         [index_col_name.clone()],
                         JoinArgs::new(JoinType::Left),
+                        None,
                     )
                 },
                 _ => polars_bail!(

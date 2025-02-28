@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import operator
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 import pytest
@@ -191,9 +193,9 @@ def test_fused_arithm() -> None:
         pl.col("c") - pl.col("c") * 2,
     ]:
         q = df.lazy().select(expr)
-        assert all(
-            el not in q.explain() for el in ["fms", "fsm", "fma"]
-        ), f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        assert all(el not in q.explain() for el in ["fms", "fsm", "fma"]), (
+            f"Fused Arithmetic applied on literal {expr}: {q.explain()}"
+        )
 
 
 def test_literal_no_upcast() -> None:
@@ -208,9 +210,9 @@ def test_literal_no_upcast() -> None:
         )
         .collect()
     )
-    assert set(q.schema.values()) == {
-        pl.Float32
-    }, "Literal * Column (Float32) should not lead upcast"
+    assert set(q.schema.values()) == {pl.Float32}, (
+        "Literal * Column (Float32) should not lead upcast"
+    )
 
 
 def test_boolean_addition() -> None:
@@ -282,8 +284,8 @@ def test_operator_arithmetic_with_nulls(op: Any, dtype: pl.DataType) -> None:
             df_expected, df.select(getattr(pl.col("n"), op_name)(null_expr))
         )
 
-    assert_frame_equal(df_expected, op(df, None))
-    assert_series_equal(s_expected, op(s, None))
+    assert_frame_equal(op(df, None), df_expected)
+    assert_series_equal(op(s, None), s_expected)
 
 
 @pytest.mark.parametrize(
@@ -547,8 +549,8 @@ def test_power_series() -> None:
     assert_series_equal(a**j, pl.Series([1, 4], dtype=Int64))
 
     # rpow
-    assert_series_equal(2.0**a, pl.Series("literal", [2.0, 4.0], dtype=Float64))
-    assert_series_equal(2**b, pl.Series("literal", [None, 4.0], dtype=Float64))
+    assert_series_equal(2.0**a, pl.Series(None, [2.0, 4.0], dtype=Float64))
+    assert_series_equal(2**b, pl.Series(None, [None, 4.0], dtype=Float64))
 
     with pytest.raises(ColumnNotFoundError):
         "hi" ** a
@@ -557,33 +559,60 @@ def test_power_series() -> None:
     assert_series_equal(a.pow(2), pl.Series([1, 4], dtype=Int64))
 
 
+def test_rpow_name_20071() -> None:
+    result = 1 ** pl.Series("a", [1, 2])
+    expected = pl.Series("a", [1, 1], pl.Int32)
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize(
-    ("expected", "expr"),
+    ("expected", "expr", "column_names"),
     [
+        (np.array([[2, 4], [6, 8]], dtype=np.int64), lambda a, b: a + b, ("a", "a")),
+        (np.array([[0, 0], [0, 0]], dtype=np.int64), lambda a, b: a - b, ("a", "a")),
+        (np.array([[1, 4], [9, 16]], dtype=np.int64), lambda a, b: a * b, ("a", "a")),
         (
-            np.array([[2, 4], [6, 8]]),
-            pl.col("a") + pl.col("a"),
+            np.array([[1.0, 1.0], [1.0, 1.0]], dtype=np.float64),
+            lambda a, b: a / b,
+            ("a", "a"),
         ),
+        (np.array([[0, 0], [0, 0]], dtype=np.int64), lambda a, b: a % b, ("a", "a")),
         (
-            np.array([[0, 0], [0, 0]]),
-            pl.col("a") - pl.col("a"),
+            np.array([[3, 4], [7, 8]], dtype=np.int64),
+            lambda a, b: a + b,
+            ("a", "uint8"),
         ),
-        (
-            np.array([[1, 4], [9, 16]]),
-            pl.col("a") * pl.col("a"),
-        ),
-        (
-            np.array([[1.0, 1.0], [1.0, 1.0]]),
-            pl.col("a") / pl.col("a"),
-        ),
+        # This fails because the code is buggy, see
+        # https://github.com/pola-rs/polars/issues/17820
+        #
+        # (
+        #     np.array([[[2, 4]], [[6, 8]]], dtype=np.int64),
+        #     lambda a, b: a + b,
+        #     ("nested", "nested"),
+        # ),
     ],
 )
-def test_array_arithmetic_same_size(expected: Any, expr: pl.Expr) -> None:
-    df = pl.Series("a", np.array([[1, 2], [3, 4]])).to_frame()
-
+def test_array_arithmetic_same_size(
+    expected: Any,
+    expr: Callable[[pl.Series | pl.Expr, pl.Series | pl.Expr], pl.Series],
+    column_names: tuple[str, str],
+) -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("a", np.array([[1, 2], [3, 4]], dtype=np.int64)),
+            pl.Series("uint8", np.array([[2, 2], [4, 4]], dtype=np.uint8)),
+            pl.Series("nested", np.array([[[1, 2]], [[3, 4]]], dtype=np.int64)),
+        ]
+    )
+    # Expr-based arithmetic:
     assert_frame_equal(
-        df.select(expr),
-        pl.Series("a", expected).to_frame(),
+        df.select(expr(pl.col(column_names[0]), pl.col(column_names[1]))),
+        pl.Series(column_names[0], expected).to_frame(),
+    )
+    # Direct arithmetic on the Series:
+    assert_series_equal(
+        expr(df[column_names[0]], df[column_names[1]]),
+        pl.Series(column_names[0], expected),
     )
 
 
@@ -676,8 +705,8 @@ def test_arithmetic_duration_div_multiply() -> None:
             ("a", pl.Duration(time_unit="us")),
             ("b", pl.Duration(time_unit="us")),
             ("c", pl.Duration(time_unit="us")),
-            ("d", pl.Unknown()),
-            ("e", pl.Unknown()),
+            ("d", pl.Duration(time_unit="us")),
+            ("e", pl.Duration(time_unit="us")),
             ("f", pl.Float64()),
         ]
     )
@@ -762,6 +791,58 @@ def test_date_datetime_sub() -> None:
     }
 
 
+def test_time_time_sub() -> None:
+    df = pl.DataFrame(
+        {
+            "foo": pl.Series([-1, 0, 10]).cast(pl.Datetime("us")),
+            "bar": pl.Series([1, 0, 1]).cast(pl.Datetime("us")),
+        }
+    )
+
+    assert df.select(
+        pl.col("foo").dt.time() - pl.col("bar").dt.time(),
+        pl.col("bar").dt.time() - pl.col("foo").dt.time(),
+    ).to_dict(as_series=False) == {
+        "foo": [
+            timedelta(days=1, microseconds=-2),
+            timedelta(0),
+            timedelta(microseconds=9),
+        ],
+        "bar": [
+            timedelta(days=-1, microseconds=2),
+            timedelta(0),
+            timedelta(microseconds=-9),
+        ],
+    }
+
+
 def test_raise_invalid_shape() -> None:
-    with pytest.raises(pl.exceptions.InvalidOperationError):
+    with pytest.raises(InvalidOperationError):
         pl.DataFrame([[1, 2], [3, 4]]) * pl.DataFrame([1, 2, 3])
+
+
+def test_integer_divide_scalar_zero_lhs_19142() -> None:
+    assert_series_equal(pl.Series([0]) // pl.Series([1, 0]), pl.Series([0, None]))
+    assert_series_equal(pl.Series([0]) % pl.Series([1, 0]), pl.Series([0, None]))
+
+
+def test_compound_duration_21389() -> None:
+    # test add
+    lf = pl.LazyFrame(
+        {
+            "ts": datetime(2024, 1, 1, 1, 2, 3),
+            "duration": timedelta(days=1),
+        }
+    )
+    result = lf.select(pl.col("ts") + pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2024, 1, 3, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)
+
+    # test subtract
+    result = lf.select(pl.col("ts") - pl.col("duration") * 2)
+    expected_schema = pl.Schema({"ts": pl.Datetime(time_unit="us", time_zone=None)})
+    expected = pl.DataFrame({"ts": datetime(2023, 12, 30, 1, 2, 3)})
+    assert result.collect_schema() == expected_schema
+    assert_frame_equal(result.collect(), expected)

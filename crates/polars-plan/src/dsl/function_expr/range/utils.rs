@@ -1,14 +1,14 @@
 use polars_core::prelude::{
-    polars_bail, polars_ensure, ChunkedArray, Int64Chunked, IntoSeries, ListBuilderTrait,
-    ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsResult, Series,
+    polars_bail, polars_ensure, ChunkedArray, Column, Int64Chunked, IntoColumn, ListBuilderTrait,
+    ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsNumericType, PolarsResult,
 };
 
-pub(super) fn temporal_series_to_i64_scalar(s: &Series) -> Option<i64> {
+pub(super) fn temporal_series_to_i64_scalar(s: &Column) -> Option<i64> {
     s.to_physical_repr().get(0).unwrap().extract::<i64>()
 }
 pub(super) fn ensure_range_bounds_contain_exactly_one_value(
-    start: &Series,
-    end: &Series,
+    start: &Column,
+    end: &Column,
 ) -> PolarsResult<()> {
     polars_ensure!(
         start.len() == 1,
@@ -28,11 +28,12 @@ pub(super) fn numeric_ranges_impl_broadcast<T, U, F>(
     step: &Int64Chunked,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
-) -> PolarsResult<Series>
+) -> PolarsResult<Column>
 where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, i64, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     match (start.len(), end.len(), step.len()) {
         (len_start, len_end, len_step) if len_start == len_end && len_start == len_step => {
@@ -133,7 +134,7 @@ where
             )
         },
     };
-    let out = builder.finish().into_series();
+    let out = builder.finish().into_column();
     Ok(out)
 }
 
@@ -143,11 +144,12 @@ pub(super) fn temporal_ranges_impl_broadcast<T, U, F>(
     end: &ChunkedArray<T>,
     range_impl: F,
     builder: &mut ListPrimitiveChunkedBuilder<U>,
-) -> PolarsResult<Series>
+) -> PolarsResult<Column>
 where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     match (start.len(), end.len()) {
         (len_start, len_end) if len_start == len_end => {
@@ -190,7 +192,7 @@ where
             )
         },
     };
-    let out = builder.finish().into_series();
+    let out = builder.finish().into_column();
     Ok(out)
 }
 
@@ -209,6 +211,7 @@ where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, i64, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     for ((start, end), step) in start.zip(end).zip(step) {
         match (start, end, step) {
@@ -232,6 +235,7 @@ where
     T: PolarsIntegerType,
     U: PolarsIntegerType,
     F: Fn(T::Native, T::Native, &mut ListPrimitiveChunkedBuilder<U>) -> PolarsResult<()>,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     for (start, end) in start.zip(end) {
         match (start, end) {
@@ -243,9 +247,10 @@ where
 }
 
 /// Add `n` nulls to the builder.
-fn build_nulls<U>(builder: &mut ListPrimitiveChunkedBuilder<U>, n: usize)
+pub fn build_nulls<U>(builder: &mut ListPrimitiveChunkedBuilder<U>, n: usize)
 where
-    U: PolarsIntegerType,
+    U: PolarsNumericType,
+    ListPrimitiveChunkedBuilder<U>: ListBuilderTrait,
 {
     for _ in 0..n {
         builder.append_null()

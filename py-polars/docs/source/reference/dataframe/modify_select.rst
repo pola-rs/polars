@@ -13,6 +13,7 @@ Manipulation/selection
     DataFrame.clone
     DataFrame.drop
     DataFrame.drop_in_place
+    DataFrame.drop_nans
     DataFrame.drop_nulls
     DataFrame.explode
     DataFrame.extend
@@ -43,6 +44,7 @@ Manipulation/selection
     DataFrame.pipe
     DataFrame.pivot
     DataFrame.rechunk
+    DataFrame.remove
     DataFrame.rename
     DataFrame.replace_column
     DataFrame.reverse

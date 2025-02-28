@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -12,11 +13,7 @@ from polars.testing import assert_frame_equal
 if TYPE_CHECKING:
     from datetime import timezone
 
-    from zoneinfo import ZoneInfo
-
     from polars._typing import FillNullStrategy, PolarsIntegerType
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(

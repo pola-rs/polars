@@ -113,7 +113,7 @@ impl DateLikeNameSpace {
 
     /// Extract the week from the underlying Date representation.
     /// Can be performed on Date and Datetime
-
+    ///
     /// Returns the ISO week number starting from 1.
     /// The return value ranges from 1 to 53. (The last week of year differs by years.)
     pub fn week(self) -> Expr {
@@ -123,7 +123,7 @@ impl DateLikeNameSpace {
 
     /// Extract the ISO week day from the underlying Date representation.
     /// Can be performed on Date and Datetime.
-
+    ///
     /// Returns the weekday number where monday = 1 and sunday = 7
     pub fn weekday(self) -> Expr {
         self.0
@@ -330,5 +330,35 @@ impl DateLikeNameSpace {
         self.0.map_private(FunctionExpr::TemporalExpr(
             TemporalFunction::TotalNanoseconds,
         ))
+    }
+
+    /// Replace the time units of a value
+    #[allow(clippy::too_many_arguments)]
+    pub fn replace(
+        self,
+        year: Expr,
+        month: Expr,
+        day: Expr,
+        hour: Expr,
+        minute: Expr,
+        second: Expr,
+        microsecond: Expr,
+        ambiguous: Expr,
+    ) -> Expr {
+        self.0.map_many_private(
+            FunctionExpr::TemporalExpr(TemporalFunction::Replace),
+            &[
+                year,
+                month,
+                day,
+                hour,
+                minute,
+                second,
+                microsecond,
+                ambiguous,
+            ],
+            false,
+            None,
+        )
     }
 }

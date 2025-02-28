@@ -15,24 +15,22 @@ pip
 # DEPENDENCIES
 # ------------
 
+polars-cloud
 # Interop
 numpy
 numba >= 0.54; python_version < '3.13'  # Numba can lag Python releases
 pandas
 pyarrow
 pydantic>=2.0.0
-numba
 # Datetime / time zones
-backports.zoneinfo; python_version < '3.9'
 tzdata; platform_system == 'Windows'
 # Database
 sqlalchemy
-adbc-driver-manager; python_version >= '3.9' and platform_system != 'Windows'
-adbc-driver-sqlite; python_version >= '3.9' and platform_system != 'Windows'
+adbc-driver-manager; platform_system != 'Windows'
+adbc-driver-sqlite; platform_system != 'Windows'
 aiosqlite
 connectorx
 kuzu
-nest-asyncio
 # Cloud
 cloudpickle
 fsspec
@@ -49,21 +47,23 @@ zstandard
 # Plotting
 altair>=5.4.0
 # Styling
-great-tables>=0.8.0; python_version >= '3.9'
+great-tables>=0.8.0
 # Async
 gevent
 # Graph
 matplotlib
 # Testing
 hypothesis
+# Miscellaneous
+orjson
 
 # -------
 # TOOLING
 # -------
 
 pytest==8.3.2
-pytest-codspeed==2.2.1
-pytest-cov==5.0.0
+pytest-codspeed==3.2.0
+pytest-cov==6.0.0
 pytest-xdist==3.6.1
 
 # Need moto.server to mock s3fs - see: https://github.com/aio-libs/aiobotocore/issues/755
@@ -74,3 +74,4 @@ flask-cors
 # Stub files
 pandas-stubs
 boto3-stubs
+google-auth-stubs

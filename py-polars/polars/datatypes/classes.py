@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 import contextlib
+import enum
 from collections import OrderedDict
-from datetime import timezone
+from collections.abc import Mapping
+from datetime import tzinfo
 from inspect import isclass
-from typing import TYPE_CHECKING, Any, Iterable, Iterator, Mapping, Sequence
+from typing import TYPE_CHECKING, Any
 
 import polars._reexport as pl
 import polars.datatypes
 import polars.functions as F
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
+    import polars.polars as plr
     from polars.polars import dtype_str_repr as _dtype_str_repr
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable, Iterator, Sequence
+
     from polars import Series
     from polars._typing import (
         CategoricalOrdering,
@@ -64,6 +69,10 @@ class DataTypeClass(type):
         ...
 
     @classmethod
+    def is_object(cls) -> bool:  # noqa: D102
+        ...
+
+    @classmethod
     def is_signed_integer(cls) -> bool:  # noqa: D102
         ...
 
@@ -88,7 +97,7 @@ class DataTypeClass(type):
         ...
 
     @classmethod
-    def to_python(self) -> PythonDataType:  # noqa: D102
+    def to_python(cls) -> PythonDataType:  # noqa: D102
         ...
 
 
@@ -137,7 +146,7 @@ class DataType(metaclass=DataTypeClass):
         Parameters
         ----------
         other
-            the other polars dtype to compare with.
+            the other Polars dtype to compare with.
 
         Examples
         --------
@@ -162,6 +171,11 @@ class DataType(metaclass=DataTypeClass):
     def is_integer(cls) -> bool:
         """Check whether the data type is an integer type."""
         return issubclass(cls, IntegerType)
+
+    @classmethod
+    def is_object(cls) -> bool:
+        """Check whether the data type is an object type."""
+        return issubclass(cls, ObjectType)
 
     @classmethod
     def is_signed_integer(cls) -> bool:
@@ -235,6 +249,44 @@ class DataType(metaclass=DataTypeClass):
 class NumericType(DataType):
     """Base class for numeric data types."""
 
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.max() == 127)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Int8.min() == -128)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
+
 
 class IntegerType(NumericType):
     """Base class for integer data types."""
@@ -260,6 +312,10 @@ class NestedType(DataType):
     """Base class for nested data types."""
 
 
+class ObjectType(DataType):
+    """Base class for object data types."""
+
+
 class Int8(SignedIntegerType):
     """8-bit signed integer type."""
 
@@ -274,6 +330,17 @@ class Int32(SignedIntegerType):
 
 class Int64(SignedIntegerType):
     """64-bit signed integer type."""
+
+
+class Int128(SignedIntegerType):
+    """
+    128-bit signed integer type.
+
+    .. warning::
+        This functionality is considered **unstable**.
+        It is a work-in-progress feature and may not always work as expected.
+        It may be changed at any point without it being considered a breaking change.
+    """
 
 
 class UInt8(UnsignedIntegerType):
@@ -325,7 +392,7 @@ class Decimal(NumericType):
         self,
         precision: int | None = None,
         scale: int = 0,
-    ):
+    ) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -394,6 +461,44 @@ class Time(TemporalType):
     The integer indicates the number of nanoseconds since midnight.
     """
 
+    @classmethod
+    def max(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the maximum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.max() == 86_399_999_999_999)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_max(cls))
+
+    @classmethod
+    def min(cls) -> pl.Expr:
+        """
+        Return a literal expression representing the minimum value of this data type.
+
+        Examples
+        --------
+        >>> pl.select(pl.Time.min() == 0)
+        shape: (1, 1)
+        ┌─────────┐
+        │ literal │
+        │ ---     │
+        │ bool    │
+        ╞═════════╡
+        │ true    │
+        └─────────┘
+        """
+        return pl.Expr._from_pyexpr(plr._get_dtype_min(cls))
+
 
 class Datetime(TemporalType):
     """
@@ -421,8 +526,8 @@ class Datetime(TemporalType):
     time_zone: str | None
 
     def __init__(
-        self, time_unit: TimeUnit = "us", time_zone: str | timezone | None = None
-    ):
+        self, time_unit: TimeUnit = "us", time_zone: str | tzinfo | None = None
+    ) -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -430,7 +535,7 @@ class Datetime(TemporalType):
             )
             raise ValueError(msg)
 
-        if isinstance(time_zone, timezone):
+        if isinstance(time_zone, tzinfo):
             time_zone = str(time_zone)
 
         self.time_unit = time_unit
@@ -475,7 +580,7 @@ class Duration(TemporalType):
 
     time_unit: TimeUnit
 
-    def __init__(self, time_unit: TimeUnit = "us"):
+    def __init__(self, time_unit: TimeUnit = "us") -> None:
         if time_unit not in ("ms", "us", "ns"):
             msg = (
                 "invalid `time_unit`"
@@ -518,7 +623,7 @@ class Categorical(DataType):
     def __init__(
         self,
         ordering: CategoricalOrdering | None = "physical",
-    ):
+    ) -> None:
         self.ordering = ordering
 
     def __repr__(self) -> str:
@@ -539,7 +644,7 @@ class Categorical(DataType):
 
 class Enum(DataType):
     """
-    A fixed set categorical encoding of a set of strings.
+    A fixed categorical encoding of a unique set of strings.
 
     .. warning::
         This functionality is considered **unstable**.
@@ -549,12 +654,26 @@ class Enum(DataType):
     Parameters
     ----------
     categories
-        The categories in the dataset. Categories must be strings.
-    """
+        The categories in the dataset; must be a unique set of strings, or an
+        existing Python string-valued enum.
+
+    Examples
+    --------
+    Explicitly define enumeration categories:
+
+    >>> pl.Enum(["north", "south", "east", "west"])
+    Enum(categories=['north', 'south', 'east', 'west'])
+
+    Initialise from an existing Python enumeration:
+
+    >>> from http import HTTPMethod
+    >>> pl.Enum(HTTPMethod)
+    Enum(categories=['CONNECT', 'DELETE', 'GET', 'HEAD', 'OPTIONS', 'PATCH', 'POST', 'PUT', 'TRACE'])
+    """  # noqa: W505
 
     categories: Series
 
-    def __init__(self, categories: Series | Iterable[str]):
+    def __init__(self, categories: Series | Iterable[str] | type[enum.Enum]) -> None:
         # Issuing the warning on `__init__` does not trigger when the class is used
         # without being instantiated, but it's better than nothing
         from polars._utils.unstable import issue_unstable_warning
@@ -564,7 +683,18 @@ class Enum(DataType):
             " It is a work-in-progress feature and may not always work as expected."
         )
 
-        if not isinstance(categories, pl.Series):
+        if isclass(categories) and issubclass(categories, enum.Enum):
+            for enum_subclass in (enum.Flag, enum.IntEnum):
+                if issubclass(categories, enum_subclass):
+                    enum_type_name = categories.__name__
+                    msg = f"Enum categories must be strings; `{enum_type_name}` values are integers"
+                    raise TypeError(msg)
+
+            enum_values = [
+                getattr(v, "value", v) for v in categories.__members__.values()
+            ]
+            categories = pl.Series(values=enum_values)
+        elif not isinstance(categories, pl.Series):
             categories = pl.Series(values=categories)
 
         if categories.is_empty():
@@ -611,7 +741,7 @@ class Enum(DataType):
     __or__ = union
 
 
-class Object(DataType):
+class Object(ObjectType):
     """Data type for wrapping arbitrary Python objects."""
 
 
@@ -654,7 +784,7 @@ class List(NestedType):
 
     inner: PolarsDataType
 
-    def __init__(self, inner: PolarsDataType | PythonDataType):
+    def __init__(self, inner: PolarsDataType | PythonDataType) -> None:
         self.inner = polars.datatypes.parse_into_dtype(inner)
 
     def __eq__(self, other: PolarsDataType) -> bool:  # type: ignore[override]
@@ -688,8 +818,13 @@ class Array(NestedType):
     ----------
     inner
         The `DataType` of the values within each array.
+    shape
+        The shape of the arrays.
     width
         The length of the arrays.
+
+        .. deprecated:: 0.20.31
+            The `width` parameter for `Array` is deprecated. Use `shape` instead.
 
     Examples
     --------
@@ -713,7 +848,7 @@ class Array(NestedType):
         shape: int | tuple[int, ...] | None = None,
         *,
         width: int | None = None,
-    ):
+    ) -> None:
         if width is not None:
             from polars._utils.deprecation import issue_deprecation_warning
 
@@ -734,7 +869,7 @@ class Array(NestedType):
             self.size = shape
             self.shape = (shape,) + inner_shape
 
-        elif isinstance(shape, tuple):
+        elif isinstance(shape, tuple) and isinstance(shape[0], int):  # type: ignore[redundant-expr]
             if len(shape) > 1:
                 inner_parsed = Array(inner_parsed, shape[1:])
 
@@ -803,7 +938,7 @@ class Field:
     name: str
     dtype: PolarsDataType
 
-    def __init__(self, name: str, dtype: PolarsDataType):
+    def __init__(self, name: str, dtype: PolarsDataType) -> None:
         self.name = name
         self.dtype = polars.datatypes.parse_into_dtype(dtype)
 
@@ -858,7 +993,7 @@ class Struct(NestedType):
 
     fields: list[Field]
 
-    def __init__(self, fields: Sequence[Field] | SchemaDict):
+    def __init__(self, fields: Sequence[Field] | SchemaDict) -> None:
         if isinstance(fields, Mapping):
             self.fields = [Field(name, dtype) for name, dtype in fields.items()]
         else:

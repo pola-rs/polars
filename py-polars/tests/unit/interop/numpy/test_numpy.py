@@ -17,6 +17,7 @@ import polars as pl
         ("uint16", [1, 3, 2], pl.UInt16, np.uint16),
         ("uint32", [1, 3, 2], pl.UInt32, np.uint32),
         ("uint64", [1, 3, 2], pl.UInt64, np.uint64),
+        ("float16", [-123.0, 0.0, 456.0], pl.Float32, np.float16),
         ("float32", [21.7, 21.8, 21], pl.Float32, np.float32),
         ("float64", [21.7, 21.8, 21], pl.Float64, np.float64),
         ("bool", [True, False, False], pl.Boolean, np.bool_),
@@ -77,3 +78,25 @@ def test_numpy_disambiguation() -> None:
 
 def test_respect_dtype_with_series_from_numpy() -> None:
     assert pl.Series("foo", np.array([1, 2, 3]), dtype=pl.UInt32).dtype == pl.UInt32
+
+
+@pytest.mark.parametrize(
+    ("np_dtype_cls", "expected_pl_dtype"),
+    [
+        (np.int8, pl.Int8),
+        (np.int16, pl.Int16),
+        (np.int32, pl.Int32),
+        (np.int64, pl.Int64),
+        (np.uint8, pl.UInt8),
+        (np.uint16, pl.UInt16),
+        (np.uint32, pl.UInt32),
+        (np.uint64, pl.UInt64),
+        (np.float16, pl.Float32),  # << note: we don't currently have a native f16
+        (np.float32, pl.Float32),
+        (np.float64, pl.Float64),
+    ],
+)
+def test_init_from_numpy_values(np_dtype_cls: Any, expected_pl_dtype: Any) -> None:
+    # test init from raw numpy values (vs arrays)
+    s = pl.Series("n", [np_dtype_cls(0), np_dtype_cls(4), np_dtype_cls(8)])
+    assert s.dtype == expected_pl_dtype

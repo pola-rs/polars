@@ -4,6 +4,7 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
+use pyo3::types::PySequence;
 
 use crate::conversion::Wrap;
 use crate::PyExpr;
@@ -118,6 +119,7 @@ impl PyExpr {
         self.inner.clone().list().shift(periods.inner).into()
     }
 
+    #[pyo3(signature = (offset, length=None))]
     fn list_slice(&self, offset: PyExpr, length: Option<PyExpr>) -> Self {
         let length = match length {
             Some(i) => i.inner,
@@ -152,6 +154,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_sample")]
+    #[pyo3(signature = (n, with_replacement, shuffle, seed=None))]
     fn list_sample_n(
         &self,
         n: PyExpr,
@@ -167,6 +170,7 @@ impl PyExpr {
     }
 
     #[cfg(feature = "list_sample")]
+    #[pyo3(signature = (fraction, with_replacement, shuffle, seed=None))]
     fn list_sample_fraction(
         &self,
         fraction: PyExpr,
@@ -211,20 +215,39 @@ impl PyExpr {
         upper_bound: usize,
     ) -> PyResult<Self> {
         let name_gen = name_gen.map(|lambda| {
-            Arc::new(move |idx: usize| {
+            NameGenerator::from_func(move |idx: usize| {
                 Python::with_gil(|py| {
                     let out = lambda.call1(py, (idx,)).unwrap();
                     let out: PlSmallStr = out.extract::<Cow<str>>(py).unwrap().as_ref().into();
                     out
                 })
-            }) as NameGenerator
+            })
         });
 
         Ok(self
             .inner
             .clone()
             .list()
-            .to_struct(width_strat.0, name_gen, upper_bound)
+            .to_struct(ListToStructArgs::InferWidth {
+                infer_field_strategy: width_strat.0,
+                get_index_name: name_gen,
+                max_fields: upper_bound,
+            })
+            .into())
+    }
+
+    #[pyo3(signature = (names))]
+    fn list_to_struct_fixed_width(&self, names: Bound<'_, PySequence>) -> PyResult<Self> {
+        Ok(self
+            .inner
+            .clone()
+            .list()
+            .to_struct(ListToStructArgs::FixedWidth(
+                names
+                    .try_iter()?
+                    .map(|x| Ok(x?.extract::<Wrap<PlSmallStr>>()?.0))
+                    .collect::<PyResult<Arc<[_]>>>()?,
+            ))
             .into())
     }
 

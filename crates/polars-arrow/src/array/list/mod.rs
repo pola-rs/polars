@@ -4,8 +4,8 @@ use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 
-#[cfg(feature = "arrow_rs")]
-mod data;
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -29,8 +29,8 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
     /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation
@@ -45,7 +45,7 @@ impl<O: Offset> ListArray<O> {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
@@ -68,8 +68,8 @@ impl<O: Offset> ListArray<O> {
     ///
     /// # Panics
     /// This function panics iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either [`crate::datatypes::PhysicalType::List`] or [`crate::datatypes::PhysicalType::LargeList`].
     /// * The `dtype`'s inner field's data type is not equal to `values.dtype`.
     /// # Implementation
@@ -130,6 +130,49 @@ impl<O: Offset> ListArray<O> {
     impl_sliced!();
     impl_mut_validity!();
     impl_into_array!();
+
+    pub fn trim_to_normalized_offsets_recursive(&self) -> Self {
+        let offsets = self.offsets();
+        let values = self.values();
+
+        let first_idx = *offsets.first();
+        let len = offsets.range().to_usize();
+
+        let values = if values.len() == len {
+            values.clone()
+        } else {
+            values.sliced(first_idx.to_usize(), len)
+        };
+
+        let offsets = if first_idx.to_usize() == 0 {
+            offsets.clone()
+        } else {
+            let v = offsets.iter().map(|x| *x - first_idx).collect::<Vec<_>>();
+            unsafe { OffsetsBuffer::<O>::new_unchecked(v.into()) }
+        };
+
+        let values = match values.dtype() {
+            ArrowDataType::List(_) => {
+                let inner: &ListArray<i32> = values.as_ref().as_any().downcast_ref().unwrap();
+                Box::new(inner.trim_to_normalized_offsets_recursive()) as Box<dyn Array>
+            },
+            ArrowDataType::LargeList(_) => {
+                let inner: &ListArray<i64> = values.as_ref().as_any().downcast_ref().unwrap();
+                Box::new(inner.trim_to_normalized_offsets_recursive()) as Box<dyn Array>
+            },
+            _ => values,
+        };
+
+        assert_eq!(offsets.first().to_usize(), 0);
+        assert_eq!(values.len(), offsets.range().to_usize());
+
+        Self::new(
+            self.dtype().clone(),
+            offsets,
+            values,
+            self.validity().cloned(),
+        )
+    }
 }
 
 // Accessors

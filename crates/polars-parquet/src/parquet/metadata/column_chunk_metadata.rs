@@ -1,4 +1,4 @@
-use parquet_format_safe::{ColumnChunk, ColumnMetaData, Encoding};
+use polars_parquet_format::{ColumnChunk, ColumnMetaData, Encoding};
 
 use super::column_descriptor::ColumnDescriptor;
 use crate::parquet::compression::Compression;
@@ -10,7 +10,7 @@ use crate::parquet::statistics::Statistics;
 mod serde_types {
     pub use std::io::Cursor;
 
-    pub use parquet_format_safe::thrift::protocol::{
+    pub use polars_parquet_format::thrift::protocol::{
         TCompactInputProtocol, TCompactOutputProtocol,
     };
     pub use serde::de::Error as DeserializeError;
@@ -63,10 +63,13 @@ fn deserialize_column_chunk<'de, D>(deserializer: D) -> std::result::Result<Colu
 where
     D: Deserializer<'de>,
 {
-    let buf = Vec::<u8>::deserialize(deserializer)?;
-    let mut cursor = Cursor::new(&buf[..]);
-    let mut protocol = TCompactInputProtocol::new(&mut cursor, usize::MAX);
-    ColumnChunk::read_from_in_protocol(&mut protocol).map_err(D::Error::custom)
+    use polars_utils::pl_serialize::deserialize_map_bytes;
+
+    deserialize_map_bytes(deserializer, |b| {
+        let mut b = b.as_ref();
+        let mut protocol = TCompactInputProtocol::new(&mut b, usize::MAX);
+        ColumnChunk::read_from_in_protocol(&mut protocol).map_err(D::Error::custom)
+    })?
 }
 
 // Represents common operations for a column chunk.

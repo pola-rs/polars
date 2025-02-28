@@ -4,8 +4,7 @@ impl DataFrame {
     /// Get a row from a [`DataFrame`]. Use of this is discouraged as it will likely be slow.
     pub fn get_row(&self, idx: usize) -> PolarsResult<Row> {
         let values = self
-            .columns
-            .iter()
+            .materialized_column_iter()
             .map(|s| s.get(idx))
             .collect::<PolarsResult<Vec<_>>>()?;
         Ok(Row(values))
@@ -15,7 +14,7 @@ impl DataFrame {
     /// The caller is responsible to make sure that the row has at least the capacity for the number
     /// of columns in the [`DataFrame`]
     pub fn get_row_amortized<'a>(&'a self, idx: usize, row: &mut Row<'a>) -> PolarsResult<()> {
-        for (s, any_val) in self.columns.iter().zip(&mut row.0) {
+        for (s, any_val) in self.materialized_column_iter().zip(&mut row.0) {
             *any_val = s.get(idx)?;
         }
         Ok(())
@@ -29,8 +28,7 @@ impl DataFrame {
     /// Does not do any bounds checking.
     #[inline]
     pub unsafe fn get_row_amortized_unchecked<'a>(&'a self, idx: usize, row: &mut Row<'a>) {
-        self.columns
-            .iter()
+        self.materialized_column_iter()
             .zip(&mut row.0)
             .for_each(|(s, any_val)| {
                 *any_val = s.get_unchecked(idx);
@@ -53,6 +51,12 @@ impl DataFrame {
     where
         I: Iterator<Item = &'a Row<'a>>,
     {
+        if schema.is_empty() {
+            let height = rows.count();
+            let columns = Vec::new();
+            return Ok(unsafe { DataFrame::new_no_checks(height, columns) });
+        }
+
         let capacity = rows.size_hint().0;
 
         let mut buffers: Vec<_> = schema
@@ -75,14 +79,14 @@ impl DataFrame {
             .into_iter()
             .zip(schema.iter_names())
             .map(|(b, name)| {
-                let mut s = b.into_series();
+                let mut c = b.into_series().into_column();
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
-                if s.is_empty() {
-                    Series::full_null(name.clone(), expected_len, s.dtype())
+                if c.is_empty() {
+                    Column::full_null(name.clone(), expected_len, c.dtype())
                 } else {
-                    s.rename(name.clone());
-                    s
+                    c.rename(name.clone());
+                    c
                 }
             })
             .collect();
@@ -117,14 +121,14 @@ impl DataFrame {
             .into_iter()
             .zip(schema.iter_names())
             .map(|(b, name)| {
-                let mut s = b.into_series();
+                let mut c = b.into_series().into_column();
                 // if the schema adds a column not in the rows, we
                 // fill it with nulls
-                if s.is_empty() {
-                    Series::full_null(name.clone(), expected_len, s.dtype())
+                if c.is_empty() {
+                    Column::full_null(name.clone(), expected_len, c.dtype())
                 } else {
-                    s.rename(name.clone());
-                    s
+                    c.rename(name.clone());
+                    c
                 }
             })
             .collect();

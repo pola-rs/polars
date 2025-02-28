@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 
 import polars as pl
+from polars._typing import AsofJoinStrategy, PolarsIntegerType
+from polars.exceptions import InvalidOperationError
 from polars.testing import assert_frame_equal
 
 
@@ -137,11 +139,11 @@ def test_join_asof_mismatched_dtypes() -> None:
         {"a": pl.Series([1, 2, 3], dtype=pl.Int64), "b": ["a", "b", "c"]}
     )
     df2 = pl.DataFrame(
-        {"a": pl.Series([1, 2, 3], dtype=pl.Int32), "c": ["d", "e", "f"]}
+        {"a": pl.Series([1.0, 2.0, 3.0], dtype=pl.Float64), "c": ["d", "e", "f"]}
     )
 
     with pytest.raises(
-        pl.exceptions.ComputeError, match="datatypes of join keys don't match"
+        pl.exceptions.SchemaError, match="datatypes of join keys don't match"
     ):
         df1.join_asof(df2, on="a", strategy="forward")
 
@@ -262,6 +264,18 @@ def test_join_asof_tolerance() -> None:
         "trade": [101, 299, 301, 500],
         "quote": [100, None, 300, None],
     }
+
+    for invalid_tolerance, match in [
+        ("foo", "expected leading integer"),
+        ([None], "could not extract number"),
+    ]:
+        with pytest.raises(pl.exceptions.PolarsError, match=match):
+            df_trades.join_asof(
+                df_quotes,
+                on="time",
+                by="stock",
+                tolerance=invalid_tolerance,  # type: ignore[arg-type]
+            )
 
 
 def test_join_asof_tolerance_forward() -> None:
@@ -1091,6 +1105,7 @@ def test_asof_join_nearest_by_date() -> None:
     assert_frame_equal(out, expected)
 
 
+@pytest.mark.may_fail_auto_streaming  # See #18927.
 def test_asof_join_string() -> None:
     left = pl.DataFrame({"x": [None, "a", "b", "c", None, "d", None]}).set_sorted("x")
     right = pl.DataFrame({"x": ["apple", None, "chutney"], "y": [0, 1, 2]}).set_sorted(
@@ -1195,3 +1210,108 @@ def test_asof_join_by_schema() -> None:
     )
 
     assert q.collect_schema() == q.collect().schema
+
+
+def test_raise_invalid_by_arg_13020() -> None:
+    df1 = pl.DataFrame({"asOfDate": [date(2020, 1, 1)]})
+    df2 = pl.DataFrame(
+        {
+            "endityId": [date(2020, 1, 1)],
+            "eventDate": ["A"],
+        }
+    )
+    with pytest.raises(pl.exceptions.InvalidOperationError, match="expected both"):
+        df1.sort("asOfDate").join_asof(
+            df2.sort("eventDate"),
+            left_on="asOfDate",
+            right_on="eventDate",
+            by_left=None,
+            by_right=["entityId"],
+        )
+
+
+def test_join_asof_no_exact_matches() -> None:
+    trades = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.038",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.048",
+            ],
+            "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+            "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+            "quantity": [75, 155, 100, 100, 100],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    quotes = pl.DataFrame(
+        {
+            "time": [
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.023",
+                "2016-05-25 13:30:00.030",
+                "2016-05-25 13:30:00.041",
+                "2016-05-25 13:30:00.048",
+                "2016-05-25 13:30:00.049",
+                "2016-05-25 13:30:00.072",
+                "2016-05-25 13:30:00.075",
+            ],
+            "ticker": ["GOOG", "MSFT", "MSFT", "MSFT", "GOOG", "AAPL", "GOOG", "MSFT"],
+            "bid": [720.50, 51.95, 51.97, 51.99, 720.50, 97.99, 720.50, 52.01],
+            "ask": [720.93, 51.96, 51.98, 52.00, 720.93, 98.01, 720.88, 52.03],
+        }
+    ).with_columns(pl.col("time").str.to_datetime())
+
+    assert trades.join_asof(
+        quotes, on="time", by="ticker", tolerance="10ms", allow_exact_matches=False
+    ).to_dict(as_series=False) == {
+        "time": [
+            datetime(2016, 5, 25, 13, 30, 0, 23000),
+            datetime(2016, 5, 25, 13, 30, 0, 38000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+            datetime(2016, 5, 25, 13, 30, 0, 48000),
+        ],
+        "ticker": ["MSFT", "MSFT", "GOOG", "GOOG", "AAPL"],
+        "price": [51.95, 51.95, 720.77, 720.92, 98.0],
+        "quantity": [75, 155, 100, 100, 100],
+        "bid": [None, 51.97, None, None, None],
+        "ask": [None, 51.98, None, None, None],
+    }
+
+
+def test_join_asof_not_sorted() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [2, 1, 3, 1, 2, 3]})
+    with pytest.warns(UserWarning, match="is not sorted"):
+        df.join_asof(df, on="b", by="a")
+    with pytest.raises(InvalidOperationError, match="is not sorted"):
+        df.join_asof(df, on="b")
+
+
+@pytest.mark.parametrize("left_dtype", [pl.Int64, pl.UInt64])
+@pytest.mark.parametrize("right_dtype", [pl.Int64, pl.UInt64])
+@pytest.mark.parametrize("strategy", ["backward", "forward", "nearest"])
+def test_join_asof_large_int_21276(
+    left_dtype: PolarsIntegerType,
+    right_dtype: PolarsIntegerType,
+    strategy: AsofJoinStrategy,
+) -> None:
+    large_int64 = 1608129000134000123  # it only happen when "on" column is large
+    left = pl.DataFrame({"ts": pl.Series([large_int64 + 2], dtype=left_dtype)})
+    right = pl.DataFrame(
+        {
+            "ts": pl.Series([large_int64 + 1, large_int64 + 3], dtype=right_dtype),
+            "value": [111, 333],
+        }
+    )
+    result = left.join_asof(right, on="ts", strategy=strategy)
+    idx = 0 if strategy == "backward" else 1
+    expected = pl.DataFrame(
+        {
+            "ts": left["ts"],
+            "value": right["value"].gather(idx),
+        }
+    )
+    assert_frame_equal(result, expected)

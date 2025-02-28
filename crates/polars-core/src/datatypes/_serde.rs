@@ -85,6 +85,7 @@ enum SerializableDataType {
     Int16,
     Int32,
     Int64,
+    Int128,
     Float32,
     Float64,
     String,
@@ -108,11 +109,11 @@ enum SerializableDataType {
     // some logical types we cannot know statically, e.g. Datetime
     Unknown(UnknownKind),
     #[cfg(feature = "dtype-categorical")]
-    Categorical(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
+    Categorical(Option<Series>, CategoricalOrdering),
     #[cfg(feature = "dtype-decimal")]
     Decimal(Option<usize>, Option<usize>),
     #[cfg(feature = "dtype-categorical")]
-    Enum(Option<Wrap<Utf8ViewArray>>, CategoricalOrdering),
+    Enum(Option<Series>, CategoricalOrdering),
     #[cfg(feature = "object")]
     Object(String),
 }
@@ -130,6 +131,7 @@ impl From<&DataType> for SerializableDataType {
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
+            Int128 => Self::Int128,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
@@ -146,11 +148,23 @@ impl From<&DataType> for SerializableDataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds.clone()),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, ordering) => Self::Categorical(None, *ordering),
+            Categorical(Some(rev_map), ordering) => Self::Categorical(
+                Some(
+                    StringChunked::with_chunk(PlSmallStr::EMPTY, rev_map.get_categories().clone())
+                        .into_series(),
+                ),
+                *ordering,
+            ),
             #[cfg(feature = "dtype-categorical")]
-            Enum(Some(rev_map), ordering) => {
-                Self::Enum(Some(Wrap(rev_map.get_categories().clone())), *ordering)
-            },
+            Categorical(None, ordering) => Self::Categorical(None, *ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(rev_map), ordering) => Self::Enum(
+                Some(
+                    StringChunked::with_chunk(PlSmallStr::EMPTY, rev_map.get_categories().clone())
+                        .into_series(),
+                ),
+                *ordering,
+            ),
             #[cfg(feature = "dtype-categorical")]
             Enum(None, ordering) => Self::Enum(None, *ordering),
             #[cfg(feature = "dtype-decimal")]
@@ -174,6 +188,7 @@ impl From<SerializableDataType> for DataType {
             Int16 => Self::Int16,
             Int32 => Self::Int32,
             Int64 => Self::Int64,
+            Int128 => Self::Int128,
             Float32 => Self::Float32,
             Float64 => Self::Float64,
             String => Self::String,
@@ -190,9 +205,26 @@ impl From<SerializableDataType> for DataType {
             #[cfg(feature = "dtype-struct")]
             Struct(flds) => Self::Struct(flds),
             #[cfg(feature = "dtype-categorical")]
-            Categorical(_, ordering) => Self::Categorical(None, ordering),
+            Categorical(Some(categories), ordering) => Self::Categorical(
+                Some(Arc::new(RevMapping::build_local(
+                    categories.0.rechunk().chunks()[0]
+                        .as_any()
+                        .downcast_ref::<Utf8ViewArray>()
+                        .unwrap()
+                        .clone(),
+                ))),
+                ordering,
+            ),
             #[cfg(feature = "dtype-categorical")]
-            Enum(Some(categories), _) => create_enum_dtype(categories.0),
+            Categorical(None, ordering) => Self::Categorical(None, ordering),
+            #[cfg(feature = "dtype-categorical")]
+            Enum(Some(categories), _) => create_enum_dtype(
+                categories.rechunk().chunks()[0]
+                    .as_any()
+                    .downcast_ref::<Utf8ViewArray>()
+                    .unwrap()
+                    .clone(),
+            ),
             #[cfg(feature = "dtype-categorical")]
             Enum(None, ordering) => Self::Enum(None, ordering),
             #[cfg(feature = "dtype-decimal")]

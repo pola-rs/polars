@@ -76,9 +76,9 @@ impl ExprNameNameSpace {
                         fd
                     })
                     .collect::<Vec<_>>();
-                let mut out = StructChunked::from_series(s.name().clone(), &fields)?;
+                let mut out = StructChunked::from_series(s.name().clone(), s.len(), fields.iter())?;
                 out.zip_outer_validity(s);
-                Ok(Some(out.into_series()))
+                Ok(Some(out.into_column()))
             },
             GetOutput::map_dtype(move |dt| match dt {
                 DataType::Struct(fds) => {

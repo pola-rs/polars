@@ -14,7 +14,7 @@ pub use revmap::*;
 
 use super::*;
 use crate::chunked_array::cast::CastOptions;
-use crate::chunked_array::metadata::MetadataFlags;
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::using_string_cache;
@@ -26,7 +26,7 @@ bitflags! {
     }
 }
 
-#[derive(Clone)]
+#[derive(Default, Clone)]
 pub struct CategoricalChunked {
     physical: Logical<CategoricalType, UInt32Type>,
     /// 1st bit: original local categorical
@@ -174,15 +174,15 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn get_flags(&self) -> MetadataFlags {
+    pub(crate) fn get_flags(&self) -> StatisticsFlags {
         self.physical().get_flags()
     }
 
     /// Set flags for the Chunked Array
-    pub(crate) fn set_flags(&mut self, mut flags: MetadataFlags) {
+    pub(crate) fn set_flags(&mut self, mut flags: StatisticsFlags) {
         // We should not set the sorted flag if we are sorting in lexical order
         if self.uses_lexical_ordering() {
-            flags.set_sorted_flag(IsSorted::Not)
+            flags.set_sorted(IsSorted::Not)
         }
         self.physical_mut().set_flags(flags)
     }
@@ -200,6 +200,24 @@ impl CategoricalChunked {
             *ordering
         } else {
             panic!("implementation error")
+        }
+    }
+
+    /// Create a [`CategoricalChunked`] from a physical array and dtype.
+    ///
+    /// # Safety
+    /// It's not checked that the indices are in-bounds or that the dtype is
+    /// correct.
+    pub unsafe fn from_cats_and_dtype_unchecked(idx: UInt32Chunked, dtype: DataType) -> Self {
+        debug_assert!(matches!(
+            dtype,
+            DataType::Enum { .. } | DataType::Categorical { .. }
+        ));
+        let mut logical = Logical::<UInt32Type, _>::new_logical::<CategoricalType>(idx);
+        logical.2 = Some(dtype);
+        Self {
+            physical: logical,
+            bit_settings: Default::default(),
         }
     }
 
@@ -279,12 +297,18 @@ impl CategoricalChunked {
         }
     }
 
-    pub(crate) fn with_fast_unique(mut self, toggle: bool) -> Self {
+    /// Set `FAST_UNIQUE` metadata
+    /// # Safety
+    /// This invariant must hold `unique(categories) == unique(self)`
+    pub(crate) unsafe fn with_fast_unique(mut self, toggle: bool) -> Self {
         self.set_fast_unique(toggle);
         self
     }
 
-    pub fn _with_fast_unique(self, toggle: bool) -> Self {
+    /// Set `FAST_UNIQUE` metadata
+    /// # Safety
+    /// This invariant must hold `unique(categories) == unique(self)`
+    pub unsafe fn _with_fast_unique(self, toggle: bool) -> Self {
         self.with_fast_unique(toggle)
     }
 
@@ -299,7 +323,7 @@ impl CategoricalChunked {
         }
     }
 
-    /// Create an `[Iterator]` that iterates over the `&str` values of the `[CategoricalChunked]`.
+    /// Create an [`Iterator`] that iterates over the `&str` values of the [`CategoricalChunked`].
     pub fn iter_str(&self) -> CatIter<'_> {
         let iter = self.physical().into_iter();
         CatIter {
@@ -391,28 +415,33 @@ impl LogicalType for CategoricalChunked {
                         return Ok(self.to_local().set_ordering(*ordering, true).into_series());
                     }
                 }
-                // Otherwise we do nothing
-                Ok(self.clone().set_ordering(*ordering, true).into_series())
+                // If casting to lexical categorical, set sorted flag as not set
+
+                let mut ca = self.clone().set_ordering(*ordering, true);
+                if ca.uses_lexical_ordering() {
+                    ca.physical.set_sorted_flag(IsSorted::Not);
+                }
+                Ok(ca.into_series())
             },
-            dt if dt.is_numeric() => {
-                // Apply the cast to the categories and then index into the casted series
+            dt if dt.is_primitive_numeric() => {
+                // Apply the cast to the categories and then index into the casted series.
+                // This has to be local for the gather.
+                let slf = self.to_local();
                 let categories = StringChunked::with_chunk(
-                    self.physical.name().clone(),
-                    self.get_rev_map().get_categories().clone(),
+                    slf.physical.name().clone(),
+                    slf.get_rev_map().get_categories().clone(),
                 );
                 let casted_series = categories.cast_with_options(dtype, options)?;
 
                 #[cfg(feature = "bigidx")]
                 {
-                    let s = self
-                        .physical
-                        .cast_with_options(&DataType::UInt64, options)?;
+                    let s = slf.physical.cast_with_options(&DataType::UInt64, options)?;
                     Ok(unsafe { casted_series.take_unchecked(s.u64()?) })
                 }
                 #[cfg(not(feature = "bigidx"))]
                 {
                     // SAFETY: Invariant of categorical means indices are in bound
-                    Ok(unsafe { casted_series.take_unchecked(&self.physical) })
+                    Ok(unsafe { casted_series.take_unchecked(&slf.physical) })
                 }
             },
             _ => self.physical.cast_with_options(dtype, options),
@@ -425,7 +454,7 @@ pub struct CatIter<'a> {
     iter: Box<dyn PolarsIterator<Item = Option<u32>> + 'a>,
 }
 
-unsafe impl<'a> TrustedLen for CatIter<'a> {}
+unsafe impl TrustedLen for CatIter<'_> {}
 
 impl<'a> Iterator for CatIter<'a> {
     type Item = Option<&'a str>;
@@ -445,7 +474,7 @@ impl<'a> Iterator for CatIter<'a> {
     }
 }
 
-impl<'a> ExactSizeIterator for CatIter<'a> {}
+impl ExactSizeIterator for CatIter<'_> {}
 
 #[cfg(test)]
 mod test {

@@ -1,4 +1,4 @@
-use std::{mem, ptr};
+use std::ptr;
 
 use ndarray::IntoDimension;
 use numpy::npyffi::types::npy_intp;
@@ -30,12 +30,12 @@ unsafe fn aligned_array<T: Element + NativeType>(
     let buffer_ptr = buf.as_mut_ptr();
 
     let mut dims = [len].into_dimension();
-    let strides = [mem::size_of::<T>() as npy_intp];
+    let strides = [size_of::<T>() as npy_intp];
 
     let ptr = PY_ARRAY_API.PyArray_NewFromDescr(
         py,
         PY_ARRAY_API.get_type_object(py, npyffi::NpyTypes::PyArray_Type),
-        T::get_dtype_bound(py).into_dtype_ptr(),
+        T::get_dtype(py).into_dtype_ptr(),
         dims.ndim_cint(),
         dims.as_dims_ptr(),
         strides.as_ptr() as *mut _, // strides
@@ -56,11 +56,11 @@ unsafe fn aligned_array<T: Element + NativeType>(
 ///   - For PyPy: Reference counters for a live PyPy object = refcnt + 2 << 60.
 fn get_refcnt<T>(pyarray: &Bound<'_, PyArray1<T>>) -> isize {
     let refcnt = pyarray.get_refcnt();
+    #[cfg(target_pointer_width = "64")]
     if refcnt >= (2 << 60) {
-        refcnt - (2 << 60)
-    } else {
-        refcnt
+        return refcnt - (2 << 60);
     }
+    refcnt
 }
 
 macro_rules! impl_ufuncs {
@@ -83,9 +83,8 @@ macro_rules! impl_ufuncs {
                     if !allocate_out {
                         // We're not going to allocate the output array.
                         // Instead, we'll let the ufunc do it.
-                        let result = lambda.call1((PyNone::get_bound(py),))?;
-                        let series_factory =
-                            PyModule::import_bound(py, "polars")?.getattr("Series")?;
+                        let result = lambda.call1((PyNone::get(py),))?;
+                        let series_factory = crate::py_modules::pl_series(py).bind(py);
                         return series_factory
                             .call((self.name(), result), None)?
                             .getattr("_s")?
@@ -98,7 +97,7 @@ macro_rules! impl_ufuncs {
 
                     debug_assert_eq!(get_refcnt(&out_array), 1);
                     // inserting it in a tuple increase the reference count by 1.
-                    let args = PyTuple::new_bound(py, &[out_array.clone()]);
+                    let args = PyTuple::new(py, &[out_array.clone()])?;
                     debug_assert_eq!(get_refcnt(&out_array), 2);
 
                     // whatever the result, we must take the leaked memory ownership back

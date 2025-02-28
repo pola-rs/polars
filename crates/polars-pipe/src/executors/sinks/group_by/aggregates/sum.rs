@@ -2,12 +2,9 @@ use std::any::Any;
 use std::ops::Add;
 
 use arrow::array::PrimitiveArray;
-use arrow::compute::aggregate::Sum;
-use arrow::types::simd::Simd;
-use polars_core::export::num::NumCast;
+use num_traits::NumCast;
+use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
 use polars_core::prelude::*;
-use polars_core::utils::arrow::compute::aggregate::sum_primitive;
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use super::*;
 
@@ -24,15 +21,14 @@ impl<K: NumericNative> SumAgg<K> {
 impl<K> AggregateFn for SumAgg<K>
 where
     K::PolarsType: PolarsNumericType,
-    K: NumericNative + Add<Output = K>,
-    <K as Simd>::Simd: Add<Output = <K as Simd>::Simd> + Sum<K>,
+    K: NumericNative + Add<Output = K> + WrappingSum,
 {
     fn has_physical_agg(&self) -> bool {
         true
     }
 
     fn pre_agg(&mut self, _chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
-        let item = unsafe { item.next().unwrap_unchecked_release() };
+        let item = unsafe { item.next().unwrap_unchecked() };
         self.pre_agg_primitive(0, item.extract::<K>())
     }
     fn pre_agg_primitive<T: NumCast>(&mut self, _chunk_idx: IdxSize, item: Option<T>) {
@@ -56,29 +52,28 @@ where
             arr.sliced_unchecked(offset as usize, length as usize)
         };
         let dtype = K::PolarsType::get_dtype().to_arrow(CompatLevel::newest());
-        let arr = arrow::compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
+        let arr = polars_compute::cast::cast_unchecked(arr.as_ref(), &dtype).unwrap();
         let arr = unsafe {
             arr.as_any()
                 .downcast_ref::<PrimitiveArray<K>>()
-                .unwrap_unchecked_release()
+                .unwrap_unchecked()
         };
-        match (sum_primitive(arr), self.sum) {
-            (Some(val), Some(sum)) => {
+        match (wrapping_sum_arr(arr), self.sum) {
+            (val, Some(sum)) => {
                 self.sum = Some(sum + val);
             },
-            (Some(val), None) => {
+            (val, None) => {
                 self.sum = Some(val);
             },
-            _ => {},
         }
     }
 
     fn dtype(&self) -> DataType {
-        (&ArrowDataType::from(K::PRIMITIVE)).into()
+        DataType::from_arrow_dtype(&ArrowDataType::from(K::PRIMITIVE))
     }
 
     fn combine(&mut self, other: &dyn Any) {
-        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
+        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked() };
         let sum = match (self.sum, other.sum) {
             (Some(lhs), Some(rhs)) => Some(lhs + rhs),
             (Some(lhs), None) => Some(lhs),

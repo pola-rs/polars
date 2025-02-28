@@ -25,7 +25,7 @@ blake3 = { version = "1.5.1", optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
-fast-float = { workspace = true, optional = true }
+fast-float2 = { workspace = true, optional = true }
 flate2 = { workspace = true, optional = true }
 futures = { workspace = true, optional = true }
 glob = { version = "0.3" }
@@ -37,6 +37,7 @@ num-traits = { workspace = true }
 object_store = { workspace = true, optional = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
+pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true, optional = true }
@@ -45,19 +46,22 @@ serde = { workspace = true, features = ["rc"], optional = true }
 serde_json = { version = "1", optional = true }
 simd-json = { workspace = true, optional = true }
 simdutf8 = { workspace = true, optional = true }
+strum = { workspace = true, optional = true }
+strum_macros = { workspace = true, optional = true }
 tokio = { workspace = true, features = ["fs", "net", "rt-multi-thread", "time", "sync"], optional = true }
 tokio-util = { workspace = true, features = ["io", "io-util"], optional = true }
 url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-fs4 = { version = "0.9", features = ["sync"], optional = true }
+fs4 = { version = "0.12", features = ["sync"], optional = true }
 home = "0.5.4"
 
 [dev-dependencies]
 tempfile = "3"
 
 [features]
+catalog = ["cloud", "serde", "reqwest", "futures", "strum", "strum_macros", "chrono"]
 default = ["decompress"]
 # support for arrows json parsing
 json = [
@@ -74,13 +78,13 @@ ipc = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 ipc_streaming = ["arrow/io_ipc", "arrow/io_ipc_compression"]
 # support for arrow avro parsing
 avro = ["arrow/io_avro", "arrow/io_avro_compression"]
-csv = ["atoi_simd", "polars-core/rows", "itoa", "ryu", "fast-float", "simdutf8"]
-decompress = ["flate2/rust_backend", "zstd"]
-decompress-fast = ["flate2/zlib-ng", "zstd"]
+csv = ["atoi_simd", "polars-core/rows", "itoa", "ryu", "fast-float2", "simdutf8"]
+decompress = ["flate2/zlib-rs", "zstd"]
 dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
+dtype-i128 = ["polars-core/dtype-i128"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 dtype-date = ["polars-core/dtype-date", "polars-time/dtype-date"]
 object = ["polars-core/object"]
@@ -98,6 +102,7 @@ timezones = [
   "polars-json?/timezones",
 ]
 dtype-time = ["polars-core/dtype-time", "polars-core/temporal", "polars-time/dtype-time"]
+dtype-duration = ["polars-core/dtype-duration", "polars-time/dtype-duration"]
 dtype-struct = ["polars-core/dtype-struct"]
 dtype-decimal = ["polars-core/dtype-decimal", "polars-json?/dtype-decimal"]
 fmt = ["polars-core/fmt"]
@@ -108,7 +113,6 @@ async = [
   "futures",
   "tokio",
   "tokio-util",
-  "arrow/io_ipc_write_async",
   "polars-error/regex",
   "polars-parquet?/async",
 ]
@@ -130,7 +134,7 @@ gcp = ["object_store/gcp", "cloud"]
 http = ["object_store/http", "cloud"]
 temporal = ["dtype-datetime", "dtype-date", "dtype-time"]
 simd = []
-python = ["polars-error/python"]
+python = ["pyo3", "polars-error/python", "polars-utils/python"]
 
 [package.metadata.docs.rs]
 all-features = true

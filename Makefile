@@ -10,6 +10,56 @@ else
 	VENV_BIN=$(VENV)/bin
 endif
 
+# Detect CPU architecture.
+ifeq ($(OS),Windows_NT)
+    ifeq ($(PROCESSOR_ARCHITECTURE),AMD64)
+		ARCH := amd64
+	else ifeq ($(PROCESSOR_ARCHITECTURE),x86)
+		ARCH := x86
+	else ifeq ($(PROCESSOR_ARCHITECTURE),ARM64)
+		ARCH := arm64
+	else
+		ARCH := unknown
+    endif
+else
+    UNAME_P := $(shell uname -p)
+    ifeq ($(UNAME_P),x86_64)
+		ARCH := amd64
+	else ifneq ($(filter %86,$(UNAME_P)),)
+		ARCH := x86
+	else ifneq ($(filter arm%,$(UNAME_P)),)
+		ARCH := arm64
+	else
+		ARCH := unknown
+    endif
+endif
+
+# Ensure boolean arguments are normalized to 1/0 to prevent surprises.
+ifdef LTS_CPU
+	ifeq ($(LTS_CPU),0)
+	else ifeq ($(LTS_CPU),1)
+	else
+$(error LTS_CPU must be 0 or 1 (or undefined, default to 0))
+	endif
+endif
+
+# Define RUSTFLAGS and CFLAGS appropriate for the architecture.
+# Keep synchronized with .github/workflows/release-python.yml.
+ifeq ($(ARCH),amd64)
+	ifeq ($(LTS_CPU),1)
+		FEAT_RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b
+		FEAT_CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16
+	else
+		FEAT_RUSTFLAGS=-C target-feature=+sse3,+ssse3,+sse4.1,+sse4.2,+popcnt,+cmpxchg16b,+avx,+avx2,+fma,+bmi1,+bmi2,+lzcnt,+pclmulqdq,+movbe -Z tune-cpu=skylake
+		FEAT_CFLAGS=-msse3 -mssse3 -msse4.1 -msse4.2 -mpopcnt -mcx16 -mavx -mavx2 -mfma -mbmi -mbmi2 -mlzcnt -mpclmul -mmovbe -mtune=skylake
+	endif
+endif
+
+override RUSTFLAGS+=$(FEAT_RUSTFLAGS)
+override CFLAGS+=$(FEAT_CFLAGS)
+export RUSTFLAGS
+export CFLAGS
+
 # Define command to filter pip warnings when running maturin
 FILTER_PIP_WARNINGS=| grep -v "don't match your environment"; test $${PIPESTATUS[0]} -eq 0
 
@@ -25,7 +75,7 @@ requirements: .venv  ## Install/refresh Python project requirements
 	   -r py-polars/requirements-dev.txt \
 	   -r py-polars/requirements-lint.txt \
 	   -r py-polars/docs/requirements-docs.txt \
-	   -r docs/requirements.txt
+	   -r docs/source/requirements.txt
 
 .PHONY: requirements-all
 requirements-all: .venv  ## Install/refresh all Python requirements (including those needed for CI tests)
@@ -35,55 +85,37 @@ requirements-all: .venv  ## Install/refresh all Python requirements (including t
 .PHONY: build
 build: .venv  ## Compile and install Python Polars for development
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
-.PHONY: build-debug-opt
-build-debug-opt: .venv  ## Compile and install Python Polars with minimal optimizations turned on
+.PHONY: build-mindebug
+build-mindebug: .venv  ## Same as build, but don't include full debug information
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile opt-dev \
-	$(FILTER_PIP_WARNINGS)
-
-.PHONY: build-debug-opt-subset
-build-debug-opt-subset: .venv  ## Compile and install Python Polars with minimal optimizations turned on and no default features
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --no-default-features --profile opt-dev \
-	$(FILTER_PIP_WARNINGS)
-
-.PHONY: build-opt
-build-opt: .venv  ## Compile and install Python Polars with nearly full optimization on and debug assertions turned off, but with debug symbols on
-	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile mindebug-dev $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: build-release
-build-release: .venv  ## Compile and install a faster Python Polars binary with full optimizations
+build-release: .venv  ## Compile and install Python Polars binary with optimizations, with minimal debug symbols
 	@unset CONDA_PREFIX \
-	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
-.PHONY: build-native
-build-native: .venv  ## Same as build, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
-	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml \
+.PHONY: build-nodebug-release
+build-nodebug-release: .venv  ## Same as build-release, but without any debug symbols at all (a bit faster to build)
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile nodebug-release $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
-.PHONY: build-debug-opt-native
-build-debug-opt-native: .venv  ## Same as build-debug-opt, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
-	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile opt-dev \
+.PHONY: build-debug-release
+build-debug-release: .venv  ## Same as build-release, but with full debug symbols turned on (a bit slower to build)
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
-.PHONY: build-opt-native
-build-opt-native: .venv  ## Same as build-opt, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
-	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile debug-release \
-	$(FILTER_PIP_WARNINGS)
-
-.PHONY: build-release-native
-build-release-native: .venv  ## Same as build-release, except with native CPU optimizations turned on
-	@unset CONDA_PREFIX && RUSTFLAGS='-C target-cpu=native' \
-	$(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --release \
+.PHONY: build-dist-release
+build-dist-release: .venv  ## Compile and install Python Polars binary with super slow extra optimization turned on, for distribution
+	@unset CONDA_PREFIX \
+	&& $(VENV_BIN)/maturin develop -m py-polars/Cargo.toml --profile dist-release $(ARGS) \
 	$(FILTER_PIP_WARNINGS)
 
 .PHONY: check
@@ -105,6 +137,13 @@ fmt:  ## Run autoformatting and linting
 	cargo fmt --all
 	dprint fmt
 	$(VENV_BIN)/typos
+	
+.PHONY: fix
+fix:
+	cargo clippy --workspace --all-targets --all-features --fix 
+	@# Good chance the fixing introduced formatting issues, best to just do a quick format.
+	cargo fmt --all
+	
 
 .PHONY: pre-commit
 pre-commit: fmt clippy clippy-default  ## Run all code quality checks
@@ -121,3 +160,6 @@ clean:  ## Clean up caches, build artifacts, and the venv
 help:  ## Display this help screen
 	@echo -e "\033[1mAvailable commands:\033[0m"
 	@grep -E '^[a-z.A-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}' | sort
+	@echo
+	@echo The build commands support LTS_CPU=1 for building for older CPUs, and ARGS which is passed through to maturin.
+	@echo 'For example to build without default features use: make build ARGS="--no-default-features".'

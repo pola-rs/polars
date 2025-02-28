@@ -7,7 +7,7 @@ fn test_with_duplicate_column_empty_df() {
     let a = Int32Chunked::from_slice("a".into(), &[]);
 
     assert_eq!(
-        DataFrame::new(vec![a.into_series()])
+        DataFrame::new(vec![a.into_column()])
             .unwrap()
             .lazy()
             .with_columns([lit(true).alias("a")])
@@ -195,7 +195,7 @@ fn test_unknown_supertype_ignore() -> PolarsResult<()> {
 fn test_apply_multiple_columns() -> PolarsResult<()> {
     let df = fruits_cars();
 
-    let multiply = |s: &mut [Series]| (&(&s[0] * &s[0])? * &s[1]).map(Some);
+    let multiply = |s: &mut [Column]| (&(&s[0] * &s[0])? * &s[1]).map(Some);
 
     let out = df
         .clone()
@@ -203,7 +203,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .select([map_multiple(
             multiply,
             [col("A"), col("B")],
-            GetOutput::from_type(DataType::Float64),
+            GetOutput::from_type(DataType::Int32),
         )])
         .collect()?;
     let out = out.column("A")?;
@@ -219,7 +219,7 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
         .agg([apply_multiple(
             multiply,
             [col("A"), col("B")],
-            GetOutput::from_type(DataType::Float64),
+            GetOutput::from_type(DataType::Int32),
             true,
         )])
         .collect()?;
@@ -234,14 +234,14 @@ fn test_apply_multiple_columns() -> PolarsResult<()> {
 
 #[test]
 fn test_group_by_on_lists() -> PolarsResult<()> {
-    let s0 = Series::new("".into(), [1i32, 2, 3]);
-    let s1 = Series::new("groups".into(), [4i32, 5]);
+    let s0 = Column::new("".into(), [1i32, 2, 3]);
+    let s1 = Column::new("groups".into(), [4i32, 5]);
 
     let mut builder =
         ListPrimitiveChunkedBuilder::<Int32Type>::new("arrays".into(), 10, 10, DataType::Int32);
-    builder.append_series(&s0).unwrap();
-    builder.append_series(&s1).unwrap();
-    let s2 = builder.finish().into_series();
+    builder.append_series(s0.as_materialized_series()).unwrap();
+    builder.append_series(s1.as_materialized_series()).unwrap();
+    let s2 = builder.finish().into_column();
 
     let df = DataFrame::new(vec![s1, s2])?;
     let out = df

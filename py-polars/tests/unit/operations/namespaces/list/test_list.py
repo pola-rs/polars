@@ -2,13 +2,21 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
 import polars as pl
-from polars.exceptions import ComputeError, OutOfBoundsError, SchemaError
+from polars.exceptions import (
+    ComputeError,
+    OutOfBoundsError,
+    SchemaError,
+)
 from polars.testing import assert_frame_equal, assert_series_equal
+
+if TYPE_CHECKING:
+    from polars._typing import PolarsDataType
 
 
 def test_list_arr_get() -> None:
@@ -244,6 +252,16 @@ def test_list_contains_invalid_datatype() -> None:
     df = pl.DataFrame({"a": [[1, 2], [3, 4]]}, schema={"a": pl.Array(pl.Int8, shape=2)})
     with pytest.raises(SchemaError, match="invalid series dtype: expected `List`"):
         df.select(pl.col("a").list.contains(2))
+
+
+def test_list_contains_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.contains
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.contains(3)).to_dict(as_series=False) == {
+        "a": [False],
+        "b": [True],
+    }
 
 
 def test_list_concat() -> None:
@@ -620,17 +638,18 @@ def test_list_unique2() -> None:
     assert sorted(result[1]) == [1, 2]
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_list_to_struct() -> None:
     df = pl.DataFrame({"n": [[0, 1, 2], [0, 1]]})
 
-    assert df.select(pl.col("n").list.to_struct()).rows(named=True) == [
+    assert df.select(pl.col("n").list.to_struct(_eager=True)).rows(named=True) == [
         {"n": {"field_0": 0, "field_1": 1, "field_2": 2}},
         {"n": {"field_0": 0, "field_1": 1, "field_2": None}},
     ]
 
-    assert df.select(pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}")).rows(
-        named=True
-    ) == [
+    assert df.select(
+        pl.col("n").list.to_struct(fields=lambda idx: f"n{idx}", _eager=True)
+    ).rows(named=True) == [
         {"n": {"n0": 0, "n1": 1, "n2": 2}},
         {"n": {"n0": 0, "n1": 1, "n2": None}},
     ]
@@ -641,6 +660,34 @@ def test_list_to_struct() -> None:
         {"n": {"one": 0, "two": 1, "three": 2}},
         {"n": {"one": 0, "two": 1, "three": None}},
     ]
+
+    q = df.lazy().select(
+        pl.col("n").list.to_struct(fields=["a", "b"]).struct.field("a")
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": [0, 0]}))
+
+    # Check that:
+    # * Specifying an upper bound calls the field name getter function to
+    #   retrieve the lazy schema
+    # * The upper bound is respected during execution
+    q = df.lazy().select(
+        pl.col("n")
+        .list.to_struct(fields=str, upper_bound=2, _eager=True)
+        .struct.unnest()
+    )
+    assert q.collect_schema() == {"0": pl.Int64, "1": pl.Int64}
+    assert_frame_equal(q.collect(), pl.DataFrame({"0": [0, 0], "1": [1, 1]}))
+
+    assert df.lazy().select(
+        pl.col("n").list.to_struct(_eager=True)
+    ).collect_schema() == {"n": pl.Unknown}
+
+
+def test_list_to_struct_all_null_12119() -> None:
+    s = pl.Series([None], dtype=pl.List(pl.Int64))
+    result = s.list.to_struct(fields=["a", "b", "c"]).to_list()
+    assert result == [{"a": None, "b": None, "c": None}]
 
 
 def test_select_from_list_to_struct_11143() -> None:
@@ -685,6 +732,16 @@ def test_list_count_matches_boolean_nulls_9141() -> None:
     assert a.select(pl.col("a").list.count_matches(True))["a"].to_list() == [1]
 
 
+def test_list_count_matches_wildcard_expansion() -> None:
+    # Test that wildcard expansions occurs correctly in list.count_match
+    # https://github.com/pola-rs/polars/issues/18968
+    df = pl.DataFrame({"a": [[1, 2]], "b": [[3, 4]]})
+    assert df.select(pl.all().list.count_matches(3)).to_dict(as_series=False) == {
+        "a": [0],
+        "b": [1],
+    }
+
+
 def test_list_gather_oob_10079() -> None:
     df = pl.DataFrame(
         {
@@ -707,13 +764,6 @@ def test_utf8_empty_series_arg_min_max_10703() -> None:
         "arg_min": [0, None],
         "arg_max": [0, None],
     }
-
-
-def test_list_len() -> None:
-    s = pl.Series([[1, 2, None], [5]])
-    result = s.list.len()
-    expected = pl.Series([3, 1], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
 
 
 def test_list_to_array() -> None:
@@ -759,11 +809,34 @@ def test_list_to_array_wrong_dtype() -> None:
 
 
 def test_list_lengths() -> None:
+    s = pl.Series([[1, 2, None], [5]])
+    result = s.list.len()
+    expected = pl.Series([3, 1], dtype=pl.UInt32)
+    assert_series_equal(result, expected)
+
     s = pl.Series("a", [[1, 2], [1, 2, 3]])
     assert_series_equal(s.list.len(), pl.Series("a", [2, 3], dtype=pl.UInt32))
     df = pl.DataFrame([s])
     assert_series_equal(
         df.select(pl.col("a").list.len())["a"], pl.Series("a", [2, 3], dtype=pl.UInt32)
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([True, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([2, None], dtype=pl.UInt32),
+    )
+
+    assert_series_equal(
+        pl.select(
+            pl.when(pl.Series([False, False]))
+            .then(pl.Series([[1, 1], [1, 1]]))
+            .list.len()
+        ).to_series(),
+        pl.Series([None, None], dtype=pl.UInt32),
     )
 
 
@@ -884,3 +957,73 @@ def test_list_get_with_null() -> None:
 def test_list_sum_bool_schema() -> None:
     q = pl.LazyFrame({"x": [[True, True, False]]})
     assert q.select(pl.col("x").list.sum()).collect_schema()["x"] == pl.UInt32
+
+
+def test_list_concat_struct_19279() -> None:
+    df = pl.select(
+        pl.struct(s=pl.lit("abcd").str.split("").explode(), i=pl.int_range(0, 4))
+    )
+    df = pl.concat([df[:2], df[-2:]])
+    assert df.select(pl.concat_list("s")).to_dict(as_series=False) == {
+        "s": [
+            [{"s": "a", "i": 0}],
+            [{"s": "b", "i": 1}],
+            [{"s": "c", "i": 2}],
+            [{"s": "d", "i": 3}],
+        ]
+    }
+
+
+def test_list_eval_element_schema_19345() -> None:
+    assert_frame_equal(
+        (
+            pl.LazyFrame({"a": [[{"a": 1}]]})
+            .select(pl.col("a").list.eval(pl.element().struct.field("a")))
+            .collect()
+        ),
+        pl.DataFrame({"a": [[1]]}),
+    )
+
+
+@pytest.mark.parametrize(
+    ("agg", "inner_dtype", "expected_dtype"),
+    [
+        ("sum", pl.Int8, pl.Int64),
+        ("max", pl.Int8, pl.Int8),
+        ("sum", pl.Duration("us"), pl.Duration("us")),
+        ("min", pl.Duration("ms"), pl.Duration("ms")),
+        ("min", pl.String, pl.String),
+        ("max", pl.String, pl.String),
+    ],
+)
+def test_list_agg_all_null(
+    agg: str, inner_dtype: PolarsDataType, expected_dtype: PolarsDataType
+) -> None:
+    s = pl.Series([None, None], dtype=pl.List(inner_dtype))
+    assert getattr(s.list, agg)().dtype == expected_dtype
+
+
+@pytest.mark.parametrize(
+    ("inner_dtype", "expected_inner_dtype"),
+    [
+        (pl.Datetime("us"), pl.Duration("us")),
+        (pl.Date(), pl.Duration("ms")),
+        (pl.Time(), pl.Duration("ns")),
+        (pl.UInt64(), pl.Int64()),
+        (pl.UInt32(), pl.Int64()),
+        (pl.UInt8(), pl.Int16()),
+        (pl.Int8(), pl.Int8()),
+        (pl.Float32(), pl.Float32()),
+    ],
+)
+def test_list_diff_schema(
+    inner_dtype: PolarsDataType, expected_inner_dtype: PolarsDataType
+) -> None:
+    lf = (
+        pl.LazyFrame({"a": [[1, 2]]})
+        .cast(pl.List(inner_dtype))
+        .select(pl.col("a").list.diff(1))
+    )
+    expected = {"a": pl.List(expected_inner_dtype)}
+    assert lf.collect_schema() == expected
+    assert lf.collect().schema == expected

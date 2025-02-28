@@ -1,7 +1,6 @@
 mod dot;
 mod format;
 mod inputs;
-mod scan_sources;
 mod schema;
 pub(crate) mod tree_format;
 
@@ -10,14 +9,14 @@ use std::fmt;
 
 pub use dot::{EscapeLabel, IRDotDisplay, PathsDisplay, ScanSourcesDisplay};
 pub use format::{ExprIRDisplay, IRDisplay};
-use hive::HivePartitions;
 use polars_core::prelude::*;
 use polars_utils::idx_vec::UnitVec;
 use polars_utils::unitvec;
-pub use scan_sources::{ScanSourceIter, ScanSourceRef, ScanSources};
 #[cfg(feature = "ir_serde")]
 use serde::{Deserialize, Serialize};
+use strum_macros::IntoStaticStr;
 
+use self::hive::HivePartitionsDf;
 use crate::prelude::*;
 
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
@@ -36,8 +35,9 @@ pub struct IRPlanRef<'a> {
 
 /// [`IR`] is a representation of [`DslPlan`] with [`Node`]s which are allocated in an [`Arena`]
 /// In this IR the logical plan has access to the full dataset.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, IntoStaticStr)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {
@@ -55,7 +55,7 @@ pub enum IR {
     Scan {
         sources: ScanSources,
         file_info: FileInfo,
-        hive_parts: Option<Arc<Vec<HivePartitions>>>,
+        hive_parts: Option<HivePartitionsDf>,
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
@@ -69,21 +69,12 @@ pub enum IR {
         // Schema of the projected file
         // If `None`, no projection is applied
         output_schema: Option<SchemaRef>,
-        // Predicate to apply on the DataFrame
-        // All the columns required for the predicate are projected.
-        filter: Option<ExprIR>,
     },
     // Only selects columns (semantically only has row access).
     // This is a more restricted operation than `Select`.
     SimpleProjection {
         input: Node,
         columns: SchemaRef,
-    },
-    // Special case of `select` where all operations reduce to a single row.
-    Reduce {
-        input: Node,
-        exprs: Vec<ExprIR>,
-        schema: SchemaRef,
     },
     // Polars' `select` operation. This may access full materialized data.
     Select {
@@ -110,10 +101,10 @@ pub enum IR {
         keys: Vec<ExprIR>,
         aggs: Vec<ExprIR>,
         schema: SchemaRef,
-        #[cfg_attr(feature = "ir_serde", serde(skip))]
-        apply: Option<Arc<dyn DataFrameUdf>>,
         maintain_order: bool,
         options: Arc<GroupbyOptions>,
+        #[cfg_attr(feature = "ir_serde", serde(skip))]
+        apply: Option<Arc<dyn DataFrameUdf>>,
     },
     Join {
         input_left: Node,
@@ -156,6 +147,12 @@ pub enum IR {
     Sink {
         input: Node,
         payload: SinkType,
+    },
+    #[cfg(feature = "merge_sorted")]
+    MergeSorted {
+        input_left: Node,
+        input_right: Node,
+        key: PlSmallStr,
     },
     #[default]
     Invalid,
@@ -272,6 +269,6 @@ mod test {
     #[ignore]
     #[test]
     fn test_alp_size() {
-        assert!(std::mem::size_of::<IR>() <= 152);
+        assert!(size_of::<IR>() <= 152);
     }
 }

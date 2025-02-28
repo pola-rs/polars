@@ -4,8 +4,8 @@ use polars_core::error::feature_gated;
 use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
+use polars_plan::dsl::ScanSources;
 use polars_plan::global::_set_n_rows_for_scan;
-use polars_plan::plans::ScanSources;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
 
@@ -28,7 +28,7 @@ pub(crate) struct CsvSource {
     // state for multi-file reads
     current_path_idx: usize,
     n_rows_read: usize,
-    first_schema: Schema,
+    first_schema: SchemaRef,
     include_file_path: Option<StringChunked>,
 }
 
@@ -189,9 +189,9 @@ impl Source for CsvSource {
 
             if first_read_from_file {
                 if self.first_schema.is_empty() {
-                    self.first_schema = batches[0].schema();
+                    self.first_schema = batches[0].schema().clone();
                 }
-                ensure_matching_schema(&self.first_schema, &batches[0].schema())?;
+                ensure_matching_schema(&self.first_schema, batches[0].schema())?;
             }
 
             let index = get_source_index(0);
@@ -216,14 +216,12 @@ impl Source for CsvSource {
                 };
 
                 for data_chunk in &mut out {
-                    // The batched reader creates the column containing all nulls because the schema it
-                    // gets passed contains the column.
-                    for s in unsafe { data_chunk.data.get_columns_mut() } {
-                        if s.name() == ca.name() {
-                            *s = ca.slice(0, s.len()).into_series();
-                            break;
-                        }
-                    }
+                    let n = data_chunk.data.height();
+                    // SAFETY: Columns are only replaced with columns
+                    // 1. of the same name, and
+                    // 2. of the same length.
+                    unsafe { data_chunk.data.get_columns_mut() }.push(ca.slice(0, n).into_column());
+                    data_chunk.data.clear_schema();
                 }
             }
 

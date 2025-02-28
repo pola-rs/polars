@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 import polars as pl
-from polars.testing import assert_series_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from polars._typing import TimeUnit
@@ -116,3 +116,51 @@ def test_datetime_offset_by(
         time_zone
     )
     assert_series_equal(result, expected)
+
+
+def test_offset_by_unique_29_feb_19608() -> None:
+    df20 = pl.select(
+        t=pl.datetime_range(
+            pl.datetime(2020, 2, 28),
+            pl.datetime(2020, 3, 1),
+            closed="left",
+            time_unit="ms",
+            interval="8h",
+            time_zone="UTC",
+        ),
+    ).with_columns(x=pl.int_range(pl.len()))
+    df19 = df20.with_columns(pl.col("t").dt.offset_by("-1y"))
+    result = df19.unique("t", keep="first").sort("t")
+    expected = pl.DataFrame(
+        {
+            "t": [
+                datetime(2019, 2, 28),
+                datetime(2019, 2, 28, 8),
+                datetime(2019, 2, 28, 16),
+            ],
+            "x": [0, 1, 2],
+        },
+        schema_overrides={"t": pl.Datetime("ms", "UTC")},
+    )
+    assert_frame_equal(result, expected)
+
+
+def test_month_then_day_21283() -> None:
+    series_vienna = pl.Series(
+        [datetime(2024, 5, 15, 8, 0)], dtype=pl.Datetime(time_zone="Europe/Vienna")
+    )
+    result = series_vienna.dt.offset_by("2y1mo1q1h")[0]
+    expected = datetime.strptime("2026-09-15 11:00:00+02:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected
+    result = series_vienna.dt.offset_by("2y1mo1q1h1d")[0]
+    expected = datetime.strptime("2026-09-16 11:00:00+02:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected
+    series_utc = pl.Series(
+        [datetime(2024, 5, 15, 8, 0)], dtype=pl.Datetime(time_zone="UTC")
+    )
+    result = series_utc.dt.offset_by("2y1mo1q1h")[0]
+    expected = datetime.strptime("2026-09-15 09:00:00+00:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected
+    result = series_utc.dt.offset_by("2y1mo1q1h1d")[0]
+    expected = datetime.strptime("2026-09-16 09:00:00+00:00", "%Y-%m-%d %H:%M:%S%z")
+    assert result == expected

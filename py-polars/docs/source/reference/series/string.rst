@@ -16,18 +16,21 @@ The following methods are available under the `Series.str` attribute.
     Series.str.decode
     Series.str.encode
     Series.str.ends_with
+    Series.str.escape_regex
     Series.str.explode
     Series.str.extract
     Series.str.extract_all
     Series.str.extract_groups
     Series.str.extract_many
     Series.str.find
+    Series.str.find_many
     Series.str.head
     Series.str.join
     Series.str.json_decode
     Series.str.json_path_match
     Series.str.len_bytes
     Series.str.len_chars
+    Series.str.normalize
     Series.str.pad_end
     Series.str.pad_start
     Series.str.replace

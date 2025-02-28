@@ -4,7 +4,7 @@ use polars_core::series::amortized_iter::AmortSeries;
 
 use super::*;
 
-impl<'a> AggregationContext<'a> {
+impl AggregationContext<'_> {
     pub(super) fn iter_groups(
         &mut self,
         keep_names: bool,
@@ -12,45 +12,45 @@ impl<'a> AggregationContext<'a> {
         match self.agg_state() {
             AggState::Literal(_) => {
                 self.groups();
-                let s = self.series().rechunk();
+                let c = self.get_values().rechunk();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
                 // SAFETY: dtype is correct
                 unsafe {
                     Box::new(LitIter::new(
-                        s.array_ref(0).clone(),
+                        c.as_materialized_series().array_ref(0).clone(),
                         self.groups.len(),
-                        s._dtype(),
+                        c.dtype(),
                         name,
                     ))
                 }
             },
             AggState::AggregatedScalar(_) => {
                 self.groups();
-                let s = self.series();
+                let c = self.get_values();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
                 // SAFETY: dtype is correct
                 unsafe {
                     Box::new(FlatIter::new(
-                        s.chunks(),
+                        c.as_materialized_series().chunks(),
                         self.groups.len(),
-                        s.dtype(),
+                        c.dtype(),
                         name,
                     ))
                 }
             },
             AggState::AggregatedList(_) => {
-                let s = self.series();
-                let list = s.list().unwrap();
+                let c = self.get_values();
+                let list = c.list().unwrap();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };
@@ -59,10 +59,10 @@ impl<'a> AggregationContext<'a> {
             AggState::NotAggregated(_) => {
                 // we don't take the owned series as we want a reference
                 let _ = self.aggregated();
-                let s = self.series();
-                let list = s.list().unwrap();
+                let c = self.get_values();
+                let list = c.list().unwrap();
                 let name = if keep_names {
-                    s.name().clone()
+                    c.name().clone()
                 } else {
                     PlSmallStr::EMPTY
                 };

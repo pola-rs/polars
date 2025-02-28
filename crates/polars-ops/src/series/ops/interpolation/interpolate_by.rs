@@ -3,7 +3,7 @@ use std::ops::{Add, Div, Mul, Sub};
 use arrow::array::PrimitiveArray;
 use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
-use polars_core::export::num::{NumCast, Zero};
+use num_traits::{NumCast, Zero};
 use polars_core::prelude::*;
 use polars_utils::slice::SliceAble;
 
@@ -263,29 +263,29 @@ where
     }
 }
 
-pub fn interpolate_by(s: &Series, by: &Series, by_is_sorted: bool) -> PolarsResult<Series> {
+pub fn interpolate_by(s: &Column, by: &Column, by_is_sorted: bool) -> PolarsResult<Column> {
     polars_ensure!(s.len() == by.len(), InvalidOperation: "`by` column must be the same length as Series ({}), got {}", s.len(), by.len());
 
     fn func<T, F>(
         ca: &ChunkedArray<T>,
         by: &ChunkedArray<F>,
         is_sorted: bool,
-    ) -> PolarsResult<Series>
+    ) -> PolarsResult<Column>
     where
         T: PolarsNumericType,
         F: PolarsNumericType,
-        ChunkedArray<T>: IntoSeries,
+        ChunkedArray<T>: IntoColumn,
     {
         if is_sorted {
             interpolate_impl_by_sorted(ca, by, |y_start, y_end, x, out| unsafe {
                 signed_interp_by_sorted(y_start, y_end, x, out)
             })
-            .map(|x| x.into_series())
+            .map(|x| x.into_column())
         } else {
             interpolate_impl_by(ca, by, |y_start, y_end, x, out, sorting_indices| unsafe {
                 signed_interp_by(y_start, y_end, x, out, sorting_indices)
             })
-            .map(|x| x.into_series())
+            .map(|x| x.into_column())
         }
     }
 

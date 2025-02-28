@@ -1,6 +1,6 @@
 //! # (De)serializing Arrows Streaming IPC format.
 //!
-//! Arrow Streaming IPC is a [binary format format](https://arrow.apache.org/docs/python/ipc.html).
+//! Arrow Streaming IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
 //! It used for sending an arbitrary length sequence of record batches.
 //! The format must be processed from start to end, and does not support random access.
 //! It is different than IPC, if you can't deserialize a file with `IpcReader::new`, it's probably an IPC Stream File.
@@ -13,9 +13,9 @@
 //! use std::io::Cursor;
 //!
 //!
-//! let s0 = Series::new("days".into(), &[0, 1, 2, 3, 4]);
-//! let s1 = Series::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
-//! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
+//! let c0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
+//! let c1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
+//! let mut df = DataFrame::new(vec![c0, c1]).unwrap();
 //!
 //! // Create an in memory file handler.
 //! // Vec<u8>: Read + Write
@@ -36,9 +36,11 @@
 use std::io::{Read, Write};
 use std::path::PathBuf;
 
+use arrow::datatypes::Metadata;
 use arrow::io::ipc::read::{StreamMetadata, StreamState};
 use arrow::io::ipc::write::WriteOptions;
 use arrow::io::ipc::{read, write};
+use polars_core::frame::chunk_df_for_writing;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
@@ -83,6 +85,12 @@ impl<R: Read> IpcStreamReader<R> {
     pub fn arrow_schema(&mut self) -> PolarsResult<ArrowSchema> {
         Ok(self.metadata()?.schema)
     }
+
+    /// Get schema-level custom metadata of the Ipc Stream file
+    pub fn custom_metadata(&mut self) -> PolarsResult<Option<Arc<Metadata>>> {
+        Ok(self.metadata()?.custom_schema_metadata.map(Arc::new))
+    }
+
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
@@ -198,8 +206,17 @@ where
 /// fn example(df: &mut DataFrame) -> PolarsResult<()> {
 ///     let mut file = File::create("file.ipc").expect("could not create file");
 ///
-///     IpcStreamWriter::new(&mut file)
-///         .finish(df)
+///     let mut writer = IpcStreamWriter::new(&mut file);
+///
+///     let custom_metadata = [
+///         ("first_name".into(), "John".into()),
+///         ("last_name".into(), "Doe".into()),
+///     ]
+///     .into_iter()
+///     .collect();
+///     writer.set_custom_schema_metadata(Arc::new(custom_metadata));
+///
+///     writer.finish(df)
 /// }
 ///
 /// ```
@@ -208,6 +225,8 @@ pub struct IpcStreamWriter<W> {
     writer: W,
     compression: Option<IpcCompression>,
     compat_level: CompatLevel,
+    /// Custom schema-level metadata
+    custom_schema_metadata: Option<Arc<Metadata>>,
 }
 
 use arrow::record_batch::RecordBatch;
@@ -225,6 +244,11 @@ impl<W> IpcStreamWriter<W> {
         self.compat_level = compat_level;
         self
     }
+
+    /// Sets custom schema metadata. Must be called before `start` is called
+    pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
+        self.custom_schema_metadata = Some(custom_metadata);
+    }
 }
 
 impl<W> SerWriter<W> for IpcStreamWriter<W>
@@ -236,6 +260,7 @@ where
             writer,
             compression: None,
             compat_level: CompatLevel::oldest(),
+            custom_schema_metadata: None,
         }
     }
 
@@ -246,6 +271,10 @@ where
                 compression: self.compression.map(|c| c.into()),
             },
         );
+
+        if let Some(custom_metadata) = &self.custom_schema_metadata {
+            ipc_stream_writer.set_custom_schema_metadata(Arc::clone(custom_metadata));
+        }
 
         ipc_stream_writer.start(&df.schema().to_arrow(self.compat_level), None)?;
         let df = chunk_df_for_writing(df, 512 * 512)?;

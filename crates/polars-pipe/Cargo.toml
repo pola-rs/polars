@@ -11,6 +11,7 @@ description = "Lazy query engine for the Polars DataFrame library"
 [dependencies]
 arrow = { workspace = true }
 futures = { workspace = true, optional = true }
+once_cell = { workspace = true }
 polars-compute = { workspace = true }
 polars-core = { workspace = true, features = ["lazy", "zip_with", "random", "rows"] }
 polars-expr = { workspace = true }
@@ -45,7 +46,8 @@ dtype-u8 = ["polars-core/dtype-u8"]
 dtype-u16 = ["polars-core/dtype-u16"]
 dtype-i8 = ["polars-core/dtype-i8"]
 dtype-i16 = ["polars-core/dtype-i16"]
-dtype-decimal = ["polars-core/dtype-decimal"]
+dtype-i128 = ["polars-core/dtype-i128"]
+dtype-decimal = ["dtype-i128"]
 dtype-array = ["polars-core/dtype-array"]
 dtype-categorical = ["polars-core/dtype-categorical"]
 trigger_ooc = []

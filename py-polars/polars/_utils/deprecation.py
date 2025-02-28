@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import inspect
+from collections.abc import Sequence
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, Sequence, TypeVar
+from typing import TYPE_CHECKING, Callable, TypeVar
 
 from polars._utils.various import issue_warning
 
 if TYPE_CHECKING:
     import sys
-    from typing import Mapping
+    from collections.abc import Mapping
 
     from polars._typing import Ambiguous
 
@@ -210,7 +211,7 @@ def deprecate_parameter_as_multi_positional(
 
     Use as follows::
 
-        @deprecate_parameter_as_positional("columns", version="0.20.4")
+        @deprecate_parameter_as_multi_positional("columns", version="0.20.4")
         def myfunc(*columns): ...
     """  # noqa: W505
 

@@ -2,7 +2,6 @@ use std::any::Any;
 
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{AnyValue, Series};
-use polars_utils::unwrap::UnwrapUncheckedRelease;
 
 use crate::executors::sinks::group_by::aggregates::AggregateFn;
 use crate::operators::IdxSize;
@@ -25,10 +24,10 @@ impl FirstAgg {
 
 impl AggregateFn for FirstAgg {
     fn pre_agg(&mut self, chunk_idx: IdxSize, item: &mut dyn ExactSizeIterator<Item = AnyValue>) {
-        let item = unsafe { item.next().unwrap_unchecked_release() };
+        let item = unsafe { item.next().unwrap_unchecked() };
         if self.first.is_none() {
             self.chunk_idx = chunk_idx;
-            self.first = Some(item.into_static().unwrap())
+            self.first = Some(item.into_static())
         }
     }
     fn pre_agg_ordered(
@@ -40,11 +39,7 @@ impl AggregateFn for FirstAgg {
     ) {
         if self.first.is_none() {
             self.chunk_idx = chunk_idx;
-            self.first = Some(
-                unsafe { values.get_unchecked(offset as usize) }
-                    .into_static()
-                    .unwrap(),
-            )
+            self.first = Some(unsafe { values.get_unchecked(offset as usize) }.into_static())
         }
     }
 
@@ -53,7 +48,7 @@ impl AggregateFn for FirstAgg {
     }
 
     fn combine(&mut self, other: &dyn Any) {
-        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked_release() };
+        let other = unsafe { other.downcast_ref::<Self>().unwrap_unchecked() };
         if other.first.is_some() && other.chunk_idx < self.chunk_idx {
             self.first.clone_from(&other.first);
             self.chunk_idx = other.chunk_idx;

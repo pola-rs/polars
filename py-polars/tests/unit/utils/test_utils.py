@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time, timedelta
-from typing import TYPE_CHECKING, Any, Sequence
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pytest
@@ -25,11 +26,9 @@ from polars._utils.various import (
 )
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
+    from collections.abc import Sequence
 
     from polars._typing import TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.mark.parametrize(

@@ -29,21 +29,15 @@ def test_count_csv(io_files_path: Path, path: str, n_rows: int) -> None:
 
 @pytest.mark.write_disk
 def test_commented_csv() -> None:
-    csv_a = NamedTemporaryFile()
-    csv_a.write(
-        b"""
-A,B
-Gr1,A
-Gr1,B
-# comment line
-    """.strip()
-    )
-    csv_a.seek(0)
+    with NamedTemporaryFile() as csv_a:
+        csv_a.write(b"A,B\nGr1,A\nGr1,B\n# comment line\n")
+        csv_a.seek(0)
 
-    expected = pl.DataFrame(pl.Series("len", [2], dtype=pl.UInt32))
-    lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
-    assert "FAST COUNT" in lf.explain()
-    assert_frame_equal(lf.collect(), expected)
+        expected = pl.DataFrame(pl.Series("len", [2], dtype=pl.UInt32))
+        lf = pl.scan_csv(csv_a.name, comment_prefix="#").select(pl.len())
+
+        assert "FAST COUNT" in lf.explain()
+        assert_frame_equal(lf.collect(), expected)
 
 
 @pytest.mark.parametrize(

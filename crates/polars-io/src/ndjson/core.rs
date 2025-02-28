@@ -133,7 +133,7 @@ where
     }
 }
 
-impl<'a> JsonLineReader<'a, File> {
+impl JsonLineReader<'_, File> {
     /// This is the recommended way to create a json reader as this allows for fastest parsing.
     pub fn from_path<P: Into<PathBuf>>(path: P) -> PolarsResult<Self> {
         let path = crate::resolve_homedir(&path.into());
@@ -141,7 +141,7 @@ impl<'a> JsonLineReader<'a, File> {
         Ok(Self::new(f).with_path(Some(path)))
     }
 }
-impl<'a, R> SerReader<R> for JsonLineReader<'a, R>
+impl<R> SerReader<R> for JsonLineReader<'_, R>
 where
     R: MmapBytesReader,
 {
@@ -184,7 +184,7 @@ where
         )?;
 
         let mut df: DataFrame = json_reader.as_df()?;
-        if rechunk && df.n_chunks() > 1 {
+        if rechunk && df.first_col_n_chunks() > 1 {
             df.as_single_chunk_par();
         }
         Ok(df)
@@ -309,7 +309,7 @@ impl<'a> CoreJsonReader<'a> {
                     let mut local_df = DataFrame::new(
                         buffers
                             .into_values()
-                            .map(|buf| buf.into_series())
+                            .map(|buf| buf.into_series().into_column())
                             .collect::<_>(),
                     )?;
 

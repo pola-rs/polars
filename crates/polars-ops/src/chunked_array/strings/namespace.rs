@@ -1,19 +1,21 @@
-use arrow::array::ValueSize;
+use arrow::array::{Array, ValueSize};
 use arrow::legacy::kernels::string::*;
 #[cfg(feature = "string_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "string_encoding")]
 use base64::Engine as _;
 #[cfg(feature = "string_to_integer")]
-use polars_core::export::num::Num;
-use polars_core::export::regex::Regex;
+use num_traits::Num;
 use polars_core::prelude::arity::*;
 use polars_utils::cache::FastFixedCache;
-use regex::escape;
+use regex::{escape, Regex};
 
 use super::*;
 #[cfg(feature = "binary_encoding")]
 use crate::chunked_array::binary::BinaryNameSpaceImpl;
+#[cfg(feature = "string_normalize")]
+use crate::prelude::strings::normalize::UnicodeForm;
+use crate::prelude::strings::starts_with::starts_with_str;
 
 // We need this to infer the right lifetimes for the match closure.
 #[inline(always)]
@@ -213,6 +215,35 @@ pub trait StringNameSpaceImpl: AsString {
                 Ok(None)
             };
             broadcast_try_binary_elementwise(ca, pat, matcher)
+        }
+    }
+
+    /// Check if strings starts with a substring
+    fn starts_with(&self, sub: &str) -> BooleanChunked {
+        let ca = self.as_string();
+        let iter = ca.downcast_iter().map(|arr| {
+            let out: <BooleanType as PolarsDataType>::Array = arr
+                .views()
+                .iter()
+                .map(|view| starts_with_str(*view, sub, arr.data_buffers()))
+                .collect_arr_with_dtype(DataType::Boolean.to_arrow(CompatLevel::newest()));
+
+            out.with_validity_typed(arr.validity().cloned())
+        });
+
+        ChunkedArray::from_chunk_iter(ca.name().clone(), iter)
+    }
+
+    /// This is more performant than the BinaryChunked version because we use the inline prefix
+    /// Use the BinaryChunked::ends_with as there is no specialization here for that
+    fn starts_with_chunked(&self, prefix: &StringChunked) -> BooleanChunked {
+        let ca = self.as_string();
+        match prefix.len() {
+            1 => match prefix.get(0) {
+                Some(s) => self.starts_with(s),
+                None => BooleanChunked::full_null(ca.name().clone(), ca.len()),
+            },
+            _ => broadcast_binary_elementwise_values(ca, prefix, |s, sub| s.starts_with(sub)),
         }
     }
 
@@ -418,7 +449,7 @@ pub trait StringNameSpaceImpl: AsString {
         Ok(builder.finish())
     }
 
-    fn strip_chars(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
             Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim())))
@@ -427,19 +458,19 @@ pub trait StringNameSpaceImpl: AsString {
         }
     }
 
-    fn strip_chars_start(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars_start(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_start())))
         } else {
             Ok(strip_chars_start(ca, pat.str()?))
         }
     }
 
-    fn strip_chars_end(&self, pat: &Series) -> PolarsResult<StringChunked> {
+    fn strip_chars_end(&self, pat: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         if pat.dtype() == &DataType::Null {
-            return Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())));
+            Ok(unary_elementwise(ca, |opt_s| opt_s.map(|s| s.trim_end())))
         } else {
             Ok(strip_chars_end(ca, pat.str()?))
         }
@@ -597,6 +628,14 @@ pub trait StringNameSpaceImpl: AsString {
         ca + other
     }
 
+    /// Normalizes the string values
+    #[must_use]
+    #[cfg(feature = "string_normalize")]
+    fn str_normalize(&self, form: UnicodeForm) -> StringChunked {
+        let ca = self.as_string();
+        normalize::normalize(ca, form)
+    }
+
     /// Reverses the string values
     #[must_use]
     #[cfg(feature = "string_reverse")]
@@ -609,7 +648,7 @@ pub trait StringNameSpaceImpl: AsString {
     ///
     /// Determines a substring starting from `offset` and with length `length` of each of the elements in `array`.
     /// `offset` can be negative, in which case the start counts from the end of the string.
-    fn str_slice(&self, offset: &Series, length: &Series) -> PolarsResult<StringChunked> {
+    fn str_slice(&self, offset: &Column, length: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let offset = offset.cast(&DataType::Int64)?;
         // We strict cast, otherwise negative value will be treated as a valid length.
@@ -623,7 +662,7 @@ pub trait StringNameSpaceImpl: AsString {
     /// Determines a substring starting at the beginning of the string up to offset `n` of each
     /// element in `array`. `n` can be negative, in which case the slice ends `n` characters from
     /// the end of the string.
-    fn str_head(&self, n: &Series) -> PolarsResult<StringChunked> {
+    fn str_head(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
@@ -634,11 +673,17 @@ pub trait StringNameSpaceImpl: AsString {
     ///
     /// Determines a substring starting at offset `n` of each element in `array`. `n` can be
     /// negative, in which case the slice begins `n` characters from the start of the string.
-    fn str_tail(&self, n: &Series) -> PolarsResult<StringChunked> {
+    fn str_tail(&self, n: &Column) -> PolarsResult<StringChunked> {
         let ca = self.as_string();
         let n = n.strict_cast(&DataType::Int64)?;
 
         substring::tail(ca, n.i64()?)
+    }
+    #[cfg(feature = "strings")]
+    /// Escapes all regular expression meta characters in the string.
+    fn str_escape_regex(&self) -> StringChunked {
+        let ca = self.as_string();
+        escape_regex::escape_regex(ca)
     }
 }
 

@@ -1,6 +1,5 @@
-use arrow::legacy::kernels::atan2::atan2 as atan2_kernel;
-use num::Float;
-use polars_core::export::num;
+use num_traits::Float;
+use polars_core::chunked_array::ops::arity::broadcast_binary_elementwise;
 
 use super::*;
 
@@ -48,9 +47,9 @@ impl Display for TrigonometricFunction {
 }
 
 pub(super) fn apply_trigonometric_function(
-    s: &Series,
+    s: &Column,
     trig_function: TrigonometricFunction,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     use DataType::*;
     match s.dtype() {
         Float32 => {
@@ -61,7 +60,7 @@ pub(super) fn apply_trigonometric_function(
             let ca = s.f64().unwrap();
             apply_trigonometric_function_to_float(ca, trig_function)
         },
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             let s = s.cast(&Float64)?;
             apply_trigonometric_function(&s, trig_function)
         },
@@ -69,7 +68,7 @@ pub(super) fn apply_trigonometric_function(
     }
 }
 
-pub(super) fn apply_arctan2(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+pub(super) fn apply_arctan2(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let y = &s[0];
     let x = &s[1];
 
@@ -77,8 +76,8 @@ pub(super) fn apply_arctan2(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     let x_len = x.len();
 
     match (y_len, x_len) {
-        (1, _) | (_, 1) => arctan2_on_series(y, x),
-        (len_a, len_b) if len_a == len_b => arctan2_on_series(y, x),
+        (1, _) | (_, 1) => arctan2_on_columns(y, x),
+        (len_a, len_b) if len_a == len_b => arctan2_on_columns(y, x),
         _ => polars_bail!(
             ComputeError:
             "y shape: {} in `arctan2` expression does not match that of x: {}",
@@ -87,7 +86,7 @@ pub(super) fn apply_arctan2(s: &mut [Series]) -> PolarsResult<Option<Series>> {
     }
 }
 
-fn arctan2_on_series(y: &Series, x: &Series) -> PolarsResult<Option<Series>> {
+fn arctan2_on_columns(y: &Column, x: &Column) -> PolarsResult<Option<Column>> {
     use DataType::*;
     match y.dtype() {
         Float32 => {
@@ -100,48 +99,36 @@ fn arctan2_on_series(y: &Series, x: &Series) -> PolarsResult<Option<Series>> {
         },
         _ => {
             let y = y.cast(&DataType::Float64)?;
-            arctan2_on_series(&y, x)
+            arctan2_on_columns(&y, x)
         },
     }
 }
 
-fn arctan2_on_floats<T>(y: &ChunkedArray<T>, x: &Series) -> PolarsResult<Option<Series>>
+fn arctan2_on_floats<T>(y: &ChunkedArray<T>, x: &Column) -> PolarsResult<Option<Column>>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
     let dtype = T::get_dtype();
     let x = x.cast(&dtype)?;
-    let x = y.unpack_series_matching_type(&x).unwrap();
+    let x = y
+        .unpack_series_matching_type(x.as_materialized_series())
+        .unwrap();
 
-    if x.len() == 1 {
-        let x_value = x
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "arctan2 x value is null"))?;
-
-        Ok(Some(y.apply_values(|v| v.atan2(x_value)).into_series()))
-    } else if y.len() == 1 {
-        let y_value = y
-            .get(0)
-            .ok_or_else(|| polars_err!(ComputeError: "arctan2 y value is null"))?;
-
-        Ok(Some(x.apply_values(|v| y_value.atan2(v)).into_series()))
-    } else {
-        Ok(Some(
-            polars_core::prelude::arity::binary(y, x, atan2_kernel).into_series(),
-        ))
-    }
+    Ok(Some(
+        broadcast_binary_elementwise(y, x, |yv, xv| Some(yv?.atan2(xv?))).into_column(),
+    ))
 }
 
 fn apply_trigonometric_function_to_float<T>(
     ca: &ChunkedArray<T>,
     trig_function: TrigonometricFunction,
-) -> PolarsResult<Series>
+) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
     match trig_function {
         TrigonometricFunction::Cos => cos(ca),
@@ -162,137 +149,137 @@ where
     }
 }
 
-fn cos<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn cos<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.cos()).into_series())
+    Ok(ca.apply_values(|v| v.cos()).into_column())
 }
 
-fn cot<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn cot<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.tan().powi(-1)).into_series())
+    Ok(ca.apply_values(|v| v.tan().powi(-1)).into_column())
 }
 
-fn sin<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn sin<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.sin()).into_series())
+    Ok(ca.apply_values(|v| v.sin()).into_column())
 }
 
-fn tan<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn tan<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.tan()).into_series())
+    Ok(ca.apply_values(|v| v.tan()).into_column())
 }
 
-fn arccos<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn arccos<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.acos()).into_series())
+    Ok(ca.apply_values(|v| v.acos()).into_column())
 }
 
-fn arcsin<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn arcsin<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.asin()).into_series())
+    Ok(ca.apply_values(|v| v.asin()).into_column())
 }
 
-fn arctan<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn arctan<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.atan()).into_series())
+    Ok(ca.apply_values(|v| v.atan()).into_column())
 }
 
-fn cosh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn cosh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.cosh()).into_series())
+    Ok(ca.apply_values(|v| v.cosh()).into_column())
 }
 
-fn sinh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn sinh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.sinh()).into_series())
+    Ok(ca.apply_values(|v| v.sinh()).into_column())
 }
 
-fn tanh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn tanh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.tanh()).into_series())
+    Ok(ca.apply_values(|v| v.tanh()).into_column())
 }
 
-fn arccosh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn arccosh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.acosh()).into_series())
+    Ok(ca.apply_values(|v| v.acosh()).into_column())
 }
 
-fn arcsinh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn arcsinh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.asinh()).into_series())
+    Ok(ca.apply_values(|v| v.asinh()).into_column())
 }
 
-fn arctanh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn arctanh<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.atanh()).into_series())
+    Ok(ca.apply_values(|v| v.atanh()).into_column())
 }
 
-fn degrees<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn degrees<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.to_degrees()).into_series())
+    Ok(ca.apply_values(|v| v.to_degrees()).into_column())
 }
 
-fn radians<T>(ca: &ChunkedArray<T>) -> PolarsResult<Series>
+fn radians<T>(ca: &ChunkedArray<T>) -> PolarsResult<Column>
 where
     T: PolarsFloatType,
     T::Native: Float,
-    ChunkedArray<T>: IntoSeries,
+    ChunkedArray<T>: IntoColumn,
 {
-    Ok(ca.apply_values(|v| v.to_radians()).into_series())
+    Ok(ca.apply_values(|v| v.to_radians()).into_column())
 }

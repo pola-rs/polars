@@ -3,11 +3,11 @@ use crate::bitmap::Bitmap;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
+mod builder;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
+pub use builder::*;
 mod mutable;
 pub use mutable::*;
 use polars_error::{polars_bail, polars_ensure, PolarsResult};
@@ -48,7 +48,7 @@ impl FixedSizeBinaryArray {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != len)
+            .is_some_and(|validity| validity.len() != len)
         {
             polars_bail!(ComputeError: "validity mask length must be equal to the number of values divided by size")
         }

@@ -4,6 +4,7 @@ import pytest
 
 import polars as pl
 from polars.exceptions import NoRowsReturnedError, TooManyRowsReturnedError
+from tests.unit.conftest import INTEGER_DTYPES
 
 
 def test_row_tuple() -> None:
@@ -102,9 +103,9 @@ def test_rows_by_key() -> None:
         "b": ("b", "q", 3.0, 7),
     }
     assert df.rows_by_key(["x", "w"]) == {
-        ("a", "q"): [(1.0, 9)],
-        ("b", "q"): [(2.5, 8), (3.0, 7)],
-        ("a", "k"): [(4.5, 6)],
+        ("q", "a"): [(1.0, 9)],
+        ("q", "b"): [(2.5, 8), (3.0, 7)],
+        ("k", "a"): [(4.5, 6)],
     }
     assert df.rows_by_key(["w", "x"], include_key=True) == {
         ("a", "q"): [("a", "q", 1.0, 9)],
@@ -222,19 +223,7 @@ def test_iter_rows() -> None:
     ]
 
 
-@pytest.mark.parametrize(
-    "primitive",
-    [
-        pl.UInt8,
-        pl.Int8,
-        pl.UInt16,
-        pl.Int16,
-        pl.UInt32,
-        pl.Int32,
-        pl.UInt64,
-        pl.Int64,
-    ],
-)
+@pytest.mark.parametrize("primitive", INTEGER_DTYPES)
 def test_row_constructor_schema(primitive: pl.DataType) -> None:
     result = pl.DataFrame(data=[[1], [2], [3]], schema={"d": primitive}, orient="row")
 

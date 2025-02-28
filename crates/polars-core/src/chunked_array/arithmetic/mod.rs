@@ -1,4 +1,4 @@
-//! Implementations of arithmetic operations on ChunkedArray's.
+//! Implementations of arithmetic operations on ChunkedArrays.
 #[cfg(feature = "dtype-decimal")]
 mod decimal;
 mod numeric;
@@ -6,6 +6,8 @@ mod numeric;
 use std::ops::{Add, Div, Mul, Rem, Sub};
 
 use arrow::compute::utils::combine_validities_and;
+#[cfg(feature = "dtype-decimal")]
+pub use decimal::{_get_decimal_scale_add_sub, _get_decimal_scale_div, _get_decimal_scale_mul};
 use num_traits::{Num, NumCast, ToPrimitive};
 pub use numeric::ArithmeticChunked;
 

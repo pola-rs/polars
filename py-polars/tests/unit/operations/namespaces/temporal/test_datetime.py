@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from datetime import date, datetime, time, timedelta
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo
 
 import pytest
 from hypothesis import given
@@ -14,11 +15,7 @@ from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import series
 
 if TYPE_CHECKING:
-    from zoneinfo import ZoneInfo
-
     from polars._typing import PolarsDataType, TemporalLiteral, TimeUnit
-else:
-    from polars._utils.convert import string_to_zoneinfo as ZoneInfo
 
 
 @pytest.fixture
@@ -56,12 +53,21 @@ def test_dt_to_string(series_of_int_dates: pl.Series) -> None:
         ("ordinal_day", pl.Series(values=[139, 278, 51], dtype=pl.Int16)),
     ],
 )
+@pytest.mark.parametrize("time_zone", ["Asia/Kathmandu", None])
 def test_dt_extract_datetime_component(
     unit_attr: str,
     expected: pl.Series,
     series_of_int_dates: pl.Series,
+    time_zone: str | None,
 ) -> None:
     assert_series_equal(getattr(series_of_int_dates.dt, unit_attr)(), expected)
+    assert_series_equal(
+        getattr(
+            series_of_int_dates.cast(pl.Datetime).dt.replace_time_zone(time_zone).dt,
+            unit_attr,
+        )(),
+        expected,
+    )
 
 
 @pytest.mark.parametrize(
@@ -125,26 +131,19 @@ def test_dt_datetime_deprecated() -> None:
     assert result.item() == expected
 
 
-@pytest.mark.parametrize(
-    ("time_zone", "expected"),
-    [
-        (None, True),
-        ("Asia/Kathmandu", False),
-        ("UTC", True),
-    ],
-)
-def test_local_date_sortedness(time_zone: str | None, expected: bool) -> None:
-    # singleton - always sorted
+@pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
+def test_local_date_sortedness(time_zone: str | None) -> None:
+    # singleton
     ser = (pl.Series([datetime(2022, 1, 1, 23)]).dt.replace_time_zone(time_zone)).sort()
     result = ser.dt.date()
     assert result.flags["SORTED_ASC"]
 
-    # 2 elements - depends on time zone
+    # 2 elements
     ser = (
         pl.Series([datetime(2022, 1, 1, 23)] * 2).dt.replace_time_zone(time_zone)
     ).sort()
     result = ser.dt.date()
-    assert result.flags["SORTED_ASC"] >= expected
+    assert result.flags["SORTED_ASC"]
 
 
 @pytest.mark.parametrize("time_zone", [None, "Asia/Kathmandu", "UTC"])
@@ -185,9 +184,9 @@ def test_local_time_before_epoch(time_unit: TimeUnit) -> None:
         (None, "1d", True),
         ("Europe/London", "1d", False),
         ("UTC", "1d", True),
-        (None, "1mo", True),
-        ("Europe/London", "1mo", False),
-        ("UTC", "1mo", True),
+        (None, "1m", True),
+        ("Europe/London", "1m", True),
+        ("UTC", "1m", True),
         (None, "1w", True),
         ("Europe/London", "1w", False),
         ("UTC", "1w", True),
@@ -946,7 +945,7 @@ def test_offset_by_expressions() -> None:
     }
 
     # Check single-row cases
-    for i in range(len(df)):
+    for i in range(df.height):
         df_slice = df[i : i + 1]
         result = df_slice.select(
             c=pl.col("a").dt.offset_by(pl.col("b")),
@@ -1374,7 +1373,7 @@ def test_dt_mean_deprecated() -> None:
 @pytest.mark.parametrize(
     "value",
     [
-        date(1677, 9, 22),
+        # date(1677, 9, 22), # See test_literal_from_datetime.
         date(1970, 1, 1),
         date(2024, 2, 29),
         date(2262, 4, 11),
@@ -1407,8 +1406,13 @@ def test_literal_from_date(
 @pytest.mark.parametrize(
     "value",
     [
-        datetime(1677, 9, 22),
-        datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
+        # Very old dates with a timezone like EST caused problems for the CI due
+        # to the IANA timezone database updating their historical offset, so
+        # these have been disabled for now. A mismatch between the timezone
+        # database that chrono_tz crate uses vs. the one that Python uses (which
+        # differs from platform to platform) will cause this to fail.
+        # datetime(1677, 9, 22),
+        # datetime(1677, 9, 22, tzinfo=ZoneInfo("EST")),
         datetime(1970, 1, 1),
         datetime(1970, 1, 1, tzinfo=ZoneInfo("EST")),
         datetime(2024, 2, 29),

@@ -11,8 +11,6 @@ use crate::datatypes::ArrowDataType;
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
 use crate::trusted_len::TrustedLen;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;
@@ -60,8 +58,8 @@ impl<T: AsRef<str>> AsRef<[u8]> for StrAsBytes<T> {
 ///
 /// # Safety
 /// The following invariants hold:
-/// * Two consecutives `offsets` casted (`as`) to `usize` are valid slices of `values`.
-/// * A slice of `values` taken from two consecutives `offsets` is valid `utf8`.
+/// * Two consecutive `offsets` cast (`as`) to `usize` are valid slices of `values`.
+/// * A slice of `values` taken from two consecutive `offsets` is valid `utf8`.
 /// * `len` is equal to `validity.len()`, when defined.
 #[derive(Clone)]
 pub struct Utf8Array<O: Offset> {
@@ -77,8 +75,8 @@ impl<O: Offset> Utf8Array<O> {
     ///
     /// # Errors
     /// This function returns an error iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * The last offset is greater than the values' length.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation
@@ -92,7 +90,7 @@ impl<O: Offset> Utf8Array<O> {
         try_check_utf8(&offsets, &values)?;
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values");
         }
@@ -356,8 +354,8 @@ impl<O: Offset> Utf8Array<O> {
     ///
     /// # Panic
     /// This function panics (in debug mode only) iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * The last offset is greater than the values' length.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     ///
     /// # Safety
@@ -378,7 +376,7 @@ impl<O: Offset> Utf8Array<O> {
         debug_assert!(
             validity
                 .as_ref()
-                .map_or(true, |validity| validity.len() == offsets.len_proxy()),
+                .is_none_or(|validity| validity.len() == offsets.len_proxy()),
             "validity mask length must match the number of values"
         );
         debug_assert!(
@@ -397,8 +395,8 @@ impl<O: Offset> Utf8Array<O> {
     /// Creates a new [`Utf8Array`].
     /// # Panics
     /// This function panics iff:
-    /// * The last offset is not equal to the values' length.
-    /// * the validity's length is not equal to `offsets.len()`.
+    /// * `offsets.last()` is greater than `values.len()`.
+    /// * the validity's length is not equal to `offsets.len_proxy()`.
     /// * The `dtype`'s [`crate::datatypes::PhysicalType`] is not equal to either `Utf8` or `LargeUtf8`.
     /// * The `values` between two consecutive `offsets` are not valid utf8
     /// # Implementation

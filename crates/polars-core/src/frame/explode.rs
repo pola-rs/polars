@@ -18,7 +18,7 @@ fn get_exploded(series: &Series) -> PolarsResult<(Series, OffsetsBuffer<i64>)> {
     }
 }
 
-/// Arguments for `[DataFrame::unpivot]` function
+/// Arguments for `LazyFrame::unpivot` function
 #[derive(Clone, Default, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnpivotArgsIR {
@@ -29,12 +29,12 @@ pub struct UnpivotArgsIR {
 }
 
 impl DataFrame {
-    pub fn explode_impl(&self, mut columns: Vec<Series>) -> PolarsResult<DataFrame> {
+    pub fn explode_impl(&self, mut columns: Vec<Column>) -> PolarsResult<DataFrame> {
         polars_ensure!(!columns.is_empty(), InvalidOperation: "no columns provided in explode");
         let mut df = self.clone();
         if self.is_empty() {
             for s in &columns {
-                df.with_column(s.explode()?)?;
+                df.with_column(s.as_materialized_series().explode()?)?;
             }
             return Ok(df);
         }
@@ -57,14 +57,16 @@ impl DataFrame {
         let exploded_columns = POOL.install(|| {
             columns
                 .par_iter()
+                .map(Column::as_materialized_series)
                 .map(get_exploded)
+                .map(|s| s.map(|(s, o)| (Column::from(s), o)))
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
         fn process_column(
             original_df: &DataFrame,
             df: &mut DataFrame,
-            exploded: Series,
+            exploded: Column,
         ) -> PolarsResult<()> {
             if exploded.len() == df.height() || df.width() == 0 {
                 let col_idx = original_df.check_name_to_idx(exploded.name().as_str())?;
@@ -187,7 +189,7 @@ impl DataFrame {
     {
         // We need to sort the column by order of original occurrence. Otherwise the insert by index
         // below will panic
-        let columns = self.select_series(columns)?;
+        let columns = self.select_columns(columns)?;
         self.explode_impl(columns)
     }
 }
@@ -203,17 +205,41 @@ mod test {
         let s0 = Series::new(PlSmallStr::from_static("a"), &[1i8, 2, 3]);
         let s1 = Series::new(PlSmallStr::from_static("b"), &[1i8, 1, 1]);
         let s2 = Series::new(PlSmallStr::from_static("c"), &[2i8, 2, 2]);
-        let list = Series::new(PlSmallStr::from_static("foo"), &[s0, s1, s2]);
+        let list = Column::new(PlSmallStr::from_static("foo"), &[s0, s1, s2]);
 
-        let s0 = Series::new(PlSmallStr::from_static("B"), [1, 2, 3]);
-        let s1 = Series::new(PlSmallStr::from_static("C"), [1, 1, 1]);
+        let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
+        let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()]).unwrap();
         let exploded = df.explode(["foo"]).unwrap();
         assert_eq!(exploded.shape(), (9, 3));
-        assert_eq!(exploded.column("C").unwrap().i32().unwrap().get(8), Some(1));
-        assert_eq!(exploded.column("B").unwrap().i32().unwrap().get(8), Some(3));
         assert_eq!(
-            exploded.column("foo").unwrap().i8().unwrap().get(8),
+            exploded
+                .column("C")
+                .unwrap()
+                .as_materialized_series()
+                .i32()
+                .unwrap()
+                .get(8),
+            Some(1)
+        );
+        assert_eq!(
+            exploded
+                .column("B")
+                .unwrap()
+                .as_materialized_series()
+                .i32()
+                .unwrap()
+                .get(8),
+            Some(3)
+        );
+        assert_eq!(
+            exploded
+                .column("foo")
+                .unwrap()
+                .as_materialized_series()
+                .i8()
+                .unwrap()
+                .get(8),
             Some(2)
         );
     }
@@ -223,12 +249,12 @@ mod test {
     fn test_explode_df_empty_list() -> PolarsResult<()> {
         let s0 = Series::new(PlSmallStr::from_static("a"), &[1, 2, 3]);
         let s1 = Series::new(PlSmallStr::from_static("b"), &[1, 1, 1]);
-        let list = Series::new(
+        let list = Column::new(
             PlSmallStr::from_static("foo"),
             &[s0, s1.clone(), s1.clear()],
         );
-        let s0 = Series::new(PlSmallStr::from_static("B"), [1, 2, 3]);
-        let s1 = Series::new(PlSmallStr::from_static("C"), [1, 1, 1]);
+        let s0 = Column::new(PlSmallStr::from_static("B"), [1, 2, 3]);
+        let s1 = Column::new(PlSmallStr::from_static("C"), [1, 1, 1]);
         let df = DataFrame::new(vec![list, s0.clone(), s1.clone()])?;
 
         let out = df.explode(["foo"])?;
@@ -240,9 +266,13 @@ mod test {
 
         assert!(out.equals_missing(&expected));
 
-        let list = Series::new(
+        let list = Column::new(
             PlSmallStr::from_static("foo"),
-            [s0.clone(), s1.clear(), s1.clone()],
+            [
+                s0.as_materialized_series().clone(),
+                s1.as_materialized_series().clear(),
+                s1.as_materialized_series().clone(),
+            ],
         );
         let df = DataFrame::new(vec![list, s0, s1])?;
         let out = df.explode(["foo"])?;
@@ -261,12 +291,13 @@ mod test {
     fn test_explode_single_col() -> PolarsResult<()> {
         let s0 = Series::new(PlSmallStr::from_static("a"), &[1i32, 2, 3]);
         let s1 = Series::new(PlSmallStr::from_static("b"), &[1i32, 1, 1]);
-        let list = Series::new(PlSmallStr::from_static("foo"), &[s0, s1]);
+        let list = Column::new(PlSmallStr::from_static("foo"), &[s0, s1]);
         let df = DataFrame::new(vec![list])?;
 
         let out = df.explode(["foo"])?;
         let out = out
             .column("foo")?
+            .as_materialized_series()
             .i32()?
             .into_no_null_iter()
             .collect::<Vec<_>>();

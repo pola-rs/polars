@@ -22,28 +22,29 @@ fn cum_fold_dtype() -> GetOutput {
 /// Accumulate over multiple columns horizontally / row wise.
 pub fn fold_exprs<F, E>(acc: Expr, f: F, exprs: E) -> Expr
 where
-    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
-    let mut exprs = exprs.as_ref().to_vec();
-    exprs.push(acc);
+    let mut exprs_v = Vec::with_capacity(exprs.as_ref().len() + 1);
+    exprs_v.push(acc);
+    exprs_v.extend(exprs.as_ref().iter().cloned());
+    let exprs = exprs_v;
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut series = series.to_vec();
-        let mut acc = series.pop().unwrap();
-
-        for s in series {
-            if let Some(a) = f(acc.clone(), s)? {
+    let function = new_column_udf(move |columns: &mut [Column]| {
+        let mut acc = columns.first().unwrap().clone();
+        for c in &columns[1..] {
+            if let Some(a) = f(acc.clone(), c.clone())? {
                 acc = a
             }
         }
         Ok(Some(acc))
-    }) as Arc<dyn SeriesUdf>);
+    });
 
     Expr::AnonymousFunction {
         input: exprs,
         function,
-        output_type: GetOutput::super_type(),
+        // Take the type of the accumulator.
+        output_type: GetOutput::first(),
         options: FunctionOptions {
             collect_groups: ApplyOptions::GroupWise,
             flags: FunctionFlags::default()
@@ -62,20 +63,20 @@ where
 /// `collect` is called.
 pub fn reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut s_iter = series.iter();
+    let function = new_column_udf(move |columns: &mut [Column]| {
+        let mut c_iter = columns.iter();
 
-        match s_iter.next() {
+        match c_iter.next() {
             Some(acc) => {
                 let mut acc = acc.clone();
 
-                for s in s_iter {
-                    if let Some(a) = f(acc.clone(), s.clone())? {
+                for c in c_iter {
+                    if let Some(a) = f(acc.clone(), c.clone())? {
                         acc = a
                     }
                 }
@@ -83,7 +84,7 @@ where
             },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
-    }) as Arc<dyn SeriesUdf>);
+    });
 
     Expr::AnonymousFunction {
         input: exprs,
@@ -104,34 +105,34 @@ where
 #[cfg(feature = "dtype-struct")]
 pub fn cum_reduce_exprs<F, E>(f: F, exprs: E) -> Expr
 where
-    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let exprs = exprs.as_ref().to_vec();
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut s_iter = series.iter();
+    let function = new_column_udf(move |columns: &mut [Column]| {
+        let mut c_iter = columns.iter();
 
-        match s_iter.next() {
+        match c_iter.next() {
             Some(acc) => {
                 let mut acc = acc.clone();
                 let mut result = vec![acc.clone()];
 
-                for s in s_iter {
-                    let name = s.name().clone();
-                    if let Some(a) = f(acc.clone(), s.clone())? {
+                for c in c_iter {
+                    let name = c.name().clone();
+                    if let Some(a) = f(acc.clone(), c.clone())? {
                         acc = a;
                     }
                     acc.rename(name);
                     result.push(acc.clone());
                 }
 
-                StructChunked::from_series(acc.name().clone(), &result)
-                    .map(|ca| Some(ca.into_series()))
+                StructChunked::from_columns(acc.name().clone(), result[0].len(), &result)
+                    .map(|ca| Some(ca.into_column()))
             },
             None => Err(polars_err!(ComputeError: "`reduce` did not have any expressions to fold")),
         }
-    }) as Arc<dyn SeriesUdf>);
+    });
 
     Expr::AnonymousFunction {
         input: exprs,
@@ -152,32 +153,33 @@ where
 #[cfg(feature = "dtype-struct")]
 pub fn cum_fold_exprs<F, E>(acc: Expr, f: F, exprs: E, include_init: bool) -> Expr
 where
-    F: 'static + Fn(Series, Series) -> PolarsResult<Option<Series>> + Send + Sync + Clone,
+    F: 'static + Fn(Column, Column) -> PolarsResult<Option<Column>> + Send + Sync,
     E: AsRef<[Expr]>,
 {
     let mut exprs = exprs.as_ref().to_vec();
     exprs.push(acc);
 
-    let function = SpecialEq::new(Arc::new(move |series: &mut [Series]| {
-        let mut series = series.to_vec();
-        let mut acc = series.pop().unwrap();
+    let function = new_column_udf(move |columns: &mut [Column]| {
+        let mut columns = columns.to_vec();
+        let mut acc = columns.pop().unwrap();
 
         let mut result = vec![];
         if include_init {
             result.push(acc.clone())
         }
 
-        for s in series {
-            let name = s.name().clone();
-            if let Some(a) = f(acc.clone(), s)? {
+        for c in columns {
+            let name = c.name().clone();
+            if let Some(a) = f(acc.clone(), c)? {
                 acc = a;
                 acc.rename(name);
                 result.push(acc.clone());
             }
         }
 
-        StructChunked::from_series(acc.name().clone(), &result).map(|ca| Some(ca.into_series()))
-    }) as Arc<dyn SeriesUdf>);
+        StructChunked::from_columns(acc.name().clone(), result[0].len(), &result)
+            .map(|ca| Some(ca.into_column()))
+    });
 
     Expr::AnonymousFunction {
         input: exprs,
@@ -273,36 +275,34 @@ pub fn min_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
 }
 
 /// Sum all values horizontally across columns.
-pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+pub fn sum_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
 
     Ok(Expr::Function {
         input: exprs,
-        function: FunctionExpr::SumHorizontal,
+        function: FunctionExpr::SumHorizontal { ignore_nulls },
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default()
                 | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            cast_to_supertypes: None,
             ..Default::default()
         },
     })
 }
 
 /// Compute the mean of all values horizontally across columns.
-pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E) -> PolarsResult<Expr> {
+pub fn mean_horizontal<E: AsRef<[Expr]>>(exprs: E, ignore_nulls: bool) -> PolarsResult<Expr> {
     let exprs = exprs.as_ref().to_vec();
     polars_ensure!(!exprs.is_empty(), ComputeError: "cannot return empty fold because the number of output rows is unknown");
 
     Ok(Expr::Function {
         input: exprs,
-        function: FunctionExpr::MeanHorizontal,
+        function: FunctionExpr::MeanHorizontal { ignore_nulls },
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
             flags: FunctionFlags::default()
                 | FunctionFlags::INPUT_WILDCARD_EXPANSION & !FunctionFlags::RETURNS_SCALAR,
-            cast_to_supertypes: None,
             ..Default::default()
         },
     })
@@ -318,8 +318,8 @@ pub fn coalesce(exprs: &[Expr]) -> Expr {
         function: FunctionExpr::Coalesce,
         options: FunctionOptions {
             collect_groups: ApplyOptions::ElementWise,
-            cast_to_supertypes: Some(Default::default()),
             flags: FunctionFlags::default() | FunctionFlags::INPUT_WILDCARD_EXPANSION,
+            cast_options: Some(CastingRules::cast_to_supertypes()),
             ..Default::default()
         },
     }

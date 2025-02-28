@@ -16,7 +16,7 @@ pub(crate) fn reproject_chunk(
 
         let out = chunk
             .data
-            .select_with_schema_unchecked(schema.iter_names_cloned(), &chunk_schema)?;
+            .select_with_schema_unchecked(schema.iter_names_cloned(), chunk_schema)?;
 
         *positions = out
             .get_columns()
@@ -27,7 +27,7 @@ pub(crate) fn reproject_chunk(
     } else {
         let columns = chunk.data.get_columns();
         let cols = positions.iter().map(|i| columns[*i].clone()).collect();
-        unsafe { DataFrame::new_no_checks(cols) }
+        unsafe { DataFrame::new_no_checks(chunk.data.height(), cols) }
     };
     *chunk = chunk.with_data(out);
     Ok(())

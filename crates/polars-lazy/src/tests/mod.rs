@@ -31,11 +31,11 @@ fn load_df() -> DataFrame {
 
 use std::io::Cursor;
 
+#[cfg(feature = "temporal")]
+use chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use optimization_checks::*;
 use polars_core::chunked_array::builder::get_list_builder;
 use polars_core::df;
-#[cfg(feature = "temporal")]
-use polars_core::export::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 pub(crate) use polars_core::SINGLE_LOCK;
@@ -73,6 +73,16 @@ fn scan_foods_ipc() -> LazyFrame {
 
 #[cfg(any(feature = "ipc", feature = "parquet"))]
 fn init_files() {
+    if std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/busy")
+        .is_err()
+    {
+        while !std::fs::exists("../../examples/datasets/finished").unwrap() {}
+        return;
+    }
+
     for path in &[
         "../../examples/datasets/foods1.csv",
         "../../examples/datasets/foods2.csv",
@@ -113,6 +123,12 @@ fn init_files() {
             }
         }
     }
+
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open("../../examples/datasets/finished")
+        .unwrap();
 }
 
 #[cfg(feature = "parquet")]
@@ -185,22 +201,4 @@ pub(crate) fn get_df() -> DataFrame {
         .into_reader_with_file_handle(file)
         .finish()
         .unwrap()
-}
-
-#[test]
-fn test_foo() -> PolarsResult<()> {
-    let df = df![
-        "A" => [1],
-        "B" => [1],
-    ]?;
-
-    let q = df.lazy();
-
-    let out = q
-        .group_by([col("A")])
-        .agg([cols(["A", "B"]).name().prefix("_agg")])
-        .explain(false)?;
-
-    println!("{out}");
-    Ok(())
 }

@@ -38,6 +38,22 @@ def test_non_strict_inequalities(east_west: tuple[pl.DataFrame, pl.DataFrame]) -
     assert len(result) > 0
 
 
+def test_single_inequality(east_west: tuple[pl.DataFrame, pl.DataFrame]) -> None:
+    east, west = east_west
+    result = (
+        east.lazy()
+        # Reduce the number of results by scaling LHS dur column up
+        .with_columns((pl.col("dur") * 30).alias("scaled_dur"))
+        .join_where(
+            west.lazy(),
+            pl.col("scaled_dur") < pl.col("time"),
+        )
+        .collect()
+    )
+
+    assert len(result) > 0
+
+
 @pytest.fixture(scope="module")
 def east_west() -> tuple[pl.DataFrame, pl.DataFrame]:
     num_rows_left, num_rows_right = 50_000, 5_000

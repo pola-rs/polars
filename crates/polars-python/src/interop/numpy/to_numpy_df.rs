@@ -5,9 +5,9 @@ use polars_core::prelude::*;
 use polars_core::utils::dtypes_to_supertype;
 use polars_core::with_match_physical_numeric_polars_type;
 use pyo3::exceptions::PyRuntimeError;
-use pyo3::intern;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use pyo3::{intern, IntoPyObjectExt};
 
 use super::to_numpy_series::series_to_numpy;
 use super::utils::{
@@ -78,11 +78,11 @@ fn try_df_to_numpy_view(py: Python, df: &DataFrame, allow_nulls: bool) -> Option
         return None;
     }
 
-    let owner = PyDataFrame::from(df.clone()).into_py(py); // Keep the DataFrame memory alive.
+    let owner = PyDataFrame::from(df.clone()).into_py_any(py).ok()?; // Keep the DataFrame memory alive.
 
     let arr = match first_dtype {
-        dt if dt.is_numeric() => {
-            with_match_physical_numeric_polars_type!(first_dtype, |$T| {
+        dt if dt.is_primitive_numeric() => {
+            with_match_physical_numpy_polars_type!(first_dtype, |$T| {
                 numeric_df_to_numpy_view::<$T>(py, df, owner)
             })
         },
@@ -113,7 +113,10 @@ fn check_df_dtypes_support_view(df: &DataFrame) -> Option<&DataType> {
 fn check_df_columns_contiguous(df: &DataFrame) -> bool {
     let columns = df.get_columns();
 
-    if columns.iter().any(|s| s.n_chunks() > 1) {
+    if columns
+        .iter()
+        .any(|s| s.as_materialized_series().n_chunks() > 1)
+    {
         return false;
     }
     if columns.len() <= 1 {
@@ -121,12 +124,12 @@ fn check_df_columns_contiguous(df: &DataFrame) -> bool {
     }
 
     match columns.first().unwrap().dtype() {
-        dt if dt.is_numeric() => {
+        dt if dt.is_primitive_numeric() => {
             with_match_physical_numeric_polars_type!(dt, |$T| {
                 let slices = columns
                     .iter()
                     .map(|s| {
-                        let ca: &ChunkedArray<$T> = s.unpack().unwrap();
+                        let ca: &ChunkedArray<$T> = s.as_materialized_series().unpack().unwrap();
                         ca.data_views().next().unwrap()
                     })
                     .collect::<Vec<_>>();
@@ -174,11 +177,17 @@ where
     T: PolarsNumericType,
     T::Native: Element,
 {
-    let ca: &ChunkedArray<T> = df.get_columns().first().unwrap().unpack().unwrap();
+    let ca: &ChunkedArray<T> = df
+        .get_columns()
+        .first()
+        .unwrap()
+        .as_materialized_series()
+        .unpack()
+        .unwrap();
     let first_slice = ca.data_views().next().unwrap();
 
     let start_ptr = first_slice.as_ptr();
-    let np_dtype = T::Native::get_dtype_bound(py);
+    let np_dtype = T::Native::get_dtype(py);
     let dims = [first_slice.len(), df.width()].into_dimension();
 
     unsafe {
@@ -235,13 +244,14 @@ fn try_df_to_numpy_numeric_supertype(
     let st = dtypes_to_supertype(df.iter().map(|s| s.dtype())).ok()?;
 
     let np_array = match st {
-        dt if dt.is_numeric() => with_match_physical_numeric_polars_type!(dt, |$T| {
-            df.to_ndarray::<$T>(order).ok()?.into_pyarray_bound(py).into_py(py)
+        dt if dt.is_primitive_numeric() => with_match_physical_numpy_polars_type!(dt, |$T| {
+            df.to_ndarray::<$T>(order).ok()?.into_pyarray(py).into_py_any(py).ok()?
         }),
         _ => return None,
     };
     Some(np_array)
 }
+
 fn df_columns_to_numpy(
     py: Python,
     df: &DataFrame,
@@ -263,21 +273,19 @@ fn df_columns_to_numpy(
                 arr.call_method1(py, intern!(py, "__getitem__"), (idx,))
                     .unwrap()
             });
-            arr = PyArray1::from_iter_bound(py, subarrays).into_py(py);
+            arr = PyArray1::from_iter(py, subarrays).into_py_any(py).unwrap();
         }
         arr
     });
 
-    let numpy = PyModule::import_bound(py, intern!(py, "numpy"))?;
+    let numpy = PyModule::import(py, intern!(py, "numpy"))?;
     let np_array = match order {
         IndexOrder::C => numpy
-            .getattr(intern!(py, "column_stack"))
-            .unwrap()
-            .call1((PyList::new_bound(py, np_arrays),))?,
+            .getattr(intern!(py, "column_stack"))?
+            .call1((PyList::new(py, np_arrays)?,))?,
         IndexOrder::Fortran => numpy
-            .getattr(intern!(py, "vstack"))
-            .unwrap()
-            .call1((PyList::new_bound(py, np_arrays),))?
+            .getattr(intern!(py, "vstack"))?
+            .call1((PyList::new(py, np_arrays)?,))?
             .getattr(intern!(py, "T"))?,
     };
 

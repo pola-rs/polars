@@ -1,9 +1,10 @@
-use arrow::legacy::prelude::DynArgs;
+use polars_compute::rolling::RollingFnParams;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "rolling_window", derive(PartialEq))]
 pub struct RollingOptionsFixedWindow {
     /// The length of the window.
     pub window_size: usize,
@@ -14,20 +15,9 @@ pub struct RollingOptionsFixedWindow {
     pub weights: Option<Vec<f64>>,
     /// Set the labels at the center of the window.
     pub center: bool,
-    #[cfg_attr(feature = "serde", serde(skip))]
-    pub fn_params: DynArgs,
-}
-
-#[cfg(feature = "rolling_window")]
-impl PartialEq for RollingOptionsFixedWindow {
-    fn eq(&self, other: &Self) -> bool {
-        self.window_size == other.window_size
-            && self.min_periods == other.min_periods
-            && self.weights == other.weights
-            && self.center == other.center
-            && self.fn_params.is_none()
-            && other.fn_params.is_none()
-    }
+    /// Optional parameters for the rolling
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fn_params: Option<RollingFnParams>,
 }
 
 impl Default for RollingOptionsFixedWindow {
@@ -105,7 +95,7 @@ mod inner_mod {
             options.window_size = std::cmp::min(self.len(), options.window_size);
 
             let len = self.len();
-            let arr = ca.downcast_iter().next().unwrap();
+            let arr = ca.downcast_as_array();
             let mut ca = ChunkedArray::<T>::from_slice(PlSmallStr::EMPTY, &[T::Native::zero()]);
             let ptr = ca.chunks[0].as_mut() as *mut dyn Array as *mut PrimitiveArray<T::Native>;
             let mut series_container = ca.into_series();
@@ -225,7 +215,7 @@ mod inner_mod {
                 return Ok(Self::full_null(self.name().clone(), self.len()));
             }
             let ca = self.rechunk();
-            let arr = ca.downcast_iter().next().unwrap();
+            let arr = ca.downcast_as_array();
 
             // We create a temporary dummy ChunkedArray. This will be a
             // container where we swap the window contents every iteration doing
@@ -247,7 +237,7 @@ mod inner_mod {
                 debug_assert!(offset + window_size <= arr.len());
                 let arr_window = unsafe { arr.slice_typed_unchecked(offset, window_size) };
                 // The lengths are cached, so we must update them.
-                heap_container.length = arr_window.len() as IdxSize;
+                heap_container.length = arr_window.len();
 
                 // SAFETY: ptr is not dropped as we are in scope. We are also the only
                 // owner of the contents of the Arc (we do this to reduce heap allocs).

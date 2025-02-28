@@ -1,29 +1,19 @@
-use either::Either;
-
 use super::*;
 
+/// Get the datatypes of function arguments.
+///
+/// If all arguments give the same datatype or a datatype cannot be found, `Ok(None)` is returned.
 pub(super) fn get_function_dtypes(
     input: &[ExprIR],
     expr_arena: &Arena<AExpr>,
     input_schema: &Schema,
     function: &FunctionExpr,
-    mut options: FunctionOptions,
-) -> PolarsResult<Either<Vec<DataType>, AExpr>> {
-    let mut early_return = move || {
-        // Next iteration this will not hit anymore as options is updated.
-        options.cast_to_supertypes = None;
-        Ok(Either::Right(AExpr::Function {
-            function: function.clone(),
-            input: input.to_vec(),
-            options,
-        }))
-    };
-
+) -> PolarsResult<Option<Vec<DataType>>> {
     let mut dtypes = Vec::with_capacity(input.len());
     let mut first = true;
     for e in input {
         let Some((_, dtype)) = get_aexpr_and_type(expr_arena, e.node(), input_schema) else {
-            return early_return();
+            return Ok(None);
         };
 
         if first {
@@ -34,16 +24,16 @@ pub(super) fn get_function_dtypes(
         // We will raise if we cannot find the supertype later.
         match dtype {
             DataType::Unknown(UnknownKind::Any) => {
-                return early_return();
+                return Ok(None);
             },
             _ => dtypes.push(dtype),
         }
     }
 
     if dtypes.iter().all_equal() {
-        return early_return();
+        return Ok(None);
     }
-    Ok(Either::Left(dtypes))
+    Ok(Some(dtypes))
 }
 
 // `str` namespace belongs to `String`
@@ -74,7 +64,7 @@ fn check_namespace(function: &FunctionExpr, first_dtype: &DataType) -> PolarsRes
         },
         #[cfg(feature = "dtype-categorical")]
         FunctionExpr::Categorical(_) => {
-            polars_ensure!(matches!(first_dtype, DataType::Categorical(_, _)), InvalidOperation: "expected Struct type, got: {}", first_dtype)
+            polars_ensure!(matches!(first_dtype, DataType::Categorical(_, _)), InvalidOperation: "expected Categorical type, got: {}", first_dtype)
         },
         _ => {},
     }

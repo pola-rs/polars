@@ -1,25 +1,18 @@
-import sys
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal as PyDecimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
 import polars as pl
 import polars.selectors as cs
 from polars._typing import SelectorType
-from polars.dependencies import _ZONEINFO_AVAILABLE
 from polars.exceptions import ColumnNotFoundError, InvalidOperationError
 from polars.selectors import expand_selector, is_selector
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import INTEGER_DTYPES, TEMPORAL_DTYPES
-
-if sys.version_info >= (3, 9):
-    from zoneinfo import ZoneInfo
-elif _ZONEINFO_AVAILABLE:
-    # Import from submodule due to typing issue with backports.zoneinfo package:
-    # https://github.com/pganssle/zoneinfo/issues/125
-    from backports.zoneinfo._zoneinfo import ZoneInfo
 
 
 def assert_repr_equals(item: Any, expected: str) -> None:
@@ -118,6 +111,58 @@ def test_selector_by_dtype(df: pl.DataFrame) -> None:
             "qqR": pl.String(),
         }
     )
+    assert df.select(
+        cs.by_dtype(pl.Datetime("ns"), pl.Float32, pl.UInt32, pl.Date)
+    ).schema == pl.Schema(
+        {
+            "bbb": pl.UInt32,
+            "def": pl.Float32,
+            "JJK": pl.Date,
+        }
+    )
+
+    # select using python types
+    assert df.select(cs.by_dtype(int, float)).schema == pl.Schema(
+        {
+            "abc": pl.UInt16,
+            "bbb": pl.UInt32,
+            "cde": pl.Float64,
+            "def": pl.Float32,
+        }
+    )
+    assert df.select(cs.by_dtype(bool, datetime, timedelta)).schema == pl.Schema(
+        {
+            "eee": pl.Boolean(),
+            "fgg": pl.Boolean(),
+            "Lmn": pl.Duration("us"),
+            "opp": pl.Datetime("ms"),
+        }
+    )
+
+    # cover timezones and decimal
+    dfx = pl.DataFrame(
+        {"idx": [], "dt1": [], "dt2": []},
+        schema_overrides={
+            "idx": pl.Decimal(24),
+            "dt1": pl.Datetime("ms"),
+            "dt2": pl.Datetime(time_zone="Asia/Tokyo"),
+        },
+    )
+    assert dfx.select(cs.by_dtype(PyDecimal)).schema == pl.Schema(
+        {"idx": pl.Decimal(24)},
+    )
+    assert dfx.select(cs.by_dtype(pl.Datetime(time_zone="*"))).schema == pl.Schema(
+        {"dt2": pl.Datetime(time_zone="Asia/Tokyo")}
+    )
+    assert dfx.select(cs.by_dtype(pl.Datetime("ms", None))).schema == pl.Schema(
+        {"dt1": pl.Datetime("ms")},
+    )
+    for dt in (datetime, pl.Datetime):
+        assert dfx.select(cs.by_dtype(dt)).schema == pl.Schema(
+            {"dt1": pl.Datetime("ms"), "dt2": pl.Datetime(time_zone="Asia/Tokyo")},
+        )
+
+    # empty selection selects nothing
     assert df.select(cs.by_dtype()).schema == {}
     assert df.select(cs.by_dtype([])).schema == {}
 
@@ -190,10 +235,16 @@ def test_selector_by_name(df: pl.DataFrame) -> None:
 
     # check "by_name & col"
     for selector_expr, expected in (
-        (cs.by_name("abc", "cde") & pl.col("ghi"), ["abc", "cde", "ghi"]),
-        (pl.col("ghi") & cs.by_name("cde", "abc"), ["ghi", "cde", "abc"]),
+        (cs.by_name("abc", "cde") & pl.col("ghi"), []),
+        (cs.by_name("abc", "cde") & pl.col("cde"), ["cde"]),
+        (pl.col("cde") & cs.by_name("cde", "abc"), ["cde"]),
     ):
         assert df.select(selector_expr).columns == expected
+
+    # check "by_name & by_name"
+    assert df.select(
+        cs.by_name("abc", "cde", "def", "eee") & cs.by_name("cde", "eee", "fgg")
+    ).columns == ["cde", "eee"]
 
     # expected errors
     with pytest.raises(ColumnNotFoundError, match="xxx"):
@@ -327,6 +378,7 @@ def test_select_decimal(df: pl.DataFrame) -> None:
             "zz2": pl.Decimal(10, 10),
         }
     )
+    print(df.select(cs.numeric()).columns)
     assert df.select(cs.numeric()).columns == ["zz0", "zz1", "zz2"]
     assert df.select(cs.decimal()).columns == ["zz1", "zz2"]
     assert df.select(~cs.decimal()).columns == ["zz0"]
@@ -523,7 +575,7 @@ def test_selector_temporal(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal()).schema == {
         "ghi": pl.Time,
         "JJK": pl.Date,
-        "Lmn": pl.Duration,
+        "Lmn": pl.Duration("us"),
         "opp": pl.Datetime("ms"),
     }
     all_columns = set(df.columns)
@@ -619,7 +671,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
             "eee": pl.Boolean,
             "ghi": pl.Time,
             "JJK": pl.Date,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
             "opp": pl.Datetime("ms"),
             "qqR": pl.String,
         }
@@ -637,7 +689,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     assert df.select(cs.temporal() - cs.matches("opp|JJK")).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 
@@ -647,7 +699,7 @@ def test_selector_sets(df: pl.DataFrame) -> None:
     ).schema == OrderedDict(
         {
             "ghi": pl.Time,
-            "Lmn": pl.Duration,
+            "Lmn": pl.Duration("us"),
         }
     )
 
@@ -657,6 +709,12 @@ def test_selector_sets(df: pl.DataFrame) -> None:
 
     with pytest.raises(TypeError, match=r"unsupported .* \('Expr' - 'Selector'\)"):
         df.select(pl.col("colx") - cs.matches("[yz]$"))
+
+    with pytest.raises(TypeError, match=r"unsupported .* \('Expr' \+ 'Selector'\)"):
+        df.select(pl.col("colx") + cs.numeric())
+
+    with pytest.raises(TypeError, match=r"unsupported .* \('Selector' \+ 'Selector'\)"):
+        df.select(cs.string() + cs.numeric())
 
     # complement
     assert df.select(~cs.by_dtype([pl.Duration, pl.Time])).schema == {
@@ -822,3 +880,18 @@ def test_selector_list_of_lists_18499() -> None:
 
     with pytest.raises(InvalidOperationError, match="invalid selector expression"):
         lf.unique(subset=[["bar", "ham"]])  # type: ignore[list-item]
+
+
+def test_selector_python_dtypes() -> None:
+    df = pl.DataFrame(
+        {
+            "int": [1, 2, 3],
+            "float": [1.0, 2.0, 3.0],
+            "bool": [True, False, True],
+            "str": ["x", "y", "z"],
+        }
+    )
+    assert df.select(cs.by_dtype(int)).columns == ["int"]
+    assert df.select(cs.by_dtype(float)).columns == ["float"]
+    assert df.select(cs.by_dtype(bool)).columns == ["bool"]
+    assert df.select(cs.by_dtype(str)).columns == ["str"]

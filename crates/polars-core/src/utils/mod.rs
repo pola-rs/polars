@@ -137,11 +137,12 @@ impl Container for DataFrame {
     }
 
     fn n_chunks(&self) -> usize {
-        DataFrame::n_chunks(self)
+        DataFrame::first_col_n_chunks(self)
     }
 
     fn chunk_lengths(&self) -> impl Iterator<Item = usize> {
-        self.get_columns()[0].chunk_lengths()
+        // @scalar-correctness?
+        self.columns[0].as_materialized_series().chunk_lengths()
     }
 }
 
@@ -308,7 +309,7 @@ pub fn split_df(df: &mut DataFrame, target: usize, strict: bool) -> Vec<DataFram
         return vec![df.clone()];
     }
     // make sure that chunks are aligned.
-    df.align_chunks();
+    df.align_chunks_par();
     split_df_as_ref(df, target, strict)
 }
 
@@ -357,6 +358,8 @@ macro_rules! match_dtype_to_physical_apply_macro {
             DataType::Int16 => $macro!(i16 $(, $opt_args)*),
             DataType::Int32 => $macro!(i32 $(, $opt_args)*),
             DataType::Int64 => $macro!(i64 $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!(i128 $(, $opt_args)*),
             DataType::Float32 => $macro!(f32 $(, $opt_args)*),
             DataType::Float64 => $macro!(f64 $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -384,6 +387,8 @@ macro_rules! match_dtype_to_logical_apply_macro {
             DataType::Int16 => $macro!(Int16Type $(, $opt_args)*),
             DataType::Int32 => $macro!(Int32Type $(, $opt_args)*),
             DataType::Int64 => $macro!(Int64Type $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!(Int128Type $(, $opt_args)*),
             DataType::Float32 => $macro!(Float32Type $(, $opt_args)*),
             DataType::Float64 => $macro!(Float64Type $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -391,7 +396,7 @@ macro_rules! match_dtype_to_logical_apply_macro {
     }};
 }
 
-/// Apply a macro on the Downcasted ChunkedArray's
+/// Apply a macro on the Downcasted ChunkedArrays
 #[macro_export]
 macro_rules! match_arrow_dtype_apply_macro_ca {
     ($self:expr, $macro:ident, $macro_string:ident, $macro_bool:ident $(, $opt_args:expr)*) => {{
@@ -410,6 +415,8 @@ macro_rules! match_arrow_dtype_apply_macro_ca {
             DataType::Int16 => $macro!($self.i16().unwrap() $(, $opt_args)*),
             DataType::Int32 => $macro!($self.i32().unwrap() $(, $opt_args)*),
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!($self.i128().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
             dt => panic!("not implemented for dtype {:?}", dt),
@@ -424,11 +431,17 @@ macro_rules! with_match_physical_numeric_type {(
     macro_rules! __with_ty__ {( $_ $T:ident ) => ( $($body)* )}
     use $crate::datatypes::DataType::*;
     match $dtype {
+        #[cfg(feature = "dtype-i8")]
         Int8 => __with_ty__! { i8 },
+        #[cfg(feature = "dtype-i16")]
         Int16 => __with_ty__! { i16 },
         Int32 => __with_ty__! { i32 },
         Int64 => __with_ty__! { i64 },
+        #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { i128 },
+        #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { u8 },
+        #[cfg(feature = "dtype-u16")]
         UInt16 => __with_ty__! { u16 },
         UInt32 => __with_ty__! { u32 },
         UInt64 => __with_ty__! { u64 },
@@ -451,6 +464,8 @@ macro_rules! with_match_physical_integer_type {(
         Int16 => __with_ty__! { i16 },
         Int32 => __with_ty__! { i32 },
         Int64 => __with_ty__! { i64 },
+        #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { i128 },
         #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { u8 },
         #[cfg(feature = "dtype-u16")]
@@ -500,6 +515,8 @@ macro_rules! with_match_physical_numeric_polars_type {(
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
+            #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { Int128Type },
             #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
             #[cfg(feature = "dtype-u16")]
@@ -520,15 +537,17 @@ macro_rules! with_match_physical_integer_polars_type {(
     use $crate::datatypes::DataType::*;
     use $crate::datatypes::*;
     match $key_type {
-            #[cfg(feature = "dtype-i8")]
+        #[cfg(feature = "dtype-i8")]
         Int8 => __with_ty__! { Int8Type },
-            #[cfg(feature = "dtype-i16")]
+        #[cfg(feature = "dtype-i16")]
         Int16 => __with_ty__! { Int16Type },
         Int32 => __with_ty__! { Int32Type },
         Int64 => __with_ty__! { Int64Type },
-            #[cfg(feature = "dtype-u8")]
+        #[cfg(feature = "dtype-i128")]
+        Int128 => __with_ty__! { Int128Type },
+        #[cfg(feature = "dtype-u8")]
         UInt8 => __with_ty__! { UInt8Type },
-            #[cfg(feature = "dtype-u16")]
+        #[cfg(feature = "dtype-u16")]
         UInt16 => __with_ty__! { UInt16Type },
         UInt32 => __with_ty__! { UInt32Type },
         UInt64 => __with_ty__! { UInt64Type },
@@ -536,7 +555,7 @@ macro_rules! with_match_physical_integer_polars_type {(
     }
 })}
 
-/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
 macro_rules! downcast_as_macro_arg_physical {
@@ -554,6 +573,8 @@ macro_rules! downcast_as_macro_arg_physical {
             DataType::Int16 => $macro!($self.i16().unwrap() $(, $opt_args)*),
             DataType::Int32 => $macro!($self.i32().unwrap() $(, $opt_args)*),
             DataType::Int64 => $macro!($self.i64().unwrap() $(, $opt_args)*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $macro!($self.i128().unwrap() $(, $opt_args)*),
             DataType::Float32 => $macro!($self.f32().unwrap() $(, $opt_args)*),
             DataType::Float64 => $macro!($self.f64().unwrap() $(, $opt_args)*),
             dt => panic!("not implemented for {:?}", dt),
@@ -561,7 +582,7 @@ macro_rules! downcast_as_macro_arg_physical {
     }};
 }
 
-/// Apply a macro on the Downcasted ChunkedArray's of DataTypes that are logical numerics.
+/// Apply a macro on the Downcasted ChunkedArrays of DataTypes that are logical numerics.
 /// So no logical.
 #[macro_export]
 macro_rules! downcast_as_macro_arg_physical_mut {
@@ -604,6 +625,11 @@ macro_rules! downcast_as_macro_arg_physical_mut {
                 let ca: &mut Int64Chunked = $self.as_mut();
                 $macro!(Int64Type, ca $(, $opt_args)*)
             },
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => {
+                let ca: &mut Int128Chunked = $self.as_mut();
+                $macro!(Int128Type, ca $(, $opt_args)*)
+            },
             DataType::Float32 => {
                 let ca: &mut Float32Chunked = $self.as_mut();
                 $macro!(Float32Type, ca $(, $opt_args)*)
@@ -635,6 +661,8 @@ macro_rules! apply_method_all_arrow_series {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $self.i128().unwrap().$method($($args),*),
             DataType::Float32 => $self.f32().unwrap().$method($($args),*),
             DataType::Float64 => $self.f64().unwrap().$method($($args),*),
             DataType::Time => $self.time().unwrap().$method($($args),*),
@@ -663,6 +691,8 @@ macro_rules! apply_method_physical_integer {
             DataType::Int16 => $self.i16().unwrap().$method($($args),*),
             DataType::Int32 => $self.i32().unwrap().$method($($args),*),
             DataType::Int64 => $self.i64().unwrap().$method($($args),*),
+            #[cfg(feature = "dtype-i128")]
+            DataType::Int128 => $self.i128().unwrap().$method($($args),*),
             dt => panic!("not implemented for dtype {:?}", dt),
         }
     }
@@ -684,7 +714,7 @@ macro_rules! apply_method_physical_numeric {
 macro_rules! df {
     ($($col_name:expr => $slice:expr), + $(,)?) => {
         $crate::prelude::DataFrame::new(vec![
-            $(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice),)+
+            $($crate::prelude::Column::from(<$crate::prelude::Series as $crate::prelude::NamedFrom::<_, _>>::new($col_name.into(), $slice)),)+
         ])
     }
 }
@@ -698,6 +728,37 @@ pub fn get_time_units(tu_l: &TimeUnit, tu_r: &TimeUnit) -> TimeUnit {
     }
 }
 
+#[cold]
+#[inline(never)]
+fn width_mismatch(df1: &DataFrame, df2: &DataFrame) -> PolarsError {
+    let mut df1_extra = Vec::new();
+    let mut df2_extra = Vec::new();
+
+    let s1 = df1.schema();
+    let s2 = df2.schema();
+
+    s1.field_compare(s2, &mut df1_extra, &mut df2_extra);
+
+    let df1_extra = df1_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let df2_extra = df2_extra
+        .into_iter()
+        .map(|(_, (n, _))| n.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    polars_err!(
+        SchemaMismatch: r#"unable to vstack, dataframes have different widths ({} != {}).
+One dataframe has additional columns: [{df1_extra}].
+Other dataframe has additional columns: [{df2_extra}]."#,
+        df1.width(),
+        df2.width(),
+    )
+}
+
 pub fn accumulate_dataframes_vertical_unchecked_optional<I>(dfs: I) -> Option<DataFrame>
 where
     I: IntoIterator<Item = DataFrame>,
@@ -708,7 +769,11 @@ where
     acc_df.reserve_chunks(additional);
 
     for df in iter {
-        acc_df.vstack_mut_unchecked(&df);
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
     }
     Some(acc_df)
 }
@@ -725,7 +790,11 @@ where
     acc_df.reserve_chunks(additional);
 
     for df in iter {
-        acc_df.vstack_mut_unchecked(&df);
+        if acc_df.width() != df.width() {
+            panic!("{}", width_mismatch(&acc_df, &df));
+        }
+
+        acc_df.vstack_mut_owned_unchecked(df);
     }
     acc_df
 }
@@ -742,6 +811,10 @@ where
     let mut acc_df = iter.next().unwrap();
     acc_df.reserve_chunks(additional);
     for df in iter {
+        if acc_df.width() != df.width() {
+            return Err(width_mismatch(&acc_df, &df));
+        }
+
         acc_df.vstack_mut(&df)?;
     }
 
@@ -884,9 +957,9 @@ where
         {
             (left, right)
         },
-        (_, 1) => (left.rechunk(), right),
-        (1, _) => (left, right.rechunk()),
-        (_, _) => (left.rechunk(), right.rechunk()),
+        (_, 1) => (left.rechunk().into_owned(), right),
+        (1, _) => (left, right.rechunk().into_owned()),
+        (_, _) => (left.rechunk().into_owned(), right.rechunk().into_owned()),
     }
 }
 
@@ -988,10 +1061,8 @@ where
     T: PolarsDataType,
 {
     let (left, right) = align_chunks_binary(left, right);
-    let left_chunk_refs: Vec<_> = left.chunks().iter().map(|c| &**c).collect();
-    let left_validity = concatenate_validities(&left_chunk_refs);
-    let right_chunk_refs: Vec<_> = right.chunks().iter().map(|c| &**c).collect();
-    let right_validity = concatenate_validities(&right_chunk_refs);
+    let left_validity = concatenate_validities(left.chunks());
+    let right_validity = concatenate_validities(right.chunks());
     combine_validities_and(left_validity.as_ref(), right_validity.as_ref())
 }
 
@@ -1135,10 +1206,10 @@ pub fn coalesce_nulls<'a, T: PolarsDataType>(
     }
 }
 
-pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
+pub fn coalesce_nulls_columns(a: &Column, b: &Column) -> (Column, Column) {
     if a.null_count() > 0 || b.null_count() > 0 {
-        let mut a = a.rechunk();
-        let mut b = b.rechunk();
+        let mut a = a.as_materialized_series().rechunk();
+        let mut b = b.as_materialized_series().rechunk();
         for (arr_a, arr_b) in unsafe { a.chunks_mut().iter_mut().zip(b.chunks_mut()) } {
             let validity = match (arr_a.validity(), arr_b.validity()) {
                 (None, Some(b)) => Some(b.clone()),
@@ -1151,14 +1222,14 @@ pub fn coalesce_nulls_series(a: &Series, b: &Series) -> (Series, Series) {
         }
         a.compute_len();
         b.compute_len();
-        (a, b)
+        (a.into(), b.into())
     } else {
         (a.clone(), b.clone())
     }
 }
 
 pub fn operation_exceeded_idxsize_msg(operation: &str) -> String {
-    if core::mem::size_of::<IdxSize>() == core::mem::size_of::<u32>() {
+    if size_of::<IdxSize>() == size_of::<u32>() {
         format!(
             "{} exceeded the maximum supported limit of {} rows. Consider installing 'polars-u64-idx'.",
             operation,

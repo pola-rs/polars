@@ -1,27 +1,30 @@
-use polars::export::arrow::array::Array;
+use arrow::array::Array;
 use polars::prelude::*;
 use pyo3::prelude::*;
 
 use super::PySeries;
-use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
-    fn scatter(&mut self, idx: PySeries, values: PySeries) -> PyResult<()> {
+    fn scatter(&mut self, py: Python, idx: PySeries, values: PySeries) -> PyResult<()> {
         // we take the value because we want a ref count of 1 so that we can
         // have mutable access cheaply via _get_inner_mut().
         let s = std::mem::take(&mut self.series);
-        match scatter(s, &idx.series, &values.series) {
-            Ok(out) => {
-                self.series = out;
-                Ok(())
-            },
-            Err((s, e)) => {
-                // Restore original series:
-                self.series = s;
-                Err(PyErr::from(PyPolarsErr::from(e)))
-            },
-        }
+        py.enter_polars(|| {
+            let result = scatter(s, &idx.series, &values.series);
+            match result {
+                Ok(out) => {
+                    self.series = out;
+                    Ok(())
+                },
+                Err((s, e)) => {
+                    // Restore original series:
+                    self.series = s;
+                    Err(e)
+                },
+            }
+        })
     }
 }
 
@@ -33,7 +36,7 @@ fn scatter(mut s: Series, idx: &Series, values: &Series) -> Result<Series, (Seri
         Err(err) => return Err((s, err)),
     };
     let idx = idx.rechunk();
-    let idx = idx.downcast_iter().next().unwrap();
+    let idx = idx.downcast_as_array();
 
     if idx.null_count() > 0 {
         return Err((

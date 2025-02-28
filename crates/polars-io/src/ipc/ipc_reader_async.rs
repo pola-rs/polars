@@ -74,7 +74,7 @@ impl IpcReaderAsync {
         let path = object_path_from_str(&prefix)?;
 
         Ok(Self {
-            store: PolarsObjectStore::new(store),
+            store,
             cache_entry,
             path,
         })

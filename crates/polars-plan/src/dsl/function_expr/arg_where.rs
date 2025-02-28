@@ -2,11 +2,11 @@ use polars_core::utils::arrow::bitmap::utils::SlicesIterator;
 
 use super::*;
 
-pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
+pub(super) fn arg_where(s: &mut [Column]) -> PolarsResult<Option<Column>> {
     let predicate = s[0].bool()?;
 
     if predicate.is_empty() {
-        Ok(Some(Series::full_null(
+        Ok(Some(Column::full_null(
             predicate.name().clone(),
             0,
             &IDX_DTYPE,
@@ -37,6 +37,6 @@ pub(super) fn arg_where(s: &mut [Series]) -> PolarsResult<Option<Series>> {
             total_offset += arr.len();
         });
         let ca = IdxCa::with_chunk(predicate.name().clone(), IdxArr::from_vec(out));
-        Ok(Some(ca.into_series()))
+        Ok(Some(ca.into_column()))
     }
 }

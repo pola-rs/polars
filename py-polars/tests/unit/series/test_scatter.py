@@ -43,7 +43,7 @@ def test_scatter() -> None:
     assert s.to_list() == ["a", "x", "x"]
     assert s.scatter([0, 2], 0.12345).to_list() == ["0.12345", "x", "0.12345"]
 
-    # set multiple values values
+    # set multiple values
     s = pl.Series(["z", "z", "z"])
     assert s.scatter([0, 1], ["a", "b"]).to_list() == ["a", "b", "z"]
     s = pl.Series([True, False, True])
@@ -77,7 +77,7 @@ def test_object_dtype_16905() -> None:
     with pytest.raises(InvalidOperationError):
         s[0] = 5
     # The error doesn't trash the series, as it used to:
-    assert s.dtype == pl.Object
+    assert s.dtype.is_object()
     assert s.name == "s"
     assert s.to_list() == [obj, 27]
 

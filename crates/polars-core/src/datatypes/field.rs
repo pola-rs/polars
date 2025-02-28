@@ -1,6 +1,8 @@
+use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;
+pub static EXTENSION_NAME: &str = "POLARS_EXTENSION_TYPE";
 
 /// Characterizes the name and the [`DataType`] of a column.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -97,6 +99,12 @@ impl Field {
         self.name = name;
     }
 
+    /// Returns this `Field`, renamed.
+    pub fn with_name(mut self, name: PlSmallStr) -> Self {
+        self.name = name;
+        self
+    }
+
     /// Converts the `Field` to an `arrow::datatypes::Field`.
     ///
     /// # Example
@@ -130,7 +138,15 @@ impl DataType {
         Box::new(self)
     }
 
-    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool) -> DataType {
+    pub fn from_arrow_field(field: &ArrowField) -> DataType {
+        Self::from_arrow(&field.dtype, true, field.metadata.as_deref())
+    }
+
+    pub fn from_arrow_dtype(dt: &ArrowDataType) -> DataType {
+        Self::from_arrow(dt, true, None)
+    }
+
+    pub fn from_arrow(dt: &ArrowDataType, bin_to_view: bool, md: Option<&Metadata>) -> DataType {
         match dt {
             ArrowDataType::Null => DataType::Null,
             ArrowDataType::UInt8 => DataType::UInt8,
@@ -141,63 +157,109 @@ impl DataType {
             ArrowDataType::Int16 => DataType::Int16,
             ArrowDataType::Int32 => DataType::Int32,
             ArrowDataType::Int64 => DataType::Int64,
+            #[cfg(feature = "dtype-i128")]
+            ArrowDataType::Int128 => DataType::Int128,
             ArrowDataType::Boolean => DataType::Boolean,
+            ArrowDataType::Float16 => DataType::Float32,
             ArrowDataType::Float32 => DataType::Float32,
             ArrowDataType::Float64 => DataType::Float64,
             #[cfg(feature = "dtype-array")]
-            ArrowDataType::FixedSizeList(f, size) => DataType::Array(DataType::from_arrow(f.dtype(), bin_to_view).boxed(), *size),
-            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => DataType::List(DataType::from_arrow(f.dtype(), bin_to_view).boxed()),
+            ArrowDataType::FixedSizeList(f, size) => {
+                DataType::Array(DataType::from_arrow_field(f).boxed(), *size)
+            },
+            ArrowDataType::LargeList(f) | ArrowDataType::List(f) => {
+                DataType::List(DataType::from_arrow_field(f).boxed())
+            },
             ArrowDataType::Date32 => DataType::Date,
-            ArrowDataType::Timestamp(tu, tz) => DataType::Datetime(tu.into(), DataType::canonical_timezone(tz)),
+            ArrowDataType::Timestamp(tu, tz) => {
+                DataType::Datetime(tu.into(), DataType::canonical_timezone(tz))
+            },
             ArrowDataType::Duration(tu) => DataType::Duration(tu.into()),
             ArrowDataType::Date64 => DataType::Datetime(TimeUnit::Milliseconds, None),
             ArrowDataType::Time64(_) | ArrowDataType::Time32(_) => DataType::Time,
             #[cfg(feature = "dtype-categorical")]
-            ArrowDataType::Dictionary(_, _, _) => DataType::Categorical(None,Default::default()),
+            ArrowDataType::Dictionary(_, value_type, _) => {
+                if md.map(|md| md.is_enum()).unwrap_or(false) {
+                    let md = md.unwrap();
+                    let encoded = md.get(DTYPE_ENUM_VALUES).unwrap();
+                    let mut encoded = encoded.as_str();
+                    let mut cats = MutableBinaryViewArray::<str>::new();
+
+                    // Data is encoded as <len in ascii><sep ';'><payload>
+                    // We know thus that len is only [0-9] and the first ';' doesn't belong to the
+                    // payload.
+                    while let Some(pos) = encoded.find(';') {
+                        let (len, remainder) = encoded.split_at(pos);
+                        // Split off ';'
+                        encoded = &remainder[1..];
+                        let len = len.parse::<usize>().unwrap();
+
+                        let (value, remainder) = encoded.split_at(len);
+                        cats.push_value(value);
+                        encoded = remainder;
+                    }
+                    DataType::Enum(
+                        Some(Arc::new(RevMapping::build_local(cats.into()))),
+                        Default::default(),
+                    )
+                } else if let Some(ordering) = md.and_then(|md| md.categorical()) {
+                    DataType::Categorical(None, ordering)
+                } else if matches!(
+                    value_type.as_ref(),
+                    ArrowDataType::Utf8 | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8View
+                ) {
+                    DataType::Categorical(None, Default::default())
+                } else {
+                    Self::from_arrow(value_type, bin_to_view, None)
+                }
+            },
             #[cfg(feature = "dtype-struct")]
             ArrowDataType::Struct(fields) => {
                 DataType::Struct(fields.iter().map(|fld| fld.into()).collect())
-            }
+            },
             #[cfg(not(feature = "dtype-struct"))]
             ArrowDataType::Struct(_) => {
                 panic!("activate the 'dtype-struct' feature to handle struct data types")
-            }
-            ArrowDataType::Extension(name, _, _) if name.as_str() == "POLARS_EXTENSION_TYPE" => {
+            },
+            ArrowDataType::Extension(ext) if ext.name.as_str() == EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
-                    DataType::Object("extension", None)
+                    DataType::Object("object", None)
                 }
                 #[cfg(not(feature = "object"))]
                 {
                     panic!("activate the 'object' feature to be able to load POLARS_EXTENSION_TYPE")
                 }
-            }
+            },
             #[cfg(feature = "dtype-decimal")]
-            ArrowDataType::Decimal(precision, scale) => DataType::Decimal(Some(*precision), Some(*scale)),
-            ArrowDataType::Utf8View |ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => DataType::String,
+            ArrowDataType::Decimal(precision, scale) => {
+                DataType::Decimal(Some(*precision), Some(*scale))
+            },
+            ArrowDataType::Utf8View | ArrowDataType::LargeUtf8 | ArrowDataType::Utf8 => {
+                DataType::String
+            },
             ArrowDataType::BinaryView => DataType::Binary,
             ArrowDataType::LargeBinary | ArrowDataType::Binary => {
                 if bin_to_view {
                     DataType::Binary
                 } else {
-
                     DataType::BinaryOffset
                 }
             },
             ArrowDataType::FixedSizeBinary(_) => DataType::Binary,
-            dt => panic!("Arrow datatype {dt:?} not supported by Polars. You probably need to activate that data-type feature."),
+            ArrowDataType::Map(inner, _is_sorted) => {
+                DataType::List(Self::from_arrow_field(inner).boxed())
+            },
+            dt => panic!(
+                "Arrow datatype {dt:?} not supported by Polars. \
+                You probably need to activate that data-type feature."
+            ),
         }
-    }
-}
-
-impl From<&ArrowDataType> for DataType {
-    fn from(dt: &ArrowDataType) -> Self {
-        Self::from_arrow(dt, true)
     }
 }
 
 impl From<&ArrowField> for Field {
     fn from(f: &ArrowField) -> Self {
-        Field::new(f.name.clone(), f.dtype().into())
+        Field::new(f.name.clone(), DataType::from_arrow_field(f))
     }
 }

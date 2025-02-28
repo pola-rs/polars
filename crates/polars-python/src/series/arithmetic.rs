@@ -2,34 +2,24 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 
 use super::PySeries;
-use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 impl PySeries {
-    fn add(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series + &other.series)
-            .map(Into::into)
-            .map_err(PyPolarsErr::from)?)
+    fn add(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &self.series + &other.series)
     }
-    fn sub(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series - &other.series)
-            .map(Into::into)
-            .map_err(PyPolarsErr::from)?)
+    fn sub(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &self.series - &other.series)
     }
-    fn div(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series / &other.series)
-            .map(Into::into)
-            .map_err(PyPolarsErr::from)?)
+    fn mul(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &self.series * &other.series)
     }
-    fn mul(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series * &other.series)
-            .map(Into::into)
-            .map_err(PyPolarsErr::from)?)
+    fn div(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &self.series / &other.series)
     }
-    fn rem(&self, other: &PySeries) -> PyResult<Self> {
-        Ok((&self.series % &other.series)
-            .map(Into::into)
-            .map_err(PyPolarsErr::from)?)
+    fn rem(&self, py: Python, other: &PySeries) -> PyResult<Self> {
+        py.enter_polars_series(|| &self.series % &other.series)
     }
 }
 
@@ -37,8 +27,8 @@ macro_rules! impl_arithmetic {
     ($name:ident, $type:ty, $operand:tt) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, other: $type) -> PyResult<Self> {
-                Ok((&self.series $operand other).into())
+            fn $name(&self, py: Python, other: $type) -> PyResult<Self> {
+                py.enter_polars_series(|| Ok({&self.series $operand other}))
             }
         }
     };
@@ -103,8 +93,8 @@ macro_rules! impl_rhs_arithmetic {
     ($name:ident, $type:ty, $operand:ident) => {
         #[pymethods]
         impl PySeries {
-            fn $name(&self, other: $type) -> PyResult<Self> {
-                Ok(other.$operand(&self.series).into())
+            fn $name(&self, py: Python, other: $type) -> PyResult<Self> {
+                py.enter_polars_series(|| Ok(other.$operand(&self.series)))
             }
         }
     };

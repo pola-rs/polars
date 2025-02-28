@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 
+use arrow::datatypes::ArrowSchema;
 use futures::{StreamExt, TryStreamExt};
 use polars_core::config::{self, get_file_prefetch_size};
 use polars_core::error::*;
@@ -14,13 +15,13 @@ use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_io::pl_async::get_runtime;
-use polars_io::predicates::PhysicalIoExpr;
-use polars_io::prelude::materialize_projection;
+use polars_io::predicates::ScanIOPredicate;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
 use polars_io::SerReader;
-use polars_plan::plans::{FileInfo, ScanSources};
+use polars_plan::dsl::ScanSources;
+use polars_plan::plans::FileInfo;
 use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
@@ -41,13 +42,14 @@ pub struct ParquetSource {
     file_options: FileScanOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
-    metadata: Option<FileMetadataRef>,
-    file_info: FileInfo,
+    first_metadata: Option<FileMetadataRef>,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     verbose: bool,
     run_async: bool,
     prefetch_size: usize,
-    predicate: Option<Arc<dyn PhysicalIoExpr>>,
+    first_schema: Arc<ArrowSchema>,
+    projected_arrow_schema: Option<Arc<ArrowSchema>>,
+    predicate: Option<ScanIOPredicate>,
 }
 
 impl ParquetSource {
@@ -61,7 +63,6 @@ impl ParquetSource {
     }
 
     fn init_next_reader_sync(&mut self) -> PolarsResult<()> {
-        self.metadata = None;
         self.init_reader_sync()
     }
 
@@ -73,7 +74,6 @@ impl ParquetSource {
         &PathBuf,
         ParquetOptions,
         FileScanOptions,
-        Option<Vec<usize>>,
         usize,
         Option<Vec<Series>>,
     )> {
@@ -82,37 +82,26 @@ impl ParquetSource {
             .as_paths()
             .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let path = &paths[index];
-        let options = self.options;
+        let options = self.options.clone();
         let file_options = self.file_options.clone();
-        let schema = self.file_info.schema.clone();
 
         let hive_partitions = self
             .hive_parts
             .as_ref()
             .map(|x| x[index].materialize_partition_columns());
 
-        let projection = materialize_projection(
-            file_options.with_columns.as_deref(),
-            &schema,
-            hive_partitions.as_deref(),
-            false,
-        );
-
-        let n_cols = projection.as_ref().map(|v| v.len()).unwrap_or(schema.len());
-        let chunk_size = determine_chunk_size(n_cols, self.n_threads)?;
+        let chunk_size = determine_chunk_size(
+            self.projected_arrow_schema
+                .as_ref()
+                .map_or(self.first_schema.len(), |x| x.len()),
+            self.n_threads,
+        )?;
 
         if self.verbose {
             eprintln!("STREAMING CHUNK SIZE: {chunk_size} rows")
         }
 
-        Ok((
-            path,
-            options,
-            file_options,
-            projection,
-            chunk_size,
-            hive_partitions,
-        ))
+        Ok((path, options, file_options, chunk_size, hive_partitions))
     }
 
     fn init_reader_sync(&mut self) -> PolarsResult<()> {
@@ -128,23 +117,31 @@ impl ParquetSource {
         }
 
         let predicate = self.predicate.clone();
-        let (path, options, file_options, projection, chunk_size, hive_partitions) =
+        let (path, options, file_options, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
         let batched_reader = {
             let file = std::fs::File::open(path).unwrap();
-            let mut reader = ParquetReader::new(file)
-                .with_projection(projection)
-                .check_schema(
-                    self.file_info
-                        .reader_schema
-                        .as_ref()
-                        .unwrap()
-                        .as_ref()
-                        .unwrap_left(),
+
+            let mut reader = ParquetReader::new(file);
+
+            if index == 0 {
+                if let Some(md) = self.first_metadata.clone() {
+                    reader.set_metadata(md);
+                }
+            }
+
+            let mut reader = reader
+                .with_arrow_schema_projection(
+                    &self.first_schema,
+                    self.projected_arrow_schema.as_deref(),
+                    self.file_options.allow_missing_columns,
                 )?
-                .with_row_index(file_options.row_index)
-                .with_predicate(predicate.clone())
+                .with_row_index(file_options.row_index.map(|mut ri| {
+                    ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
+                    ri
+                }))
+                .with_predicate(predicate)
                 .use_statistics(options.use_statistics)
                 .with_hive_partition_columns(hive_partitions)
                 .with_include_file_path(
@@ -191,10 +188,10 @@ impl ParquetSource {
     async fn init_reader_async(&self, index: usize) -> PolarsResult<BatchedParquetReader> {
         use std::sync::atomic::Ordering;
 
-        let metadata = self.metadata.clone();
+        let metadata = self.first_metadata.clone().filter(|_| index == 0);
         let predicate = self.predicate.clone();
         let cloud_options = self.cloud_options.clone();
-        let (path, options, file_options, projection, chunk_size, hive_partitions) =
+        let (path, options, file_options, chunk_size, hive_partitions) =
             self.prepare_init_reader(index)?;
 
         let batched_reader = {
@@ -203,18 +200,17 @@ impl ParquetSource {
             let mut async_reader =
                 ParquetAsyncReader::from_uri(&uri, cloud_options.as_ref(), metadata)
                     .await?
-                    .with_row_index(file_options.row_index)
-                    .with_projection(projection)
-                    .check_schema(
-                        self.file_info
-                            .reader_schema
-                            .as_ref()
-                            .unwrap()
-                            .as_ref()
-                            .unwrap_left(),
+                    .with_row_index(file_options.row_index.map(|mut ri| {
+                        ri.offset += self.processed_rows.load(Ordering::Relaxed) as IdxSize;
+                        ri
+                    }))
+                    .with_arrow_schema_projection(
+                        &self.first_schema,
+                        self.projected_arrow_schema.as_deref(),
+                        self.file_options.allow_missing_columns,
                     )
                     .await?
-                    .with_predicate(predicate.clone())
+                    .with_predicate(predicate)
                     .use_statistics(options.use_statistics)
                     .with_hive_partition_columns(hive_partitions)
                     .with_include_file_path(
@@ -252,12 +248,12 @@ impl ParquetSource {
         sources: ScanSources,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        metadata: Option<FileMetadataRef>,
+        first_metadata: Option<FileMetadataRef>,
         file_options: FileScanOptions,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,
-        predicate: Option<Arc<dyn PhysicalIoExpr>>,
+        predicate: Option<ScanIOPredicate>,
     ) -> PolarsResult<Self> {
         let paths = sources
             .as_paths()
@@ -272,6 +268,16 @@ impl ParquetSource {
         }
         let run_async = paths.first().map(is_cloud_url).unwrap_or(false) || config::force_async();
 
+        let first_schema = file_info.reader_schema.clone().unwrap().unwrap_left();
+
+        let projected_arrow_schema = {
+            if let Some(with_columns) = file_options.with_columns.as_deref() {
+                Some(Arc::new(first_schema.try_project(with_columns)?))
+            } else {
+                None
+            }
+        };
+
         let mut source = ParquetSource {
             batched_readers: VecDeque::new(),
             n_threads,
@@ -282,18 +288,18 @@ impl ParquetSource {
             iter,
             sources,
             cloud_options,
-            metadata,
-            file_info,
+            first_metadata,
             hive_parts,
             verbose,
             run_async,
             prefetch_size,
+            first_schema,
+            projected_arrow_schema,
             predicate,
         };
         // Already start downloading when we deal with cloud urls.
         if run_async {
             source.init_next_reader()?;
-            source.metadata = None;
         }
         Ok(source)
     }
@@ -318,7 +324,11 @@ impl ParquetSource {
                         .collect::<Vec<_>>();
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                    let batched_readers = if self.file_options.slice.is_some() {
+                    let needs_exact_processed_rows_count =
+                        self.file_options.slice.is_some() || self.file_options.row_index.is_some();
+
+                    let batched_readers = if needs_exact_processed_rows_count {
+                        // We run serially to ensure we have a correct processed_rows count.
                         polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
                             futures::stream::iter(init_iter)
                                 .then(|x| x)

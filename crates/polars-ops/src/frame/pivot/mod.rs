@@ -3,12 +3,12 @@ mod unpivot;
 
 use std::borrow::Cow;
 
-use polars_core::export::rayon::prelude::*;
 use polars_core::frame::group_by::expr::PhysicalAggExpr;
 use polars_core::prelude::*;
 use polars_core::utils::_split_offsets;
 use polars_core::{downcast_as_macro_arg_physical, POOL};
 use polars_utils::format_pl_smallstr;
+use rayon::prelude::*;
 pub use unpivot::UnpivotDF;
 
 const HASHMAP_INIT_SIZE: usize = 512;
@@ -76,7 +76,7 @@ fn restore_logical_type(s: &Series, logical_type: &DataType) -> Series {
             let ca = s.u32().unwrap();
             ca.reinterpret_signed().cast(logical_type).unwrap()
         },
-        _ => unsafe { s.cast_unchecked(logical_type).unwrap() },
+        _ => unsafe { s.from_physical_unchecked(logical_type).unwrap() },
     }
 }
 
@@ -232,9 +232,10 @@ fn pivot_impl(
             polars_bail!(ComputeError: "cannot use column name {column} that \
             already exists in the DataFrame. Please rename it prior to calling `pivot`.")
         }
-        let columns_struct = StructChunked::from_series(column.clone(), fields)
+        // @scalar-opt
+        let columns_struct = StructChunked::from_columns(column.clone(), fields[0].len(), fields)
             .unwrap()
-            .into_series();
+            .into_column();
         let mut binding = pivot_df.clone();
         let pivot_df = unsafe { binding.with_column_unchecked(columns_struct) };
         pivot_impl_single_column(
@@ -306,13 +307,13 @@ fn pivot_impl_single_column(
                         First => value_col.agg_first(&groups),
                         Mean => value_col.agg_mean(&groups),
                         Median => value_col.agg_median(&groups),
-                        Count => groups.group_count().into_series(),
+                        Count => groups.group_count().into_column(),
                         Expr(ref expr) => {
                             let name = expr.root_name()?.clone();
                             let mut value_col = value_col.clone();
                             value_col.rename(name);
                             let tmp_df = value_col.into_frame();
-                            let mut aggregated = expr.evaluate(&tmp_df, &groups)?;
+                            let mut aggregated = Column::from(expr.evaluate(&tmp_df, &groups)?);
                             aggregated.rename(value_col_name.clone());
                             aggregated
                         },
@@ -333,7 +334,7 @@ fn pivot_impl_single_column(
             debug_assert_eq!(row_locations.len(), col_locations.len());
             debug_assert_eq!(value_agg_phys.len(), row_locations.len());
 
-            let mut cols = if value_agg_phys.dtype().is_numeric() {
+            let mut cols = if value_agg_phys.dtype().is_primitive_numeric() {
                 macro_rules! dispatch {
                     ($ca:expr) => {{
                         positioning::position_aggregates_numeric(
@@ -354,7 +355,7 @@ fn pivot_impl_single_column(
                     n_cols,
                     &row_locations,
                     &col_locations,
-                    &value_agg_phys,
+                    value_agg_phys.as_materialized_series(),
                     logical_type,
                     &headers,
                 )
@@ -378,6 +379,5 @@ fn pivot_impl_single_column(
     });
     out?;
 
-    // SAFETY: length has already been checked.
-    unsafe { DataFrame::new_no_length_checks(final_cols) }
+    DataFrame::new(final_cols)
 }

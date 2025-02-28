@@ -8,7 +8,6 @@ use super::*;
 /// and:
 /// Ling, Robert F. (1974). "Comparison of Several Algorithms for Computing Sample Means and Variances".
 /// Journal of the American Statistical Association. 69 (348): 859–866. doi:10.2307/2286154. JSTOR 2286154.
-
 pub fn online_variance<I>(
     // iterator producing values
     iter: I,

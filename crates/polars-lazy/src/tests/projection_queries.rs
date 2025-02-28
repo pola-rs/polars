@@ -130,7 +130,7 @@ fn concat_str_regex_expansion() -> PolarsResult<()> {
     let s = out.column("concatenated")?;
     assert_eq!(
         s,
-        &Series::new("concatenated".into(), ["a--;;", ";b--;", ";;c--"])
+        &Column::new("concatenated".into(), ["a--;;", ";b--;", ";;c--"])
     );
 
     Ok(())

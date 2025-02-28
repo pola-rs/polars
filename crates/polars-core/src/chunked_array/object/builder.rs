@@ -1,10 +1,12 @@
+use arrow::bitmap::BitmapBuilder;
+
 use super::*;
 use crate::chunked_array::object::registry::{AnonymousObjectBuilder, ObjectRegistry};
 use crate::utils::get_iter_capacity;
 
 pub struct ObjectChunkedBuilder<T> {
     field: Field,
-    bitmask_builder: MutableBitmap,
+    bitmask_builder: BitmapBuilder,
     values: Vec<T>,
 }
 
@@ -16,7 +18,7 @@ where
         ObjectChunkedBuilder {
             field: Field::new(name, DataType::Object(T::type_name(), None)),
             values: Vec::with_capacity(capacity),
-            bitmask_builder: MutableBitmap::with_capacity(capacity),
+            bitmask_builder: BitmapBuilder::with_capacity(capacity),
         }
     }
 
@@ -52,13 +54,13 @@ where
     }
 
     pub fn finish(mut self) -> ObjectChunked<T> {
-        let null_bitmap: Option<Bitmap> = self.bitmask_builder.into();
+        let null_bitmap: Option<Bitmap> = self.bitmask_builder.into_opt_validity();
 
         let len = self.values.len();
         let null_count = null_bitmap
             .as_ref()
             .map(|validity| validity.unset_bits())
-            .unwrap_or(0) as IdxSize;
+            .unwrap_or(0);
 
         let arr = Box::new(ObjectArray {
             values: self.values.into(),
@@ -67,9 +69,7 @@ where
 
         self.field.dtype = get_object_type::<T>();
 
-        unsafe {
-            ChunkedArray::new_with_dims(Arc::new(self.field), vec![arr], len as IdxSize, null_count)
-        }
+        unsafe { ChunkedArray::new_with_dims(Arc::new(self.field), vec![arr], len, null_count) }
     }
 }
 
@@ -80,7 +80,7 @@ pub(crate) fn get_object_type<T: PolarsObject>() -> DataType {
         Box::new(ObjectChunkedBuilder::<T>::new(name, capacity)) as Box<dyn AnonymousObjectBuilder>
     });
 
-    let object_size = std::mem::size_of::<T>();
+    let object_size = size_of::<T>();
     let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
 
     let registry = ObjectRegistry::new(object_builder, physical_dtype);
@@ -142,21 +142,23 @@ where
             validity: None,
         });
 
-        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, 0) }
+        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len, 0) }
     }
 
-    pub fn new_from_vec_and_validity(name: PlSmallStr, v: Vec<T>, validity: Bitmap) -> Self {
+    pub fn new_from_vec_and_validity(
+        name: PlSmallStr,
+        v: Vec<T>,
+        validity: Option<Bitmap>,
+    ) -> Self {
         let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
         let len = v.len();
-        let null_count = validity.unset_bits();
+        let null_count = validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
         let arr = Box::new(ObjectArray {
             values: v.into(),
-            validity: Some(validity),
+            validity,
         });
 
-        unsafe {
-            ObjectChunked::new_with_dims(field, vec![arr], len as IdxSize, null_count as IdxSize)
-        }
+        unsafe { ObjectChunked::new_with_dims(field, vec![arr], len, null_count) }
     }
 
     pub fn new_empty(name: PlSmallStr) -> Self {
@@ -171,7 +173,7 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
 
     // SAFETY: 0..len is in bounds
     let list_s = unsafe {
-        s.agg_list(&GroupsProxy::Slice {
+        s.agg_list(&GroupsType::Slice {
             groups: vec![[0, s.len() as IdxSize]],
             rolling: false,
         })

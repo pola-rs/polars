@@ -3,19 +3,19 @@ use std::io::Write;
 use arrow::array::*;
 use arrow::bitmap::utils::ZipValidity;
 #[cfg(feature = "dtype-decimal")]
-use arrow::compute::decimal::{format_decimal, get_trim_decimal_zeros};
+use arrow::compute::decimal::get_trim_decimal_zeros;
 use arrow::datatypes::{ArrowDataType, IntegerType, TimeUnit};
 use arrow::io::iterator::BufStreamingIterator;
 use arrow::offset::Offset;
 #[cfg(feature = "timezones")]
 use arrow::temporal_conversions::parse_offset_tz;
 use arrow::temporal_conversions::{
-    date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_s_to_duration,
-    duration_us_to_duration, parse_offset, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
-    timestamp_s_to_datetime, timestamp_to_datetime, timestamp_us_to_datetime,
+    date32_to_date, duration_ms_to_duration, duration_ns_to_duration, duration_us_to_duration,
+    parse_offset, time64ns_to_time, timestamp_ms_to_datetime, timestamp_ns_to_datetime,
+    timestamp_to_datetime, timestamp_us_to_datetime,
 };
 use arrow::types::NativeType;
-use chrono::{Duration, NaiveDate, NaiveDateTime};
+use chrono::{Duration, NaiveDate, NaiveDateTime, NaiveTime};
 use streaming_iterator::StreamingIterator;
 
 use super::utf8;
@@ -122,9 +122,10 @@ fn decimal_serializer<'a>(
     take: usize,
 ) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
     let trim_zeros = get_trim_decimal_zeros();
+    let mut fmt_buf = arrow::compute::decimal::DecimalFmtBuffer::new();
     let f = move |x: Option<&i128>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
-            utf8::write_str(buf, format_decimal(*x, scale, trim_zeros).as_str()).unwrap()
+            utf8::write_str(buf, fmt_buf.format(*x, scale, trim_zeros)).unwrap()
         } else {
             buf.extend(b"null")
         }
@@ -336,6 +337,28 @@ where
     materialize_serializer(f, array.iter(), offset, take)
 }
 
+fn time_serializer<'a, T, F>(
+    array: &'a PrimitiveArray<T>,
+    convert: F,
+    offset: usize,
+    take: usize,
+) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync>
+where
+    T: NativeType,
+    F: Fn(T) -> NaiveTime + 'static + Send + Sync,
+{
+    let f = move |x: Option<&T>, buf: &mut Vec<u8>| {
+        if let Some(x) = x {
+            let time = convert(*x);
+            write!(buf, "\"{time}\"").unwrap();
+        } else {
+            buf.extend_from_slice(b"null")
+        }
+    };
+
+    materialize_serializer(f, array.iter(), offset, take)
+}
+
 fn timestamp_serializer<'a, F>(
     array: &'a PrimitiveArray<i64>,
     convert: F,
@@ -483,7 +506,7 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => timestamp_ns_to_datetime,
                 TimeUnit::Microsecond => timestamp_us_to_datetime,
                 TimeUnit::Millisecond => timestamp_ms_to_datetime,
-                TimeUnit::Second => timestamp_s_to_datetime,
+                tu => panic!("Invalid time unit '{:?}' for Datetime.", tu),
             };
             timestamp_serializer(
                 array.as_any().downcast_ref().unwrap(),
@@ -504,9 +527,21 @@ pub(crate) fn new_serializer<'a>(
                 TimeUnit::Nanosecond => duration_ns_to_duration,
                 TimeUnit::Microsecond => duration_us_to_duration,
                 TimeUnit::Millisecond => duration_ms_to_duration,
-                TimeUnit::Second => duration_s_to_duration,
+                tu => panic!("Invalid time unit '{:?}' for Duration.", tu),
             };
             duration_serializer(
+                array.as_any().downcast_ref().unwrap(),
+                convert,
+                offset,
+                take,
+            )
+        },
+        ArrowDataType::Time64(tu) => {
+            let convert = match tu {
+                TimeUnit::Nanosecond => time64ns_to_time,
+                tu => panic!("Invalid time unit '{:?}' for Time.", tu),
+            };
+            time_serializer(
                 array.as_any().downcast_ref().unwrap(),
                 convert,
                 offset,

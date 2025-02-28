@@ -74,6 +74,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.may_fail_auto_streaming
 def test_cross_join_stack() -> None:
     a = pl.Series(np.arange(100_000)).to_frame().lazy()
     t0 = time.time()
@@ -301,7 +302,7 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
         .head()
         .collect(streaming=True)
     )
-    assert len(df) == 0
+    assert df.height == 0
     assert df.schema == schema
 
 
@@ -352,9 +353,9 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     # doesn't yet support streaming.
     for i, line in enumerate(plan_lines):
         if line.startswith("PLAN"):
-            assert plan_lines[i + 1].startswith(
-                "STREAMING"
-            ), f"{line} does not contain a streaming section"
+            assert plan_lines[i + 1].startswith("STREAMING"), (
+                f"{line} does not contain a streaming section"
+            )
 
     result = query.collect(streaming=True)
 
@@ -367,3 +368,38 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
     )
 
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.write_disk
+def test_elementwise_identification_in_ternary_15767(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    (
+        pl.LazyFrame({"a": pl.Series([1])})
+        .with_columns(b=pl.col("a").is_in(pl.Series([1, 2, 3])))
+        .sink_parquet(tmp_path / "1")
+    )
+
+    (
+        pl.LazyFrame({"a": pl.Series([1])})
+        .with_columns(
+            b=pl.when(pl.col("a").is_in(pl.Series([1, 2, 3]))).then(pl.col("a"))
+        )
+        .sink_parquet(tmp_path / "1")
+    )
+
+
+def test_streaming_temporal_17669() -> None:
+    df = (
+        pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": pl.Datetime("us")})
+        .with_columns(
+            b=pl.col("a").dt.date(),
+            c=pl.col("a").dt.time(),
+        )
+        .collect(streaming=True)
+    )
+    assert df.schema == {
+        "a": pl.Datetime("us"),
+        "b": pl.Date,
+        "c": pl.Time,
+    }

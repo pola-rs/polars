@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use polars_utils::mmap::MemSlice;
+
 use super::*;
 
 pub(super) struct CountStar;
@@ -17,30 +19,31 @@ impl OptimizationRule for CountStar {
         lp_arena: &mut Arena<IR>,
         expr_arena: &mut Arena<AExpr>,
         node: Node,
-    ) -> Option<IR> {
-        visit_logical_plan_for_scan_paths(node, lp_arena, expr_arena, false).map(
-            |count_star_expr| {
-                // MapFunction needs a leaf node, hence we create a dummy placeholder node
-                let placeholder = IR::DataFrameScan {
-                    df: Arc::new(Default::default()),
-                    schema: Arc::new(Default::default()),
-                    output_schema: None,
-                    filter: None,
-                };
-                let placeholder_node = lp_arena.add(placeholder);
+    ) -> PolarsResult<Option<IR>> {
+        Ok(
+            visit_logical_plan_for_scan_paths(node, lp_arena, expr_arena, false).map(
+                |count_star_expr| {
+                    // MapFunction needs a leaf node, hence we create a dummy placeholder node
+                    let placeholder = IR::DataFrameScan {
+                        df: Arc::new(Default::default()),
+                        schema: Arc::new(Default::default()),
+                        output_schema: None,
+                    };
+                    let placeholder_node = lp_arena.add(placeholder);
 
-                let alp = IR::MapFunction {
-                    input: placeholder_node,
-                    function: FunctionIR::FastCount {
-                        sources: count_star_expr.sources,
-                        scan_type: count_star_expr.scan_type,
-                        alias: count_star_expr.alias,
-                    },
-                };
+                    let alp = IR::MapFunction {
+                        input: placeholder_node,
+                        function: FunctionIR::FastCount {
+                            sources: count_star_expr.sources,
+                            scan_type: count_star_expr.scan_type,
+                            alias: count_star_expr.alias,
+                        },
+                    };
 
-                lp_arena.replace(count_star_expr.node, alp.clone());
-                alp
-            },
+                    lp_arena.replace(count_star_expr.node, alp.clone());
+                    alp
+                },
+            ),
         )
     }
 }
@@ -68,7 +71,7 @@ fn visit_logical_plan_for_scan_paths(
         IR::Union { inputs, .. } => {
             enum MutableSources {
                 Paths(Vec<PathBuf>),
-                Buffers(Vec<bytes::Bytes>),
+                Buffers(Vec<MemSlice>),
             }
 
             let mut scan_type: Option<FileScan> = None;

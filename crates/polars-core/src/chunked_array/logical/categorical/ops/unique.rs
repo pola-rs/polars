@@ -3,6 +3,18 @@ use super::*;
 impl CategoricalChunked {
     pub fn unique(&self) -> PolarsResult<Self> {
         let cat_map = self.get_rev_map();
+        if self.is_empty() {
+            // SAFETY: rev map is valid.
+            unsafe {
+                return Ok(CategoricalChunked::from_cats_and_rev_map_unchecked(
+                    UInt32Chunked::full_null(self.name().clone(), 0),
+                    cat_map.clone(),
+                    self.is_enum(),
+                    self.get_ordering(),
+                ));
+            }
+        };
+
         if self._can_fast_unique() {
             let ca = match &**cat_map {
                 RevMapping::Local(a, _) => UInt32Chunked::from_iter_values(
@@ -66,8 +78,9 @@ impl CategoricalChunked {
 
         let mut counts = groups.group_count();
         counts.rename(PlSmallStr::from_static("counts"));
-        let cols = vec![values.into_series(), counts.into_series()];
-        let df = unsafe { DataFrame::new_no_checks(cols) };
+        let height = counts.len();
+        let cols = vec![values.into_series().into(), counts.into_series().into()];
+        let df = unsafe { DataFrame::new_no_checks(height, cols) };
         df.sort(
             ["counts"],
             SortMultipleOptions::default().with_order_descending(true),

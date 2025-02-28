@@ -83,8 +83,6 @@ impl FunctionIR {
                     panic!("activate feature 'dtype-struct'")
                 }
             },
-            #[cfg(feature = "merge_sorted")]
-            MergeSorted { .. } => Ok(Cow::Borrowed(input_schema)),
             Rename {
                 existing,
                 new,
@@ -132,10 +130,17 @@ fn explode_schema<'a>(
 
     // columns to string
     columns.iter().try_for_each(|name| {
-        if let DataType::List(inner) = schema.try_get(name)? {
-            let inner = *inner.clone();
-            schema.with_column(name.clone(), inner);
-        };
+        match schema.try_get(name)? {
+            DataType::List(inner) => {
+                schema.with_column(name.clone(), inner.as_ref().clone());
+            },
+            #[cfg(feature = "dtype-array")]
+            DataType::Array(inner, _) => {
+                schema.with_column(name.clone(), inner.as_ref().clone());
+            },
+            _ => {},
+        }
+
         PolarsResult::Ok(())
     })?;
     let schema = Arc::new(schema);

@@ -44,11 +44,14 @@ _POLARS_ARCH = "unknown"
 _POLARS_FEATURE_FLAGS = ""
 
 # Set to True during the build process if we are building a LTS CPU version.
-# The risk of the CPU check failing is then higher than a CPU not being supported.
 _POLARS_LTS_CPU = False
 
 _IS_WINDOWS = os.name == "nt"
 _IS_64BIT = ctypes.sizeof(ctypes.c_void_p) == 8
+
+
+def get_lts_cpu() -> bool:
+    return _POLARS_LTS_CPU
 
 
 def _open_posix_libc() -> ctypes.CDLL:
@@ -234,11 +237,7 @@ def _read_cpu_flags() -> dict[str, bool]:
 
 
 def check_cpu_flags() -> None:
-    if (
-        not _POLARS_FEATURE_FLAGS
-        or _POLARS_LTS_CPU
-        or os.environ.get("POLARS_SKIP_CPU_CHECK")
-    ):
+    if not _POLARS_FEATURE_FLAGS or os.environ.get("POLARS_SKIP_CPU_CHECK"):
         return
 
     expected_cpu_flags = [f.lstrip("+") for f in _POLARS_FEATURE_FLAGS.split(",")]

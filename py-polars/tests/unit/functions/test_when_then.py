@@ -232,6 +232,7 @@ def test_object_when_then_4702() -> None:
     }
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_comp_categorical_lit_dtype() -> None:
     df = pl.DataFrame(
         data={"column": ["a", "b", "e"], "values": [1, 5, 9]},
@@ -597,6 +598,49 @@ def test_when_then_parametric(
             assert ref["if_true"].to_list() == ans["if_true"].to_list()
 
 
+def test_when_then_else_struct_18961() -> None:
+    v1 = [None, {"foo": 0, "bar": "1"}]
+    v2 = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+
+    df = pl.DataFrame({"left": v1, "right": v2, "mask": [False, True]})
+
+    expected = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask).then(pl.col.left).otherwise(pl.col.right.first())
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected == ans
+
+    df = pl.DataFrame({"left": v2, "right": v1, "mask": [True, False]})
+
+    expected = [{"foo": 0, "bar": "1"}, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask).then(pl.col.left.first()).otherwise(pl.col.right)
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected == ans
+
+    df = pl.DataFrame({"left": v1, "right": v2, "mask": [True, False]})
+
+    expected2 = [None, {"foo": 0, "bar": "1"}]
+    ans = (
+        df.select(
+            pl.when(pl.col.mask)
+            .then(pl.col.left.first())
+            .otherwise(pl.col.right.first())
+        )
+        .get_column("left")
+        .to_list()
+    )
+    assert expected2 == ans
+
+
 def test_when_then_supertype_15975() -> None:
     df = pl.DataFrame({"a": [1, 2, 3]})
 
@@ -630,3 +674,84 @@ def test_chained_when_no_subclass_17142() -> None:
 
     assert not isinstance(when, pl.Expr)
     assert "<polars.expr.whenthen.ChainedWhen object at" in str(when)
+
+
+def test_when_then_chunked_structs_18673() -> None:
+    df = pl.DataFrame(
+        [
+            pl.Series("x", [{"a": 1}]),
+            pl.Series("b", [False]),
+        ]
+    )
+
+    df = df.vstack(df)
+
+    # This used to panic
+    assert_frame_equal(
+        df.select(pl.when(pl.col.b).then(pl.first("x")).otherwise(pl.first("x"))),
+        pl.DataFrame({"x": [{"a": 1}, {"a": 1}]}),
+    )
+
+
+some_scalar = pl.Series("a", [{"x": 2}], pl.Struct)
+none_scalar = pl.Series("a", [None], pl.Struct({"x": pl.Int64}))
+column = pl.Series("a", [{"x": 2}, {"x": 2}], pl.Struct)
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        (some_scalar, some_scalar),
+        (some_scalar, pl.col.a),
+        (some_scalar, none_scalar),
+        (some_scalar, column),
+        (none_scalar, pl.col.a),
+        (none_scalar, none_scalar),
+        (none_scalar, column),
+        (pl.col.a, pl.col.a),
+        (pl.col.a, column),
+        (column, column),
+    ],
+)
+def test_struct_when_then_broadcasting_combinations_19122(
+    values: tuple[Any, Any],
+) -> None:
+    lv, rv = values
+
+    df = pl.Series("a", [{"x": 1}, {"x": 1}], pl.Struct).to_frame()
+
+    assert_frame_equal(
+        df.select(
+            pl.when(pl.col.a.struct.field("x") == 0).then(lv).otherwise(rv).alias("a")
+        ),
+        df.select(
+            pl.when(pl.col.a.struct.field("x") == 0).then(None).otherwise(rv).alias("a")
+        ),
+    )
+
+    assert_frame_equal(
+        df.select(
+            pl.when(pl.col.a.struct.field("x") != 0).then(rv).otherwise(lv).alias("a")
+        ),
+        df.select(
+            pl.when(pl.col.a.struct.field("x") != 0).then(rv).otherwise(None).alias("a")
+        ),
+    )
+
+
+def test_when_then_to_decimal_18375() -> None:
+    df = pl.DataFrame({"a": ["1.23", "4.56"]})
+
+    result = df.with_columns(
+        b=pl.when(False).then(None).otherwise(pl.col("a").str.to_decimal()),
+        c=pl.when(True).then(pl.col("a").str.to_decimal()),
+    )
+    expected = pl.DataFrame(
+        {
+            "a": ["1.23", "4.56"],
+            "b": ["1.23", "4.56"],
+            "c": ["1.23", "4.56"],
+        },
+        schema={"a": pl.String, "b": pl.Decimal, "c": pl.Decimal},
+    )
+    assert_frame_equal(result, expected)

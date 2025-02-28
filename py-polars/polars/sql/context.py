@@ -5,9 +5,7 @@ import re
 from typing import (
     TYPE_CHECKING,
     Callable,
-    Collection,
     Generic,
-    Mapping,
     Union,
     overload,
 )
@@ -30,6 +28,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 if TYPE_CHECKING:
     import sys
+    from collections.abc import Collection, Mapping
     from types import TracebackType
     from typing import Any, Final, Literal
 
@@ -204,7 +203,6 @@ class SQLContext(Generic[FrameType]):
         if register_globals:
             for name, obj in _get_frame_locals(
                 all_compatible=False,
-                n_objects=None if (register_globals is True) else None,
             ).items():
                 if name not in frames and name not in named_frames:
                     named_frames[name] = obj

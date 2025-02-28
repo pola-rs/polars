@@ -1,6 +1,6 @@
 //! # (De)serializing Arrows IPC format.
 //!
-//! Arrow IPC is a [binary format format](https://arrow.apache.org/docs/python/ipc.html).
+//! Arrow IPC is a [binary format](https://arrow.apache.org/docs/python/ipc.html).
 //! It is the recommended way to serialize and deserialize Polars DataFrames as this is most true
 //! to the data schema.
 //!
@@ -12,8 +12,8 @@
 //! use std::io::Cursor;
 //!
 //!
-//! let s0 = Series::new("days".into(), &[0, 1, 2, 3, 4]);
-//! let s1 = Series::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
+//! let s0 = Column::new("days".into(), &[0, 1, 2, 3, 4]);
+//! let s1 = Column::new("temp".into(), &[22.1, 19.9, 7., 2., 3.]);
 //! let mut df = DataFrame::new(vec![s0, s1]).unwrap();
 //!
 //! // Create an in memory file handler.
@@ -35,7 +35,7 @@
 use std::io::{Read, Seek};
 use std::path::PathBuf;
 
-use arrow::datatypes::ArrowSchemaRef;
+use arrow::datatypes::{ArrowSchemaRef, Metadata};
 use arrow::io::ipc::read::{self, get_row_count};
 use arrow::record_batch::RecordBatch;
 use polars_core::prelude::*;
@@ -115,6 +115,16 @@ impl<R: MmapBytesReader> IpcReader<R> {
         self.get_metadata()?;
         Ok(self.schema.as_ref().unwrap().clone())
     }
+
+    /// Get schema-level custom metadata of the Ipc file
+    pub fn custom_metadata(&mut self) -> PolarsResult<Option<Arc<Metadata>>> {
+        self.get_metadata()?;
+        Ok(self
+            .metadata
+            .as_ref()
+            .and_then(|meta| meta.custom_schema_metadata.clone()))
+    }
+
     /// Stop reading when `n` rows are read.
     pub fn with_n_rows(mut self, num_rows: Option<usize>) -> Self {
         self.n_rows = num_rows;
@@ -242,24 +252,25 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
 
         // In case only hive columns are projected, the df would be empty, but we need the row count
         // of the file in order to project the correct number of rows for the hive columns.
-        let (mut df, row_count) = (|| {
-            if self
-                .projection
-                .as_ref()
-                .map(|x| x.is_empty())
-                .unwrap_or(false)
-            {
-                return PolarsResult::Ok((
-                    Default::default(),
-                    get_row_count(&mut self.reader)? as usize,
-                ));
+        let mut df = (|| {
+            if self.projection.as_ref().is_some_and(|x| x.is_empty()) {
+                let row_count = if let Some(v) = self.n_rows {
+                    v
+                } else {
+                    get_row_count(&mut self.reader)? as usize
+                };
+                let mut df = DataFrame::empty_with_height(row_count);
+
+                if let Some(ri) = &self.row_index {
+                    df.with_row_index_mut(ri.name.clone(), Some(ri.offset));
+                }
+                return PolarsResult::Ok(df);
             }
 
             if self.memory_map.is_some() && self.reader.to_file().is_some() {
                 match self.finish_memmapped(None) {
                     Ok(df) => {
-                        let n = df.height();
-                        return Ok((df, n));
+                        return Ok(df);
                     },
                     Err(err) => check_mmap_err(err)?,
                 }
@@ -283,22 +294,23 @@ impl<R: MmapBytesReader> SerReader<R> for IpcReader<R> {
             let ipc_reader =
                 read::FileReader::new(self.reader, metadata, self.projection, self.n_rows);
             let df = finish_reader(ipc_reader, rechunk, None, None, &schema, self.row_index)?;
-            let n = df.height();
-            Ok((df, n))
+            Ok(df)
         })()?;
 
         if let Some(hive_cols) = hive_partition_columns {
-            materialize_hive_partitions(
-                &mut df,
-                reader_schema,
-                Some(hive_cols.as_slice()),
-                row_count,
-            );
+            materialize_hive_partitions(&mut df, reader_schema, Some(hive_cols.as_slice()));
         };
 
         if let Some((col, value)) = include_file_path {
             unsafe {
-                df.with_column_unchecked(StringChunked::full(col, &value, row_count).into_series())
+                df.with_column_unchecked(Column::new_scalar(
+                    col,
+                    Scalar::new(
+                        DataType::String,
+                        AnyValue::StringOwned(value.as_ref().into()),
+                    ),
+                    df.height(),
+                ))
             };
         }
 

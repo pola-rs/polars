@@ -4,8 +4,6 @@ use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::OffsetsBuffer;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -27,7 +25,7 @@ impl MapArray {
     /// Returns a new [`MapArray`].
     /// # Errors
     /// This function errors iff:
-    /// * The last offset is not equal to the field' length
+    /// * `offsets.last()` is greater than `field.len()`
     /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Map`]
     /// * The fields' `dtype` is not equal to the inner field of `dtype`
     /// * The validity is not `None` and its length is different from `offsets.len() - 1`.
@@ -53,7 +51,7 @@ impl MapArray {
 
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != offsets.len_proxy())
+            .is_some_and(|validity| validity.len() != offsets.len_proxy())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
@@ -68,7 +66,7 @@ impl MapArray {
 
     /// Creates a new [`MapArray`].
     /// # Panics
-    /// * The last offset is not equal to the field' length.
+    /// * `offsets.last()` is greater than `field.len()`.
     /// * The `dtype`'s physical type is not [`crate::datatypes::PhysicalType::Map`],
     /// * The validity is not `None` and its length is different from `offsets.len() - 1`.
     pub fn new(

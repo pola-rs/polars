@@ -1,4 +1,5 @@
 use either::Either;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
@@ -7,16 +8,14 @@ use crate::bitmap::{Bitmap, MutableBitmap};
 use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::trusted_len::TrustedLen;
 
-#[cfg(feature = "arrow_rs")]
-mod data;
 mod ffi;
 pub(super) mod fmt;
 mod from;
 mod iterator;
 mod mutable;
-
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+mod builder;
+pub use builder::*;
 
 /// A [`BooleanArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<bool>>`.
 /// It implements [`Array`].
@@ -63,7 +62,7 @@ impl BooleanArray {
     ) -> PolarsResult<Self> {
         if validity
             .as_ref()
-            .map_or(false, |validity| validity.len() != values.len())
+            .is_some_and(|validity| validity.len() != values.len())
         {
             polars_bail!(ComputeError: "validity mask length must match the number of values")
         }
@@ -359,8 +358,8 @@ impl BooleanArray {
         (dtype, values, validity)
     }
 
-    /// Creates a `[BooleanArray]` from its internal representation.
-    /// This is the inverted from `[BooleanArray::into_inner]`
+    /// Creates a [`BooleanArray`] from its internal representation.
+    /// This is the inverted from [`BooleanArray::into_inner`]
     ///
     /// # Safety
     /// Callers must ensure all invariants of this struct are upheld.

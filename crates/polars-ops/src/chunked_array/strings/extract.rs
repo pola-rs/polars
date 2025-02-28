@@ -3,8 +3,8 @@ use std::iter::zip;
 #[cfg(feature = "extract_groups")]
 use arrow::array::{Array, StructArray};
 use arrow::array::{MutablePlString, Utf8ViewArray};
-use polars_core::export::regex::Regex;
 use polars_core::prelude::arity::{try_binary_mut_with_options, try_unary_mut_with_options};
+use regex::Regex;
 
 use super::*;
 
@@ -36,7 +36,7 @@ fn extract_groups_array(
     }
 
     let values = builders.into_iter().map(|a| a.freeze().boxed()).collect();
-    Ok(StructArray::new(dtype.clone(), values, arr.validity().cloned()).boxed())
+    Ok(StructArray::new(dtype.clone(), arr.len(), values, arr.validity().cloned()).boxed())
 }
 
 #[cfg(feature = "extract_groups")]
@@ -50,7 +50,8 @@ pub(super) fn extract_groups(
     if n_fields == 1 {
         return StructChunked::from_series(
             ca.name().clone(),
-            &[Series::new_null(ca.name().clone(), ca.len())],
+            ca.len(),
+            [Series::new_null(ca.name().clone(), ca.len())].iter(),
         )
         .map(|ca| ca.into_series());
     }

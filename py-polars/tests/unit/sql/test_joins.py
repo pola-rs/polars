@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -23,11 +24,19 @@ def foods_ipc_path() -> Path:
             pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
         ),
         (
+            "SELECT * FROM tbl_a SEMI JOIN tbl_b USING (a,c)",
+            pl.DataFrame({"a": [2], "b": [0], "c": ["y"]}),
+        ),
+        (
             "SELECT * FROM tbl_a LEFT SEMI JOIN tbl_b USING (a)",
             pl.DataFrame({"a": [1, 2, 3], "b": [4, 0, 6], "c": ["w", "y", "z"]}),
         ),
         (
             "SELECT * FROM tbl_a LEFT ANTI JOIN tbl_b USING (a)",
+            pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.String}),
+        ),
+        (
+            "SELECT * FROM tbl_a ANTI JOIN tbl_b USING (a)",
             pl.DataFrame(schema={"a": pl.Int64, "b": pl.Int64, "c": pl.String}),
         ),
         (
@@ -112,27 +121,36 @@ def test_join_cross_11927() -> None:
 def test_join_inner(foods_ipc_path: Path, join_clause: str) -> None:
     foods1 = pl.scan_ipc(foods_ipc_path)
     foods2 = foods1  # noqa: F841
+    schema = foods1.collect_schema()
 
+    sort_clause = ", ".join(f'{c} ASC, "{c}:foods2" DESC' for c in schema)
     out = pl.sql(
         f"""
         SELECT *
         FROM foods1
         INNER JOIN foods2 {join_clause}
+        ORDER BY {sort_clause}
         LIMIT 2
         """,
         eager=True,
     )
 
-    assert out.to_dict(as_series=False) == {
-        "category": ["vegetables", "vegetables"],
-        "calories": [45, 20],
-        "fats_g": [0.5, 0.0],
-        "sugars_g": [2, 2],
-        "category:foods2": ["vegetables", "vegetables"],
-        "calories:foods2": [45, 45],
-        "fats_g:foods2": [0.5, 0.5],
-        "sugars_g:foods2": [2, 2],
-    }
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {
+                "category": ["fruit", "fruit"],
+                "calories": [30, 30],
+                "fats_g": [0.0, 0.0],
+                "sugars_g": [3, 5],
+                "category:foods2": ["fruit", "fruit"],
+                "calories:foods2": [130, 130],
+                "fats_g:foods2": [0.0, 0.0],
+                "sugars_g:foods2": [25, 25],
+            }
+        ),
+        check_dtypes=False,
+    )
 
 
 @pytest.mark.parametrize(
@@ -295,10 +313,14 @@ def test_join_misc_16255() -> None:
 )
 def test_non_equi_joins(constraint: str) -> None:
     # no support (yet) for non equi-joins in polars joins
-    with pytest.raises(
-        SQLInterfaceError,
-        match=r"only equi-join constraints are supported",
-    ), pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx:
+    # TODO: integrate awareness of new IEJoin
+    with (
+        pytest.raises(
+            SQLInterfaceError,
+            match=r"only equi-join constraints \(combined with 'AND'\) are currently supported",
+        ),
+        pl.SQLContext({"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2]})}) as ctx,
+    ):
         ctx.execute(
             f"""
             SELECT *
@@ -310,12 +332,19 @@ def test_non_equi_joins(constraint: str) -> None:
 
 def test_implicit_joins() -> None:
     # no support for this yet; ensure we catch it
-    with pytest.raises(
-        SQLInterfaceError,
-        match=r"not currently supported .* use explicit JOIN syntax instead",
-    ), pl.SQLContext(
-        {"tbl": pl.DataFrame({"a": [1, 2, 3], "b": [4, 3, 2], "c": ["x", "y", "z"]})}
-    ) as ctx:
+    with (
+        pytest.raises(
+            SQLInterfaceError,
+            match=r"not currently supported .* use explicit JOIN syntax instead",
+        ),
+        pl.SQLContext(
+            {
+                "tbl": pl.DataFrame(
+                    {"a": [1, 2, 3], "b": [4, 3, 2], "c": ["x", "y", "z"]}
+                )
+            }
+        ) as ctx,
+    ):
         ctx.execute(
             """
             SELECT t1.*
@@ -323,6 +352,109 @@ def test_implicit_joins() -> None:
             WHERE t1.a = t2.b
             """
         )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        # INNER joins
+        (
+            "SELECT df1.* FROM df1 INNER JOIN df2 USING (a)",
+            {"a": [1, 3], "b": ["x", "z"], "c": [100, 300]},
+        ),
+        (
+            "SELECT df2.* FROM df1 INNER JOIN df2 USING (a)",
+            {"a": [1, 3], "b": ["qq", "pp"], "c": [400, 500]},
+        ),
+        (
+            "SELECT df1.* FROM df2 INNER JOIN df1 USING (a)",
+            {"a": [1, 3], "b": ["x", "z"], "c": [100, 300]},
+        ),
+        (
+            "SELECT df2.* FROM df2 INNER JOIN df1 USING (a)",
+            {"a": [1, 3], "b": ["qq", "pp"], "c": [400, 500]},
+        ),
+        # LEFT joins
+        (
+            "SELECT df1.* FROM df1 LEFT JOIN df2 USING (a)",
+            {"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [100, 200, 300]},
+        ),
+        (
+            "SELECT df2.* FROM df1 LEFT JOIN df2 USING (a)",
+            {"a": [1, 3, None], "b": ["qq", "pp", None], "c": [400, 500, None]},
+        ),
+        (
+            "SELECT df1.* FROM df2 LEFT JOIN df1 USING (a)",
+            {"a": [1, 3, None], "b": ["x", "z", None], "c": [100, 300, None]},
+        ),
+        (
+            "SELECT df2.* FROM df2 LEFT JOIN df1 USING (a)",
+            {"a": [1, 3, 4], "b": ["qq", "pp", "oo"], "c": [400, 500, 600]},
+        ),
+        # RIGHT joins
+        (
+            "SELECT df1.* FROM df1 RIGHT JOIN df2 USING (a)",
+            {"a": [1, 3, None], "b": ["x", "z", None], "c": [100, 300, None]},
+        ),
+        (
+            "SELECT df2.* FROM df1 RIGHT JOIN df2 USING (a)",
+            {"a": [1, 3, 4], "b": ["qq", "pp", "oo"], "c": [400, 500, 600]},
+        ),
+        (
+            "SELECT df1.* FROM df2 RIGHT JOIN df1 USING (a)",
+            {"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [100, 200, 300]},
+        ),
+        (
+            "SELECT df2.* FROM df2 RIGHT JOIN df1 USING (a)",
+            {"a": [1, 3, None], "b": ["qq", "pp", None], "c": [400, 500, None]},
+        ),
+        # FULL joins
+        (
+            "SELECT df1.* FROM df1 FULL JOIN df2 USING (a)",
+            {
+                "a": [1, 2, 3, None],
+                "b": ["x", "y", "z", None],
+                "c": [100, 200, 300, None],
+            },
+        ),
+        (
+            "SELECT df2.* FROM df1 FULL JOIN df2 USING (a)",
+            {
+                "a": [1, 3, 4, None],
+                "b": ["qq", "pp", "oo", None],
+                "c": [400, 500, 600, None],
+            },
+        ),
+        (
+            "SELECT df1.* FROM df2 FULL JOIN df1 USING (a)",
+            {
+                "a": [1, 2, 3, None],
+                "b": ["x", "y", "z", None],
+                "c": [100, 200, 300, None],
+            },
+        ),
+        (
+            "SELECT df2.* FROM df2 FULL JOIN df1 USING (a)",
+            {
+                "a": [1, 3, 4, None],
+                "b": ["qq", "pp", "oo", None],
+                "c": [400, 500, 600, None],
+            },
+        ),
+    ],
+)
+def test_wildcard_resolution_and_join_order(
+    query: str, expected: dict[str, Any]
+) -> None:
+    df1 = pl.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"], "c": [100, 200, 300]})  # noqa: F841
+    df2 = pl.DataFrame({"a": [1, 3, 4], "b": ["qq", "pp", "oo"], "c": [400, 500, 600]})  # noqa: F841
+
+    res = pl.sql(query).collect()
+    assert_frame_equal(
+        res,
+        pl.DataFrame(expected),
+        check_row_order=False,
+    )
 
 
 def test_natural_joins_01() -> None:
@@ -471,8 +603,15 @@ def test_natural_joins_02(cols_constraint: str, expect_data: list[tuple[int]]) -
 @pytest.mark.parametrize(
     "join_clause",
     [
-        "df2 INNER JOIN df3 ON df2.CharacterID=df3.CharacterID",
-        "df2 INNER JOIN (df3 INNDER JOIN df4 ON df3.CharacterID=df4.CharacterID) ON df2.CharacterID=df3.CharacterID",
+        """
+        df2 JOIN df3 ON
+        df2.CharacterID = df3.CharacterID
+        """,
+        """
+        df2 INNER JOIN (
+          df3 JOIN df4 ON df3.CharacterID = df4.CharacterID
+        ) AS r0 ON df2.CharacterID = df3.CharacterID
+        """,
     ],
 )
 def test_nested_join(join_clause: str) -> None:
@@ -522,7 +661,7 @@ def test_nested_join(join_clause: str) -> None:
             f"""
             SELECT df1.CharacterID, df1.FirstName, df2.Role, df3.Species
             FROM df1
-            INNER JOIN ({join_clause})
+            INNER JOIN ({join_clause}) AS r99
             ON df1.CharacterID = df2.CharacterID
             ORDER BY ALL
             """
@@ -541,3 +680,43 @@ def test_nested_join(join_clause: str) -> None:
                 "Species": "Human",
             },
         ]
+
+
+def test_sql_forbid_nested_join_unnamed_relation() -> None:
+    df = pl.DataFrame({"a": 1})
+
+    with (
+        pl.SQLContext({"left": df, "right": df}) as ctx,
+        pytest.raises(SQLInterfaceError, match="cannot join on unnamed relation"),
+    ):
+        ctx.execute(
+            """\
+SELECT *
+FROM left
+JOIN (right JOIN right ON right.a = right.a)
+ON left.a = right.a
+"""
+        )
+
+
+def test_nulls_equal_19624() -> None:
+    df1 = pl.DataFrame({"a": [1, 2, None, None]})
+    df2 = pl.DataFrame({"a": [1, 1, 2, 2, None], "b": [0, 1, 2, 3, 4]})
+
+    # left join
+    result_df = df1.join(df2, how="left", on="a", nulls_equal=False, validate="1:m")
+    expected_df = pl.DataFrame(
+        {"a": [1, 1, 2, 2, None, None], "b": [0, 1, 2, 3, None, None]}
+    )
+    assert_frame_equal(result_df, expected_df)
+    result_df = df2.join(df1, how="left", on="a", nulls_equal=False, validate="m:1")
+    expected_df = pl.DataFrame({"a": [1, 1, 2, 2, None], "b": [0, 1, 2, 3, 4]})
+    assert_frame_equal(result_df, expected_df)
+
+    # inner join
+    result_df = df1.join(df2, how="inner", on="a", nulls_equal=False, validate="1:m")
+    expected_df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [0, 1, 2, 3]})
+    assert_frame_equal(result_df, expected_df)
+    result_df = df2.join(df1, how="inner", on="a", nulls_equal=False, validate="m:1")
+    expected_df = pl.DataFrame({"a": [1, 1, 2, 2], "b": [0, 1, 2, 3]})
+    assert_frame_equal(result_df, expected_df)

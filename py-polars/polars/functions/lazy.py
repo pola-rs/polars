@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import contextlib
-from typing import TYPE_CHECKING, Any, Callable, Iterable, Sequence, overload
+from collections.abc import Sequence
+from typing import TYPE_CHECKING, Any, Callable, overload
 
 import polars._reexport as pl
 import polars.functions as F
 from polars._utils.async_ import _AioDataFrameResult, _GeventDataFrameResult
-from polars._utils.deprecation import deprecate_function, issue_deprecation_warning
+from polars._utils.deprecation import (
+    deprecate_function,
+    deprecate_renamed_parameter,
+    issue_deprecation_warning,
+)
 from polars._utils.parse import (
     parse_into_expression,
     parse_into_list_of_expressions,
@@ -20,7 +25,8 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     import polars.polars as plr
 
 if TYPE_CHECKING:
-    from typing import Awaitable, Collection, Literal
+    from collections.abc import Awaitable, Collection, Iterable
+    from typing import Literal
 
     from polars import DataFrame, Expr, LazyFrame, Series
     from polars._typing import (
@@ -779,7 +785,7 @@ def corr(
     b: IntoExpr,
     *,
     method: CorrelationMethod = "pearson",
-    ddof: int = 1,
+    ddof: int | None = None,
     propagate_nans: bool = False,
 ) -> Expr:
     """
@@ -792,9 +798,10 @@ def corr(
     b
         Column name or Expression.
     ddof
-        "Delta Degrees of Freedom": the divisor used in the calculation is N - ddof,
-        where N represents the number of elements.
-        By default ddof is 1.
+        Has no effect, do not use.
+
+        .. deprecated:: 1.17.0
+
     method : {'pearson', 'spearman'}
         Correlation method.
     propagate_nans
@@ -842,13 +849,19 @@ def corr(
     │ 0.5 │
     └─────┘
     """
+    if ddof is not None:
+        issue_deprecation_warning(
+            "The `ddof` parameter has no effect. Do not use it.",
+            version="1.17.0",
+        )
+
     a = parse_into_expression(a)
     b = parse_into_expression(b)
 
     if method == "pearson":
-        return wrap_expr(plr.pearson_corr(a, b, ddof))
+        return wrap_expr(plr.pearson_corr(a, b))
     elif method == "spearman":
-        return wrap_expr(plr.spearman_rank_corr(a, b, ddof, propagate_nans))
+        return wrap_expr(plr.spearman_rank_corr(a, b, propagate_nans))
     else:
         msg = f"method must be one of {{'pearson', 'spearman'}}, got {method!r}"
         raise ValueError(msg)
@@ -1012,6 +1025,7 @@ def map_groups(
     ...             function=lambda list_of_series: list_of_series[0]
     ...             / list_of_series[0].sum()
     ...             + list_of_series[1],
+    ...             return_dtype=pl.Float64,
     ...         ).alias("my_custom_aggregation")
     ...     )
     ... ).sort("group")
@@ -1027,7 +1041,7 @@ def map_groups(
 
     The output for group `1` can be understood as follows:
 
-    - group `1` contains Series `'a': [1, 3]` and `'b': [4, 5]`
+    - group `1` contains Series `'a': [1, 3]` and `'b': [5, 6]`
     - applying the function to those lists of Series, one gets the output
       `[1 / 4 + 5, 3 / 4 + 6]`, i.e. `[5.25, 6.75]`
     """
@@ -1609,6 +1623,7 @@ def collect_all(
     lazy_frames: Iterable[LazyFrame],
     *,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1617,7 +1632,9 @@ def collect_all(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
+    _check_order: bool = True,
 ) -> list[DataFrame]:
     """
     Collect multiple LazyFrames at the same time.
@@ -1646,6 +1663,8 @@ def collect_all(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1671,6 +1690,7 @@ def collect_all(
         comm_subplan_elim = False
         comm_subexpr_elim = False
         cluster_with_columns = False
+        collapse_joins = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1679,17 +1699,21 @@ def collect_all(
     prepared = []
 
     for lf in lazy_frames:
+        type_check = _type_check
         ldf = lf._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         prepared.append(ldf)
@@ -1708,6 +1732,7 @@ def collect_all_async(
     *,
     gevent: Literal[True],
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1716,6 +1741,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = True,
 ) -> _GeventDataFrameResult[list[DataFrame]]: ...
 
@@ -1726,6 +1752,7 @@ def collect_all_async(
     *,
     gevent: Literal[False] = False,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1734,6 +1761,7 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
 ) -> Awaitable[list[DataFrame]]: ...
 
@@ -1744,6 +1772,7 @@ def collect_all_async(
     *,
     gevent: bool = False,
     type_coercion: bool = True,
+    _type_check: bool = True,
     predicate_pushdown: bool = True,
     projection_pushdown: bool = True,
     simplify_expression: bool = True,
@@ -1752,7 +1781,9 @@ def collect_all_async(
     comm_subplan_elim: bool = True,
     comm_subexpr_elim: bool = True,
     cluster_with_columns: bool = True,
+    collapse_joins: bool = True,
     streaming: bool = False,
+    _check_order: bool = True,
 ) -> Awaitable[list[DataFrame]] | _GeventDataFrameResult[list[DataFrame]]:
     """
     Collect multiple LazyFrames at the same time asynchronously in thread pool.
@@ -1792,6 +1823,8 @@ def collect_all_async(
         Common subexpressions will be cached and reused.
     cluster_with_columns
         Combine sequential independent calls to with_columns
+    collapse_joins
+        Collapse a join and filters into a faster join
     streaming
         Process the query in batches to handle larger-than-memory data.
         If set to `False` (default), the entire query is processed in a single
@@ -1829,6 +1862,7 @@ def collect_all_async(
         comm_subplan_elim = False
         comm_subexpr_elim = False
         cluster_with_columns = False
+        collapse_joins = False
 
     if streaming:
         issue_unstable_warning("Streaming mode is considered unstable.")
@@ -1837,31 +1871,56 @@ def collect_all_async(
     prepared = []
 
     for lf in lazy_frames:
+        type_check = _type_check
         ldf = lf._ldf.optimization_toggle(
-            type_coercion,
-            predicate_pushdown,
-            projection_pushdown,
-            simplify_expression,
-            slice_pushdown,
-            comm_subplan_elim,
-            comm_subexpr_elim,
-            cluster_with_columns,
-            streaming,
+            type_coercion=type_coercion,
+            type_check=type_check,
+            predicate_pushdown=predicate_pushdown,
+            projection_pushdown=projection_pushdown,
+            simplify_expression=simplify_expression,
+            slice_pushdown=slice_pushdown,
+            comm_subplan_elim=comm_subplan_elim,
+            comm_subexpr_elim=comm_subexpr_elim,
+            cluster_with_columns=cluster_with_columns,
+            collapse_joins=collapse_joins,
+            streaming=streaming,
             _eager=False,
+            _check_order=_check_order,
             new_streaming=False,
         )
         prepared.append(ldf)
 
-    result = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
-    plr.collect_all_with_callback(prepared, result._callback_all)  # type: ignore[attr-defined]
-    return result  # type: ignore[return-value]
+    result: (
+        _GeventDataFrameResult[list[DataFrame]] | _AioDataFrameResult[list[DataFrame]]
+    ) = _GeventDataFrameResult() if gevent else _AioDataFrameResult()
+    plr.collect_all_with_callback(prepared, result._callback_all)
+    return result
 
 
-def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> DataFrame:
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[True] = ...,
+    **named_exprs: IntoExpr,
+) -> DataFrame: ...
+
+
+@overload
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr],
+    eager: Literal[False],
+    **named_exprs: IntoExpr,
+) -> LazyFrame: ...
+
+
+def select(
+    *exprs: IntoExpr | Iterable[IntoExpr], eager: bool = True, **named_exprs: IntoExpr
+) -> DataFrame | LazyFrame:
     """
     Run polars expressions without a context.
 
-    This is syntactic sugar for running `df.select` on an empty DataFrame.
+    This is syntactic sugar for running `df.select` on an empty DataFrame
+    (or LazyFrame if eager=False).
 
     Parameters
     ----------
@@ -1869,13 +1928,16 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
         Column(s) to select, specified as positional arguments.
         Accepts expression input. Strings are parsed as column names,
         other non-expression inputs are parsed as literals.
+    eager
+        Evaluate immediately and return a `DataFrame` (default); if set to `False`,
+        return a `LazyFrame` instead.
     **named_exprs
         Additional columns to select, specified as keyword arguments.
         The columns will be renamed to the keyword used.
 
     Returns
     -------
-    DataFrame
+    DataFrame or LazyFrame
 
     Examples
     --------
@@ -1892,8 +1954,25 @@ def select(*exprs: IntoExpr | Iterable[IntoExpr], **named_exprs: IntoExpr) -> Da
     │ 2   │
     │ 1   │
     └─────┘
+
+    >>> pl.select(pl.int_range(0, 100_000, 2).alias("n"), eager=False).filter(
+    ...     pl.col("n") % 22_500 == 0
+    ... ).collect()
+    shape: (5, 1)
+    ┌───────┐
+    │ n     │
+    │ ---   │
+    │ i64   │
+    ╞═══════╡
+    │ 0     │
+    │ 22500 │
+    │ 45000 │
+    │ 67500 │
+    │ 90000 │
+    └───────┘
     """
-    return pl.DataFrame().select(*exprs, **named_exprs)
+    empty_frame = pl.DataFrame() if eager else pl.LazyFrame()
+    return empty_frame.select(*exprs, **named_exprs)
 
 
 @overload
@@ -2074,22 +2153,18 @@ def from_epoch(
         raise ValueError(msg)
 
 
-@unstable()
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_cov(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling covariance between two columns/ expressions.
 
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
-
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
 
@@ -2101,39 +2176,35 @@ def rolling_cov(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_cov(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 
-@unstable()
+@deprecate_renamed_parameter("min_periods", "min_samples", version="1.21.0")
 def rolling_corr(
     a: str | Expr,
     b: str | Expr,
     *,
     window_size: int,
-    min_periods: int | None = None,
+    min_samples: int | None = None,
     ddof: int = 1,
 ) -> Expr:
     """
     Compute the rolling correlation between two columns/ expressions.
-
-    .. warning::
-        This functionality is considered **unstable**. It may be changed
-        at any point without it being considered a breaking change.
 
     The window at a given row includes the row itself and the
     `window_size - 1` elements before it.
@@ -2146,21 +2217,21 @@ def rolling_corr(
         Column name or Expression.
     window_size
         The length of the window.
-    min_periods
+    min_samples
         The number of values in the window that should be non-null before computing
         a result. If None, it will be set equal to window size.
     ddof
         Delta degrees of freedom. The divisor used in calculations
         is `N - ddof`, where `N` represents the number of elements.
     """
-    if min_periods is None:
-        min_periods = window_size
+    if min_samples is None:
+        min_samples = window_size
     if isinstance(a, str):
         a = F.col(a)
     if isinstance(b, str):
         b = F.col(b)
     return wrap_expr(
-        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_periods, ddof)
+        plr.rolling_corr(a._pyexpr, b._pyexpr, window_size, min_samples, ddof)
     )
 
 

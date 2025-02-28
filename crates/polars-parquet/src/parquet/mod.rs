@@ -15,7 +15,7 @@ pub mod write;
 
 use std::ops::Deref;
 
-use parquet_format_safe as thrift_format;
+use polars_parquet_format as thrift_format;
 use polars_utils::mmap::MemSlice;
 pub use streaming_decompression::{fallible_streaming_iterator, FallibleStreamingIterator};
 

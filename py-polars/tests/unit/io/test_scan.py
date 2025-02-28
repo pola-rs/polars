@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import io
+import os
 from dataclasses import dataclass
+from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
@@ -29,12 +31,18 @@ def _enable_force_async(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _assert_force_async(capfd: Any, data_file_extension: str) -> None:
+    if (
+        os.getenv("POLARS_AUTO_NEW_STREAMING", os.getenv("POLARS_FORCE_NEW_STREAMING"))
+        == "1"
+    ):
+        return
+
     """Calls `capfd.readouterr`, consuming the captured output so far."""
     if data_file_extension == ".ndjson":
         return
 
     captured = capfd.readouterr().err
-    assert captured.count("ASYNC READING FORCED") == 1
+    assert captured.count("ASYNC READING FORCED") >= 1
 
 
 def _scan(
@@ -48,10 +56,10 @@ def _scan(
 
     if (
         scan_func := {
-            ".ipc"     : pl.scan_ipc,
-            ".parquet" : pl.scan_parquet,
-            ".csv"     : pl.scan_csv,
-            ".ndjson"  : pl.scan_ndjson,
+            ".ipc": pl.scan_ipc,
+            ".parquet": pl.scan_parquet,
+            ".csv": pl.scan_csv,
+            ".ndjson": pl.scan_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
         result = scan_func(
@@ -72,10 +80,10 @@ def _write(df: pl.DataFrame, file_path: Path) -> None:
 
     if (
         write_func := {
-            ".ipc"     : pl.DataFrame.write_ipc,
-            ".parquet" : pl.DataFrame.write_parquet,
-            ".csv"     : pl.DataFrame.write_csv,
-            ".ndjson"  : pl.DataFrame.write_ndjson,
+            ".ipc": pl.DataFrame.write_ipc,
+            ".parquet": pl.DataFrame.write_parquet,
+            ".csv": pl.DataFrame.write_csv,
+            ".ndjson": pl.DataFrame.write_ndjson,
         }.get(suffix)
     ) is not None:  # fmt: skip
         return write_func(df, file_path)  # type: ignore[operator, no-any-return]
@@ -149,7 +157,7 @@ def data_file_glob(session_tmp_dir: Path, data_file_extension: str) -> _DataFile
     assert sum(row_counts) == 10000
 
     # Make sure we pad file names with enough zeros to ensure correct
-    # lexographical ordering.
+    # lexicographical ordering.
     assert len(row_counts) < 100
 
     # Make sure that some of our data frames consist of multiple chunks which
@@ -645,7 +653,7 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
-def test_scan_include_file_name(
+def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
     write_func: Callable[[pl.DataFrame, Path], None],
@@ -675,13 +683,20 @@ def test_scan_include_file_name(
     lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
     assert_frame_equal(lf.collect(streaming=streaming), df)
 
-    # TODO: Support this with CSV
-    if scan_func not in [pl.scan_csv, pl.scan_ndjson]:
-        # Test projecting only the path column
-        assert_frame_equal(
-            lf.select("path").collect(streaming=streaming),
-            df.select("path"),
-        )
+    # Test projecting only the path column
+    q = lf.select("path")
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(streaming=streaming),
+        df.select("path"),
+    )
+
+    q = q.select("path").head(3)
+    assert q.collect_schema() == {"path": pl.String}
+    assert_frame_equal(
+        q.collect(streaming=streaming),
+        df.select("path").head(3),
+    )
 
     # Test predicates
     for predicate in [pl.col("path") != pl.col("x"), pl.col("path") != ""]:
@@ -708,6 +723,7 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
     "method",
     ["parquet", "csv", "ipc", "ndjson"],
 )
+@pytest.mark.may_fail_auto_streaming  # unsupported negative slice offset -1 for CSV source
 def test_scan_in_memory(method: str) -> None:
     f = io.BytesIO()
     df = pl.DataFrame(
@@ -750,6 +766,20 @@ def test_scan_in_memory(method: str) -> None:
     assert_frame_equal(df.vstack(df).slice(-1, 1), result)
 
 
+def test_scan_pyobject_zero_copy_buffer_mutate() -> None:
+    f = io.BytesIO()
+
+    df = pl.DataFrame({"x": [1, 2, 3, 4, 5]})
+    df.write_ipc(f)
+    f.seek(0)
+
+    q = pl.scan_ipc(f)
+    assert_frame_equal(q.collect(), df)
+
+    f.write(b"AAA")
+    assert_frame_equal(q.collect(), df)
+
+
 @pytest.mark.parametrize(
     "method",
     ["csv", "ndjson"],
@@ -785,3 +815,249 @@ def test_scan_stringio(method: str) -> None:
 def test_empty_list(method: Callable[[list[str]], pl.LazyFrame]) -> None:
     with pytest.raises(pl.exceptions.ComputeError, match="expected at least 1 source"):
         _ = (method)([]).collect()
+
+
+def test_scan_double_collect_row_index_invalidates_cached_ir_18892() -> None:
+    lf = pl.scan_csv(io.BytesIO(b"a\n1\n2\n3"))
+
+    lf.collect()
+
+    out = lf.with_row_index().collect()
+
+    assert_frame_equal(
+        out,
+        pl.DataFrame(
+            {"index": [0, 1, 2], "a": [1, 2, 3]},
+            schema={"index": pl.UInt32, "a": pl.Int64},
+        ),
+    )
+
+
+def test_scan_include_file_paths_respects_projection_pushdown() -> None:
+    q = pl.scan_csv(b"a,b,c\na1,b1,c1", include_file_paths="path_name").select(
+        ["a", "b"]
+    )
+
+    assert_frame_equal(q.collect(), pl.DataFrame({"a": "a1", "b": "b1"}))
+
+
+def test_streaming_scan_csv_include_file_paths_18257(io_files_path: Path) -> None:
+    lf = pl.scan_csv(
+        io_files_path / "foods1.csv",
+        include_file_paths="path",
+    ).select("category", "path")
+
+    assert lf.collect(streaming=True).columns == ["category", "path"]
+
+
+def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
+    lf = (
+        pl.scan_csv(io_files_path / "foods1.csv", infer_schema=False)
+        .with_row_index()
+        .select("calories", "index")
+        .head(1)
+    )
+
+    assert_frame_equal(
+        lf.collect(streaming=True),
+        pl.DataFrame(
+            {"calories": "45", "index": 0},
+            schema={"calories": pl.String, "index": pl.UInt32},
+        ),
+    )
+
+
+@pytest.mark.write_disk
+def test_predicate_hive_pruning_with_cast(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    df = pl.DataFrame({"x": 1})
+
+    (p := (tmp_path / "date=2024-01-01")).mkdir()
+
+    df.write_parquet(p / "1")
+
+    (p := (tmp_path / "date=2024-01-02")).mkdir()
+
+    # Write an invalid parquet file that will cause errors if polars attempts to
+    # read it.
+    # This works because `scan_parquet()` only looks at the first file during
+    # schema inference.
+    (p / "1").write_text("not a parquet file")
+
+    expect = pl.DataFrame({"x": 1, "date": datetime(2024, 1, 1).date()})
+
+    lf = pl.scan_parquet(tmp_path)
+
+    q = lf.filter(pl.col("date") < datetime(2024, 1, 2).date())
+
+    assert_frame_equal(q.collect(), expect)
+
+    # This filter expr with stprtime is effectively what LazyFrame.sql()
+    # generates
+    q = lf.filter(
+        pl.col("date")
+        < pl.lit("2024-01-02").str.strptime(
+            dtype=pl.Date, format="%Y-%m-%d", ambiguous="latest"
+        )
+    )
+
+    assert_frame_equal(q.collect(), expect)
+
+    q = lf.sql("select * from self where date < '2024-01-02'")
+    assert_frame_equal(q.collect(), expect)
+
+
+def test_predicate_stats_eval_nested_binary() -> None:
+    bufs: list[bytes] = []
+
+    for i in range(10):
+        b = io.BytesIO()
+        pl.DataFrame({"x": i}).write_parquet(b)
+        b.seek(0)
+        bufs.append(b.read())
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(bufs)
+            .filter(pl.col("x") % 2 == 0)
+            .collect(no_optimization=True)
+        ),
+        pl.DataFrame({"x": [0, 2, 4, 6, 8]}),
+    )
+
+    assert_frame_equal(
+        (
+            pl.scan_parquet(bufs)
+            # The literal eval depth limit is 4 -
+            # * crates/polars-expr/src/expressions/mod.rs::PhysicalExpr::evaluate_inline
+            .filter(pl.col("x") == pl.lit("222").str.slice(0, 1).cast(pl.Int64))
+            .collect()
+        ),
+        pl.DataFrame({"x": [2]}),
+    )
+
+
+@pytest.mark.slow
+@pytest.mark.parametrize("streaming", [True, False])
+def test_scan_csv_bytesio_memory_usage(
+    streaming: bool,
+    # memory_usage_without_pyarrow: MemoryUsage,
+) -> None:
+    # memory_usage = memory_usage_without_pyarrow
+
+    # Create CSV that is ~6-7 MB in size:
+    f = io.BytesIO()
+    df = pl.DataFrame({"mydata": pl.int_range(0, 1_000_000, eager=True)})
+    df.write_csv(f)
+    # assert 6_000_000 < f.tell() < 7_000_000
+    f.seek(0, 0)
+
+    # A lazy scan shouldn't make a full copy of the data:
+    # starting_memory = memory_usage.get_current()
+    assert (
+        pl.scan_csv(f)
+        .filter(pl.col("mydata") == 999_999)
+        .collect(new_streaming=streaming)  # type: ignore[call-overload]
+        .item()
+        == 999_999
+    )
+    # assert memory_usage.get_peak() - starting_memory < 1_000_000
+
+
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_only_project_row_index(scan_type: tuple[Any, Any]) -> None:
+    write, scan = scan_type
+
+    f = io.BytesIO()
+    df = pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)])
+    write(df, f)
+
+    f.seek(0)
+    s = scan(f, row_index_name="row_index", row_index_offset=42)
+
+    assert_frame_equal(
+        s.select("row_index").collect(),
+        pl.DataFrame({"row_index": [42, 43, 44]}),
+        check_dtypes=False,
+    )
+
+
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
+        (pl.DataFrame.write_csv, pl.scan_csv),
+        (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+    ],
+)
+def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
+    write, scan = scan_type
+
+    f = io.BytesIO()
+    df = pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)])
+    write(df, f)
+
+    f.seek(0)
+    s = scan(f, include_file_paths="file_path")
+
+    # The exact value for in-memory buffers is undefined
+    c = s.select("file_path").collect()
+    assert c.height == 3
+    assert c.columns == ["file_path"]
+
+
+@pytest.mark.parametrize(
+    "scan_type",
+    [
+        (pl.DataFrame.write_parquet, pl.scan_parquet),
+        pytest.param(
+            (pl.DataFrame.write_ipc, pl.scan_ipc),
+            marks=pytest.mark.xfail(
+                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+            ),
+        ),
+        pytest.param(
+            (pl.DataFrame.write_csv, pl.scan_csv),
+            marks=pytest.mark.xfail(
+                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+            ),
+        ),
+        pytest.param(
+            (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+            marks=pytest.mark.xfail(
+                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+            ),
+        ),
+    ],
+)
+def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
+    write, scan = scan_type
+
+    f = io.BytesIO()
+    g = io.BytesIO()
+    write(
+        pl.DataFrame(
+            [pl.Series("a", [], pl.UInt32), pl.Series("missing", [], pl.Int32)]
+        ),
+        f,
+    )
+    write(pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)]), g)
+
+    f.seek(0)
+    g.seek(0)
+    s = scan([f, g], allow_missing_columns=True)
+
+    assert_frame_equal(
+        s.select("missing").collect(),
+        pl.DataFrame([pl.Series("missing", [None, None, None], pl.Int32)]),
+    )

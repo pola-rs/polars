@@ -12,12 +12,12 @@ use crate::dsl::function_expr::FieldsMapper;
 const CAPACITY_FACTOR: usize = 5;
 
 pub(super) fn datetime_range(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let mut start = s[0].clone();
     let mut end = s[1].clone();
 
@@ -69,7 +69,7 @@ pub(super) fn datetime_range(
                 NonExistent::Raise,
             )?
             .cast(&dtype)?
-            .into_series(),
+            .into_column(),
             polars_ops::prelude::replace_time_zone(
                 end.datetime().unwrap(),
                 Some(&tz),
@@ -77,7 +77,7 @@ pub(super) fn datetime_range(
                 NonExistent::Raise,
             )?
             .cast(&dtype)?
-            .into_series(),
+            .into_column(),
         ),
         _ => (start.cast(&dtype)?, end.cast(&dtype)?),
     };
@@ -99,16 +99,16 @@ pub(super) fn datetime_range(
         },
         _ => unimplemented!(),
     };
-    Ok(result.cast(&dtype).unwrap().into_series())
+    Ok(result.cast(&dtype).unwrap().into_column())
 }
 
 pub(super) fn datetime_ranges(
-    s: &[Series],
+    s: &[Column],
     interval: Duration,
     closed: ClosedWindow,
     time_unit: Option<TimeUnit>,
     time_zone: Option<TimeZone>,
-) -> PolarsResult<Series> {
+) -> PolarsResult<Column> {
     let mut start = s[0].clone();
     let mut end = s[1].clone();
 
@@ -158,7 +158,7 @@ pub(super) fn datetime_ranges(
                 NonExistent::Raise,
             )?
             .cast(&dtype)?
-            .into_series()
+            .into_column()
             .to_physical_repr()
             .cast(&DataType::Int64)?,
             polars_ops::prelude::replace_time_zone(
@@ -168,7 +168,7 @@ pub(super) fn datetime_ranges(
                 NonExistent::Raise,
             )?
             .cast(&dtype)?
-            .into_series()
+            .into_column()
             .to_physical_repr()
             .cast(&DataType::Int64)?,
         ),
@@ -223,7 +223,7 @@ pub(super) fn datetime_ranges(
     out.cast(&to_type)
 }
 
-impl<'a> FieldsMapper<'a> {
+impl FieldsMapper<'_> {
     pub(super) fn map_to_datetime_range_dtype(
         &self,
         time_unit: Option<&TimeUnit>,

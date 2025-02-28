@@ -1,43 +1,55 @@
 from __future__ import annotations
 
+import asyncio
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import TYPE_CHECKING, Any
 
+from polars._utils.various import parse_version
 from polars.convert import from_arrow
 from polars.dependencies import import_optional
 
 if TYPE_CHECKING:
-    import sys
     from collections.abc import Coroutine
-
-    if sys.version_info >= (3, 10):
-        from typing import TypeAlias
-    else:
-        from typing_extensions import TypeAlias
 
     from polars import DataFrame
     from polars._typing import SchemaDict
 
+
+def _run_async(
+    coroutine: Coroutine[Any, Any, Any], *, timeout: float | None = None
+) -> Any:
+    """Run asynchronous code as if it were synchronous.
+
+    This is required for execution in Jupyter notebook environments.
+    """
+    # Implementation taken from StackOverflow answer here:
+    # https://stackoverflow.com/a/78911765/2344703
+
     try:
-        from sqlalchemy.sql.expression import Selectable
-    except ImportError:
-        Selectable: TypeAlias = Any  # type: ignore[no-redef]
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # If there is no running loop, use `asyncio.run` normally
+        return asyncio.run(coroutine)
 
+    def run_in_new_loop() -> Any:
+        new_loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(new_loop)
+        try:
+            return new_loop.run_until_complete(coroutine)
+        finally:
+            new_loop.close()
 
-def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
-    """Run asynchronous code as if it was synchronous."""
-    import asyncio
-
-    from polars._utils.unstable import issue_unstable_warning
-    from polars.dependencies import import_optional
-
-    issue_unstable_warning(
-        "Use of asynchronous connections is currently considered unstable "
-        "and unexpected issues may arise; if this happens, please report them."
-    )
-    nest_asyncio = import_optional("nest_asyncio")
-    nest_asyncio.apply()
-    return asyncio.run(co)
+    if threading.current_thread() is threading.main_thread():
+        if not loop.is_running():
+            return loop.run_until_complete(coroutine)
+        else:
+            with ThreadPoolExecutor() as pool:
+                future = pool.submit(run_in_new_loop)
+                return future.result(timeout=timeout)
+    else:
+        return asyncio.run_coroutine_threadsafe(coroutine, loop).result()
 
 
 def _read_sql_connectorx(
@@ -51,10 +63,11 @@ def _read_sql_connectorx(
 ) -> DataFrame:
     cx = import_optional("connectorx")
     try:
+        return_type = "arrow2" if parse_version(cx.__version__) < (0, 4, 2) else "arrow"
         tbl = cx.read_sql(
             conn=connection_uri,
             query=query,
-            return_type="arrow2",
+            return_type=return_type,
             partition_on=partition_on,
             partition_range=partition_range,
             partition_num=partition_num,

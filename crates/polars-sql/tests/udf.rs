@@ -39,10 +39,10 @@ fn test_udfs() -> PolarsResult<()> {
             Field::new("b".into(), DataType::Int32),
         ],
         GetOutput::same_type(),
-        move |s: &mut [Series]| {
-            let first = s[0].clone();
-            let second = s[1].clone();
-            (first + second).map(Some)
+        move |c: &mut [Column]| {
+            let first = c[0].as_materialized_series().clone();
+            let second = c[1].as_materialized_series().clone();
+            (first + second).map(Column::from).map(Some)
         },
     );
 
@@ -74,10 +74,10 @@ fn test_udfs() -> PolarsResult<()> {
             Field::new("b".into(), DataType::Int32),
         ],
         GetOutput::same_type(),
-        move |s: &mut [Series]| {
-            let first = s[0].clone();
-            let second = s[1].clone();
-            (first / second).map(Some)
+        move |c: &mut [Column]| {
+            let first = c[0].as_materialized_series().clone();
+            let second = c[1].as_materialized_series().clone();
+            (first / second).map(Column::from).map(Some)
         },
     );
 

@@ -2,7 +2,8 @@
 
 mod binview;
 mod boolean;
-mod dictionary;
+mod categorical;
+mod dictionary_encoded;
 mod fixed_size_binary;
 mod nested;
 mod nested_utils;
@@ -11,16 +12,18 @@ mod primitive;
 mod simple;
 mod utils;
 
-use arrow::array::{Array, DictionaryKey, FixedSizeListArray, ListArray, MapArray};
-use arrow::datatypes::{ArrowDataType, Field, IntervalUnit};
+use arrow::array::{Array, FixedSizeListArray, ListArray, MapArray};
+use arrow::bitmap::Bitmap;
+use arrow::datatypes::{ArrowDataType, Field};
 use arrow::offset::Offsets;
 use polars_utils::mmap::MemReader;
 use simple::page_iter_to_array;
 
 pub use self::nested_utils::{init_nested, InitNested, NestedState};
-pub use self::utils::filter::Filter;
+pub use self::utils::filter::{Filter, PredicateFilter};
 use self::utils::freeze_validity;
 use super::*;
+use crate::parquet::error::ParquetResult;
 use crate::parquet::read::get_page_iterator as _get_page_iterator;
 use crate::parquet::schema::types::PrimitiveType;
 
@@ -45,7 +48,7 @@ pub fn create_list(
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
-    let (mut offsets, validity) = nested.pop().unwrap();
+    let (length, mut offsets, validity) = nested.pop().unwrap();
     let validity = validity.and_then(freeze_validity);
     match dtype.to_logical_type() {
         ArrowDataType::List(_) => {
@@ -75,7 +78,7 @@ pub fn create_list(
             ))
         },
         ArrowDataType::FixedSizeList(_, _) => {
-            Box::new(FixedSizeListArray::new(dtype, values, validity))
+            Box::new(FixedSizeListArray::new(dtype, length, values, validity))
         },
         _ => unreachable!(),
     }
@@ -87,7 +90,7 @@ pub fn create_map(
     nested: &mut NestedState,
     values: Box<dyn Array>,
 ) -> Box<dyn Array> {
-    let (mut offsets, validity) = nested.pop().unwrap();
+    let (_, mut offsets, validity) = nested.pop().unwrap();
     match dtype.to_logical_type() {
         ArrowDataType::Map(_, _) => {
             offsets.push(values.len() as i64);
@@ -131,16 +134,17 @@ fn columns_to_iter_recursive(
     field: Field,
     init: Vec<InitNested>,
     filter: Option<Filter>,
-) -> PolarsResult<(NestedState, Box<dyn Array>)> {
+) -> ParquetResult<(NestedState, Box<dyn Array>, Bitmap)> {
     if init.is_empty() && is_primitive(&field.dtype) {
-        let array = page_iter_to_array(
+        let (_, array, pred_true_mask) = page_iter_to_array(
             columns.pop().unwrap(),
             types.pop().unwrap(),
-            field.dtype,
+            field,
             filter,
+            None,
         )?;
 
-        return Ok((NestedState::default(), array));
+        return Ok((NestedState::default(), array, pred_true_mask));
     }
 
     nested::columns_to_iter_recursive(columns, types, field, init, filter)
@@ -194,7 +198,8 @@ pub fn column_iter_to_arrays(
     types: Vec<&PrimitiveType>,
     field: Field,
     filter: Option<Filter>,
-) -> PolarsResult<Box<dyn Array>> {
-    let (_, array) = columns_to_iter_recursive(columns, types, field, vec![], filter)?;
-    Ok(array)
+) -> PolarsResult<(Box<dyn Array>, Bitmap)> {
+    let (_, array, pred_true_mask) =
+        columns_to_iter_recursive(columns, types, field, vec![], filter)?;
+    Ok((array, pred_true_mask))
 }

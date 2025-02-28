@@ -4,6 +4,7 @@ use pyo3::prelude::*;
 
 use crate::conversion::{get_df, get_series};
 use crate::error::PyPolarsErr;
+use crate::utils::EnterPolarsExt;
 use crate::{PyDataFrame, PySeries};
 
 #[pyfunction]
@@ -11,7 +12,7 @@ pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
     use polars_core::error::PolarsResult;
     use polars_core::utils::rayon::prelude::*;
 
-    let mut iter = dfs.iter()?;
+    let mut iter = dfs.try_iter()?;
     let first = iter.next().unwrap()?;
 
     let first_rdf = get_df(&first)?;
@@ -26,30 +27,26 @@ pub fn concat_df(dfs: &Bound<'_, PyAny>, py: Python) -> PyResult<PyDataFrame> {
 
     let identity = || Ok(identity_df.clone());
 
-    let df = py
-        .allow_threads(|| {
-            polars_core::POOL.install(|| {
-                rdfs.into_par_iter()
-                    .fold(identity, |acc: PolarsResult<DataFrame>, df| {
-                        let mut acc = acc?;
-                        acc.vstack_mut(&df?)?;
-                        Ok(acc)
-                    })
-                    .reduce(identity, |acc, df| {
-                        let mut acc = acc?;
-                        acc.vstack_mut(&df?)?;
-                        Ok(acc)
-                    })
-            })
+    py.enter_polars_df(|| {
+        polars_core::POOL.install(|| {
+            rdfs.into_par_iter()
+                .fold(identity, |acc: PolarsResult<DataFrame>, df| {
+                    let mut acc = acc?;
+                    acc.vstack_mut(&df?)?;
+                    Ok(acc)
+                })
+                .reduce(identity, |acc, df| {
+                    let mut acc = acc?;
+                    acc.vstack_mut(&df?)?;
+                    Ok(acc)
+                })
         })
-        .map_err(PyPolarsErr::from)?;
-
-    Ok(df.into())
+    })
 }
 
 #[pyfunction]
 pub fn concat_series(series: &Bound<'_, PyAny>) -> PyResult<PySeries> {
-    let mut iter = series.iter()?;
+    let mut iter = series.try_iter()?;
     let first = iter.next().unwrap()?;
 
     let mut s = get_series(&first)?;
@@ -64,7 +61,7 @@ pub fn concat_series(series: &Bound<'_, PyAny>) -> PyResult<PySeries> {
 
 #[pyfunction]
 pub fn concat_df_diagonal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
-    let iter = dfs.iter()?;
+    let iter = dfs.try_iter()?;
 
     let dfs = iter
         .map(|item| {
@@ -79,7 +76,7 @@ pub fn concat_df_diagonal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
 
 #[pyfunction]
 pub fn concat_df_horizontal(dfs: &Bound<'_, PyAny>) -> PyResult<PyDataFrame> {
-    let iter = dfs.iter()?;
+    let iter = dfs.try_iter()?;
 
     let dfs = iter
         .map(|item| {

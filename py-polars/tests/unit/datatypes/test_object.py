@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 from pathlib import Path
 from uuid import uuid4
@@ -75,6 +77,26 @@ def test_nullable_object_13538() -> None:
     }
 
 
+def test_nullable_object_17936() -> None:
+    class Custom:
+        value: int
+
+        def __init__(self, value: int) -> None:
+            self.value = value
+
+    def mapper(value: int) -> Custom | None:
+        if value == 2:
+            return None
+        return Custom(value)
+
+    df = pl.DataFrame({"a": [1, 2, 3]})
+
+    assert df.select(
+        pl.col("a").map_elements(mapper, return_dtype=pl.Object).alias("with_dtype"),
+        pl.col("a").map_elements(mapper).alias("without_dtype"),
+    ).null_count().row(0) == (1, 1)
+
+
 def test_empty_sort() -> None:
     df = pl.DataFrame(
         data=[
@@ -118,6 +140,15 @@ def test_object_concat() -> None:
     assert catted.shape == (6, 1)
     assert catted.dtypes == [pl.Object]
     assert catted.to_dict(as_series=False) == {"a": [1, 2, 3, 1, 4, 3]}
+
+
+def test_object_concat_diagonal_14651() -> None:
+    df1 = pl.DataFrame({"a": ["abc"]}, schema={"a": pl.Object})
+    df2 = pl.DataFrame({"b": ["def"]}, schema={"b": pl.Object})
+    result = pl.concat([df1, df2], how="diagonal")
+    assert result.schema == pl.Schema({"a": pl.Object, "b": pl.Object})
+    assert result["a"].to_list() == ["abc", None]
+    assert result["b"].to_list() == [None, "def"]
 
 
 def test_object_row_construction() -> None:
@@ -166,7 +197,7 @@ def test_null_obj_str_13512() -> None:
 
 def test_format_object_series_14267() -> None:
     s = pl.Series([Path(), Path("abc")])
-    expected = "shape: (2,)\n" "Series: '' [o][object]\n" "[\n" "\t.\n" "\tabc\n" "]"
+    expected = "shape: (2,)\nSeries: '' [o][object]\n[\n\t.\n\tabc\n]"
     assert str(s) == expected
 
 
@@ -199,3 +230,34 @@ def test_object_null_slice() -> None:
     assert_series_equal(s.slice(0, 2).is_null(), pl.Series("x", [False, True]))
     assert_series_equal(s.slice(1, 1).is_null(), pl.Series("x", [True]))
     assert_series_equal(s.slice(2, 1).is_null(), pl.Series("x", [False]))
+
+
+def test_object_sort_scalar_19925() -> None:
+    a = object()
+    assert pl.DataFrame({"a": [0], "obj": [a]}).sort("a")["obj"].item() == a
+
+
+def test_object_estimated_size() -> None:
+    df = pl.DataFrame(
+        [
+            ["3", "random python object, not a string"],
+        ],
+        schema={"name": pl.String, "ob": pl.Object},
+        orient="row",
+    )
+
+    # is a huge underestimation
+    assert df.estimated_size() == 9
+
+
+def test_object_polars_dtypes_20572() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Date(),
+            "b": pl.Decimal(5, 1),
+            "c": pl.Int64(),
+            "d": pl.Object(),
+            "e": pl.String(),
+        }
+    )
+    assert all(dt.is_object() for dt in df.schema.dtypes())

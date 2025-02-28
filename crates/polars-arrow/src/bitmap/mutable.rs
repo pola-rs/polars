@@ -1,12 +1,12 @@
 use std::hint::unreachable_unchecked;
 
 use polars_error::{polars_bail, PolarsResult};
+use polars_utils::vec::PushUnchecked;
 
-use super::utils::{
-    count_zeros, fmt, get_bit, set, set_bit, BitChunk, BitChunks, BitChunksExactMut, BitmapIter,
-};
+use super::bitmask::BitMask;
+use super::utils::{count_zeros, fmt, BitChunk, BitChunks, BitChunksExactMut, BitmapIter};
 use super::{intersects_with_mut, Bitmap};
-use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_unchecked};
+use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_in_byte};
 use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;
 
@@ -118,8 +118,8 @@ impl MutableBitmap {
         if self.length % 8 == 0 {
             self.buffer.push(0);
         }
-        let byte = unsafe { self.buffer.as_mut_slice().last_mut().unwrap_unchecked() };
-        *byte = set(*byte, self.length % 8, value);
+        let byte = unsafe { self.buffer.last_mut().unwrap_unchecked() };
+        *byte = set_bit_in_byte(*byte, self.length % 8, value);
         self.length += 1;
     }
 
@@ -144,7 +144,8 @@ impl MutableBitmap {
     /// Panics iff `index >= self.len()`.
     #[inline]
     pub fn get(&self, index: usize) -> bool {
-        get_bit(&self.buffer, index)
+        assert!(index < self.len());
+        unsafe { self.get_unchecked(index) }
     }
 
     /// Returns whether the position `index` is set.
@@ -161,7 +162,28 @@ impl MutableBitmap {
     /// Panics iff `index >= self.len()`.
     #[inline]
     pub fn set(&mut self, index: usize, value: bool) {
-        set_bit(self.buffer.as_mut_slice(), index, value)
+        assert!(index < self.len());
+        unsafe {
+            self.set_unchecked(index, value);
+        }
+    }
+
+    /// Sets the position `index` to the OR of its original value and `value`.
+    ///
+    /// # Safety
+    /// It's undefined behavior if index >= self.len().
+    #[inline]
+    pub unsafe fn or_pos_unchecked(&mut self, index: usize, value: bool) {
+        *self.buffer.get_unchecked_mut(index / 8) |= (value as u8) << (index % 8);
+    }
+
+    /// Sets the position `index` to the AND of its original value and `value`.
+    ///
+    /// # Safety
+    /// It's undefined behavior if index >= self.len().
+    #[inline]
+    pub unsafe fn and_pos_unchecked(&mut self, index: usize, value: bool) {
+        *self.buffer.get_unchecked_mut(index / 8) &= (value as u8) << (index % 8);
     }
 
     /// constructs a new iterator over the bits of [`MutableBitmap`].
@@ -189,6 +211,17 @@ impl MutableBitmap {
             self.extend_set(additional)
         } else {
             self.extend_unset(additional)
+        }
+    }
+
+    /// Resizes the [`MutableBitmap`] to the specified length, inserting value
+    /// if the length is bigger than the current length.
+    pub fn resize(&mut self, length: usize, value: bool) {
+        if let Some(additional) = length.checked_sub(self.len()) {
+            self.extend_constant(additional, value);
+        } else {
+            self.buffer.truncate(length.saturating_add(7) / 8);
+            self.length = length;
         }
     }
 
@@ -230,10 +263,10 @@ impl MutableBitmap {
     #[inline]
     pub unsafe fn push_unchecked(&mut self, value: bool) {
         if self.length % 8 == 0 {
-            self.buffer.push(0);
+            self.buffer.push_unchecked(0);
         }
-        let byte = self.buffer.as_mut_slice().last_mut().unwrap();
-        *byte = set(*byte, self.length % 8, value);
+        let byte = self.buffer.last_mut().unwrap_unchecked();
+        *byte = set_bit_in_byte(*byte, self.length % 8, value);
         self.length += 1;
     }
 
@@ -330,7 +363,9 @@ impl MutableBitmap {
     /// Caller must ensure that `index < self.len()`
     #[inline]
     pub unsafe fn set_unchecked(&mut self, index: usize, value: bool) {
-        set_bit_unchecked(self.buffer.as_mut_slice(), index, value)
+        debug_assert!(index < self.len());
+        let byte = self.buffer.get_unchecked_mut(index / 8);
+        *byte = set_bit_in_byte(*byte, index % 8, value);
     }
 
     /// Shrinks the capacity of the [`MutableBitmap`] to fit its current length.
@@ -394,18 +429,15 @@ impl<P: AsRef<[bool]>> From<P> for MutableBitmap {
     }
 }
 
-impl FromIterator<bool> for MutableBitmap {
-    fn from_iter<I>(iter: I) -> Self
-    where
-        I: IntoIterator<Item = bool>,
-    {
+impl Extend<bool> for MutableBitmap {
+    fn extend<T: IntoIterator<Item = bool>>(&mut self, iter: T) {
         let mut iterator = iter.into_iter();
-        let mut buffer = {
-            let byte_capacity: usize = iterator.size_hint().0.saturating_add(7) / 8;
-            Vec::with_capacity(byte_capacity)
-        };
 
-        let mut length = 0;
+        let mut buffer = std::mem::take(&mut self.buffer);
+        let mut length = std::mem::take(&mut self.length);
+
+        let byte_capacity: usize = iterator.size_hint().0.saturating_add(7) / 8;
+        buffer.reserve(byte_capacity);
 
         loop {
             let mut exhausted = false;
@@ -447,7 +479,20 @@ impl FromIterator<bool> for MutableBitmap {
                 break;
             }
         }
-        Self { buffer, length }
+
+        self.buffer = buffer;
+        self.length = length;
+    }
+}
+
+impl FromIterator<bool> for MutableBitmap {
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = bool>,
+    {
+        let mut bm = Self::new();
+        bm.extend(iter);
+        bm
     }
 }
 
@@ -566,10 +611,10 @@ impl MutableBitmap {
                 self.buffer.push(0);
             }
             // the iterator will not fill the last byte
-            let byte = self.buffer.as_mut_slice().last_mut().unwrap();
+            let byte = self.buffer.last_mut().unwrap();
             let mut i = bit_offset;
             for value in iterator {
-                *byte = set(*byte, i, value);
+                *byte = set_bit_in_byte(*byte, i, value);
                 i += 1;
             }
             self.length += length;
@@ -581,9 +626,9 @@ impl MutableBitmap {
 
         if bit_offset != 0 {
             // we are in the middle of a byte; lets finish it
-            let byte = self.buffer.as_mut_slice().last_mut().unwrap();
+            let byte = self.buffer.last_mut().unwrap();
             (bit_offset..8).for_each(|i| {
-                *byte = set(*byte, i, iterator.next().unwrap());
+                *byte = set_bit_in_byte(*byte, i, iterator.next().unwrap());
             });
             self.length += 8 - bit_offset;
             length -= 8 - bit_offset;
@@ -650,7 +695,7 @@ impl MutableBitmap {
         let data = buffer.as_mut_slice();
         data[..chunks].iter_mut().try_for_each(|byte| {
             (0..8).try_for_each(|i| {
-                *byte = set(*byte, i, iterator.next().unwrap()?);
+                *byte = set_bit_in_byte(*byte, i, iterator.next().unwrap()?);
                 Ok(())
             })
         })?;
@@ -658,7 +703,7 @@ impl MutableBitmap {
         if reminder != 0 {
             let last = &mut data[chunks];
             iterator.enumerate().try_for_each(|(i, value)| {
-                *last = set(*last, i, value?);
+                *last = set_bit_in_byte(*last, i, value?);
                 Ok(())
             })?;
         }
@@ -754,6 +799,12 @@ impl MutableBitmap {
         assert!(offset + length <= slice.len() * 8);
         // SAFETY: invariant is asserted
         unsafe { self.extend_from_slice_unchecked(slice, offset, length) }
+    }
+
+    #[inline]
+    pub fn extend_from_bitmask(&mut self, bitmask: BitMask<'_>) {
+        let (slice, offset, length) = bitmask.inner();
+        self.extend_from_slice(slice, offset, length)
     }
 
     /// Extends the [`MutableBitmap`] from a [`Bitmap`].

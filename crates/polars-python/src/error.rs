@@ -1,45 +1,74 @@
-use std::fmt::{Debug, Formatter};
-use std::io::{Error, ErrorKind};
+use std::error::Error;
+use std::fmt::{Debug, Display, Formatter};
+use std::io::{Error as IoError, ErrorKind};
 
 use polars::prelude::PolarsError;
 use polars_error::PolarsWarning;
 use pyo3::exceptions::{
-    PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError, PyRuntimeError,
-    PyUserWarning,
+    PyDeprecationWarning, PyFileExistsError, PyFileNotFoundError, PyIOError, PyPermissionError,
+    PyRuntimeError, PyUserWarning,
 };
 use pyo3::prelude::*;
 use pyo3::PyTypeInfo;
-use thiserror::Error;
 
 use crate::exceptions::{
-    CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
+    AssertionError, CategoricalRemappingWarning, ColumnNotFoundError, ComputeError, DuplicateError,
     InvalidOperationError, MapWithoutReturnDtypeWarning, NoDataError, OutOfBoundsError,
     SQLInterfaceError, SQLSyntaxError, SchemaError, SchemaFieldNotFoundError, ShapeError,
     StringCacheMismatchError, StructFieldNotFoundError,
 };
 use crate::Wrap;
 
-#[derive(Error)]
 pub enum PyPolarsErr {
-    #[error(transparent)]
-    Polars(#[from] PolarsError),
-    #[error("{0}")]
+    Polars(PolarsError),
+    Python(PyErr),
     Other(String),
 }
 
-impl std::convert::From<std::io::Error> for PyPolarsErr {
-    fn from(value: Error) -> Self {
-        PyPolarsErr::Other(format!("{value:?}"))
+impl Error for PyPolarsErr {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Polars(err) => Some(err),
+            Self::Python(err) => Some(err),
+            Self::Other(_) => None,
+        }
     }
 }
 
-impl std::convert::From<PyPolarsErr> for PyErr {
-    fn from(err: PyPolarsErr) -> PyErr {
-        let default = || PyRuntimeError::new_err(format!("{:?}", &err));
+impl std::fmt::Display for PyPolarsErr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Polars(err) => Display::fmt(err, f),
+            Self::Python(err) => Display::fmt(err, f),
+            Self::Other(err) => write!(f, "{err}"),
+        }
+    }
+}
 
+impl From<PolarsError> for PyPolarsErr {
+    fn from(err: PolarsError) -> Self {
+        PyPolarsErr::Polars(err)
+    }
+}
+
+impl From<PyErr> for PyPolarsErr {
+    fn from(err: PyErr) -> Self {
+        PyPolarsErr::Python(err)
+    }
+}
+
+impl From<IoError> for PyPolarsErr {
+    fn from(err: IoError) -> Self {
+        PyPolarsErr::Other(format!("{err:?}"))
+    }
+}
+
+impl From<PyPolarsErr> for PyErr {
+    fn from(err: PyPolarsErr) -> PyErr {
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
+                PolarsError::AssertionError(err) => AssertionError::new_err(err.to_string()),
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),
@@ -79,7 +108,8 @@ impl std::convert::From<PyPolarsErr> for PyErr {
                     PyErr::from(tmp)
                 },
             },
-            _ => default(),
+            Python(err) => err,
+            err => PyRuntimeError::new_err(format!("{:?}", &err)),
         }
     }
 }
@@ -89,6 +119,7 @@ impl Debug for PyPolarsErr {
         use PyPolarsErr::*;
         match self {
             Polars(err) => write!(f, "{err:?}"),
+            Python(err) => write!(f, "{err:?}"),
             Other(err) => write!(f, "BindingsError: {err:?}"),
         }
     }
@@ -102,16 +133,21 @@ macro_rules! raise_err(
     }}
 );
 
-impl IntoPy<PyObject> for Wrap<PolarsWarning> {
-    fn into_py(self, py: Python<'_>) -> PyObject {
+impl<'py> IntoPyObject<'py> for Wrap<PolarsWarning> {
+    type Target = PyAny;
+    type Output = Bound<'py, Self::Target>;
+    type Error = std::convert::Infallible;
+
+    fn into_pyobject(self, py: Python<'py>) -> Result<Self::Output, Self::Error> {
         match self.0 {
             PolarsWarning::CategoricalRemappingWarning => {
-                CategoricalRemappingWarning::type_object_bound(py).to_object(py)
+                Ok(CategoricalRemappingWarning::type_object(py).into_any())
             },
             PolarsWarning::MapWithoutReturnDtypeWarning => {
-                MapWithoutReturnDtypeWarning::type_object_bound(py).to_object(py)
+                Ok(MapWithoutReturnDtypeWarning::type_object(py).into_any())
             },
-            PolarsWarning::UserWarning => PyUserWarning::type_object_bound(py).to_object(py),
+            PolarsWarning::UserWarning => Ok(PyUserWarning::type_object(py).into_any()),
+            PolarsWarning::Deprecation => Ok(PyDeprecationWarning::type_object(py).into_any()),
         }
     }
 }

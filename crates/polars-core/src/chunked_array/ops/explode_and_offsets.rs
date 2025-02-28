@@ -1,5 +1,5 @@
-use arrow::compute::take::take_unchecked;
 use arrow::offset::OffsetsBuffer;
+use polars_compute::gather::take_unchecked;
 
 use super::*;
 
@@ -40,9 +40,7 @@ impl ListChunked {
 
         // let mut values = values.explode_by_offsets(offsets);
         // restore logical type
-        unsafe {
-            values = values.cast_unchecked(self.inner_dtype()).unwrap();
-        }
+        values = unsafe { values.from_physical_unchecked(self.inner_dtype()) }.unwrap();
 
         (values, offsets_buf)
     }
@@ -53,7 +51,6 @@ impl ChunkExplode for ListChunked {
         let ca = self.rechunk();
         let listarr: &LargeListArray = ca.downcast_iter().next().unwrap();
         let offsets = listarr.offsets().clone();
-
         Ok(offsets)
     }
 
@@ -112,7 +109,8 @@ impl ChunkExplode for ListChunked {
             let (indices, new_offsets) = if listarr.null_count() == 0 {
                 // SPECIALIZED path.
                 let inner_phys = self.inner_dtype().to_physical();
-                if inner_phys.is_numeric() || inner_phys.is_null() || inner_phys.is_bool() {
+                if inner_phys.is_primitive_numeric() || inner_phys.is_null() || inner_phys.is_bool()
+                {
                     return Ok(self.specialized(values, offsets, offsets_buf));
                 }
                 // Use gather
@@ -189,9 +187,7 @@ impl ChunkExplode for ListChunked {
         };
         debug_assert_eq!(s.name(), self.name());
         // restore logical type
-        unsafe {
-            s = s.cast_unchecked(self.inner_dtype()).unwrap();
-        }
+        s = unsafe { s.from_physical_unchecked(self.inner_dtype()) }.unwrap();
 
         Ok((s, offsets))
     }

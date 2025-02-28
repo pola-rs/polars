@@ -63,10 +63,7 @@ fn test_streaming_csv() -> PolarsResult<()> {
 
 #[test]
 fn test_streaming_glob() -> PolarsResult<()> {
-    let q = get_csv_glob();
-    let q = q.sort(["sugars_g"], Default::default());
-
-    assert_streaming_with_default(q, true, false);
+    assert_streaming_with_default(get_csv_glob(), true, false);
     Ok(())
 }
 

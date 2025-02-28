@@ -1,4 +1,4 @@
-use polars_error::constants::LENGTH_LIMIT_MSG;
+use arrow::compute::concatenate::concatenate_unchecked;
 
 use super::*;
 
@@ -6,7 +6,7 @@ use super::*;
 fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataType {
     // ensure we don't get List<null>
     let dtype = if let Some(arr) = chunks.get(0) {
-        arr.dtype().into()
+        DataType::from_arrow_dtype(arr.dtype())
     } else {
         dtype
     };
@@ -22,7 +22,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 DataType::Categorical(None, _) | DataType::Enum(None, _)
             ) =>
         {
-            let array = concatenate_owned_unchecked(chunks).unwrap();
+            let array = concatenate_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<ListArray<i64>>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {
@@ -54,7 +54,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
                 DataType::Categorical(None, _) | DataType::Enum(None, _)
             ) =>
         {
-            let array = concatenate_owned_unchecked(chunks).unwrap();
+            let array = concatenate_unchecked(chunks).unwrap();
             let list_arr = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
             let values_arr = list_arr.values();
             let cat = unsafe {
@@ -71,6 +71,7 @@ fn from_chunks_list_dtype(chunks: &mut Vec<ArrayRef>, dtype: DataType) -> DataTy
             let arrow_dtype = FixedSizeListArray::default_datatype(ArrowDataType::UInt32, width);
             let new_array = FixedSizeListArray::new(
                 arrow_dtype,
+                values_arr.len(),
                 cat.array_ref(0).clone(),
                 list_arr.validity().cloned(),
             );
@@ -175,14 +176,7 @@ where
             })
             .collect();
 
-        unsafe {
-            ChunkedArray::new_with_dims(
-                field,
-                chunks,
-                length.try_into().expect(LENGTH_LIMIT_MSG),
-                null_count as IdxSize,
-            )
-        }
+        unsafe { ChunkedArray::new_with_dims(field, chunks, length, null_count) }
     }
 
     /// Create a new [`ChunkedArray`] from existing chunks.
@@ -210,6 +204,7 @@ where
     /// Create a new [`ChunkedArray`] from existing chunks.
     ///
     /// # Safety
+    ///
     /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub unsafe fn from_chunks_and_dtype(
         name: PlSmallStr,
@@ -224,10 +219,15 @@ where
                 assert_eq!(chunks[0].dtype(), &dtype.to_arrow(CompatLevel::newest()))
             }
         }
-        let field = Arc::new(Field::new(name, dtype));
-        ChunkedArray::new_with_compute_len(field, chunks)
+
+        Self::from_chunks_and_dtype_unchecked(name, chunks, dtype)
     }
 
+    /// Create a new [`ChunkedArray`] from existing chunks.
+    ///
+    /// # Safety
+    ///
+    /// The Arrow datatype of all chunks must match the [`PolarsDataType`] `T`.
     pub(crate) unsafe fn from_chunks_and_dtype_unchecked(
         name: PlSmallStr,
         chunks: Vec<ArrayRef>,
@@ -284,6 +284,13 @@ impl BooleanChunked {
     pub unsafe fn mmap_slice(name: PlSmallStr, values: &[u8], offset: usize, len: usize) -> Self {
         let arr = arrow::ffi::mmap::bitmap(values, offset, len).unwrap();
         Self::with_chunk(name, arr)
+    }
+
+    pub fn from_bitmap(name: PlSmallStr, bitmap: Bitmap) -> Self {
+        Self::with_chunk(
+            name,
+            BooleanArray::new(ArrowDataType::Boolean, bitmap, None),
+        )
     }
 }
 

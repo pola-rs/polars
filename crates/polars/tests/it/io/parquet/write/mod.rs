@@ -215,6 +215,7 @@ fn basic() -> ParquetResult<()> {
     assert_eq!(
         metadata.row_groups[0]
             .columns_under_root_iter("col")
+            .unwrap()
             .next()
             .unwrap()
             .uncompressed_size(),

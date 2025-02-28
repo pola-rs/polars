@@ -5,11 +5,16 @@ use polars::prelude::*;
 use polars::series::ops::NullBehavior;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::series::IsSorted;
+use polars_plan::plans::predicates::aexpr_to_skip_batch_predicate;
+use polars_plan::plans::{node_to_expr, to_aexpr};
+use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
 use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
+use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
+use crate::utils::EnterPolarsExt;
 use crate::PyExpr;
 
 #[pymethods]
@@ -149,7 +154,7 @@ impl PyExpr {
     fn implode(&self) -> Self {
         self.inner.clone().implode().into()
     }
-    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileInterpolOptions>) -> Self {
+    fn quantile(&self, quantile: Self, interpolation: Wrap<QuantileMethod>) -> Self {
         self.inner
             .clone()
             .quantile(quantile.inner, interpolation.0)
@@ -259,6 +264,7 @@ impl PyExpr {
                 nulls_last,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .into()
     }
@@ -271,6 +277,7 @@ impl PyExpr {
                 nulls_last,
                 multithreaded: true,
                 maintain_order: false,
+                limit: None,
             })
             .into()
     }
@@ -315,6 +322,11 @@ impl PyExpr {
         self.inner.clone().arg_min().into()
     }
 
+    #[cfg(feature = "index_of")]
+    fn index_of(&self, element: Self) -> Self {
+        self.inner.clone().index_of(element.inner).into()
+    }
+
     #[cfg(feature = "search_sorted")]
     fn search_sorted(&self, element: Self, side: Wrap<SearchSortedSide>) -> Self {
         self.inner
@@ -322,6 +334,7 @@ impl PyExpr {
             .search_sorted(element.inner, side.0)
             .into()
     }
+
     fn gather(&self, idx: Self) -> Self {
         self.inner.clone().gather(idx.inner).into()
     }
@@ -348,6 +361,7 @@ impl PyExpr {
                     nulls_last,
                     multithreaded,
                     maintain_order,
+                    limit: None,
                 },
             )
             .into()
@@ -361,6 +375,7 @@ impl PyExpr {
         self.inner.clone().forward_fill(limit).into()
     }
 
+    #[pyo3(signature = (n, fill_value=None))]
     fn shift(&self, n: Self, fill_value: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match fill_value {
@@ -418,6 +433,7 @@ impl PyExpr {
             .into()
     }
 
+    #[cfg(feature = "approx_unique")]
     fn approx_n_unique(&self) -> Self {
         self.inner.clone().approx_n_unique().into()
     }
@@ -440,14 +456,6 @@ impl PyExpr {
 
     fn slice(&self, offset: Self, length: Self) -> Self {
         self.inner.clone().slice(offset.inner, length.inner).into()
-    }
-
-    fn head(&self, n: usize) -> Self {
-        self.inner.clone().head(Some(n)).into()
-    }
-
-    fn tail(&self, n: usize) -> Self {
-        self.inner.clone().tail(Some(n)).into()
     }
 
     fn append(&self, other: Self, upcast: bool) -> Self {
@@ -477,6 +485,7 @@ impl PyExpr {
         self.inner.clone().ceil().into()
     }
 
+    #[pyo3(signature = (min=None, max=None))]
     fn clip(&self, min: Option<Self>, max: Option<Self>) -> Self {
         let expr = self.inner.clone();
         let out = match (min, max) {
@@ -619,15 +628,15 @@ impl PyExpr {
         period: &str,
         offset: &str,
         closed: Wrap<ClosedWindow>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let options = RollingGroupOptions {
             index_column: index_column.into(),
-            period: Duration::parse(period),
-            offset: Duration::parse(offset),
+            period: Duration::try_parse(period).map_err(PyPolarsErr::from)?,
+            offset: Duration::try_parse(offset).map_err(PyPolarsErr::from)?,
             closed_window: closed.0,
         };
 
-        self.inner.clone().rolling(options).into()
+        Ok(self.inner.clone().rolling(options).into())
     }
 
     fn and_(&self, expr: Self) -> Self {
@@ -643,8 +652,8 @@ impl PyExpr {
     }
 
     #[cfg(feature = "is_in")]
-    fn is_in(&self, expr: Self) -> Self {
-        self.inner.clone().is_in(expr.inner).into()
+    fn is_in(&self, expr: Self, nulls_equal: bool) -> Self {
+        self.inner.clone().is_in(expr.inner, nulls_equal).into()
     }
 
     #[cfg(feature = "repeat_by")]
@@ -746,6 +755,7 @@ impl PyExpr {
         self.inner.clone().upper_bound().into()
     }
 
+    #[pyo3(signature = (method, descending, seed=None))]
     fn rank(&self, method: Wrap<RankMethod>, descending: bool, seed: Option<u64>) -> Self {
         let options = RankOptions {
             method: method.0,
@@ -770,8 +780,9 @@ impl PyExpr {
         self.inner.clone().kurtosis(fisher, bias).into()
     }
 
+    #[cfg(feature = "dtype-array")]
     fn reshape(&self, dims: Vec<i64>) -> Self {
-        self.inner.clone().reshape(&dims, NestedType::Array).into()
+        self.inner.clone().reshape(&dims).into()
     }
 
     fn to_physical(&self) -> Self {
@@ -815,12 +826,13 @@ impl PyExpr {
         };
         self.inner.clone().ewm_mean(options).into()
     }
-    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> Self {
-        let half_life = Duration::parse(half_life);
-        self.inner
+    fn ewm_mean_by(&self, times: PyExpr, half_life: &str) -> PyResult<Self> {
+        let half_life = Duration::try_parse(half_life).map_err(PyPolarsErr::from)?;
+        Ok(self
+            .inner
             .clone()
             .ewm_mean_by(times.inner, half_life)
-            .into()
+            .into())
     }
 
     fn ewm_std(
@@ -902,6 +914,7 @@ impl PyExpr {
         self.inner.clone().replace(old.inner, new.inner).into()
     }
 
+    #[pyo3(signature = (old, new, default=None, return_dtype=None))]
     fn replace_strict(
         &self,
         old: PyExpr,
@@ -934,5 +947,21 @@ impl PyExpr {
             .clone()
             .hist(bins, bin_count, include_category, include_breakpoint)
             .into()
+    }
+
+    #[pyo3(signature = (schema))]
+    fn skip_batch_predicate(&self, py: Python, schema: Wrap<Schema>) -> PyResult<Option<Self>> {
+        let mut aexpr_arena = Arena::new();
+        py.enter_polars(|| {
+            let node = to_aexpr(self.inner.clone(), &mut aexpr_arena)?;
+            let Some(node) = aexpr_to_skip_batch_predicate(node, &mut aexpr_arena, &schema.0)
+            else {
+                return Ok(None);
+            };
+            let skip_batch_predicate = node_to_expr(node, &aexpr_arena);
+            PolarsResult::Ok(Some(Self {
+                inner: skip_batch_predicate,
+            }))
+        })
     }
 }

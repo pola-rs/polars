@@ -77,14 +77,14 @@ def test_streaming_joins() -> None:
         pl_result = (
             dfa_pl.lazy()
             .join(dfb_pl.lazy(), on="a", how=how)
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
             .collect(streaming=True)
         )
 
         a = (
             pl.from_pandas(pd_result)
             .with_columns(pl.all().cast(int))
-            .sort(["a", "b"], maintain_order=True)
+            .sort(["a", "b", "b_right"])
         )
         assert_frame_equal(a, pl_result, check_dtypes=False)
 
@@ -103,26 +103,14 @@ def test_streaming_joins() -> None:
 
 
 def test_streaming_cross_join_empty() -> None:
-    df1 = pl.LazyFrame(
-        data={
-            "col1": ["a"],
-        }
-    )
+    df1 = pl.LazyFrame(data={"col1": ["a"]})
 
     df2 = pl.LazyFrame(
-        data={
-            "col1": [],
-        },
-        schema={
-            "col1": str,
-        },
+        data={"col1": []},
+        schema={"col1": str},
     )
 
-    out = df1.join(
-        df2,
-        how="cross",
-        on="col1",
-    ).collect(streaming=True)
+    out = df1.join(df2, how="cross").collect(streaming=True)
     assert out.shape == (0, 2)
     assert out.columns == ["col1", "col1_right"]
 
@@ -134,7 +122,7 @@ def test_streaming_join_rechunk_12498() -> None:
     b = pl.select(B=rows).lazy()
 
     q = a.join(b, how="cross")
-    assert q.collect(streaming=True).to_dict(as_series=False) == {
+    assert q.collect(streaming=True).sort(["B", "A"]).to_dict(as_series=False) == {
         "A": [0, 1, 0, 1],
         "B": [0, 0, 1, 1],
     }
@@ -157,10 +145,10 @@ def test_join_null_matches(streaming: bool) -> None:
         }
     )
     # Semi
-    assert df_a.join(df_b, on="a", how="semi", join_nulls=True).collect(
+    assert df_a.join(df_b, on="a", how="semi", nulls_equal=True).collect(
         streaming=streaming
     )["idx_a"].to_list() == [0, 1, 2]
-    assert df_a.join(df_b, on="a", how="semi", join_nulls=False).collect(
+    assert df_a.join(df_b, on="a", how="semi", nulls_equal=False).collect(
         streaming=streaming
     )["idx_a"].to_list() == [1, 2]
 
@@ -177,7 +165,9 @@ def test_join_null_matches(streaming: bool) -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming), expected
+        df_a.join(df_b, on="a", how="left").collect(streaming=streaming),
+        expected,
+        check_row_order=False,
     )
     # Full outer
     expected = pl.DataFrame(
@@ -214,6 +204,7 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="inner").collect(streaming=streaming),
         expected,
+        check_row_order=False,
     )
     expected = pl.DataFrame(
         {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
@@ -221,6 +212,7 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
     assert_frame_equal(
         df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
         expected,
+        check_row_order=False,
     )
 
     expected = pl.DataFrame(
@@ -299,3 +291,37 @@ def test_streaming_outer_join_partial_flush(tmp_path: Path) -> None:
         ],
         "value": [0, 1, 2, 3, 4, 5],
     }
+
+
+def test_flush_join_and_operation_19040() -> None:
+    df_A = pl.LazyFrame({"K": [True, False], "A": [1, 1]})
+
+    df_B = pl.LazyFrame({"K": [True], "B": [1]})
+
+    df_C = pl.LazyFrame({"K": [True], "C": [1]})
+
+    q = (
+        df_A.join(df_B, how="full", on=["K"], coalesce=True)
+        .join(df_C, how="full", on=["K"], coalesce=True)
+        .with_columns(B=pl.col("B"))
+        .sort("K")
+    )
+    assert q.collect(streaming=True).to_dict(as_series=False) == {
+        "K": [False, True],
+        "A": [1, 1],
+        "B": [None, 1],
+        "C": [None, 1],
+    }
+
+
+def test_full_coalesce_join_and_rename_15583() -> None:
+    df1 = pl.LazyFrame({"a": [1, 2, 3]})
+    df2 = pl.LazyFrame({"a": [3, 4, 5]})
+
+    result = (
+        df1.join(df2, on="a", how="full", coalesce=True)
+        .select(pl.all().name.map(lambda c: c.upper()))
+        .sort("A")
+        .collect(streaming=True)
+    )
+    assert result["A"].to_list() == [1, 2, 3, 4, 5]

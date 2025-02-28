@@ -17,11 +17,16 @@ where
         name: PlSmallStr,
         capacity: usize,
         values_capacity: usize,
-        logical_type: DataType,
+        inner_type: DataType,
     ) -> Self {
+        debug_assert!(
+            inner_type.to_physical().is_primitive_numeric(),
+            "inner type must be primitive, got {}",
+            inner_type
+        );
         let values = MutablePrimitiveArray::<T::Native>::with_capacity(values_capacity);
         let builder = LargePrimitiveBuilder::<T::Native>::new_with_capacity(values, capacity);
-        let field = Field::new(name, DataType::List(Box::new(logical_type)));
+        let field = Field::new(name, DataType::List(Box::new(inner_type)));
 
         Self {
             builder,
@@ -72,7 +77,10 @@ where
     }
     /// Appends from an iterator over values
     #[inline]
-    pub fn append_iter_values<I: Iterator<Item = T::Native> + TrustedLen>(&mut self, iter: I) {
+    pub fn append_values_iter_trusted_len<I: Iterator<Item = T::Native> + TrustedLen>(
+        &mut self,
+        iter: I,
+    ) {
         let values = self.builder.mut_values();
 
         if iter.size_hint().0 == 0 {
@@ -80,7 +88,18 @@ where
         }
         // SAFETY:
         // trusted len, trust the type system
-        unsafe { values.extend_trusted_len_values_unchecked(iter) };
+        values.extend_values(iter);
+        self.builder.try_push_valid().unwrap();
+    }
+
+    #[inline]
+    pub fn append_values_iter<I: Iterator<Item = T::Native>>(&mut self, iter: I) {
+        let values = self.builder.mut_values();
+
+        if iter.size_hint().0 == 0 {
+            self.fast_explode = false;
+        }
+        values.extend_values(iter);
         self.builder.try_push_valid().unwrap();
     }
 
@@ -115,7 +134,11 @@ where
             self.fast_explode = false;
         }
         let physical = s.to_physical_repr();
-        let ca = physical.unpack::<T>()?;
+        let ca = physical.unpack::<T>().map_err(|_| {
+            polars_err!(SchemaMismatch: "cannot build list with different dtypes 
+
+Expected {}, got {}.", self.field.dtype(), s.dtype())
+        })?;
         let values = self.builder.mut_values();
 
         ca.downcast_iter().for_each(|arr| {

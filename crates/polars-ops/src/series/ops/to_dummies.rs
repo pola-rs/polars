@@ -42,11 +42,11 @@ impl ToDummies for Series {
                         dummies_helper_slice(offset, len, self.len(), name)
                     },
                 };
-                ca.into_series()
+                ca.into_column()
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        Ok(unsafe { DataFrame::new_no_checks(sort_columns(columns)) })
+        DataFrame::new(sort_columns(columns))
     }
 }
 
@@ -77,7 +77,7 @@ fn dummies_helper_slice(
     ChunkedArray::from_vec(name, av)
 }
 
-fn sort_columns(mut columns: Vec<Series>) -> Vec<Series> {
+fn sort_columns(mut columns: Vec<Column>) -> Vec<Column> {
     columns.sort_by(|a, b| a.name().partial_cmp(b.name()).unwrap());
     columns
 }

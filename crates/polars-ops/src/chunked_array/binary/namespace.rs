@@ -1,6 +1,7 @@
 #[cfg(feature = "binary_encoding")]
 use std::borrow::Cow;
 
+use arrow::with_match_primitive_type;
 #[cfg(feature = "binary_encoding")]
 use base64::engine::general_purpose;
 #[cfg(feature = "binary_encoding")]
@@ -9,6 +10,7 @@ use memchr::memmem::find;
 use polars_compute::size::binary_size_bytes;
 use polars_core::prelude::arity::{broadcast_binary_elementwise_values, unary_elementwise_values};
 
+use super::cast_binary_to_numerical::cast_binview_to_primitive_dyn;
 use super::*;
 
 pub trait BinaryNameSpaceImpl: AsBinary {
@@ -34,18 +36,14 @@ pub trait BinaryNameSpaceImpl: AsBinary {
     fn ends_with(&self, sub: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
         let f = |s: &[u8]| s.ends_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name().clone());
-        out
+        ca.apply_nonnull_values_generic(DataType::Boolean, f)
     }
 
     /// Check if strings starts with a substring
     fn starts_with(&self, sub: &[u8]) -> BooleanChunked {
         let ca = self.as_binary();
         let f = |s: &[u8]| s.starts_with(sub);
-        let mut out: BooleanChunked = ca.into_iter().map(|opt_s| opt_s.map(f)).collect();
-        out.rename(ca.name().clone());
-        out
+        ca.apply_nonnull_values_generic(DataType::Boolean, f)
     }
 
     fn starts_with_chunked(&self, prefix: &BinaryChunked) -> BooleanChunked {
@@ -129,6 +127,36 @@ pub trait BinaryNameSpaceImpl: AsBinary {
             ca.apply_values(|s| general_purpose::STANDARD.encode(s).into_bytes().into())
                 .cast_unchecked(&DataType::String)
                 .unwrap()
+        }
+    }
+
+    #[cfg(feature = "binary_encoding")]
+    #[allow(clippy::wrong_self_convention)]
+    fn from_buffer(&self, dtype: &DataType, is_little_endian: bool) -> PolarsResult<Series> {
+        let ca = self.as_binary();
+        let arrow_type = dtype.to_arrow(CompatLevel::newest());
+
+        match arrow_type.to_physical_type() {
+            arrow::datatypes::PhysicalType::Primitive(ty) => {
+                with_match_primitive_type!(ty, |$T| {
+                    unsafe {
+                        Ok(Series::from_chunks_and_dtype_unchecked(
+                            ca.name().clone(),
+                            ca.chunks().iter().map(|chunk| {
+                                cast_binview_to_primitive_dyn::<$T>(
+                                    &**chunk,
+                                    &arrow_type,
+                                    is_little_endian,
+                                )
+                            }).collect::<PolarsResult<Vec<_>>>()?,
+                            dtype
+                        ))
+                    }
+                })
+            },
+            _ => Err(
+                polars_err!(InvalidOperation:"unsupported data type in from_buffer. Only numerical types are allowed."),
+            ),
         }
     }
 }

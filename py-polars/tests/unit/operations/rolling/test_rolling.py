@@ -15,6 +15,7 @@ from polars.exceptions import ComputeError, InvalidOperationError
 from polars.testing import assert_frame_equal, assert_series_equal
 from polars.testing.parametric import column, dataframes
 from polars.testing.parametric.strategies.dtype import _time_units
+from tests.unit.conftest import INTEGER_DTYPES
 
 if TYPE_CHECKING:
     from hypothesis.strategies import SearchStrategy
@@ -229,8 +230,10 @@ def test_rolling_crossing_dst(
 
 
 def test_rolling_by_invalid() -> None:
-    df = pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).sort("a")
-    msg = r"in `rolling_\*_by` operation, `by` argument of dtype `i64` is not supported"
+    df = pl.DataFrame(
+        {"a": [1, 2, 3], "b": [4, 5, 6]}, schema_overrides={"a": pl.Int16}
+    ).sort("a")
+    msg = "unsupported data type: i16 for temporal/index column, expected UInt64, UInt32, Int64, Int32, Datetime, Date, Duration, or Time"
     with pytest.raises(InvalidOperationError, match=msg):
         df.select(pl.col("b").rolling_min_by("a", "2i"))
     df = pl.DataFrame({"a": [1, 2, 3], "b": [date(2020, 1, 1)] * 3}).sort("b")
@@ -584,7 +587,7 @@ def test_rolling_cov_corr() -> None:
         pl.rolling_corr("x", "y", window_size=3).alias("corr"),
     ).to_dict(as_series=False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
-    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
+    assert res["corr"][2:] == pytest.approx([nan, 0.0, 0.9176629354822473], nan_ok=True)
     assert res["cov"][:2] == [None] * 2
     assert res["corr"][:2] == [None] * 2
 
@@ -601,10 +604,10 @@ def test_rolling_cov_corr_nulls() -> None:
     )
 
     val_1 = df1.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
     )
     val_2 = df2.select(
-        pl.rolling_corr("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+        pl.rolling_corr("a", "lag_a", window_size=10, min_samples=5, ddof=1)
     )
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.62204709]})
@@ -614,10 +617,10 @@ def test_rolling_cov_corr_nulls() -> None:
     assert_frame_equal(val_2, df2_expected, atol=0.0000001)
 
     val_1 = df1.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
     )
     val_2 = df2.select(
-        pl.rolling_cov("a", "lag_a", window_size=10, min_periods=5, ddof=1)
+        pl.rolling_cov("a", "lag_a", window_size=10, min_samples=5, ddof=1)
     )
 
     df1_expected = pl.DataFrame({"a": [None, None, None, None, 0.009445]})
@@ -737,11 +740,25 @@ def test_rolling_aggregations_with_over_11225() -> None:
     assert_frame_equal(result, expected)
 
 
-def test_rolling() -> None:
-    s = pl.Series("a", [1, 2, 3, 2, 1])
-    assert_series_equal(s.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1]))
-    assert_series_equal(s.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2]))
-    assert_series_equal(s.rolling_sum(2), pl.Series("a", [None, 3, 5, 5, 3]))
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_rolling_ints(dtype: PolarsDataType) -> None:
+    s = pl.Series("a", [1, 2, 3, 2, 1], dtype=dtype)
+    assert_series_equal(
+        s.rolling_min(2), pl.Series("a", [None, 1, 2, 2, 1], dtype=dtype)
+    )
+    assert_series_equal(
+        s.rolling_max(2), pl.Series("a", [None, 2, 3, 3, 2], dtype=dtype)
+    )
+    assert_series_equal(
+        s.rolling_sum(2),
+        pl.Series(
+            "a",
+            [None, 3, 5, 5, 3],
+            dtype=(
+                pl.Int64 if dtype in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16] else dtype
+            ),
+        ),
+    )
     assert_series_equal(s.rolling_mean(2), pl.Series("a", [None, 1.5, 2.5, 2.5, 1.5]))
 
     assert s.rolling_std(2).to_list()[1] == pytest.approx(0.7071067811865476)
@@ -766,6 +783,8 @@ def test_rolling() -> None:
     )
     assert s.rolling_skew(4).null_count() == 3
 
+
+def test_rolling_floats() -> None:
     # 3099
     # test if we maintain proper dtype
     for dt in [pl.Float32, pl.Float64]:
@@ -805,6 +824,14 @@ def test_rolling() -> None:
     )
 
 
+def test_rolling_std_nulls_min_samples_1_20076() -> None:
+    result = pl.Series([1, 2, None, 4]).rolling_std(3, min_samples=1)
+    expected = pl.Series(
+        [None, 0.7071067811865476, 0.7071067811865476, 1.4142135623730951]
+    )
+    assert_series_equal(result, expected)
+
+
 def test_rolling_by_date() -> None:
     df = pl.DataFrame(
         {
@@ -816,6 +843,34 @@ def test_rolling_by_date() -> None:
     result = df.with_columns(roll=pl.col("val").rolling_sum_by("dt", "2d"))
     expected = df.with_columns(roll=pl.Series([1, 3, 5]))
     assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", [pl.Int64, pl.Int32, pl.UInt64, pl.UInt32])
+def test_rolling_by_integer(dtype: PolarsDataType) -> None:
+    df = (
+        pl.DataFrame({"val": [1, 2, 3]})
+        .with_row_index()
+        .with_columns(pl.col("index").cast(dtype))
+    )
+    result = df.with_columns(roll=pl.col("val").rolling_sum_by("index", "2i"))
+    expected = df.with_columns(roll=pl.Series([1, 3, 5]))
+    assert_frame_equal(result, expected)
+
+
+@pytest.mark.parametrize("dtype", INTEGER_DTYPES)
+def test_rolling_sum_by_integer(dtype: PolarsDataType) -> None:
+    lf = (
+        pl.LazyFrame({"a": [1, 2, 3]}, schema={"a": dtype})
+        .with_row_index()
+        .select(pl.col("a").rolling_sum_by("index", "2i"))
+    )
+    result = lf.collect()
+    expected_dtype = (
+        pl.Int64 if dtype in [pl.Int8, pl.UInt8, pl.Int16, pl.UInt16] else dtype
+    )
+    expected = pl.DataFrame({"a": [1, 3, 5]}, schema={"a": expected_dtype})
+    assert_frame_equal(result, expected)
+    assert lf.collect_schema() == expected.schema
 
 
 def test_rolling_nanoseconds_11003() -> None:
@@ -965,13 +1020,13 @@ def test_rolling_median_2() -> None:
         ),
     ],
 )
-def test_rolling_min_periods(
+def test_rolling_min_samples(
     dates: list[date], closed: ClosedInterval, expected: list[int]
 ) -> None:
     df = pl.DataFrame({"date": dates, "value": [1, 2, 3]}).sort("date")
     result = df.select(
         pl.col("value").rolling_sum_by(
-            "date", window_size="2d", min_periods=2, closed=closed
+            "date", window_size="2d", min_samples=2, closed=closed
         )
     )["value"]
     assert_series_equal(result, pl.Series("value", expected, pl.Int64))
@@ -981,7 +1036,7 @@ def test_rolling_min_periods(
         df.sort("date", descending=True)
         .with_columns(
             pl.col("value").rolling_sum_by(
-                "date", window_size="2d", min_periods=2, closed=closed
+                "date", window_size="2d", min_samples=2, closed=closed
             )
         )
         .sort("date")["value"]
@@ -1230,3 +1285,108 @@ def test_window_size_validation() -> None:
 
     with pytest.raises(OverflowError, match=r"can't convert negative int to unsigned"):
         df.with_columns(trailing_min=pl.col("x").rolling_min(window_size=-3))
+
+
+def test_rolling_empty_21032() -> None:
+    df = pl.DataFrame(schema={"a": pl.Datetime("ms"), "b": pl.Int64()})
+
+    result = df.rolling(index_column="a", period=timedelta(days=2)).agg(
+        pl.col("b").sum()
+    )
+    assert_frame_equal(result, df)
+
+    result = df.rolling(
+        index_column="a", period=timedelta(days=2), offset=timedelta(days=3)
+    ).agg(pl.col("b").sum())
+    assert_frame_equal(result, df)
+
+
+def test_rolling_offset_agg_15122() -> None:
+    df = pl.DataFrame({"a": [1, 1, 1, 2, 2, 2], "b": [1, 2, 3, 1, 2, 3]})
+
+    result = df.rolling(index_column="b", period="1i", offset="0i", group_by="a").agg(
+        window=pl.col("b")
+    )
+    expected = df.with_columns(window=pl.Series([[2], [3], [], [2], [3], []]))
+    assert_frame_equal(result, expected)
+
+    result = df.rolling(index_column="b", period="1i", offset="1i", group_by="a").agg(
+        window=pl.col("b")
+    )
+    expected = df.with_columns(window=pl.Series([[3], [], [], [3], [], []]))
+    assert_frame_equal(result, expected)
+
+
+def test_rolling_sum_stability_11146() -> None:
+    data_frame = pl.DataFrame(
+        {
+            "value": [
+                0.0,
+                290.57,
+                107.0,
+                172.0,
+                124.25,
+                304.0,
+                379.5,
+                347.35,
+                1516.41,
+                386.12,
+                226.5,
+                294.62,
+                125.5,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+                0.0,
+            ]
+        }
+    )
+    assert (
+        data_frame.with_columns(
+            pl.col("value").rolling_mean(window_size=8, min_samples=1).alias("test_col")
+        )["test_col"][-1]
+        == 0.0
+    )
+
+
+def test_rolling() -> None:
+    df = pl.DataFrame(
+        {
+            "n": [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10],
+            "col1": ["A", "B"] * 11,
+        }
+    )
+
+    assert df.rolling("n", period="1i", group_by="col1").agg().to_dict(
+        as_series=False
+    ) == {
+        "col1": [
+            "A",
+            "A",
+            "A",
+            "A",
+            "A",
+            "A",
+            "A",
+            "A",
+            "A",
+            "A",
+            "A",
+            "B",
+            "B",
+            "B",
+            "B",
+            "B",
+            "B",
+            "B",
+            "B",
+            "B",
+            "B",
+            "B",
+        ],
+        "n": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+    }

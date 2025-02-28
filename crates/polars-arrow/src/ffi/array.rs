@@ -12,7 +12,7 @@ use crate::datatypes::{ArrowDataType, PhysicalType};
 use crate::ffi::schema::get_child;
 use crate::storage::SharedStorage;
 use crate::types::NativeType;
-use crate::{match_integer_type, with_match_primitive_type_full};
+use crate::{ffi, match_integer_type, with_match_primitive_type_full};
 
 /// Reads a valid `ffi` interface into a `Box<dyn Array>`
 /// # Errors
@@ -99,34 +99,26 @@ impl ArrowArray {
     /// This method releases `buffers`. Consumers of this struct *must* call `release` before
     /// releasing this struct, or contents in `buffers` leak.
     pub(crate) fn new(array: Box<dyn Array>) -> Self {
-        let needs_variadic_buffer_sizes = matches!(
-            array.dtype(),
-            ArrowDataType::BinaryView | ArrowDataType::Utf8View
-        );
-
+        #[allow(unused_mut)]
         let (offset, mut buffers, children, dictionary) =
             offset_buffers_children_dictionary(array.as_ref());
 
-        let variadic_buffer_sizes = if needs_variadic_buffer_sizes {
-            #[cfg(feature = "compute_cast")]
-            {
-                let arr = crate::compute::cast::cast_unchecked(
-                    array.as_ref(),
-                    &ArrowDataType::BinaryView,
-                )
-                .unwrap();
-                let arr = arr.as_any().downcast_ref::<BinaryViewArray>().unwrap();
+        let variadic_buffer_sizes = match array.dtype() {
+            ArrowDataType::BinaryView => {
+                let arr = array.as_any().downcast_ref::<BinaryViewArray>().unwrap();
                 let boxed = arr.variadic_buffer_lengths().into_boxed_slice();
                 let ptr = boxed.as_ptr().cast::<u8>();
                 buffers.push(Some(ptr));
                 boxed
-            }
-            #[cfg(not(feature = "compute_cast"))]
-            {
-                panic!("activate 'compute_cast' feature")
-            }
-        } else {
-            Box::from([])
+            },
+            ArrowDataType::Utf8View => {
+                let arr = array.as_any().downcast_ref::<Utf8ViewArray>().unwrap();
+                let boxed = arr.variadic_buffer_lengths().into_boxed_slice();
+                let ptr = boxed.as_ptr().cast::<u8>();
+                buffers.push(Some(ptr));
+                boxed
+            },
+            _ => Box::new([]),
         };
 
         let buffers_ptr = buffers
@@ -140,12 +132,19 @@ impl ArrowArray {
 
         let children_ptr = children
             .into_iter()
-            .map(|child| Box::into_raw(Box::new(ArrowArray::new(child))))
+            .map(|child| {
+                Box::into_raw(Box::new(ArrowArray::new(ffi::align_to_c_data_interface(
+                    child,
+                ))))
+            })
             .collect::<Box<_>>();
         let n_children = children_ptr.len() as i64;
 
-        let dictionary_ptr =
-            dictionary.map(|array| Box::into_raw(Box::new(ArrowArray::new(array))));
+        let dictionary_ptr = dictionary.map(|array| {
+            Box::into_raw(Box::new(ArrowArray::new(ffi::align_to_c_data_interface(
+                array,
+            ))))
+        });
 
         let length = array.len() as i64;
         let null_count = array.null_count() as i64;
@@ -217,11 +216,7 @@ unsafe fn get_buffer_ptr<T: NativeType>(
         );
     }
 
-    if array
-        .buffers
-        .align_offset(std::mem::align_of::<*mut *const u8>())
-        != 0
-    {
+    if array.buffers.align_offset(align_of::<*mut *const u8>()) != 0 {
         polars_bail!( ComputeError:
             "an ArrowArray of type {dtype:?}
             must have buffer {index} aligned to type {}",
@@ -286,7 +281,7 @@ unsafe fn create_buffer<T: NativeType>(
 
     // We have to check alignment.
     // This is the zero-copy path.
-    if ptr.align_offset(std::mem::align_of::<T>()) == 0 {
+    if ptr.align_offset(align_of::<T>()) == 0 {
         let storage = SharedStorage::from_internal_arrow_array(ptr, len, owner);
         Ok(Buffer::from_storage(storage).sliced(offset, len - offset))
     }
@@ -616,7 +611,7 @@ pub struct ArrowArrayChild<'a> {
     parent: InternalArrowArray,
 }
 
-impl<'a> ArrowArrayRef for ArrowArrayChild<'a> {
+impl ArrowArrayRef for ArrowArrayChild<'_> {
     /// the dtype as declared in the schema
     fn dtype(&self) -> &ArrowDataType {
         &self.dtype

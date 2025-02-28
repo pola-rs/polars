@@ -3,9 +3,8 @@ use std::borrow::Cow;
 use arrow::array::{Array, BinaryArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_ops::chunked_array::DfTake;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::{JoinArgs, JoinType};
+use polars_ops::prelude::{JoinArgs, JoinType, TakeChunked};
 use polars_utils::nulls::IsNull;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -48,7 +47,7 @@ pub struct GenericJoinProbe<K: ExtraPayload> {
     /// cached output names
     output_names: Option<Vec<PlSmallStr>>,
     args: JoinArgs,
-    join_nulls: bool,
+    nulls_equal: bool,
     row_values: RowValues,
 }
 
@@ -67,7 +66,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         amortized_hashes: Vec<u64>,
         context: &PExecutionContext,
         args: JoinArgs,
-        join_nulls: bool,
+        nulls_equal: bool,
     ) -> Self {
         if swapped_or_left && args.should_coalesce() {
             let tmp = DataChunk {
@@ -101,7 +100,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
             swapped_or_left,
             output_names: None,
             args,
-            join_nulls,
+            nulls_equal,
             row_values: RowValues::new(join_columns_right, !swapped_or_left),
         }
     }
@@ -131,6 +130,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                     .for_each(|(s, name)| {
                         s.rename(name.clone());
                     });
+                left_df.clear_schema();
                 left_df
             },
         })
@@ -188,10 +188,10 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_left(iter);
         } else {
@@ -208,7 +208,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 .data
                 ._take_unchecked_slice_sorted(&self.join_tuples_b, false, IsSorted::Ascending)
         };
-        let right_df = unsafe { right_df._take_opt_chunked_unchecked_seq(&self.join_tuples_a) };
+        let right_df = unsafe { right_df.take_opt_chunked_unchecked(&self.join_tuples_a, false) };
 
         let out = self.finish_join(left_df, right_df)?;
 
@@ -253,10 +253,10 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_inner(iter);
         } else {
@@ -271,7 +271,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
 
         let left_df = unsafe {
             self.df_a
-                ._take_chunked_unchecked_seq(&self.join_tuples_a, IsSorted::Not)
+                .take_chunked_unchecked(&self.join_tuples_a, IsSorted::Not, false)
         };
         let right_df = unsafe {
             let mut df = Cow::Borrowed(&chunk.data);

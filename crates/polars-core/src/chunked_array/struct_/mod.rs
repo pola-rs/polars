@@ -1,5 +1,6 @@
 mod frame;
 
+use std::borrow::Cow;
 use std::fmt::Write;
 
 use arrow::array::StructArray;
@@ -10,79 +11,100 @@ use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
 use crate::chunked_array::cast::CastOptions;
+use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::chunked_array::ChunkedArray;
-use crate::prelude::sort::arg_sort_multiple::{_get_rows_encoded_arr, _get_rows_encoded_ca};
 use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;
 
 pub type StructChunked = ChunkedArray<StructType>;
 
-fn constructor(name: PlSmallStr, fields: &[Series]) -> PolarsResult<StructChunked> {
-    // Different chunk lengths: rechunk and recurse.
-    if !fields.iter().map(|s| s.n_chunks()).all_equal() {
-        let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
-        return constructor(name, &fields);
+fn constructor<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
+    name: PlSmallStr,
+    length: usize,
+    fields: I,
+) -> StructChunked {
+    if fields.len() == 0 {
+        let dtype = DataType::Struct(Vec::new());
+        let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
+        let chunks = vec![StructArray::new(arrow_dtype, length, Vec::new(), None).boxed()];
+
+        // SAFETY: We construct each chunk above to have the `Struct` data type.
+        return unsafe { StructChunked::from_chunks_and_dtype(name, chunks, dtype) };
     }
 
-    let n_chunks = fields[0].n_chunks();
-    let dtype = DataType::Struct(fields.iter().map(|s| s.field().into_owned()).collect());
+    // Different chunk lengths: rechunk and recurse.
+    if !fields.clone().map(|s| s.n_chunks()).all_equal() {
+        let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
+        return constructor(name, length, fields.iter());
+    }
+
+    let n_chunks = fields.clone().next().unwrap().n_chunks();
+    let dtype = DataType::Struct(fields.clone().map(|s| s.field().into_owned()).collect());
     let arrow_dtype = dtype.to_physical().to_arrow(CompatLevel::newest());
 
     let chunks = (0..n_chunks)
         .map(|c_i| {
             let fields = fields
-                .iter()
+                .clone()
                 .map(|field| field.chunks()[c_i].clone())
                 .collect::<Vec<_>>();
+            let chunk_length = fields[0].len();
 
-            if !fields.iter().map(|arr| arr.len()).all_equal() {
-                return Err(());
+            if fields[1..].iter().any(|arr| chunk_length != arr.len()) {
+                return None;
             }
 
-            Ok(StructArray::new(arrow_dtype.clone(), fields, None).boxed())
+            Some(StructArray::new(arrow_dtype.clone(), chunk_length, fields, None).boxed())
         })
-        .collect::<Result<Vec<_>, ()>>();
+        .collect::<Option<Vec<_>>>();
 
     match chunks {
-        Ok(chunks) => {
+        Some(chunks) => {
             // SAFETY: invariants checked above.
-            unsafe {
-                Ok(StructChunked::from_chunks_and_dtype_unchecked(
-                    name, chunks, dtype,
-                ))
-            }
+            unsafe { StructChunked::from_chunks_and_dtype_unchecked(name, chunks, dtype) }
         },
-        // Different chunk lengths: rechunk and recurse.
-        Err(_) => {
-            let fields = fields.iter().map(|s| s.rechunk()).collect::<Vec<_>>();
-            constructor(name, &fields)
+        // Different chunks: rechunk and recurse.
+        None => {
+            let fields = fields.map(|s| s.rechunk()).collect::<Vec<_>>();
+            constructor(name, length, fields.iter())
         },
     }
 }
 
 impl StructChunked {
-    pub fn from_series(name: PlSmallStr, fields: &[Series]) -> PolarsResult<Self> {
+    pub fn from_columns(name: PlSmallStr, length: usize, fields: &[Column]) -> PolarsResult<Self> {
+        Self::from_series(
+            name,
+            length,
+            fields.iter().map(|c| c.as_materialized_series()),
+        )
+    }
+
+    pub fn from_series<'a, I: ExactSizeIterator<Item = &'a Series> + Clone>(
+        name: PlSmallStr,
+        length: usize,
+        fields: I,
+    ) -> PolarsResult<Self> {
         let mut names = PlHashSet::with_capacity(fields.len());
-        let first_len = fields.first().map(|s| s.len()).unwrap_or(0);
-        let mut max_len = first_len;
 
-        let mut all_equal_len = true;
-        let mut is_empty = false;
-        for s in fields {
+        let mut needs_to_broadcast = false;
+        for s in fields.clone() {
             let s_len = s.len();
-            max_len = std::cmp::max(max_len, s_len);
 
-            if s_len != first_len {
-                all_equal_len = false;
+            if s_len != length && s_len != 1 {
+                polars_bail!(
+                    ShapeMismatch: "expected struct fields to have given length. given = {length}, field length = {s_len}."
+                );
             }
-            if s_len == 0 {
-                is_empty = true;
-            }
+
+            needs_to_broadcast |= length != 1 && s_len == 1;
+
             polars_ensure!(
                 names.insert(s.name()),
                 Duplicate: "multiple fields with name '{}' found", s.name()
             );
+
             match s.dtype() {
                 #[cfg(feature = "object")]
                 DataType::Object(_, _) => {
@@ -92,29 +114,87 @@ impl StructChunked {
             }
         }
 
-        if !all_equal_len {
-            let mut new_fields = Vec::with_capacity(fields.len());
-            for s in fields {
-                let s_len = s.len();
-                if is_empty {
-                    new_fields.push(s.clear())
-                } else if s_len == max_len {
-                    new_fields.push(s.clone())
-                } else if s_len == 1 {
-                    new_fields.push(s.new_from_index(0, max_len))
-                } else {
-                    polars_bail!(
-                        ShapeMismatch: "expected all fields to have equal length"
-                    );
-                }
-            }
-            constructor(name, &new_fields)
-        } else if fields.is_empty() {
-            let fields = &[Series::new_null(PlSmallStr::EMPTY, 0)];
-            constructor(name, fields)
-        } else {
-            constructor(name, fields)
+        if !needs_to_broadcast {
+            return Ok(constructor(name, length, fields));
         }
+
+        if length == 0 {
+            // @NOTE: There are columns that are being broadcasted so we need to clear those.
+            let new_fields = fields.map(|s| s.clear()).collect::<Vec<_>>();
+
+            return Ok(constructor(name, length, new_fields.iter()));
+        }
+
+        let new_fields = fields
+            .map(|s| {
+                if s.len() == length {
+                    s.clone()
+                } else {
+                    s.new_from_index(0, length)
+                }
+            })
+            .collect::<Vec<_>>();
+        Ok(constructor(name, length, new_fields.iter()))
+    }
+
+    /// Convert a struct to the underlying physical datatype.
+    pub fn to_physical_repr(&self) -> Cow<StructChunked> {
+        let mut physicals = Vec::new();
+
+        let field_series = self.fields_as_series();
+        for (i, s) in field_series.iter().enumerate() {
+            if let Cow::Owned(physical) = s.to_physical_repr() {
+                physicals.reserve(field_series.len());
+                physicals.extend(field_series[..i].iter().cloned());
+                physicals.push(physical);
+                break;
+            }
+        }
+
+        if physicals.is_empty() {
+            return Cow::Borrowed(self);
+        }
+
+        physicals.extend(
+            field_series[physicals.len()..]
+                .iter()
+                .map(|s| s.to_physical_repr().into_owned()),
+        );
+
+        let mut ca = constructor(self.name().clone(), self.length, physicals.iter());
+        if self.null_count() > 0 {
+            ca.zip_outer_validity(self);
+        }
+
+        Cow::Owned(ca)
+    }
+
+    /// Convert a non-logical [`StructChunked`] back into a logical [`StructChunked`] without casting.
+    ///
+    /// # Safety
+    ///
+    /// This can lead to invalid memory access in downstream code.
+    pub unsafe fn from_physical_unchecked(
+        &self,
+        to_fields: &[Field],
+    ) -> PolarsResult<StructChunked> {
+        if cfg!(debug_assertions) {
+            for f in self.struct_fields() {
+                assert!(!f.dtype().is_logical());
+            }
+        }
+
+        let length = self.len();
+        let fields = self
+            .fields_as_series()
+            .iter()
+            .zip(to_fields)
+            .map(|(f, to)| unsafe { f.from_physical_unchecked(to.dtype()) })
+            .collect::<PolarsResult<Vec<_>>>()?;
+
+        let mut out = StructChunked::from_series(self.name().clone(), length, fields.iter())?;
+        out.zip_outer_validity(self);
+        Ok(out)
     }
 
     pub fn struct_fields(&self) -> &[Field] {
@@ -175,7 +255,8 @@ impl StructChunked {
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
 
-                let mut out = Self::from_series(self.name().clone(), &new_fields)?;
+                let mut out =
+                    Self::from_series(self.name().clone(), struct_len, new_fields.iter())?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -231,7 +312,7 @@ impl StructChunked {
                         }
                     })
                     .collect::<PolarsResult<Vec<_>>>()?;
-                let mut out = Self::from_series(self.name().clone(), &fields)?;
+                let mut out = Self::from_series(self.name().clone(), self.len(), fields.iter())?;
                 if self.null_count > 0 {
                     out.zip_outer_validity(self);
                 }
@@ -276,7 +357,7 @@ impl StructChunked {
             .iter()
             .map(func)
             .collect::<PolarsResult<Vec<_>>>()?;
-        Self::from_series(self.name().clone(), &fields).map(|mut ca| {
+        Self::from_series(self.name().clone(), self.len(), fields.iter()).map(|mut ca| {
             if self.null_count > 0 {
                 // SAFETY: we don't change types/ lengths.
                 unsafe {
@@ -290,15 +371,15 @@ impl StructChunked {
     }
 
     pub fn get_row_encoded_array(&self, options: SortOptions) -> PolarsResult<BinaryArray<i64>> {
-        let s = self.clone().into_series();
-        _get_rows_encoded_arr(&[s], &[options.descending], &[options.nulls_last])
+        let c = self.clone().into_column();
+        _get_rows_encoded_arr(&[c], &[options.descending], &[options.nulls_last])
     }
 
     pub fn get_row_encoded(&self, options: SortOptions) -> PolarsResult<BinaryOffsetChunked> {
-        let s = self.clone().into_series();
+        let c = self.clone().into_column();
         _get_rows_encoded_ca(
             self.name().clone(),
-            &[s],
+            &[c],
             &[options.descending],
             &[options.nulls_last],
         )
@@ -319,38 +400,52 @@ impl StructChunked {
 
     /// Combine the validities of two structs.
     pub fn zip_outer_validity(&mut self, other: &StructChunked) {
+        // This might go wrong for broadcasting behavior. If this is not checked, it leads to a
+        // segfault because we infinitely recurse.
+        assert_eq!(self.len(), other.len());
+
+        if other.null_count() == 0 {
+            return;
+        }
+
         if self.chunks.len() != other.chunks.len()
-            || !self
+            || self
                 .chunks
                 .iter()
-                .zip(other.chunks.iter())
-                .map(|(a, b)| a.len() == b.len())
-                .all_equal()
+                .zip(other.chunks())
+                .any(|(a, b)| a.len() != b.len())
         {
-            *self = self.rechunk();
+            self.rechunk_mut();
             let other = other.rechunk();
             return self.zip_outer_validity(&other);
         }
-        if other.null_count > 0 {
-            // SAFETY:
-            // We keep length and dtypes the same.
-            unsafe {
-                for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
-                    let new = combine_validities_and(a.validity(), b.validity());
-                    a.set_validity(new)
-                }
+
+        // SAFETY:
+        // We keep length and dtypes the same.
+        unsafe {
+            for (a, b) in self.downcast_iter_mut().zip(other.downcast_iter()) {
+                let new = combine_validities_and(a.validity(), b.validity());
+                a.set_validity(new)
             }
         }
+
         self.compute_len();
         self.propagate_nulls();
     }
 
     pub fn unnest(self) -> DataFrame {
+        // @scalar-opt
+        let columns = self
+            .fields_as_series()
+            .into_iter()
+            .map(Column::from)
+            .collect::<Vec<_>>();
+
         // SAFETY: invariants for struct are the same
-        unsafe { DataFrame::new_no_checks(self.fields_as_series()) }
+        unsafe { DataFrame::new_no_checks(self.len(), columns) }
     }
 
-    /// Get access to one of this `[StructChunked]`'s fields
+    /// Get access to one of this [`StructChunked`]'s fields
     pub fn field_by_name(&self, name: &str) -> PolarsResult<Series> {
         self.fields_as_series()
             .into_iter()
@@ -370,31 +465,5 @@ impl StructChunked {
     pub fn with_outer_validity(mut self, validity: Option<Bitmap>) -> Self {
         self.set_outer_validity(validity);
         self
-    }
-
-    pub fn with_outer_validity_chunked(mut self, validity: BooleanChunked) -> Self {
-        assert_eq!(self.len(), validity.len());
-        if !self
-            .chunks
-            .iter()
-            .zip(validity.chunks.iter())
-            .map(|(a, b)| a.len() == b.len())
-            .all_equal()
-            || self.chunks.len() != validity.chunks().len()
-        {
-            let ca = self.rechunk();
-            let validity = validity.rechunk();
-            ca.with_outer_validity_chunked(validity)
-        } else {
-            unsafe {
-                for (arr, valid) in self.chunks_mut().iter_mut().zip(validity.downcast_iter()) {
-                    assert!(valid.validity().is_none());
-                    *arr = arr.with_validity(Some(valid.values().clone()))
-                }
-            }
-            self.compute_len();
-            self.propagate_nulls();
-            self
-        }
     }
 }

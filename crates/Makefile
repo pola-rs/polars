@@ -3,6 +3,10 @@
 SHELL=bash
 BASE ?= main
 
+.PHONY: fix
+fix:
+	@$(MAKE) -s -C .. $@
+
 .PHONY: fmt
 fmt:  ## Run rustfmt and dprint
 	cargo fmt --all
@@ -123,6 +127,8 @@ publish:  ## Publish Polars crates
 	cargo publish --allow-dirty -p polars-lazy
 	cargo publish --allow-dirty -p polars-sql
 	cargo publish --allow-dirty -p polars
+	# This is independent
+	cargo publish --allow-dirty -p polars-python
 
 .PHONY: help
 help:  ## Display this help screen
@@ -137,9 +143,7 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features aws                \
 		--exclude-features azure              \
 		--exclude-features cloud              \
-		--exclude-features cloud_write        \
 		--exclude-features decompress         \
-		--exclude-features decompress-fast    \
 		--exclude-features default            \
 		--exclude-features docs-selection     \
 		--exclude-features extract_jsonpath   \
@@ -152,5 +156,6 @@ check-wasm:  ## Check wasm build without supported features
 		--exclude-features parquet            \
 		--exclude-features performant         \
 		--exclude-features streaming          \
-		--exclude-features http          	  \
+		--exclude-features http               \
+		--exclude-features full               \
 		--exclude-features test

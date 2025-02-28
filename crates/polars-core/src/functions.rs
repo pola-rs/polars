@@ -35,10 +35,10 @@ pub fn concat_df_diagonal(dfs: &[DataFrame]) -> PolarsResult<DataFrame> {
             for (name, dtype) in &schema {
                 match df.column(name.as_str()).ok() {
                     Some(s) => columns.push(s.clone()),
-                    None => columns.push(Series::full_null(name.clone(), height, dtype)),
+                    None => columns.push(Column::full_null(name.clone(), height, dtype)),
                 }
             }
-            unsafe { DataFrame::new_no_checks(columns) }
+            unsafe { DataFrame::new_no_checks(height, columns) }
         })
         .collect::<Vec<_>>();
 

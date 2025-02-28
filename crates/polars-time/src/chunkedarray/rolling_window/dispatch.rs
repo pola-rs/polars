@@ -16,7 +16,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> PolarsResult<ArrayRef>,
     rolling_agg_fn_nulls: &dyn Fn(
         &PrimitiveArray<T::Native>,
@@ -24,7 +24,7 @@ fn rolling_agg<T>(
         usize,
         bool,
         Option<&[f64]>,
-        DynArgs,
+        Option<RollingFnParams>,
     ) -> ArrayRef,
 ) -> PolarsResult<Series>
 where
@@ -72,7 +72,7 @@ fn rolling_agg_by<T>(
         usize,
         TimeUnit,
         Option<&TimeZone>,
-        DynArgs,
+        Option<RollingFnParams>,
         Option<&[IdxSize]>,
     ) -> PolarsResult<ArrayRef>,
 ) -> PolarsResult<Series>
@@ -92,10 +92,19 @@ where
             by.cast(&DataType::Datetime(TimeUnit::Milliseconds, None))?,
             &None,
         ),
+        DataType::Int64 => (
+            by.cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+            &None,
+        ),
+        DataType::Int32 | DataType::UInt64 | DataType::UInt32 => (
+            by.cast(&DataType::Int64)?
+                .cast(&DataType::Datetime(TimeUnit::Nanoseconds, None))?,
+            &None,
+        ),
         dt => polars_bail!(InvalidOperation:
             "in `rolling_*_by` operation, `by` argument of dtype `{}` is not supported (expected `{}`)",
             dt,
-            "date/datetime"),
+            "Date/Datetime/Int64/Int32/UInt64/UInt32"),
     };
     let ca = ca.rechunk();
     let by = by.rechunk();
@@ -186,7 +195,13 @@ pub trait SeriesOpsTime: AsSeries {
         by: &Series,
         options: RollingOptionsDynamicWindow,
     ) -> PolarsResult<Series> {
-        let s = self.as_series().clone();
+        let mut s = self.as_series().clone();
+        if matches!(
+            s.dtype(),
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+        ) {
+            s = s.cast(&DataType::Int64).unwrap();
+        }
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {
             let ca: &ChunkedArray<$T> = s.as_ref().as_ref().as_ref();
             rolling_agg_by(
@@ -204,6 +219,11 @@ pub trait SeriesOpsTime: AsSeries {
         let mut s = self.as_series().clone();
         if options.weights.is_some() {
             s = s.to_float()?;
+        } else if matches!(
+            s.dtype(),
+            DataType::Int8 | DataType::UInt8 | DataType::Int16 | DataType::UInt16
+        ) {
+            s = s.cast(&DataType::Int64).unwrap();
         }
 
         with_match_physical_numeric_polars_type!(s.dtype(), |$T| {

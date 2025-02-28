@@ -25,7 +25,6 @@ impl IR {
             Filter { .. } => "selection",
             DataFrameScan { .. } => "df",
             Select { .. } => "projection",
-            Reduce { .. } => "reduce",
             Sort { .. } => "sort",
             Cache { .. } => "cache",
             GroupBy { .. } => "aggregate",
@@ -39,10 +38,10 @@ impl IR {
             Sink { payload, .. } => match payload {
                 SinkType::Memory => "sink (memory)",
                 SinkType::File { .. } => "sink (file)",
-                #[cfg(feature = "cloud")]
-                SinkType::Cloud { .. } => "sink (cloud)",
             },
             SimpleProjection { .. } => "simple_projection",
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { .. } => "merge_sorted",
             Invalid => "invalid",
         }
     }
@@ -85,7 +84,6 @@ impl IR {
             } => output_schema.as_ref().unwrap_or(schema),
             Filter { input, .. } => return arena.get(*input).schema(arena),
             Select { schema, .. } => schema,
-            Reduce { schema, .. } => schema,
             SimpleProjection { columns, .. } => columns,
             GroupBy { schema, .. } => schema,
             Join { schema, .. } => schema,
@@ -103,6 +101,8 @@ impl IR {
                 };
             },
             ExtContext { schema, .. } => schema,
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { input_left, .. } => return arena.get(*input_left).schema(arena),
             Invalid => unreachable!(),
         };
         Cow::Borrowed(schema)
@@ -146,7 +146,6 @@ impl IR {
                 ..
             } => output_schema.as_ref().unwrap_or(schema).clone(),
             Select { schema, .. }
-            | Reduce { schema, .. }
             | GroupBy { schema, .. }
             | Join { schema, .. }
             | HStack { schema, .. }
@@ -158,6 +157,8 @@ impl IR {
                 let input_schema = IR::schema_with_cache(*input, arena, cache);
                 function.schema(&input_schema).unwrap().into_owned()
             },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted { input_left, .. } => IR::schema_with_cache(*input_left, arena, cache),
             Invalid => unreachable!(),
         };
         cache.insert(node, schema.clone());

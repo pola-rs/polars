@@ -1,10 +1,9 @@
-use std::borrow::Cow;
-use std::fmt;
-use std::fmt::{Display, Formatter};
+use std::fmt::{self, Display, Formatter};
 
 use polars_core::datatypes::AnyValue;
 use polars_core::schema::Schema;
 use polars_io::RowIndex;
+use polars_utils::format_list_truncated;
 use recursive::recursive;
 
 use self::ir::dot::ScanSourcesDisplay;
@@ -20,6 +19,16 @@ pub struct ExprIRDisplay<'a> {
     pub(crate) node: Node,
     pub(crate) output_name: &'a OutputName,
     pub(crate) expr_arena: &'a Arena<AExpr>,
+}
+
+impl<'a> ExprIRDisplay<'a> {
+    pub fn display_node(node: Node, expr_arena: &'a Arena<AExpr>) -> Self {
+        Self {
+            node,
+            output_name: &OutputName::None,
+            expr_arena,
+        }
+    }
 }
 
 /// Utility structure to display several [`ExprIR`]'s in a nice way
@@ -261,35 +270,26 @@ impl<'a> IRDisplay<'a> {
             DataFrameScan {
                 schema,
                 output_schema,
-                filter: selection,
                 ..
             } => {
                 let total_columns = schema.len();
-                let n_columns = if let Some(columns) = output_schema {
-                    columns.len().to_string()
+                let (n_columns, projected) = if let Some(schema) = output_schema {
+                    (
+                        format!("{}", schema.len()),
+                        format_list_truncated!(schema.iter_names(), 4, '"'),
+                    )
                 } else {
-                    "*".to_string()
-                };
-                let selection = match selection {
-                    Some(s) => Cow::Owned(self.display_expr(s).to_string()),
-                    None => Cow::Borrowed("None"),
+                    ("*".to_string(), "".to_string())
                 };
                 write!(
                     f,
-                    "{:indent$}DF {:?}; PROJECT {}/{} COLUMNS; SELECTION: {}",
+                    "{:indent$}DF {}; PROJECT{} {}/{} COLUMNS",
                     "",
-                    schema.iter_names().take(4).collect::<Vec<_>>(),
+                    format_list_truncated!(schema.iter_names(), 4, '"'),
+                    projected,
                     n_columns,
                     total_columns,
-                    selection,
                 )
-            },
-            Reduce { input, exprs, .. } => {
-                // @NOTE: Maybe there should be a clear delimiter here?
-                let default_exprs = self.display_expr_slice(exprs);
-
-                write!(f, "{:indent$} REDUCE {default_exprs} FROM", "")?;
-                self.with_root(*input)._format(f, sub_indent)
             },
             Select { expr, input, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
@@ -306,13 +306,21 @@ impl<'a> IRDisplay<'a> {
                 self.with_root(*input)._format(f, sub_indent)
             },
             GroupBy {
-                input, keys, aggs, ..
+                input,
+                keys,
+                aggs,
+                apply,
+                ..
             } => {
-                let aggs = self.display_expr_slice(aggs);
                 let keys = self.display_expr_slice(keys);
 
                 write!(f, "{:indent$}AGGREGATE", "")?;
-                write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
+                if apply.is_some() {
+                    write!(f, "\n{:indent$}\tMAP_GROUPS BY {keys} FROM", "")?;
+                } else {
+                    let aggs = self.display_expr_slice(aggs);
+                    write!(f, "\n{:indent$}\t{aggs} BY {keys} FROM", "")?;
+                }
                 self.with_root(*input)._format(f, sub_indent)
             },
             Join {
@@ -326,13 +334,25 @@ impl<'a> IRDisplay<'a> {
                 let left_on = self.display_expr_slice(left_on);
                 let right_on = self.display_expr_slice(right_on);
 
-                let how = &options.args.how;
-                write!(f, "{:indent$}{how} JOIN:", "")?;
-                write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
-                self.with_root(*input_left)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
-                self.with_root(*input_right)._format(f, sub_indent)?;
-                write!(f, "\n{:indent$}END {how} JOIN", "")
+                // Fused cross + filter (show as nested loop join)
+                if let Some(JoinTypeOptionsIR::Cross { predicate }) = &options.options {
+                    let predicate = self.display_expr(predicate);
+                    let name = "NESTED LOOP";
+                    write!(f, "{:indent$}{name} JOIN ON {predicate}:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {name} JOIN", "")
+                } else {
+                    let how = &options.args.how;
+                    write!(f, "{:indent$}{how} JOIN:", "")?;
+                    write!(f, "\n{:indent$}LEFT PLAN ON: {left_on}", "")?;
+                    self.with_root(*input_left)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}RIGHT PLAN ON: {right_on}", "")?;
+                    self.with_root(*input_right)._format(f, sub_indent)?;
+                    write!(f, "\n{:indent$}END {how} JOIN", "")
+                }
             },
             HStack { input, exprs, .. } => {
                 // @NOTE: Maybe there should be a clear delimiter here?
@@ -372,8 +392,6 @@ impl<'a> IRDisplay<'a> {
                 let name = match payload {
                     SinkType::Memory => "SINK (memory)",
                     SinkType::File { .. } => "SINK (file)",
-                    #[cfg(feature = "cloud")]
-                    SinkType::Cloud { .. } => "SINK (cloud)",
                 };
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
@@ -390,6 +408,19 @@ impl<'a> IRDisplay<'a> {
                 )?;
 
                 self.with_root(*input)._format(f, sub_indent)
+            },
+            #[cfg(feature = "merge_sorted")]
+            MergeSorted {
+                input_left,
+                input_right,
+                key,
+            } => {
+                write!(f, "{:indent$}MERGE SORTED ON '{key}':", "")?;
+                write!(f, "\n{:indent$}LEFT PLAN:", "")?;
+                self.with_root(*input_left)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}RIGHT PLAN:", "")?;
+                self.with_root(*input_right)._format(f, sub_indent)?;
+                write!(f, "\n{:indent$}END MERGE_SORTED", "")
             },
             Invalid => write!(f, "{:indent$}INVALID", ""),
         }
@@ -413,13 +444,19 @@ impl<'a> ExprIRDisplay<'a> {
     }
 }
 
-impl<'a> Display for IRDisplay<'a> {
+impl Display for IRDisplay<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         self._format(f, 0)
     }
 }
 
-impl<'a, T: AsExpr> Display for ExprIRSliceDisplay<'a, T> {
+impl fmt::Debug for IRDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self, f)
+    }
+}
+
+impl<T: AsExpr> Display for ExprIRSliceDisplay<'_, T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         // Display items in slice delimited by a comma
 
@@ -452,7 +489,13 @@ impl<'a, T: AsExpr> Display for ExprIRSliceDisplay<'a, T> {
     }
 }
 
-impl<'a> Display for ExprIRDisplay<'a> {
+impl<T: AsExpr> fmt::Debug for ExprIRSliceDisplay<'_, T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
+    }
+}
+
+impl Display for ExprIRDisplay<'_> {
     #[recursive]
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let root = self.expr_arena.get(self.node);
@@ -654,6 +697,12 @@ impl<'a> Display for ExprIRDisplay<'a> {
         }
 
         Ok(())
+    }
+}
+
+impl fmt::Debug for ExprIRDisplay<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        Display::fmt(self, f)
     }
 }
 

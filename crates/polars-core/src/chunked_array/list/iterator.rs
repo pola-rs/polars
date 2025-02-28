@@ -2,8 +2,7 @@ use std::marker::PhantomData;
 use std::ptr::NonNull;
 use std::rc::Rc;
 
-use polars_utils::unwrap::UnwrapUncheckedRelease;
-
+use crate::chunked_array::flags::StatisticsFlags;
 use crate::prelude::*;
 use crate::series::amortized_iter::{unstable_series_container_and_ptr, AmortSeries, ArrayBox};
 
@@ -18,7 +17,7 @@ pub struct AmortizedListIter<'a, I: Iterator<Item = Option<ArrayBox>>> {
     inner_dtype: DataType,
 }
 
-impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
+impl<I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'_, I> {
     pub(crate) unsafe fn new(
         len: usize,
         series_container: Series,
@@ -37,7 +36,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> AmortizedListIter<'a, I> {
     }
 }
 
-impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a, I> {
+impl<I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'_, I> {
     type Item = Option<AmortSeries>;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -55,7 +54,7 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                             vec![array_ref],
                             &self.inner_dtype.to_physical(),
                         )
-                        .cast_unchecked(&self.inner_dtype)
+                        .from_physical_unchecked(&self.inner_dtype)
                         .unwrap();
                         let inner = Rc::make_mut(&mut self.series_container);
                         *inner = s;
@@ -78,16 +77,18 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
                     self.inner = NonNull::new(ptr).unwrap();
                 } else {
                     // SAFETY: we checked the RC above;
-                    let series_mut = unsafe {
-                        Rc::get_mut(&mut self.series_container).unwrap_unchecked_release()
-                    };
+                    let series_mut =
+                        unsafe { Rc::get_mut(&mut self.series_container).unwrap_unchecked() };
                     // update the inner state
                     unsafe { *self.inner.as_mut() = array_ref };
 
+                    // As an optimization, we try to minimize how many calls to
+                    // _get_inner_mut() we do.
+                    let series_mut_inner = series_mut._get_inner_mut();
                     // last iteration could have set the sorted flag (e.g. in compute_len)
-                    series_mut.clear_flags();
+                    series_mut_inner._set_flags(StatisticsFlags::empty());
                     // make sure that the length is correct
-                    series_mut._get_inner_mut().compute_len();
+                    series_mut_inner.compute_len();
                 }
 
                 // SAFETY:
@@ -106,7 +107,8 @@ impl<'a, I: Iterator<Item = Option<ArrayBox>>> Iterator for AmortizedListIter<'a
 
 // # Safety
 // we correctly implemented size_hint
-unsafe impl<'a, I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'a, I> {}
+unsafe impl<I: Iterator<Item = Option<ArrayBox>>> TrustedLen for AmortizedListIter<'_, I> {}
+impl<I: Iterator<Item = Option<ArrayBox>>> ExactSizeIterator for AmortizedListIter<'_, I> {}
 
 impl ListChunked {
     /// This is an iterator over a [`ListChunked`] that saves allocations.
@@ -151,7 +153,7 @@ impl ListChunked {
         let (s, ptr) =
             unsafe { unstable_series_container_and_ptr(name, inner_values.clone(), &iter_dtype) };
 
-        // SAFETY: ptr belongs the the Series..
+        // SAFETY: ptr belongs the Series..
         unsafe {
             AmortizedListIter::new(
                 self.len(),
@@ -392,7 +394,7 @@ mod test {
 
     #[test]
     fn test_iter_list() {
-        let mut builder = get_list_builder(&DataType::Int32, 10, 10, PlSmallStr::EMPTY).unwrap();
+        let mut builder = get_list_builder(&DataType::Int32, 10, 10, PlSmallStr::EMPTY);
         builder
             .append_series(&Series::new(PlSmallStr::EMPTY, &[1, 2, 3]))
             .unwrap();

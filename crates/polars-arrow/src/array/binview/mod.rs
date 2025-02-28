@@ -1,4 +1,7 @@
 //! See thread: https://lists.apache.org/thread/w88tpz76ox8h3rxkjl4so6rg3f1rv7wt
+
+mod builder;
+pub use builder::*;
 mod ffi;
 pub(super) mod fmt;
 mod iterator;
@@ -27,7 +30,6 @@ mod private {
 pub use iterator::BinaryViewValueIter;
 pub use mutable::MutableBinaryViewArray;
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
-use polars_utils::slice::GetSaferUnchecked;
 use private::Sealed;
 
 use crate::array::binview::view::{validate_binary_view, validate_utf8_only};
@@ -45,14 +47,19 @@ pub type MutablePlBinary = MutableBinaryViewArray<[u8]>;
 static BIN_VIEW_TYPE: ArrowDataType = ArrowDataType::BinaryView;
 static UTF8_VIEW_TYPE: ArrowDataType = ArrowDataType::Utf8View;
 
+// Growth parameters of view array buffers.
+const DEFAULT_BLOCK_SIZE: usize = 8 * 1024;
+const MAX_EXP_BLOCK_SIZE: usize = 16 * 1024 * 1024;
+
 pub trait ViewType: Sealed + 'static + PartialEq + AsRef<Self> {
     const IS_UTF8: bool;
     const DATA_TYPE: ArrowDataType;
     type Owned: Debug + Clone + Sync + Send + AsRef<Self>;
 
     /// # Safety
-    /// The caller must ensure `index < self.len()`.
+    /// The caller must ensure that `slice` is a valid view.
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self;
+    fn from_bytes(slice: &[u8]) -> Option<&Self>;
 
     fn to_bytes(&self) -> &[u8];
 
@@ -70,6 +77,10 @@ impl ViewType for str {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         std::str::from_utf8_unchecked(slice)
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        std::str::from_utf8(slice).ok()
     }
 
     #[inline(always)]
@@ -93,6 +104,10 @@ impl ViewType for [u8] {
     #[inline(always)]
     unsafe fn from_bytes_unchecked(slice: &[u8]) -> &Self {
         slice
+    }
+    #[inline(always)]
+    fn from_bytes(slice: &[u8]) -> Option<&Self> {
+        Some(slice)
     }
 
     #[inline(always)]
@@ -162,6 +177,10 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         // Verify the invariants
         #[cfg(debug_assertions)]
         {
+            if let Some(validity) = validity.as_ref() {
+                assert_eq!(validity.len(), views.len());
+            }
+
             // @TODO: Enable this. This is currently bugged with concatenate.
             // let mut actual_total_buffer_len = 0;
             // let mut actual_total_bytes_len = 0;
@@ -170,7 +189,13 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
             //     actual_total_buffer_len += buffer.len();
             // }
 
-            for view in views.iter() {
+            for (i, view) in views.iter().enumerate() {
+                let is_valid = validity.as_ref().is_none_or(|v| v.get_bit(i));
+
+                if !is_valid {
+                    continue;
+                }
+
                 // actual_total_bytes_len += view.length as usize;
                 if view.length > View::MAX_INLINE_SIZE {
                     assert!((view.buffer_idx as usize) < (buffers.len()));
@@ -334,8 +359,37 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
     /// Assumes that the `i < self.len`.
     #[inline]
     pub unsafe fn value_unchecked(&self, i: usize) -> &T {
-        let v = self.views.get_unchecked_release(i);
+        let v = self.views.get_unchecked(i);
         T::from_bytes_unchecked(v.get_slice_unchecked(&self.buffers))
+    }
+
+    /// Returns the element at index `i`, or None if it is null.
+    /// # Panics
+    /// iff `i >= self.len()`
+    #[inline]
+    pub fn get(&self, i: usize) -> Option<&T> {
+        assert!(i < self.len());
+        unsafe { self.get_unchecked(i) }
+    }
+
+    /// Returns the element at index `i`, or None if it is null.
+    ///
+    /// # Safety
+    /// Assumes that the `i < self.len`.
+    #[inline]
+    pub unsafe fn get_unchecked(&self, i: usize) -> Option<&T> {
+        if self
+            .validity
+            .as_ref()
+            .is_none_or(|v| v.get_bit_unchecked(i))
+        {
+            let v = self.views.get_unchecked(i);
+            Some(T::from_bytes_unchecked(
+                v.get_slice_unchecked(&self.buffers),
+            ))
+        } else {
+            None
+        }
     }
 
     /// Returns an iterator of `Option<&T>` over every element of this array.
@@ -431,6 +485,15 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         mutable.freeze().with_validity(self.validity)
     }
 
+    pub fn deshare(&self) -> Self {
+        if Arc::strong_count(&self.buffers) == 1
+            && self.buffers.iter().all(|b| b.storage_refcount() == 1)
+        {
+            return self.clone();
+        }
+        self.clone().gc()
+    }
+
     pub fn is_sliced(&self) -> bool {
         self.views.as_ptr() != self.views.storage_ptr()
     }
@@ -472,13 +535,21 @@ impl<T: ViewType + ?Sized> BinaryViewArrayGeneric<T> {
         let views = self.views.make_mut();
         let completed_buffers = self.buffers.to_vec();
         let validity = self.validity.map(|bitmap| bitmap.make_mut());
+
+        // We need to know the total_bytes_len if we are going to mutate it.
+        let mut total_bytes_len = self.total_bytes_len.load(Ordering::Relaxed);
+        if total_bytes_len == UNKNOWN_LEN {
+            total_bytes_len = views.iter().map(|view| view.length as u64).sum();
+        }
+        let total_bytes_len = total_bytes_len as usize;
+
         MutableBinaryViewArray {
             views,
             completed_buffers,
             in_progress_buffer: vec![],
             validity,
             phantom: Default::default(),
-            total_bytes_len: self.total_bytes_len.load(Ordering::Relaxed) as usize,
+            total_bytes_len,
             total_buffer_len: self.total_buffer_len,
             stolen_buffers: PlHashMap::new(),
         }
@@ -583,7 +654,7 @@ impl<T: ViewType + ?Sized> Array for BinaryViewArrayGeneric<T> {
 
     fn with_validity(&self, validity: Option<Bitmap>) -> Box<dyn Array> {
         debug_assert!(
-            validity.as_ref().map_or(true, |v| v.len() == self.len()),
+            validity.as_ref().is_none_or(|v| v.len() == self.len()),
             "{} != {}",
             validity.as_ref().unwrap().len(),
             self.len()

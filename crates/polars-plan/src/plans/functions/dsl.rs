@@ -1,3 +1,4 @@
+use polars_compute::rolling::QuantileMethod;
 use strum_macros::IntoStaticStr;
 
 use super::*;
@@ -21,9 +22,10 @@ pub struct OpaquePythonUdf {
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 pub enum DslFunction {
-    // Function that is already converted to IR.
-    #[cfg_attr(feature = "serde", serde(skip))]
-    FunctionIR(FunctionIR),
+    RowIndex {
+        name: PlSmallStr,
+        offset: Option<IdxSize>,
+    },
     // This is both in DSL and IR because we want to be able to serialize it.
     #[cfg(feature = "python")]
     OpaquePython(OpaquePythonUdf),
@@ -35,19 +37,19 @@ pub enum DslFunction {
     Unpivot {
         args: UnpivotArgsDSL,
     },
-    RowIndex {
-        name: PlSmallStr,
-        offset: Option<IdxSize>,
-    },
     Rename {
         existing: Arc<[PlSmallStr]>,
         new: Arc<[PlSmallStr]>,
+        strict: bool,
     },
     Unnest(Vec<Selector>),
     Stats(StatsFunction),
     /// FillValue
     FillNan(Expr),
     Drop(DropFunction),
+    // Function that is already converted to IR.
+    #[cfg_attr(feature = "serde", serde(skip))]
+    FunctionIR(FunctionIR),
 }
 
 #[derive(Clone)]
@@ -71,7 +73,7 @@ pub enum StatsFunction {
     },
     Quantile {
         quantile: Expr,
-        interpol: QuantileInterpolOptions,
+        method: QuantileMethod,
     },
     Median,
     Mean,
@@ -80,11 +82,12 @@ pub enum StatsFunction {
     Max,
 }
 
-pub(crate) fn validate_columns_in_input<S: AsRef<str>>(
-    columns: &[S],
+pub(crate) fn validate_columns_in_input<S: AsRef<str>, I: IntoIterator<Item = S>>(
+    columns: I,
     input_schema: &Schema,
     operation_name: &str,
 ) -> PolarsResult<()> {
+    let columns = columns.into_iter();
     for c in columns {
         polars_ensure!(input_schema.contains(c.as_ref()), ColumnNotFound: "'{}' on column: '{}' is invalid\n\nSchema at this point: {:?}", operation_name, c.as_ref(), input_schema)
     }
@@ -119,10 +122,15 @@ impl DslFunction {
                 offset,
                 schema: Default::default(),
             },
-            DslFunction::Rename { existing, new } => {
+            DslFunction::Rename {
+                existing,
+                new,
+                strict,
+            } => {
                 let swapping = new.iter().any(|name| input_schema.get(name).is_some());
-                validate_columns_in_input(existing.as_ref(), input_schema, "rename")?;
-
+                if strict {
+                    validate_columns_in_input(existing.as_ref(), input_schema, "rename")?;
+                }
                 FunctionIR::Rename {
                     existing,
                     new,

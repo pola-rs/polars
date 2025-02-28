@@ -3,12 +3,21 @@ use std::fmt::{Debug, Formatter};
 use polars_error::{polars_ensure, PolarsResult};
 
 use crate::nulls::IsNull;
-use crate::slice::GetSaferUnchecked;
 
 #[cfg(not(feature = "bigidx"))]
 pub type IdxSize = u32;
 #[cfg(feature = "bigidx")]
 pub type IdxSize = u64;
+
+#[cfg(not(feature = "bigidx"))]
+pub type NonZeroIdxSize = std::num::NonZeroU32;
+#[cfg(feature = "bigidx")]
+pub type NonZeroIdxSize = std::num::NonZeroU64;
+
+#[cfg(not(feature = "bigidx"))]
+pub type AtomicIdxSize = std::sync::atomic::AtomicU32;
+#[cfg(feature = "bigidx")]
+pub type AtomicIdxSize = std::sync::atomic::AtomicU64;
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
@@ -37,6 +46,7 @@ impl Debug for NullableIdxSize {
 impl NullableIdxSize {
     #[inline(always)]
     pub fn is_null_idx(&self) -> bool {
+        // The left/right join maintain_order algorithms depend on the special value for sorting
         self.inner == IdxSize::MAX
     }
 
@@ -121,24 +131,17 @@ impl<T: Copy + IsNull> Indexable for &[T] {
     /// # Safety
     /// Doesn't do any bound checks.
     unsafe fn get_unchecked(&self, i: usize) -> Self::Item {
-        *self.get_unchecked_release(i)
+        *<[T]>::get_unchecked(self, i)
     }
 }
 
 pub fn check_bounds(idx: &[IdxSize], len: IdxSize) -> PolarsResult<()> {
     // We iterate in large uninterrupted chunks to help auto-vectorization.
-    let mut in_bounds = true;
-    for chunk in idx.chunks(1024) {
-        for i in chunk {
-            if *i >= len {
-                in_bounds = false;
-            }
-        }
-        if !in_bounds {
-            break;
-        }
-    }
-    polars_ensure!(in_bounds, OutOfBounds: "indices are out of bounds");
+    let Some(max_idx) = idx.iter().copied().max() else {
+        return Ok(());
+    };
+
+    polars_ensure!(max_idx < len, OutOfBounds: "indices are out of bounds");
     Ok(())
 }
 
@@ -189,9 +192,7 @@ pub struct ChunkId<const CHUNK_BITS: u64 = DEFAULT_CHUNK_BITS> {
     swizzled: u64,
 }
 
-pub type NullableChunkId = ChunkId;
-
-impl Debug for ChunkId {
+impl<const CHUNK_BITS: u64> Debug for ChunkId<CHUNK_BITS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         if self.is_null() {
             write!(f, "NULL")
@@ -217,7 +218,7 @@ impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     #[allow(clippy::unnecessary_cast)]
     pub fn store(chunk: IdxSize, row: IdxSize) -> Self {
         debug_assert!(chunk < !(u64::MAX << CHUNK_BITS) as IdxSize);
-        let swizzled = (row as u64) << CHUNK_BITS | chunk as u64;
+        let swizzled = ((row as u64) << CHUNK_BITS) | chunk as u64;
 
         Self { swizzled }
     }
@@ -226,15 +227,22 @@ impl<const CHUNK_BITS: u64> ChunkId<CHUNK_BITS> {
     #[allow(clippy::unnecessary_cast)]
     pub fn extract(self) -> (IdxSize, IdxSize) {
         let row = (self.swizzled >> CHUNK_BITS) as IdxSize;
-
-        let mask: IdxSize = IdxSize::MAX << CHUNK_BITS;
-        let chunk = (self.swizzled as IdxSize) & !mask;
+        let mask = (1u64 << CHUNK_BITS) - 1;
+        let chunk = (self.swizzled & mask) as IdxSize;
         (chunk, row)
     }
 
     #[inline(always)]
     pub fn inner_mut(&mut self) -> &mut u64 {
         &mut self.swizzled
+    }
+
+    pub fn from_inner(inner: u64) -> Self {
+        Self { swizzled: inner }
+    }
+
+    pub fn into_inner(self) -> u64 {
+        self.swizzled
     }
 }
 

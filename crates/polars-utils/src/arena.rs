@@ -4,14 +4,13 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use serde::{Deserialize, Serialize};
 
 use crate::error::*;
-use crate::slice::GetSaferUnchecked;
 
 unsafe fn index_of_unchecked<T>(slice: &[T], item: &T) -> usize {
-    (item as *const _ as usize - slice.as_ptr() as usize) / std::mem::size_of::<T>()
+    (item as *const _ as usize - slice.as_ptr() as usize) / size_of::<T>()
 }
 
 fn index_of<T>(slice: &[T], item: &T) -> Option<usize> {
-    debug_assert!(std::mem::size_of::<T>() > 0);
+    debug_assert!(size_of::<T>() > 0);
     let ptr = item as *const T;
     unsafe {
         if slice.as_ptr() < ptr && slice.as_ptr().add(slice.len()) > ptr {
@@ -66,6 +65,14 @@ impl<T> Arena<T> {
         self.items.pop()
     }
 
+    pub fn last_node(&mut self) -> Option<Node> {
+        if self.is_empty() {
+            None
+        } else {
+            Some(Node(self.items.len() - 1))
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -105,7 +112,7 @@ impl<T> Arena<T> {
     /// # Safety
     /// Doesn't do any bound checks
     pub unsafe fn get_unchecked(&self, idx: Node) -> &T {
-        self.items.get_unchecked_release(idx.0)
+        self.items.get_unchecked(idx.0)
     }
 
     #[inline]

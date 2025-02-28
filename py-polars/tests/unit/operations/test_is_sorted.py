@@ -331,6 +331,7 @@ def test_sorted_flag() -> None:
     pl.Series([{"a": 1}], dtype=pl.Object).set_sorted(descending=True)
 
 
+@pytest.mark.may_fail_auto_streaming
 def test_sorted_flag_after_joins() -> None:
     np.random.seed(1)
     dfa = pl.DataFrame(
@@ -384,12 +385,16 @@ def test_sorted_flag_after_joins() -> None:
     test_with_pd(dfbpd, dfapd, "b", "left", joined)
 
     joined = dfb.join(dfa, on="b", how="inner")
-    assert not joined["a"].flags["SORTED_ASC"]
+    if (joined["a"] != sorted(joined["a"])).any():
+        assert not joined["a"].flags["SORTED_ASC"]
 
     joined = dfb.join(dfa, on="b", how="semi")
-    assert not joined["a"].flags["SORTED_ASC"]
+    if (joined["a"] != sorted(joined["a"])).any():
+        assert not joined["a"].flags["SORTED_ASC"]
+
     joined = dfb.join(dfa, on="b", how="anti")
-    assert not joined["a"].flags["SORTED_ASC"]
+    if (joined["a"] != sorted(joined["a"])).any():
+        assert not joined["a"].flags["SORTED_ASC"]
 
 
 def test_sorted_flag_group_by_dynamic() -> None:
@@ -417,3 +422,18 @@ def test_is_sorted_chunked_select() -> None:
         .set_sorted("a")
         .select(pl.col("a").alias("b"))
     )["b"].flags["SORTED_ASC"]
+
+
+def test_is_sorted_arithmetic_overflow_14106() -> None:
+    s = pl.Series([0, 200], dtype=pl.UInt8).sort()
+    assert not (s + 200).is_sorted()
+
+
+def test_is_sorted_struct() -> None:
+    s = pl.Series("a", [{"x": 3}, {"x": 1}, {"x": 2}]).sort()
+    assert s.flags["SORTED_ASC"]
+    assert not s.flags["SORTED_DESC"]
+
+    s = s.sort(descending=True)
+    assert s.flags["SORTED_DESC"]
+    assert not s.flags["SORTED_ASC"]

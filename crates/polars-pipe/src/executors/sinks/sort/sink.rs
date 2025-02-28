@@ -20,7 +20,7 @@ pub struct SortSink {
     schema: SchemaRef,
     chunks: Vec<DataFrame>,
     // Stores available memory in the system at the start of this sink.
-    // and stores the memory used by this this sink.
+    // and stores the memory used by this sink.
     mem_track: MemTracker,
     // sort in-memory or out-of-core
     ooc: bool,
@@ -124,7 +124,7 @@ impl SortSink {
                 // SAFETY: we just asserted height > 0
                 let sample = unsafe {
                     let s = &df.get_columns()[self.sort_idx];
-                    s.to_physical_repr().get_unchecked(0).into_static().unwrap()
+                    s.to_physical_repr().get_unchecked(0).into_static()
                 };
                 self.dist_sample.push(sample);
 

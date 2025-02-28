@@ -1,7 +1,7 @@
-use polars_core::export::rayon::prelude::*;
 use polars_core::POOL;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
+use rayon::prelude::*;
 
 use super::*;
 
@@ -23,7 +23,6 @@ pub trait ToStruct: AsArray {
             .as_deref()
             .unwrap_or(&arr_default_struct_name_gen);
 
-        polars_ensure!(n_fields != 0, ComputeError: "cannot create a struct with 0 fields");
         let fields = POOL.install(|| {
             (0..n_fields)
                 .into_par_iter()
@@ -40,7 +39,7 @@ pub trait ToStruct: AsArray {
                 .collect::<PolarsResult<Vec<_>>>()
         })?;
 
-        StructChunked::from_series(ca.name().clone(), &fields)
+        StructChunked::from_series(ca.name().clone(), ca.len(), fields.iter())
     }
 }
 
