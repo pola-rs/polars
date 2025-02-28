@@ -73,9 +73,11 @@ impl SinkNode for IpcSinkNode {
         // Buffer task -> Encode tasks
         let (mut dist_tx, dist_rxs) =
             distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
-        // Encode tasks -> IO task
+        // Encode tasks -> Collect task
         let (mut lin_rx, lin_txs) =
             Linearizer::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+        // Collect task -> IO task
+        let (mut io_task_tx, mut io_task_rx) = connector::<(Vec<EncodedData>, EncodedData)>();
 
         let options = WriteOptions {
             compression: self.write_options.compression.map(Into::into),
@@ -116,7 +118,10 @@ impl SinkNode for IpcSinkNode {
                     }
                     seq += 1;
                 }
-                drop(consume_token);
+                drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
+                                     // morsel has started encoding in its entirety. This still
+                                     // allows for parallelism of Morsels, but prevents large
+                                     // bunches of Morsels from stacking up here.
             }
 
             if config::verbose() {
@@ -193,46 +198,29 @@ impl SinkNode for IpcSinkNode {
                 }),
         );
 
-        // IO task.
+        // Collect Task.
         //
-        // Task that will actually do write to the target file.
-        let path = self.path.clone();
-        let write_options = self.write_options;
+        // Collects all the encoded data and packs it together for the IO task to write it.
         let input_schema = self.input_schema.clone();
-        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            use tokio::fs::OpenOptions;
-
-            let file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path.as_path())
-                .await?;
-            let writer = BufWriter::new(file.into_std().await);
-            let mut writer = IpcWriter::new(writer)
-                .with_compression(write_options.compression)
-                .with_parallel(false)
-                .batched(&input_schema)?;
-
+        join_handles.push(spawn(TaskPriority::Low, async move {
             let mut dictionary_tracker = DictionaryTracker {
                 dictionaries: Default::default(),
                 cannot_replace: false,
             };
 
+            struct CurrentColumn {
+                array: Box<dyn Array>,
+                variadic_buffer_counts: Vec<i64>,
+                buffers: Vec<arrow::io::ipc::format::ipc::Buffer>,
+                arrow_data: Vec<u8>,
+                nodes: Vec<arrow::io::ipc::format::ipc::FieldNode>,
+                offset: i64,
+            }
             struct Current {
                 seq: usize,
                 height: usize,
                 num_columns_seen: usize,
-                columns: Vec<
-                    Option<(
-                        Box<dyn Array>,
-                        Vec<i64>,
-                        Vec<arrow::io::ipc::format::ipc::Buffer>,
-                        Vec<u8>,
-                        Vec<arrow::io::ipc::format::ipc::FieldNode>,
-                        i64,
-                    )>,
-                >,
+                columns: Vec<Option<CurrentColumn>>,
                 encoded_dictionaries: Vec<EncodedData>,
             }
 
@@ -258,14 +246,14 @@ impl SinkNode for IpcSinkNode {
                 debug_assert_eq!(current.seq, seq);
                 debug_assert_eq!(current.height, array.len());
                 debug_assert!(current.columns[i].is_none());
-                current.columns[i] = Some((
+                current.columns[i] = Some(CurrentColumn {
                     array,
                     variadic_buffer_counts,
                     buffers,
                     arrow_data,
                     nodes,
                     offset,
-                ));
+                });
                 current.num_columns_seen += 1;
 
                 if current.num_columns_seen == input_schema.len() {
@@ -280,47 +268,88 @@ impl SinkNode for IpcSinkNode {
                     for (i, column) in current.columns.iter_mut().enumerate() {
                         let column = column.take().unwrap();
 
-                        // @Optimize: This would be nicer to do in parallel somehow, but it is a
-                        // bit difficult as the dictionary tracker needs to keep track globally.
+                        // @Optimize: It would be nice to do this on the Encode Tasks, but it is
+                        // difficult to centralize the dictionary tracker like that.
                         //
                         // If there are dictionaries, we might need to emit the original dictionary
                         // definitions or dictionary deltas. We have precomputed which columns contain
                         // dictionaries and only check those columns.
                         encode_new_dictionaries(
                             &ipc_fields[i],
-                            column.0.as_ref(),
+                            column.array.as_ref(),
                             &options,
                             &mut dictionary_tracker,
                             &mut current.encoded_dictionaries,
                         )?;
 
-                        variadic_buffer_counts.extend(column.1);
-                        buffers.extend(column.2.into_iter().map(|mut b| {
+                        variadic_buffer_counts.extend(column.variadic_buffer_counts);
+                        buffers.extend(column.buffers.into_iter().map(|mut b| {
+                            // @NOTE: We need to offset all the buffers by the prefix sum of the
+                            // column offsets.
                             b.offset += offset;
                             b
                         }));
-                        arrow_data.extend(column.3);
-                        nodes.extend(column.4);
+                        arrow_data.extend(column.arrow_data);
+                        nodes.extend(column.nodes);
 
-                        offset += column.5;
+                        offset += column.offset;
                     }
 
+                    let mut encoded_data = EncodedData {
+                        ipc_message: Vec::new(),
+                        arrow_data,
+                    };
                     commit_encoded_arrays(
                         current.height,
                         &options,
                         variadic_buffer_counts,
                         buffers,
-                        arrow_data,
                         nodes,
-                        writer.encoded_message(),
+                        &mut encoded_data,
                     );
 
-                    // @TODO: At the moment this is a sync write, this is not ideal because we can only
-                    // have so many blocking threads in the tokio threadpool.
-                    writer.write_encoded(current.encoded_dictionaries.as_slice())?;
+                    if io_task_tx
+                        .send((
+                            std::mem::take(&mut current.encoded_dictionaries),
+                            encoded_data,
+                        ))
+                        .await
+                        .is_err()
+                    {
+                        return Ok(());
+                    }
                     current.num_columns_seen = 0;
-                    current.encoded_dictionaries.clear();
                 }
+            }
+
+            Ok(())
+        }));
+
+        // IO task.
+        //
+        // Task that will actually do write to the target file.
+        let path = self.path.clone();
+        let write_options = self.write_options;
+        let input_schema = self.input_schema.clone();
+        let io_task = polars_io::pl_async::get_runtime().spawn(async move {
+            use tokio::fs::OpenOptions;
+
+            let file = OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .open(path.as_path())
+                .await?;
+            let writer = BufWriter::new(file.into_std().await);
+            let mut writer = IpcWriter::new(writer)
+                .with_compression(write_options.compression)
+                .with_parallel(false)
+                .batched(&input_schema)?;
+
+            while let Ok((dicts, record_batch)) = io_task_rx.recv().await {
+                // @TODO: At the moment this is a sync write, this is not ideal because we can only
+                // have so many blocking threads in the tokio threadpool.
+                writer.write_encoded(dicts.as_slice(), &record_batch)?;
             }
 
             writer.finish()?;

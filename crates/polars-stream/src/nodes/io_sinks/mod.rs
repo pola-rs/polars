@@ -114,7 +114,10 @@ impl SinkRecvPort {
     }
 
     /// Serialize the input and allow for long lived lasts to listen to a constant channel.
-    pub fn serial(mut self, join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>) -> Receiver<Morsel> {
+    pub fn serial(
+        mut self,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) -> Receiver<Morsel> {
         let (mut tx, rx) = connector();
         join_handles.push(spawn(TaskPriority::High, async move {
             while let Ok((outcome, port_rx)) = self.recv.recv().await {
@@ -216,8 +219,6 @@ impl SinkRecvPort {
                 outcomes.clear();
             }
 
-            dbg!("stopping coordinating channel");
-
             Ok(())
         });
 
@@ -285,7 +286,6 @@ impl ComputeNode for SinkComputeNode {
         if recv[0] == PortState::Done {
             if let Some(mut started) = self.started.take() {
                 drop(started.input_send);
-                dbg!("started on waiting for tasks to finish");
                 polars_io::pl_async::get_runtime().block_on(async move {
                     // Either the task finished or some error occurred.
                     while let Some(ret) = started.join_handles.next().await {

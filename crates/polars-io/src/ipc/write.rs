@@ -169,8 +169,9 @@ impl<W: Write> BatchedWriter<W> {
     pub fn write_encoded(
         &mut self,
         dictionaries: &[EncodedData],
+        message: &EncodedData,
     ) -> PolarsResult<()> {
-        self.writer.write_encoded(dictionaries)?;
+        self.writer.write_encoded(dictionaries, message)?;
         Ok(())
     }
 
@@ -178,10 +179,6 @@ impl<W: Write> BatchedWriter<W> {
     pub fn finish(&mut self) -> PolarsResult<()> {
         self.writer.finish()?;
         Ok(())
-    }
-
-    pub fn encoded_message(&mut self) -> &mut EncodedData {
-        self.writer.encoded_message()
     }
 }
 

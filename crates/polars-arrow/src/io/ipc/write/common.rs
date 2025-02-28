@@ -333,8 +333,7 @@ pub fn encode_record_batch(
 ) {
     let mut nodes: Vec<arrow_format::ipc::FieldNode> = vec![];
     let mut buffers: Vec<arrow_format::ipc::Buffer> = vec![];
-    let mut arrow_data = std::mem::take(&mut encoded_message.arrow_data);
-    arrow_data.clear();
+    encoded_message.arrow_data.clear();
 
     let mut offset = 0;
     let mut variadic_buffer_counts = vec![];
@@ -344,7 +343,7 @@ pub fn encode_record_batch(
             options,
             &mut variadic_buffer_counts,
             &mut buffers,
-            &mut arrow_data,
+            &mut encoded_message.arrow_data,
             &mut nodes,
             &mut offset,
         );
@@ -355,7 +354,6 @@ pub fn encode_record_batch(
         options,
         variadic_buffer_counts,
         buffers,
-        arrow_data,
         nodes,
         encoded_message,
     );
@@ -366,7 +364,6 @@ pub fn commit_encoded_arrays(
     options: &WriteOptions,
     variadic_buffer_counts: Vec<i64>,
     buffers: Vec<ipc::Buffer>,
-    arrow_data: Vec<u8>,
     nodes: Vec<ipc::FieldNode>,
     encoded_message: &mut EncodedData,
 ) {
@@ -389,14 +386,13 @@ pub fn commit_encoded_arrays(
                 variadic_buffer_counts,
             },
         ))),
-        body_length: arrow_data.len() as i64,
+        body_length: encoded_message.arrow_data.len() as i64,
         custom_metadata: None,
     };
 
     let mut builder = Builder::new();
     let ipc_message = builder.finish(&message, None);
     encoded_message.ipc_message = ipc_message.to_vec();
-    encoded_message.arrow_data = arrow_data
 }
 
 /// Write dictionary values into two sets of bytes, one for the header (ipc::Schema::Message) and the

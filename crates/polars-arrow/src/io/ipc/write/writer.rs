@@ -7,7 +7,7 @@ use polars_error::{polars_bail, PolarsResult};
 use super::super::{IpcField, ARROW_MAGIC_V2};
 use super::common::{DictionaryTracker, EncodedData, WriteOptions};
 use super::common_sync::{write_continuation, write_message};
-use super::{default_ipc_fields, encode_record_batch, schema, schema_to_bytes};
+use super::{default_ipc_fields, schema, schema_to_bytes};
 use crate::array::Array;
 use crate::datatypes::*;
 use crate::io::ipc::write::common::encode_chunk_amortized;
@@ -159,14 +159,25 @@ impl<W: Write> FileWriter<W> {
             &self.options,
             &mut self.encoded_message,
         )?;
-        encode_record_batch(chunk, &self.options, &mut self.encoded_message);
 
-        self.write_encoded(&encoded_dictionaries[..])?;
+        let encoded_message = std::mem::take(&mut self.encoded_message);
+        self.write_encoded(&encoded_dictionaries[..], &encoded_message)?;
+        self.encoded_message = encoded_message;
 
         Ok(())
     }
 
-    pub fn write_encoded(&mut self, encoded_dictionaries: &[EncodedData]) -> PolarsResult<()> {
+    pub fn write_encoded(
+        &mut self,
+        encoded_dictionaries: &[EncodedData],
+        encoded_message: &EncodedData,
+    ) -> PolarsResult<()> {
+        if self.state != State::Started {
+            polars_bail!(
+                oos ="The IPC file must be started before it can be written to. Call `start` before `write`"
+            );
+        }
+
         // add all dictionaries
         for encoded_dictionary in encoded_dictionaries {
             let (meta, data) = write_message(&mut self.writer, encoded_dictionary)?;
@@ -180,9 +191,7 @@ impl<W: Write> FileWriter<W> {
             self.block_offsets += meta + data;
         }
 
-        let encoded_message = std::mem::take(&mut self.encoded_message);
-        self.write_encoded_record_batch(&encoded_message)?;
-        self.encoded_message = encoded_message;
+        self.write_encoded_record_batch(encoded_message)?;
 
         Ok(())
     }
@@ -243,9 +252,5 @@ impl<W: Write> FileWriter<W> {
     /// Sets custom schema metadata. Must be called before `start` is called
     pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
         self.custom_schema_metadata = Some(custom_metadata);
-    }
-
-    pub fn encoded_message(&mut self) -> &mut EncodedData {
-        &mut self.encoded_message
     }
 }
