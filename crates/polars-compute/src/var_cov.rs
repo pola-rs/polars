@@ -47,7 +47,7 @@ pub struct PearsonState {
 }
 
 impl VarState {
-    pub fn new(x: &[f64]) -> Self {
+    fn new(x: &[f64]) -> Self {
         if x.is_empty() {
             return Self::default();
         }
