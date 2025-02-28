@@ -159,7 +159,6 @@ impl<W: Write> FileWriter<W> {
             &self.options,
             &mut self.encoded_message,
         )?;
-        encode_record_batch(chunk, &self.options, &mut self.encoded_message);
 
         let encoded_message = std::mem::take(&mut self.encoded_message);
         self.write_encoded(&encoded_dictionaries[..], &encoded_message)?;
