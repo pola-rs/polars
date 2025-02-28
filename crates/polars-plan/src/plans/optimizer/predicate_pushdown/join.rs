@@ -25,7 +25,7 @@ fn should_block_join_specific(
         } => join_produces_null(how),
         #[cfg(feature = "is_in")]
         Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
             ..
         } => join_produces_null(how),
         // joins can produce duplicates

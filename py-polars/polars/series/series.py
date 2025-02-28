@@ -3783,9 +3783,19 @@ class Series:
         ]
         """
 
-    def is_in(self, other: Series | Collection[Any]) -> Series:
+    def is_in(
+        self,
+        other: Series | Collection[Any],
+        *,
+        nulls_equal: bool = False,
+    ) -> Series:
         """
         Check if elements of this Series are in the other Series.
+
+        Parameters
+        ----------
+        nulls_equal : bool, default False
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -3795,12 +3805,22 @@ class Series:
         Examples
         --------
         >>> s = pl.Series("a", [1, 2, 3])
-        >>> s2 = pl.Series("b", [2, 4])
+        >>> s2 = pl.Series("b", [2, 4, None])
         >>> s2.is_in(s)
-        shape: (2,)
+        shape: (3,)
         Series: 'b' [bool]
         [
                 true
+                false
+                null
+        ]
+        >>> # when nulls_equal=True, None is treated as a distinct value
+        >>> s2.is_in(s, nulls_equal=True)
+        shape: (3,)
+        Series: 'b' [bool]
+        [
+                true
+                false
                 false
         ]
 

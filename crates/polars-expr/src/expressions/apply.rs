@@ -438,7 +438,7 @@ impl PhysicalExpr for ApplyExpr {
         match function {
             FunctionExpr::Boolean(BooleanFunction::IsNull) => Some(self),
             #[cfg(feature = "is_in")]
-            FunctionExpr::Boolean(BooleanFunction::IsIn) => Some(self),
+            FunctionExpr::Boolean(BooleanFunction::IsIn { .. }) => Some(self),
             #[cfg(feature = "is_between")]
             FunctionExpr::Boolean(BooleanFunction::IsBetween { closed: _ }) => Some(self),
             FunctionExpr::Boolean(BooleanFunction::IsNotNull) => Some(self),
@@ -573,7 +573,7 @@ impl ApplyExpr {
                 }
             },
             #[cfg(feature = "is_in")]
-            FunctionExpr::Boolean(BooleanFunction::IsIn) => {
+            FunctionExpr::Boolean(BooleanFunction::IsIn { .. }) => {
                 let should_read = || -> Option<bool> {
                     let root = expr_to_leaf_column_name(&input[0]).ok()?;
 

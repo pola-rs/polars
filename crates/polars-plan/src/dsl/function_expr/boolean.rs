@@ -36,7 +36,9 @@ pub enum BooleanFunction {
         closed: ClosedInterval,
     },
     #[cfg(feature = "is_in")]
-    IsIn,
+    IsIn {
+        nulls_equal: bool,
+    },
     AllHorizontal,
     AnyHorizontal,
     // Also bitwise negate
@@ -84,7 +86,7 @@ impl Display for BooleanFunction {
             #[cfg(feature = "is_between")]
             IsBetween { .. } => "is_between",
             #[cfg(feature = "is_in")]
-            IsIn => "is_in",
+            IsIn { .. } => "is_in",
             AnyHorizontal => "any_horizontal",
             AllHorizontal => "all_horizontal",
             Not => "not",
@@ -116,7 +118,7 @@ impl From<BooleanFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             #[cfg(feature = "is_between")]
             IsBetween { closed } => map_as_slice!(is_between, closed),
             #[cfg(feature = "is_in")]
-            IsIn => wrap!(is_in),
+            IsIn { nulls_equal } => wrap!(is_in, nulls_equal),
             Not => map!(not),
             AllHorizontal => map_as_slice!(all_horizontal),
             AnyHorizontal => map_as_slice!(any_horizontal),
@@ -207,12 +209,13 @@ fn is_between(s: &[Column], closed: ClosedInterval) -> PolarsResult<Column> {
 }
 
 #[cfg(feature = "is_in")]
-fn is_in(s: &mut [Column]) -> PolarsResult<Option<Column>> {
+fn is_in(s: &mut [Column], nulls_equal: bool) -> PolarsResult<Option<Column>> {
     let left = &s[0];
     let other = &s[1];
     polars_ops::prelude::is_in(
         left.as_materialized_series(),
         other.as_materialized_series(),
+        nulls_equal,
     )
     .map(|ca| Some(ca.into_column()))
 }

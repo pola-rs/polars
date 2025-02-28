@@ -5782,7 +5782,12 @@ class Expr:
         """
         return self.__xor__(other)
 
-    def is_in(self, other: Expr | Collection[Any] | Series) -> Expr:
+    def is_in(
+        self,
+        other: Expr | Collection[Any] | Series,
+        *,
+        nulls_equal: bool = False,
+    ) -> Expr:
         """
         Check if elements of this expression are present in the other Series.
 
@@ -5790,6 +5795,8 @@ class Expr:
         ----------
         other
             Series or sequence of primitive type.
+        nulls_equal : bool, default False
+            If True, treat null as a distinct value. Null values will not propagate.
 
         Returns
         -------
@@ -5819,7 +5826,7 @@ class Expr:
             other = F.lit(pl.Series(other))._pyexpr
         else:
             other = parse_into_expression(other)
-        return self._from_pyexpr(self._pyexpr.is_in(other))
+        return self._from_pyexpr(self._pyexpr.is_in(other, nulls_equal))
 
     def repeat_by(self, by: pl.Series | Expr | str | int) -> Expr:
         """
