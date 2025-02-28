@@ -161,18 +161,12 @@ impl<W: Write> FileWriter<W> {
         )?;
         encode_record_batch(chunk, &self.options, &mut self.encoded_message);
 
-        let encoded_message = std::mem::take(&mut self.encoded_message);
-        self.write_encoded(&encoded_dictionaries[..], &encoded_message)?;
-        self.encoded_message = encoded_message;
+        self.write_encoded(&encoded_dictionaries[..])?;
 
         Ok(())
     }
 
-    pub fn write_encoded(
-        &mut self,
-        encoded_dictionaries: &[EncodedData],
-        encoded_message: &EncodedData,
-    ) -> PolarsResult<()> {
+    pub fn write_encoded(&mut self, encoded_dictionaries: &[EncodedData]) -> PolarsResult<()> {
         // add all dictionaries
         for encoded_dictionary in encoded_dictionaries {
             let (meta, data) = write_message(&mut self.writer, encoded_dictionary)?;
@@ -186,7 +180,9 @@ impl<W: Write> FileWriter<W> {
             self.block_offsets += meta + data;
         }
 
-        self.write_encoded_record_batch(encoded_message)?;
+        let encoded_message = std::mem::take(&mut self.encoded_message);
+        self.write_encoded_record_batch(&encoded_message)?;
+        self.encoded_message = encoded_message;
 
         Ok(())
     }
@@ -247,5 +243,9 @@ impl<W: Write> FileWriter<W> {
     /// Sets custom schema metadata. Must be called before `start` is called
     pub fn set_custom_schema_metadata(&mut self, custom_metadata: Arc<Metadata>) {
         self.custom_schema_metadata = Some(custom_metadata);
+    }
+
+    pub fn encoded_message(&mut self) -> &mut EncodedData {
+        &mut self.encoded_message
     }
 }

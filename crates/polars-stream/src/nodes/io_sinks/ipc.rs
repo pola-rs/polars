@@ -1,13 +1,15 @@
 use std::cmp::Reverse;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use std::sync::Arc;
 
+use polars_core::config;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::CompatLevel;
 use polars_core::schema::{SchemaExt, SchemaRef};
+use polars_core::utils::arrow;
+use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::io::ipc::write::{
-    default_ipc_fields, dictionaries_to_encode, encode_dictionary, encode_record_batch,
+    commit_encoded_arrays, default_ipc_fields, encode_array, encode_new_dictionaries,
     DictionaryTracker, EncodedData, WriteOptions,
 };
 use polars_error::PolarsResult;
@@ -16,15 +18,14 @@ use polars_io::ipc::{IpcWriter, IpcWriterOptions};
 use polars_io::SerWriter;
 use polars_utils::priority::Priority;
 
-use super::SinkNode;
+use super::{SinkNode, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE};
 use crate::async_executor::spawn;
+use crate::async_primitives::connector::connector;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{JoinHandle, TaskPriority};
-use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
-type Linearized = Priority<Reverse<u64>, (Vec<EncodedData>, EncodedData)>;
 pub struct IpcSinkNode {
     path: PathBuf,
 
@@ -67,113 +68,67 @@ impl SinkNode for IpcSinkNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        let (handle, mut buffer_tx, worker_rxs, mut io_rx) =
-            recv_ports_recv.serial_into_distribute();
-        join_handles.push(handle);
+        // .. -> Buffer task
+        let mut buffer_rx = recv_ports_recv.serial(join_handles);
+        // Buffer task -> Encode tasks
+        let (mut dist_tx, dist_rxs) =
+            distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
+        // Encode tasks -> IO task
+        let (mut lin_rx, lin_txs) =
+            Linearizer::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
 
         let options = WriteOptions {
             compression: self.write_options.compression.map(Into::into),
         };
 
+        let path = self.path.clone();
         let input_schema = self.input_schema.clone();
         let compat_level = self.compat_level;
         let chunk_size = self.chunk_size;
 
-        // Search for Dictionary fields and which need to handled in special ways when encoding
-        // IPC.
         let ipc_fields = input_schema
             .iter_fields()
             .map(|f| f.to_arrow(compat_level))
-            .collect::<Arc<_>>();
+            .collect::<Vec<_>>();
         let ipc_fields = default_ipc_fields(ipc_fields.iter());
-        let dict_columns_idxs = ipc_fields
-            .iter()
-            .enumerate()
-            .filter_map(|(i, f)| f.contains_dictionary().then_some(i))
-            .collect::<Arc<_>>();
 
         // Buffer task.
         //
         // This task linearizes and buffers morsels until a given a maximum chunk size is reached
         // and then sends the whole record batch to be encoded and written.
         join_handles.push(spawn(TaskPriority::High, async move {
-            let mut seq = 0;
+            let mut seq = 0usize;
             let mut buffer = DataFrame::empty_with_schema(input_schema.as_ref());
-            let mut dictionary_tracker = DictionaryTracker {
-                dictionaries: Default::default(),
-                cannot_replace: false,
-            };
 
-            while let Ok((outcome, port, mut sender)) = buffer_tx.recv().await {
-                match port {
-                    None => {
-                        // Flush the remaining rows.
-                        while buffer.height() > 0 {
-                            let df;
-                            (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+            while let Ok(morsel) = buffer_rx.recv().await {
+                let (df, _, _, consume_token) = morsel.into_inner();
+                // @NOTE: This also performs schema validation.
+                buffer.vstack_mut(&df)?;
 
-                            // We want to rechunk for two reasons:
-                            // 1. the IPC writer expects aligned column chunks
-                            // 2. the IPC writer turns chunks / record batches into chunks in the file,
-                            //    so we want to respect the given `chunk_size`.
-                            //
-                            // This also properly sets the inner types of the record batches, which is
-                            // important for dictionary and nested type encoding.
-                            let record_batch = df.rechunk_to_record_batch(compat_level);
-                            for (i, array) in record_batch.into_arrays().into_iter().enumerate() {
-                                if sender.send((i, array)).await.is_err() {
-                                    break;
-                                }
-                            }
-                            seq += 1;
+                while buffer.height() >= chunk_size {
+                    let df;
+                    (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+
+                    for (i, column) in df.take_columns().into_iter().enumerate() {
+                        if dist_tx.send((seq, i, column)).await.is_err() {
+                            return Ok(());
                         }
-                    },
-                    Some(mut receiver) => {
-                        while let Ok(morsel) = receiver.recv().await {
-                            let df = morsel.into_df();
-                            // @NOTE: This also performs schema validation.
-                            buffer.vstack_mut(&df)?;
-
-                            while buffer.height() >= chunk_size {
-                                let df;
-                                (df, buffer) =
-                                    buffer.split_at(buffer.height().min(chunk_size) as i64);
-
-                                // We want to rechunk for two reasons:
-                                // 1. the IPC writer expects aligned column chunks
-                                // 2. the IPC writer turns chunks / record batches into chunks in the file,
-                                //    so we want to respect the given `chunk_size`.
-                                //
-                                // This also properly sets the inner types of the record batches, which is
-                                // important for dictionary and nested type encoding.
-                                let record_batch = df.rechunk_to_record_batch(compat_level);
-
-                                // If there are dictionaries, we might need to emit the original dictionary
-                                // definitions or dictionary deltas. We have precomputed which columns contain
-                                // dictionaries and only check those columns.
-                                let mut dicts_to_encode = Vec::new();
-                                for &i in &dict_columns_idxs {
-                                    dictionaries_to_encode(
-                                        &ipc_fields[i],
-                                        record_batch.arrays()[i].as_ref(),
-                                        &mut dictionary_tracker,
-                                        &mut dicts_to_encode,
-                                    )?;
-                                }
-
-                                // Send of the dictionaries and record batch to be encoded by an Encoder
-                                // task. This is compute heavy, so distribute the chunks.
-                                let msg = (seq, dicts_to_encode, record_batch);
-                                seq += 1;
-                                if sender.send(msg).await.is_err() {
-                                    break;
-                                }
-                            }
-                        }
-                    },
+                    }
+                    seq += 1;
                 }
+                drop(consume_token);
+            }
 
-                outcome.stopped();
+            if config::verbose() {
+                eprintln!("[ipc_sink]: Flushing last chunk for '{}'", path.display());
+            }
+
+            // Flush the remaining rows.
+            assert!(buffer.height() <= chunk_size);
+            for (i, column) in buffer.take_columns().into_iter().enumerate() {
+                if dist_tx.send((seq, i, column)).await.is_err() {
+                    return Ok(());
+                }
             }
 
             PolarsResult::Ok(())
@@ -182,49 +137,61 @@ impl SinkNode for IpcSinkNode {
         // Encoding tasks.
         //
         // Task encodes the buffered record batch and sends it to be written to the file.
-        join_handles.extend(worker_rxs.into_iter().map(|mut worker_rx| {
-            spawn(TaskPriority::High, async move {
-                while let Ok((outcome, mut dist_rx, mut lin_tx)) = worker_rx.recv().await {
-                    while let Ok((seq, col, array)) = dist_rx.recv().await {
-                        let mut encoded_dictionaries = Vec::new();
-                        let mut encoded_message = EncodedData::default();
+        join_handles.extend(
+            dist_rxs
+                .into_iter()
+                .zip(lin_txs)
+                .map(|(mut dist_rx, mut lin_tx)| {
+                    spawn(TaskPriority::High, async move {
+                        while let Ok((seq, col_idx, column)) = dist_rx.recv().await {
+                            let mut variadic_buffer_counts = Vec::new();
+                            let mut buffers = Vec::new();
+                            let mut arrow_data = Vec::new();
+                            let mut nodes = Vec::new();
+                            let mut offset = 0;
 
-                        if 
-                        // If there are dictionaries, we might need to emit the original dictionary
-                        // definitions or dictionary deltas. We have precomputed which columns contain
-                        // dictionaries and only check those columns.
-                        let mut dicts_to_encode = Vec::new();
-                        dictionaries_to_encode(
-                            &ipc_fields[i],
-                            record_batch.arrays()[i].as_ref(),
-                            &mut dictionary_tracker,
-                            &mut dicts_to_encode,
-                        )?;
+                            // We want to rechunk for two reasons:
+                            // 1. the IPC writer expects aligned column chunks
+                            // 2. the IPC writer turns chunks / record batches into chunks in the file,
+                            //    so we want to respect the given `chunk_size`.
+                            //
+                            // This also properly sets the inner types of the record batches, which is
+                            // important for dictionary and nested type encoding.
+                            let array = column.rechunk_to_arrow(compat_level);
 
-                        // Encode the dictionaries and record batch.
-                        for (dict_id, dict_array) in dicts_to_encode {
-                            encode_dictionary(
-                                dict_id,
-                                dict_array.as_ref(),
+                            // Encode array.
+                            encode_array(
+                                &array,
                                 &options,
-                                &mut encoded_dictionaries,
-                            )?;
+                                &mut variadic_buffer_counts,
+                                &mut buffers,
+                                &mut arrow_data,
+                                &mut nodes,
+                                &mut offset,
+                            );
+
+                            // Send the encoded data to the IO task.
+                            let msg = Priority(
+                                Reverse(seq),
+                                (
+                                    col_idx,
+                                    array,
+                                    variadic_buffer_counts,
+                                    buffers,
+                                    arrow_data,
+                                    nodes,
+                                    offset,
+                                ),
+                            );
+                            if lin_tx.insert(msg).await.is_err() {
+                                return Ok(());
+                            }
                         }
-                        encode_record_batch(&record_batch, &options, &mut encoded_message);
 
-                        // Send the encoded data to the IO task.
-                        let msg = Priority(Reverse(seq), (col, encoded_dictionaries, encoded_message, offset));
-                        if lin_tx.insert(msg).await.is_err() {
-                            return Ok(());
-                        }
-                    }
-
-                    outcome.stopped();
-                }
-
-                PolarsResult::Ok(())
-            })
-        }));
+                        PolarsResult::Ok(())
+                    })
+                }),
+        );
 
         // IO task.
         //
@@ -247,17 +214,113 @@ impl SinkNode for IpcSinkNode {
                 .with_parallel(false)
                 .batched(&input_schema)?;
 
-            while let Ok((outcome, mut lin_rx)) = io_rx.recv().await {
-                // Linearize from all the Encoder tasks.
-                while let Some(encoded_data) = lin_rx.get().await {
-                    let (dicts, record_batch) = encoded_data.1;
+            let mut dictionary_tracker = DictionaryTracker {
+                dictionaries: Default::default(),
+                cannot_replace: false,
+            };
+
+            struct Current {
+                seq: usize,
+                height: usize,
+                num_columns_seen: usize,
+                columns: Vec<
+                    Option<(
+                        Box<dyn Array>,
+                        Vec<i64>,
+                        Vec<arrow::io::ipc::format::ipc::Buffer>,
+                        Vec<u8>,
+                        Vec<arrow::io::ipc::format::ipc::FieldNode>,
+                        i64,
+                    )>,
+                >,
+                encoded_dictionaries: Vec<EncodedData>,
+            }
+
+            let mut current = Current {
+                seq: 0,
+                height: 0,
+                num_columns_seen: 0,
+                columns: (0..input_schema.len()).map(|_| None).collect(),
+                encoded_dictionaries: Vec::new(),
+            };
+
+            // Linearize from all the Encoder tasks.
+            while let Some(Priority(
+                Reverse(seq),
+                (i, array, variadic_buffer_counts, buffers, arrow_data, nodes, offset),
+            )) = lin_rx.get().await
+            {
+                if current.num_columns_seen == 0 {
+                    current.seq = seq;
+                    current.height = array.len();
+                }
+
+                debug_assert_eq!(current.seq, seq);
+                debug_assert_eq!(current.height, array.len());
+                debug_assert!(current.columns[i].is_none());
+                current.columns[i] = Some((
+                    array,
+                    variadic_buffer_counts,
+                    buffers,
+                    arrow_data,
+                    nodes,
+                    offset,
+                ));
+                current.num_columns_seen += 1;
+
+                if current.num_columns_seen == input_schema.len() {
+                    // @Optimize: Keep track of these sizes so we can correctly preallocate
+                    // them.
+                    let mut variadic_buffer_counts = Vec::new();
+                    let mut buffers = Vec::new();
+                    let mut arrow_data = Vec::new();
+                    let mut nodes = Vec::new();
+                    let mut offset = 0;
+
+                    for (i, column) in current.columns.iter_mut().enumerate() {
+                        let column = column.take().unwrap();
+
+                        // @Optimize: This would be nicer to do in parallel somehow, but it is a
+                        // bit difficult as the dictionary tracker needs to keep track globally.
+                        //
+                        // If there are dictionaries, we might need to emit the original dictionary
+                        // definitions or dictionary deltas. We have precomputed which columns contain
+                        // dictionaries and only check those columns.
+                        encode_new_dictionaries(
+                            &ipc_fields[i],
+                            column.0.as_ref(),
+                            &options,
+                            &mut dictionary_tracker,
+                            &mut current.encoded_dictionaries,
+                        )?;
+
+                        variadic_buffer_counts.extend(column.1);
+                        buffers.extend(column.2.into_iter().map(|mut b| {
+                            b.offset += offset;
+                            b
+                        }));
+                        arrow_data.extend(column.3);
+                        nodes.extend(column.4);
+
+                        offset += column.5;
+                    }
+
+                    commit_encoded_arrays(
+                        current.height,
+                        &options,
+                        variadic_buffer_counts,
+                        buffers,
+                        arrow_data,
+                        nodes,
+                        writer.encoded_message(),
+                    );
 
                     // @TODO: At the moment this is a sync write, this is not ideal because we can only
                     // have so many blocking threads in the tokio threadpool.
-                    writer.write_encoded(dicts.as_slice(), &record_batch)?;
+                    writer.write_encoded(current.encoded_dictionaries.as_slice())?;
+                    current.num_columns_seen = 0;
+                    current.encoded_dictionaries.clear();
                 }
-
-                outcome.stopped();
             }
 
             writer.finish()?;

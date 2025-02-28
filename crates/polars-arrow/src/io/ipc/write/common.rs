@@ -219,7 +219,6 @@ pub fn encode_chunk_amortized(
             &mut encoded_dictionaries,
         )?;
     }
-
     encode_record_batch(chunk, options, encoded_message);
 
     Ok(encoded_dictionaries)
