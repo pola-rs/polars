@@ -51,10 +51,31 @@ impl Executor for PythonScanExec {
                 },
             };
 
-            let generator_init = if matches!(
-                self.options.python_source,
-                PythonScanSource::Pyarrow | PythonScanSource::Cuda
-            ) {
+            let generator_init = if matches!(self.options.python_source, PythonScanSource::Cuda) {
+                let args = (
+                    python_scan_function,
+                    with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),
+                    predicate,
+                    n_rows,
+                    // If this boolean is true, callback should return
+                    // a dataframe and list of timings [(start, end,
+                    // name)]
+                    state.has_node_timer(),
+                );
+                let result = callable.call1(args).map_err(to_compute_err)?;
+                if state.has_node_timer() {
+                    let df = result.get_item(0).map_err(to_compute_err);
+                    let timing_info: Vec<(u64, u64, String)> = result
+                        .get_item(1)
+                        .map_err(to_compute_err)?
+                        .extract()
+                        .map_err(to_compute_err)?;
+                    state.record_raw_timings(&timing_info);
+                    df
+                } else {
+                    Ok(result)
+                }
+            } else if matches!(self.options.python_source, PythonScanSource::Pyarrow) {
                 let args = (
                     python_scan_function,
                     with_columns.map(|x| x.into_iter().map(|x| x.to_string()).collect::<Vec<_>>()),

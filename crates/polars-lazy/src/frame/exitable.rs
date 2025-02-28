@@ -8,7 +8,7 @@ use super::*;
 
 impl LazyFrame {
     pub fn collect_concurrently(self) -> PolarsResult<InProcessQuery> {
-        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
+        let (mut state, mut physical_plan, _) = self.prepare_collect(false, None)?;
 
         let (tx, rx) = channel();
         let token = state.cancel_token();
