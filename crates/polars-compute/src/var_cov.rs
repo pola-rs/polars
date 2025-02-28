@@ -61,6 +61,12 @@ impl VarState {
         }
     }
 
+    pub(crate) fn new_single(x: f64) -> Self {
+        let mut out = Self::default();
+        out.insert_one(x);
+        out
+    }
+
     pub fn insert_one(&mut self, x: f64) {
         // Just a specialized version of
         // self.combine(&Self { weight: 1.0, mean: x, dp: 0.0 })

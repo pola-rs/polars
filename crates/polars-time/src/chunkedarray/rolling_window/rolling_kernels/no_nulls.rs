@@ -4,6 +4,7 @@ use arrow::bitmap::MutableBitmap;
 use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
+use num_traits::{FromPrimitive, ToPrimitive};
 use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::RollingFnParams;
@@ -312,7 +313,7 @@ pub(crate) fn rolling_var<T>(
     sorting_indices: Option<&[IdxSize]>,
 ) -> PolarsResult<ArrayRef>
 where
-    T: NativeType + Float + std::iter::Sum<T> + SubAssign + AddAssign + IsFloat,
+    T: NativeType + Float + ToPrimitive + FromPrimitive + AddAssign + IsFloat,
 {
     let offset_iter = match tz {
         #[cfg(feature = "timezones")]

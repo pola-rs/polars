@@ -587,7 +587,7 @@ def test_rolling_cov_corr() -> None:
         pl.rolling_corr("x", "y", window_size=3).alias("corr"),
     ).to_dict(as_series=False)
     assert res["cov"][2:] == pytest.approx([0.0, 0.0, 5.333333333333336])
-    assert res["corr"][2:] == pytest.approx([nan, nan, 0.9176629354822473], nan_ok=True)
+    assert res["corr"][2:] == pytest.approx([nan, 0.0, 0.9176629354822473], nan_ok=True)
     assert res["cov"][:2] == [None] * 2
     assert res["corr"][:2] == [None] * 2
 
