@@ -115,6 +115,7 @@ if TYPE_CHECKING:
     import deltalake
     import jax
     import numpy.typing as npt
+    import pyiceberg
     import torch
     from great_tables import GT
     from xlsxwriter import Workbook
@@ -4291,6 +4292,45 @@ class DataFrame:
         else:
             msg = f"unrecognised connection type {connection!r}"
             raise TypeError(msg)
+
+    @unstable()
+    def write_iceberg(
+        self,
+        target: str | pyiceberg.table.Table,
+        mode: Literal["append", "overwrite"],
+    ) -> None:
+        """
+        Write DataFrame to an Iceberg table.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        target
+            Name of the table or the Table object representing an Iceberg table.
+        mode : {'append', 'overwrite'}
+            How to handle existing data.
+
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+
+        """
+        from pyiceberg.catalog import load_catalog
+
+        if isinstance(target, str):
+            catalog = load_catalog()
+            table = catalog.load_table(target)
+        else:
+            table = target
+
+        data = self.to_arrow(compat_level=CompatLevel.oldest())
+
+        if mode == "append":
+            table.append(data)
+        else:
+            table.overwrite(data)
 
     @overload
     def write_delta(
