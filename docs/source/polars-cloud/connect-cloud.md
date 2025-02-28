@@ -6,7 +6,7 @@ If you log in to the Polars Cloud dashboard for the first time with an account t
 to a cloud environment, you will see a blue bar at the top of the screen. You can explore Polars
 Cloud in this state, but you won’t be able to execute any queries yet.
 
-![An overview of the Polars Cloud dashboard showing a button to connect your cloud environment](assets/connect-cloud/dashboard.png)
+![An overview of the Polars Cloud dashboard showing a button to connect your cloud environment](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/dashboard.png)
 
 When you click the blue bar you will be redirected to the start of the set up flow.
 
@@ -23,14 +23,14 @@ the compute context to run your queries remotely.
 
 <!-- dprint-ignore-end -->
 
-![Connect your cloud screen where you can input a workspace name](assets/connect-cloud/workspace-naming.png)
+![Connect your cloud screen where you can input a workspace name](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/connect-cloud/workspace-naming.png)
 
 ## 2. Deploy to AWS
 
 After naming your workspace, click Deploy to Amazon. This opens a screen in AWS with a
 CloudFormation template. This template installs the necessary roles in your AWS environment.
 
-![CloudFormation stack image as step of the setupflow](assets/connect-cloud/cloudformation.png)
+![CloudFormation stack image as step of the setupflow](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/connect-cloud/cloudformation.png)
 
 If you want to learn more about what Polars Cloud installs in your environment, you can read more on
 [the AWS Infrastructure page](providers/aws/infra.md).
@@ -46,11 +46,11 @@ After you click Create stack, the CloudFormation stack will be deployed in your 
 process usually takes around 5 minutes. You can monitor the progress in your AWS environment or in
 the Polars setup flow.
 
-![Progress screen in the set up flow](assets/connect-cloud/progress-page.png)
+![Progress screen in the set up flow](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/connect-cloud/progress-page.png)
 
 When the CloudFormation stack deployment completes, you’ll see a confirmation message.
 
-![Final screen of the set up flow indication successful deployment](assets/connect-cloud/successful-setup.png)
+![Final screen of the set up flow indication successful deployment](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/connect-cloud/connect-cloud/successful-setup.png)
 
 If you click "Start exploring", you will be redirected to the Polars Cloud dashboard.
 

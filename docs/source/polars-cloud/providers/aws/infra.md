@@ -10,7 +10,7 @@ costs. The recommended way of doing this is running `pc workspace setup`.
 When you deploy Polars Cloud the following infrastructure is setup.
 
 <figure markdown="span">
-![AWS infrastructure](../../assets/aws-infra.png)
+![AWS infrastructure](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/aws-infra.png)
 </figure>
 
 1. A `VPC` and `subnet` in which Polars EC2 workers can run.
