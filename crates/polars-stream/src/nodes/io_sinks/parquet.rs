@@ -205,7 +205,8 @@ impl SinkNode for ParquetSinkNode {
                 if current.num_columns_seen == input_schema.len() {
                     // @Optimize: Keep track of these sizes so we can correctly preallocate
                     // them.
-                    let mut current_row_group: Vec<Vec<CompressedPage>> = Vec::with_capacity(num_parquet_columns);
+                    let mut current_row_group: Vec<Vec<CompressedPage>> =
+                        Vec::with_capacity(num_parquet_columns);
                     for column in current.columns.iter_mut() {
                         current_row_group.extend(column.take().unwrap());
                     }
