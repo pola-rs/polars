@@ -1,3 +1,4 @@
+"""
 import polars_cloud as pc
 
 # --8<-- [start:compute]
@@ -26,3 +27,4 @@ ctx = pc.ComputeContext(
     workspace="your-workspace", instance_type="t2.micro", cluster_size=2
 )
 # --8<-- [end:set-compute]
+"""

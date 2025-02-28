@@ -1,3 +1,4 @@
+"""
 # --8<-- [start:example]
 import polars as pl
 import polars_cloud as pc
@@ -56,3 +57,4 @@ res2 = (
     .await_result()
 )
 # --8<-- [end:interactive-next]
+"""

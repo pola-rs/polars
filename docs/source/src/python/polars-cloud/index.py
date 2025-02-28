@@ -1,3 +1,4 @@
+"""
 # --8<-- [start:index]
 import polars as pl
 import polars_cloud as pc
@@ -14,5 +15,9 @@ query = (
     )
 )
 
-query.remote(ctx).sink_parquet("s3://my-dst/")
+(
+    query.remote(ctx)
+    .sink_parquet("s3://my-dst/")
+)
 # --8<-- [end:index]
+"""
