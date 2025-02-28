@@ -299,6 +299,18 @@ pub enum SinkType {
         file_type: FileType,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
+    Partition {
+        path_f_string: Arc<PathBuf>,
+        file_type: FileType,
+        variant: PartitionVariant,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum PartitionVariant {
+    MaxSize(IdxSize),
 }
 
 impl SinkType {

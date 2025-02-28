@@ -38,6 +38,7 @@ impl IR {
             Sink { payload, .. } => match payload {
                 SinkType::Memory => "sink (memory)",
                 SinkType::File { .. } => "sink (file)",
+                SinkType::Partition { .. } => "sink (partition)",
             },
             SimpleProjection { .. } => "simple_projection",
             #[cfg(feature = "merge_sorted")]

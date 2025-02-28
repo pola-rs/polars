@@ -275,6 +275,15 @@ fn to_graph_rec<'a>(
             }
         },
 
+        PartitionSink {
+            path_f_string: _,
+            variant: _,
+            file_type: _,
+            input: _,
+        } => {
+            todo!()
+        },
+
         InMemoryMap { input, map } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;

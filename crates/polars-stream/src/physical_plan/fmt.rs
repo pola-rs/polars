@@ -119,6 +119,20 @@ fn visualize_plan_rec(
             #[allow(unreachable_patterns)]
             _ => todo!(),
         },
+        PhysNodeKind::PartitionSink {
+            input, file_type, ..
+        } => match file_type {
+            #[cfg(feature = "parquet")]
+            FileType::Parquet(_) => ("parquet-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "ipc")]
+            FileType::Ipc(_) => ("ipc-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "csv")]
+            FileType::Csv(_) => ("csv-partition-sink".to_string(), from_ref(input)),
+            #[cfg(feature = "json")]
+            FileType::Json(_) => ("json-partition-sink".to_string(), from_ref(input)),
+            #[allow(unreachable_patterns)]
+            _ => todo!(),
+        },
         PhysNodeKind::InMemoryMap { input, map: _ } => {
             ("in-memory-map".to_string(), from_ref(input))
         },
