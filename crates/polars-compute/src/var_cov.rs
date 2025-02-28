@@ -47,7 +47,7 @@ pub struct PearsonState {
 }
 
 impl VarState {
-    fn new(x: &[f64]) -> Self {
+    pub fn new(x: &[f64]) -> Self {
         if x.is_empty() {
             return Self::default();
         }
@@ -59,6 +59,12 @@ impl VarState {
             mean,
             dp: alg_sum_f64(x.iter().map(|&xi| (xi - mean) * (xi - mean))),
         }
+    }
+
+    pub(crate) fn new_single(x: f64) -> Self {
+        let mut out = Self::default();
+        out.insert_one(x);
+        out
     }
 
     pub fn insert_one(&mut self, x: f64) {
