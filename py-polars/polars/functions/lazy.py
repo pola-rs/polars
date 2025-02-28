@@ -789,7 +789,7 @@ def corr(
     propagate_nans: bool = False,
 ) -> Expr:
     """
-    Compute the Pearson's or Spearman rank correlation correlation between two columns.
+    Compute the Pearson's or Spearman rank correlation between two columns.
 
     Parameters
     ----------

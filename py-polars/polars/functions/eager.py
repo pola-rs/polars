@@ -311,7 +311,7 @@ def _alignment_join(
     descending: bool | Sequence[bool] = False,
 ) -> LazyFrame:
     """Create a single master frame with all rows aligned on the common key values."""
-    # note: can stackoverflow if the join becomes too large, so we
+    # note: can stack overflow if the join becomes too large, so we
     # collect eagerly when hitting a large enough number of frames
     post_align_collect = len(idx_frames) >= 250
 

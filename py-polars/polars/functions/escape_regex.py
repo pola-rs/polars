@@ -14,7 +14,7 @@ def escape_regex(s: str) -> str:
     Parameters
     ----------
     s
-        The string that all of its meta characters will be escaped.
+        The string whose meta characters will be escaped.
 
     """
     if isinstance(s, pl.Expr):
