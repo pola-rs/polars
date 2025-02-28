@@ -2,8 +2,6 @@ use std::cmp::Reverse;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-use polars_core::config;
-use polars_core::frame::DataFrame;
 use polars_core::prelude::CompatLevel;
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow;
@@ -18,7 +16,10 @@ use polars_io::ipc::{IpcWriter, IpcWriterOptions};
 use polars_io::SerWriter;
 use polars_utils::priority::Priority;
 
-use super::{SinkNode, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE};
+use super::{
+    buffer_and_distribute_columns_task, SinkNode, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
+    DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::connector;
 use crate::async_primitives::distributor_channel::distributor_channel;
@@ -69,75 +70,37 @@ impl SinkNode for IpcSinkNode {
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         // .. -> Buffer task
-        let mut buffer_rx = recv_ports_recv.serial(join_handles);
+        let buffer_rx = recv_ports_recv.serial(join_handles);
         // Buffer task -> Encode tasks
-        let (mut dist_tx, dist_rxs) =
+        let (dist_tx, dist_rxs) =
             distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
         // Encode tasks -> Collect task
         let (mut lin_rx, lin_txs) =
             Linearizer::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
         // Collect task -> IO task
-        let (mut io_task_tx, mut io_task_rx) = connector::<(Vec<EncodedData>, EncodedData)>();
+        let (mut io_tx, mut io_rx) = connector::<(Vec<EncodedData>, EncodedData)>();
 
         let options = WriteOptions {
             compression: self.write_options.compression.map(Into::into),
         };
 
-        let path = self.path.clone();
-        let input_schema = self.input_schema.clone();
         let compat_level = self.compat_level;
         let chunk_size = self.chunk_size;
 
-        let ipc_fields = input_schema
+        let ipc_fields = self
+            .input_schema
             .iter_fields()
             .map(|f| f.to_arrow(compat_level))
             .collect::<Vec<_>>();
         let ipc_fields = default_ipc_fields(ipc_fields.iter());
 
         // Buffer task.
-        //
-        // This task linearizes and buffers morsels until a given a maximum chunk size is reached
-        // and then sends the whole record batch to be encoded and written.
-        join_handles.push(spawn(TaskPriority::High, async move {
-            let mut seq = 0usize;
-            let mut buffer = DataFrame::empty_with_schema(input_schema.as_ref());
-
-            while let Ok(morsel) = buffer_rx.recv().await {
-                let (df, _, _, consume_token) = morsel.into_inner();
-                // @NOTE: This also performs schema validation.
-                buffer.vstack_mut(&df)?;
-
-                while buffer.height() >= chunk_size {
-                    let df;
-                    (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
-
-                    for (i, column) in df.take_columns().into_iter().enumerate() {
-                        if dist_tx.send((seq, i, column)).await.is_err() {
-                            return Ok(());
-                        }
-                    }
-                    seq += 1;
-                }
-                drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
-                                     // morsel has started encoding in its entirety. This still
-                                     // allows for parallelism of Morsels, but prevents large
-                                     // bunches of Morsels from stacking up here.
-            }
-
-            if config::verbose() {
-                eprintln!("[ipc_sink]: Flushing last chunk for '{}'", path.display());
-            }
-
-            // Flush the remaining rows.
-            assert!(buffer.height() <= chunk_size);
-            for (i, column) in buffer.take_columns().into_iter().enumerate() {
-                if dist_tx.send((seq, i, column)).await.is_err() {
-                    return Ok(());
-                }
-            }
-
-            PolarsResult::Ok(())
-        }));
+        join_handles.push(buffer_and_distribute_columns_task(
+            buffer_rx,
+            dist_tx,
+            chunk_size,
+            self.input_schema.clone(),
+        ));
 
         // Encoding tasks.
         //
@@ -202,7 +165,7 @@ impl SinkNode for IpcSinkNode {
         //
         // Collects all the encoded data and packs it together for the IO task to write it.
         let input_schema = self.input_schema.clone();
-        join_handles.push(spawn(TaskPriority::Low, async move {
+        join_handles.push(spawn(TaskPriority::High, async move {
             let mut dictionary_tracker = DictionaryTracker {
                 dictionaries: Default::default(),
                 cannot_replace: false,
@@ -308,7 +271,7 @@ impl SinkNode for IpcSinkNode {
                         &mut encoded_data,
                     );
 
-                    if io_task_tx
+                    if io_tx
                         .send((
                             std::mem::take(&mut current.encoded_dictionaries),
                             encoded_data,
@@ -346,7 +309,7 @@ impl SinkNode for IpcSinkNode {
                 .with_parallel(false)
                 .batched(&input_schema)?;
 
-            while let Ok((dicts, record_batch)) = io_task_rx.recv().await {
+            while let Ok((dicts, record_batch)) = io_rx.recv().await {
                 // @TODO: At the moment this is a sync write, this is not ideal because we can only
                 // have so many blocking threads in the tokio threadpool.
                 writer.write_encoded(dicts.as_slice(), &record_batch)?;
