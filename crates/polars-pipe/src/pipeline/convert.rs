@@ -222,6 +222,9 @@ where
                         _ => unreachable!(),
                     }
                 },
+                SinkType::Partition { .. } => {
+                    polars_bail!(InvalidOperation: "partitioning sink not supported in old streaming engine")
+                },
             }
         },
         Join {

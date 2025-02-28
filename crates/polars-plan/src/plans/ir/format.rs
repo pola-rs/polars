@@ -392,6 +392,7 @@ impl<'a> IRDisplay<'a> {
                 let name = match payload {
                     SinkType::Memory => "SINK (memory)",
                     SinkType::File { .. } => "SINK (file)",
+                    SinkType::Partition { .. } => "SINK (partition)",
                 };
                 write!(f, "{:indent$}{name}", "")?;
                 self.with_root(*input)._format(f, sub_indent)
