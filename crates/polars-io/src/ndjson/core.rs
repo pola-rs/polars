@@ -253,7 +253,7 @@ impl<'a> CoreJsonReader<'a> {
 
     fn count(mut self) -> PolarsResult<usize> {
         let bytes = self.reader_bytes.take().unwrap();
-        Ok(super::count_rows_par(&bytes))
+        Ok(super::count_rows_par(&bytes, self.n_threads))
     }
 
     fn parse_json(&mut self, mut n_threads: usize, bytes: &[u8]) -> PolarsResult<DataFrame> {
