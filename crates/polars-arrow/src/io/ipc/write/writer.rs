@@ -172,6 +172,12 @@ impl<W: Write> FileWriter<W> {
         encoded_dictionaries: &[EncodedData],
         encoded_message: &EncodedData,
     ) -> PolarsResult<()> {
+        if self.state != State::Started {
+            polars_bail!(
+                oos ="The IPC file must be started before it can be written to. Call `start` before `write`"
+            );
+        }
+
         // add all dictionaries
         for encoded_dictionary in encoded_dictionaries {
             let (meta, data) = write_message(&mut self.writer, encoded_dictionary)?;

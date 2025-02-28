@@ -1748,6 +1748,15 @@ impl Column {
         // @scalar-opt
         self.as_materialized_series().into_total_eq_inner()
     }
+
+    pub fn rechunk_to_arrow(self, compat_level: CompatLevel) -> Box<dyn Array> {
+        // Rechunk to one chunk if necessary
+        let mut series = self.take_materialized_series();
+        if series.n_chunks() > 1 {
+            series = series.rechunk();
+        }
+        series.to_arrow(0, compat_level)
+    }
 }
 
 impl Default for Column {
