@@ -7,7 +7,6 @@ distributed execution. In this section we will cover how to setup your compute c
 
 ## Setting the context
 
-The compute context can be set on an individual query basis by passing it to `.remote(ctx)` or globally by calling `pc.set_compute_context`.
 There are three ways to define the compute context:
 
 1. Use your workspace default
