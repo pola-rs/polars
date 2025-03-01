@@ -81,7 +81,6 @@ nav:
                 - Migrating:
                       - user-guide/migration/pandas.md
                       - user-guide/migration/spark.md
-                - user-guide/polars_llms.md
                 - user-guide/ecosystem.md
                 - Misc:
                       - user-guide/misc/multiprocessing.md
@@ -89,6 +88,7 @@ nav:
                       - user-guide/misc/styling.md
                       - user-guide/misc/comparison.md
                       - user-guide/misc/arrow.md
+                      - user-guide/misc/polars_llms.md
                 - user-guide/gpu-support.md
           - API:
                 - api/reference.md
