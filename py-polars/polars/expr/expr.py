@@ -1290,7 +1290,7 @@ class Expr:
         --------
         >>> df = pl.DataFrame({"a": [1, 1, 2]})
 
-        Create a Series with 3 nulls, append column a then rechunk
+        Create a Series with 3 nulls, append column `a`, then rechunk.
 
         >>> df.select(pl.repeat(None, 3).append(pl.col("a")).rechunk())
         shape: (6, 1)

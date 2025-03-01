@@ -53,7 +53,7 @@ class DataFramePlot:
 
         `df.plot.bar(**kwargs)` is shorthand for
         `alt.Chart(df).mark_bar().encode(**kwargs).interactive()`,
-        and is provided for convenience - for full customisatibility, use a plotting
+        and is provided for convenience - for full customisability, use a plotting
         library directly.
 
         .. versionchanged:: 1.6.0
