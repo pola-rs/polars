@@ -871,7 +871,11 @@ impl LazyFrame {
 
             let _hold = StringCacheHolder::hold();
             let f = || {
-                polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
+                polars_stream::run_query(
+                    stream_lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )
             };
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
                 Ok(v) => return Some(v),
