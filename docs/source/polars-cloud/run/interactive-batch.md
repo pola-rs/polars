@@ -38,7 +38,7 @@ lf.remote(ctx).sink_parquet("s3://bucket/output.parquet")
 
 Polars Cloud also supports interactive workflows. Different from batch mode, results are being
 interactively updated. Polars Cloud will not automatically close the cluster when a result has been
-produced, but the cluster stays active and intermediate state can stil be accessed. In interactive
+produced, but the cluster stays active and intermediate state can still be accessed. In interactive
 mode you directly communicate with the compute nodes.
 
 Because this mode is used for exploratory use cases and short feedback cycles, the queries are not
