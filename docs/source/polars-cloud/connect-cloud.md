@@ -13,7 +13,7 @@ When you click the blue bar you will be redirected to the start of the set up fl
 ## 1. Set workspace name
 
 In the first step of the setup flow, you’ll name your workspace. You can keep the default name
-Personal Workspace or use the name of your team or department. This workspace name will be used by
+"Personal Workspace" or use the name of your team or department. This workspace name will be used by
 the compute context to run your queries remotely.
 
 <!-- dprint-ignore-start -->

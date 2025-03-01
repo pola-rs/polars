@@ -4,7 +4,7 @@ Data processing and analytics often begins small but can quickly grow beyond the
 your local machine. A typical workflow starts with exploring a sample dataset locally, developing
 the analytical approach, and then scaling up to process the full dataset in the cloud.
 
-This pattern allows you to iterate quickly during development while still handling massive datasets
+This pattern allows you to iterate quickly during development while still handling larger datasets
 in production. With Polars Cloud, you can maintain this natural workflow without rewriting your code
 when moving from local to cloud execution, without requiring any migrations between local and
 production tooling.
@@ -40,15 +40,17 @@ lf = pl.DataFrame(
 A simple transformation will done to create a new column.
 
 ```python
-lf.with_columns(
-    [
-        (
-            (pl.col("temperature") / 10)
-            * (1 - pl.col("humidity") / 100)
-            * pl.col("vegetation_density")
-        ).alias("fire_risk"),
-    ]
-).filter(pl.col("humidity") < 70).sort(by="fire_risk", descending=True).collect()
+(
+    lf.with_columns(
+            (
+                (pl.col("temperature") / 10)
+                * (1 - pl.col("humidity") / 100)
+                * pl.col("vegetation_density")
+            ).alias("fire_risk"),
+    ).filter(pl.col("humidity") < 70)
+    .sort(by="fire_risk", descending=True)
+ .collect()
+)
 ```
 
 ```text
@@ -144,9 +146,9 @@ head:
 └───────────────┴─────────────┴──────────┴───────────┴────────────────────┴───────────┘
 ```
 
-We can call `.collect()` instead of `.sink_parquet()`. This will write store your results to a
-temporary location which can be used to further iterate upon. To continue on the result from
-`collect` simply call `lazy` and you can get back a `LazyFrame` for further analysis.
+We can call `.collect()` instead of `.sink_parquet()`. This will store your results to a temporary
+location which can be used to further iterate upon. To continue on the result from `collect` simply
+call `lazy` and you can get back a `LazyFrame` for further analysis.
 
 ```python
 res2 = (

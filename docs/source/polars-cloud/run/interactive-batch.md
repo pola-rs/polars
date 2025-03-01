@@ -1,8 +1,8 @@
 # Interactive or batch mode
 
-In Polars Cloud a user can define two types of compute modes: batch & interactive. Batch mode is
-designed for job-style queries. These kinds of queries are typically scheduled and run once in a
-certain period. Interactive mode allows for exploratory workflows where a user interacts with the
+In Polars Cloud, a user can define two types of compute modes: batch & interactive. Batch mode is
+designed for batch job style queries. These kinds of queries are typically scheduled and run once in
+a certain period. Interactive mode allows for exploratory workflows where a user interacts with the
 dataset and requires more compute resources than are locally available.
 
 The rest of this page will give examples on how to set up one or the other. More information on the
@@ -36,16 +36,13 @@ lf.remote(ctx).sink_parquet("s3://bucket/output.parquet")
 
 ## Interactive
 
-Interactive data workflows are more iterative and discovery focused workflows. These workflows have
-a more ad-hoc nature that evolves as insights are discovered. It is often used by data scientists to
-explore new features for their models or by data analysts to uncover patterns.
+Polars Cloud also supports interactive workflows. Different from batch mode, results are being
+interactively updated. Polars Cloud will not automatically close the cluster when a result has been
+produced, but the cluster stays active and intermediate state can stil be accessed. In interactive
+mode you directly communicate with the compute nodes.
 
-The difference with batch data workflows is that the user expects a shorter feedback cycle, as they
-want to inspect the result and continue their exploration. Polars Cloud supports this workflow with
-interactive mode. In interactive mode you directly communicate with the compute nodes.
-
-Because this mode will is used for exploratory use cases and short feedback cycles, the queries are
-not logged to Polars Cloud and will not be available for later inspection.
+Because this mode is used for exploratory use cases and short feedback cycles, the queries are not
+logged to Polars Cloud and will not be available for later inspection.
 
 {{code_block('polars-cloud/interactive-batch','interactive',['ComputeContext'])}}
 

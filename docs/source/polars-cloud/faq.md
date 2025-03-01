@@ -4,13 +4,9 @@ On this page you can find answers to some frequently asked questions around Pola
 
 ## Who is behind Polars Cloud?
 
-Polars Cloud is built by the organization behind the open source Polars project. Polars has grown to
-10M+ monthly downloads and more than 125M+ total downloads since the first commit in 2020. We are
-building Polars Cloud, on top of the open source Polars project, to offer a service that is more
-aligned with the needs of organizations that use or are looking to use Polars.
-
-By offering our managed service we get to drive even greater adoption and invest more resources into
-the open source Polars project, supporting further improvements and long term development.
+Polars Cloud is built by the organization behind the open source Polars project. We are committed to
+improve Polars open source for all single machine workloads. Polars Cloud will extend Polars
+functionalities for remote and distributed compute.
 
 ## Where does the compute run?
 
@@ -31,8 +27,7 @@ Polars Cloud offers a managed service that enables scalable data processing with
 expressiveness of the Polars API. It extends the open source Polars project with the following
 capabilities:
 
-- Distributed engine to efficiently handle terabyte to petabyte scale workloads through parallel
-  processing across multiple nodes
+- Distributed engine to scale workloads horizontally.
 - Cost-optimized serverless architecture that automatically scales compute resources
 - Built-in fault tolerance mechanisms ensuring query completion even during hardware failures or
   system interruptions
@@ -65,8 +60,7 @@ are geared towards running queries as fast and efficient as possible.
 ## Will the distributed engine be available in open source?
 
 The distributed engine is only available in Polars Cloud. There are no plans to make it available in
-the open source project. Polars is focused on single machines, as it makes efficient use of the
+the open source project. Polars is focused on single node compute, as it makes efficient use of the
 available resources. Users already report utilizing Polars to process hundreds of gigabytes of data
-on single (large) compute instance. The distributed engine is gear towards teams and organizations
-that are I/O bound or want to scale their Polars queries beyond single machines and required a
-solution process workloads at terabyte and even petabyte scale.
+on single (large) compute instance. The distributed engine is geared towards teams and organizations
+that are I/O bound or want to scale their Polars queries beyond single machines.

@@ -11,7 +11,7 @@ significantly reduced, allowing users to process at scale.
 <!-- dprint-ignore-start -->
 
 !!! info "Distributed engine is in early stage"
-    The distributed engine is actively being developed and is labeled unstable. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Many operations are either unsupported or not yet optimized. Major performance improvements will be introduced in the near future.
+    The distributed engine is in its very early development. It currently runs all [PDS-H benchmarks](https://github.com/pola-rs/polars-benchmark). Many operations are either unsupported or not yet optimized. Major performance improvements will be introduced in the near future. When a operation is not available in a distributed manner, Polars Cloud will run that operation on single node.
 
 <!-- dprint-ignore-end-->
 

@@ -1,8 +1,8 @@
-# Setup Compute context
+# Setting up a Compute context
 
 The compute context is the abstraction of the hardware to execute the query on. This can be either a
-single node or multiple nodes in case of distributed execution. In this section we will cover how to
-setup your compute context.
+single node, or in case of distributed execution, on multiple nodes . In this section we will cover
+how to setup your compute context.
 
 {{code_block('polars-cloud/compute-context','compute',['ComputeContext'])}}
 
@@ -30,9 +30,9 @@ settings section.
 ### Define CPU and RAM
 
 You can directly specify the `cpus` and `memory` in your ComputeContext. When set, Polars Cloud will
-match your requirements and pick the most suitable and efficient instance_type from your cloud
-service provider. The requirements are lower bounds, the machine will have at least that number of
-CPUs and memory.
+match your requirements and pick the most suitable and efficient `instance_type` from your cloud
+service provider. The requirements are lower bounds, meaning the machine will have at least that
+number of CPUs and memory.
 
 {{code_block('polars-cloud/compute-context','defined-compute',['ComputeContext'])}}
 
