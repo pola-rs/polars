@@ -980,6 +980,7 @@ def test_categorical_prefill() -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # not implemented
+@pytest.mark.usefixtures("test_global_and_local")
 def test_categorical_min_max() -> None:
     schema = pl.Schema(
         {

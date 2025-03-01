@@ -462,7 +462,7 @@ impl CategoricalChunked {
             let rev_map = self.get_rev_map();
             // Fast path where all categories are used
             let c = if self._can_fast_unique() {
-                self.get_rev_map().get_categories().min_ignore_nan_kernel()
+                rev_map.get_categories().min_ignore_nan_kernel()
             } else {
                 // SAFETY:
                 // Indices are in bounds
@@ -475,10 +475,7 @@ impl CategoricalChunked {
             };
             rev_map.find(c.unwrap())
         } else {
-            match self._can_fast_unique() {
-                true => Some(0),
-                false => self.physical().min(),
-            }
+            self.physical().min()
         }
     }
 
@@ -490,7 +487,7 @@ impl CategoricalChunked {
             let rev_map = self.get_rev_map();
             // Fast path where all categories are used
             let c = if self._can_fast_unique() {
-                self.get_rev_map().get_categories().max_ignore_nan_kernel()
+                rev_map.get_categories().max_ignore_nan_kernel()
             } else {
                 // SAFETY:
                 // Indices are in bounds
@@ -503,10 +500,7 @@ impl CategoricalChunked {
             };
             rev_map.find(c.unwrap())
         } else {
-            match self._can_fast_unique() {
-                true => Some((self.get_rev_map().len() - 1) as u32),
-                false => self.physical().max(),
-            }
+            self.physical().max()
         }
     }
 }
@@ -534,14 +528,16 @@ impl ChunkAggSeries for CategoricalChunked {
             DataType::Categorical(r, _) => match self.min_categorical() {
                 None => Scalar::new(self.dtype().clone(), AnyValue::Null),
                 Some(v) => {
-                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
-                        unreachable!()
+                    let r = r.as_ref().unwrap();
+                    let arr = match &**r {
+                        RevMapping::Local(arr, _) => arr,
+                        RevMapping::Global(_, arr, _) => arr,
                     };
                     Scalar::new(
                         self.dtype().clone(),
                         AnyValue::CategoricalOwned(
                             v,
-                            r.as_ref().unwrap().clone(),
+                            r.clone(),
                             SyncPtr::from_const(arr as *const _),
                         ),
                     )
@@ -571,14 +567,16 @@ impl ChunkAggSeries for CategoricalChunked {
             DataType::Categorical(r, _) => match self.max_categorical() {
                 None => Scalar::new(self.dtype().clone(), AnyValue::Null),
                 Some(v) => {
-                    let RevMapping::Local(arr, _) = &**r.as_ref().unwrap() else {
-                        unreachable!()
+                    let r = r.as_ref().unwrap();
+                    let arr = match &**r {
+                        RevMapping::Local(arr, _) => arr,
+                        RevMapping::Global(_, arr, _) => arr,
                     };
                     Scalar::new(
                         self.dtype().clone(),
                         AnyValue::CategoricalOwned(
                             v,
-                            r.as_ref().unwrap().clone(),
+                            r.clone(),
                             SyncPtr::from_const(arr as *const _),
                         ),
                     )
