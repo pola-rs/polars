@@ -81,6 +81,7 @@ nav:
                 - Migrating:
                       - user-guide/migration/pandas.md
                       - user-guide/migration/spark.md
+                - user-guide/polars_llms.md
                 - user-guide/ecosystem.md
                 - Misc:
                       - user-guide/misc/multiprocessing.md
@@ -110,7 +111,7 @@ nav:
           - polars-cloud/index.md
           - polars-cloud/quickstart.md
           - polars-cloud/connect-cloud.md
-          - Run queries remote:
+          - User guide:
                 - polars-cloud/run/compute-context.md
                 - polars-cloud/run/workflow.md
                 - polars-cloud/run/interactive-batch.md
@@ -119,7 +120,7 @@ nav:
           - Manage workspace:
                 - polars-cloud/workspace/settings.md
                 - polars-cloud/workspace/team.md
-          - User Guide:
+          - Authentication:
                 - polars-cloud/explain/authentication.md
           - Providers:
                 - AWS:
