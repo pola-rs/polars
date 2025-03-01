@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import inspect
-from typing import TYPE_CHECKING, Callable, Union
-
+from typing import TYPE_CHECKING, Any, Callable, Union
+import os
 from polars.dependencies import altair as alt
 
 if TYPE_CHECKING:
@@ -33,6 +33,38 @@ if TYPE_CHECKING:
 
 class DataFramePlot:
     """DataFrame.plot namespace."""
+
+    def __init__(self, df: DataFrame, backend: str | None = None) -> None:
+        self._df = df
+        # TODO: add config for backend
+        if backend is None and "POLARS_PLOTTING_BACKEND" in os.environ:
+            backend = os.environ["POLARS_PLOTTING_BACKEND"]
+        elif backend is None:
+            backend = (
+                "altair"  # TODO: change from default to detecting installed library
+            )
+
+        if backend == "altair":
+            self._backend = AltairPlot(df)
+
+    def bar(
+        self,
+        x: X | None = None,
+        y: Y | None = None,
+        color: Color | None = None,
+        /,
+        **kwargs: Any,
+    ) -> Any:
+        return self._backend.bar(x, y, color, **kwargs)
+
+    def alt(self) -> AltairPlot:
+        # going through the extra class makes it so users can get the right static
+        # typed outputs or
+        return AltairPlot(self._df)
+
+
+class AltairPlot:
+    """DataFrame.plot namespace for altair."""
 
     def __init__(self, df: DataFrame) -> None:
         self._chart = alt.Chart(df)
