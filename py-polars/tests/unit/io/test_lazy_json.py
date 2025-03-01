@@ -172,3 +172,18 @@ def test_glob_single_scan(io_files_path: Path) -> None:
 
     assert explain.count("SCAN") == 1
     assert "UNION" not in explain
+
+
+def test_scan_ndjson_empty_lines_in_middle() -> None:
+    assert_frame_equal(
+        pl.scan_ndjson(
+            f"""\
+{{"a": 1}}
+{"              "}
+{{"a": 2}}{"              "}
+{"              "}
+{{"a": 3}}
+""".encode()
+        ).collect(),
+        pl.DataFrame({"a": [1, 2, 3]}),
+    )

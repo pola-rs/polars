@@ -310,10 +310,10 @@ pub fn csv_file_info(
 }
 
 #[cfg(feature = "json")]
-pub(super) fn ndjson_file_info(
+pub fn ndjson_file_info(
     sources: &ScanSources,
     file_options: &FileScanOptions,
-    ndjson_options: &mut NDJsonReadOptions,
+    ndjson_options: &NDJsonReadOptions,
     cloud_options: Option<&polars_io::cloud::CloudOptions>,
 ) -> PolarsResult<FileInfo> {
     use polars_core::config;
@@ -346,7 +346,7 @@ pub(super) fn ndjson_file_info(
 
     let owned = &mut vec![];
 
-    let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.take() {
+    let (mut reader_schema, schema) = if let Some(schema) = ndjson_options.schema.clone() {
         if file_options.row_index.is_none() {
             (schema.clone(), schema.clone())
         } else {

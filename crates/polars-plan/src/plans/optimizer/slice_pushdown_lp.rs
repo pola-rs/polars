@@ -244,6 +244,30 @@ impl SlicePushDown {
 
                 self.no_pushdown_finish_opt(lp, Some(state), lp_arena)
             },
+            #[cfg(feature = "json")]
+            (Scan {
+                sources,
+                file_info,
+                hive_parts,
+                output_schema,
+                mut file_options,
+                predicate,
+                scan_type: FileScan::NDJson { options, cloud_options },
+            }, Some(state)) if predicate.is_none() && self.new_streaming =>  {
+                file_options.slice = Some((state.offset, state.len as usize));
+
+                let lp = Scan {
+                    sources,
+                    file_info,
+                    hive_parts,
+                    output_schema,
+                    scan_type: FileScan::NDJson { options, cloud_options },
+                    file_options,
+                    predicate,
+                };
+
+                Ok(lp)
+            },
             #[cfg(feature = "parquet")]
             (Scan {
                 sources,

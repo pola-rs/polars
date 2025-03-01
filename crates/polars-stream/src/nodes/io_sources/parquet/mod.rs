@@ -1,7 +1,6 @@
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
 use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
@@ -19,6 +18,7 @@ use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
+use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
@@ -33,7 +33,6 @@ use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
 mod init;
-mod mem_prefetch_funcs;
 mod metadata_fetch;
 mod metadata_utils;
 mod row_group_data_fetch;
