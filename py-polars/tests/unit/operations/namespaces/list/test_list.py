@@ -1040,9 +1040,9 @@ def test_list_struct_field() -> None:
             ],
         }
     )
-    actual = df.select(pl.col("a").list.struct_field("x"))
+    out = df.select(pl.col("a").list.struct_field("x"))
     expected = pl.DataFrame({"x": [[1], [3, 5, None], [], None]})
-    assert_frame_equal(actual, expected)
+    assert_frame_equal(out, expected)
 
 
 @pytest.mark.parametrize(
