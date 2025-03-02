@@ -613,9 +613,45 @@ impl PyLazyFrame {
         ldf.cache().into()
     }
 
-    fn profile(&self, py: Python) -> PyResult<(PyDataFrame, PyDataFrame)> {
-        let (df, time_df) = py.enter_polars(|| self.ldf.clone().profile())?;
-        Ok((df.into(), time_df.into()))
+    #[pyo3(signature = (lambda_post_opt=None))]
+    fn profile(
+        &self,
+        py: Python,
+        lambda_post_opt: Option<PyObject>,
+    ) -> PyResult<(PyDataFrame, PyDataFrame)> {
+        py.enter_polars_df_pair(|| {
+            let ldf = self.ldf.clone();
+            if let Some(lambda) = lambda_post_opt {
+                ldf._profile_post_opt(|root, lp_arena, expr_arena| {
+                    Python::with_gil(|py| {
+                        let nt = NodeTraverser::new(
+                            root,
+                            std::mem::take(lp_arena),
+                            std::mem::take(expr_arena),
+                        );
+
+                        // Get a copy of the arena's.
+                        let arenas = nt.get_arenas();
+
+                        // Pass the node visitor which allows the python callback to replace parts of the query plan.
+                        // Remove "cuda" or specify better once we have multiple post-opt callbacks.
+                        lambda.call1(py, (nt,)).map_err(
+                            |e| polars_err!(ComputeError: "'cuda' conversion failed: {}", e),
+                        )?;
+
+                        // Unpack the arena's.
+                        // At this point the `nt` is useless.
+
+                        std::mem::swap(lp_arena, &mut *arenas.0.lock().unwrap());
+                        std::mem::swap(expr_arena, &mut *arenas.1.lock().unwrap());
+
+                        Ok(())
+                    })
+                })
+            } else {
+                ldf.profile()
+            }
+        })
     }
 
     #[pyo3(signature = (lambda_post_opt=None))]

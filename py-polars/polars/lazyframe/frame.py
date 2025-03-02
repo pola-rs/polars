@@ -1631,6 +1631,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
         _check_order: bool = True,
+        engine: EngineType = "cpu",
+        **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
@@ -1705,6 +1707,30 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          │ group_by_partitioned(a) ┆ 5     ┆ 470  │
          │ sort(a)                 ┆ 475   ┆ 1964 │
          └─────────────────────────┴───────┴──────┘)
+        >>> lf.group_by("a", maintain_order=True).agg(pl.all().sum()).sort("a").profile(
+        ...     engine="gpu"
+        ... )  # doctest: +SKIP
+        (shape: (3, 3)
+         ┌─────┬─────┬─────┐
+         │ a   ┆ b   ┆ c   │
+         │ --- ┆ --- ┆ --- │
+         │ str ┆ i64 ┆ i64 │
+         ╞═════╪═════╪═════╡
+         │ a   ┆ 4   ┆ 10  │
+         │ b   ┆ 11  ┆ 10  │
+         │ c   ┆ 6   ┆ 1   │
+         └─────┴─────┴─────┘,
+         shape: (4, 3)
+         ┌────────────────┬───────┬──────┐
+         │ node           ┆ start ┆ end  │
+         │ ---            ┆ ---   ┆ ---  │
+         │ str            ┆ u64   ┆ u64  │
+         ╞════════════════╪═══════╪══════╡
+         │ optimization   ┆ 0     ┆ 130  │
+         │ dataframe_scan ┆ 130   ┆ 2431 │
+         │ group_by       ┆ 2453  ┆ 5759 │
+         │ sort           ┆ 5794  ┆ 6443 │
+         └────────────────┴───────┴──────┘)
         """
         if no_optimization:
             predicate_pushdown = False
@@ -1731,8 +1757,36 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _check_order=_check_order,
             new_streaming=False,
         )
-        df, timings = ldf.profile()
-        (df, timings) = wrap_df(df), wrap_df(timings)
+        is_config_obj = isinstance(engine, GPUEngine)
+        is_gpu = (engine == "gpu") or is_config_obj
+        if streaming and is_gpu:
+            issue_warning(
+                "GPU engine does not support streaming; disabling GPU engine.",
+                category=UserWarning,
+            )
+            is_gpu = False
+
+        callback = None
+        if is_gpu:
+            cudf_polars = import_optional(
+                "cudf_polars",
+                err_prefix="GPU engine requested, but required package",
+                install_message=(
+                    "Please install using the command "
+                    "`pip install cudf-polars-cu12` "
+                    "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
+                    "if your system has a CUDA 11 driver)."
+                ),
+            )
+            if not is_config_obj:
+                engine = GPUEngine()  # If user only passed engine="gpu"
+            callback = partial(cudf_polars.execute_with_cudf, config=engine)
+
+        callback = _kwargs.get("post_opt_callback", callback)
+
+        df, timings = ldf.profile(callback)
+
+        df, timings = wrap_df(df), wrap_df(timings)
 
         if show_plot:
             import_optional(
