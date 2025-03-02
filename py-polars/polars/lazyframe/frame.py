@@ -91,7 +91,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame
+    from polars.polars import PyLazyFrame, get_engine_affinity
 
 
 if TYPE_CHECKING:
@@ -1789,7 +1789,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: None | EngineType = "cpu",
         background: Literal[True],
         _eager: bool = False,
         _check_order: bool = True,
@@ -1811,7 +1811,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: None | EngineType = "cpu",
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1832,7 +1832,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: None | EngineType = "cpu",
         background: bool = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1993,7 +1993,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        new_streaming = _kwargs.get("new_streaming", False)
+        if engine is None:
+            engine = get_engine_affinity()
+            if engine is None:
+                engine = "cpu"
+
+        new_streaming = (
+            _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
+        )
 
         if no_optimization or _eager:
             predicate_pushdown = False
@@ -2008,7 +2015,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
-        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
+        is_gpu = (
+            (is_config_obj := isinstance(engine, GPUEngine))
+            or engine == "gpu"
+            or get_engine_affinity() == "gpu"
+        )
         if not (is_config_obj or engine in ("cpu", "gpu")):
             msg = f"Invalid engine argument {engine=}"
             raise ValueError(msg)
