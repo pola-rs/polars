@@ -21,6 +21,29 @@ class ExprArrayNameSpace:
     def __init__(self, expr: Expr) -> None:
         self._pyexpr = expr._pyexpr
 
+    def len(self) -> Expr:
+        """
+        Return the number of elements in each array.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     data={"a": [[1, 2], [4, 3]]},
+        ...     schema={"a": pl.Array(pl.Int64, 2)},
+        ... )
+        >>> df.select(pl.col("a").arr.len())
+        shape: (2, 1)
+        ┌─────┐
+        │ a   │
+        │ --- │
+        │ u32 │
+        ╞═════╡
+        │ 2   │
+        │ 2   │
+        └─────┘
+        """
+        return wrap_expr(self._pyexpr.arr_len())
+
     def min(self) -> Expr:
         """
         Compute the min values of the sub-arrays.

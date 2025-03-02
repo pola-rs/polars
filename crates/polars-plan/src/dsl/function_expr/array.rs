@@ -6,6 +6,7 @@ use crate::{map, map_as_slice};
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Debug)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum ArrayFunction {
+    Length,
     Min,
     Max,
     Sum,
@@ -47,6 +48,7 @@ impl ArrayFunction {
                     &mut mapper.args().iter().map(|x| (x.name.as_str(), &x.dtype)),
                 )?,
             )),
+            Length => mapper.with_dtype(IDX_DTYPE),
             Min | Max => mapper.map_to_list_and_array_inner_dtype(),
             Sum => mapper.nested_sum_type(),
             ToList => mapper.try_map_dtype(map_array_dtype_to_list_dtype),
@@ -85,6 +87,7 @@ impl Display for ArrayFunction {
         use ArrayFunction::*;
         let name = match self {
             Concat => "concat",
+            Length => "length",
             Min => "min",
             Max => "max",
             Sum => "sum",
@@ -120,6 +123,7 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
         use ArrayFunction::*;
         match func {
             Concat => map_as_slice!(concat_arr),
+            Length => map!(length),
             Min => map!(min),
             Max => map!(max),
             Sum => map!(sum),
@@ -147,6 +151,10 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             Explode => map_as_slice!(explode),
         }
     }
+}
+
+pub(super) fn length(s: &Column) -> PolarsResult<Column> {
+    Ok(s.array()?.array_lengths().into_column())
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {
