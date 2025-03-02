@@ -136,8 +136,8 @@ impl ExecutionState {
     }
 
     /// Toggle this to measure execution times.
-    pub fn time_nodes(&mut self) {
-        self.node_timer = Some(NodeTimer::new())
+    pub fn time_nodes(&mut self, start: std::time::Instant) {
+        self.node_timer = Some(NodeTimer::new(start))
     }
     pub fn has_node_timer(&self) -> bool {
         self.node_timer.is_some()
@@ -145,6 +145,17 @@ impl ExecutionState {
 
     pub fn finish_timer(self) -> PolarsResult<DataFrame> {
         self.node_timer.unwrap().finish()
+    }
+
+    // Timings should be a list of (start, end, name) where the start
+    // and end are raw durations since the query start as nanoseconds.
+    pub fn record_raw_timings(&self, timings: &[(u64, u64, String)]) -> () {
+        for &(start, end, ref name) in timings {
+            self.node_timer
+                .as_ref()
+                .unwrap()
+                .store_raw(start, end, name.to_string());
+        }
     }
 
     // This is wrong when the U64 overflows which will never happen.
