@@ -49,7 +49,7 @@ pay for the resources you use in your own cloud environment.
 
 ## Cloud availability
 
-Currently, Polars CLoud is available on AWS. Other cloud providers and on-premise solution is on the
+Currently, Polars Cloud is available on AWS. Other cloud providers and on-premise solution is on the
 roadmap and will become available in the upcoming months.
 
 ![AWS logo](https://raw.githubusercontent.com/pola-rs/polars-static/refs/heads/master/polars_cloud/aws-logo.svg)
