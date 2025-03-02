@@ -2453,8 +2453,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        if not isinstance(path, (str | Path)):
+            path = path._p
+
         return lf.sink_parquet(
-            path=normalize_filepath(path),
+            target=normalize_filepath(path),
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
@@ -2580,8 +2583,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        if not isinstance(path, (str | Path)):
+            path = path._p
+
         return lf.sink_ipc(
-            path=path,
+            target=path,
             compression=compression,
             maintain_order=maintain_order,
             cloud_options=storage_options,
@@ -2770,8 +2776,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        if not isinstance(path, (str | Path)):
+            path = path._p
+
         return lf.sink_csv(
-            path=normalize_filepath(path),
+            target=normalize_filepath(path),
             include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
@@ -2901,8 +2910,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        if not isinstance(path, (str | Path)):
+            path = path._p
+
         return lf.sink_json(
-            path=path,
+            target=path,
             maintain_order=maintain_order,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,

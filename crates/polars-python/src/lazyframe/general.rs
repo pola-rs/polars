@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use either::Either;
 use polars::io::{HiveOptions, RowIndex};
@@ -16,6 +16,7 @@ use pyo3::types::{PyDict, PyList};
 use super::PyLazyFrame;
 use crate::error::PyPolarsErr;
 use crate::expr::ToExprs;
+use crate::functions::PyPartitioning;
 use crate::interop::arrow::to_rust::pyarrow_schema_to_rust;
 use crate::lazyframe::visit::NodeTraverser;
 use crate::prelude::*;
@@ -33,6 +34,31 @@ fn pyobject_to_first_path_and_scan_sources(
         PythonScanSourceInput::File(file) => (None, ScanSources::Files([file].into())),
         PythonScanSourceInput::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
     })
+}
+
+#[derive(Clone)]
+enum SinkTarget {
+    Path(PathBuf),
+    Partition(PyPartitioning),
+}
+
+impl<'py> FromPyObject<'py> for SinkTarget {
+    fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
+        if let Ok(v) = ob.extract::<PyPartitioning>() {
+            return Ok(Self::Partition(v));
+        }
+
+        Ok(Self::Path(ob.extract::<PathBuf>()?))
+    }
+}
+
+impl SinkTarget {
+    fn unformatted_path(&self) -> &Path {
+        match self {
+            Self::Path(path) => path.as_path(),
+            Self::Partition(partition) => partition.path.as_ref().as_path(),
+        }
+    }
 }
 
 #[pymethods]
@@ -681,13 +707,13 @@ impl PyLazyFrame {
 
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
-        path, compression, compression_level, statistics, row_group_size, data_page_size,
+        target, compression, compression_level, statistics, row_group_size, data_page_size,
         maintain_order, cloud_options, credential_provider, retries
     ))]
     fn sink_parquet(
         &self,
         py: Python,
-        path: PathBuf,
+        target: SinkTarget,
         compression: &str,
         compression_level: Option<i32>,
         statistics: Wrap<StatisticsOptions>,
@@ -709,8 +735,10 @@ impl PyLazyFrame {
         };
 
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
@@ -720,15 +748,28 @@ impl PyLazyFrame {
             )
         };
 
-        py.enter_polars(|| self.ldf.clone().sink_parquet(&path, options, cloud_options))
+        py.enter_polars(|| {
+            let ldf = self.ldf.clone();
+            match target {
+                SinkTarget::Path(path) => {
+                    ldf.sink_parquet(&path as &dyn AsRef<Path>, options, cloud_options)
+                },
+                SinkTarget::Partition(partition) => ldf.sink_parquet_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                ),
+            }
+        })
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
-    #[pyo3(signature = (path, compression, maintain_order, cloud_options, credential_provider, retries))]
+    #[pyo3(signature = (target, compression, maintain_order, cloud_options, credential_provider, retries))]
     fn sink_ipc(
         &self,
         py: Python,
-        path: PathBuf,
+        target: SinkTarget,
         compression: Option<Wrap<IpcCompression>>,
         maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
@@ -742,8 +783,10 @@ impl PyLazyFrame {
 
         #[cfg(feature = "cloud")]
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
@@ -756,19 +799,30 @@ impl PyLazyFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        py.enter_polars(|| self.ldf.clone().sink_ipc(path, options, cloud_options))
+        py.enter_polars(|| {
+            let ldf = self.ldf.clone();
+            match target {
+                SinkTarget::Path(path) => ldf.sink_ipc(path, options, cloud_options),
+                SinkTarget::Partition(partition) => ldf.sink_ipc_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                ),
+            }
+        })
     }
 
     #[cfg(all(feature = "streaming", feature = "csv"))]
     #[pyo3(signature = (
-        path, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
+        target, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
         quote_style, maintain_order, cloud_options, credential_provider, retries
     ))]
     fn sink_csv(
         &self,
         py: Python,
-        path: PathBuf,
+        target: SinkTarget,
         include_bom: bool,
         include_header: bool,
         separator: u8,
@@ -813,8 +867,10 @@ impl PyLazyFrame {
 
         #[cfg(feature = "cloud")]
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
@@ -829,17 +885,25 @@ impl PyLazyFrame {
 
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_csv(path, options, cloud_options)
+            match target {
+                SinkTarget::Path(path) => ldf.sink_csv(path, options, cloud_options),
+                SinkTarget::Partition(partition) => ldf.sink_csv_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                ),
+            }
         })
     }
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "json"))]
-    #[pyo3(signature = (path, maintain_order, cloud_options, credential_provider, retries))]
+    #[pyo3(signature = (target, maintain_order, cloud_options, credential_provider, retries))]
     fn sink_json(
         &self,
         py: Python,
-        path: PathBuf,
+        target: SinkTarget,
         maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
@@ -848,8 +912,10 @@ impl PyLazyFrame {
         let options = JsonWriterOptions { maintain_order };
 
         let cloud_options = {
-            let cloud_options =
-                parse_cloud_options(path.to_str().unwrap(), cloud_options.unwrap_or_default())?;
+            let cloud_options = parse_cloud_options(
+                target.unformatted_path().to_str().unwrap(),
+                cloud_options.unwrap_or_default(),
+            )?;
             Some(
                 cloud_options
                     .with_max_retries(retries)
@@ -861,7 +927,15 @@ impl PyLazyFrame {
 
         py.enter_polars(|| {
             let ldf = self.ldf.clone();
-            ldf.sink_json(path, options, cloud_options)
+            match target {
+                SinkTarget::Path(path) => ldf.sink_json(path, options, cloud_options),
+                SinkTarget::Partition(partition) => ldf.sink_json_partitioned(
+                    partition.path.as_ref(),
+                    partition.variant,
+                    options,
+                    cloud_options,
+                ),
+            }
         })
     }
 

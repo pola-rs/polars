@@ -311,6 +311,7 @@ impl<'a> IRDotDisplay<'a> {
                     f.write_str(match payload {
                         SinkType::Memory => "SINK (MEMORY)",
                         SinkType::File { .. } => "SINK (FILE)",
+                        SinkType::Partition { .. } => "SINK (PARTITION)",
                     })
                 })?;
             },
