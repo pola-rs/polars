@@ -504,6 +504,36 @@ def test_read_csv_encoding(tmp_path: Path) -> None:
 
 
 @pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
+@pytest.mark.write_disk
+def test_read_csv_encoding_lossy(tmp_path: Path) -> None:
+    tmp_path.mkdir(exist_ok=True)
+
+    bts = (
+        b"\xc8\xec\xff,\xc2\xee\xe7\xf0\xe0\xf1\xf2,\xc3\xee\xf0\xee\xe4\n"
+        b"\xc8\xe2\xe0\xed,25,\xcc\xee\xf1\xea\xe2\xe0\n"
+        # \x98 is not supported in "windows-1251".
+        b"\xce\xeb\xfc\xe3\xe0,30,\xd1\xe0\xed\xea\xf2-\x98\xcf\xe5\xf2\xe5\xf0\xe1\xf3\xf0\xe3\n"
+    )
+
+    file_path = tmp_path / "encoding_lossy.csv"
+    file_path.write_bytes(bts)
+
+    file_str = str(file_path)
+    bytesio = io.BytesIO(bts)
+    bytesio.seek(0)
+
+    for file in [file_path, file_str, bts, bytesio]:
+        assert_series_equal(
+            pl.read_csv(
+                file,  # type: ignore[arg-type]
+                encoding="windows-1251-lossy",
+                use_pyarrow=False,
+            ).get_column("Город"),
+            pl.Series("Город", ["Москва", "Санкт-�Петербург"]),
+        )
+
+
+@pytest.mark.may_fail_auto_streaming  # read->scan_csv dispatch
 def test_column_rename_and_schema_overrides() -> None:
     csv = textwrap.dedent(
         """\
