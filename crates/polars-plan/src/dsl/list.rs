@@ -366,4 +366,17 @@ impl ListNameSpace {
         let other = other.into();
         self.set_operation(other, SetOperation::SymmetricDifference)
     }
+
+    /// Map a list of structs to a list of an individual struct field.
+    #[cfg(feature = "dtype-struct")]
+    pub fn struct_field(self, name: &str) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ListExpr(ListFunction::StructField(
+                name.into(),
+            )))
+            .with_function_options(|mut options| {
+                options.flags |= FunctionFlags::ALLOW_RENAME;
+                options
+            })
+    }
 }

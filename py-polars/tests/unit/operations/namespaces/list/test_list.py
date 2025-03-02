@@ -1027,3 +1027,45 @@ def test_list_diff_schema(
     expected = {"a": pl.List(expected_inner_dtype)}
     assert lf.collect_schema() == expected
     assert lf.collect().schema == expected
+
+
+def test_list_struct_field() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [
+                [{"x": 1, "y": 2}],
+                [{"x": 3, "y": 4}, {"x": 5, "y": 6}, None],
+                [],
+                None,
+            ],
+        }
+    )
+    actual = df.select(pl.col("a").list.struct_field("x"))
+    expected = pl.DataFrame({"x": [[1], [3, 5, None], [], None]})
+    assert_frame_equal(actual, expected)
+
+
+@pytest.mark.parametrize(
+    ("dtype_x_series_a", "dtype_x_series_b"), [(pl.UInt8, pl.Int16)]
+)
+def test_list_struct_field_schema(
+    dtype_x_series_a: PolarsDataType, dtype_x_series_b: PolarsDataType
+) -> None:
+    lf = (
+        pl.LazyFrame(
+            {
+                "a": [[{"x": 1, "y": 2}]],
+                "b": [[{"x": 3, "y": 4}]],
+            }
+        )
+        .cast(
+            {
+                "a": pl.List(pl.Struct({"x": dtype_x_series_a, "y": pl.UInt8})),
+                "b": pl.List(pl.Struct({"x": dtype_x_series_b, "y": pl.UInt8})),
+            }
+        )
+        .select(pl.col("a", "b").list.struct_field("x").name.keep())
+    )
+    expected = {"a": pl.List(dtype_x_series_a), "b": pl.List(dtype_x_series_b)}
+    assert lf.collect_schema() == expected
+    assert lf.collect().schema == expected

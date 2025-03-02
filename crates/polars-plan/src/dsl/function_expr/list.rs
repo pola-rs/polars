@@ -58,6 +58,8 @@ pub enum ListFunction {
     ToArray(usize),
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
+    #[cfg(feature = "dtype-struct")]
+    StructField(String),
 }
 
 impl ListFunction {
@@ -121,6 +123,23 @@ impl ListFunction {
             NUnique => mapper.with_dtype(IDX_DTYPE),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => mapper.try_map_dtype(|x| args.get_output_dtype(x)),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => {
+                let inner = mapper.map_to_list_and_array_inner_dtype()?;
+                match inner.dtype {
+                    DataType::Struct(fields) => {
+                        let new_inner = fields
+                            .into_iter()
+                            .find(|field| field.name() == name)
+                            .ok_or_else(|| polars_err!(StructFieldNotFound: "{}", name))?;
+                        Ok(Field::new(
+                            new_inner.name,
+                            DataType::List(Box::new(new_inner.dtype)),
+                        ))
+                    },
+                    _ => Err(polars_err!(op = "struct_name", inner.dtype)),
+                }
+            },
         }
     }
 }
@@ -194,6 +213,8 @@ impl Display for ListFunction {
             ToArray(_) => "to_array",
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
+            #[cfg(feature = "dtype-struct")]
+            StructField(_) => "struct_field",
         };
         write!(f, "list.{name}")
     }
@@ -257,6 +278,8 @@ impl From<ListFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             NUnique => map!(n_unique),
             #[cfg(feature = "list_to_struct")]
             ToStruct(args) => map!(to_struct, &args),
+            #[cfg(feature = "dtype-struct")]
+            StructField(name) => map!(struct_field, &name),
         }
     }
 }
@@ -682,4 +705,12 @@ pub(super) fn to_struct(s: &Column, args: &ListToStructArgs) -> PolarsResult<Col
 
 pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
     Ok(s.list()?.lst_n_unique()?.into_column())
+}
+
+#[cfg(feature = "dtype-struct")]
+pub(super) fn struct_field(s: &Column, name: &str) -> PolarsResult<Column> {
+    Ok(s.list()?
+        .apply_to_inner(&|s| s.struct_()?.field_by_name(name))?
+        .with_name(name.into())
+        .into_column())
 }

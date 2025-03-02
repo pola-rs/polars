@@ -276,4 +276,8 @@ impl PyExpr {
         }
         .into()
     }
+
+    fn list_struct_field(&self, name: &str) -> Self {
+        self.inner.clone().list().struct_field(name).into()
+    }
 }
