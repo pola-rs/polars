@@ -1,0 +1,32 @@
+﻿polars.datatypes.Float32
+========================
+
+.. currentmodule:: polars.datatypes
+
+.. autoclass:: Float32
+
+   
+   .. automethod:: __init__
+
+   
+   .. rubric:: Methods
+
+   .. autosummary::
+   
+      ~Float32.__init__
+      ~Float32.base_type
+      ~Float32.is_
+      ~Float32.is_decimal
+      ~Float32.is_float
+      ~Float32.is_integer
+      ~Float32.is_nested
+      ~Float32.is_numeric
+      ~Float32.is_signed_integer
+      ~Float32.is_temporal
+      ~Float32.is_unsigned_integer
+   
+   
+
+   
+   
+   
