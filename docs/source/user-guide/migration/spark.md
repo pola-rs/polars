@@ -164,3 +164,36 @@ Output:
 |  b|  4|
 +---+---+
 ```
+
+### Example 3: Composing expressions
+
+Polars allows you compose expressions quite liberally. For example, if you want to find the rolling
+mean of a lagged variable, you can write
+
+```python
+df.with_columns(
+    feature=pl.col('price').shift(7).rolling_mean(7).over('store', order_by='date')
+)
+```
+
+In PySpark however this is not allowed. They allow expressions such as
+`F.mean(F.abs("price")).over(window)` because `F.abs` is an elementwise function, but not
+`F.mean(F.lag("price", 1)).over(window)`. To produce the same result, you need to use `over` for
+both `lag` and `mean`, with slightly different windows.
+
+```python
+from pyspark.sql import Window
+from pyspark.sql import functions as F
+
+window = Window().partitionBy("store").orderBy("date")
+rolling_window = Window().partitionBy("store").orderBy("date").rowsBetween(-6, 0)
+(
+    df.withColumn("lagged_price", F.lag("price", 7).over(window)).withColumn(
+        "feature",
+        F.when(
+            F.count("lagged_price").over(rolling_window) >= 7,
+            F.mean("lagged_price").over(rolling_window),
+        ),
+    )
+)
+```
