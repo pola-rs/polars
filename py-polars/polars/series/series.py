@@ -6958,8 +6958,8 @@ class Series:
         Series: 'a' [i64]
         [
                 2
-                1
                 3
+                1
         ]
         """
 

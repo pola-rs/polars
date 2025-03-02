@@ -291,17 +291,17 @@ def test_rolling_extrema() -> None:
     # shuffled data triggers other kernels
     df = df.select([pl.all().shuffle(0)])
     assert df.select([pl.all().rolling_min(3)]).to_dict(as_series=False) == {
-        "col1": [None, None, 0, 0, 1, 2, 2],
-        "col2": [None, None, 0, 2, 1, 1, 1],
-        "col1_nulls": [None, None, None, None, None, 2, 2],
-        "col2_nulls": [None, None, None, None, None, 1, 1],
+        "col1": [None, None, 0, 0, 4, 1, 1],
+        "col2": [None, None, 1, 1, 0, 0, 0],
+        "col1_nulls": [None, None, None, None, 4, None, None],
+        "col2_nulls": [None, None, None, None, 0, None, None],
     }
 
     assert df.select([pl.all().rolling_max(3)]).to_dict(as_series=False) == {
-        "col1": [None, None, 6, 4, 5, 5, 5],
-        "col2": [None, None, 6, 6, 5, 4, 4],
-        "col1_nulls": [None, None, None, None, None, 5, 5],
-        "col2_nulls": [None, None, None, None, None, 4, 4],
+        "col1": [None, None, 5, 5, 6, 6, 6],
+        "col2": [None, None, 6, 6, 2, 5, 5],
+        "col1_nulls": [None, None, None, None, 6, None, None],
+        "col2_nulls": [None, None, None, None, 2, None, None],
     }
 
 
@@ -406,16 +406,16 @@ def test_rolling_group_by_extrema() -> None:
         .select(["col1_list", "col1_min", "col1_max"])
     ).to_dict(as_series=False) == {
         "col1_list": [
-            [3],
-            [3, 4],
-            [3, 4, 5],
-            [4, 5, 6],
-            [5, 6, 2],
-            [6, 2, 1],
-            [2, 1, 0],
+            [4],
+            [4, 2],
+            [4, 2, 5],
+            [2, 5, 1],
+            [5, 1, 6],
+            [1, 6, 0],
+            [6, 0, 3],
         ],
-        "col1_min": [3, 3, 3, 4, 2, 1, 0],
-        "col1_max": [3, 4, 5, 6, 6, 6, 2],
+        "col1_min": [4, 2, 2, 1, 1, 0, 0],
+        "col1_max": [4, 4, 5, 5, 6, 6, 6],
     }
 
 
