@@ -59,7 +59,7 @@ pub enum ListFunction {
     #[cfg(feature = "list_to_struct")]
     ToStruct(ListToStructArgs),
     #[cfg(feature = "dtype-struct")]
-    StructField(String),
+    StructField(PlSmallStr),
 }
 
 impl ListFunction {
@@ -214,7 +214,7 @@ impl Display for ListFunction {
             #[cfg(feature = "list_to_struct")]
             ToStruct(_) => "to_struct",
             #[cfg(feature = "dtype-struct")]
-            StructField(_) => "struct_field",
+            StructField(name) => return write!(f, "list.struct_field({:?})", name),
         };
         write!(f, "list.{name}")
     }
@@ -711,6 +711,6 @@ pub(super) fn n_unique(s: &Column) -> PolarsResult<Column> {
 pub(super) fn struct_field(s: &Column, name: &str) -> PolarsResult<Column> {
     Ok(s.list()?
         .apply_to_inner(&|s| s.struct_()?.field_by_name(name))?
-        .with_name(name.into())
-        .into_column())
+        .into_column()
+        .with_name(name.into()))
 }

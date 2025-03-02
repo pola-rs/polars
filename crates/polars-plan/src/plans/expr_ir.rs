@@ -136,6 +136,10 @@ impl ExprIR {
                 } => {
                     match function {
                         #[cfg(feature = "dtype-struct")]
+                        FunctionExpr::ListExpr(ListFunction::StructField(name)) => {
+                            out.output_name = OutputName::Field(name.clone());
+                        },
+                        #[cfg(feature = "dtype-struct")]
                         FunctionExpr::StructExpr(StructFunction::FieldByName(name)) => {
                             out.output_name = OutputName::Field(name.clone());
                         },

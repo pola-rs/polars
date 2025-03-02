@@ -1056,16 +1056,25 @@ def test_list_struct_field_schema(
             {
                 "a": [[{"x": 1, "y": 2}]],
                 "b": [[{"x": 3, "y": 4}]],
+                "c": [[{"x": 5, "y": 6}]],
             }
         )
         .cast(
             {
                 "a": pl.List(pl.Struct({"x": dtype_x_series_a, "y": pl.UInt8})),
                 "b": pl.List(pl.Struct({"x": dtype_x_series_b, "y": pl.UInt8})),
+                "c": pl.List(pl.Struct({"x": pl.UInt8, "y": pl.UInt8})),
             }
         )
-        .select(pl.col("a", "b").list.struct_field("x").name.keep())
+        .select(
+            pl.col("a", "b").list.struct_field("x").name.keep(),
+            pl.col("c").list.struct_field("y"),
+        )
     )
-    expected = {"a": pl.List(dtype_x_series_a), "b": pl.List(dtype_x_series_b)}
+    expected = {
+        "a": pl.List(dtype_x_series_a),
+        "b": pl.List(dtype_x_series_b),
+        "y": pl.List(pl.UInt8),
+    }
     assert lf.collect_schema() == expected
     assert lf.collect().schema == expected
