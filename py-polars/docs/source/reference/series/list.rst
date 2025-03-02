@@ -33,6 +33,7 @@ The following methods are available under the `Series.list` attribute.
     Series.list.median
     Series.list.min
     Series.list.n_unique
+    Series.list.pad_start
     Series.list.reverse
     Series.list.sample
     Series.list.set_difference
