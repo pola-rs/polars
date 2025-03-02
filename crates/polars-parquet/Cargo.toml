@@ -43,7 +43,7 @@ zstd = { workspace = true, optional = true }
 xxhash-rust = { version = "0.8", optional = true, features = ["xxh64"] }
 
 [dev-dependencies]
-rand = "0.8"
+rand = "0.9"
 
 [features]
 compression = [
