@@ -2457,7 +2457,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             storage_options = None
 
         target: str | Path | PyPartitioning
-        if not isinstance(path, (str | Path)):
+        if not isinstance(path, (str, Path)):
             target = path._p
         else:
             target = normalize_filepath(path)
@@ -2590,7 +2590,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             storage_options = None
 
         target: str | Path | PyPartitioning
-        if not isinstance(path, (str | Path)):
+        if not isinstance(path, (str, Path)):
             target = path._p
         else:
             target = path
@@ -2786,7 +2786,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             storage_options = None
 
         target: str | Path | PyPartitioning
-        if not isinstance(path, (str | Path)):
+        if not isinstance(path, (str, Path)):
             target = path._p
         else:
             target = normalize_filepath(path)
@@ -2923,7 +2923,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             storage_options = None
 
         target: str | Path | PyPartitioning
-        if not isinstance(path, (str | Path)):
+        if not isinstance(path, (str, Path)):
             target = path._p
         else:
             target = path

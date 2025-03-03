@@ -1,5 +1,4 @@
 import contextlib
-from typing import TypeAlias, Union
 
 from polars._utils.unstable import issue_unstable_warning
 
@@ -27,6 +26,3 @@ class MaxSizePartitioning:
         msg = "Partitioning strategies are considered unstable."
         issue_unstable_warning(msg)
         self._p = PyPartitioning.new_max_size(path, max_size)
-
-
-IOPartitioning: TypeAlias = Union[MaxSizePartitioning]
