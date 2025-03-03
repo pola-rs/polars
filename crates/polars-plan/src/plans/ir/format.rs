@@ -257,7 +257,7 @@ impl<'a> IRDisplay<'a> {
                     n_columns,
                     file_info.schema.len(),
                     &predicate,
-                    file_options.slice,
+                    file_options.pre_slice,
                     file_options.row_index.as_ref(),
                 )
             },

@@ -50,7 +50,7 @@ pub struct PyFileOptions {
 impl PyFileOptions {
     #[getter]
     fn n_rows(&self) -> Option<(i64, usize)> {
-        self.inner.slice
+        self.inner.pre_slice
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {

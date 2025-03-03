@@ -85,7 +85,7 @@ fn slice_at_scan(q: LazyFrame) -> bool {
     (&lp_arena).iter(lp).any(|(_, lp)| {
         use IR::*;
         match lp {
-            Scan { file_options, .. } => file_options.slice.is_some(),
+            Scan { file_options, .. } => file_options.pre_slice.is_some(),
             _ => false,
         }
     })

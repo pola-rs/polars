@@ -75,7 +75,7 @@ impl IpcSourceNode {
         let IpcScanOptions = options;
 
         let FileScanOptions {
-            slice,
+            pre_slice: slice,
             with_columns,
             cache: _, // @TODO
             row_index,

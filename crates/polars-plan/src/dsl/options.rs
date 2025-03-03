@@ -192,7 +192,8 @@ pub type FileCount = u32;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types.
 pub struct FileScanOptions {
-    pub slice: Option<(i64, usize)>,
+    // Slice applied before predicates
+    pub pre_slice: Option<(i64, usize)>,
     pub with_columns: Option<Arc<[PlSmallStr]>>,
     pub cache: bool,
     pub row_index: Option<RowIndex>,

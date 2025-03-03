@@ -211,7 +211,7 @@ impl CsvSourceNode {
         let skip_rows_after_header = options.skip_rows_after_header;
         let comment_prefix = parse_options.comment_prefix.clone();
         let has_header = options.has_header;
-        let global_slice = self.file_options.slice;
+        let global_slice = self.file_options.pre_slice;
 
         if verbose {
             eprintln!(
@@ -589,11 +589,11 @@ impl MultiScanable for CsvSourceNode {
         });
     }
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
-        self.file_options.slice = None;
+        self.file_options.pre_slice = None;
         match row_restriction {
             None => {},
             Some(RowRestriction::Slice(rng)) => {
-                self.file_options.slice = Some((rng.start as i64, rng.end - rng.start))
+                self.file_options.pre_slice = Some((rng.start as i64, rng.end - rng.start))
             },
             Some(RowRestriction::Predicate(_)) => unreachable!(),
         }

@@ -201,7 +201,7 @@ fn visualize_plan_rec(
                 write!(f, r#"\nrow index: name: "{}", offset: {}"#, name, offset).unwrap();
             }
 
-            if let Some((offset, len)) = file_options.slice {
+            if let Some((offset, len)) = file_options.pre_slice {
                 write!(f, "\nslice: offset: {}, len: {}", offset, len).unwrap();
             }
 

@@ -399,7 +399,7 @@ fn test_scan_parquet_limit_9001() {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
         },
-        IR::Scan { file_options, .. } => file_options.slice == Some((0, 3)),
+        IR::Scan { file_options, .. } => file_options.pre_slice == Some((0, 3)),
         _ => true,
     });
 }
