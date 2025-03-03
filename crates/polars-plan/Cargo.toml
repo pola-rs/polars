@@ -60,6 +60,7 @@ serde = [
   "polars-io/serde",
   "polars-ops/serde",
   "polars-utils/serde",
+  "polars-compute/serde",
   "either/serde",
 ]
 streaming = []

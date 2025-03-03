@@ -18,6 +18,8 @@ pub mod iterator;
 
 mod mutable;
 pub use mutable::*;
+mod builder;
+pub use builder::*;
 use polars_error::{polars_bail, PolarsResult};
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::slice::SliceAble;

@@ -133,6 +133,10 @@ html_theme_options = {
             "name": "User guide",
             "url": f"{web_root}/",
         },
+        {
+            "name": "Polars Cloud API reference",
+            "url": "https://docs.cloud.pola.rs/reference/index.html",
+        },
     ],
     "icon_links": [
         {

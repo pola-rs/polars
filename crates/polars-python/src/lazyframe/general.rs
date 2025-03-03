@@ -8,7 +8,7 @@ use polars::time::*;
 use polars_core::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
-use polars_plan::plans::ScanSources;
+use polars_plan::dsl::ScanSources;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyDict, PyList};
@@ -875,6 +875,11 @@ impl PyLazyFrame {
         ldf.filter(predicate.inner).into()
     }
 
+    fn remove(&mut self, predicate: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.remove(predicate.inner).into()
+    }
+
     fn select(&mut self, exprs: Vec<PyExpr>) -> Self {
         let ldf = self.ldf.clone();
         let exprs = exprs.to_exprs();
@@ -1018,7 +1023,7 @@ impl PyLazyFrame {
             .into())
     }
 
-    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, join_nulls, how, suffix, validate, maintain_order, coalesce=None))]
+    #[pyo3(signature = (other, left_on, right_on, allow_parallel, force_parallel, nulls_equal, how, suffix, validate, maintain_order, coalesce=None))]
     fn join(
         &self,
         other: Self,
@@ -1026,7 +1031,7 @@ impl PyLazyFrame {
         right_on: Vec<PyExpr>,
         allow_parallel: bool,
         force_parallel: bool,
-        join_nulls: bool,
+        nulls_equal: bool,
         how: Wrap<JoinType>,
         suffix: String,
         validate: Wrap<JoinValidation>,
@@ -1056,7 +1061,7 @@ impl PyLazyFrame {
             .right_on(right_on)
             .allow_parallel(allow_parallel)
             .force_parallel(force_parallel)
-            .join_nulls(join_nulls)
+            .join_nulls(nulls_equal)
             .how(how.0)
             .suffix(suffix)
             .validate(validate.0)

@@ -1,4 +1,6 @@
-use arrow::legacy::kernels::sort_partition::{create_clean_partitions, partition_to_groups};
+use arrow::legacy::kernels::sort_partition::{
+    create_clean_partitions, partition_to_groups, partition_to_groups_amortized_varsize,
+};
 use polars_error::signals::try_raise_keyboard_interrupt;
 use polars_utils::total_ord::{ToTotalOrd, TotalHash};
 
@@ -8,6 +10,7 @@ use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
 use crate::config::verbose;
 use crate::series::BitRepr;
 use crate::utils::flatten::flatten_par;
+use crate::utils::Container;
 
 /// Used to create the tuples for a group_by operation.
 pub trait IntoGroupsType {
@@ -276,6 +279,17 @@ impl IntoGroupsType for BinaryChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        if self.is_sorted_any() && !self.has_nulls() && self.n_chunks() == 1 {
+            let arr = self.downcast_get(0).unwrap();
+            let values = arr.values_iter();
+            let mut out = Vec::with_capacity(values.len() / 30);
+            partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
+            return Ok(GroupsType::Slice {
+                groups: out,
+                rolling: false,
+            });
+        }
+
         multithreaded &= POOL.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 
@@ -299,6 +313,16 @@ impl IntoGroupsType for BinaryOffsetChunked {
         mut multithreaded: bool,
         sorted: bool,
     ) -> PolarsResult<GroupsType> {
+        if self.is_sorted_any() && !self.has_nulls() && self.n_chunks() == 1 {
+            let arr = self.downcast_get(0).unwrap();
+            let values = arr.values_iter();
+            let mut out = Vec::with_capacity(values.len() / 30);
+            partition_to_groups_amortized_varsize(values, arr.len() as _, 0, false, 0, &mut out);
+            return Ok(GroupsType::Slice {
+                groups: out,
+                rolling: false,
+            });
+        }
         multithreaded &= POOL.current_num_threads() > 1;
         let bh = self.to_bytes_hashes(multithreaded, Default::default());
 

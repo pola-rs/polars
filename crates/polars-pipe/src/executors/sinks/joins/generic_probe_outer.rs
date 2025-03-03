@@ -48,7 +48,7 @@ pub struct GenericFullOuterJoinProbe<K: ExtraPayload> {
     swapped: bool,
     // cached output names
     output_names: Option<Vec<PlSmallStr>>,
-    join_nulls: bool,
+    nulls_equal: bool,
     coalesce: bool,
     thread_no: usize,
     row_values: RowValues,
@@ -68,7 +68,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         swapped: bool,
         // Re-use the hashes allocation of the build side.
         amortized_hashes: Vec<u64>,
-        join_nulls: bool,
+        nulls_equal: bool,
         coalesce: bool,
         key_names_left: Arc<[PlSmallStr]>,
         key_names_right: Arc<[PlSmallStr]>,
@@ -85,7 +85,7 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
             hashes: amortized_hashes,
             swapped,
             output_names: None,
-            join_nulls,
+            nulls_equal,
             coalesce,
             thread_no: 0,
             row_values: RowValues::new(join_columns_right, false),
@@ -208,10 +208,10 @@ impl<K: ExtraPayload> GenericFullOuterJoinProbe<K> {
         let mut hashes = std::mem::take(&mut self.hashes);
         let rows = self
             .row_values
-            .get_values(context, chunk, self.join_nulls)?;
+            .get_values(context, chunk, self.nulls_equal)?;
         hash_rows(&rows, &mut hashes, &self.hb);
 
-        if self.join_nulls || rows.null_count() == 0 {
+        if self.nulls_equal || rows.null_count() == 0 {
             let iter = hashes.iter().zip(rows.values_iter()).enumerate();
             self.match_outer(iter);
         } else {

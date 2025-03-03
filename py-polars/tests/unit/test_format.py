@@ -473,3 +473,41 @@ Series: '' [decimal[38,38]]
 def test_simple_project_format(lf: pl.LazyFrame, expected: str) -> None:
     result = lf.explain()
     assert expected in result
+
+
+@pytest.mark.parametrize(
+    ("df", "expected"),
+    [
+        pytest.param(
+            pl.DataFrame({"A": range(4)}),
+            """shape: (4, 1)
++-----+
+| A   |
++=====+
+| 0   |
+| 1   |
+| ... |
+| 3   |
++-----+""",
+            id="Ellipsis correctly aligned",
+        ),
+        pytest.param(
+            pl.DataFrame({"A": range(2)}),
+            """shape: (2, 1)
++---+
+| A |
++===+
+| 0 |
+| 1 |
++---+""",
+            id="No ellipsis needed",
+        ),
+    ],
+)
+def test_format_ascii_table_truncation(df: pl.DataFrame, expected: str) -> None:
+    with pl.Config(tbl_rows=3, tbl_hide_column_data_types=True, ascii_tables=True):
+        assert str(df) == expected
+
+
+def test_format_21393() -> None:
+    assert pl.select(pl.format("{}", pl.lit(1, pl.Int128))).item() == "1"

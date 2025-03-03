@@ -5,7 +5,7 @@ use std::sync::Arc;
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::{HiveOptions, RowIndex};
-use polars_plan::plans::{DslPlan, FileScan, ScanSources};
+use polars_plan::dsl::{DslPlan, FileScan, ScanSources};
 use polars_plan::prelude::{FileScanOptions, NDJsonReadOptions};
 
 use crate::prelude::LazyFrame;
@@ -123,7 +123,7 @@ impl LazyJsonLineReader {
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
         let file_options = FileScanOptions {
-            slice: self.n_rows.map(|x| (0, x)),
+            pre_slice: self.n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
             row_index: self.row_index,

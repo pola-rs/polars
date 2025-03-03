@@ -4,7 +4,7 @@ use std::{mem, ops};
 
 use arrow::datatypes::ArrowSchemaRef;
 use polars_row::ArrayRef;
-use polars_schema::schema::debug_ensure_matching_schema_names;
+use polars_schema::schema::ensure_matching_schema_names;
 use polars_utils::itertools::Itertools;
 use rayon::prelude::*;
 
@@ -31,6 +31,7 @@ pub(crate) mod horizontal;
 pub mod row;
 mod top_k;
 mod upstream_traits;
+mod validation;
 
 use arrow::record_batch::{RecordBatch, RecordBatchT};
 use polars_utils::pl_str::PlSmallStr;
@@ -260,6 +261,8 @@ impl DataFrame {
 
     /// Create a DataFrame from a Vector of Series.
     ///
+    /// Errors if a column names are not unique, or if heights are not all equal.
+    ///
     /// # Example
     ///
     /// ```
@@ -271,17 +274,9 @@ impl DataFrame {
     /// # Ok::<(), PolarsError>(())
     /// ```
     pub fn new(columns: Vec<Column>) -> PolarsResult<Self> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-
-        let Some(fst) = columns.first() else {
-            return Ok(DataFrame {
-                height: 0,
-                columns,
-                cached_schema: OnceLock::new(),
-            });
-        };
-
-        Self::new_with_height(fst.len(), columns)
+        DataFrame::validate_columns_slice(&columns)
+            .map_err(|e| e.wrap_msg(|e| format!("could not create a new DataFrame: {}", e)))?;
+        Ok(unsafe { Self::new_no_checks_height_from_first(columns) })
     }
 
     pub fn new_with_height(height: usize, columns: Vec<Column>) -> PolarsResult<Self> {
@@ -522,11 +517,7 @@ impl DataFrame {
     /// having an equal length and a unique name, if not this may panic down the line.
     pub unsafe fn new_no_checks(height: usize, columns: Vec<Column>) -> DataFrame {
         if cfg!(debug_assertions) {
-            ensure_names_unique(&columns, |s| s.name().as_str()).unwrap();
-
-            for col in &columns {
-                assert_eq!(col.len(), height);
-            }
+            DataFrame::validate_columns_slice(&columns).unwrap();
         }
 
         unsafe { Self::_new_no_checks_impl(height, columns) }
@@ -542,30 +533,6 @@ impl DataFrame {
             columns,
             cached_schema: OnceLock::new(),
         }
-    }
-
-    /// Create a new `DataFrame` but does not check the length of the `Series`,
-    /// only check for duplicates.
-    ///
-    /// It is advised to use [DataFrame::new] in favor of this method.
-    ///
-    /// # Safety
-    ///
-    /// It is the callers responsibility to uphold the contract of all `Series`
-    /// having an equal length, if not this may panic down the line.
-    pub unsafe fn new_no_length_checks(columns: Vec<Column>) -> PolarsResult<DataFrame> {
-        ensure_names_unique(&columns, |s| s.name().as_str())?;
-
-        Ok(if cfg!(debug_assertions) {
-            Self::new(columns).unwrap()
-        } else {
-            let height = Self::infer_height(&columns);
-            DataFrame {
-                height,
-                columns,
-                cached_schema: OnceLock::new(),
-            }
-        })
     }
 
     /// Shrink the capacity of this DataFrame to fit its length.
@@ -1845,7 +1812,9 @@ impl DataFrame {
         cols: &[PlSmallStr],
         schema: &Schema,
     ) -> PolarsResult<Vec<Column>> {
-        debug_ensure_matching_schema_names(schema, self.schema())?;
+        if cfg!(debug_assertions) {
+            ensure_matching_schema_names(schema, self.schema())?;
+        }
 
         cols.iter()
             .map(|name| {

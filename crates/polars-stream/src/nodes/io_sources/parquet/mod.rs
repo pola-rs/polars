@@ -1,7 +1,5 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
 use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
@@ -14,15 +12,17 @@ use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_io::RowIndex;
 use polars_parquet::read::read_metadata;
 use polars_parquet::read::schema::infer_schema_with_options;
+use polars_plan::dsl::{ScanSource, ScanSources};
 use polars_plan::plans::hive::HivePartitions;
-use polars_plan::plans::{FileInfo, ScanSource, ScanSources};
+use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
+use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use super::multi_scan::{MultiScanable, RowRestrication};
-use super::{MorselOutput, SourceNode, SourceOutput};
+use super::multi_scan::MultiScanable;
+use super::{MorselOutput, RowRestriction, SourceNode, SourceOutput};
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::wait_group::WaitGroup;
@@ -32,7 +32,6 @@ use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
 mod init;
-mod mem_prefetch_funcs;
 mod metadata_fetch;
 mod metadata_utils;
 mod row_group_data_fetch;
@@ -153,7 +152,7 @@ impl SourceNode for ParquetSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unresistricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
             .map(|_| connector())
@@ -189,17 +188,20 @@ impl SourceNode for ParquetSourceNode {
         self.init_projected_arrow_schema();
 
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
-
-        let morsel_stream_starter = self.morsel_stream_starter.take().unwrap();
+        let mut morsel_stream_starter = self.morsel_stream_starter.take();
 
         join_handles.push(spawn(TaskPriority::Low, async move {
-            if let Some(rc) = unresistricted_row_count {
+            if let Some(rc) = unrestricted_row_count {
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))?;
-                rc.store(num_rows, Ordering::Relaxed);
+                _ = rc.send(num_rows);
             }
 
-            morsel_stream_starter.send(()).unwrap();
+            if let Some(v) = morsel_stream_starter.take() {
+                if v.send(()).is_err() {
+                    return Ok(());
+                }
+            }
 
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {
@@ -268,8 +270,7 @@ impl MultiScanable for ParquetSourceNode {
 
     const BASE_NAME: &'static str = "parquet";
 
-    const DOES_PRED_PD: bool = true;
-    const DOES_SLICE_PD: bool = true;
+    const SPECIALIZED_PRED_PD: bool = true;
 
     async fn new(
         source: ScanSource,
@@ -330,18 +331,18 @@ impl MultiScanable for ParquetSourceNode {
             self.file_options.with_columns = Some(with_columns.into());
         }
     }
-    fn with_row_restriction(&mut self, row_restriction: Option<RowRestrication>) {
+    fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
         self.predicate = None;
-        self.file_options.slice = None;
+        self.file_options.pre_slice = None;
 
         if let Some(row_restriction) = row_restriction {
             match row_restriction {
-                RowRestrication::Slice(slice) => {
-                    self.file_options.slice = Some((slice.start as i64, slice.len()))
+                RowRestriction::Slice(slice) => {
+                    self.file_options.pre_slice = Some((slice.start as i64, slice.len()));
                 },
                 // @TODO: Cache
-                RowRestrication::Predicate(scan_predicate) => {
-                    self.predicate = Some(scan_predicate.to_io(None, &self.file_info.schema))
+                RowRestriction::Predicate(scan_predicate) => {
+                    self.predicate = Some(scan_predicate);
                 },
             }
         }

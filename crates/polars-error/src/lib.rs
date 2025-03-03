@@ -77,6 +77,7 @@ impl Display for ErrString {
 
 #[derive(Debug, Clone)]
 pub enum PolarsError {
+    AssertionError(ErrString),
     ColumnNotFound(ErrString),
     ComputeError(ErrString),
     Duplicate(ErrString),
@@ -113,6 +114,7 @@ impl Display for PolarsError {
             | SQLInterface(msg)
             | SQLSyntax(msg) => write!(f, "{msg}"),
 
+            AssertionError(msg) => write!(f, "assertion failed: {msg}"),
             ColumnNotFound(msg) => write!(f, "not found: {msg}"),
             Duplicate(msg) => write!(f, "duplicate: {msg}"),
             IO { error, msg } => match msg {
@@ -226,6 +228,7 @@ impl PolarsError {
     pub fn wrap_msg<F: FnOnce(&str) -> String>(&self, func: F) -> Self {
         use PolarsError::*;
         match self {
+            AssertionError(msg) => AssertionError(func(msg).into()),
             ColumnNotFound(msg) => ColumnNotFound(func(msg).into()),
             ComputeError(msg) => ComputeError(func(msg).into()),
             Duplicate(msg) => Duplicate(func(msg).into()),
@@ -406,6 +409,12 @@ on startup."#.trim_start())
         polars_err!(
             ComputeError: "could not find an appropriate format to parse {}s, please define a format",
             $dtype,
+        )
+    };
+    (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
+        $crate::polars_err!(
+            AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",
+            $objects, $detail, $lhs, $rhs
         )
     };
 }

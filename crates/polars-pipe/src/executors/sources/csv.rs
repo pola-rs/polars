@@ -4,8 +4,8 @@ use polars_core::error::feature_gated;
 use polars_core::{config, POOL};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
+use polars_plan::dsl::ScanSources;
 use polars_plan::global::_set_n_rows_for_scan;
-use polars_plan::plans::ScanSources;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::itertools::Itertools;
 
@@ -43,7 +43,7 @@ impl CsvSource {
             .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let file_options = self.file_options.clone();
 
-        let n_rows = file_options.slice.map(|x| {
+        let n_rows = file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         });
@@ -82,7 +82,7 @@ impl CsvSource {
         };
         let n_rows = _set_n_rows_for_scan(
             file_options
-                .slice
+                .pre_slice
                 .map(|x| {
                     assert_eq!(x.0, 0);
                     x.1

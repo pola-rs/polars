@@ -35,7 +35,7 @@ def show_versions() -> None:
     pandas:               2.2.2
     pyarrow:              16.0.0
     pydantic:             2.7.1
-    pyiceberg:            0.6.0
+    pyiceberg:            0.7.1
     sqlalchemy:           2.0.29
     torch:                2.2.2
     xlsx2csv:             0.8.2
@@ -87,6 +87,7 @@ def _get_dependency_list() -> list[str]:
         "numpy",
         "openpyxl",
         "pandas",
+        "polars_cloud",
         "pyarrow",
         "pydantic",
         "pyiceberg",

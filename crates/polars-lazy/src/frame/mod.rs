@@ -30,6 +30,7 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
@@ -870,7 +871,11 @@ impl LazyFrame {
 
             let _hold = StringCacheHolder::hold();
             let f = || {
-                polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
+                polars_stream::run_query(
+                    stream_lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )
             };
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
                 Ok(v) => return Some(v),
@@ -928,9 +933,10 @@ impl LazyFrame {
         Ok(())
     }
 
-    /// Filter by some predicate expression.
+    /// Filter frame rows that match a predicate expression.
     ///
-    /// The expression must yield boolean values.
+    /// The expression must yield boolean values (note that rows where the
+    /// predicate resolves to `null` are *not* included in the resulting frame).
     ///
     /// # Example
     ///
@@ -948,6 +954,27 @@ impl LazyFrame {
         let opt_state = self.get_opt_state();
         let lp = self.get_plan_builder().filter(predicate).build();
         Self::from_logical_plan(lp, opt_state)
+    }
+
+    /// Remove frame rows that match a predicate expression.
+    ///
+    /// The expression must yield boolean values (note that rows where the
+    /// predicate resolves to `null` are *not* removed from the resulting frame).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use polars_core::prelude::*;
+    /// use polars_lazy::prelude::*;
+    ///
+    /// fn example(df: DataFrame) -> LazyFrame {
+    ///       df.lazy()
+    ///         .remove(col("sepal_width").is_null())
+    ///         .select([col("sepal_width"), col("sepal_length")])
+    /// }
+    /// ```
+    pub fn remove(self, predicate: Expr) -> Self {
+        self.filter(predicate.neq_missing(lit(true)))
     }
 
     /// Select (and optionally rename, with [`alias`](crate::dsl::Expr::alias)) columns from the query.
@@ -1014,7 +1041,6 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1360,7 +1386,7 @@ impl LazyFrame {
             validation,
             suffix,
             slice,
-            join_nulls,
+            nulls_equal,
             coalesce,
             maintain_order,
         } = args;
@@ -1376,7 +1402,7 @@ impl LazyFrame {
             .right_on(right_on)
             .how(how)
             .validate(validation)
-            .join_nulls(join_nulls)
+            .join_nulls(nulls_equal)
             .coalesce(coalesce)
             .maintain_order(maintain_order);
 
@@ -1920,7 +1946,6 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -2027,7 +2052,7 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<PlSmallStr>,
     validation: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
 }
@@ -2044,7 +2069,7 @@ impl JoinBuilder {
             force_parallel: false,
             suffix: None,
             validation: Default::default(),
-            join_nulls: false,
+            nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
         }
@@ -2106,8 +2131,8 @@ impl JoinBuilder {
     }
 
     /// Join on null values. By default null values will never produce matches.
-    pub fn join_nulls(mut self, join_nulls: bool) -> Self {
-        self.join_nulls = join_nulls;
+    pub fn join_nulls(mut self, nulls_equal: bool) -> Self {
+        self.nulls_equal = nulls_equal;
         self
     }
 
@@ -2148,7 +2173,7 @@ impl JoinBuilder {
             validation: self.validation,
             suffix: self.suffix,
             slice: None,
-            join_nulls: self.join_nulls,
+            nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
         };
@@ -2245,7 +2270,7 @@ impl JoinBuilder {
             validation: self.validation,
             suffix: self.suffix,
             slice: None,
-            join_nulls: self.join_nulls,
+            nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
         };

@@ -1,4 +1,4 @@
-use arrow::legacy::prelude::RollingFnParams;
+use polars_compute::rolling::RollingFnParams;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

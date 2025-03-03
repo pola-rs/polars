@@ -359,7 +359,7 @@ pub(crate) fn elim_cmn_subplans(
     let mut id_array = Default::default();
 
     with_ir_arena(lp_arena, expr_arena, |arena| {
-        let lp_node = IRNode::new(root);
+        let lp_node = IRNode::new_mutate(root);
         let mut visitor = LpIdentifierVisitor::new(&mut sp_count, &mut id_array);
 
         lp_node.visit(&mut visitor, arena).map(|_| ()).unwrap();

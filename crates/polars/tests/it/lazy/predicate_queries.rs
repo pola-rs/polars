@@ -140,7 +140,7 @@ fn test_is_in_categorical_3420() -> PolarsResult<()> {
     let out = df
         .lazy()
         .with_column(col("a").strict_cast(DataType::Categorical(None, Default::default())))
-        .filter(col("a").is_in(lit(s).alias("x")))
+        .filter(col("a").is_in(lit(s).alias("x"), false))
         .collect()?;
 
     let mut expected = df![

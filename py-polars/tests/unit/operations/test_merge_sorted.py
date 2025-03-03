@@ -75,6 +75,15 @@ def test_merge_sorted_categorical() -> None:
         left.merge_sorted(right, "a")
 
 
+@pytest.mark.may_fail_auto_streaming
+def test_merge_sorted_categorical_lexical() -> None:
+    left = pl.Series("a", ["b", "a"], pl.Categorical("lexical")).sort().to_frame()
+    right = pl.Series("a", ["b", "b", "a"], pl.Categorical("lexical")).sort().to_frame()
+    result = left.merge_sorted(right, "a").get_column("a")
+    expected = left.get_column("a").append(right.get_column("a")).sort()
+    assert_series_equal(result, expected)
+
+
 @pytest.mark.parametrize(
     ("size", "ra"),
     [

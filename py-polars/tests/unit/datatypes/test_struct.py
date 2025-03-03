@@ -1227,6 +1227,18 @@ def test_nested_object_raises_15237() -> None:
         df.select(pl.struct("a"))
 
 
+def test_empty_struct_with_fields_21095() -> None:
+    df = pl.DataFrame({"a": [{}, {}]})
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=pl.lit(42, pl.Int64))),
+        pl.DataFrame({"a": [{"a": 42}, {"a": 42}]}),
+    )
+    assert_frame_equal(
+        df.select(pl.col("a").struct.with_fields(a=None)),
+        pl.DataFrame({"a": [{"a": None}, {"a": None}]}),
+    )
+
+
 def test_cast_to_struct_needs_field_14083() -> None:
     with pytest.raises(
         InvalidOperationError, match="must specify one field in the struct"
@@ -1237,3 +1249,34 @@ def test_cast_to_struct_needs_field_14083() -> None:
         InvalidOperationError, match="must specify one field in the struct"
     ):
         pl.Series([1], dtype=pl.Int32).cast(pl.Struct({"a": pl.UInt8, "b": pl.UInt8}))
+
+
+@pytest.mark.filterwarnings("ignore:Comparisons with None always result in null.")
+def test_zip_outer_validity_infinite_recursion_21267() -> None:
+    s = pl.Series("x", [None, None], pl.Struct({"f": pl.Null}))
+    assert_series_equal(
+        s.to_frame().select(pl.col.x.__eq__(None)).to_series(),
+        pl.Series("x", [None, None], pl.Boolean),
+    )
+
+
+def test_struct_arithmetic_broadcast_21376() -> None:
+    df = pl.DataFrame(
+        {
+            "struct1": [{"low": 1, "mid": 2, "up": 3}],
+            "list_struct": [
+                [{"low": 1, "mid": 2, "up": 3}, {"low": 1, "mid": 2, "up": 3}]
+            ],
+        }
+    )
+    expected = pl.DataFrame(
+        {
+            "add_struct": [{"low": 2, "mid": 4, "up": 6}] * 2,
+        }
+    )
+    out = (
+        df.with_row_index()
+        .explode("list_struct")
+        .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
+    )
+    assert_frame_equal(out, expected)

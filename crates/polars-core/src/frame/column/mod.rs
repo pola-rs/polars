@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use arrow::bitmap::BitmapBuilder;
 use arrow::trusted_len::TrustMyLength;
 use num_traits::{Num, NumCast};
+use polars_compute::rolling::QuantileMethod;
 use polars_error::PolarsResult;
 use polars_utils::index::check_bounds;
 use polars_utils::pl_str::PlSmallStr;
@@ -753,6 +754,7 @@ impl Column {
         method: QuantileMethod,
     ) -> Self {
         // @scalar-opt
+
         unsafe {
             self.as_materialized_series()
                 .agg_quantile(groups, quantile, method)
@@ -1745,6 +1747,15 @@ impl Column {
     pub(crate) fn into_total_eq_inner<'a>(&'a self) -> Box<dyn TotalEqInner + 'a> {
         // @scalar-opt
         self.as_materialized_series().into_total_eq_inner()
+    }
+
+    pub fn rechunk_to_arrow(self, compat_level: CompatLevel) -> Box<dyn Array> {
+        // Rechunk to one chunk if necessary
+        let mut series = self.take_materialized_series();
+        if series.n_chunks() > 1 {
+            series = series.rechunk();
+        }
+        series.to_arrow(0, compat_level)
     }
 }
 

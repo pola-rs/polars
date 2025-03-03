@@ -81,14 +81,16 @@ impl ParquetExec {
                 None
             }
         };
-        let predicate = self
-            .predicate
-            .as_ref()
-            .map(|p| p.to_io(self.skip_batch_predicate.as_ref(), &self.file_info.schema));
+        let predicate = self.predicate.as_ref().map(|p| {
+            p.to_io(
+                self.skip_batch_predicate.as_ref(),
+                self.file_info.schema.clone(),
+            )
+        });
         let mut base_row_index = self.file_options.row_index.take();
 
         // (offset, end)
-        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
+        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.pre_slice {
             if slice.0 >= 0 {
                 (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
             } else {
@@ -294,7 +296,7 @@ impl ParquetExec {
             skip_batch_predicate: self
                 .skip_batch_predicate
                 .clone()
-                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.as_ref())),
+                .or_else(|| p.to_dyn_skip_batch_predicate(self.file_info.schema.clone())),
             column_predicates: Arc::new(Default::default()),
         });
         let mut base_row_index = self.file_options.row_index.take();
@@ -303,7 +305,7 @@ impl ParquetExec {
         let mut first_file_idx = 0;
 
         // (offset, end)
-        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.slice {
+        let (slice_offset, slice_end) = if let Some(slice) = self.file_options.pre_slice {
             if slice.0 >= 0 {
                 (slice.0 as usize, slice.1.saturating_add(slice.0 as usize))
             } else {
@@ -582,7 +584,7 @@ impl ScanExec for ParquetExec {
         row_index: Option<RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(o, l)| (o as i64, l));
+        self.file_options.pre_slice = slice.map(|(o, l)| (o as i64, l));
         self.predicate = predicate;
         self.skip_batch_predicate = skip_batch_predicate;
         self.file_options.row_index = row_index;

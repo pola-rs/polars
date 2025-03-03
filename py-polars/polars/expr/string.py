@@ -2724,7 +2724,6 @@ class ExprStringNameSpace:
         │ ["disco"]       │
         │ ["rhap", "ody"] │
         └─────────────────┘
-
         """
         patterns = parse_into_expression(
             patterns, str_as_lit=False, list_as_series=True
@@ -2803,7 +2802,6 @@ class ExprStringNameSpace:
         │ [0]       │
         │ [0, 5]    │
         └───────────┘
-
         """
         patterns = parse_into_expression(
             patterns, str_as_lit=False, list_as_series=True

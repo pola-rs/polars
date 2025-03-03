@@ -325,13 +325,13 @@
 //! ### Custom allocator
 //! An OLAP query engine does a lot of heap allocations. It is recommended to use a custom
 //! allocator, (we have found this to have up to ~25% runtime influence).
-//! [JeMalloc](https://crates.io/crates/jemallocator) and
+//! [JeMalloc](https://crates.io/crates/tikv-jemallocator) and
 //! [Mimalloc](https://crates.io/crates/mimalloc) for instance, show a significant
 //! performance gain in runtime as well as memory usage.
 //!
 //! #### Jemalloc Usage
 //! ```ignore
-//! use jemallocator::Jemalloc;
+//! use tikv_jemallocator::Jemalloc;
 //!
 //! #[global_allocator]
 //! static GLOBAL: Jemalloc = Jemalloc;
@@ -340,7 +340,7 @@
 //! #### Cargo.toml
 //! ```toml
 //! [dependencies]
-//! jemallocator = { version = "*" }
+//! tikv-jemallocator = { version = "*" }
 //! ```
 //!
 //! #### Mimalloc Usage

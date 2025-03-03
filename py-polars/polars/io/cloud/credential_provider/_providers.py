@@ -172,7 +172,7 @@ class CredentialProviderAzure(CredentialProvider):
         *,
         scopes: list[str] | None = None,
         tenant_id: str | None = None,
-        credentials: Any | None = None,
+        credential: Any | None = None,
         _storage_account: str | None = None,
     ) -> None:
         """
@@ -186,7 +186,7 @@ class CredentialProviderAzure(CredentialProvider):
             Scopes to pass to `get_token`
         tenant_id
             Azure tenant ID.
-        credentials
+        credential
             Optionally pass an instantiated Azure credential class to use (e.g.
             `azure.identity.DefaultAzureCredential`). The credential class must
             have a `get_token()` method.
@@ -199,21 +199,21 @@ class CredentialProviderAzure(CredentialProvider):
             scopes if scopes is not None else ["https://storage.azure.com/.default"]
         )
         self.tenant_id = tenant_id
-        self.credentials = credentials
+        self.credential = credential
 
-        if credentials is not None:
-            # If the user passes a credentials class, we just need to ensure it
+        if credential is not None:
+            # If the user passes a credential class, we just need to ensure it
             # has a `get_token()` method.
-            if not hasattr(credentials, "get_token"):
+            if not hasattr(credential, "get_token"):
                 msg = (
-                    f"the provided `credentials` object {credentials!r} does "
+                    f"the provided `credential` object {credential!r} does "
                     "not have a `get_token()` method."
                 )
                 raise ValueError(msg)
 
         # We don't need the module if we are permitted and able to retrieve the
         # account key from the Azure CLI.
-        elif self._try_get_azure_storage_account_credentials_if_permitted() is None:
+        elif self._try_get_azure_storage_account_credential_if_permitted() is None:
             self._ensure_module_availability()
 
         if verbose():
@@ -227,13 +227,13 @@ class CredentialProviderAzure(CredentialProvider):
     def __call__(self) -> CredentialProviderFunctionReturn:
         """Fetch the credentials."""
         if (
-            v := self._try_get_azure_storage_account_credentials_if_permitted()
+            v := self._try_get_azure_storage_account_credential_if_permitted()
         ) is not None:
             return v
 
         # Done like this to bypass mypy, we don't have stubs for azure.identity
         credential = (
-            self.credentials
+            self.credential
             or importlib.import_module("azure.identity").__dict__[
                 "DefaultAzureCredential"
             ]()
@@ -244,7 +244,7 @@ class CredentialProviderAzure(CredentialProvider):
             "bearer_token": token.token,
         }, token.expires_on
 
-    def _try_get_azure_storage_account_credentials_if_permitted(
+    def _try_get_azure_storage_account_credential_if_permitted(
         self,
     ) -> CredentialProviderFunctionReturn | None:
         POLARS_AUTO_USE_AZURE_STORAGE_ACCOUNT_KEY = os.getenv(

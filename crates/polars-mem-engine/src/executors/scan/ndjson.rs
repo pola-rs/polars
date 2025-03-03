@@ -49,7 +49,7 @@ impl JsonExec {
             eprintln!("ASYNC READING FORCED");
         }
 
-        let mut n_rows = self.file_options.slice.map(|x| {
+        let mut n_rows = self.file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         });
@@ -144,7 +144,7 @@ impl ScanExec for JsonExec {
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(s, l)| (s as i64, l));
+        self.file_options.pre_slice = slice.map(|(s, l)| (s as i64, l));
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 

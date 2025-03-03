@@ -27,6 +27,8 @@ mod time;
 use std::any::Any;
 use std::borrow::Cow;
 
+use polars_compute::rolling::QuantileMethod;
+
 use super::*;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{

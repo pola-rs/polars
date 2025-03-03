@@ -68,6 +68,9 @@ impl From<PyPolarsErr> for PyErr {
         use PyPolarsErr::*;
         match err {
             Polars(err) => match err {
+                PolarsError::AssertionError(err) => {
+                    pyo3::exceptions::PyAssertionError::new_err(err.to_string())
+                },
                 PolarsError::ColumnNotFound(name) => ColumnNotFoundError::new_err(name.to_string()),
                 PolarsError::ComputeError(err) => ComputeError::new_err(err.to_string()),
                 PolarsError::Duplicate(err) => DuplicateError::new_err(err.to_string()),

@@ -1,3 +1,4 @@
+use std::ops::Range;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -6,7 +7,8 @@ use futures::StreamExt;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
-use polars_utils::index::AtomicIdxSize;
+use polars_io::predicates::ScanIOPredicate;
+use polars_utils::IdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
 use crate::async_executor::AbortOnDropHandle;
@@ -18,13 +20,21 @@ pub mod csv;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod multi_scan;
+#[cfg(feature = "json")]
+pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+
+#[derive(Clone, Debug)]
+pub enum RowRestriction {
+    Slice(Range<usize>),
+    Predicate(ScanIOPredicate),
+}
 
 /// The state needed to manage a spawned [`SourceNode`].
 struct StartedSourceComputeNode {
     output_send: Sender<SourceOutput>,
-    join_handles: Vec<JoinHandle<PolarsResult<()>>>,
+    join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
 /// A [`ComputeNode`] to wrap a [`SourceNode`].
@@ -94,6 +104,10 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
 
             self.source
                 .spawn_source(self.num_pipelines, rx, state, &mut join_handles, None);
+            // One of the tasks might throw an error. In which case, we need to cancel all
+            // handles and find the error.
+            let join_handles: FuturesUnordered<_> =
+                join_handles.drain(..).map(AbortOnDropHandle::new).collect();
 
             StartedSourceComputeNode {
                 output_send: tx,
@@ -112,27 +126,22 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (outcome, wait_group, source_output) = SourceOutput::from_port(source_output);
-            if started.output_send.send(source_output).await.is_err() {
-                return Ok(());
-            };
 
-            // Wait for the phase to finish.
-            wait_group.wait().await;
-            if outcome.did_finish() {
+            if started.output_send.send(source_output).await.is_ok() {
+                // Wait for the phase to finish.
+                wait_group.wait().await;
+                if !outcome.did_finish() {
+                    return Ok(());
+                }
+
                 if config::verbose() {
                     eprintln!("[{name}]: Last data received.");
                 }
+            };
 
-                // One of the tasks might throw an error. In which case, we need to cancel all
-                // handles and find the error.
-                let mut join_handles: FuturesUnordered<_> = started
-                    .join_handles
-                    .drain(..)
-                    .map(AbortOnDropHandle::new)
-                    .collect();
-                while let Some(ret) = join_handles.next().await {
-                    ret?;
-                }
+            // Either the task finished or some error occurred.
+            while let Some(ret) = started.join_handles.next().await {
+                ret?;
             }
 
             Ok(())
@@ -159,16 +168,17 @@ impl PhaseOutcomeToken {
     }
 
     /// Indicate that the phase was stopped before finishing.
-    fn stop(&self) {
+    pub fn stop(&self) {
         self.stop.store(true, Ordering::Relaxed);
     }
 
     /// Returns whether the phase was stopped before finishing.
-    fn was_stopped(&self) -> bool {
+    pub fn was_stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
     }
+
     /// Returns whether the phase was finished completely.
-    fn did_finish(&self) -> bool {
+    pub fn did_finish(&self) -> bool {
         !self.was_stopped()
     }
 }
@@ -273,6 +283,6 @@ pub trait SourceNode: Sized + Send + Sync {
         output_recv: Receiver<SourceOutput>,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     );
 }

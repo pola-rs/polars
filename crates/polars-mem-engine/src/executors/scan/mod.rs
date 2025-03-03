@@ -67,7 +67,7 @@ pub(crate) struct AnonymousScanExec {
 impl Executor for AnonymousScanExec {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
         let mut args = AnonymousScanArgs {
-            n_rows: self.file_options.slice.map(|x| {
+            n_rows: self.file_options.pre_slice.map(|x| {
                 assert_eq!(x.0, 0);
                 x.1
             }),

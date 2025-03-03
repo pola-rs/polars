@@ -150,7 +150,7 @@ fn get_replacement_mask(s: &Series, old: &Series) -> PolarsResult<BooleanChunked
         // Fast path for when users are using `replace(None, ...)` instead of `fill_null`.
         Ok(s.is_null())
     } else {
-        is_in(s, old)
+        is_in(s, old, false)
     }
 }
 
@@ -174,7 +174,7 @@ fn replace_by_multiple(
         JoinArgs {
             how: JoinType::Left,
             coalesce: JoinCoalesce::CoalesceColumns,
-            join_nulls: true,
+            nulls_equal: true,
             ..Default::default()
         },
         None,
@@ -216,7 +216,7 @@ fn replace_by_multiple_strict(s: &Series, old: Series, new: Series) -> PolarsRes
         JoinArgs {
             how: JoinType::Left,
             coalesce: JoinCoalesce::CoalesceColumns,
-            join_nulls: true,
+            nulls_equal: true,
             ..Default::default()
         },
         None,

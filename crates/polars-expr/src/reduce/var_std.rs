@@ -77,7 +77,7 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
     #[inline(always)]
     fn reduce_one(&self, a: &mut Self::Value, b: Option<T::Native>, _seq_id: u64) {
         if let Some(x) = b {
-            a.add_one(x.as_());
+            a.insert_one(x.as_());
         }
     }
 

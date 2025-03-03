@@ -38,16 +38,12 @@ pub fn _finish_join(
 
     for name in rename_strs {
         let new_name = _join_suffix_name(name.as_str(), suffix.as_str());
-
-        df_right.rename(&name, new_name.clone()).map_err(|_| {
-            polars_err!(Duplicate: "column with name '{}' already exists\n\n\
-            You may want to try:\n\
-            - renaming the column prior to joining\n\
-            - using the `suffix` parameter to specify a suffix different to the default one ('_right')", new_name)
-        })?;
+        // Safety: IR resolving should guarantee this passes
+        df_right.rename(&name, new_name.clone()).unwrap();
     }
 
     drop(left_names);
+    // Safety: IR resolving should guarantee this passes
     unsafe { df_left.hstack_mut_unchecked(df_right.get_columns()) };
     Ok(df_left)
 }

@@ -969,15 +969,7 @@ def test_scan_csv_bytesio_memory_usage(
     "scan_type",
     [
         (pl.DataFrame.write_parquet, pl.scan_parquet),
-        pytest.param(
-            (pl.DataFrame.write_ipc, pl.scan_ipc),
-            marks=[
-                pytest.mark.xfail(
-                    reason="Bug. See https://github.com/pola-rs/polars/issues/21165"
-                ),
-                pytest.mark.may_fail_auto_streaming,
-            ],
-        ),
+        (pl.DataFrame.write_ipc, pl.scan_ipc),
         (pl.DataFrame.write_csv, pl.scan_csv),
         (pl.DataFrame.write_ndjson, pl.scan_ndjson),
     ],
