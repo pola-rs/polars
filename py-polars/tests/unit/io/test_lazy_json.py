@@ -187,3 +187,27 @@ def test_scan_ndjson_empty_lines_in_middle() -> None:
         ).collect(),
         pl.DataFrame({"a": [1, 2, 3]}),
     )
+
+
+@pytest.mark.parametrize("row_index_offset", [None, 0, 20])
+def test_scan_ndjson_slicing(
+    foods_ndjson_path: Path, row_index_offset: int | None
+) -> None:
+    lf = pl.scan_ndjson(foods_ndjson_path)
+
+    if row_index_offset is not None:
+        lf = lf.with_row_index(offset=row_index_offset)
+
+    for q in [
+        lf.head(5),
+        lf.tail(5),
+        lf.head(0),
+        lf.tail(0),
+        lf.slice(-999, 3),
+        lf.slice(999, 3),
+        lf.slice(-999, 0),
+        lf.slice(999, 0),
+        lf.slice(-999),
+        lf.slice(-3, 999),
+    ]:
+        assert_frame_equal(q.collect(), q.collect(no_optimization=True))

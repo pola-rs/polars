@@ -445,6 +445,8 @@ pub fn lower_ir(
                                         )
                                     }
                                 },
+                                #[cfg(feature = "json")]
+                                FileScan::NDJson { .. } => (None, None, predicate.take()),
                                 _ => todo!(),
                             };
 

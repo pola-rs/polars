@@ -467,6 +467,30 @@ fn to_graph_rec<'a>(
                     ),
                     [],
                 ),
+                #[cfg(feature = "json")]
+                polars_plan::dsl::FileScan::NDJson {
+                    options,
+                    cloud_options,
+                } => ctx.graph.add_node(
+                    nodes::io_sources::SourceComputeNode::new(
+                        nodes::io_sources::multi_scan::MultiScanNode::<
+                            nodes::io_sources::ndjson::NDJsonSourceNode,
+                        >::new(
+                            scan_sources.clone(),
+                            hive_parts.clone().map(Arc::new),
+                            *allow_missing_columns,
+                            include_file_paths.clone(),
+                            file_schema.clone(),
+                            projection.clone(),
+                            row_index.clone(),
+                            row_restriction.clone(),
+                            predicate,
+                            options.clone(),
+                            cloud_options.clone(),
+                        ),
+                    ),
+                    [],
+                ),
                 _ => todo!(),
             }
         },
@@ -581,6 +605,22 @@ fn to_graph_rec<'a>(
                         ctx.graph.add_node(
                             nodes::io_sources::SourceComputeNode::new(
                                 nodes::io_sources::csv::CsvSourceNode::new(
+                                    scan_source,
+                                    file_info,
+                                    file_options,
+                                    options,
+                                ),
+                            ),
+                            [],
+                        )
+                    },
+                    #[cfg(feature = "json")]
+                    FileScan::NDJson { options, .. } => {
+                        assert!(predicate.is_none());
+
+                        ctx.graph.add_node(
+                            nodes::io_sources::SourceComputeNode::new(
+                                nodes::io_sources::ndjson::NDJsonSourceNode::new(
                                     scan_source,
                                     file_info,
                                     file_options,
