@@ -843,7 +843,7 @@ impl LazyFrame {
         )
     }
 
-    /// Stream a query result into a parquet file in a partioned manner. This is useful if the
+    /// Stream a query result into a parquet file in a partitioned manner. This is useful if the
     /// final result doesn't fit into memory. This methods will return an error if the query cannot
     /// be completely done in a streaming fashion.
     #[cfg(feature = "parquet")]
@@ -865,7 +865,7 @@ impl LazyFrame {
         )
     }
 
-    /// Stream a query result into an ipc/arrow file in a partioned manner. This is useful if the
+    /// Stream a query result into an ipc/arrow file in a partitioned manner. This is useful if the
     /// final result doesn't fit into memory. This methods will return an error if the query cannot
     /// be completely done in a streaming fashion.
     #[cfg(feature = "ipc")]
@@ -887,7 +887,7 @@ impl LazyFrame {
         )
     }
 
-    /// Stream a query result into an csv file in a partioned manner. This is useful if the final
+    /// Stream a query result into an csv file in a partitioned manner. This is useful if the final
     /// result doesn't fit into memory. This methods will return an error if the query cannot be
     /// completely done in a streaming fashion.
     #[cfg(feature = "csv")]
@@ -909,7 +909,7 @@ impl LazyFrame {
         )
     }
 
-    /// Stream a query result into a JSON file in a partioned manner. This is useful if the final
+    /// Stream a query result into a JSON file in a partitioned manner. This is useful if the final
     /// result doesn't fit into memory. This methods will return an error if the query cannot be
     /// completely done in a streaming fashion.
     #[cfg(feature = "json")]
