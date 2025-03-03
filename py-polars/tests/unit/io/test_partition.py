@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
@@ -45,6 +46,7 @@ def test_max_size_partition(
         lf,
         MaxSizePartitioning(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
     )
+    os.sync()
 
     i = 0
     while length > 0:
