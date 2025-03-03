@@ -3500,14 +3500,6 @@ class Series:
                 6
         ]
         """
-        df = F.select(F.lit(self).search_sorted(element, side))
-        # These types unambiguously return a Series:
-        #
-        # * Series means we want to search for multiple values.
-        # * Expr because that always returns a Series, matching Expr.search_sorted().
-        if isinstance(element, (Series, pl.Expr)):
-            return df.to_series()
-
         # A list or ndarray passed to search_sorted() has two possible meanings:
         #
         # 1. Searching for multiple values, for example the Series is Int64 and
@@ -3533,23 +3525,32 @@ class Series:
         # Therefore, we disallow searching for multiple values via lists when
         # self's dtype is pl.List or pl.Array, so that we have a non-ambiguous
         # API.
-        if isinstance(element, (list, np.ndarray)):
-            if isinstance(self.dtype, (List, Array)):
-                # Catch (most) disallowed multi-value-search cases by casting
-                # the needle to the haystack's dtype:
-                try:
-                    F.select(F.lit(element, dtype=self.dtype))
-                except TypeError:
-                    raise TypeError(
-                        f"{element} does not match dtype {self.dtype}. "
-                        "If you were trying to search for multiple values, "
-                        "use a ``pl.Series`` instead of a list/ndarray."
-                    )
-                # If we didn't error out, assume we searched for a single
-                # value:
-                return df.item()
-            else:
-                return df.to_series()
+        if isinstance(element, (list, np.ndarray)) and isinstance(
+            self.dtype, (List, Array)
+        ):
+            # Catch (most) disallowed multi-value-search cases by casting
+            # the needle to the haystack's dtype:
+            try:
+                F.select(F.lit(element, dtype=self.dtype))
+            except TypeError:
+                raise TypeError(
+                    f"{element} does not match dtype {self.dtype}. "
+                    "If you were trying to search for multiple values, "
+                    "use a ``pl.Series`` instead of a list/ndarray."
+                )
+
+        df = F.select(F.lit(self).search_sorted(element, side))
+        # These types unambiguously return a Series:
+        #
+        # * Series means we want to search for multiple values.
+        # * Expr because that always returns a Series, matching Expr.search_sorted().
+        if isinstance(element, (Series, pl.Expr)):
+            return df.to_series()
+
+        if isinstance(element, (list, np.ndarray)) and not isinstance(
+            self.dtype, (List, Array)
+        ):
+            return df.to_series()
         else:
             return df.item()
 

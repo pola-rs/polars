@@ -98,6 +98,7 @@ def test_search_sorted_array() -> None:
     assert series.search_sorted([2]) == 1
     assert series.search_sorted(pl.Series([[3], [2]], dtype=dtype)).to_list() == [2, 1]
     assert series.search_sorted(pl.lit([3])).to_list() == [2]
+    assert series.search_sorted(pl.lit([3], dtype=dtype)).to_list() == [2]
     with pytest.raises(
         TypeError, match="If you were trying to search for multiple values"
     ):
