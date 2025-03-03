@@ -19,16 +19,21 @@ class MaxSizePartitioning:
     This partitioning scheme generates files that have a given maximum size. If
     the size reaches the maximum size, it is closed and a new file is opened.
 
-    The `path` can be given a `{part}` to specify the output files.
-
     .. warning::
         This functionality is currently considered **unstable**. It may be
         changed at any point without it being considered a breaking change.
+
+    Parameters
+    ----------
+    path
+        The path to the output files. The format string `{part}` is replaced to the
+        zero-based index of the file.
+    max_size : int
+        The maximum size in rows of each of the generated files.
     """
 
     _p: PyPartitioning
 
     def __init__(self, path: Path | str, *, max_size: int) -> None:
-        msg = "Partitioning strategies are considered unstable."
-        issue_unstable_warning(msg)
+        issue_unstable_warning("Partitioning strategies are considered unstable.")
         self._p = PyPartitioning.new_max_size(path, max_size)

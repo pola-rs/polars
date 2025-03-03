@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -25,12 +24,21 @@ pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
     create_new: CreateNewSinkFn,
+
+    /// The number of tasks that get used to wait for finished files. If you are write large enough
+    /// files (i.e. they would be formed by multiple morsels) this should almost always be 1. But
+    /// if you are writing many small files, this should scan up to allow for your threads to
+    /// saturate. In any sane situation this should never go past the amount of threads you have
+    /// available.
+    ///
+    /// This is somewhat proportional to the amount of files open at any given point.
     num_retire_tasks: usize,
 }
 
 const DEFAULT_RETIRE_TASKS: usize = 1;
 impl MaxSizePartitionSinkNode {
     pub fn new(input_schema: SchemaRef, max_size: IdxSize, create_new: CreateNewSinkFn) -> Self {
+        assert!(max_size > 0);
         let num_retire_tasks =
             std::env::var("POLARS_MAX_SIZE_SINK_RETIRE_TASKS").map_or(DEFAULT_RETIRE_TASKS, |v| {
                 v.parse::<usize>()
@@ -84,14 +92,21 @@ impl SinkNode for MaxSizePartitionSinkNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
+        // .. -> Main Task
         let mut recv_port = recv_port.serial();
-
+        // Main Task -> Distributor -> Parallel Input Sink
         let (mut dist_txs, dist_rxs) = (0..num_pipelines)
             .map(|_| connector())
             .collect::<(Vec<_>, Vec<_>)>();
+        // Main Task -> Retire Tasks
         let (mut retire_tx, retire_rxs) = distributor_channel(self.num_retire_tasks, 1);
+
+        // Whether an error has been observed in the retire tasks.
         let has_error_occurred = Arc::new(AtomicBool::new(false));
 
+        // Main Task.
+        //
+        // Takes the morsels coming in and passes them to underlying sink.
         let input_schema = self.input_schema.clone();
         let max_size = self.max_size;
         let create_new = self.create_new.clone();
@@ -102,11 +117,6 @@ impl SinkNode for MaxSizePartitionSinkNode {
             args.insert(part_str.clone(), PlSmallStr::EMPTY);
 
             struct CurrentSink {
-                #[expect(unused)]
-                path: PathBuf,
-                #[expect(unused)]
-                node: Box<dyn SinkNode + Send + Sync>,
-
                 sender: SinkSender,
                 join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
                 num_remaining: IdxSize,
@@ -172,8 +182,6 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                 join_handles.into_iter().map(AbortOnDropHandle::new),
                             );
                             current_sink_opt.insert(CurrentSink {
-                                path,
-                                node,
                                 sender,
                                 num_remaining: max_size,
                                 join_handles,
@@ -181,8 +189,13 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         },
                     };
 
+                    // If we can send the whole morsel into sink, do that.
                     if morsel.df().height() < current_sink.num_remaining as usize {
                         current_sink.num_remaining -= morsel.df().height() as IdxSize;
+
+                        // This sends the consume token along so that we don't start buffering here
+                        // too much. The sinks are very specific about how they handle consume
+                        // tokens and we want to keep that behavior.
                         let result = match &mut current_sink.sender {
                             SinkSender::Connector(s) => s.send(morsel).await.ok(),
                             SinkSender::Distributor(s) => s.send(morsel).await.ok(),
@@ -194,6 +207,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         break;
                     }
 
+                    // Else, we need to split up the morsel into what can be sent and what needs to
+                    // be passed to the current sink and what needs to be passed to the next sink.
                     let (df, seq, source_token, consume_token) = morsel.into_inner();
 
                     let (final_sink_df, df) = df.split_at(current_sink.num_remaining as i64);
@@ -214,6 +229,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         return Ok(());
                     };
 
+                    // We consciously keep the consume token for the last sub-morsel sent.
                     morsel = Morsel::new(df, seq, source_token);
                     if let Some(consume_token) = consume_token {
                         morsel.set_consume_token(consume_token);
@@ -231,6 +247,10 @@ impl SinkNode for MaxSizePartitionSinkNode {
             Ok(())
         }));
 
+        // Distributor Pass Tasks.
+        //
+        // If the sink wants to receive morsels in parallel these tasks pass them in parallel from
+        // a distributor.
         join_handles.extend(dist_rxs.into_iter().map(|mut dist_rx| {
             spawn(TaskPriority::High, async move {
                 while let Ok((mut rx, mut tx)) = dist_rx.recv().await {
@@ -243,6 +263,12 @@ impl SinkNode for MaxSizePartitionSinkNode {
                 Ok(())
             })
         }));
+
+        // Retire Tasks.
+        //
+        // If a file is finished someone needs to wait for the sink tasks to finish. Since we don't
+        // want to block the main task, we do it in separate tasks. Usually this is only 1 task,
+        // but it can be scaled up using an environment variable.
         let has_error_occurred = &has_error_occurred;
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
             let has_error_occurred = has_error_occurred.clone();
