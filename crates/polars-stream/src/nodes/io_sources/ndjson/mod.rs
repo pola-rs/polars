@@ -108,7 +108,7 @@ impl SourceNode for NDJsonSourceNode {
         // Note: This is converted to right-to-left for negative slice (i.e. range.start is position
         // from end).
         let global_slice: Option<Range<usize>> =
-            if let Some((offset, len)) = self.file_options.slice {
+            if let Some((offset, len)) = self.file_options.pre_slice {
                 if offset < 0 {
                     is_negative_slice = true;
                     // array: [_ _ _ _ _]
@@ -536,12 +536,12 @@ impl MultiScanable for NDJsonSourceNode {
     }
 
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
-        self.file_options.slice = None;
+        self.file_options.pre_slice = None;
 
         match row_restriction {
             None => {},
             Some(RowRestriction::Slice(rng)) => {
-                self.file_options.slice = Some((rng.start as i64, rng.end - rng.start))
+                self.file_options.pre_slice = Some((rng.start as i64, rng.end - rng.start))
             },
             Some(RowRestriction::Predicate(_)) => unreachable!(),
         }
