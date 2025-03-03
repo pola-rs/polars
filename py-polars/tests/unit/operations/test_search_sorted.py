@@ -1,5 +1,3 @@
-from decimal import Decimal
-
 import numpy as np
 import pytest
 
@@ -88,7 +86,7 @@ def test_search_sorted_list() -> None:
     with pytest.raises(
         TypeError, match="If you were trying to search for multiple values"
     ):
-        series.search_sorted([[1]])
+        series.search_sorted([[1]])  # type: ignore[list-item]
 
 
 def test_search_sorted_array() -> None:
@@ -102,4 +100,4 @@ def test_search_sorted_array() -> None:
     with pytest.raises(
         TypeError, match="If you were trying to search for multiple values"
     ):
-        series.search_sorted([[1]])
+        series.search_sorted([[1]])  # type: ignore[list-item]

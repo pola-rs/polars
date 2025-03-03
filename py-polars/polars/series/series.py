@@ -3456,10 +3456,12 @@ class Series:
         ----------
         element
             Expression or scalar value.
-            If this value matches the dtype of values in self, the return result is an integer.
-            If self's dtype is ``pl.List``/``pl.Array``, the assumption is that any input ``list`` or NumPy array is a single value, and therefore an integer is returned.
-            If this is a ``Series`` or ``Expr``, the return result is a ``Series``, potentially with multiple values if the input had multiple values.
-            If this is a ``list`` or NumPy array, the return result is a ``Series`` if self's dtype is not ``pl.List``/``pl.Array``.
+            If this value matches the dtype of values in self, the return result is an
+            integer.
+            If self's dtype is ``pl.List``/``pl.Array``, we assume an element that is
+            ``list`` or NumPy array is a single value, and return an integer.
+            If this is a ``Series`` or ``Expr``, the return result is a ``Series``.
+            If self is a ``list`` or NumPy array, the return result is a ``Series``.
 
         side : {'any', 'left', 'right'}
             If 'any', the index of the first suitable location found is given.
@@ -3531,12 +3533,13 @@ class Series:
                 # the needle to the haystack's dtype:
                 try:
                     F.select(F.lit(element, dtype=self.dtype))
-                except TypeError:
-                    raise TypeError(
+                except TypeError as err:
+                    message = (
                         f"{element} does not match dtype {self.dtype}. "
                         "If you were trying to search for multiple values, "
                         "use a ``pl.Series`` instead of a list/ndarray."
                     )
+                    raise TypeError(message) from err
             else:
                 # We're definitely searching for multiple values. Wrap in
                 # Series so we don't have issues with casting:
