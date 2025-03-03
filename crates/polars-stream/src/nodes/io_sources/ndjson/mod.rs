@@ -171,13 +171,10 @@ impl SourceNode for NDJsonSourceNode {
 
             let chunk_size = chunk_size.clamp(min_chunk_size, max_chunk_size);
 
-            if let Ok(v) = std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE")
-                .map(|x| x.parse::<usize>().expect("integer"))
-            {
-                v
-            } else {
-                chunk_size
-            }
+            std::env::var("POLARS_FORCE_NDJSON_CHUNK_SIZE").map_or(chunk_size, |x| {
+                x.parse::<usize>()
+                    .expect("expected `POLARS_FORCE_NDJSON_CHUNK_SIZE` to be an integer")
+            })
         };
 
         if verbose {
