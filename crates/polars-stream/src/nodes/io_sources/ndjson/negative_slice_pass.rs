@@ -116,7 +116,7 @@ impl MorselStreamReverser {
             // Note: We add the df height here rather than the slice length as the negative slice
             // could go past the start of the file.
             let n_from_end = offset_len_rtl.0 + combined_df.height();
-            let n_from_start = total_count.saturating_sub(n_from_end);
+            let n_from_start = total_count - n_from_end;
 
             if IdxSize::try_from(n_from_start)
                 .ok()
