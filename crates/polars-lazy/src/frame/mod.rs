@@ -1145,6 +1145,16 @@ impl LazyFrame {
         if let Expr::Column(name) = index_column {
             options.index_column = name;
         } else {
+            fn is_int_range(expr: &Expr) -> bool {
+                match expr {
+                    Expr::Alias(input, _) => is_int_range(input),
+                    Expr::Function { function, .. } => {
+                        matches!(function, FunctionExpr::Range(f) if f.to_string() == "int_range")
+                    },
+                    _ => false,
+                }
+            }
+            options.int_range = is_int_range(&index_column);
             let output_field = index_column
                 .to_field(&self.collect_schema().unwrap(), Context::Default)
                 .unwrap();

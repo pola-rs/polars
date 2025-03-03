@@ -220,6 +220,104 @@ pub fn group_by_windows(
     (groups, lower_bound, upper_bound)
 }
 
+/// Generate groups efficiently for a (vanilla) int-range index.
+/// A vanilla int-range index is an index that starts at 0 and has a step of 1.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn group_by_windows_int_range(
+    len: IdxSize,
+    step: IdxSize,
+    mut window_size: IdxSize,
+    mut offset: IdxSize,
+    closed_window: ClosedWindow,
+    include_lower_bound: bool,
+    include_upper_bound: bool,
+    start_by: StartBy,
+) -> (Vec<[IdxSize; 2]>, Vec<i64>, Vec<i64>) {
+    let orig_window_size = window_size;
+
+    if start_by == StartBy::DataPoint {
+        offset = 0;
+    }
+
+    if closed_window == ClosedWindow::Right {
+        offset += 1;
+    } else if closed_window == ClosedWindow::Both {
+        window_size += 1;
+    } else if closed_window == ClosedWindow::None {
+        offset += 1;
+        window_size -= 1;
+    }
+
+    let mut groups: Vec<[IdxSize; 2]> = match window_size {
+        0 => Vec::new(),
+        _ => generate_start_indices(offset, len, step)
+            .into_iter()
+            .map(|start| {
+                let end = std::cmp::min(window_size, len - start);
+                [start, end]
+            })
+            .collect(),
+    };
+
+    if (start_by == StartBy::WindowBound) && (window_size > 0) {
+        while offset >= step {
+            offset -= step;
+            groups.insert(0, [offset, window_size]);
+        }
+    }
+
+    let mut lower = match (include_lower_bound, window_size > 0) {
+        (true, true) => groups.iter().map(|&i| i[0] as i64).collect::<Vec<i64>>(),
+        _ => Vec::<i64>::new(),
+    };
+
+    let mut upper = match (include_upper_bound, window_size > 0) {
+        (true, true) => groups
+            .iter()
+            .map(|&i| (i[0] + orig_window_size) as i64)
+            .collect::<Vec<i64>>(),
+        _ => Vec::<i64>::new(),
+    };
+
+    if include_lower_bound
+        && (closed_window == ClosedWindow::Right) | (closed_window == ClosedWindow::None)
+    {
+        lower = lower.iter().map(|&i| i - 1).collect::<Vec<i64>>();
+    }
+    if include_upper_bound
+        && (closed_window == ClosedWindow::Right) | (closed_window == ClosedWindow::None)
+    {
+        upper = upper.iter().map(|&i| i - 1).collect::<Vec<i64>>();
+    }
+    if start_by == StartBy::WindowBound
+        && (offset > 0)
+        && (window_size >= offset)
+        && (step < window_size + offset)
+    {
+        groups.insert(0, [0, offset + window_size - step]);
+        if include_lower_bound {
+            lower.insert(0, offset as i64 - step as i64);
+            if (closed_window == ClosedWindow::Right) | (closed_window == ClosedWindow::None) {
+                lower[0] -= 1;
+            }
+        }
+        if include_upper_bound {
+            upper.insert(0, groups[0][1] as i64);
+            if (closed_window == ClosedWindow::Right) | (closed_window == ClosedWindow::Both) {
+                upper[0] -= 1;
+            }
+        }
+    }
+
+    (groups, lower, upper)
+}
+
+#[inline]
+fn generate_start_indices(offset: IdxSize, len: IdxSize, stride: IdxSize) -> Vec<IdxSize> {
+    let nb_idxs: IdxSize = (len - offset).div_ceil(stride);
+    (0..nb_idxs).map(|i| offset + i * stride).collect()
+}
+
 // t is right at the end of the window
 // ------t---
 // [------]

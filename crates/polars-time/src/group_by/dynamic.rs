@@ -35,6 +35,7 @@ pub struct DynamicGroupOptions {
     pub include_boundaries: bool,
     pub closed_window: ClosedWindow,
     pub start_by: StartBy,
+    pub int_range: bool, // Whether the index column is a range column
 }
 
 impl Default for DynamicGroupOptions {
@@ -48,6 +49,7 @@ impl Default for DynamicGroupOptions {
             include_boundaries: false,
             closed_window: ClosedWindow::Left,
             start_by: Default::default(),
+            int_range: false,
         }
     }
 }
@@ -312,16 +314,30 @@ impl Wrap<&DataFrame> {
         let groups = if by.is_empty() {
             let vals = dt.downcast_iter().next().unwrap();
             let ts = vals.values().as_slice();
-            let (groups, lower, upper) = group_by_windows(
-                w,
-                ts,
-                options.closed_window,
-                tu,
-                tz,
-                include_lower_bound,
-                include_upper_bound,
-                options.start_by,
-            );
+
+            let vanilla_start_step = (ts[0] == 0) && (ts[1] - ts[0] == 1);
+            let (groups, lower, upper) = match (options.int_range, vanilla_start_step) {
+                (true, true) => group_by_windows_int_range(
+                    self.0.height() as IdxSize,
+                    options.every.nanoseconds() as IdxSize,
+                    options.period.nanoseconds() as IdxSize,
+                    options.offset.nanoseconds() as IdxSize,
+                    options.closed_window,
+                    include_lower_bound,
+                    include_upper_bound,
+                    options.start_by,
+                ),
+                _ => group_by_windows(
+                    w,
+                    ts,
+                    options.closed_window,
+                    tu,
+                    tz,
+                    include_lower_bound,
+                    include_upper_bound,
+                    options.start_by,
+                ),
+            };
             update_bounds(lower, upper);
             PolarsResult::Ok(GroupsType::Slice {
                 groups,
@@ -814,6 +830,7 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
+                    int_range: Default::default(),
                 },
             )
             .unwrap();
@@ -935,6 +952,7 @@ mod test {
                     include_boundaries: true,
                     closed_window: ClosedWindow::Both,
                     start_by: Default::default(),
+                    int_range: Default::default(),
                 },
             )
             .unwrap();
