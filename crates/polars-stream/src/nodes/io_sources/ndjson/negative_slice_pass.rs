@@ -83,8 +83,10 @@ impl MorselStreamReverser {
 
         // We don't assert height because the slice may overrun the file
         let combined_df = combine_acc_morsels_reverse(&mut acc_morsels);
+        drop(acc_morsels);
 
-        // The NDJSON workers don't stop at exactly the right number of rows.
+        // The NDJSON workers don't stop at exactly the right number of rows (they stop when they
+        // see the channel closed).
         let combined_df = if combined_df.height() > offset_len_rtl.1 {
             combined_df.slice(
                 i64::try_from(combined_df.height() - offset_len_rtl.1).unwrap(),
