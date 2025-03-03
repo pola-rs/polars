@@ -3515,29 +3515,32 @@ class Series:
         #
         #   Series([...], dtype=pl.List(pl.List(pl.Int64()))).search_sorted([])
         #
-        # Does this mean searching multiple values, and should return a
-        # pl.Series of length 0, or does it searching mean a single empty list
-        # and it should return an integer? Who can say! Arguably this API
+        # Does this mean searching multiple values, which should return a
+        # pl.Series of length 0, or does it mean searching for a single empty
+        # list and it should return an integer? Who can say! Arguably this API
         # design was a mistake once you allow searching pl.List series, and
         # probably the solution is deprecate searching for multiple values with
         # lists, and force people to use Series for that case.
         #
-        # Therefore, we disallow searching for multiple values via lists when
+        # For now, we disallow searching for multiple values via lists when
         # self's dtype is pl.List or pl.Array, so that we have a non-ambiguous
         # API.
-        if isinstance(element, (list, np.ndarray)) and isinstance(
-            self.dtype, (List, Array)
-        ):
-            # Catch (most) disallowed multi-value-search cases by casting
-            # the needle to the haystack's dtype:
-            try:
-                F.select(F.lit(element, dtype=self.dtype))
-            except TypeError:
-                raise TypeError(
-                    f"{element} does not match dtype {self.dtype}. "
-                    "If you were trying to search for multiple values, "
-                    "use a ``pl.Series`` instead of a list/ndarray."
-                )
+        if isinstance(element, (list, np.ndarray)):
+            if isinstance(self.dtype, (List, Array)):
+                # Catch (most) disallowed multi-value-search cases by casting
+                # the needle to the haystack's dtype:
+                try:
+                    F.select(F.lit(element, dtype=self.dtype))
+                except TypeError:
+                    raise TypeError(
+                        f"{element} does not match dtype {self.dtype}. "
+                        "If you were trying to search for multiple values, "
+                        "use a ``pl.Series`` instead of a list/ndarray."
+                    )
+            else:
+                # We're definitely searching for multiple values. Wrap in
+                # Series so we don't have issues with casting:
+                element = pl.Series(element)
 
         df = F.select(F.lit(self).search_sorted(element, side))
         # These types unambiguously return a Series:
