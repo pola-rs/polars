@@ -3027,3 +3027,62 @@ def test_scan_parquet_filter_statistics_load_missing_column_21391(
         ),
         pl.DataFrame({"x": 1, "y": 1}),
     )
+
+
+@pytest.mark.parametrize(
+    "ty",
+    [
+        (lambda i: i, pl.Int8, True),
+        (lambda i: datetime(year=2025, month=9, day=i), pl.Datetime, True),
+        (lambda i: float(i), pl.Float32, True),
+        (lambda i: str(i), pl.String, True),
+        (lambda i: str(i) + "make it a bit longer", pl.String, True),
+        (lambda i: [i, i + 7] * (i % 3), pl.List(pl.Int32), True),
+        (lambda i: {"x": i}, pl.Struct({"x": pl.Int32}), True),
+        (lambda i: [i, i + 3, i + 7], pl.Array(pl.Int32, 3), False),
+    ],
+)
+def test_filter_nulls_21538(ty: tuple[Callable[[int], Any], pl.DataType, bool]) -> None:
+    i_to_value, dtype, do_no_dicts = ty
+
+    patterns = [
+        [None, None, None, None, None],
+        [1, None, None, 2, None],
+        [None, 1, 2, 3, 4],
+        [1, 2, 3, 4, None],
+        [None, 1, 2, 3, None],
+        [None, 1, None, 3, None],
+        [1, 2, 3, 4, 5],
+    ]
+
+    df = pl.DataFrame(
+        pl.Series(
+            f"p{i}", [None if v is None else i_to_value(v) for v in pattern], dtype
+        )
+        for i, pattern in enumerate(patterns)
+    )
+
+    fs = []
+
+    dicts_f = io.BytesIO()
+    df.write_parquet(dicts_f)
+    fs += [dicts_f]
+
+    if do_no_dicts:
+        no_dicts_f = io.BytesIO()
+        pq.write_table(df.to_arrow(), no_dicts_f, use_dictionary=False)
+        fs += [no_dicts_f]
+
+    for f in fs:
+        for i in range(len(patterns)):
+            f.seek(0)
+            assert_frame_equal(
+                pl.scan_parquet(f).filter(pl.col(f"p{i}").is_null()).collect(),
+                df.filter(pl.col(f"p{i}").is_null()),
+            )
+
+            f.seek(0)
+            assert_frame_equal(
+                pl.scan_parquet(f).filter(pl.col(f"p{i}").is_not_null()).collect(),
+                df.filter(pl.col(f"p{i}").is_not_null()),
+            )
