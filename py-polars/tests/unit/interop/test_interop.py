@@ -235,6 +235,31 @@ def test_from_arrow() -> None:
     assert df.schema == {"a": pl.UInt32, "b": pl.UInt64}  # type: ignore[union-attr]
 
 
+def test_from_arrow_with_bigquery_metadata() -> None:
+    arrow_schema = pa.schema(
+        [
+            pa.field("id", pa.int64()).with_metadata(
+                {"ARROW:extension:name": "google:sqlType:integer"}
+            ),
+            pa.field(
+                "misc",
+                pa.struct([("num", pa.int32()), ("val", pa.string())]),
+            ).with_metadata({"ARROW:extension:name": "google:sqlType:struct"}),
+        ]
+    )
+    arrow_tbl = pa.Table.from_pylist(
+        [{"id": 1, "misc": None}, {"id": 2, "misc": None}],
+        schema=arrow_schema,
+    )
+
+    expected_data = {"id": [1, 2], "num": [None, None], "val": [None, None]}
+    expected_schema = {"id": pl.Int64, "num": pl.Int32, "val": pl.String}
+    assert_frame_equal(
+        pl.DataFrame(expected_data, schema=expected_schema),
+        pl.from_arrow(arrow_tbl).unnest("misc"),  # type: ignore[union-attr]
+    )
+
+
 def test_from_optional_not_available() -> None:
     from polars.dependencies import _LazyModule
 
