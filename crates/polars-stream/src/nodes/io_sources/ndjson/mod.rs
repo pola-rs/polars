@@ -455,9 +455,6 @@ impl NDJsonSourceNode {
             .as_scan_source_ref()
             .to_memslice_async_assume_latest(run_async)?;
 
-        let mut out = vec![];
-        maybe_decompress_bytes(&source, &mut out)?;
-
         let mem_slice = {
             let mut out = vec![];
             maybe_decompress_bytes(&source, &mut out)?;
