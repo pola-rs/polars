@@ -550,7 +550,7 @@ impl MultiScanable for NDJsonSourceNode {
     async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
         let mem_slice = self.scan_source_bytes()?;
 
-        let num_rows = ndjson::count_rows_par(&mem_slice, None);
+        let num_rows = ndjson::count_rows(&mem_slice);
         let num_rows = IdxSize::try_from(num_rows)
             .map_err(|_| polars_err!(bigidx, ctx = "ndjson file", size = num_rows))?;
         Ok(num_rows)
