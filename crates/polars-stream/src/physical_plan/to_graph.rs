@@ -484,7 +484,7 @@ fn to_graph_rec<'a>(
                 unreachable!()
             };
 
-            file_options.slice = if let Some((offset, len)) = file_options.slice {
+            file_options.pre_slice = if let Some((offset, len)) = file_options.pre_slice {
                 Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
             } else {
                 _set_n_rows_for_scan(None).map(|x| (0, x))
@@ -575,7 +575,7 @@ fn to_graph_rec<'a>(
                         if options.parse_options.comment_prefix.is_some() {
                             // Should have been re-written to separate streaming nodes
                             assert!(file_options.row_index.is_none());
-                            assert!(file_options.slice.is_none());
+                            assert!(file_options.pre_slice.is_none());
                         }
 
                         ctx.graph.add_node(

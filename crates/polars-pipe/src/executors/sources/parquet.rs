@@ -110,7 +110,7 @@ impl ParquetSource {
         let Some(index) = self.iter.next() else {
             return Ok(());
         };
-        if let Some(slice) = self.file_options.slice {
+        if let Some(slice) = self.file_options.pre_slice {
             if self.processed_rows.load(Ordering::Relaxed) >= slice.0 as usize + slice.1 {
                 return Ok(());
             }
@@ -156,7 +156,7 @@ impl ParquetSource {
                 .processed_rows
                 .fetch_add(n_rows_this_file, Ordering::Relaxed);
 
-            let slice = file_options.slice.map(|slice| {
+            let slice = file_options.pre_slice.map(|slice| {
                 assert!(slice.0 >= 0);
                 let slice_start = slice.0 as usize;
                 let slice_end = slice_start + slice.1;
@@ -225,7 +225,7 @@ impl ParquetSource {
                 .processed_rows
                 .fetch_add(n_rows_this_file, Ordering::Relaxed);
 
-            let slice = file_options.slice.map(|slice| {
+            let slice = file_options.pre_slice.map(|slice| {
                 assert!(slice.0 >= 0);
                 let slice_start = slice.0 as usize;
                 let slice_end = slice_start + slice.1;
@@ -324,8 +324,8 @@ impl ParquetSource {
                         .collect::<Vec<_>>();
                     let init_iter = range.into_iter().map(|index| self.init_reader_async(index));
 
-                    let needs_exact_processed_rows_count =
-                        self.file_options.slice.is_some() || self.file_options.row_index.is_some();
+                    let needs_exact_processed_rows_count = self.file_options.pre_slice.is_some()
+                        || self.file_options.row_index.is_some();
 
                     let batched_readers = if needs_exact_processed_rows_count {
                         // We run serially to ensure we have a correct processed_rows count.

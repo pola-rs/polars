@@ -440,7 +440,7 @@ pub fn lower_ir(
                                         // return an accurate line count :'(.
                                         (
                                             file_options.row_index.take(),
-                                            file_options.slice.take(),
+                                            file_options.pre_slice.take(),
                                             predicate.take(),
                                         )
                                     }
@@ -524,7 +524,7 @@ pub fn lower_ir(
                 });
 
                 let mut row_restriction = None;
-                if let Some((offset, len)) = file_options.slice.take() {
+                if let Some((offset, len)) = file_options.pre_slice.take() {
                     if offset < 0 {
                         let offset = (-offset) as usize;
                         row_restriction = Some(MultiscanRowRestriction::NegativeSlice(offset, len));
