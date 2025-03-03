@@ -19,6 +19,7 @@ use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
 mod arithmetic;
+pub mod builder;
 mod chunks;
 pub use chunks::chunk_df_for_writing;
 pub mod column;
@@ -180,6 +181,11 @@ pub struct DataFrame {
 impl DataFrame {
     pub fn clear_schema(&mut self) {
         self.cached_schema = OnceLock::new();
+    }
+
+    #[inline]
+    pub fn column_iter(&self) -> impl ExactSizeIterator<Item = &Column> {
+        self.columns.iter()
     }
 
     #[inline]
