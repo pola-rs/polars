@@ -368,6 +368,13 @@ def _init_credential_provider_builder(
                     # https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
                     if k in {"token", "bearer_token"}:
                         token = v
+                    elif k in {
+                        "google_bucket",
+                        "google_bucket_name",
+                        "bucket",
+                        "bucket_name",
+                    }:
+                        continue
                     elif k in OBJECT_STORE_CLIENT_OPTIONS:
                         continue
                     else:
