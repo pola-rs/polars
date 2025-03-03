@@ -22,7 +22,7 @@ if TYPE_CHECKING:
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_csv, pl.DataFrame.write_csv),
-        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -51,6 +51,7 @@ def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc", False, True),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet", True, True),
         (pl.scan_csv, pl.DataFrame.write_csv, "csv", False, False),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl", False, False),
     ],
 )
 @pytest.mark.parametrize("missing_column", [False, True])
@@ -229,6 +230,7 @@ def test_multiscan_hive_predicate(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
     ],
 )
 @pytest.mark.write_disk
@@ -308,12 +310,7 @@ def test_multiscan_row_index(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        pytest.param(
-            pl.scan_ndjson,
-            pl.DataFrame.write_ndjson,
-            "ndjson",
-            marks=pytest.mark.xfail(reason="NYI"),
-        ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
     ],
 )
 @pytest.mark.write_disk
@@ -356,12 +353,7 @@ def test_schema_mismatch_type_mismatch(
                 reason="See https://github.com/pola-rs/polars/issues/21211"
             ),
         ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     "ndjson",
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
     ],
 )
 @pytest.mark.write_disk
@@ -397,11 +389,7 @@ def test_schema_mismatch_order_mismatch(
             pl.scan_csv,
             pl.DataFrame.write_csv,
         ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
     ],
 )
 def test_multiscan_head(
@@ -425,14 +413,10 @@ def test_multiscan_head(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
         # (
         #     pl.scan_csv,
         #     pl.DataFrame.write_csv,
-        # ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     marks=pytest.mark.xfail(reason="NYI"),
         # ),
     ],
 )
@@ -457,14 +441,10 @@ def test_multiscan_tail(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
         # (
         #     pl.scan_csv,
         #     pl.DataFrame.write_csv,
-        # ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     marks=pytest.mark.xfail(reason="NYI"),
         # ),
     ],
 )
@@ -514,6 +494,7 @@ def test_multiscan_slice_middle(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
         pytest.param(
             pl.scan_csv,
             pl.DataFrame.write_csv,
@@ -521,12 +502,6 @@ def test_multiscan_slice_middle(
             marks=pytest.mark.may_fail_auto_streaming,
             # negatives slices are not yet implemented for CSV
         ),
-        # pytest.param(
-        #     pl.scan_ndjson,
-        #     pl.DataFrame.write_ndjson,
-        #     "ndjson",
-        #     marks=pytest.mark.xfail(reason="NYI"),
-        # ),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
@@ -583,6 +558,7 @@ def test_multiscan_slice_parametric(
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_csv, pl.DataFrame.write_csv),
+        (pl.scan_ndjson, pl.DataFrame.write_ndjson),
         # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
     ],
 )

@@ -413,23 +413,7 @@ pub fn parse_ndjson(
     schema: &Schema,
     ignore_errors: bool,
 ) -> PolarsResult<DataFrame> {
-    let capacity = n_rows_hint.unwrap_or_else(|| {
-        // Default to total len divided by max len of first and last non-empty lines or 1.
-        bytes
-            .split(|&c| c == b'\n')
-            .find(|x| !x.is_empty())
-            .map_or(1, |x| {
-                bytes.len().div_ceil(
-                    x.len().max(
-                        bytes
-                            .rsplit(|&c| c == b'\n')
-                            .find(|x| !x.is_empty())
-                            .unwrap()
-                            .len(),
-                    ),
-                )
-            })
-    });
+    let capacity = n_rows_hint.unwrap_or_else(|| estimate_n_lines_in_chunk(bytes));
 
     let mut buffers = init_buffers(schema, capacity, ignore_errors)?;
     parse_lines(bytes, &mut buffers)?;
@@ -440,6 +424,33 @@ pub fn parse_ndjson(
             .map(|buf| buf.into_series().into_column())
             .collect::<_>(),
     )
+}
+
+pub fn estimate_n_lines_in_file(file_bytes: &[u8], sample_size: usize) -> usize {
+    if let Some((mean, std)) = get_line_stats_json(file_bytes, sample_size) {
+        (file_bytes.len() as f32 / (mean - 0.01 * std)) as usize
+    } else {
+        estimate_n_lines_in_chunk(file_bytes)
+    }
+}
+
+/// Total len divided by max len of first and last non-empty lines. This is intended to be cheaper
+/// than `estimate_n_lines_in_file`.
+pub fn estimate_n_lines_in_chunk(chunk: &[u8]) -> usize {
+    chunk
+        .split(|&c| c == b'\n')
+        .find(|x| !x.is_empty())
+        .map_or(1, |x| {
+            chunk.len().div_ceil(
+                x.len().max(
+                    chunk
+                        .rsplit(|&c| c == b'\n')
+                        .find(|x| !x.is_empty())
+                        .unwrap()
+                        .len(),
+                ),
+            )
+        })
 }
 
 /// Find the nearest next line position.

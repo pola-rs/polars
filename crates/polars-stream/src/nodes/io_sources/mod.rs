@@ -20,6 +20,8 @@ pub mod csv;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod multi_scan;
+#[cfg(feature = "json")]
+pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
 
