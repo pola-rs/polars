@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import numpy as np
 import pytest
 
@@ -76,3 +78,27 @@ def test_raise_literal_numeric_search_sorted_18096() -> None:
 
     with pytest.raises(pl.exceptions.InvalidOperationError):
         df.with_columns(idx=pl.col("foo").search_sorted("bar"))
+
+
+def test_search_sorted_list() -> None:
+    series = pl.Series([[1], [2], [3]])
+    assert series.search_sorted([2]) == 1
+    assert series.search_sorted(pl.Series([[3], [2]])).to_list() == [2, 1]
+    assert series.search_sorted(pl.lit([3], dtype=pl.List(pl.Int64()))).to_list() == [2]
+    with pytest.raises(
+        TypeError, match="If you were trying to search for multiple values"
+    ):
+        series.search_sorted([[1]])
+
+
+def test_search_sorted_array() -> None:
+    dtype = pl.Array(pl.Int64(), 1)
+    series = pl.Series([[1], [2], [3]], dtype=dtype)
+    assert series.index_of([2]) == 1
+    assert series.search_sorted([2]) == 1
+    assert series.search_sorted(pl.Series([[3], [2]], dtype=dtype)).to_list() == [2, 1]
+    assert series.search_sorted(pl.lit([3])).to_list() == [2]
+    with pytest.raises(
+        TypeError, match="If you were trying to search for multiple values"
+    ):
+        series.search_sorted([[1]])

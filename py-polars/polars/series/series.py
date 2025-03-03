@@ -3456,6 +3456,11 @@ class Series:
         ----------
         element
             Expression or scalar value.
+            If this value matches the dtype of values in self, the return result is an integer.
+            If self's dtype is ``pl.List``/``pl.Array``, the assumption is that any input ``list`` or NumPy array is a single value, and therefore an integer is returned.
+            If this is a ``Series`` or ``Expr``, the return result is a ``Series``, potentially with multiple values if the input had multiple values.
+            If this is a ``list`` or NumPy array, the return result is a ``Series`` if self's dtype is not ``pl.List``/``pl.Array``.
+
         side : {'any', 'left', 'right'}
             If 'any', the index of the first suitable location found is given.
             If 'left', the index of the leftmost suitable location found is given.
@@ -3496,8 +3501,55 @@ class Series:
         ]
         """
         df = F.select(F.lit(self).search_sorted(element, side))
-        if isinstance(element, (list, Series, pl.Expr, np.ndarray)):
+        # These types unambiguously return a Series:
+        #
+        # * Series means we want to search for multiple values.
+        # * Expr because that always returns a Series, matching Expr.search_sorted().
+        if isinstance(element, (Series, pl.Expr)):
             return df.to_series()
+
+        # A list or ndarray passed to search_sorted() has two possible meanings:
+        #
+        # 1. Searching for multiple values, for example the Series is Int64 and
+        #    we're searching for multiple integers.
+        # 2. Searching for a single value, when the Series dtype is List or
+        #    Array.
+        #
+        # Depending which it is, we need to return either a Series (i.e.
+        # multiple results), or a single integer. We can mostly distinguish
+        # which case it is by casting to the dtype of self: if that succeeds,
+        # we assume it's case 2, if it fails, we assume case 1. There is still
+        # an ambiguous case, though:
+        #
+        #   Series([...], dtype=pl.List(pl.List(pl.Int64()))).search_sorted([])
+        #
+        # Does this mean searching multiple values, and should return a
+        # pl.Series of length 0, or does it searching mean a single empty list
+        # and it should return an integer? Who can say! Arguably this API
+        # design was a mistake once you allow searching pl.List series, and
+        # probably the solution is deprecate searching for multiple values with
+        # lists, and force people to use Series for that case.
+        #
+        # Therefore, we disallow searching for multiple values via lists when
+        # self's dtype is pl.List or pl.Array, so that we have a non-ambiguous
+        # API.
+        if isinstance(element, (list, np.ndarray)):
+            if isinstance(self.dtype, (List, Array)):
+                # Catch (most) disallowed multi-value-search cases by casting
+                # the needle to the haystack's dtype:
+                try:
+                    F.select(F.lit(element, dtype=self.dtype))
+                except TypeError:
+                    raise TypeError(
+                        f"{element} does not match dtype {self.dtype}. "
+                        "If you were trying to search for multiple values, "
+                        "use a ``pl.Series`` instead of a list/ndarray."
+                    )
+                # If we didn't error out, assume we searched for a single
+                # value:
+                return df.item()
+            else:
+                return df.to_series()
         else:
             return df.item()
 
