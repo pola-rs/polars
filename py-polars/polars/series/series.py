@@ -3459,9 +3459,10 @@ class Series:
             If this value matches the dtype of values in self, the return result is an
             integer.
             If self's dtype is ``pl.List``/``pl.Array``, we assume an element that is
-            ``list`` or NumPy array is a single value, and return an integer.
+            ``list`` or NumPy array is a single value, and return an integer. For other
+            dtypes, a ``list``/NumPy array element is assumed to be searching for
+            multiple values, and the return result is a ``Series``.
             If this is a ``Series`` or ``Expr``, the return result is a ``Series``.
-            If self is a ``list`` or NumPy array, the return result is a ``Series``.
 
         side : {'any', 'left', 'right'}
             If 'any', the index of the first suitable location found is given.
