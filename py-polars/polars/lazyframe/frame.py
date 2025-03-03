@@ -1675,6 +1675,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         streaming: bool = False,
         engine: EngineType = "cpu",
         _check_order: bool = True,
+        **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
@@ -1771,6 +1772,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          │ sort(a)                 ┆ 475   ┆ 1964 │
          └─────────────────────────┴───────┴──────┘)
         """
+        for k in _kwargs:
+            if k not in (  # except "private" kwargs
+                "post_opt_callback",
+            ):
+                error_msg = f"profile() got an unexpected keyword argument '{k}'"
+                raise TypeError(error_msg)
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
@@ -1803,6 +1810,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             new_streaming=False,
             _eager=False,
         )
+        if _kwargs.get("post_opt_callback") is not None:
+            # Only for testing
+            callback = _kwargs.get("post_opt_callback")
         df, timings = ldf.profile(callback)
         (df, timings) = wrap_df(df), wrap_df(timings)
 
