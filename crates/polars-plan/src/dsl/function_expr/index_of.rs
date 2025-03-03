@@ -27,9 +27,7 @@ pub(super) fn index_of(s: &mut [Column]) -> PolarsResult<Column> {
     let result = match is_sorted_flag {
         // If the Series is sorted, we can use an optimized binary search to
         // find the value.
-        IsSorted::Ascending | IsSorted::Descending
-            if !needle.is_null() =>
-        {
+        IsSorted::Ascending | IsSorted::Descending if !needle.is_null() => {
             search_sorted(
                 series,
                 needle_s.as_materialized_series(),
