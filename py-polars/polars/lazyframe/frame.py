@@ -100,6 +100,9 @@ if TYPE_CHECKING:
     from io import IOBase
     from typing import Literal
 
+    with contextlib.suppress(ImportError):  # Module not available when building docs
+        from polars.polars import PyPartitioning
+
     from polars import DataFrame, DataType, Expr
     from polars._typing import (
         AsofJoinStrategy,
@@ -2453,8 +2456,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        target: str | Path | PyPartitioning
+        if not isinstance(path, (str, Path)):
+            target = path._p
+        else:
+            target = normalize_filepath(path)
+
         return lf.sink_parquet(
-            path=normalize_filepath(path),
+            target=target,
             compression=compression,
             compression_level=compression_level,
             statistics=statistics,
@@ -2580,8 +2589,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        target: str | Path | PyPartitioning
+        if not isinstance(path, (str, Path)):
+            target = path._p
+        else:
+            target = path
+
         return lf.sink_ipc(
-            path=path,
+            target=target,
             compression=compression,
             maintain_order=maintain_order,
             cloud_options=storage_options,
@@ -2770,8 +2785,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        target: str | Path | PyPartitioning
+        if not isinstance(path, (str, Path)):
+            target = path._p
+        else:
+            target = normalize_filepath(path)
+
         return lf.sink_csv(
-            path=normalize_filepath(path),
+            target=target,
             include_bom=include_bom,
             include_header=include_header,
             separator=ord(separator),
@@ -2901,8 +2922,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             # Handle empty dict input
             storage_options = None
 
+        target: str | Path | PyPartitioning
+        if not isinstance(path, (str, Path)):
+            target = path._p
+        else:
+            target = path
+
         return lf.sink_json(
-            path=path,
+            target=target,
             maintain_order=maintain_order,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,

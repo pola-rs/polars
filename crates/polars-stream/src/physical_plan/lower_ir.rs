@@ -272,6 +272,24 @@ pub fn lower_ir(
                     },
                 }
             },
+            SinkType::Partition {
+                path_f_string,
+                variant,
+                file_type,
+                cloud_options: _,
+            } => {
+                let path_f_string = path_f_string.clone();
+                let variant = variant.clone();
+                let file_type = file_type.clone();
+
+                let phys_input = lower_ir!(*input)?;
+                PhysNodeKind::PartitionSink {
+                    path_f_string,
+                    variant,
+                    file_type,
+                    input: phys_input,
+                }
+            },
         },
 
         #[cfg(feature = "merge_sorted")]

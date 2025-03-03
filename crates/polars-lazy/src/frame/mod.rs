@@ -843,6 +843,94 @@ impl LazyFrame {
         )
     }
 
+    /// Stream a query result into a parquet file in a partitioned manner. This is useful if the
+    /// final result doesn't fit into memory. This methods will return an error if the query cannot
+    /// be completely done in a streaming fashion.
+    #[cfg(feature = "parquet")]
+    pub fn sink_parquet_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: ParquetWriteOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                variant,
+                file_type: FileType::Parquet(options),
+                cloud_options,
+            },
+            "collect().write_parquet()",
+        )
+    }
+
+    /// Stream a query result into an ipc/arrow file in a partitioned manner. This is useful if the
+    /// final result doesn't fit into memory. This methods will return an error if the query cannot
+    /// be completely done in a streaming fashion.
+    #[cfg(feature = "ipc")]
+    pub fn sink_ipc_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: IpcWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                variant,
+                file_type: FileType::Ipc(options),
+                cloud_options,
+            },
+            "collect().write_ipc()",
+        )
+    }
+
+    /// Stream a query result into an csv file in a partitioned manner. This is useful if the final
+    /// result doesn't fit into memory. This methods will return an error if the query cannot be
+    /// completely done in a streaming fashion.
+    #[cfg(feature = "csv")]
+    pub fn sink_csv_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: CsvWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                variant,
+                file_type: FileType::Csv(options),
+                cloud_options,
+            },
+            "collect().write_csv()",
+        )
+    }
+
+    /// Stream a query result into a JSON file in a partitioned manner. This is useful if the final
+    /// result doesn't fit into memory. This methods will return an error if the query cannot be
+    /// completely done in a streaming fashion.
+    #[cfg(feature = "json")]
+    pub fn sink_json_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: JsonWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                variant,
+                file_type: FileType::Json(options),
+                cloud_options,
+            },
+            "collect().write_ndjson()` or `collect().write_json()",
+        )
+    }
+
     #[cfg(feature = "new_streaming")]
     pub fn try_new_streaming_if_requested(
         &mut self,
@@ -916,6 +1004,10 @@ impl LazyFrame {
             {
                 return Ok(());
             }
+        }
+
+        if matches!(payload, SinkType::Partition { .. }) {
+            polars_bail!(InvalidOperation: "partition sinks are not supported on the old streaming engine");
         }
 
         self.logical_plan = DslPlan::Sink {
