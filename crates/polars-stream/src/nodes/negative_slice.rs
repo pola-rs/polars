@@ -72,8 +72,9 @@ impl ComputeNode for NegativeSliceNode {
                     signed_start_offset -= len as i64;
                 }
 
-                while buffer.total_len as i64 - buffer.frames.back().unwrap().height() as i64
-                    > signed_stop_offset
+                while !buffer.frames.is_empty()
+                    && buffer.total_len as i64 - buffer.frames.back().unwrap().height() as i64
+                        > signed_stop_offset
                 {
                     buffer.total_len -= buffer.frames.pop_back().unwrap().height();
                 }
