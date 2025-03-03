@@ -100,19 +100,20 @@ impl LineBatchDistributor {
                     unsafe { merge_adjacent_non_empty_slices(prev_remainder, full_chunk) }
                 };
 
+                prev_remainder = &[];
                 row_skipper.skip_rows(&mut full_chunk);
 
-                prev_remainder = &[];
-
-                if line_batch_distribute_tx
-                    .send(LineBatch {
-                        bytes: full_chunk,
-                        chunk_idx,
-                    })
-                    .await
-                    .is_err()
-                {
-                    break;
+                if !full_chunk.is_empty() {
+                    if line_batch_distribute_tx
+                        .send(LineBatch {
+                            bytes: full_chunk,
+                            chunk_idx,
+                        })
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
             }
 
