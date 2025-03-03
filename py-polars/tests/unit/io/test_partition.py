@@ -46,6 +46,12 @@ def test_max_size_partition(
         lf,
         MaxSizePartitioning(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
     )
+
+    # We need to fsync here because platforms do not guarantee that a close on
+    # one thread is immediately visible on another thread.
+    #
+    # "Multithreaded processes and close()"
+    # https://man7.org/linux/man-pages/man2/close.2.html
     os.fsync()
 
     i = 0
