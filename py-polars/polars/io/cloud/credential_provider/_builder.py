@@ -8,6 +8,7 @@ import polars._utils.logging
 from polars._utils.logging import eprint, verbose
 from polars._utils.unstable import issue_unstable_warning
 from polars.io.cloud.credential_provider._providers import (
+    CredentialProvider,
     CredentialProviderAWS,
     CredentialProviderAzure,
     CredentialProviderGCP,
@@ -15,8 +16,8 @@ from polars.io.cloud.credential_provider._providers import (
 
 if TYPE_CHECKING:
     from polars.io.cloud.credential_provider._providers import (
-        CredentialProvider,
         CredentialProviderFunction,
+        CredentialProviderFunctionReturn,
     )
 
 # https://docs.rs/object_store/latest/object_store/enum.ClientConfigKey.html
@@ -214,6 +215,17 @@ class AutoInitAWS(CredentialProviderBuilderImpl):
         return "CredentialProviderAWS"
 
 
+class UserProvidedGCPToken(CredentialProvider):
+    """User-provided GCP token in storage_options."""
+
+    def __init__(self, token: str) -> None:
+        self.token = token
+
+    def __call__(self) -> CredentialProviderFunctionReturn:
+        """Fetches the credentials."""
+        return {"bearer_token": self.token}, None
+
+
 def _init_credential_provider_builder(
     credential_provider: CredentialProviderFunction
     | CredentialProviderBuilder
@@ -345,11 +357,39 @@ def _init_credential_provider_builder(
                 )
             )
 
-        elif storage_options is not None and any(
-            key.lower() not in OBJECT_STORE_CLIENT_OPTIONS for key in storage_options
-        ):
-            return None
         elif _is_gcp_cloud(scheme):
+            token = None
+            unhandled_key = None
+
+            if storage_options is not None:
+                for k, v in storage_options.items():
+                    k = k.lower()
+
+                    # https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html
+                    if k in {"token", "bearer_token"}:
+                        token = v
+                    elif k in OBJECT_STORE_CLIENT_OPTIONS:
+                        continue
+                    else:
+                        # We assume some sort of access key was given, so we
+                        # just dispatch to the rust side.
+                        unhandled_key = k
+
+            if unhandled_key is not None:
+                if token is not None:
+                    msg = (
+                        "unsupported: cannot combine token with "
+                        f"{unhandled_key} in storage_options"
+                    )
+                    raise ValueError(msg)
+
+                return None
+
+            if token is not None:
+                return CredentialProviderBuilder(
+                    InitializedCredentialProvider(UserProvidedGCPToken(token))
+                )
+
             return CredentialProviderBuilder(AutoInit(CredentialProviderGCP))
 
         return None
