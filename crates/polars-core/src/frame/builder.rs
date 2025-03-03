@@ -89,7 +89,7 @@ impl DataFrameBuilder {
     }
 
     /// Extends this builder with the contents of the given dataframe at the given
-    /// indices. That is, other[idxs[i]] is appended to this builder in order,
+    /// indices. That is, `other[idxs[i]]` is appended to this builder in order,
     /// for each i=0..idxs.len(). May panic if other does not match the schema
     /// of this builder, or if the other dataframe is not rechunked.
     ///
