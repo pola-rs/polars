@@ -3045,7 +3045,7 @@ def test_scan_parquet_filter_statistics_load_missing_column_21391(
 def test_filter_nulls_21538(ty: tuple[Callable[[int], Any], pl.DataType, bool]) -> None:
     i_to_value, dtype, do_no_dicts = ty
 
-    patterns = [
+    patterns: list[list[int | None]] = [
         [None, None, None, None, None],
         [1, None, None, 2, None],
         [None, 1, 2, 3, 4],
@@ -3056,10 +3056,12 @@ def test_filter_nulls_21538(ty: tuple[Callable[[int], Any], pl.DataType, bool]) 
     ]
 
     df = pl.DataFrame(
-        pl.Series(
-            f"p{i}", [None if v is None else i_to_value(v) for v in pattern], dtype
-        )
-        for i, pattern in enumerate(patterns)
+        [
+            pl.Series(
+                f"p{i}", [None if v is None else i_to_value(v) for v in pattern], dtype
+            )
+            for i, pattern in enumerate(patterns)
+        ]
     )
 
     fs = []
