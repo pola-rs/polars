@@ -212,6 +212,7 @@ impl SourceNode for NDJsonSourceNode {
         let output_to_linearizer = opt_linearizer.is_some();
 
         let opt_post_process_handle = if is_negative_slice {
+            // Note: This is right-to-left
             let negative_slice = global_slice.clone().unwrap();
 
             if verbose {
@@ -266,6 +267,8 @@ impl SourceNode for NDJsonSourceNode {
                 ApplyRowIndexOrLimit {
                     morsel_receiver: opt_linearizer.unwrap(),
                     phase_tx_receivers: std::mem::take(&mut phase_tx_receivers),
+                    // Note: The line batch distributor handles skipping lines until the offset,
+                    // we only need to handle the limit here.
                     limit: global_slice.as_ref().map(|x| x.len()),
                     row_index,
                     verbose,
