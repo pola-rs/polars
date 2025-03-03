@@ -19,7 +19,6 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::RowIndex;
 use polars_plan::dsl::{ScanSource, ScanSourceRef, ScanSources};
 use polars_plan::plans::hive::HivePartitionsDf;
-use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
@@ -452,7 +451,7 @@ struct SourcePhase {
     /// We don't use this to communicate anything, it is just a sanity check.
     source_idx: usize,
     content: SourcePhaseContent,
-    unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+    unrestricted_row_count: Option<tokio::sync::oneshot::Receiver<IdxSize>>,
     missing_columns: Option<Bitmap>,
 }
 
@@ -471,7 +470,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
         mut send_port_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         assert!(unrestricted_row_count.is_none());
 
@@ -742,13 +741,16 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                             if is_selected {
                                 let row_count = source.unrestricted_row_count().await?;
+                                let unrestricted_row_count_rx = {
+                                    let (tx, rx) = tokio::sync::oneshot::channel();
+                                    tx.send(row_count).unwrap();
+                                    rx
+                                };
                                 let phase = SourcePhase {
                                     source_idx: i,
                                     content: SourcePhaseContent::OneShot(DataFrame::empty()),
                                     missing_columns: None,
-                                    unrestricted_row_count: Some(Arc::new(AtomicIdxSize::new(
-                                        row_count,
-                                    ))),
+                                    unrestricted_row_count: Some(unrestricted_row_count_rx),
                                 };
                                 // Wait for the orchestrator task to actually be interested in the output
                                 // of this file.
@@ -792,13 +794,18 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     if let Some(name) = &row_index_name {
                                         df.with_row_index_mut(name.clone(), None);
                                     }
+
+                                    let unrestricted_row_count_rx = {
+                                        let (tx, rx) = tokio::sync::oneshot::channel();
+                                      tx.send(row_count).unwrap();
+                                        rx
+                                    };
+
                                     let phase = SourcePhase {
                                         source_idx: i,
                                         content: SourcePhaseContent::OneShot(df),
                                         missing_columns: missing_columns.clone(),
-                                        unrestricted_row_count: Some(Arc::new(AtomicIdxSize::new(
-                                            row_count,
-                                        ))),
+                                        unrestricted_row_count: Some(unrestricted_row_count_rx),
                                     };
 
                                     // Wait for the orchestrator task to actually be interested in the output
@@ -871,9 +878,13 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 }
                             }
 
-                            let unrestricted_row_count = row_index_name
-                                .is_some()
-                                .then(|| Arc::new(AtomicIdxSize::new(0)));
+                            let (unrestricted_row_count_tx, mut unrestricted_row_count_rx) =
+                                if row_index_name.is_some() {
+                                    let (tx, rx) = tokio::sync::oneshot::channel() ;
+                                    (Some(tx), Some(rx))
+                                } else {
+                                    (None,None)
+                                };
 
                             source.with_projection(Some(&source_projection));
                             source.spawn_source(
@@ -881,7 +892,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 output_recv,
                                 &state,
                                 &mut join_handles,
-                                unrestricted_row_count.clone(),
+                                unrestricted_row_count_tx,
                             );
                             let mut join_handles: FuturesUnordered<_> =
                                 join_handles.drain(..).map(AbortOnDropHandle::new).collect();
@@ -903,7 +914,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     source_idx: i,
                                     content: SourcePhaseContent::Channels(rx),
                                     missing_columns: missing_columns.clone(),
-                                    unrestricted_row_count: unrestricted_row_count.clone(),
+                                    unrestricted_row_count: unrestricted_row_count_rx.take(),
                                 };
 
                                 // Wait for the orchestrator task to actually be interested in the output
@@ -1031,6 +1042,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             join_handles.push(spawn(TaskPriority::High, async move {
                 let mut seq = MorselSeq::default();
                 let mut current_scan = first_scan_source;
+                let mut unrestricted_row_count_rx = None;
 
                 // Every phase we are given a new send channel.
                 'phase_loop: while let Ok(phase_output) = send_port_recv.recv().await {
@@ -1062,6 +1074,9 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             return Ok(());
                         };
 
+                        // This is sent with the first phase.
+                        unrestricted_row_count_rx = unrestricted_row_count_rx.or(phase.unrestricted_row_count);
+
                         // Sanity Check: Is the worker currently on the same source as we are?
                         assert_eq!(phase.source_idx, current_scan);
 
@@ -1069,6 +1084,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                         if let Some(skipable_file_mask) = skipable_file_mask.as_mut() {
                             skipable_file_mask.slice(1, skipable_file_mask.len() - 1);
                         }
+
 
                         match phase.content {
                             // In certain cases, we don't actually need to read physical data from the
@@ -1177,10 +1193,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
 
                         if let Some(ri) = row_index.as_mut() {
-                            let source_num_rows = phase
-                                .unrestricted_row_count
+                            let source_num_rows = unrestricted_row_count_rx
+                                .take()
                                 .unwrap()
-                                .load(Ordering::Relaxed);
+                                .await
+                                .unwrap();
                             ri.offset += source_num_rows;
                         }
                         current_scan += 1;

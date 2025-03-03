@@ -1,7 +1,6 @@
 use std::cmp::Reverse;
 use std::io::Cursor;
 use std::ops::Range;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -24,7 +23,6 @@ use polars_io::RowIndex;
 use polars_plan::dsl::ScanSource;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::index::AtomicIdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
@@ -177,7 +175,7 @@ impl SourceNode for IpcSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         // Split size for morsels.
         let max_morsel_size = get_max_morsel_size();
@@ -352,7 +350,7 @@ impl SourceNode for IpcSourceNode {
                 )?;
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "ipc file", size = num_rows))?;
-                rc.store(num_rows, Ordering::Relaxed);
+                _ = rc.send(num_rows);
             }
 
             let mut morsel_seq: u64 = 0;
