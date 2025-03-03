@@ -20,5 +20,7 @@ pub use options::*;
 #[cfg(feature = "cloud")]
 pub use polars_object_store::*;
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+pub mod client_options;
 #[cfg(feature = "cloud")]
 pub mod credential_provider;
