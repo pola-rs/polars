@@ -1,0 +1,6 @@
+﻿polars.Series.arcsin
+====================
+
+.. currentmodule:: polars
+
+.. automethod:: Series.arcsin

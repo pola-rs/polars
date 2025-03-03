@@ -1,0 +1,6 @@
+﻿polars.align\_frames
+====================
+
+.. currentmodule:: polars
+
+.. autofunction:: align_frames

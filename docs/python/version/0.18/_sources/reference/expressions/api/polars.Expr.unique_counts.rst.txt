@@ -1,0 +1,6 @@
+﻿polars.Expr.unique\_counts
+==========================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.unique_counts

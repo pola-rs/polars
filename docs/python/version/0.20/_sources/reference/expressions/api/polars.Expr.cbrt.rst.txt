@@ -1,0 +1,6 @@
+﻿polars.Expr.cbrt
+================
+
+.. currentmodule:: polars
+
+.. automethod:: Expr.cbrt

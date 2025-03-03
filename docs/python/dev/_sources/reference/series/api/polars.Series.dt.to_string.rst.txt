@@ -1,0 +1,6 @@
+﻿polars.Series.dt.to_string
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.dt.to_string
