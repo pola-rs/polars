@@ -139,7 +139,7 @@ def test_sink_csv_with_options() -> None:
     df = pl.LazyFrame({"dummy": ["abc"]})
     with patch.object(df, "_ldf") as ldf:
         df.sink_csv(
-            "path",
+            "target",
             include_bom=True,
             include_header=False,
             separator=";",
@@ -160,7 +160,7 @@ def test_sink_csv_with_options() -> None:
         )
 
         ldf.optimization_toggle().sink_csv.assert_called_with(
-            path="path",
+            target="target",
             include_bom=True,
             include_header=False,
             separator=ord(";"),
