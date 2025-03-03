@@ -5,19 +5,32 @@ use crate::prelude::*;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
 use crate::POOL;
 
-impl TryFrom<(RecordBatch, &ArrowSchema)> for DataFrame {
-    type Error = PolarsError;
+impl From<RecordBatch> for DataFrame {
+    fn from(rb: RecordBatch) -> DataFrame {
+        let height = rb.height();
+        let (schema, arrays) = rb.into_schema_and_arrays();
 
-    fn try_from(arg: (RecordBatch, &ArrowSchema)) -> PolarsResult<DataFrame> {
-        let columns: PolarsResult<Vec<Column>> = arg
-            .0
-            .columns()
-            .iter()
-            .zip(arg.1.iter_values())
-            .map(|(arr, field)| Series::try_from((field, arr.clone())).map(Column::from))
+        let columns: Vec<Column> = arrays
+            .into_iter()
+            .zip(schema.iter())
+            .map(|(arr, (name, field))| {
+                // SAFETY: Record Batch has the invariant that the schema datatype matches the
+                // columns.
+                unsafe {
+                    Series::_try_from_arrow_unchecked_with_md(
+                        name.clone(),
+                        vec![arr],
+                        field.dtype(),
+                        field.metadata.as_deref(),
+                    )
+                }
+                .unwrap()
+                .into_column()
+            })
             .collect();
 
-        DataFrame::new(columns?)
+        // SAFETY: RecordBatch has the same invariants for names and heights as DataFrame.
+        unsafe { DataFrame::new_no_checks(height, columns) }
     }
 }
 

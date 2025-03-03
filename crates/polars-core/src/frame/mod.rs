@@ -3281,28 +3281,14 @@ impl DataFrame {
     }
 
     pub fn append_record_batch(&mut self, rb: RecordBatchT<ArrayRef>) -> PolarsResult<()> {
+        // @Optimize: this does a lot of unnecessary allocations. We should probably have a
+        // append_chunk or something like this. It is just quite difficult to make that safe.
+        let df = DataFrame::from(rb);
         polars_ensure!(
-            rb.arrays().len() == self.width(),
-            InvalidOperation: "attempt to extend dataframe of width {} with record batch of width {}",
-            self.width(),
-            rb.arrays().len(),
+            self.schema() == df.schema(),
+            SchemaMismatch: "cannot append record batch with different schema",
         );
-
-        if rb.height() == 0 {
-            return Ok(());
-        }
-
-        // SAFETY:
-        // - we don't adjust the names of the columns
-        // - each column gets appended the same number of rows, which is an invariant of
-        //   record_batch.
-        self.height += rb.height();
-        let columns = unsafe { self.get_columns_mut() };
-        for (col, arr) in columns.iter_mut().zip(rb.into_arrays()) {
-            let arr_series = Series::from_arrow_chunks(PlSmallStr::EMPTY, vec![arr])?.into_column();
-            col.append(&arr_series)?;
-        }
-
+        self.vstack_mut_owned_unchecked(df);
         Ok(())
     }
 }
