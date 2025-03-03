@@ -146,6 +146,46 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
+def _gpu_engine_callback(
+    engine: EngineType,
+    *,
+    streaming: bool,
+    background: bool,
+    new_streaming: bool,
+    _eager: bool,
+) -> Callable[[Any, int | None], None] | None:
+    is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
+    if not (is_config_obj or engine in ("cpu", "gpu")):
+        msg = f"Invalid engine argument {engine=}"
+        raise ValueError(msg)
+    if (streaming or background or new_streaming) and is_gpu:
+        issue_warning(
+            "GPU engine does not support streaming or background collection, "
+            "disabling GPU engine.",
+            category=UserWarning,
+        )
+        is_gpu = False
+    if _eager:
+        # Don't run on GPU in _eager mode (but don't warn)
+        is_gpu = False
+
+    if not is_gpu:
+        return None
+    cudf_polars = import_optional(
+        "cudf_polars",
+        err_prefix="GPU engine requested, but required package",
+        install_message=(
+            "Please install using the command "
+            "`pip install cudf-polars-cu12` "
+            "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
+            "if your system has a CUDA 11 driver)."
+        ),
+    )
+    if not is_config_obj:
+        engine = GPUEngine()
+    return partial(cudf_polars.execute_with_cudf, config=engine)
+
+
 class LazyFrame:
     """
     Representation of a Lazy computation graph/query against a DataFrame.
@@ -1633,7 +1673,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
+        engine: EngineType = "cpu",
         _check_order: bool = True,
+        **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
         """
         Profile a LazyFrame.
@@ -1675,6 +1717,27 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             matplotlib figsize of the profiling plot
         streaming
             Run parts of the query in a streaming fashion (this is in an alpha state)
+        engine
+            Select the engine used to process the query, optional.
+            If set to `"cpu"` (default), the query is run using the
+            polars CPU engine. If set to `"gpu"`, the GPU engine is
+            used. Fine-grained control over the GPU engine, for
+            example which device to use on a system with multiple
+            devices, is possible by providing a :class:`~.GPUEngine` object
+            with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, if streaming
+               is enabled then GPU execution is switched off.
+
 
         Examples
         --------
@@ -1709,6 +1772,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
          │ sort(a)                 ┆ 475   ┆ 1964 │
          └─────────────────────────┴───────┴──────┘)
         """
+        for k in _kwargs:
+            if k not in (  # except "private" kwargs
+                "post_opt_callback",
+            ):
+                error_msg = f"profile() got an unexpected keyword argument '{k}'"
+                raise TypeError(error_msg)
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
@@ -1734,7 +1803,17 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _check_order=_check_order,
             new_streaming=False,
         )
-        df, timings = ldf.profile()
+        callback = _gpu_engine_callback(
+            engine,
+            streaming=streaming,
+            background=False,
+            new_streaming=False,
+            _eager=False,
+        )
+        if _kwargs.get("post_opt_callback") is not None:
+            # Only for testing
+            callback = _kwargs.get("post_opt_callback")
+        df, timings = ldf.profile(callback)
         (df, timings) = wrap_df(df), wrap_df(timings)
 
         if show_plot:
@@ -2011,21 +2090,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         if streaming:
             issue_unstable_warning("Streaming mode is considered unstable.")
 
-        is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
-        if not (is_config_obj or engine in ("cpu", "gpu")):
-            msg = f"Invalid engine argument {engine=}"
-            raise ValueError(msg)
-        if (streaming or background or new_streaming) and is_gpu:
-            issue_warning(
-                "GPU engine does not support streaming or background collection, "
-                "disabling GPU engine.",
-                category=UserWarning,
-            )
-            is_gpu = False
-        if _eager:
-            # Don't run on GPU in _eager mode (but don't warn)
-            is_gpu = False
-
+        callback = _gpu_engine_callback(
+            engine,
+            streaming=streaming,
+            background=background,
+            new_streaming=new_streaming,
+            _eager=_eager,
+        )
         type_check = _type_check
         ldf = self._ldf.optimization_toggle(
             type_coercion=type_coercion,
@@ -2048,21 +2119,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             issue_unstable_warning("Background mode is considered unstable.")
             return InProcessQuery(ldf.collect_concurrently())
 
-        callback = None
-        if is_gpu:
-            cudf_polars = import_optional(
-                "cudf_polars",
-                err_prefix="GPU engine requested, but required package",
-                install_message=(
-                    "Please install using the command "
-                    "`pip install cudf-polars-cu12` "
-                    "(or `pip install --extra-index-url=https://pypi.nvidia.com cudf-polars-cu11` "
-                    "if your system has a CUDA 11 driver)."
-                ),
-            )
-            if not is_config_obj:
-                engine = GPUEngine()
-            callback = partial(cudf_polars.execute_with_cudf, config=engine)
         # Only for testing purposes
         callback = _kwargs.get("post_opt_callback", callback)
         return wrap_df(ldf.collect(callback))
