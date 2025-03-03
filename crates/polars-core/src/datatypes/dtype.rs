@@ -1057,12 +1057,14 @@ fn collect_nested_types(
             }
             collect_nested_types(inner, result, include_compound_types);
         },
+        #[cfg(feature = "dtype-array")]
         DataType::Array(inner, _) => {
             if include_compound_types {
                 result.insert(dtype.clone());
             }
             collect_nested_types(inner, result, include_compound_types);
         },
+        #[cfg(feature = "dtype-struct")]
         DataType::Struct(fields) => {
             if include_compound_types {
                 result.insert(dtype.clone());
@@ -1121,6 +1123,7 @@ impl CompatLevel {
 mod tests {
     use super::*;
 
+    #[cfg(feature = "dtype-array")]
     #[test]
     fn test_unpack_primitive_dtypes() {
         let inner_type = DataType::Float64;
@@ -1135,6 +1138,7 @@ mod tests {
         assert_eq!(result, expected)
     }
 
+    #[cfg(feature = "dtype-array")]
     #[test]
     fn test_unpack_compound_dtypes() {
         let inner_type = DataType::Float64;
