@@ -208,5 +208,6 @@ def test_scan_ndjson_slicing(
         lf.slice(-999, 0),
         lf.slice(999, 0),
         lf.slice(-999),
+        lf.slice(-3, 999),
     ]:
         assert_frame_equal(q.collect(), q.collect(no_optimization=True))
