@@ -103,17 +103,16 @@ impl LineBatchDistributor {
                 prev_remainder = &[];
                 row_skipper.skip_rows(&mut full_chunk);
 
-                if !full_chunk.is_empty() {
-                    if line_batch_distribute_tx
+                if !full_chunk.is_empty()
+                    && line_batch_distribute_tx
                         .send(LineBatch {
                             bytes: full_chunk,
                             chunk_idx,
                         })
                         .await
                         .is_err()
-                    {
-                        break;
-                    }
+                {
+                    break;
                 }
             }
 
