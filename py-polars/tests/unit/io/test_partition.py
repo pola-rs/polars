@@ -31,6 +31,10 @@ io_types: list[IOType] = [
 @pytest.mark.parametrize("io_type", io_types)
 @pytest.mark.parametrize("length", [0, 1, 4, 5, 6, 7])
 @pytest.mark.parametrize("max_size", [1, 2, 3])
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="sync does not exist on Windows",
+)
 @pytest.mark.write_disk
 def test_max_size_partition(
     tmp_path: Path,
@@ -52,7 +56,7 @@ def test_max_size_partition(
     #
     # "Multithreaded processes and close()"
     # https://man7.org/linux/man-pages/man2/close.2.html
-    os.fsync()
+    os.sync()
 
     i = 0
     while length > 0:
