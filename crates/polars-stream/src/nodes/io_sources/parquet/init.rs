@@ -40,7 +40,7 @@ impl ParquetSourceNode {
 
         let (mut raw_morsel_sender, raw_morsel_receivers) =
             distributor_channel(self.config.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        if let Some((_, 0)) = self.file_options.slice {
+        if let Some((_, 0)) = self.file_options.pre_slice {
             return (
                 raw_morsel_receivers,
                 task_handles_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),

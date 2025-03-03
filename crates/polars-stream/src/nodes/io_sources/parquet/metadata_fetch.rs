@@ -165,14 +165,14 @@ impl ParquetSourceNode {
 
         let metadata_task_handle = if self
             .file_options
-            .slice
+            .pre_slice
             .map(|(offset, _)| offset >= 0)
             .unwrap_or(true)
         {
             normalized_slice_oneshot_tx
                 .send(
                     self.file_options
-                        .slice
+                        .pre_slice
                         .map(|(offset, len)| (offset as usize, len)),
                 )
                 .unwrap();
@@ -180,7 +180,7 @@ impl ParquetSourceNode {
             // Safety: `offset + len` does not overflow.
             let slice_range = self
                 .file_options
-                .slice
+                .pre_slice
                 .map(|(offset, len)| offset as usize..offset as usize + len);
 
             let mut metadata_stream = futures::stream::iter(0..self.scan_sources.len())
@@ -281,7 +281,7 @@ impl ParquetSourceNode {
             })
         } else {
             // Walk the files in reverse to translate the slice into a positive offset.
-            let slice = self.file_options.slice.unwrap();
+            let slice = self.file_options.pre_slice.unwrap();
             let slice_start_as_n_from_end = -slice.0 as usize;
 
             let mut metadata_stream = futures::stream::iter((0..self.scan_sources.len()).rev())

@@ -206,7 +206,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type: FileScan::Csv { options, cloud_options },
             }, Some(state)) if predicate.is_none() && self.new_streaming =>  {
-                file_options.slice = Some((state.offset, state.len as usize));
+                file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -230,7 +230,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type: FileScan::Csv { options, cloud_options },
             }, Some(state)) if predicate.is_none() && state.offset >= 0 =>  {
-                file_options.slice = Some((0, state.offset as usize + state.len as usize));
+                file_options.pre_slice = Some((0, state.offset as usize + state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -254,7 +254,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type: FileScan::NDJson { options, cloud_options },
             }, Some(state)) if predicate.is_none() && self.new_streaming =>  {
-                file_options.slice = Some((state.offset, state.len as usize));
+                file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -278,7 +278,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type: scan_type @ FileScan::Parquet { .. },
             }, Some(state)) if predicate.is_none() =>  {
-                file_options.slice = Some((state.offset, state.len as usize));
+                file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -303,7 +303,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type: scan_type @ FileScan::Ipc { .. },
             }, Some(state)) if self.new_streaming && predicate.is_none() =>  {
-                file_options.slice = Some((state.offset, state.len as usize));
+                file_options.pre_slice = Some((state.offset, state.len as usize));
 
                 let lp = Scan {
                     sources,
@@ -328,7 +328,7 @@ impl SlicePushDown {
                 predicate,
                 scan_type
             }, Some(state)) if state.offset == 0 && predicate.is_none() => {
-                options.slice = Some((0, state.len as usize));
+                options.pre_slice = Some((0, state.len as usize));
 
                 let lp = Scan {
                     sources,

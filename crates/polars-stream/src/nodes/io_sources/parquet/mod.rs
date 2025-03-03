@@ -333,12 +333,12 @@ impl MultiScanable for ParquetSourceNode {
     }
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
         self.predicate = None;
-        self.file_options.slice = None;
+        self.file_options.pre_slice = None;
 
         if let Some(row_restriction) = row_restriction {
             match row_restriction {
                 RowRestriction::Slice(slice) => {
-                    self.file_options.slice = Some((slice.start as i64, slice.len()));
+                    self.file_options.pre_slice = Some((slice.start as i64, slice.len()));
                 },
                 // @TODO: Cache
                 RowRestriction::Predicate(scan_predicate) => {

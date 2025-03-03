@@ -203,7 +203,7 @@ fn create_physical_plan_impl(
             predicate,
             mut file_options,
         } => {
-            file_options.slice = if let Some((offset, len)) = file_options.slice {
+            file_options.pre_slice = if let Some((offset, len)) = file_options.pre_slice {
                 Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
             } else {
                 _set_n_rows_for_scan(None).map(|x| (0, x))
