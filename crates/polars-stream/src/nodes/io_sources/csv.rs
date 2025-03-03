@@ -1,4 +1,3 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -21,7 +20,6 @@ use polars_io::RowIndex;
 use polars_plan::dsl::ScanSource;
 use polars_plan::plans::{isolated_csv_file_info, FileInfo};
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::index::AtomicIdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
@@ -96,7 +94,7 @@ impl SourceNode for CsvSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
             .map(|_| connector::<MorselOutput>())
@@ -190,7 +188,7 @@ impl CsvSourceNode {
     fn init_line_batch_source(
         &mut self,
         num_pipelines: usize,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) -> AsyncTaskData {
         let verbose = self.verbose;
 
@@ -370,11 +368,11 @@ impl CsvSourceNode {
                     }
                 }
 
-                if let Some(unrestricted_row_count) = unrestricted_row_count.as_ref() {
+                if let Some(unrestricted_row_count) = unrestricted_row_count {
                     let num_rows = *current_row_offset_ref;
                     let num_rows = IdxSize::try_from(num_rows)
                         .map_err(|_| polars_err!(bigidx, ctx = "csv file", size = num_rows))?;
-                    unrestricted_row_count.store(num_rows, Ordering::Relaxed);
+                    _ = unrestricted_row_count.send(num_rows);
                 }
 
                 Ok(())

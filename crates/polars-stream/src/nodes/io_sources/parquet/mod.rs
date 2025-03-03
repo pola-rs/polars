@@ -1,4 +1,3 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -153,7 +152,7 @@ impl SourceNode for ParquetSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unresistricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
             .map(|_| connector())
@@ -192,10 +191,10 @@ impl SourceNode for ParquetSourceNode {
         let mut morsel_stream_starter = self.morsel_stream_starter.take();
 
         join_handles.push(spawn(TaskPriority::Low, async move {
-            if let Some(rc) = unresistricted_row_count {
+            if let Some(rc) = unrestricted_row_count {
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))?;
-                rc.store(num_rows, Ordering::Relaxed);
+                _ = rc.send(num_rows);
             }
 
             if let Some(v) = morsel_stream_starter.take() {
