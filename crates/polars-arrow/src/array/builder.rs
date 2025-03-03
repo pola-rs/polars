@@ -59,7 +59,7 @@ pub trait StaticArrayBuilder {
     }
 
     /// Extends this builder with the contents of the given array at the given
-    /// indices. That is, other[idxs[i]] is appended to this array in order,
+    /// indices. That is, `other[idxs[i]]` is appended to this array in order,
     /// for each i=0..idxs.len(). May panic if other does not match the
     /// dtype of this array.
     ///
@@ -150,7 +150,7 @@ pub trait ArrayBuilder: ArrayBuilderBoxedHelper {
     );
 
     /// Extends this builder with the contents of the given array at the given
-    /// indices. That is, other[idxs[i]] is appended to this array in order,
+    /// indices. That is, `other[idxs[i]]` is appended to this array in order,
     /// for each i=0..idxs.len(). May panic if other does not match the
     /// dtype of this array.
     ///
