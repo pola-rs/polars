@@ -17,8 +17,8 @@ use polars_io::SerWriter;
 use polars_utils::priority::Priority;
 
 use super::{
-    buffer_and_distribute_columns_task, SinkNode, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
-    DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+    buffer_and_distribute_columns_task, SinkInputPort, SinkNode, SinkRecvPort,
+    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
 };
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::connector;
@@ -65,12 +65,28 @@ impl SinkNode for IpcSinkNode {
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
-        recv_ports_recv: super::SinkRecvPort,
+        recv_ports_recv: SinkRecvPort,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        let rx = recv_ports_recv.serial(join_handles);
+        self.spawn_sink_once(
+            num_pipelines,
+            SinkInputPort::Serial(rx),
+            _state,
+            join_handles,
+        );
+    }
+
+    fn spawn_sink_once(
+        &mut self,
+        num_pipelines: usize,
+        recv_port: SinkInputPort,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
         // .. -> Buffer task
-        let buffer_rx = recv_ports_recv.serial(join_handles);
+        let buffer_rx = recv_port.serial();
         // Buffer task -> Encode tasks
         let (dist_tx, dist_rxs) =
             distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);

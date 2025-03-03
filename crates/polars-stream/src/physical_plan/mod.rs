@@ -134,9 +134,7 @@ pub enum PhysNodeKind {
     },
 
     PartitionSink {
-        #[expect(unused)]
         path_f_string: Arc<PathBuf>,
-        #[expect(unused)]
         variant: PartitionVariant,
         file_type: FileType,
         input: PhysStream,

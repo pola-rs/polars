@@ -9,7 +9,7 @@ use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, Expressio
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::JoinOptions;
+use polars_plan::dsl::{JoinOptions, PartitionVariant};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
@@ -276,12 +276,32 @@ fn to_graph_rec<'a>(
         },
 
         PartitionSink {
-            path_f_string: _,
-            variant: _,
-            file_type: _,
-            input: _,
+            path_f_string,
+            variant,
+            file_type,
+            input,
         } => {
-            todo!()
+            let input_schema = ctx.phys_sm[input.node].output_schema.clone();
+            let input_key = to_graph_rec(input.node, ctx)?;
+
+            let path_f_string = path_f_string.clone();
+            let args_to_path =
+                nodes::io_sinks::partition::get_args_to_path_fn(variant, path_f_string);
+            let create_new =
+                nodes::io_sinks::partition::get_create_new_fn(file_type.clone(), args_to_path);
+
+            match variant {
+                PartitionVariant::MaxSize(max_size) => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
+                            input_schema,
+                            *max_size,
+                            create_new,
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
+            }
         },
 
         InMemoryMap { input, map } => {

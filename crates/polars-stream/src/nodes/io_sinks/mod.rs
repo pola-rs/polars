@@ -25,6 +25,7 @@ pub mod ipc;
 pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+pub mod partition;
 
 // This needs to be low to increase the backpressure.
 const DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: usize = 1;
@@ -181,10 +182,18 @@ fn buffer_and_distribute_columns_task(
 pub trait SinkNode {
     fn name(&self) -> &str;
     fn is_sink_input_parallel(&self) -> bool;
+
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
         recv_ports_recv: SinkRecvPort,
+        state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    );
+    fn spawn_sink_once(
+        &mut self,
+        num_pipelines: usize,
+        recv_ports_recv: SinkInputPort,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );

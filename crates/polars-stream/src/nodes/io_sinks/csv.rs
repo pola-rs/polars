@@ -9,7 +9,7 @@ use polars_io::prelude::{CsvWriter, CsvWriterOptions};
 use polars_io::SerWriter;
 use polars_utils::priority::Priority;
 
-use super::{SinkNode, SinkRecvPort};
+use super::{SinkInputPort, SinkNode, SinkRecvPort};
 use crate::async_executor::spawn;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::io_sinks::DEFAULT_SINK_LINEARIZER_BUFFER_SIZE;
@@ -47,8 +47,24 @@ impl SinkNode for CsvSinkNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        // .. -> Encode task
         let rxs = recv_ports_recv.parallel(join_handles);
+        self.spawn_sink_once(
+            num_pipelines,
+            SinkInputPort::Parallel(rxs),
+            _state,
+            join_handles,
+        );
+    }
+
+    fn spawn_sink_once(
+        &mut self,
+        num_pipelines: usize,
+        recv_port: SinkInputPort,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        // .. -> Encode task
+        let rxs = recv_port.parallel();
         // Encode tasks -> IO task
         let (mut lin_rx, lin_txs) =
             Linearizer::<Linearized>::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
