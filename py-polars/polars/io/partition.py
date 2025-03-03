@@ -1,5 +1,5 @@
 import contextlib
-from typing import Literal, TypeAlias, Union
+from typing import TypeAlias, Union
 
 from polars._utils.unstable import issue_unstable_warning
 
@@ -9,7 +9,10 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
 
 class MaxSizePartitioning:
     """
-    File Partitioning scheme that generates files up to a maximum size and then switches to the next file.
+    Partitioning scheme to write files with a maximum size.
+
+    This partitioning scheme generates files that have a given maximum size. If
+    the size reaches the maximum size, it is closes and a new file is opened.
 
     The `path` can be given a `{part}` to specify the output files.
 
