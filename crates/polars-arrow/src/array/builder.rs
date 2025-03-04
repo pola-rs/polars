@@ -19,7 +19,7 @@ pub enum ShareStrategy {
     Always,
 }
 
-pub trait StaticArrayBuilder : Send {
+pub trait StaticArrayBuilder: Send {
     type Array: Array;
 
     fn dtype(&self) -> &ArrowDataType;
