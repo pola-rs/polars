@@ -446,7 +446,12 @@ pub fn lower_ir(
                                 FileScan::Ipc { .. } => (None, None, predicate.take()),
                                 #[cfg(feature = "csv")]
                                 FileScan::Csv { options, .. } => {
+                                    // Note: We dispatch negative slice to separate node.
+                                    #[allow(clippy::nonminimal_bool)]
                                     if options.parse_options.comment_prefix.is_none()
+                                        && !file_options
+                                            .pre_slice
+                                            .is_some_and(|(offset, _)| offset < 0)
                                         && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE")
                                             .as_deref()
                                             != Ok("1")
