@@ -155,11 +155,7 @@ def _gpu_engine_callback(
     new_streaming: bool,
     _eager: bool,
 ) -> Callable[[Any, int | None], None] | None:
-    is_gpu = (
-        (is_config_obj := isinstance(engine, GPUEngine))
-        or engine == "gpu"
-        or get_engine_affinity() == "gpu"
-    )
+    is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
     if not (is_config_obj or engine in ("cpu", "gpu")):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)
@@ -1678,7 +1674,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: EngineType = None,
         _check_order: bool = True,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
@@ -1724,7 +1720,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run parts of the query in a streaming fashion (this is in an alpha state)
         engine
             Select the engine used to process the query, optional.
-            If set to `"cpu"` (default), the query is run using the
+            If set to `None` (default), polars will attempt to run the query
+            using the engine set from the `POLARS_ENGINE_AFFINITY` environment
+            variable. If set to `"cpu"`, the query is run using the
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
@@ -1783,6 +1781,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
+        if engine is None:
+            engine = get_engine_affinity()
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
@@ -1876,7 +1876,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: None | EngineType = "cpu",
+        engine: None | EngineType = None,
         background: Literal[True],
         _eager: bool = False,
         _check_order: bool = True,
@@ -1898,7 +1898,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: None | EngineType = "cpu",
+        engine: None | EngineType = None,
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1919,7 +1919,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: None | EngineType = "cpu",
+        engine: None | EngineType = None,
         background: bool = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1967,7 +1967,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mode.
         engine
             Select the engine used to process the query, optional.
-            If set to `"cpu"` (default), the query is run using the
+            If set to `None` (default), polars will attempt to run the query
+            using the engine set from the `POLARS_ENGINE_AFFINITY` environment
+            variable. If set to `"cpu"`, the query is run using the
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
@@ -2082,8 +2084,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if engine is None:
             engine = get_engine_affinity()
-            if engine is None:
-                engine = "cpu"
 
         new_streaming = (
             _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"

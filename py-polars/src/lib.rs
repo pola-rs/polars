@@ -226,7 +226,7 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
     // Functions: other
     m.add_wrapped(wrap_pyfunction!(functions::check_length))
         .unwrap();
-    m.add_wrapped(wrap_pyfunction!(functions::get_engine_affinity))
+    m.add_wrapped(wrap_pyfunction!(functions::py_get_engine_affinity))
         .unwrap();
 
     #[cfg(feature = "sql")]

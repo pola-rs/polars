@@ -1494,7 +1494,19 @@ class Config(contextlib.ContextDecorator):
         │ 2   ┆ 5   │
         │ 3   ┆ 6   │
         └─────┴─────┘
+
+        Raises
+        ------
+        ValueError: if engine is not recognised.
         """
+        if engine not in {
+            "cpu",
+            "gpu",
+            "streaming",
+            "none",
+        }:
+            msg = 'engine must be one of "cpu", "gpu", "streaming", or None.'
+            raise ValueError(msg)
         if engine is None:
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)
         else:
