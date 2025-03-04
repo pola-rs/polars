@@ -236,11 +236,9 @@ impl CsvSourceNode {
             async_executor::spawn(TaskPriority::Low, async move {
                 let global_slice = if let Some((offset, len)) = global_slice {
                     if offset < 0 {
-                        polars_bail!(
-                            ComputeError:
-                            "not implemented: negative slice offset {} for CSV source",
-                            offset
-                        );
+                        // IR lowering puts negative slice in separate node.
+                        // TODO: Native line buffering for negative slice
+                        unreachable!()
                     }
                     Some(offset as usize..offset as usize + len)
                 } else {
