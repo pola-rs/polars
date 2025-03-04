@@ -14,10 +14,10 @@ use polars_python::catalog::unity::PyCatalogClient;
 use polars_python::cloud;
 use polars_python::dataframe::PyDataFrame;
 use polars_python::expr::PyExpr;
-use polars_python::functions::{PyPartitioning, PyStringCacheHolder};
+use polars_python::functions::PyStringCacheHolder;
 #[cfg(not(target_arch = "wasm32"))]
 use polars_python::lazyframe::PyInProcessQuery;
-use polars_python::lazyframe::PyLazyFrame;
+use polars_python::lazyframe::{PyLazyFrame, PyPartitioning};
 use polars_python::lazygroupby::PyLazyGroupBy;
 use polars_python::series::PySeries;
 #[cfg(feature = "sql")]

@@ -4,21 +4,23 @@ use std::path::PathBuf;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::json::BatchedWriter;
+use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
-use super::{SinkNode, SinkRecvPort};
+use super::{SinkInputPort, SinkNode, SinkRecvPort};
 use crate::async_executor::spawn;
 use crate::async_primitives::linearizer::Linearizer;
-use crate::nodes::io_sinks::DEFAULT_SINK_LINEARIZER_BUFFER_SIZE;
+use crate::nodes::io_sinks::{tokio_sync_on_close, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE};
 use crate::nodes::{JoinHandle, MorselSeq, TaskPriority};
 
 type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct NDJsonSinkNode {
     path: PathBuf,
+    sink_options: SinkOptions,
 }
 impl NDJsonSinkNode {
-    pub fn new(path: PathBuf) -> Self {
-        Self { path }
+    pub fn new(path: PathBuf, sink_options: SinkOptions) -> Self {
+        Self { path, sink_options }
     }
 }
 
@@ -38,8 +40,24 @@ impl SinkNode for NDJsonSinkNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        // .. -> Encode task
         let rxs = recv_ports_recv.parallel(join_handles);
+        self.spawn_sink_once(
+            num_pipelines,
+            SinkInputPort::Parallel(rxs),
+            _state,
+            join_handles,
+        );
+    }
+
+    fn spawn_sink_once(
+        &mut self,
+        num_pipelines: usize,
+        recv_port: SinkInputPort,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
+        // .. -> Encode task
+        let rxs = recv_port.parallel();
         // Encode tasks -> IO task
         let (mut lin_rx, lin_txs) =
             Linearizer::<Linearized>::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
@@ -76,11 +94,11 @@ impl SinkNode for NDJsonSinkNode {
             })
         }));
 
-        let path = self.path.clone();
-
         // IO task.
         //
         // Task that will actually do write to the target file.
+        let sink_options = self.sink_options.clone();
+        let path = self.path.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
             use tokio::fs::OpenOptions;
             use tokio::io::AsyncWriteExt;
@@ -97,6 +115,7 @@ impl SinkNode for NDJsonSinkNode {
                 file.write_all(&buffer).await?;
             }
 
+            tokio_sync_on_close(sink_options.sync_on_close, &mut file).await?;
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {

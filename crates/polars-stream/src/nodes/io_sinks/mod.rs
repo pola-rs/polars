@@ -1,3 +1,5 @@
+use std::{fs, io};
+
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::config;
@@ -6,6 +8,7 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_plan::dsl::SyncOnCloseType;
 
 use super::io_sources::PhaseOutcomeToken;
 use super::{
@@ -25,6 +28,7 @@ pub mod ipc;
 pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+pub mod partition;
 
 // This needs to be low to increase the backpressure.
 const DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: usize = 1;
@@ -181,10 +185,18 @@ fn buffer_and_distribute_columns_task(
 pub trait SinkNode {
     fn name(&self) -> &str;
     fn is_sink_input_parallel(&self) -> bool;
+
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
         recv_ports_recv: SinkRecvPort,
+        state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    );
+    fn spawn_sink_once(
+        &mut self,
+        num_pipelines: usize,
+        recv_ports_recv: SinkInputPort,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
@@ -315,5 +327,24 @@ impl ComputeNode for SinkComputeNode {
 
             Ok(())
         }));
+    }
+}
+
+pub fn sync_on_close(sync_on_close: SyncOnCloseType, file: &mut fs::File) -> io::Result<()> {
+    match sync_on_close {
+        SyncOnCloseType::None => Ok(()),
+        SyncOnCloseType::Data => file.sync_data(),
+        SyncOnCloseType::All => file.sync_all(),
+    }
+}
+
+pub async fn tokio_sync_on_close(
+    sync_on_close: SyncOnCloseType,
+    file: &mut tokio::fs::File,
+) -> io::Result<()> {
+    match sync_on_close {
+        SyncOnCloseType::None => Ok(()),
+        SyncOnCloseType::Data => file.sync_data().await,
+        SyncOnCloseType::All => file.sync_all().await,
     }
 }

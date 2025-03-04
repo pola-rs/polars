@@ -808,10 +808,12 @@ impl LazyFrame {
         path: &dyn AsRef<Path>,
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
                 file_type: FileType::Parquet(options),
                 cloud_options,
             },
@@ -828,10 +830,12 @@ impl LazyFrame {
         path: impl AsRef<Path>,
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
                 file_type: FileType::Ipc(options),
                 cloud_options,
             },
@@ -848,10 +852,12 @@ impl LazyFrame {
         path: impl AsRef<Path>,
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
                 file_type: FileType::Csv(options),
                 cloud_options,
             },
@@ -868,10 +874,12 @@ impl LazyFrame {
         path: impl AsRef<Path>,
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
                 file_type: FileType::Json(options),
                 cloud_options,
             },
@@ -889,10 +897,12 @@ impl LazyFrame {
         variant: PartitionVariant,
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
                 variant,
                 file_type: FileType::Parquet(options),
                 cloud_options,
@@ -911,10 +921,12 @@ impl LazyFrame {
         variant: PartitionVariant,
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
                 variant,
                 file_type: FileType::Ipc(options),
                 cloud_options,
@@ -933,10 +945,12 @@ impl LazyFrame {
         variant: PartitionVariant,
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
                 variant,
                 file_type: FileType::Csv(options),
                 cloud_options,
@@ -955,10 +969,12 @@ impl LazyFrame {
         variant: PartitionVariant,
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
                 variant,
                 file_type: FileType::Json(options),
                 cloud_options,

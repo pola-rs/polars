@@ -16,22 +16,25 @@ use polars_parquet::write::{
     array_to_columns, to_parquet_schema, CompressedPage, Compressor, Encoding, FileWriter,
     SchemaDescriptor, Version, WriteOptions,
 };
+use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
 use super::{
-    buffer_and_distribute_columns_task, SinkNode, SinkRecvPort,
+    buffer_and_distribute_columns_task, SinkInputPort, SinkNode, SinkRecvPort,
     DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
 };
 use crate::async_executor::spawn;
 use crate::async_primitives::connector::connector;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
+use crate::nodes::io_sinks::sync_on_close;
 use crate::nodes::{JoinHandle, TaskPriority};
 
 pub struct ParquetSinkNode {
     path: PathBuf,
 
     input_schema: SchemaRef,
+    sink_options: SinkOptions,
     write_options: ParquetWriteOptions,
 
     parquet_schema: SchemaDescriptor,
@@ -43,6 +46,7 @@ impl ParquetSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         path: &Path,
+        sink_options: SinkOptions,
         write_options: &ParquetWriteOptions,
     ) -> PolarsResult<Self> {
         let schema = schema_to_arrow_checked(&input_schema, CompatLevel::newest(), "parquet")?;
@@ -53,6 +57,7 @@ impl ParquetSinkNode {
             path: path.to_path_buf(),
 
             input_schema,
+            sink_options,
             write_options: *write_options,
 
             parquet_schema,
@@ -81,8 +86,24 @@ impl SinkNode for ParquetSinkNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
+        let rx = recv_ports_recv.serial(join_handles);
+        self.spawn_sink_once(
+            num_pipelines,
+            SinkInputPort::Serial(rx),
+            _state,
+            join_handles,
+        );
+    }
+
+    fn spawn_sink_once(
+        &mut self,
+        num_pipelines: usize,
+        recv_port: SinkInputPort,
+        _state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) {
         // .. -> Buffer task
-        let buffer_rx = recv_ports_recv.serial(join_handles);
+        let buffer_rx = recv_port.serial();
         // Buffer task -> Encode tasks
         let (dist_tx, dist_rxs) =
             distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
@@ -226,6 +247,7 @@ impl SinkNode for ParquetSinkNode {
         // Task that will actually do write to the target file. It is important that this is only
         // spawned once.
         let path = self.path.clone();
+        let sink_options = self.sink_options.clone();
         let write_options = self.write_options;
         let arrow_schema = self.arrow_schema.clone();
         let parquet_schema = self.parquet_schema.clone();
@@ -240,9 +262,9 @@ impl SinkNode for ParquetSinkNode {
                 .open(path.as_path())
                 .await
                 .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
-            let file = file.into_std().await;
-            let writer = BufWriter::new(file);
-            let options = WriteOptions {
+            let mut file = file.into_std().await;
+            let writer = BufWriter::new(&mut file);
+            let write_options = WriteOptions {
                 statistics: write_options.statistics,
                 compression: write_options.compression.into(),
                 version: Version::V1,
@@ -252,9 +274,9 @@ impl SinkNode for ParquetSinkNode {
                 writer,
                 arrow_schema,
                 parquet_schema,
-                options,
+                write_options,
             ));
-            let mut writer = BatchedWriter::new(file_writer, encodings, options, false);
+            let mut writer = BatchedWriter::new(file_writer, encodings, write_options, false);
 
             let num_parquet_columns = writer.parquet_schema().leaves().len();
             while let Ok(current_row_group) = io_rx.recv().await {
@@ -265,7 +287,9 @@ impl SinkNode for ParquetSinkNode {
             }
 
             writer.finish()?;
+            drop(writer);
 
+            sync_on_close(sink_options.sync_on_close, &mut file)?;
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {
