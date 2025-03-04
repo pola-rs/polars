@@ -116,7 +116,7 @@ pub fn predicate_to_pa(
         },
         #[cfg(feature = "is_in")]
         AExpr::Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
             input,
             ..
         } => {

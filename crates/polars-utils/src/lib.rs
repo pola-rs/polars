@@ -22,6 +22,7 @@ pub mod floor_divmod;
 pub mod functions;
 pub mod hashing;
 pub mod idx_map;
+pub mod idx_mapper;
 pub mod idx_vec;
 pub mod mem;
 pub mod min_max;

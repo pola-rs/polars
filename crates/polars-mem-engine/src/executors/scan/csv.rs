@@ -27,7 +27,7 @@ impl CsvExec {
             // Interpret selecting no columns as selecting all columns.
             .filter(|columns| !columns.is_empty());
 
-        let n_rows = _set_n_rows_for_scan(self.file_options.slice.map(|x| {
+        let n_rows = _set_n_rows_for_scan(self.file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         }));
@@ -224,7 +224,7 @@ impl ScanExec for CsvExec {
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(o, l)| (o as i64, l));
+        self.file_options.pre_slice = slice.map(|(o, l)| (o as i64, l));
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 
@@ -292,7 +292,7 @@ impl ScanExec for CsvExec {
 
         let bytes = maybe_decompress_bytes(&memslice, owned)?;
 
-        let num_rows = count_rows_from_slice(
+        let num_rows = polars_io::csv::read::count_rows_from_slice_par(
             bytes,
             popt.separator,
             popt.quote_char,

@@ -21,7 +21,7 @@ ahash = { workspace = true }
 arrow = { workspace = true }
 async-trait = { version = "0.1.59", optional = true }
 atoi_simd = { workspace = true, optional = true }
-blake3 = { version = "1.5.1", optional = true }
+blake3 = { version = "1.6.1", optional = true }
 bytes = { workspace = true }
 chrono = { workspace = true, optional = true }
 chrono-tz = { workspace = true, optional = true }
@@ -54,7 +54,7 @@ url = { workspace = true, optional = true }
 zstd = { workspace = true, optional = true }
 
 [target.'cfg(not(target_family = "wasm"))'.dependencies]
-fs4 = { version = "0.12", features = ["sync"], optional = true }
+fs4 = { version = "0.13", features = ["sync"], optional = true }
 home = "0.5.4"
 
 [dev-dependencies]

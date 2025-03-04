@@ -1045,6 +1045,46 @@ pub fn merge_dtypes(left: &DataType, right: &DataType) -> PolarsResult<DataType>
     })
 }
 
+fn collect_nested_types(
+    dtype: &DataType,
+    result: &mut PlHashSet<DataType>,
+    include_compound_types: bool,
+) {
+    match dtype {
+        DataType::List(inner) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            collect_nested_types(inner, result, include_compound_types);
+        },
+        #[cfg(feature = "dtype-array")]
+        DataType::Array(inner, _) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            collect_nested_types(inner, result, include_compound_types);
+        },
+        #[cfg(feature = "dtype-struct")]
+        DataType::Struct(fields) => {
+            if include_compound_types {
+                result.insert(dtype.clone());
+            }
+            for field in fields {
+                collect_nested_types(field.dtype(), result, include_compound_types);
+            }
+        },
+        _ => {
+            result.insert(dtype.clone());
+        },
+    }
+}
+
+pub fn unpack_dtypes(dtype: &DataType, include_compound_types: bool) -> PlHashSet<DataType> {
+    let mut result = PlHashSet::new();
+    collect_nested_types(dtype, &mut result, include_compound_types);
+    result
+}
+
 #[cfg(feature = "dtype-categorical")]
 pub fn create_enum_dtype(categories: Utf8ViewArray) -> DataType {
     let rev_map = RevMapping::build_local(categories);
@@ -1076,5 +1116,42 @@ impl CompatLevel {
     #[doc(hidden)]
     pub fn get_level(&self) -> u16 {
         self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(feature = "dtype-array")]
+    #[test]
+    fn test_unpack_primitive_dtypes() {
+        let inner_type = DataType::Float64;
+        let array_type = DataType::Array(Box::new(inner_type), 10);
+        let list_type = DataType::List(Box::new(array_type.clone()));
+
+        let result = unpack_dtypes(&list_type, false);
+
+        let mut expected = PlHashSet::new();
+        expected.insert(DataType::Float64);
+
+        assert_eq!(result, expected)
+    }
+
+    #[cfg(feature = "dtype-array")]
+    #[test]
+    fn test_unpack_compound_dtypes() {
+        let inner_type = DataType::Float64;
+        let array_type = DataType::Array(Box::new(inner_type), 10);
+        let list_type = DataType::List(Box::new(array_type.clone()));
+
+        let result = unpack_dtypes(&list_type, true);
+
+        let mut expected = PlHashSet::new();
+        expected.insert(list_type.clone());
+        expected.insert(array_type.clone());
+        expected.insert(DataType::Float64);
+
+        assert_eq!(result, expected)
     }
 }

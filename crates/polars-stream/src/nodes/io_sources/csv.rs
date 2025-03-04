@@ -1,4 +1,3 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use polars_core::config;
@@ -21,7 +20,6 @@ use polars_io::RowIndex;
 use polars_plan::dsl::ScanSource;
 use polars_plan::plans::{isolated_csv_file_info, FileInfo};
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::index::AtomicIdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
@@ -96,7 +94,7 @@ impl SourceNode for CsvSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
             .map(|_| connector::<MorselOutput>())
@@ -190,7 +188,7 @@ impl CsvSourceNode {
     fn init_line_batch_source(
         &mut self,
         num_pipelines: usize,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) -> AsyncTaskData {
         let verbose = self.verbose;
 
@@ -213,7 +211,7 @@ impl CsvSourceNode {
         let skip_rows_after_header = options.skip_rows_after_header;
         let comment_prefix = parse_options.comment_prefix.clone();
         let has_header = options.has_header;
-        let global_slice = self.file_options.slice;
+        let global_slice = self.file_options.pre_slice;
 
         if verbose {
             eprintln!(
@@ -238,11 +236,9 @@ impl CsvSourceNode {
             async_executor::spawn(TaskPriority::Low, async move {
                 let global_slice = if let Some((offset, len)) = global_slice {
                     if offset < 0 {
-                        polars_bail!(
-                            ComputeError:
-                            "not implemented: negative slice offset {} for CSV source",
-                            offset
-                        );
+                        // IR lowering puts negative slice in separate node.
+                        // TODO: Native line buffering for negative slice
+                        unreachable!()
                     }
                     Some(offset as usize..offset as usize + len)
                 } else {
@@ -370,11 +366,11 @@ impl CsvSourceNode {
                     }
                 }
 
-                if let Some(unrestricted_row_count) = unrestricted_row_count.as_ref() {
+                if let Some(unrestricted_row_count) = unrestricted_row_count {
                     let num_rows = *current_row_offset_ref;
                     let num_rows = IdxSize::try_from(num_rows)
                         .map_err(|_| polars_err!(bigidx, ctx = "csv file", size = num_rows))?;
-                    unrestricted_row_count.store(num_rows, Ordering::Relaxed);
+                    _ = unrestricted_row_count.send(num_rows);
                 }
 
                 Ok(())
@@ -591,11 +587,11 @@ impl MultiScanable for CsvSourceNode {
         });
     }
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
-        self.file_options.slice = None;
+        self.file_options.pre_slice = None;
         match row_restriction {
             None => {},
             Some(RowRestriction::Slice(rng)) => {
-                self.file_options.slice = Some((rng.start as i64, rng.end - rng.start))
+                self.file_options.pre_slice = Some((rng.start as i64, rng.end - rng.start))
             },
             Some(RowRestriction::Predicate(_)) => unreachable!(),
         }
@@ -620,9 +616,9 @@ impl MultiScanable for CsvSourceNode {
             }
         };
 
+        // TODO: Parallelize this over the async executor
         let num_rows = polars_io::csv::read::count_rows_from_slice(
             &mem_slice[..],
-            parse_options.separator,
             parse_options.quote_char,
             parse_options.comment_prefix.as_ref(),
             parse_options.eol_char,

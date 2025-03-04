@@ -30,6 +30,7 @@ pub use ipc::*;
 pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
+use polars_compute::rolling::QuantileMethod;
 use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
@@ -667,10 +668,16 @@ impl LazyFrame {
     fn prepare_collect_post_opt<P>(
         mut self,
         check_sink: bool,
+        query_start: Option<std::time::Instant>,
         post_opt: P,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)>
     where
-        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
+        P: FnOnce(
+            Node,
+            &mut Arena<IR>,
+            &mut Arena<AExpr>,
+            Option<std::time::Duration>,
+        ) -> PolarsResult<()>,
     {
         let (mut lp_arena, mut expr_arena) = self.get_arenas();
 
@@ -678,7 +685,14 @@ impl LazyFrame {
         let lp_top =
             self.optimize_with_scratch(&mut lp_arena, &mut expr_arena, &mut scratch, false)?;
 
-        post_opt(lp_top, &mut lp_arena, &mut expr_arena)?;
+        post_opt(
+            lp_top,
+            &mut lp_arena,
+            &mut expr_arena,
+            // Post optimization callback gets the time since the
+            // query was started as its "base" timepoint.
+            query_start.map(|s| s.elapsed()),
+        )?;
 
         // sink should be replaced
         let no_file_sink = if check_sink {
@@ -695,9 +709,15 @@ impl LazyFrame {
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
     pub fn _collect_post_opt<P>(self, post_opt: P) -> PolarsResult<DataFrame>
     where
-        P: Fn(Node, &mut Arena<IR>, &mut Arena<AExpr>) -> PolarsResult<()>,
+        P: FnOnce(
+            Node,
+            &mut Arena<IR>,
+            &mut Arena<AExpr>,
+            Option<std::time::Duration>,
+        ) -> PolarsResult<()>,
     {
-        let (mut state, mut physical_plan, _) = self.prepare_collect_post_opt(false, post_opt)?;
+        let (mut state, mut physical_plan, _) =
+            self.prepare_collect_post_opt(false, None, post_opt)?;
         physical_plan.execute(&mut state)
     }
 
@@ -705,8 +725,9 @@ impl LazyFrame {
     fn prepare_collect(
         self,
         check_sink: bool,
+        query_start: Option<std::time::Instant>,
     ) -> PolarsResult<(ExecutionState, Box<dyn Executor>, bool)> {
-        self.prepare_collect_post_opt(check_sink, |_, _, _| Ok(()))
+        self.prepare_collect_post_opt(check_sink, query_start, |_, _, _, _| Ok(()))
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
@@ -744,7 +765,27 @@ impl LazyFrame {
             physical_plan.execute(&mut state)
         }
         #[cfg(not(feature = "new_streaming"))]
-        self._collect_post_opt(|_, _, _| Ok(()))
+        self._collect_post_opt(|_, _, _, _| Ok(()))
+    }
+
+    // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
+    // This version does profiling of the node execution.
+    pub fn _profile_post_opt<P>(self, post_opt: P) -> PolarsResult<(DataFrame, DataFrame)>
+    where
+        P: FnOnce(
+            Node,
+            &mut Arena<IR>,
+            &mut Arena<AExpr>,
+            Option<std::time::Duration>,
+        ) -> PolarsResult<()>,
+    {
+        let query_start = std::time::Instant::now();
+        let (mut state, mut physical_plan, _) =
+            self.prepare_collect_post_opt(false, Some(query_start), post_opt)?;
+        state.time_nodes(query_start);
+        let out = physical_plan.execute(&mut state)?;
+        let timer_df = state.finish_timer()?;
+        Ok((out, timer_df))
     }
 
     /// Profile a LazyFrame.
@@ -755,11 +796,7 @@ impl LazyFrame {
     ///
     /// The units of the timings are microseconds.
     pub fn profile(self) -> PolarsResult<(DataFrame, DataFrame)> {
-        let (mut state, mut physical_plan, _) = self.prepare_collect(false)?;
-        state.time_nodes();
-        let out = physical_plan.execute(&mut state)?;
-        let timer_df = state.finish_timer()?;
-        Ok((out, timer_df))
+        self._profile_post_opt(|_, _, _, _| Ok(()))
     }
 
     /// Stream a query result into a parquet file. This is useful if the final result doesn't fit
@@ -771,10 +808,12 @@ impl LazyFrame {
         path: &dyn AsRef<Path>,
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
                 file_type: FileType::Parquet(options),
                 cloud_options,
             },
@@ -791,10 +830,12 @@ impl LazyFrame {
         path: impl AsRef<Path>,
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
                 file_type: FileType::Ipc(options),
                 cloud_options,
             },
@@ -811,10 +852,12 @@ impl LazyFrame {
         path: impl AsRef<Path>,
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
                 file_type: FileType::Csv(options),
                 cloud_options,
             },
@@ -831,10 +874,108 @@ impl LazyFrame {
         path: impl AsRef<Path>,
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
+                sink_options,
+                file_type: FileType::Json(options),
+                cloud_options,
+            },
+            "collect().write_ndjson()` or `collect().write_json()",
+        )
+    }
+
+    /// Stream a query result into a parquet file in a partitioned manner. This is useful if the
+    /// final result doesn't fit into memory. This methods will return an error if the query cannot
+    /// be completely done in a streaming fashion.
+    #[cfg(feature = "parquet")]
+    pub fn sink_parquet_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: ParquetWriteOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
+                variant,
+                file_type: FileType::Parquet(options),
+                cloud_options,
+            },
+            "collect().write_parquet()",
+        )
+    }
+
+    /// Stream a query result into an ipc/arrow file in a partitioned manner. This is useful if the
+    /// final result doesn't fit into memory. This methods will return an error if the query cannot
+    /// be completely done in a streaming fashion.
+    #[cfg(feature = "ipc")]
+    pub fn sink_ipc_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: IpcWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
+                variant,
+                file_type: FileType::Ipc(options),
+                cloud_options,
+            },
+            "collect().write_ipc()",
+        )
+    }
+
+    /// Stream a query result into an csv file in a partitioned manner. This is useful if the final
+    /// result doesn't fit into memory. This methods will return an error if the query cannot be
+    /// completely done in a streaming fashion.
+    #[cfg(feature = "csv")]
+    pub fn sink_csv_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: CsvWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
+                variant,
+                file_type: FileType::Csv(options),
+                cloud_options,
+            },
+            "collect().write_csv()",
+        )
+    }
+
+    /// Stream a query result into a JSON file in a partitioned manner. This is useful if the final
+    /// result doesn't fit into memory. This methods will return an error if the query cannot be
+    /// completely done in a streaming fashion.
+    #[cfg(feature = "json")]
+    pub fn sink_json_partitioned(
+        self,
+        path_f_string: impl AsRef<Path>,
+        variant: PartitionVariant,
+        options: JsonWriterOptions,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+        sink_options: SinkOptions,
+    ) -> PolarsResult<()> {
+        self.sink(
+            SinkType::Partition {
+                path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
+                sink_options,
+                variant,
                 file_type: FileType::Json(options),
                 cloud_options,
             },
@@ -870,7 +1011,11 @@ impl LazyFrame {
 
             let _hold = StringCacheHolder::hold();
             let f = || {
-                polars_stream::run_query(stream_lp_top, alp_plan.lp_arena, &mut alp_plan.expr_arena)
+                polars_stream::run_query(
+                    stream_lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )
             };
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
                 Ok(v) => return Some(v),
@@ -913,12 +1058,16 @@ impl LazyFrame {
             }
         }
 
+        if matches!(payload, SinkType::Partition { .. }) {
+            polars_bail!(InvalidOperation: "partition sinks are not supported on the old streaming engine");
+        }
+
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
             payload,
         };
         self.opt_state |= OptFlags::STREAMING;
-        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true)?;
+        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true, None)?;
         polars_ensure!(
             is_streaming,
             ComputeError: format!("cannot run the whole query in a streaming order; \
@@ -1036,7 +1185,6 @@ impl LazyFrame {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -1382,7 +1530,7 @@ impl LazyFrame {
             validation,
             suffix,
             slice,
-            join_nulls,
+            nulls_equal,
             coalesce,
             maintain_order,
         } = args;
@@ -1398,7 +1546,7 @@ impl LazyFrame {
             .right_on(right_on)
             .how(how)
             .validate(validation)
-            .join_nulls(join_nulls)
+            .join_nulls(nulls_equal)
             .coalesce(coalesce)
             .maintain_order(maintain_order);
 
@@ -1942,7 +2090,6 @@ impl LazyGroupBy {
     /// ```rust
     /// use polars_core::prelude::*;
     /// use polars_lazy::prelude::*;
-    /// use arrow::legacy::prelude::QuantileMethod;
     ///
     /// fn example(df: DataFrame) -> LazyFrame {
     ///       df.lazy()
@@ -2049,7 +2196,7 @@ pub struct JoinBuilder {
     force_parallel: bool,
     suffix: Option<PlSmallStr>,
     validation: JoinValidation,
-    join_nulls: bool,
+    nulls_equal: bool,
     coalesce: JoinCoalesce,
     maintain_order: MaintainOrderJoin,
 }
@@ -2066,7 +2213,7 @@ impl JoinBuilder {
             force_parallel: false,
             suffix: None,
             validation: Default::default(),
-            join_nulls: false,
+            nulls_equal: false,
             coalesce: Default::default(),
             maintain_order: Default::default(),
         }
@@ -2128,8 +2275,8 @@ impl JoinBuilder {
     }
 
     /// Join on null values. By default null values will never produce matches.
-    pub fn join_nulls(mut self, join_nulls: bool) -> Self {
-        self.join_nulls = join_nulls;
+    pub fn join_nulls(mut self, nulls_equal: bool) -> Self {
+        self.nulls_equal = nulls_equal;
         self
     }
 
@@ -2170,7 +2317,7 @@ impl JoinBuilder {
             validation: self.validation,
             suffix: self.suffix,
             slice: None,
-            join_nulls: self.join_nulls,
+            nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
         };
@@ -2267,7 +2414,7 @@ impl JoinBuilder {
             validation: self.validation,
             suffix: self.suffix,
             slice: None,
-            join_nulls: self.join_nulls,
+            nulls_equal: self.nulls_equal,
             coalesce: self.coalesce,
             maintain_order: self.maintain_order,
         };

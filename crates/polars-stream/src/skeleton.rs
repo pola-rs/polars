@@ -12,7 +12,7 @@ use slotmap::{SecondaryMap, SlotMap};
 
 pub fn run_query(
     node: Node,
-    mut ir_arena: Arena<IR>,
+    ir_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Option<DataFrame>> {
     if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_IR") {
@@ -25,8 +25,7 @@ pub fn run_query(
         std::fs::write(visual_path, visualization).unwrap();
     }
     let mut phys_sm = SlotMap::with_capacity_and_key(ir_arena.len());
-    let root =
-        crate::physical_plan::build_physical_plan(node, &mut ir_arena, expr_arena, &mut phys_sm)?;
+    let root = crate::physical_plan::build_physical_plan(node, ir_arena, expr_arena, &mut phys_sm)?;
     if let Ok(visual_path) = std::env::var("POLARS_VISUALIZE_PHYSICAL_PLAN") {
         let visualization = crate::physical_plan::visualize_plan(root, &phys_sm, expr_arena);
         std::fs::write(visual_path, visualization).unwrap();

@@ -59,13 +59,13 @@ def assert_series_equal(
     right
         The second Series to compare.
     check_dtypes
-        Require data types to match.
+        Requires data types to match.
     check_names
-        Require names to match.
+        Requires names to match.
     check_order
-        Require elements to appear in the same order.
+        Requires elements to appear in the same order.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
+        Requires float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
         Only affects columns with a Float data type.
     rtol
@@ -386,13 +386,13 @@ def assert_series_not_equal(
     right
         The second Series to compare.
     check_dtypes
-        Require data types to match.
+        Requires data types to match.
     check_names
-        Require names to match.
+        Requires names to match.
     check_order
-        Require elements to appear in the same order.
+        Requires elements to appear in the same order.
     check_exact
-        Require float values to match exactly. If set to `False`, values are considered
+        Requires float values to match exactly. If set to `False`, values are considered
         equal when within tolerance of each other (see `rtol` and `atol`).
         Only affects columns with a Float data type.
     rtol

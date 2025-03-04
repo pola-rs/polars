@@ -136,7 +136,7 @@ fn test_parquet_statistics() -> PolarsResult<()> {
 
     // issue: 13427
     let out = scan_foods_parquet(par)
-        .filter(col("calories").is_in(lit(Series::new("".into(), [0, 500]))))
+        .filter(col("calories").is_in(lit(Series::new("".into(), [0, 500])), false))
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
@@ -399,7 +399,7 @@ fn test_scan_parquet_limit_9001() {
             let sliced = options.slice.unwrap();
             sliced.1 == 3
         },
-        IR::Scan { file_options, .. } => file_options.slice == Some((0, 3)),
+        IR::Scan { file_options, .. } => file_options.pre_slice == Some((0, 3)),
         _ => true,
     });
 }

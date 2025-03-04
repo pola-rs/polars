@@ -231,7 +231,10 @@ pub(crate) fn insert_streaming_nodes(
             },
             Scan {
                 scan_type,
-                file_options: FileScanOptions { slice, .. },
+                file_options:
+                    FileScanOptions {
+                        pre_slice: slice, ..
+                    },
                 ..
             } if scan_type.streamable() && slice.map(|slice| slice.0 >= 0).unwrap_or(true) => {
                 if state.streamable {

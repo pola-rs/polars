@@ -50,7 +50,7 @@ pub struct PyFileOptions {
 impl PyFileOptions {
     #[getter]
     fn n_rows(&self) -> Option<(i64, usize)> {
-        self.inner.slice
+        self.inner.pre_slice
     }
     #[getter]
     fn with_columns(&self) -> Option<Vec<&str>> {
@@ -509,7 +509,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         },
                         _ => name.into_any().unbind(),
                     },
-                    options.args.join_nulls,
+                    options.args.nulls_equal,
                     options.args.slice,
                     options.args.suffix().as_str(),
                     options.args.coalesce.coalesce(how),

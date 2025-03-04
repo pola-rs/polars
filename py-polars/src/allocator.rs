@@ -5,7 +5,7 @@
     target_family = "unix",
     not(target_os = "emscripten"),
 ))]
-static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
+static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[global_allocator]
 #[cfg(all(

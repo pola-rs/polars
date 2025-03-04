@@ -134,7 +134,7 @@ async fn select_keys(
     Ok(HashKeys::from_df(
         &keys,
         params.random_state.clone(),
-        params.args.join_nulls,
+        params.args.nulls_equal,
         true,
     ))
 }

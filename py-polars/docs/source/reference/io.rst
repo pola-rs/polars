@@ -85,6 +85,7 @@ Iceberg
    :toctree: api/
 
    scan_iceberg
+   DataFrame.write_iceberg
 
 JSON
 ~~~~

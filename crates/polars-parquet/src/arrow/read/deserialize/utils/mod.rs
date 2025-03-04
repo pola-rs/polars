@@ -298,7 +298,7 @@ pub(super) trait Decoder: Sized {
     /// The state that this decoder derives from a [`DataPage`]. This is bound to the page.
     type Translation<'a>: StateTranslation<'a, Self>;
     /// The dictionary representation that the decoder uses
-    type Dict: Array;
+    type Dict: Array + Clone;
     /// The target state that this Decoder decodes into.
     type DecodedState: Decoded;
 
@@ -337,11 +337,15 @@ pub(super) trait Decoder: Sized {
         decoded: &mut Self::DecodedState,
         pred_true_mask: &mut BitmapBuilder,
         predicate: &PredicateFilter,
+        dict: Option<Self::Dict>,
         dtype: &ArrowDataType,
     ) -> ParquetResult<()> {
         let is_optional = state.is_optional;
 
         let mut intermediate_array = self.with_capacity(state.translation.num_rows());
+        if let Some(dict) = dict.as_ref() {
+            self.apply_dictionary(&mut intermediate_array, dict)?;
+        }
         self.extend_filtered_with_state(
             state,
             &mut intermediate_array,
@@ -349,7 +353,7 @@ pub(super) trait Decoder: Sized {
             None,
         )?;
         let intermediate_array = self
-            .finalize(dtype.clone(), None, intermediate_array)?
+            .finalize(dtype.clone(), dict, intermediate_array)?
             .into_boxed();
 
         let mask = if let Some(validity) = intermediate_array.validity() {
@@ -357,7 +361,7 @@ pub(super) trait Decoder: Sized {
             let mask = predicate.predicate.evaluate(ignore_validity_array.as_ref());
 
             if predicate.predicate.evaluate_null() {
-                &mask | validity
+                arrow::bitmap::or_not(&mask, validity)
             } else {
                 &mask & validity
             }
@@ -533,6 +537,7 @@ impl<D: Decoder> PageDecoder<D> {
                         &mut target,
                         &mut pred_true_mask,
                         p,
+                        self.dict.clone(),
                         &self.dtype,
                     )?
                 },

@@ -71,7 +71,7 @@ impl Default for StrptimeOptions {
 pub enum JoinTypeOptionsIR {
     #[cfg(feature = "iejoin")]
     IEJoin(IEJoinOptions),
-    #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(all(feature = "serde", not(feature = "ir_serde")), serde(skip))]
     // Fused cross join and filter (only in in-memory engine)
     Cross { predicate: ExprIR },
 }
@@ -192,7 +192,8 @@ pub type FileCount = u32;
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 /// Generic options for all file types.
 pub struct FileScanOptions {
-    pub slice: Option<(i64, usize)>,
+    // Slice applied before predicates
+    pub pre_slice: Option<(i64, usize)>,
     pub with_columns: Option<Arc<[PlSmallStr]>>,
     pub cache: bool,
     pub row_index: Option<RowIndex>,
@@ -289,6 +290,39 @@ pub struct AnonymousScanOptions {
     pub fmt_str: &'static str,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum SyncOnCloseType {
+    /// Don't call sync on close.
+    #[default]
+    None,
+
+    /// Sync only the file contents.
+    Data,
+    /// Synce the file contents and the metadata.
+    All,
+}
+
+/// Options that apply to all sinks.
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SinkOptions {
+    /// Call sync when closing the file.
+    pub sync_on_close: SyncOnCloseType,
+
+    /// The output file needs to maintain order of the data that comes in.
+    pub maintain_order: bool,
+}
+
+impl Default for SinkOptions {
+    fn default() -> Self {
+        Self {
+            sync_on_close: Default::default(),
+            maintain_order: true,
+        }
+    }
+}
+
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum SinkType {
@@ -296,8 +330,22 @@ pub enum SinkType {
     File {
         path: Arc<PathBuf>,
         file_type: FileType,
+        sink_options: SinkOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
     },
+    Partition {
+        path_f_string: Arc<PathBuf>,
+        file_type: FileType,
+        sink_options: SinkOptions,
+        variant: PartitionVariant,
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum PartitionVariant {
+    MaxSize(IdxSize),
 }
 
 impl SinkType {

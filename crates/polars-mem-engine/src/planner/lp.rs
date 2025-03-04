@@ -130,7 +130,7 @@ fn create_physical_plan_impl(
             SinkType::Memory => {
                 polars_bail!(InvalidOperation: "memory sink not supported in the standard engine")
             },
-            SinkType::File { file_type, .. } => {
+            SinkType::File { file_type, .. } | SinkType::Partition { file_type, .. } => {
                 polars_bail!(InvalidOperation:
                     "sink_{file_type:?} not yet supported in standard engine. Use 'collect().write_{file_type:?}()'"
                 )
@@ -203,7 +203,7 @@ fn create_physical_plan_impl(
             predicate,
             mut file_options,
         } => {
-            file_options.slice = if let Some((offset, len)) = file_options.slice {
+            file_options.pre_slice = if let Some((offset, len)) = file_options.pre_slice {
                 Some((offset, _set_n_rows_for_scan(Some(len)).unwrap()))
             } else {
                 _set_n_rows_for_scan(None).map(|x| (0, x))

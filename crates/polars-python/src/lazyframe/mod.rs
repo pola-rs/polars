@@ -3,6 +3,7 @@ mod exitable;
 mod general;
 #[cfg(feature = "pymethods")]
 mod serde;
+mod sink;
 pub mod visit;
 pub mod visitor;
 
@@ -10,6 +11,7 @@ pub mod visitor;
 pub use exitable::PyInProcessQuery;
 use polars::prelude::LazyFrame;
 use pyo3::pyclass;
+pub use sink::{PyPartitioning, SinkTarget};
 
 #[pyclass]
 #[repr(transparent)]

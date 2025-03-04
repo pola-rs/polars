@@ -1,4 +1,5 @@
 use either::Either;
+use polars_error::{polars_bail, PolarsResult};
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
@@ -12,9 +13,9 @@ pub(super) mod fmt;
 mod from;
 mod iterator;
 mod mutable;
-
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+mod builder;
+pub use builder::*;
 
 /// A [`BooleanArray`] is Arrow's semantically equivalent of an immutable `Vec<Option<bool>>`.
 /// It implements [`Array`].

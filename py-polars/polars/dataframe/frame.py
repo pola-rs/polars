@@ -115,6 +115,7 @@ if TYPE_CHECKING:
     import deltalake
     import jax
     import numpy.typing as npt
+    import pyiceberg
     import torch
     from great_tables import GT
     from xlsxwriter import Workbook
@@ -4292,6 +4293,45 @@ class DataFrame:
             msg = f"unrecognised connection type {connection!r}"
             raise TypeError(msg)
 
+    @unstable()
+    def write_iceberg(
+        self,
+        target: str | pyiceberg.table.Table,
+        mode: Literal["append", "overwrite"],
+    ) -> None:
+        """
+        Write DataFrame to an Iceberg table.
+
+        .. warning::
+            This functionality is currently considered **unstable**. It may be
+            changed at any point without it being considered a breaking change.
+
+        Parameters
+        ----------
+        target
+            Name of the table or the Table object representing an Iceberg table.
+        mode : {'append', 'overwrite'}
+            How to handle existing data.
+
+            - If 'append', will add new data.
+            - If 'overwrite', will replace table with new data.
+
+        """
+        from pyiceberg.catalog import load_catalog
+
+        if isinstance(target, str):
+            catalog = load_catalog()
+            table = catalog.load_table(target)
+        else:
+            table = target
+
+        data = self.to_arrow(compat_level=CompatLevel.oldest())
+
+        if mode == "append":
+            table.append(data)
+        else:
+            table.overwrite(data)
+
     @overload
     def write_delta(
         self,
@@ -7495,6 +7535,7 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    @deprecate_renamed_parameter("join_nulls", "nulls_equal", version="1.24")
     def join(
         self,
         other: DataFrame,
@@ -7505,7 +7546,7 @@ class DataFrame:
         right_on: str | Expr | Sequence[str | Expr] | None = None,
         suffix: str = "_right",
         validate: JoinValidation = "m:m",
-        join_nulls: bool = False,
+        nulls_equal: bool = False,
         coalesce: bool | None = None,
         maintain_order: MaintainOrderJoin | None = None,
     ) -> DataFrame:
@@ -7560,7 +7601,7 @@ class DataFrame:
             .. note::
                 This is currently not supported by the streaming engine.
 
-        join_nulls
+        nulls_equal
             Join on null values. By default null values will never produce matches.
         coalesce
             Coalescing behavior (merging of join columns).
@@ -7716,7 +7757,7 @@ class DataFrame:
                 how=how,
                 suffix=suffix,
                 validate=validate,
-                join_nulls=join_nulls,
+                nulls_equal=nulls_equal,
                 coalesce=coalesce,
                 maintain_order=maintain_order,
             )
@@ -11535,8 +11576,9 @@ class DataFrame:
         Take two sorted DataFrames and merge them by the sorted key.
 
         The output of this operation will also be sorted.
-        It is the callers responsibility that the frames are sorted
-        by that key otherwise the output will not make sense.
+        It is the callers responsibility that the frames
+        are sorted in ascending order by that key otherwise
+        the output will not make sense.
 
         The schemas of both DataFrames must be equal.
 
@@ -11598,6 +11640,8 @@ class DataFrame:
         -----
         No guarantee is given over the output row order when the key is equal
         between the both dataframes.
+
+        The key must be sorted in ascending order.
         """
         return self.lazy().merge_sorted(other.lazy(), key).collect(_eager=True)
 

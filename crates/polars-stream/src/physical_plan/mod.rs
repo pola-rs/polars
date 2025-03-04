@@ -8,7 +8,9 @@ use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::RowIndex;
 use polars_ops::frame::JoinArgs;
-use polars_plan::dsl::{FileScan, JoinTypeOptionsIR, ScanSource, ScanSources};
+use polars_plan::dsl::{
+    FileScan, JoinTypeOptionsIR, PartitionVariant, ScanSource, ScanSources, SinkOptions,
+};
 use polars_plan::plans::hive::HivePartitionsDf;
 use polars_plan::plans::{AExpr, DataFrameUdf, FileInfo, IR};
 use polars_plan::prelude::expr_ir::ExprIR;
@@ -129,6 +131,15 @@ pub enum PhysNodeKind {
 
     FileSink {
         path: Arc<PathBuf>,
+        sink_options: SinkOptions,
+        file_type: FileType,
+        input: PhysStream,
+    },
+
+    PartitionSink {
+        path_f_string: Arc<PathBuf>,
+        sink_options: SinkOptions,
+        variant: PartitionVariant,
         file_type: FileType,
         input: PhysStream,
     },
@@ -271,6 +282,7 @@ fn visit_node_inputs_mut(
             | PhysNodeKind::SimpleProjection { input, .. }
             | PhysNodeKind::InMemorySink { input }
             | PhysNodeKind::FileSink { input, .. }
+            | PhysNodeKind::PartitionSink { input, .. }
             | PhysNodeKind::InMemoryMap { input, .. }
             | PhysNodeKind::Map { input, .. }
             | PhysNodeKind::Sort { input, .. }

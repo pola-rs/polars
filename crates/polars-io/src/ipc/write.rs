@@ -14,8 +14,6 @@ use crate::shared::schema_to_arrow_checked;
 pub struct IpcWriterOptions {
     /// Data page compression
     pub compression: Option<IpcCompression>,
-    /// maintain the order the data was processed
-    pub maintain_order: bool,
 }
 
 impl IpcWriterOptions {

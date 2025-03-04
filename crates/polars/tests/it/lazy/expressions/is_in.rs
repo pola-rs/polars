@@ -10,7 +10,7 @@ fn test_is_in() -> PolarsResult<()> {
 
     let out = df
         .lazy()
-        .select([col("y").is_in(lit(s)).alias("isin")])
+        .select([col("y").is_in(lit(s), false).alias("isin")])
         .collect()?;
     assert_eq!(
         Vec::from(out.column("isin")?.bool()?),

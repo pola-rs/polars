@@ -138,7 +138,7 @@ fn rg_to_dfs(
     previous_row_count: &mut IdxSize,
     row_group_start: usize,
     row_group_end: usize,
-    slice: (usize, usize),
+    pre_slice: (usize, usize),
     file_metadata: &FileMetadata,
     schema: &ArrowSchemaRef,
     predicate: Option<&ScanIOPredicate>,
@@ -156,13 +156,13 @@ fn rg_to_dfs(
     if projection.is_empty() {
         if let Some(row_index) = row_index {
             let placeholder =
-                NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), slice.1).finish();
+                NullChunkedBuilder::new(PlSmallStr::from_static("__PL_TMP"), pre_slice.1).finish();
             return Ok(vec![DataFrame::new(vec![placeholder
                 .into_series()
                 .into_column()])?
             .with_row_index(
                 row_index.name.clone(),
-                Some(row_index.offset + IdxSize::try_from(slice.0).unwrap()),
+                Some(row_index.offset + IdxSize::try_from(pre_slice.0).unwrap()),
             )?
             .select(std::iter::once(row_index.name))?]);
         }
@@ -170,7 +170,7 @@ fn rg_to_dfs(
 
     use ParallelStrategy as S;
 
-    if parallel == S::Prefiltered {
+    if parallel == S::Prefiltered && pre_slice == (0, usize::MAX) {
         if let Some(predicate) = predicate {
             if !predicate.live_columns.is_empty() {
                 return rg_to_dfs_prefiltered(
@@ -196,7 +196,7 @@ fn rg_to_dfs(
             previous_row_count,
             row_group_start,
             row_group_end,
-            slice,
+            pre_slice,
             file_metadata,
             schema,
             predicate,
@@ -211,7 +211,7 @@ fn rg_to_dfs(
             row_group_start,
             row_group_end,
             previous_row_count,
-            slice,
+            pre_slice,
             file_metadata,
             schema,
             predicate,
@@ -852,7 +852,7 @@ fn rg_to_dfs_par_over_rg(
 #[allow(clippy::too_many_arguments)]
 pub fn read_parquet<R: MmapBytesReader>(
     mut reader: R,
-    slice: (usize, usize),
+    pre_slice: (usize, usize),
     projection: Option<&[usize]>,
     reader_schema: &ArrowSchemaRef,
     metadata: Option<FileMetadataRef>,
@@ -863,7 +863,7 @@ pub fn read_parquet<R: MmapBytesReader>(
     hive_partition_columns: Option<&[Series]>,
 ) -> PolarsResult<DataFrame> {
     // Fast path.
-    if slice.1 == 0 {
+    if pre_slice.1 == 0 {
         return Ok(materialize_empty_df(
             projection,
             reader_schema,
@@ -938,7 +938,7 @@ pub fn read_parquet<R: MmapBytesReader>(
         &mut 0,
         0,
         n_row_groups,
-        slice,
+        pre_slice,
         &file_metadata,
         reader_schema,
         predicate,

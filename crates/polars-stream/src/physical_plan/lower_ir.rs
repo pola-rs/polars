@@ -227,10 +227,12 @@ pub fn lower_ir(
             },
             SinkType::File {
                 path,
+                sink_options,
                 file_type,
                 cloud_options: _,
             } => {
                 let path = path.clone();
+                let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
 
                 match file_type {
@@ -239,6 +241,7 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
@@ -248,6 +251,7 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
@@ -257,6 +261,7 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
@@ -266,10 +271,32 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
                     },
+                }
+            },
+            SinkType::Partition {
+                path_f_string,
+                sink_options,
+                variant,
+                file_type,
+                cloud_options: _,
+            } => {
+                let path_f_string = path_f_string.clone();
+                let sink_options = sink_options.clone();
+                let variant = variant.clone();
+                let file_type = file_type.clone();
+
+                let phys_input = lower_ir!(*input)?;
+                PhysNodeKind::PartitionSink {
+                    path_f_string,
+                    sink_options,
+                    variant,
+                    file_type,
+                    input: phys_input,
                 }
             },
         },
@@ -404,15 +431,6 @@ pub fn lower_ir(
                     match ScanSource::from_sources(scan_sources) {
                         Err(s) => scan_sources = s,
                         Ok(scan_source) => {
-                            #[cfg(feature = "ipc")]
-                            if matches!(scan_type, FileScan::Ipc { .. }) {
-                                // @TODO: All the things the IPC source does not support yet.
-                                if matches!(&scan_source, ScanSource::Path(p) if polars_io::is_cloud_url(p))
-                                {
-                                    todo!();
-                                }
-                            }
-
                             // Operation ordering:
                             // * with_row_index() -> slice() -> filter()
 
@@ -428,7 +446,12 @@ pub fn lower_ir(
                                 FileScan::Ipc { .. } => (None, None, predicate.take()),
                                 #[cfg(feature = "csv")]
                                 FileScan::Csv { options, .. } => {
+                                    // Note: We dispatch negative slice to separate node.
+                                    #[allow(clippy::nonminimal_bool)]
                                     if options.parse_options.comment_prefix.is_none()
+                                        && !file_options
+                                            .pre_slice
+                                            .is_some_and(|(offset, _)| offset < 0)
                                         && std::env::var("POLARS_DISABLE_EXPERIMENTAL_CSV_SLICE")
                                             .as_deref()
                                             != Ok("1")
@@ -440,11 +463,13 @@ pub fn lower_ir(
                                         // return an accurate line count :'(.
                                         (
                                             file_options.row_index.take(),
-                                            file_options.slice.take(),
+                                            file_options.pre_slice.take(),
                                             predicate.take(),
                                         )
                                     }
                                 },
+                                #[cfg(feature = "json")]
+                                FileScan::NDJson { .. } => (None, None, predicate.take()),
                                 _ => todo!(),
                             };
 
@@ -524,7 +549,7 @@ pub fn lower_ir(
                 });
 
                 let mut row_restriction = None;
-                if let Some((offset, len)) = file_options.slice.take() {
+                if let Some((offset, len)) = file_options.pre_slice.take() {
                     if offset < 0 {
                         let offset = (-offset) as usize;
                         row_restriction = Some(MultiscanRowRestriction::NegativeSlice(offset, len));

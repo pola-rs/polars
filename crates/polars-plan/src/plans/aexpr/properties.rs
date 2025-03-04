@@ -64,7 +64,7 @@ pub fn is_elementwise(stack: &mut UnitVec<Node>, ae: &AExpr, expr_arena: &Arena<
         // for inspection. (e.g. `is_in(<literal>)`).
         #[cfg(feature = "is_in")]
         Function {
-            function: FunctionExpr::Boolean(BooleanFunction::IsIn),
+            function: FunctionExpr::Boolean(BooleanFunction::IsIn { .. }),
             input,
             ..
         } => (|| {

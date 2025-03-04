@@ -15,21 +15,6 @@ use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
 use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
 
 impl ParquetSourceNode {
-    // /// Spawns a task to shut down the source node to avoid blocking the current thread. This is
-    // /// usually called when data is no longer needed from the source node, as such it does not
-    // /// propagate any (non-critical) errors. If on the other hand the source node does not provide
-    // /// more data when requested, then it is more suitable to call [`Self::shutdown`], as it returns
-    // /// a result that can be used to distinguish between whether the data stream stopped due to an
-    // /// error or EOF.
-    // pub(super) fn shutdown_in_background(&self) {
-    //     if self.verbose {
-    //         eprintln!("[ParquetSource]: Shutdown via `shutdown_in_background()`");
-    //     }
-    //     let async_task_data = self.async_task_data.clone();
-    //     polars_io::pl_async::get_runtime()
-    //         .spawn(Self::shutdown_impl(async_task_data, self.verbose));
-    // }
-
     /// Constructs the task that distributes morsels across the engine pipelines.
     #[allow(clippy::type_complexity)]
     pub(super) fn init_raw_morsel_distributor(&mut self) -> AsyncTaskData {
@@ -40,7 +25,7 @@ impl ParquetSourceNode {
 
         let (mut raw_morsel_sender, raw_morsel_receivers) =
             distributor_channel(self.config.num_pipelines, DEFAULT_DISTRIBUTOR_BUFFER_SIZE);
-        if let Some((_, 0)) = self.file_options.slice {
+        if let Some((_, 0)) = self.file_options.pre_slice {
             return (
                 raw_morsel_receivers,
                 task_handles_ext::AbortOnDropHandle(io_runtime.spawn(std::future::ready(Ok(())))),
@@ -72,7 +57,6 @@ impl ParquetSourceNode {
             current_row_group_idx: 0,
             current_max_row_group_height: 0,
             current_row_offset: 0,
-            current_shared_file_state: Default::default(),
         };
 
         let row_group_decoder = self.init_row_group_decoder();
@@ -193,18 +177,12 @@ impl ParquetSourceNode {
     /// * `self.projected_arrow_schema`
     /// * `self.physical_predicate`
     pub(super) fn init_row_group_decoder(&self) -> RowGroupDecoder {
-        let scan_sources = self.scan_sources.clone();
-        let hive_partitions = self.hive_parts.clone();
-        let hive_partitions_width = hive_partitions
-            .as_deref()
-            .map(|x| x[0].get_statistics().column_stats().len())
-            .unwrap_or(0);
-        let include_file_paths = self.file_options.include_file_paths.clone();
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
         let row_index = self.row_index.clone();
         let min_values_per_thread = self.config.min_values_per_thread;
 
         let mut use_prefiltered = self.predicate.is_some()
+            && self.file_options.pre_slice.is_none()
             && matches!(
                 self.options.parallel,
                 ParallelStrategy::Auto | ParallelStrategy::Prefiltered
@@ -258,11 +236,6 @@ impl ParquetSourceNode {
         }
 
         RowGroupDecoder {
-            scan_sources,
-            hive_partitions,
-            hive_partitions_width,
-            include_file_paths,
-            reader_schema: self.schema.clone().unwrap(),
             projected_arrow_schema,
             row_index,
             predicate: self.predicate.clone(),
