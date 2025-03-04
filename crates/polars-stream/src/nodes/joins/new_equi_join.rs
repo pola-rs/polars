@@ -616,7 +616,11 @@ impl BuildState {
             probe_tables.set_len(num_partitions);
         }
 
-        todo!()
+        ProbeState {
+            table_per_partition: probe_tables,
+            max_seq_sent: MorselSeq::default(),
+            sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
+        }
     }
 }
 
@@ -641,8 +645,6 @@ impl ProbeState {
         params: &EquiJoinParams,
         state: &ExecutionState,
     ) -> PolarsResult<MorselSeq> {
-        todo!()
-        /*
         // TODO: shuffle after partitioning and keep probe tables thread-local.
         let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
         let mut table_match = Vec::new();
@@ -653,13 +655,17 @@ impl ProbeState {
         let mark_matches = params.emit_unmatched_build();
         let emit_unmatched = params.emit_unmatched_probe();
 
-        let (key_selectors, payload_selector);
+        let (key_selectors, payload_selector, build_payload_schema, probe_payload_schema);
         if params.left_is_build.unwrap() {
-            payload_selector = &params.right_payload_select;
             key_selectors = &params.right_key_selectors;
+            payload_selector = &params.right_payload_select;
+            build_payload_schema = &params.left_payload_schema;
+            probe_payload_schema = &params.right_payload_schema;
         } else {
-            payload_selector = &params.left_payload_select;
             key_selectors = &params.left_key_selectors;
+            payload_selector = &params.left_payload_select;
+            build_payload_schema = &params.right_payload_schema;
+            probe_payload_schema = &params.left_payload_schema;
         };
 
         while let Ok(morsel) = recv.recv().await {
@@ -683,77 +689,13 @@ impl ProbeState {
                     emit_unmatched,
                 );
                 if params.preserve_order_probe {
-                    // TODO: non-sort based implementation, can directly scatter
-                    // after finding matches for each partition.
-                    let mut out_per_partition = Vec::with_capacity(partitioner.num_partitions());
-                    let name = PlSmallStr::from_static("__POLARS_PROBE_PRESERVE_ORDER_IDX");
-                    for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
-                        p.hash_table.probe_subset(
-                            &hash_keys,
-                            idxs_in_p,
-                            &mut table_match,
-                            &mut probe_match,
-                            mark_matches,
-                            emit_unmatched,
-                            IdxSize::MAX,
-                        );
-
-                        if table_match.is_empty() {
-                            continue;
-                        }
-
-                        // Gather output and add to buffer.
-                        let mut build_df = if emit_unmatched {
-                            p.payload.take_opt_chunked_unchecked(&table_match, false)
-                        } else {
-                            p.payload.take_chunked_unchecked(&table_match, IsSorted::Not, false)
-                        };
-
-                        if !payload_rechunked {
-                            // TODO: can avoid rechunk? We have to rechunk here or else we do it
-                            // multiple times during the gather.
-                            payload.rechunk_mut();
-                            payload_rechunked = true;
-                        }
-                        let mut probe_df = payload.take_slice_unchecked_impl(&probe_match, false);
-
-                        let mut out_df = if params.left_is_build.unwrap() {
-                            build_df.hstack_mut_unchecked(probe_df.get_columns());
-                            build_df
-                        } else {
-                            probe_df.hstack_mut_unchecked(build_df.get_columns());
-                            probe_df
-                        };
-
-                        let idxs_ca =
-                            IdxCa::from_vec(name.clone(), core::mem::take(&mut probe_match));
-                        out_df.with_column_unchecked(idxs_ca.into_column());
-                        out_per_partition.push(out_df);
-                    }
-
-                    if !out_per_partition.is_empty() {
-                        let sort_options = SortMultipleOptions {
-                            descending: vec![false],
-                            nulls_last: vec![false],
-                            multithreaded: false,
-                            maintain_order: true,
-                            limit: None,
-                        };
-                        let mut out_df =
-                            accumulate_dataframes_vertical_unchecked(out_per_partition);
-                        out_df.sort_in_place([name.clone()], sort_options).unwrap();
-                        out_df.drop_in_place(&name).unwrap();
-                        out_df = postprocess_join(out_df, params);
-
-                        // TODO: break in smaller morsels.
-                        let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                        if send.send(out_morsel).await.is_err() {
-                            break;
-                        }
-                    }
+                    todo!()
                 } else {
                     let mut out_frames = Vec::new();
+                    let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
+                    let mut probe_out = DataFrameBuilder::new(probe_payload_schema.clone());
                     let mut out_len = 0;
+                    /*
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
@@ -811,6 +753,7 @@ impl ProbeState {
                             }
                         }
                     }
+                    */
 
                     if out_len > 0 {
                         let df = accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
@@ -826,7 +769,6 @@ impl ProbeState {
         }
 
         Ok(max_seq)
-        */
     }
 
     fn ordered_unmatched(
