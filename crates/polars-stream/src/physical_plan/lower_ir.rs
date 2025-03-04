@@ -227,10 +227,12 @@ pub fn lower_ir(
             },
             SinkType::File {
                 path,
+                sink_options,
                 file_type,
                 cloud_options: _,
             } => {
                 let path = path.clone();
+                let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
 
                 match file_type {
@@ -239,6 +241,7 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
@@ -248,6 +251,7 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
@@ -257,6 +261,7 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
@@ -266,6 +271,7 @@ pub fn lower_ir(
                         let phys_input = lower_ir!(*input)?;
                         PhysNodeKind::FileSink {
                             path,
+                            sink_options,
                             file_type,
                             input: phys_input,
                         }
@@ -274,17 +280,20 @@ pub fn lower_ir(
             },
             SinkType::Partition {
                 path_f_string,
+                sink_options,
                 variant,
                 file_type,
                 cloud_options: _,
             } => {
                 let path_f_string = path_f_string.clone();
+                let sink_options = sink_options.clone();
                 let variant = variant.clone();
                 let file_type = file_type.clone();
 
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::PartitionSink {
                     path_f_string,
+                    sink_options,
                     variant,
                     file_type,
                     input: phys_input,

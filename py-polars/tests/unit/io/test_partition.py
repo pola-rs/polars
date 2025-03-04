@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-import sys
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
@@ -32,10 +30,6 @@ io_types: list[IOType] = [
 @pytest.mark.parametrize("io_type", io_types)
 @pytest.mark.parametrize("length", [0, 1, 4, 5, 6, 7])
 @pytest.mark.parametrize("max_size", [1, 2, 3])
-@pytest.mark.skipif(
-    sys.platform == "win32",
-    reason="sync does not exist on Windows",
-)
 @pytest.mark.write_disk
 def test_max_size_partition(
     tmp_path: Path,
@@ -50,14 +44,13 @@ def test_max_size_partition(
     (io_type["sink"])(
         lf,
         MaxSizePartitioning(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
+        # We need to sync here because platforms do not guarantee that a close on
+        # one thread is immediately visible on another thread.
+        #
+        # "Multithreaded processes and close()"
+        # https://man7.org/linux/man-pages/man2/close.2.html
+        sync_on_close="data",
     )
-
-    # We need to sync here because platforms do not guarantee that a close on
-    # one thread is immediately visible on another thread.
-    #
-    # "Multithreaded processes and close()"
-    # https://man7.org/linux/man-pages/man2/close.2.html
-    os.sync()
 
     i = 0
     while length > 0:

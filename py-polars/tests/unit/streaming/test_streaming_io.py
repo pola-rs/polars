@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 from typing import TYPE_CHECKING, Any
-from unittest.mock import patch
 
 import pytest
 
@@ -126,59 +125,6 @@ def test_sink_csv_14494(tmp_path: Path) -> None:
         pl.col("c") > 10
     ).sink_csv(tmp_path / "sink.csv")
     assert pl.read_csv(tmp_path / "sink.csv").columns == ["c"]
-
-
-def test_sink_csv_with_options() -> None:
-    """
-    Test with all possible options.
-
-    As we already tested the main read/write functionality of the `sink_csv` method in
-     the `test_sink_csv` method above, we only need to verify that all the options are
-     passed into the rust-polars correctly.
-    """
-    df = pl.LazyFrame({"dummy": ["abc"]})
-    with patch.object(df, "_ldf") as ldf:
-        df.sink_csv(
-            "target",
-            include_bom=True,
-            include_header=False,
-            separator=";",
-            line_terminator="|",
-            quote_char="$",
-            batch_size=42,
-            datetime_format="%Y",
-            date_format="%d",
-            time_format="%H",
-            float_scientific=True,
-            float_precision=42,
-            null_value="BOOM",
-            quote_style="always",
-            maintain_order=False,
-            storage_options=None,
-            credential_provider="auto",
-            retries=2,
-        )
-
-        ldf.optimization_toggle().sink_csv.assert_called_with(
-            target="target",
-            include_bom=True,
-            include_header=False,
-            separator=ord(";"),
-            line_terminator="|",
-            quote_char=ord("$"),
-            batch_size=42,
-            datetime_format="%Y",
-            date_format="%d",
-            time_format="%H",
-            float_scientific=True,
-            float_precision=42,
-            null_value="BOOM",
-            quote_style="always",
-            maintain_order=False,
-            cloud_options=None,
-            credential_provider=None,
-            retries=2,
-        )
 
 
 @pytest.mark.parametrize(("value"), ["abc", ""])

@@ -222,9 +222,11 @@ fn to_graph_rec<'a>(
 
         FileSink {
             path,
+            sink_options,
             file_type,
             input,
         } => {
+            let sink_options = sink_options.clone();
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
 
@@ -234,6 +236,7 @@ fn to_graph_rec<'a>(
                     SinkComputeNode::from(nodes::io_sinks::ipc::IpcSinkNode::new(
                         input_schema,
                         path.to_path_buf(),
+                        sink_options,
                         *ipc_writer_options,
                     )),
                     [(input_key, input.port)],
@@ -242,6 +245,7 @@ fn to_graph_rec<'a>(
                 FileType::Json(_) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
                         path.to_path_buf(),
+                        sink_options,
                     )),
                     [(input_key, input.port)],
                 ),
@@ -250,6 +254,7 @@ fn to_graph_rec<'a>(
                     SinkComputeNode::from(nodes::io_sinks::parquet::ParquetSinkNode::new(
                         input_schema,
                         path,
+                        sink_options,
                         parquet_writer_options,
                     )?),
                     [(input_key, input.port)],
@@ -259,6 +264,7 @@ fn to_graph_rec<'a>(
                     SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
                         input_schema,
                         path.to_path_buf(),
+                        sink_options,
                         csv_writer_options.clone(),
                     )),
                     [(input_key, input.port)],
@@ -277,6 +283,7 @@ fn to_graph_rec<'a>(
 
         PartitionSink {
             path_f_string,
+            sink_options,
             variant,
             file_type,
             input,
@@ -287,8 +294,11 @@ fn to_graph_rec<'a>(
             let path_f_string = path_f_string.clone();
             let args_to_path =
                 nodes::io_sinks::partition::get_args_to_path_fn(variant, path_f_string);
-            let create_new =
-                nodes::io_sinks::partition::get_create_new_fn(file_type.clone(), args_to_path);
+            let create_new = nodes::io_sinks::partition::get_create_new_fn(
+                file_type.clone(),
+                sink_options.clone(),
+                args_to_path,
+            );
 
             match variant {
                 PartitionVariant::MaxSize(max_size) => ctx.graph.add_node(

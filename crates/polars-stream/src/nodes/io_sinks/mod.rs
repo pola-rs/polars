@@ -1,3 +1,5 @@
+use std::{fs, io};
+
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::config;
@@ -6,6 +8,7 @@ use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_plan::dsl::SyncOnCloseType;
 
 use super::io_sources::PhaseOutcomeToken;
 use super::{
@@ -324,5 +327,24 @@ impl ComputeNode for SinkComputeNode {
 
             Ok(())
         }));
+    }
+}
+
+pub fn sync_on_close(sync_on_close: SyncOnCloseType, file: &mut fs::File) -> io::Result<()> {
+    match sync_on_close {
+        SyncOnCloseType::None => Ok(()),
+        SyncOnCloseType::Data => file.sync_data(),
+        SyncOnCloseType::All => file.sync_all(),
+    }
+}
+
+pub async fn tokio_sync_on_close(
+    sync_on_close: SyncOnCloseType,
+    file: &mut tokio::fs::File,
+) -> io::Result<()> {
+    match sync_on_close {
+        SyncOnCloseType::None => Ok(()),
+        SyncOnCloseType::Data => file.sync_data().await,
+        SyncOnCloseType::All => file.sync_all().await,
     }
 }

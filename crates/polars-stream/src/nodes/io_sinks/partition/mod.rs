@@ -4,7 +4,7 @@ use std::sync::Arc;
 use polars_core::prelude::PlHashMap;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
-use polars_plan::dsl::{FileType, PartitionVariant};
+use polars_plan::dsl::{FileType, PartitionVariant, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::SinkNode;
@@ -46,7 +46,11 @@ pub fn get_args_to_path_fn(
         }) as _,
     }
 }
-pub fn get_create_new_fn(file_type: FileType, args_to_path: ArgsToPathFn) -> CreateNewSinkFn {
+pub fn get_create_new_fn(
+    file_type: FileType,
+    sink_options: SinkOptions,
+    args_to_path: ArgsToPathFn,
+) -> CreateNewSinkFn {
     match file_type {
         #[cfg(feature = "ipc")]
         FileType::Ipc(ipc_writer_options) => Arc::new(move |input_schema, args| {
@@ -54,6 +58,7 @@ pub fn get_create_new_fn(file_type: FileType, args_to_path: ArgsToPathFn) -> Cre
             let sink = Box::new(super::ipc::IpcSinkNode::new(
                 input_schema,
                 path.clone(),
+                sink_options.clone(),
                 ipc_writer_options,
             )) as Box<dyn SinkNode + Send + Sync>;
             Ok((path, sink, args))
@@ -61,8 +66,10 @@ pub fn get_create_new_fn(file_type: FileType, args_to_path: ArgsToPathFn) -> Cre
         #[cfg(feature = "json")]
         FileType::Json(_ndjson_writer_options) => Arc::new(move |_input_schema, args| {
             let (path, args) = args_to_path(args);
-            let sink = Box::new(super::json::NDJsonSinkNode::new(path.clone()))
-                as Box<dyn SinkNode + Send + Sync>;
+            let sink = Box::new(super::json::NDJsonSinkNode::new(
+                path.clone(),
+                sink_options.clone(),
+            )) as Box<dyn SinkNode + Send + Sync>;
             Ok((path, sink, args))
         }) as _,
         #[cfg(feature = "parquet")]
@@ -71,6 +78,7 @@ pub fn get_create_new_fn(file_type: FileType, args_to_path: ArgsToPathFn) -> Cre
             let sink = Box::new(super::parquet::ParquetSinkNode::new(
                 input_schema,
                 path.as_path(),
+                sink_options.clone(),
                 &parquet_writer_options,
             )?) as Box<dyn SinkNode + Send + Sync>;
             Ok((path, sink, args))
@@ -81,6 +89,7 @@ pub fn get_create_new_fn(file_type: FileType, args_to_path: ArgsToPathFn) -> Cre
             let sink = Box::new(super::csv::CsvSinkNode::new(
                 input_schema,
                 path.clone(),
+                sink_options.clone(),
                 csv_writer_options.clone(),
             )) as Box<dyn SinkNode + Send + Sync>;
             Ok((path, sink, args))

@@ -183,6 +183,7 @@ where
                 #[allow(unused_variables)]
                 SinkType::File {
                     path,
+                    sink_options: _,
                     file_type,
                     cloud_options,
                 } => {
