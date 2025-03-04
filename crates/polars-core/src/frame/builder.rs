@@ -50,6 +50,14 @@ impl DataFrameBuilder {
         unsafe { DataFrame::new_no_checks(self.height, columns) }
     }
 
+    pub fn len(&self) -> usize {
+        self.height
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.height == 0
+    }
+
     /// Extends this builder with the contents of the given dataframe. May panic
     /// if other does not match the schema of this builder.
     pub fn extend(&mut self, other: &DataFrame, share: ShareStrategy) {
@@ -115,6 +123,44 @@ impl DataFrameBuilder {
                 Column::Scalar(sc) => {
                     let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
                     builder.subslice_extend_repeated(&scalar_as_series, 0, 1, idxs.len(), share);
+                },
+            }
+        }
+
+        self.height += idxs.len();
+    }
+
+    /// Extends this builder with the contents of the given dataframe at the given
+    /// indices. That is, `other[idxs[i]]` is appended to this builder in order,
+    /// for each i=0..idxs.len(). Out-of-bounds indices extend with nulls.
+    /// May panic if other does not match the schema of this builder, or if the
+    /// other dataframe is not rechunked.
+    pub fn opt_gather_extend(&mut self, other: &DataFrame, idxs: &[IdxSize], share: ShareStrategy) {
+        let mut trans_idxs = Vec::new();
+        let columns = other.get_columns();
+        assert!(self.builders.len() == columns.len());
+        for (builder, column) in self.builders.iter_mut().zip(columns) {
+            match column {
+                Column::Series(s) => {
+                    builder.opt_gather_extend(s, idxs, share);
+                },
+                Column::Partitioned(p) => {
+                    // @scalar-opt
+                    builder.opt_gather_extend(p.as_materialized_series(), idxs, share);
+                },
+                Column::Scalar(sc) => {
+                    let scalar_as_series = sc.scalar().clone().into_series(PlSmallStr::default());
+                    // Reduce call overhead by transforming indices to 0/1 and dispatching to
+                    // opt_gather_extend on the scalar as series.
+                    for idx_chunk in idxs.chunks(4096) {
+                        trans_idxs.clear();
+                        trans_idxs.extend(
+                            idx_chunk
+                                .iter()
+                                .map(|idx| ((*idx as usize) >= sc.len()) as IdxSize),
+                        );
+                        builder.opt_gather_extend(&scalar_as_series, &trans_idxs, share);
+                    }
                 },
             }
         }

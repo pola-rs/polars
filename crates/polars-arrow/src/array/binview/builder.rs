@@ -11,6 +11,7 @@ use crate::array::{Array, BinaryViewArrayGeneric, View, ViewType};
 use crate::bitmap::OptBitmapBuilder;
 use crate::buffer::Buffer;
 use crate::datatypes::ArrowDataType;
+use crate::pushable::Pushable;
 
 static PLACEHOLDER_BUFFER: LazyLock<Buffer<u8>> = LazyLock::new(|| Buffer::from_static(&[]));
 
@@ -208,6 +209,15 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
         }
     }
 
+    fn len(&self) -> usize {
+        self.views.len()
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.views.extend_constant(length, View::default());
+        self.validity.extend_constant(length, false);
+    }
+
     fn subslice_extend(
         &mut self,
         other: &Self::Array,
@@ -287,5 +297,50 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
 
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+    }
+
+    fn opt_gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy) {
+        self.views.reserve(idxs.len());
+
+        unsafe {
+            match share {
+                ShareStrategy::Never => {
+                    if let Some(v) = other.validity() {
+                        for idx in idxs {
+                            if (*idx as usize) < v.len() && v.get_bit_unchecked(*idx as usize) {
+                                self.push_value_ignore_validity(
+                                    other.value_unchecked(*idx as usize),
+                                );
+                            } else {
+                                self.views.push(View::default())
+                            }
+                        }
+                    } else {
+                        for idx in idxs {
+                            if (*idx as usize) < other.len() {
+                                self.push_value_ignore_validity(
+                                    other.value_unchecked(*idx as usize),
+                                );
+                            } else {
+                                self.views.push(View::default())
+                            }
+                        }
+                    }
+                },
+                ShareStrategy::Always => {
+                    let other_view_slice = other.views().as_slice();
+                    let other_views = idxs.iter().map(|idx| {
+                        other_view_slice
+                            .get(*idx as usize)
+                            .copied()
+                            .unwrap_or_default()
+                    });
+                    self.extend_views_dedup_ignore_validity(other_views, other.data_buffers());
+                },
+            }
+        }
+
+        self.validity
+            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
     }
 }

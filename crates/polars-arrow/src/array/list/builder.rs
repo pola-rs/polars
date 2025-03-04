@@ -45,6 +45,15 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
         ListArray::new(self.dtype, offsets, values, validity)
     }
 
+    fn len(&self) -> usize {
+        self.offsets.len()
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        self.offsets.extend_constant(length);
+        self.validity.extend_constant(length, false);
+    }
+
     fn subslice_extend(
         &mut self,
         other: &ListArray<O>,
@@ -116,5 +125,64 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
 
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+    }
+
+    fn opt_gather_extend(&mut self, other: &ListArray<O>, idxs: &[IdxSize], share: ShareStrategy) {
+        let other_values = &**other.values();
+        let other_offsets = other.offsets();
+
+        unsafe {
+            // Pre-compute proper length for reserve.
+            let total_len: usize = idxs
+                .iter()
+                .map(|idx| {
+                    if (*idx as usize) < other.len() {
+                        let start = other_offsets.get_unchecked(*idx as usize).to_usize();
+                        let stop = other_offsets.get_unchecked(*idx as usize + 1).to_usize();
+                        stop - start
+                    } else {
+                        0
+                    }
+                })
+                .sum();
+            self.inner_builder.reserve(total_len);
+
+            // Group consecutive indices into larger copies.
+            let mut group_start = 0;
+            while group_start < idxs.len() {
+                let start_idx = idxs[group_start] as usize;
+                let mut group_len = 1;
+                let in_bounds = start_idx < other.len();
+
+                while group_start + group_len < idxs.len()
+                    && idxs[group_start + group_len] as usize == start_idx + group_len
+                    && (start_idx + group_len < other.len()) == in_bounds
+                {
+                    group_len += 1;
+                }
+
+                if in_bounds {
+                    let start_offset = other_offsets.get_unchecked(start_idx).to_usize();
+                    let stop_offset = other_offsets
+                        .get_unchecked(start_idx + group_len)
+                        .to_usize();
+                    self.offsets
+                        .try_extend_from_slice(other_offsets, group_start, group_len)
+                        .unwrap();
+                    self.inner_builder.subslice_extend(
+                        other_values,
+                        start_offset,
+                        stop_offset - start_offset,
+                        share,
+                    );
+                } else {
+                    self.offsets.extend_constant(group_len);
+                }
+                group_start += group_len;
+            }
+
+            self.validity
+                .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
+        }
     }
 }

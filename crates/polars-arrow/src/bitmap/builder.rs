@@ -273,11 +273,39 @@ impl BitmapBuilder {
         }
     }
 
+    pub fn opt_gather_extend_from_slice(
+        &mut self,
+        slice: &[u8],
+        offset: usize,
+        length: usize,
+        idxs: &[IdxSize],
+    ) {
+        assert!(8 * slice.len() >= offset + length);
+
+        self.reserve(idxs.len());
+        unsafe {
+            for idx in idxs {
+                if (*idx as usize) < length {
+                    let idx_in_slice = offset + *idx as usize;
+                    let bit = (*slice.get_unchecked(idx_in_slice / 8) >> (idx_in_slice % 8)) & 1;
+                    self.push_unchecked(bit != 0);
+                } else {
+                    self.push_unchecked(false);
+                }
+            }
+        }
+    }
+
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_extend_from_bitmap(&mut self, bitmap: &Bitmap, idxs: &[IdxSize]) {
         let (slice, offset, length) = bitmap.as_slice();
         self.gather_extend_from_slice(slice, offset, length, idxs);
+    }
+
+    pub fn opt_gather_extend_from_bitmap(&mut self, bitmap: &Bitmap, idxs: &[IdxSize]) {
+        let (slice, offset, length) = bitmap.as_slice();
+        self.opt_gather_extend_from_slice(slice, offset, length, idxs);
     }
 
     /// # Safety
@@ -443,6 +471,30 @@ impl OptBitmapBuilder {
             },
             None => {
                 self.extend_constant(idxs.len(), true);
+            },
+        }
+    }
+
+    pub fn opt_gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+        length: usize,
+    ) {
+        match bitmap {
+            Some(bm) => {
+                self.get_builder().opt_gather_extend_from_bitmap(bm, idxs);
+            },
+            None => {
+                if let Some(first_oob) = idxs.iter().position(|idx| *idx as usize >= length) {
+                    let builder = self.get_builder();
+                    builder.extend_constant(first_oob, true);
+                    for idx in idxs.iter().skip(first_oob) {
+                        builder.push((*idx as usize) < length);
+                    }
+                } else {
+                    self.extend_constant(idxs.len(), true);
+                }
             },
         }
     }

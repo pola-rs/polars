@@ -27,6 +27,14 @@ impl SeriesBuilder {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.builder.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.builder.len() == 0
+    }
+
     /// Extends this builder with the contents of the given series. May panic if
     /// other does not match the dtype of this builder.
     #[inline(always)]
@@ -98,5 +106,11 @@ impl SeriesBuilder {
         let chunks = other.chunks();
         assert!(chunks.len() == 1);
         self.builder.gather_extend(&*chunks[0], idxs, share);
+    }
+
+    pub fn opt_gather_extend(&mut self, other: &Series, idxs: &[IdxSize], share: ShareStrategy) {
+        let chunks = other.chunks();
+        assert!(chunks.len() == 1);
+        self.builder.opt_gather_extend(&*chunks[0], idxs, share);
     }
 }
