@@ -39,6 +39,10 @@ impl StaticArrayBuilder for BooleanArrayBuilder {
         BooleanArray::try_new(self.dtype, values, validity).unwrap()
     }
 
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
     fn extend_nulls(&mut self, length: usize) {
         self.values.extend_constant(length, false);
         self.validity.extend_constant(length, false);

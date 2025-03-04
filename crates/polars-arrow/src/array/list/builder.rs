@@ -45,6 +45,10 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
         ListArray::new(self.dtype, offsets, values, validity)
     }
 
+    fn len(&self) -> usize {
+        self.offsets.len()
+    }
+
     fn extend_nulls(&mut self, length: usize) {
         self.offsets.extend_constant(length);
         self.validity.extend_constant(length, false);

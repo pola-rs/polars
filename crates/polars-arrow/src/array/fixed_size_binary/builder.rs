@@ -10,6 +10,7 @@ use crate::pushable::Pushable;
 pub struct FixedSizeBinaryArrayBuilder {
     dtype: ArrowDataType,
     size: usize,
+    length: usize,
     values: Vec<u8>,
     validity: OptBitmapBuilder,
 }
@@ -18,6 +19,7 @@ impl FixedSizeBinaryArrayBuilder {
     pub fn new(dtype: ArrowDataType) -> Self {
         Self {
             size: FixedSizeBinaryArray::get_size(&dtype),
+            length: 0,
             dtype,
             values: Vec::new(),
             validity: OptBitmapBuilder::default(),
@@ -39,14 +41,21 @@ impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
     }
 
     fn freeze(self) -> FixedSizeBinaryArray {
+        // TODO: FixedSizeBinaryArray should track its own length to be correct
+        // for size-0 inner.
         let values = Buffer::from(self.values);
         let validity = self.validity.into_opt_validity();
         FixedSizeBinaryArray::new(self.dtype, values, validity)
     }
 
+    fn len(&self) -> usize {
+        self.length
+    }
+
     fn extend_nulls(&mut self, length: usize) {
         self.values.extend_constant(length * self.size, 0);
         self.validity.extend_constant(length, false);
+        self.length += length;
     }
 
     fn subslice_extend(
@@ -61,6 +70,7 @@ impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
             .extend_from_slice(&other_slice[start * self.size..(start + length) * self.size]);
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
+        self.length += length.min(other.len().saturating_sub(start));
     }
 
     unsafe fn gather_extend(
@@ -78,6 +88,7 @@ impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
         }
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+        self.length += idxs.len();
     }
 
     fn opt_gather_extend(
@@ -98,5 +109,6 @@ impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
         }
         self.validity
             .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
+        self.length += idxs.len();
     }
 }

@@ -42,6 +42,10 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         FixedSizeListArray::new(self.dtype, self.length, values, validity)
     }
 
+    fn len(&self) -> usize {
+        self.length
+    }
+
     fn extend_nulls(&mut self, length: usize) {
         self.inner_builder.extend_nulls(length * self.size);
         self.validity.extend_constant(length, false);
@@ -63,7 +67,7 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         );
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
-        self.length += length;
+        self.length += length.min(other.len().saturating_sub(start));
     }
 
     unsafe fn gather_extend(

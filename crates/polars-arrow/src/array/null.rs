@@ -240,6 +240,10 @@ impl StaticArrayBuilder for NullArrayBuilder {
         NullArray::new(self.dtype, self.length)
     }
 
+    fn len(&self) -> usize {
+        self.length
+    }
+
     fn extend_nulls(&mut self, length: usize) {
         self.length += length;
     }

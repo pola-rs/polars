@@ -209,6 +209,10 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
         }
     }
 
+    fn len(&self) -> usize {
+        self.views.len()
+    }
+
     fn extend_nulls(&mut self, length: usize) {
         self.views.extend_constant(length, View::default());
         self.validity.extend_constant(length, false);

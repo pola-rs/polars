@@ -37,14 +37,6 @@ impl StaticArrayBuilder for StructArrayBuilder {
         self.validity.reserve(additional);
     }
 
-    fn extend_nulls(&mut self, length: usize) {
-        for builder in &mut self.inner_builders {
-            builder.extend_nulls(length);
-        }
-        self.validity.extend_constant(length, false);
-        self.length += length;
-    }
-
     fn freeze(self) -> StructArray {
         let values = self
             .inner_builders
@@ -53,6 +45,18 @@ impl StaticArrayBuilder for StructArrayBuilder {
             .collect();
         let validity = self.validity.into_opt_validity();
         StructArray::new(self.dtype, self.length, values, validity)
+    }
+
+    fn len(&self) -> usize {
+        self.length
+    }
+
+    fn extend_nulls(&mut self, length: usize) {
+        for builder in &mut self.inner_builders {
+            builder.extend_nulls(length);
+        }
+        self.validity.extend_constant(length, false);
+        self.length += length;
     }
 
     fn subslice_extend(
@@ -67,7 +71,7 @@ impl StaticArrayBuilder for StructArrayBuilder {
         }
         self.validity
             .subslice_extend_from_opt_validity(other.validity(), start, length);
-        self.length += length;
+        self.length += length.min(other.len().saturating_sub(start));
     }
 
     unsafe fn gather_extend(

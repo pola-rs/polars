@@ -28,6 +28,9 @@ pub trait StaticArrayBuilder {
     /// Consume this builder returning the built array.
     fn freeze(self) -> Self::Array;
 
+    /// Returns the length of this builder (so far).
+    fn len(&self) -> usize;
+
     /// Extend this builder with the given number of null elements.
     fn extend_nulls(&mut self, length: usize);
 
@@ -94,6 +97,11 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
     }
 
     #[inline(always)]
+    fn len(&self) -> usize {
+        StaticArrayBuilder::len(self)
+    }
+
+    #[inline(always)]
     fn extend_nulls(&mut self, length: usize) {
         StaticArrayBuilder::extend_nulls(self, length);
     }
@@ -143,6 +151,9 @@ pub trait ArrayBuilder: ArrayBuilderBoxedHelper {
 
     /// Consume this builder returning the built array.
     fn freeze(self) -> Box<dyn Array>;
+
+    /// Returns the length of this builder (so far).
+    fn len(&self) -> usize;
 
     /// Extend this builder with the given number of null elements.
     fn extend_nulls(&mut self, length: usize);
@@ -201,22 +212,32 @@ impl<T: ArrayBuilder> ArrayBuilderBoxedHelper for T {
 }
 
 impl ArrayBuilder for Box<dyn ArrayBuilder> {
+    #[inline(always)]
     fn dtype(&self) -> &ArrowDataType {
         (**self).dtype()
     }
 
+    #[inline(always)]
     fn reserve(&mut self, additional: usize) {
         (**self).reserve(additional)
     }
 
+    #[inline(always)]
     fn freeze(self) -> Box<dyn Array> {
         self.freeze_boxed()
     }
 
+    #[inline(always)]
+    fn len(&self) -> usize {
+        (**self).len()
+    }
+
+    #[inline(always)]
     fn extend_nulls(&mut self, length: usize) {
         (**self).extend_nulls(length);
     }
 
+    #[inline(always)]
     fn subslice_extend(
         &mut self,
         other: &dyn Array,
@@ -227,6 +248,7 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
         (**self).subslice_extend(other, start, length, share);
     }
 
+    #[inline(always)]
     fn subslice_extend_repeated(
         &mut self,
         other: &dyn Array,
@@ -238,10 +260,12 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
         (**self).subslice_extend_repeated(other, start, length, repeats, share);
     }
 
+    #[inline(always)]
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
         (**self).gather_extend(other, idxs, share);
     }
 
+    #[inline(always)]
     fn opt_gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
         (**self).opt_gather_extend(other, idxs, share);
     }

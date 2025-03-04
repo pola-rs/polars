@@ -42,6 +42,10 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
         PrimitiveArray::new(self.dtype, values, validity)
     }
 
+    fn len(&self) -> usize {
+        self.values.len()
+    }
+
     fn extend_nulls(&mut self, length: usize) {
         self.values.resize(self.values.len() + length, T::zeroed());
         self.validity.extend_constant(length, false);
