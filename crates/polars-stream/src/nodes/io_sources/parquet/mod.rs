@@ -9,7 +9,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
-use polars_io::RowIndex;
+use polars_io::{pl_async, RowIndex};
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::{ScanSource, ScanSources};
 use polars_plan::plans::hive::HivePartitions;
@@ -293,8 +293,12 @@ impl MultiScanable for ParquetSourceNode {
         let verbose = config::verbose();
 
         // TODO: Use _opt_full_bytes if it is Some(_)
-        let (metadata_bytes, _opt_full_bytes) =
-            metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await?;
+        let (metadata_bytes, _opt_full_bytes) = pl_async::get_runtime()
+            .spawn(async move {
+                metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
+            })
+            .await
+            .unwrap()?;
 
         let file_metadata = polars_parquet::parquet::read::deserialize_metadata(
             metadata_bytes.as_ref(),
