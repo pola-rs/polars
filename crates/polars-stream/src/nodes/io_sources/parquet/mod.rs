@@ -10,7 +10,6 @@ use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
 use polars_io::RowIndex;
-use polars_parquet::read::read_metadata;
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::{ScanSource, ScanSources};
 use polars_plan::plans::hive::HivePartitions;
@@ -278,9 +277,29 @@ impl MultiScanable for ParquetSourceNode {
         cloud_options: Option<&CloudOptions>,
         row_index: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let source = source.into_sources();
-        let memslice = source.at(0).to_memslice()?;
-        let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
+        let scan_sources = source.into_sources();
+        let source = scan_sources.at(0);
+        let byte_source = source
+            .to_dyn_byte_source(
+                &if scan_sources.is_cloud_url() || config::force_async() {
+                    DynByteSourceBuilder::ObjectStore
+                } else {
+                    DynByteSourceBuilder::Mmap
+                },
+                cloud_options,
+            )
+            .await?;
+
+        let verbose = config::verbose();
+
+        // TODO: Use _opt_full_bytes if it is Some(_)
+        let (metadata_bytes, _opt_full_bytes) =
+            metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await?;
+
+        let file_metadata = polars_parquet::parquet::read::deserialize_metadata(
+            metadata_bytes.as_ref(),
+            metadata_bytes.len() * 2 + 1024,
+        )?;
 
         let arrow_schema = infer_schema_with_options(&file_metadata, &None)?;
         let arrow_schema = Arc::new(arrow_schema);
@@ -303,7 +322,7 @@ impl MultiScanable for ParquetSourceNode {
         );
 
         Ok(ParquetSourceNode::new(
-            source,
+            scan_sources,
             file_info,
             None,
             options,

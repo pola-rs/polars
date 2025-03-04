@@ -497,7 +497,12 @@ impl MultiScanable for IpcSourceNode {
     ) -> PolarsResult<Self> {
         let options = options.clone();
 
-        let memslice = source.as_scan_source_ref().to_memslice()?;
+        // TODO
+        // * `to_memslice_async_assume_latest` being a non-async function is not ideal.
+        // * This is also downoading the whole file even if there is a projection
+        let memslice = source
+            .as_scan_source_ref()
+            .to_memslice_async_assume_latest(source.run_async())?;
         let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
             memslice.as_ref(),
         ))?);
