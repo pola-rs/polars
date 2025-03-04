@@ -12,7 +12,7 @@ with contextlib.suppress(ImportError):  # Module not available when building doc
     from polars.polars import PyPartitioning
 
 
-class MaxSizePartitioning:
+class PartitionMaxSize:
     """
     Partitioning scheme to write files with a maximum size.
 
