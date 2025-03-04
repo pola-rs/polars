@@ -155,10 +155,17 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 
 pub(super) fn length(s: &Column) -> PolarsResult<Column> {
     let array = s.array()?;
+    let width = array.width();
+
+    let width_val = match IDX_DTYPE {
+        DataType::UInt32 => AnyValue::UInt32(width as u32),
+        DataType::UInt64 => AnyValue::UInt64(width as u64),
+        _ => unreachable!("IDX_DTYPE should be UInt32 or UInt64"),
+    };
 
     let mut c = Column::new_scalar(
         array.name().clone(),
-        Scalar::new(IDX_DTYPE, AnyValue::UInt32(array.width() as IdxSize)),
+        Scalar::new(IDX_DTYPE, width_val),
         array.len(),
     );
 
