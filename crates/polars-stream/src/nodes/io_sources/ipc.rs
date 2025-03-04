@@ -20,7 +20,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::utils::columns_to_projection;
 use polars_io::RowIndex;
-use polars_plan::dsl::ScanSource;
+use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::mmap::MemSlice;
@@ -500,9 +500,18 @@ impl MultiScanable for IpcSourceNode {
         // TODO
         // * `to_memslice_async_assume_latest` being a non-async function is not ideal.
         // * This is also downloading the whole file even if there is a projection
-        let memslice = source
-            .as_scan_source_ref()
-            .to_memslice_async_assume_latest(source.run_async())?;
+        let memslice = {
+            if let ScanSourceRef::Path(p) = source.as_scan_source_ref() {
+                polars_io::file_cache::init_entries_from_uri_list(
+                    &[Arc::from(p.to_str().unwrap())],
+                    cloud_options,
+                )?;
+            }
+
+            source
+                .as_scan_source_ref()
+                .to_memslice_async_assume_latest(source.run_async())?
+        };
         let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
             memslice.as_ref(),
         ))?);
