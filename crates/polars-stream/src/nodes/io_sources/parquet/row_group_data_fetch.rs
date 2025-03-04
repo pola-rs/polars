@@ -14,19 +14,15 @@ use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
-use super::row_group_decode::SharedFileState;
 use crate::utils::task_handles_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
 pub(super) struct RowGroupData {
     pub(super) fetched_bytes: FetchedBytes,
-    pub(super) path_index: usize,
     pub(super) row_offset: usize,
     pub(super) slice: Option<(usize, usize)>,
-    pub(super) file_max_row_group_height: usize,
     pub(super) row_group_metadata: RowGroupMetadata,
     pub(super) sorting_map: PlHashMap<usize, IsSorted>,
-    pub(super) shared_file_state: Arc<tokio::sync::OnceCell<SharedFileState>>,
 }
 
 pub(super) struct RowGroupDataFetcher {
@@ -50,7 +46,6 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) current_row_group_idx: usize,
     pub(super) current_max_row_group_height: usize,
     pub(super) current_row_offset: usize,
-    pub(super) current_shared_file_state: Arc<tokio::sync::OnceCell<SharedFileState>>,
 }
 
 impl RowGroupDataFetcher {
@@ -68,7 +63,6 @@ impl RowGroupDataFetcher {
         self.current_row_offset = row_offset;
         self.current_row_group_idx = 0;
         self.current_row_groups = metadata.row_groups.into_iter();
-        self.current_shared_file_state = Default::default();
 
         true
     }
@@ -153,11 +147,8 @@ impl RowGroupDataFetcher {
 
                 let current_byte_source = self.current_byte_source.clone();
                 let projection = self.projection.clone();
-                let current_shared_file_state = self.current_shared_file_state.clone();
                 let memory_prefetch_func = self.memory_prefetch_func;
                 let io_runtime = polars_io::pl_async::get_runtime();
-                let current_path_index = self.current_path_index;
-                let current_max_row_group_height = self.current_max_row_group_height;
 
                 let handle = io_runtime.spawn(async move {
                     let fetched_bytes =
@@ -227,13 +218,10 @@ impl RowGroupDataFetcher {
 
                     PolarsResult::Ok(RowGroupData {
                         fetched_bytes,
-                        path_index: current_path_index,
                         row_offset: current_row_offset,
                         slice,
-                        file_max_row_group_height: current_max_row_group_height,
                         row_group_metadata,
                         sorting_map,
-                        shared_file_state: current_shared_file_state.clone(),
                     })
                 });
 
