@@ -205,6 +205,15 @@ pub struct FileScanOptions {
     pub allow_missing_columns: bool,
 }
 
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Engine {
+    OldStreaming,
+    Streaming,
+    InMemory,
+    Gpu,
+}
+
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {

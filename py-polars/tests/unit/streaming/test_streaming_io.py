@@ -278,3 +278,14 @@ def test_empty_sink_parquet_join_14863(tmp_path: Path) -> None:
         pl.LazyFrame({"a": ["uno"]}).join(pl.scan_parquet(file_path), on="a").collect(),
         lf.collect(),
     )
+
+
+@pytest.mark.write_disk
+def test_scan_non_existent_file_21527() -> None:
+    with pytest.raises(
+        FileNotFoundError,
+        match="No such file or directory (os error 2): a-file-that-does-not-exist",
+    ):
+        pl.scan_parquet("a-file-that-does-not-exist").sink_ipc(
+            "x.ipc", engine="streaming"
+        )

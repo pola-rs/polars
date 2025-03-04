@@ -156,7 +156,7 @@ def _gpu_engine_callback(
     _eager: bool,
 ) -> Callable[[Any, int | None], None] | None:
     is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
-    if not (is_config_obj or engine in ("cpu", "gpu")):
+    if not (is_config_obj or engine in ("cpu", "in-memory", "streaming", "old-streaming", "gpu")):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)
     if (streaming or background or new_streaming) and is_gpu:
@@ -1674,7 +1674,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: EngineType = "in-memory",
         _check_order: bool = True,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
@@ -1720,7 +1720,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run parts of the query in a streaming fashion (this is in an alpha state)
         engine
             Select the engine used to process the query, optional.
-            If set to `"cpu"` (default), the query is run using the
+            If set to `"in-memory"` (default), the query is run using the
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
@@ -1872,7 +1872,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: EngineType = "in-memory",
         background: Literal[True],
         _eager: bool = False,
         _check_order: bool = True,
@@ -1894,7 +1894,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: EngineType = "in-memory",
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1915,7 +1915,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "cpu",
+        engine: EngineType = "in-memory",
         background: bool = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1963,7 +1963,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mode.
         engine
             Select the engine used to process the query, optional.
-            If set to `"cpu"` (default), the query is run using the
+            If set to `"in-memory"` (default), the query is run using the
             polars CPU engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
@@ -2077,6 +2077,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise TypeError(error_msg)
 
         new_streaming = _kwargs.get("new_streaming", False)
+        new_streaming |= engine == "streaming"
+        streaming |= engine == "old-streaming"
 
         if no_optimization or _eager:
             predicate_pushdown = False
@@ -2369,6 +2371,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        engine: EngineType = "old-streaming",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2467,6 +2470,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        engine
+            Select the engine used to process the query, optional.
+            If set to `"old-streaming"` (default), the query is run using the
+            polars old streaming engine.
+
+            .. note::
+               The GPU engine is currently not supported.
 
         Returns
         -------
@@ -2542,6 +2552,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
+            engine=engine,
         )
 
     @unstable()
@@ -2565,6 +2576,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        engine: EngineType = "old-streaming",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -2629,6 +2641,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        engine
+            Select the engine used to process the query, optional.
+            If set to `"old-streaming"` (default), the query is run using the
+            polars old streaming engine.
+
+            .. note::
+               The GPU engine is currently not supported.
 
         Returns
         -------
@@ -2683,6 +2702,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
+            engine=engine,
         )
 
     @unstable()
@@ -2718,6 +2738,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        engine: EngineType = "old-streaming",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
@@ -2830,6 +2851,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        engine
+            Select the engine used to process the query, optional.
+            If set to `"old-streaming"` (default), the query is run using the
+            polars old streaming engine.
+
+            .. note::
+               The GPU engine is currently not supported.
 
         Returns
         -------
@@ -2903,6 +2931,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
+            engine=engine,
         )
 
     @unstable()
@@ -2925,6 +2954,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
+        engine: EngineType = "old-streaming",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
@@ -2986,6 +3016,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
+        engine
+            Select the engine used to process the query, optional.
+            If set to `"old-streaming"` (default), the query is run using the
+            polars old streaming engine.
+
+            .. note::
+               The GPU engine is currently not supported.
 
         Returns
         -------
@@ -3039,6 +3076,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             credential_provider=credential_provider_builder,
             retries=retries,
             sink_options=sink_options,
+            engine=engine,
         )
 
     def _set_sink_optimizations(
