@@ -78,6 +78,9 @@ impl SinkNode for ParquetSinkNode {
     fn is_sink_input_parallel(&self) -> bool {
         false
     }
+    fn do_maintain_order(&self) -> bool {
+        self.sink_options.maintain_order
+    }
 
     fn spawn_sink(
         &mut self,

@@ -8,6 +8,7 @@ use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_plan::dsl::SinkOptions;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
@@ -25,6 +26,8 @@ pub struct MaxSizePartitionSinkNode {
     max_size: IdxSize,
     create_new: CreateNewSinkFn,
 
+    sink_options: SinkOptions,
+
     /// The number of tasks that get used to wait for finished files. If you are write large enough
     /// files (i.e. they would be formed by multiple morsels) this should almost always be 1. But
     /// if you are writing many small files, this should scan up to allow for your threads to
@@ -37,7 +40,12 @@ pub struct MaxSizePartitionSinkNode {
 
 const DEFAULT_RETIRE_TASKS: usize = 1;
 impl MaxSizePartitionSinkNode {
-    pub fn new(input_schema: SchemaRef, max_size: IdxSize, create_new: CreateNewSinkFn) -> Self {
+    pub fn new(
+        input_schema: SchemaRef,
+        max_size: IdxSize,
+        create_new: CreateNewSinkFn,
+        sink_options: SinkOptions,
+    ) -> Self {
         assert!(max_size > 0);
         let num_retire_tasks =
             std::env::var("POLARS_MAX_SIZE_SINK_RETIRE_TASKS").map_or(DEFAULT_RETIRE_TASKS, |v| {
@@ -50,6 +58,7 @@ impl MaxSizePartitionSinkNode {
             input_schema,
             max_size,
             create_new,
+            sink_options,
             num_retire_tasks,
         }
     }
@@ -67,6 +76,9 @@ impl SinkNode for MaxSizePartitionSinkNode {
 
     fn is_sink_input_parallel(&self) -> bool {
         false
+    }
+    fn do_maintain_order(&self) -> bool {
+        self.sink_options.maintain_order
     }
 
     fn spawn_sink(

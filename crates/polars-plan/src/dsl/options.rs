@@ -304,11 +304,23 @@ pub enum SyncOnCloseType {
 }
 
 /// Options that apply to all sinks.
-#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SinkOptions {
     /// Call sync when closing the file.
     pub sync_on_close: SyncOnCloseType,
+
+    /// The output file needs to maintain order of the data that comes in.
+    pub maintain_order: bool,
+}
+
+impl Default for SinkOptions {
+    fn default() -> Self {
+        Self {
+            sync_on_close: Default::default(),
+            maintain_order: true,
+        }
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

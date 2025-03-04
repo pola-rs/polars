@@ -59,6 +59,31 @@ impl<T: Ord> Linearizer<T> {
         (slf, inserters)
     }
 
+    pub fn new_with_maintain_order(
+        num_inserters: usize,
+        buffer_size: usize,
+        maintain_order: bool,
+    ) -> (Self, Vec<Inserter<T>>) {
+        if maintain_order {
+            return Self::new(num_inserters, buffer_size);
+        }
+
+        let (sender, receiver) = channel(buffer_size * num_inserters);
+        let receivers = vec![receiver];
+        let inserters = (0..num_inserters)
+            .map(|_| Inserter {
+                sender: sender.clone(),
+            })
+            .collect();
+
+        let slf = Self {
+            receivers,
+            poll_state: PollState::PollAll,
+            heap: BinaryHeap::with_capacity(1),
+        };
+        (slf, inserters)
+    }
+
     /// Fetch the next ordered item produced by senders.
     ///
     /// This may wait for at each sender to have sent at least one value before the [`Linearizer`]
