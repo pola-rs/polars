@@ -19,7 +19,7 @@ pub enum ShareStrategy {
     Always,
 }
 
-pub trait StaticArrayBuilder {
+pub trait StaticArrayBuilder : Send {
     type Array: Array;
 
     fn dtype(&self) -> &ArrowDataType;
@@ -153,7 +153,7 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
 }
 
 #[allow(private_bounds)]
-pub trait ArrayBuilder: ArrayBuilderBoxedHelper {
+pub trait ArrayBuilder: ArrayBuilderBoxedHelper + Send {
     fn dtype(&self) -> &ArrowDataType;
     fn reserve(&mut self, additional: usize);
 
