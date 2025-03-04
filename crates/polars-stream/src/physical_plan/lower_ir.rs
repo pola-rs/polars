@@ -422,15 +422,6 @@ pub fn lower_ir(
                     match ScanSource::from_sources(scan_sources) {
                         Err(s) => scan_sources = s,
                         Ok(scan_source) => {
-                            #[cfg(feature = "ipc")]
-                            if matches!(scan_type, FileScan::Ipc { .. }) {
-                                // @TODO: All the things the IPC source does not support yet.
-                                if matches!(&scan_source, ScanSource::Path(p) if polars_io::is_cloud_url(p))
-                                {
-                                    todo!();
-                                }
-                            }
-
                             // Operation ordering:
                             // * with_row_index() -> slice() -> filter()
 
