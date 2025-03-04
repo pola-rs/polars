@@ -21,7 +21,7 @@ pub struct BinaryViewArrayGenericBuilder<V: ViewType + ?Sized> {
     active_buffer: Vec<u8>,
     active_buffer_idx: u32,
     buffer_set: Vec<Buffer<u8>>,
-    stolen_buffers: PlHashMap<*const u8, u32>,
+    stolen_buffers: PlHashMap<usize, u32>,
 
     // With these we can amortize buffer set translation costs if repeatedly
     // stealing from the same set of buffers.
@@ -94,11 +94,10 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
             let view = if bytes.len() > View::MAX_INLINE_SIZE as usize {
                 self.reserve_active_buffer(bytes.len());
 
-                let buffer_idx = u32::try_from(self.buffer_set.len()).unwrap();
                 let offset = self.active_buffer.len() as u32; // Ensured no overflow by reserve_active_buffer.
                 self.active_buffer.extend_from_slice(bytes);
                 self.total_buffer_len += bytes.len();
-                View::new_noninline_unchecked(bytes, buffer_idx, offset)
+                View::new_noninline_unchecked(bytes, self.active_buffer_idx, offset)
             } else {
                 View::new_inline_unchecked(bytes)
             };
@@ -149,7 +148,7 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
                         .get_unchecked(view.buffer_idx as usize)
                         .clone()
                         .expand_end_to_storage();
-                    let buf_id = buffer.as_slice().as_ptr();
+                    let buf_id = buffer.as_slice().as_ptr().addr();
                     let idx = match self.stolen_buffers.entry(buf_id) {
                         Entry::Occupied(o) => *o.get(),
                         Entry::Vacant(v) => {
