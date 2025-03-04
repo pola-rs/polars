@@ -154,7 +154,25 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 }
 
 pub(super) fn length(s: &Column) -> PolarsResult<Column> {
-    Ok(s.array()?.array_lengths().into_column())
+    let array = s.array()?;
+
+    let mut c = Column::new_scalar(
+        array.name().clone(),
+        Scalar::new(IDX_DTYPE, AnyValue::UInt32(array.width() as IdxSize)),
+        array.len(),
+    );
+
+    if let Some(validity) = array.rechunk_validity() {
+        let mut series = c.into_materialized_series().clone();
+        let chunks = unsafe { series.chunks_mut() };
+        let arr = &mut chunks[0];
+        *arr = arr.with_validity(Some(validity));
+        series.compute_len();
+
+        c = series.into_column();
+    }
+
+    Ok(c)
 }
 
 pub(super) fn max(s: &Column) -> PolarsResult<Column> {
