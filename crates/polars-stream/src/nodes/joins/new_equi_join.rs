@@ -695,7 +695,7 @@ impl ProbeState {
                     let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
                     let mut probe_out = DataFrameBuilder::new(probe_payload_schema.clone());
                     let mut out_len = 0;
-                    /*
+
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
@@ -714,28 +714,29 @@ impl ProbeState {
                             }
 
                             // Gather output and send.
-                            let mut build_df = if emit_unmatched {
-                                p.payload.take_opt_chunked_unchecked(&table_match, false)
+                            if emit_unmatched {
+                                build_out.opt_gather_extend(&p.payload, &table_match, ShareStrategy::Always);
                             } else {
-                                p.payload.take_chunked_unchecked(&table_match, IsSorted::Not, false)
+                                build_out.gather_extend(&p.payload, &table_match, ShareStrategy::Always);
                             };
                             if !payload_rechunked {
-                                // TODO: can avoid rechunk? We have to rechunk here or else we do it
-                                // multiple times during the gather.
                                 payload.rechunk_mut();
                                 payload_rechunked = true;
                             }
-                            let mut probe_df =
-                                payload.take_slice_unchecked_impl(&probe_match, false);
+                            probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                            
+                            if probe_out.len() >= probe_limit {
+                                let out_df = if params.left_is_build.unwrap() {
+                                    build_df.hstack_mut_unchecked(probe_df.get_columns());
+                                    build_df
+                                } else {
+                                    probe_df.hstack_mut_unchecked(build_df.get_columns());
+                                    probe_df
+                                };
+                                let out_df = postprocess_join(out_df, params);
 
-                            let out_df = if params.left_is_build.unwrap() {
-                                build_df.hstack_mut_unchecked(probe_df.get_columns());
-                                build_df
-                            } else {
-                                probe_df.hstack_mut_unchecked(build_df.get_columns());
-                                probe_df
-                            };
-                            let out_df = postprocess_join(out_df, params);
+                            }
+
 
                             out_len = out_len
                                 .checked_add(out_df.height().try_into().unwrap())
