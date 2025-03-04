@@ -236,11 +236,9 @@ impl CsvSourceNode {
             async_executor::spawn(TaskPriority::Low, async move {
                 let global_slice = if let Some((offset, len)) = global_slice {
                     if offset < 0 {
-                        polars_bail!(
-                            ComputeError:
-                            "not implemented: negative slice offset {} for CSV source",
-                            offset
-                        );
+                        // IR lowering puts negative slice in separate node.
+                        // TODO: Native line buffering for negative slice
+                        unreachable!()
                     }
                     Some(offset as usize..offset as usize + len)
                 } else {
@@ -618,9 +616,9 @@ impl MultiScanable for CsvSourceNode {
             }
         };
 
+        // TODO: Parallelize this over the async executor
         let num_rows = polars_io::csv::read::count_rows_from_slice(
             &mem_slice[..],
-            parse_options.separator,
             parse_options.quote_char,
             parse_options.comment_prefix.as_ref(),
             parse_options.eol_char,

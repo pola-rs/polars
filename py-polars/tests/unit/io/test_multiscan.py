@@ -414,10 +414,10 @@ def test_multiscan_head(
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-        # (
-        #     pl.scan_csv,
-        #     pl.DataFrame.write_csv,
-        # ),
+        (
+            pl.scan_csv,
+            pl.DataFrame.write_csv,
+        ),
     ],
 )
 def test_multiscan_tail(
@@ -442,10 +442,10 @@ def test_multiscan_tail(
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-        # (
-        #     pl.scan_csv,
-        #     pl.DataFrame.write_csv,
-        # ),
+        (
+            pl.scan_csv,
+            pl.DataFrame.write_csv,
+        ),
     ],
 )
 def test_multiscan_slice_middle(
@@ -495,13 +495,7 @@ def test_multiscan_slice_middle(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-        pytest.param(
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
-            "csv",
-            marks=pytest.mark.may_fail_auto_streaming,
-            # negatives slices are not yet implemented for CSV
-        ),
+        (pl.scan_csv, pl.DataFrame.write_csv, "jsonl"),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
@@ -512,18 +506,6 @@ def test_multiscan_slice_parametric(
     offset: int,
     length: int,
 ) -> None:
-    # Once CSV negative slicing is implemented this should be removed. If we
-    # don't do this, this test is flaky.
-    if ext == "csv":
-        f = io.BytesIO()
-        write(pl.Series("a", [1]).to_frame(), f)
-        f.seek(0)
-        try:
-            scan(f).slice(-1, 1).collect(new_streaming=True)  # type: ignore[call-overload]
-            pytest.fail("This should crash")
-        except pl.exceptions.ComputeError:
-            pass
-
     ref = io.BytesIO()
     write(pl.Series("c1", [i % 7 for i in range(13 * 7)]).to_frame(), ref)
     ref.seek(0)
