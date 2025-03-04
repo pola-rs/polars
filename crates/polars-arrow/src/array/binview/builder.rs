@@ -209,6 +209,34 @@ impl<V: ViewType + ?Sized> StaticArrayBuilder for BinaryViewArrayGenericBuilder<
         }
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        // Flush active buffer and/or remove extra placeholder buffer.
+        if !self.active_buffer.is_empty() {
+            self.buffer_set[self.active_buffer_idx as usize] =
+                Buffer::from(core::mem::take(&mut self.active_buffer));
+        } else if self.buffer_set.last().is_some_and(|b| b.is_empty()) {
+            self.buffer_set.pop();
+        }
+
+        let out = unsafe {
+            BinaryViewArrayGeneric::new_unchecked(
+                self.dtype.clone(),
+                Buffer::from(core::mem::take(&mut self.views)),
+                Arc::from(core::mem::take(&mut self.buffer_set)),
+                core::mem::take(&mut self.validity).into_opt_validity(),
+                self.total_bytes_len,
+                self.total_buffer_len,
+            )
+        };
+
+        self.total_buffer_len = 0;
+        self.total_bytes_len = 0;
+        self.active_buffer_idx = 0;
+        self.stolen_buffers.clear();
+        self.last_buffer_set_stolen_from = None;
+        out
+    }
+
     fn len(&self) -> usize {
         self.views.len()
     }

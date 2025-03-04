@@ -42,6 +42,12 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
         PrimitiveArray::new(self.dtype, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let values = Buffer::from(core::mem::take(&mut self.values));
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        PrimitiveArray::new(self.dtype.clone(), values, validity)
+    }
+
     fn len(&self) -> usize {
         self.values.len()
     }
