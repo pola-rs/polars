@@ -456,16 +456,19 @@ impl PyDataFrame {
             });
         };
 
-        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            ParquetWriter::new(BufWriter::new(f))
+            ParquetWriter::new(BufWriter::new(&mut f))
                 .with_compression(compression)
                 .with_statistics(statistics.0)
                 .with_row_group_size(row_group_size)
                 .with_data_page_size(data_page_size)
-                .finish(&mut self.df)
-                .map(|_| ())
+                .finish(&mut self.df)?;
+
+            let _ = f.close()?;
+
+            Ok(())
         })
     }
 

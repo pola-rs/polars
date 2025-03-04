@@ -13,6 +13,7 @@ use polars::io::mmap::MmapBytesReader;
 use polars_error::polars_err;
 use polars_io::cloud::CloudOptions;
 use polars_utils::create_file;
+use polars_utils::file::ClosableFile;
 use polars_utils::mmap::MemSlice;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
@@ -185,15 +186,24 @@ impl Seek for PyFileLikeObject {
     }
 }
 
-pub trait FileLike: Read + Write + Seek + Sync + Send {}
+pub trait FileLike: Read + Write + Seek + Sync + Send {
+    fn close(self: Box<Self>) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 impl FileLike for File {}
+impl FileLike for ClosableFile {
+    fn close(self: Box<Self>) -> std::io::Result<()> {
+        ClosableFile::close(*self)
+    }
+}
 impl FileLike for PyFileLikeObject {}
 impl MmapBytesReader for PyFileLikeObject {}
 
 pub enum EitherRustPythonFile {
     Py(PyFileLikeObject),
-    Rust(File),
+    Rust(ClosableFile),
 }
 
 impl EitherRustPythonFile {
@@ -222,7 +232,7 @@ impl EitherRustPythonFile {
 pub enum PythonScanSourceInput {
     Buffer(MemSlice),
     Path(PathBuf),
-    File(File),
+    File(ClosableFile),
 }
 
 fn try_get_pyfile(
@@ -282,7 +292,7 @@ fn try_get_pyfile(
     .map(|fileno| fileno as RawFd)
     {
         return Ok((
-            EitherRustPythonFile::Rust(unsafe { File::from_raw_fd(fd) }),
+            EitherRustPythonFile::Rust(unsafe { File::from_raw_fd(fd).into() }),
             // This works on Linux and BSD with procfs mounted,
             // otherwise it fails silently.
             fs::canonicalize(format!("/proc/self/fd/{fd}")).ok(),

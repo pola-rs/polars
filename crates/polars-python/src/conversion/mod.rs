@@ -23,6 +23,7 @@ use polars_lazy::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::write::StatisticsOptions;
 use polars_plan::dsl::ScanSources;
+use polars_utils::file::ClosableFile;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::total_ord::{TotalEq, TotalHash};
@@ -549,7 +550,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
 
         enum MutableSources {
             Paths(Vec<PathBuf>),
-            Files(Vec<File>),
+            Files(Vec<ClosableFile>),
             Buffers(Vec<MemSlice>),
         }
 
