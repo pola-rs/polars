@@ -704,7 +704,7 @@ impl PyLazyFrame {
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
         target, compression, compression_level, statistics, row_group_size, data_page_size,
-        maintain_order, cloud_options, credential_provider, retries, sink_options
+        cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_parquet(
         &self,
@@ -715,7 +715,6 @@ impl PyLazyFrame {
         statistics: Wrap<StatisticsOptions>,
         row_group_size: Option<usize>,
         data_page_size: Option<usize>,
-        maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
@@ -728,7 +727,6 @@ impl PyLazyFrame {
             statistics: statistics.0,
             row_group_size,
             data_page_size,
-            maintain_order,
         };
 
         let cloud_options = {
@@ -766,13 +764,12 @@ impl PyLazyFrame {
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
-    #[pyo3(signature = (target, compression, maintain_order, cloud_options, credential_provider, retries, sink_options))]
+    #[pyo3(signature = (target, compression, cloud_options, credential_provider, retries, sink_options))]
     fn sink_ipc(
         &self,
         py: Python,
         target: SinkTarget,
         compression: Option<Wrap<IpcCompression>>,
-        maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
@@ -780,7 +777,6 @@ impl PyLazyFrame {
     ) -> PyResult<()> {
         let options = IpcWriterOptions {
             compression: compression.map(|c| c.0),
-            maintain_order,
         };
 
         #[cfg(feature = "cloud")]
@@ -822,7 +818,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (
         target, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
-        quote_style, maintain_order, cloud_options, credential_provider, retries, sink_options
+        quote_style, cloud_options, credential_provider, retries, sink_options
     ))]
     fn sink_csv(
         &self,
@@ -841,7 +837,6 @@ impl PyLazyFrame {
         float_precision: Option<usize>,
         null_value: Option<String>,
         quote_style: Option<Wrap<QuoteStyle>>,
-        maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
@@ -866,7 +861,6 @@ impl PyLazyFrame {
         let options = CsvWriterOptions {
             include_bom,
             include_header,
-            maintain_order,
             batch_size,
             serialize_options,
         };
@@ -908,18 +902,17 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "json"))]
-    #[pyo3(signature = (target, maintain_order, cloud_options, credential_provider, retries, sink_options))]
+    #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options))]
     fn sink_json(
         &self,
         py: Python,
         target: SinkTarget,
-        maintain_order: bool,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
     ) -> PyResult<()> {
-        let options = JsonWriterOptions { maintain_order };
+        let options = JsonWriterOptions {};
 
         let cloud_options = {
             let cloud_options = parse_cloud_options(

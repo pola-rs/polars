@@ -2528,6 +2528,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",
+            "maintain_order": maintain_order,
         }
 
         return lf.sink_parquet(
@@ -2537,7 +2538,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             statistics=statistics,
             row_group_size=row_group_size,
             data_page_size=data_page_size,
-            maintain_order=maintain_order,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
@@ -2673,12 +2673,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",
+            "maintain_order": maintain_order,
         }
 
         return lf.sink_ipc(
             target=target,
             compression=compression,
-            maintain_order=maintain_order,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
@@ -2881,6 +2881,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",
+            "maintain_order": maintain_order,
         }
 
         return lf.sink_csv(
@@ -2898,7 +2899,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             float_precision=float_precision,
             null_value=null_value,
             quote_style=quote_style,
-            maintain_order=maintain_order,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
@@ -3030,11 +3030,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         sink_options = {
             "sync_on_close": sync_on_close or "none",
+            "maintain_order": maintain_order,
         }
 
         return lf.sink_json(
             target=target,
-            maintain_order=maintain_order,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,

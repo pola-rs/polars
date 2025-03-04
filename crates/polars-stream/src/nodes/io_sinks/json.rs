@@ -32,6 +32,9 @@ impl SinkNode for NDJsonSinkNode {
     fn is_sink_input_parallel(&self) -> bool {
         true
     }
+    fn do_maintain_order(&self) -> bool {
+        self.sink_options.maintain_order
+    }
 
     fn spawn_sink(
         &mut self,
@@ -59,8 +62,11 @@ impl SinkNode for NDJsonSinkNode {
         // .. -> Encode task
         let rxs = recv_port.parallel();
         // Encode tasks -> IO task
-        let (mut lin_rx, lin_txs) =
-            Linearizer::<Linearized>::new(num_pipelines, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE);
+        let (mut lin_rx, lin_txs) = Linearizer::<Linearized>::new_with_maintain_order(
+            num_pipelines,
+            DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+            self.sink_options.maintain_order,
+        );
 
         // 16MB
         const DEFAULT_ALLOCATION_SIZE: usize = 1 << 24;
