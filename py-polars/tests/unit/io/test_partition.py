@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from typing import TYPE_CHECKING, Any, TypedDict
 
 import pytest
@@ -51,7 +52,7 @@ def test_max_size_partition(
         MaxSizePartitioning(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
     )
 
-    # We need to fsync here because platforms do not guarantee that a close on
+    # We need to sync here because platforms do not guarantee that a close on
     # one thread is immediately visible on another thread.
     #
     # "Multithreaded processes and close()"
