@@ -1,3 +1,5 @@
+use polars_compute::rolling::QuantileMethod;
+
 use super::*;
 use crate::prelude::*;
 

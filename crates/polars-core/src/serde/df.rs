@@ -74,7 +74,6 @@ impl DataFrame {
 
     pub fn deserialize_from_reader(reader: &mut dyn std::io::Read) -> PolarsResult<Self> {
         let mut md = read_stream_metadata(reader)?;
-        let arrow_schema = md.schema.clone();
 
         let custom_metadata = md.custom_schema_metadata.take();
 
@@ -82,7 +81,7 @@ impl DataFrame {
         let dfs = reader
             .into_iter()
             .map_while(|batch| match batch {
-                Ok(StreamState::Some(batch)) => Some(DataFrame::try_from((batch, &arrow_schema))),
+                Ok(StreamState::Some(batch)) => Some(Ok(DataFrame::from(batch))),
                 Ok(StreamState::Waiting) => None,
                 Err(e) => Some(Err(e)),
             })

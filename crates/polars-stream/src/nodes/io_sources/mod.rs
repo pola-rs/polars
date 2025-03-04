@@ -8,7 +8,7 @@ use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::ScanIOPredicate;
-use polars_utils::index::AtomicIdxSize;
+use polars_utils::IdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
 use crate::async_executor::AbortOnDropHandle;
@@ -20,6 +20,8 @@ pub mod csv;
 #[cfg(feature = "ipc")]
 pub mod ipc;
 pub mod multi_scan;
+#[cfg(feature = "json")]
+pub mod ndjson;
 #[cfg(feature = "parquet")]
 pub mod parquet;
 
@@ -174,6 +176,7 @@ impl PhaseOutcomeToken {
     pub fn was_stopped(&self) -> bool {
         self.stop.load(Ordering::Relaxed)
     }
+
     /// Returns whether the phase was finished completely.
     pub fn did_finish(&self) -> bool {
         !self.was_stopped()
@@ -280,6 +283,6 @@ pub trait SourceNode: Sized + Send + Sync {
         output_recv: Receiver<SourceOutput>,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unrestricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     );
 }

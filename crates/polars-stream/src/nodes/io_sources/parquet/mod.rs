@@ -1,7 +1,5 @@
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
-use mem_prefetch_funcs::get_memory_prefetch_func;
 use polars_core::config;
 use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
@@ -11,14 +9,14 @@ use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
-use polars_io::RowIndex;
-use polars_parquet::read::read_metadata;
+use polars_io::{pl_async, RowIndex};
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::{ScanSource, ScanSources};
 use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
+use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
 
@@ -33,7 +31,6 @@ use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
 mod init;
-mod mem_prefetch_funcs;
 mod metadata_fetch;
 mod metadata_utils;
 mod row_group_data_fetch;
@@ -154,7 +151,7 @@ impl SourceNode for ParquetSourceNode {
         mut output_recv: Receiver<SourceOutput>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-        unresistricted_row_count: Option<Arc<AtomicIdxSize>>,
+        unrestricted_row_count: Option<tokio::sync::oneshot::Sender<IdxSize>>,
     ) {
         let (mut send_to, recv_from) = (0..num_pipelines)
             .map(|_| connector())
@@ -193,10 +190,10 @@ impl SourceNode for ParquetSourceNode {
         let mut morsel_stream_starter = self.morsel_stream_starter.take();
 
         join_handles.push(spawn(TaskPriority::Low, async move {
-            if let Some(rc) = unresistricted_row_count {
+            if let Some(rc) = unrestricted_row_count {
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))?;
-                rc.store(num_rows, Ordering::Relaxed);
+                _ = rc.send(num_rows);
             }
 
             if let Some(v) = morsel_stream_starter.take() {
@@ -280,9 +277,40 @@ impl MultiScanable for ParquetSourceNode {
         cloud_options: Option<&CloudOptions>,
         row_index: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
-        let source = source.into_sources();
-        let memslice = source.at(0).to_memslice()?;
-        let file_metadata = read_metadata(&mut std::io::Cursor::new(memslice.as_ref()))?;
+        let scan_sources = source.into_sources();
+
+        let verbose = config::verbose();
+
+        let scan_sources_2 = scan_sources.clone();
+        let cloud_options_2 = cloud_options.cloned();
+
+        // TODO: Use _opt_full_bytes if it is Some(_)
+        let (metadata_bytes, _opt_full_bytes) = pl_async::get_runtime()
+            .spawn(async move {
+                let scan_sources = scan_sources_2;
+                let cloud_options = cloud_options_2;
+                let source = scan_sources.at(0);
+
+                let byte_source = source
+                    .to_dyn_byte_source(
+                        &if scan_sources.is_cloud_url() || config::force_async() {
+                            DynByteSourceBuilder::ObjectStore
+                        } else {
+                            DynByteSourceBuilder::Mmap
+                        },
+                        cloud_options.as_ref(),
+                    )
+                    .await?;
+
+                metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
+            })
+            .await
+            .unwrap()?;
+
+        let file_metadata = polars_parquet::parquet::read::deserialize_metadata(
+            metadata_bytes.as_ref(),
+            metadata_bytes.len() * 2 + 1024,
+        )?;
 
         let arrow_schema = infer_schema_with_options(&file_metadata, &None)?;
         let arrow_schema = Arc::new(arrow_schema);
@@ -305,7 +333,7 @@ impl MultiScanable for ParquetSourceNode {
         );
 
         Ok(ParquetSourceNode::new(
-            source,
+            scan_sources,
             file_info,
             None,
             options,
@@ -335,12 +363,12 @@ impl MultiScanable for ParquetSourceNode {
     }
     fn with_row_restriction(&mut self, row_restriction: Option<RowRestriction>) {
         self.predicate = None;
-        self.file_options.slice = None;
+        self.file_options.pre_slice = None;
 
         if let Some(row_restriction) = row_restriction {
             match row_restriction {
                 RowRestriction::Slice(slice) => {
-                    self.file_options.slice = Some((slice.start as i64, slice.len()));
+                    self.file_options.pre_slice = Some((slice.start as i64, slice.len()));
                 },
                 // @TODO: Cache
                 RowRestriction::Predicate(scan_predicate) => {

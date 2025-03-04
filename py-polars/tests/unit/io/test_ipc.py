@@ -9,7 +9,7 @@ import pytest
 
 import polars as pl
 from polars.interchange.protocol import CompatLevel
-from polars.testing import assert_frame_equal
+from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -441,3 +441,17 @@ def test_categorical_lexical_sort_2732() -> None:
     df.write_ipc(f)
     f.seek(0)
     assert_frame_equal(df, pl.read_ipc(f))
+
+
+def test_enum_scan_21564() -> None:
+    s = pl.Series("a", ["A"], pl.Enum(["A"]))
+
+    # DataFrame with a an enum field
+    f = io.BytesIO()
+    s.to_frame().write_ipc(f)
+
+    f.seek(0)
+    assert_series_equal(
+        pl.scan_ipc(f).collect().to_series(),
+        s,
+    )

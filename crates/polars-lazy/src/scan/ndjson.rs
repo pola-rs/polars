@@ -123,7 +123,7 @@ impl LazyJsonLineReader {
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
         let file_options = FileScanOptions {
-            slice: self.n_rows.map(|x| (0, x)),
+            pre_slice: self.n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
             row_index: self.row_index,

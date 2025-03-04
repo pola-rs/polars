@@ -41,7 +41,12 @@ impl IpcExec {
                 polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
             })
         } else {
-            self.read_sync()?
+            self.read_sync().map_err(|e| match &self.sources {
+                ScanSources::Paths(paths) => {
+                    e.context(format!("reading paths {:?} failed", paths.as_ref()).into())
+                },
+                _ => e,
+            })?
         };
 
         if self.file_options.rechunk {
@@ -58,7 +63,7 @@ impl IpcExec {
         if config::verbose() {
             eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
-                self.file_options.slice.map(|x| {
+                self.file_options.pre_slice.map(|x| {
                     assert_eq!(x.0, 0);
                     x.1
                 }).as_ref(),
@@ -108,7 +113,7 @@ impl IpcExec {
                 .finish()
         };
 
-        let mut dfs = if let Some(mut n_rows) = self.file_options.slice.map(|x| {
+        let mut dfs = if let Some(mut n_rows) = self.file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         }) {
@@ -204,7 +209,7 @@ impl ScanExec for IpcExec {
         row_index: Option<polars_io::RowIndex>,
     ) -> PolarsResult<DataFrame> {
         self.file_options.with_columns = with_columns;
-        self.file_options.slice = slice.map(|(s, l)| (s as i64, l));
+        self.file_options.pre_slice = slice.map(|(s, l)| (s as i64, l));
         self.predicate = predicate;
         self.file_options.row_index = row_index;
 

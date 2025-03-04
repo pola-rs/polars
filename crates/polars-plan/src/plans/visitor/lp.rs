@@ -65,7 +65,8 @@ impl TreeWalker for IRNode {
 
         self.to_alp(&arena.0).copy_inputs(&mut scratch);
         for &node in scratch.as_slice() {
-            let lp_node = IRNode::new(node);
+            let mut lp_node = IRNode::new(node);
+            lp_node.mutate = self.mutate;
             match op(&lp_node, arena)? {
                 // let the recursion continue
                 VisitRecursion::Continue | VisitRecursion::Skip => {},
@@ -90,7 +91,8 @@ impl TreeWalker for IRNode {
 
         // rewrite the nodes
         for node in &mut inputs {
-            let lp_node = IRNode::new(*node);
+            let mut lp_node = IRNode::new(*node);
+            lp_node.mutate = self.mutate;
             *node = op(lp_node, arena)?.node;
         }
         let lp = arena.0.get(self.node);

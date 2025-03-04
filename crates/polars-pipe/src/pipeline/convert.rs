@@ -183,6 +183,7 @@ where
                 #[allow(unused_variables)]
                 SinkType::File {
                     path,
+                    sink_options: _,
                     file_type,
                     cloud_options,
                 } => {
@@ -221,6 +222,9 @@ where
                         #[allow(unreachable_patterns)]
                         _ => unreachable!(),
                     }
+                },
+                SinkType::Partition { .. } => {
+                    polars_bail!(InvalidOperation: "partitioning sink not supported in old streaming engine")
                 },
             }
         },
@@ -279,7 +283,7 @@ where
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
-                                options.args.join_nulls,
+                                options.args.nulls_equal,
                                 node,
                                 // We don't need the key names for these joins.
                                 vec![].into(),
@@ -306,7 +310,7 @@ where
                                 swapped,
                                 join_columns_left,
                                 join_columns_right,
-                                options.args.join_nulls,
+                                options.args.nulls_equal,
                                 node,
                                 key_names_left,
                                 key_names_right,

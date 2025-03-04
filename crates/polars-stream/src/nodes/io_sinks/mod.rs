@@ -1,14 +1,23 @@
+use std::{fs, io};
+
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use polars_core::config;
+use polars_core::frame::DataFrame;
+use polars_core::prelude::Column;
+use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_plan::dsl::SyncOnCloseType;
 
 use super::io_sources::PhaseOutcomeToken;
-use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskScope};
+use super::{
+    ComputeNode, JoinHandle, Morsel, PhaseOutcome, PortState, RecvPort, SendPort, TaskScope,
+};
 use crate::async_executor::{spawn, AbortOnDropHandle};
 use crate::async_primitives::connector::{connector, Receiver, Sender};
-use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::async_primitives::distributor_channel;
+use crate::async_primitives::wait_group::WaitGroup;
 use crate::nodes::TaskPriority;
 
 #[cfg(feature = "csv")]
@@ -19,24 +28,20 @@ pub mod ipc;
 pub mod json;
 #[cfg(feature = "parquet")]
 pub mod parquet;
+pub mod partition;
+
+// This needs to be low to increase the backpressure.
+const DEFAULT_SINK_LINEARIZER_BUFFER_SIZE: usize = 1;
+const DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE: usize = 1;
 
 pub enum SinkInputPort {
     Serial(Receiver<Morsel>),
     Parallel(Vec<Receiver<Morsel>>),
 }
 
-pub struct SinkInput {
-    pub outcome: PhaseOutcomeToken,
-    pub port: SinkInputPort,
-
-    #[allow(unused)]
-    /// Dropping this indicates that the phase is done.
-    wait_token: WaitToken,
-}
-
 pub struct SinkRecvPort {
     num_pipelines: usize,
-    recv: Receiver<SinkInput>,
+    recv: Receiver<(PhaseOutcome, SinkInputPort)>,
 }
 
 impl SinkInputPort {
@@ -56,71 +61,131 @@ impl SinkInputPort {
 }
 
 impl SinkRecvPort {
-    #[allow(clippy::type_complexity)]
     pub fn parallel(
         mut self,
-    ) -> (
-        JoinHandle<PolarsResult<()>>,
-        Vec<Receiver<(WaitToken, PhaseOutcomeToken, Receiver<Morsel>)>>,
-    ) {
-        let (mut rx_senders, rx_receivers) = (0..self.num_pipelines)
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) -> Vec<Receiver<Morsel>> {
+        let (txs, rxs) = (0..self.num_pipelines)
             .map(|_| connector())
             .collect::<(Vec<_>, Vec<_>)>();
-        let handle = spawn(TaskPriority::High, async move {
-            let wg = WaitGroup::default();
+        let (mut pass_txs, pass_rxs) = (0..self.num_pipelines)
+            .map(|_| connector())
+            .collect::<(Vec<_>, Vec<_>)>();
+        let mut outcomes = Vec::<PhaseOutcomeToken>::with_capacity(self.num_pipelines);
+        let wg = WaitGroup::default();
 
-            while let Ok(input) = self.recv.recv().await {
-                let inputs = input.port.parallel();
-
-                let mut outcomes = Vec::with_capacity(inputs.len());
-                for (input, rx_sender) in inputs.into_iter().zip(rx_senders.iter_mut()) {
-                    let outcome = PhaseOutcomeToken::new();
-                    if rx_sender
-                        .send((wg.token(), outcome.clone(), input))
-                        .await
-                        .is_err()
-                    {
+        join_handles.push(spawn(TaskPriority::High, async move {
+            while let Ok((outcome, port_rxs)) = self.recv.recv().await {
+                let port_rxs = port_rxs.parallel();
+                for (pass_tx, port_rx) in pass_txs.iter_mut().zip(port_rxs) {
+                    let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
+                    if pass_tx.send((outcome, port_rx)).await.is_err() {
                         return Ok(());
                     }
-                    outcomes.push(outcome);
+                    outcomes.push(token);
                 }
 
                 wg.wait().await;
-                for outcome in outcomes {
-                    if outcome.did_finish() {
+                for outcome_token in &outcomes {
+                    if outcome_token.did_finish() {
                         return Ok(());
                     }
                 }
-                input.outcome.stop();
+                outcomes.clear();
+                outcome.stopped();
             }
 
             Ok(())
-        });
+        }));
+        join_handles.extend(pass_rxs.into_iter().zip(txs).map(|(mut pass_rx, mut tx)| {
+            spawn(TaskPriority::High, async move {
+                while let Ok((outcome, mut rx)) = pass_rx.recv().await {
+                    while let Ok(morsel) = rx.recv().await {
+                        if tx.send(morsel).await.is_err() {
+                            return Ok(());
+                        }
+                    }
+                    outcome.stopped();
+                }
+                Ok(())
+            })
+        }));
 
-        (handle, rx_receivers)
+        rxs
     }
-    fn serial(self) -> Receiver<SinkInput> {
-        self.recv
+
+    /// Serialize the input and allow for long lived lasts to listen to a constant channel.
+    pub fn serial(
+        mut self,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    ) -> Receiver<Morsel> {
+        let (mut tx, rx) = connector();
+        join_handles.push(spawn(TaskPriority::High, async move {
+            while let Ok((outcome, port_rx)) = self.recv.recv().await {
+                let mut port_rx = port_rx.serial();
+                while let Ok(morsel) = port_rx.recv().await {
+                    if tx.send(morsel).await.is_err() {
+                        return Ok(());
+                    }
+                }
+                outcome.stopped();
+            }
+            Ok(())
+        }));
+        rx
     }
 }
 
-impl SinkInput {
-    pub fn from_port(port: SinkInputPort) -> (PhaseOutcomeToken, WaitGroup, Self) {
-        let outcome = PhaseOutcomeToken::new();
-        let wait_group = WaitGroup::default();
+/// Spawn a task that linearizes and buffers morsels until a given a maximum chunk size is reached
+/// and then distributes the columns amongst worker tasks.
+fn buffer_and_distribute_columns_task(
+    mut rx: Receiver<Morsel>,
+    mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
+    chunk_size: usize,
+    schema: SchemaRef,
+) -> JoinHandle<PolarsResult<()>> {
+    spawn(TaskPriority::High, async move {
+        let mut seq = 0usize;
+        let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
-        let input = Self {
-            outcome: outcome.clone(),
-            wait_token: wait_group.token(),
-            port,
-        };
-        (outcome, wait_group, input)
-    }
+        while let Ok(morsel) = rx.recv().await {
+            let (df, _, _, consume_token) = morsel.into_inner();
+            // @NOTE: This also performs schema validation.
+            buffer.vstack_mut(&df)?;
+
+            while buffer.height() >= chunk_size {
+                let df;
+                (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+
+                for (i, column) in df.take_columns().into_iter().enumerate() {
+                    if dist_tx.send((seq, i, column)).await.is_err() {
+                        return Ok(());
+                    }
+                }
+                seq += 1;
+            }
+            drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
+                                 // morsel has started encoding in its entirety. This still
+                                 // allows for parallelism of Morsels, but prevents large
+                                 // bunches of Morsels from stacking up here.
+        }
+
+        // Flush the remaining rows.
+        assert!(buffer.height() <= chunk_size);
+        for (i, column) in buffer.take_columns().into_iter().enumerate() {
+            if dist_tx.send((seq, i, column)).await.is_err() {
+                return Ok(());
+            }
+        }
+
+        PolarsResult::Ok(())
+    })
 }
 
 pub trait SinkNode {
     fn name(&self) -> &str;
     fn is_sink_input_parallel(&self) -> bool;
+
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
@@ -128,11 +193,18 @@ pub trait SinkNode {
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
+    fn spawn_sink_once(
+        &mut self,
+        num_pipelines: usize,
+        recv_ports_recv: SinkInputPort,
+        state: &ExecutionState,
+        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    );
 }
 
 /// The state needed to manage a spawned [`SinkNode`].
 struct StartedSinkComputeNode {
-    input_send: Sender<SinkInput>,
+    input_send: Sender<(PhaseOutcome, SinkInputPort)>,
     join_handles: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>,
 }
 
@@ -227,6 +299,7 @@ impl ComputeNode for SinkComputeNode {
             }
         });
 
+        let wait_group = WaitGroup::default();
         let recv = recv_ports[0].take().unwrap();
         let sink_input = if self.sink.is_sink_input_parallel() {
             SinkInputPort::Parallel(recv.parallel())
@@ -234,11 +307,11 @@ impl ComputeNode for SinkComputeNode {
             SinkInputPort::Serial(recv.serial())
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            let (outcome, wait_group, sink_input) = SinkInput::from_port(sink_input);
-            if started.input_send.send(sink_input).await.is_ok() {
+            let (token, outcome) = PhaseOutcome::new_shared_wait(wait_group.token());
+            if started.input_send.send((outcome, sink_input)).await.is_ok() {
                 // Wait for the phase to finish.
                 wait_group.wait().await;
-                if !outcome.did_finish() {
+                if !token.did_finish() {
                     return Ok(());
                 }
 
@@ -254,5 +327,24 @@ impl ComputeNode for SinkComputeNode {
 
             Ok(())
         }));
+    }
+}
+
+pub fn sync_on_close(sync_on_close: SyncOnCloseType, file: &mut fs::File) -> io::Result<()> {
+    match sync_on_close {
+        SyncOnCloseType::None => Ok(()),
+        SyncOnCloseType::Data => file.sync_data(),
+        SyncOnCloseType::All => file.sync_all(),
+    }
+}
+
+pub async fn tokio_sync_on_close(
+    sync_on_close: SyncOnCloseType,
+    file: &mut tokio::fs::File,
+) -> io::Result<()> {
+    match sync_on_close {
+        SyncOnCloseType::None => Ok(()),
+        SyncOnCloseType::Data => file.sync_data().await,
+        SyncOnCloseType::All => file.sync_all().await,
     }
 }

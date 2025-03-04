@@ -11,7 +11,7 @@ mod private {
     use polars_error::PolarsResult;
 
     use super::MMapSemaphore;
-    use crate::mem::prefetch_l2;
+    use crate::mem::prefetch::prefetch_l2;
 
     /// A read-only reference to a slice of memory that can potentially be memory-mapped.
     ///

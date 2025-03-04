@@ -171,7 +171,7 @@ def read_csv(
         Stop reading from CSV file after reading `n_rows`.
         During multi-threaded parsing, an upper bound of `n_rows`
         rows cannot be guaranteed.
-    encoding : {'utf8', 'utf8-lossy', ...}
+    encoding : {'utf8', 'utf8-lossy', 'windows-1252', 'windows-1252-lossy', ...}
         Lossy means that invalid utf8 values are replaced with `�`
         characters. When using other encodings than `utf8` or
         `utf8-lossy`, the input is first decoded in memory with

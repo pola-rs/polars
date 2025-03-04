@@ -43,7 +43,7 @@ impl CsvSource {
             .ok_or_else(|| polars_err!(nyi = "Streaming scanning of in-memory buffers"))?;
         let file_options = self.file_options.clone();
 
-        let n_rows = file_options.slice.map(|x| {
+        let n_rows = file_options.pre_slice.map(|x| {
             assert_eq!(x.0, 0);
             x.1
         });
@@ -82,7 +82,7 @@ impl CsvSource {
         };
         let n_rows = _set_n_rows_for_scan(
             file_options
-                .slice
+                .pre_slice
                 .map(|x| {
                     assert_eq!(x.0, 0);
                     x.1

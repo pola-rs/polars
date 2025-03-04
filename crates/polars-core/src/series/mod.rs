@@ -17,6 +17,7 @@ macro_rules! invalid_operation_panic {
 pub mod amortized_iter;
 mod any_value;
 pub mod arithmetic;
+pub mod builder;
 mod comparison;
 mod from;
 pub mod implementations;

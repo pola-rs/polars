@@ -291,7 +291,7 @@ impl MultiScanExec {
 
         let allow_missing_columns = self.file_options.allow_missing_columns;
         self.file_options.allow_missing_columns = false;
-        let slice = self.file_options.slice.take();
+        let slice = self.file_options.pre_slice.take();
 
         let mut first_slice_file = None;
         let mut slice = match slice {
