@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Any, TypedDict
 import pytest
 
 import polars as pl
-from polars.io.partition import MaxSizePartitioning
+from polars.io.partition import PartitionMaxSize
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,7 +43,7 @@ def test_max_size_partition(
     monkeypatch.setenv("POLARS_FORCE_NEW_STREAMING", "1")
     (io_type["sink"])(
         lf,
-        MaxSizePartitioning(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
+        PartitionMaxSize(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
         #
