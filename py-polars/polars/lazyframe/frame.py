@@ -156,7 +156,10 @@ def _gpu_engine_callback(
     _eager: bool,
 ) -> Callable[[Any, int | None], None] | None:
     is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
-    if not (is_config_obj or engine in ("cpu", "in-memory", "streaming", "old-streaming", "gpu")):
+    if not (
+        is_config_obj
+        or engine in ("cpu", "in-memory", "streaming", "old-streaming", "gpu")
+    ):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)
     if (streaming or background or new_streaming) and is_gpu:
