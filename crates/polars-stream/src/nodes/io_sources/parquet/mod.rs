@@ -13,7 +13,6 @@ use polars_io::RowIndex;
 use polars_parquet::read::read_metadata;
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::{ScanSource, ScanSources};
-use polars_plan::plans::hive::HivePartitions;
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
 use polars_utils::index::AtomicIdxSize;
@@ -46,7 +45,6 @@ type AsyncTaskData = (
 pub struct ParquetSourceNode {
     scan_sources: ScanSources,
     file_info: FileInfo,
-    hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
@@ -110,7 +108,6 @@ impl ParquetSourceNode {
         Self {
             scan_sources,
             file_info,
-            hive_parts: None,
             predicate,
             options,
             cloud_options,
