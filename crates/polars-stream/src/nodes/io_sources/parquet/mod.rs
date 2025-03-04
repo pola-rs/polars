@@ -278,23 +278,30 @@ impl MultiScanable for ParquetSourceNode {
         row_index: Option<PlSmallStr>,
     ) -> PolarsResult<Self> {
         let scan_sources = source.into_sources();
-        let source = scan_sources.at(0);
-        let byte_source = source
-            .to_dyn_byte_source(
-                &if scan_sources.is_cloud_url() || config::force_async() {
-                    DynByteSourceBuilder::ObjectStore
-                } else {
-                    DynByteSourceBuilder::Mmap
-                },
-                cloud_options,
-            )
-            .await?;
 
         let verbose = config::verbose();
+
+        let scan_sources_2 = scan_sources.clone();
+        let cloud_options_2 = cloud_options.cloned();
 
         // TODO: Use _opt_full_bytes if it is Some(_)
         let (metadata_bytes, _opt_full_bytes) = pl_async::get_runtime()
             .spawn(async move {
+                let scan_sources = scan_sources_2;
+                let cloud_options = cloud_options_2;
+                let source = scan_sources.at(0);
+
+                let byte_source = source
+                    .to_dyn_byte_source(
+                        &if scan_sources.is_cloud_url() || config::force_async() {
+                            DynByteSourceBuilder::ObjectStore
+                        } else {
+                            DynByteSourceBuilder::Mmap
+                        },
+                        cloud_options.as_ref(),
+                    )
+                    .await?;
+
                 metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
             })
             .await
