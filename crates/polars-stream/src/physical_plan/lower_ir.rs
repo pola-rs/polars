@@ -447,6 +447,7 @@ pub fn lower_ir(
                                 #[cfg(feature = "csv")]
                                 FileScan::Csv { options, .. } => {
                                     // Note: We dispatch negative slice to separate node.
+                                    #[allow(clippy::nonminimal_bool)]
                                     if options.parse_options.comment_prefix.is_none()
                                         && !file_options
                                             .pre_slice
