@@ -127,7 +127,7 @@ if TYPE_CHECKING:
         SchemaDict,
         SerializationFormat,
         StartBy,
-        SyncOnClose,
+        SyncOnCloseMethod,
         UniqueKeepStrategy,
     )
     from polars.dependencies import numpy as np
@@ -2368,7 +2368,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | Literal["auto"]
         | None = "auto",
         retries: int = 2,
-        sync_on_close: SyncOnClose = "none",
+        sync_on_close: SyncOnCloseMethod | None = None,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2461,10 +2461,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
-        sync_on_close
-            Sync to disk when before closing a file..
+        sync_on_close: { None, 'data', 'all' }
+            Sync to disk when before closing a file.
 
-            * `none` does not sync.
+            * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
 
@@ -2527,7 +2527,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target = normalize_filepath(path)
 
         sink_options = {
-            "sync_on_close": sync_on_close,
+            "sync_on_close": sync_on_close or "none",
         }
 
         return lf.sink_parquet(
@@ -2564,7 +2564,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | Literal["auto"]
         | None = "auto",
         retries: int = 2,
-        sync_on_close: SyncOnClose = "none",
+        sync_on_close: SyncOnCloseMethod | None = None,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -2623,10 +2623,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
-        sync_on_close
-            Sync to disk when before closing a file..
+        sync_on_close: { None, 'data', 'all' }
+            Sync to disk when before closing a file.
 
-            * `none` does not sync.
+            * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
 
@@ -2672,7 +2672,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target = path
 
         sink_options = {
-            "sync_on_close": sync_on_close,
+            "sync_on_close": sync_on_close or "none",
         }
 
         return lf.sink_ipc(
@@ -2717,7 +2717,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | Literal["auto"]
         | None = "auto",
         retries: int = 2,
-        sync_on_close: SyncOnClose = "none",
+        sync_on_close: SyncOnCloseMethod | None = None,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
@@ -2824,10 +2824,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
-        sync_on_close
-            Sync to disk when before closing a file..
+        sync_on_close: { None, 'data', 'all' }
+            Sync to disk when before closing a file.
 
-            * `none` does not sync.
+            * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
 
@@ -2880,7 +2880,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target = normalize_filepath(path)
 
         sink_options = {
-            "sync_on_close": sync_on_close,
+            "sync_on_close": sync_on_close or "none",
         }
 
         return lf.sink_csv(
@@ -2924,7 +2924,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | Literal["auto"]
         | None = "auto",
         retries: int = 2,
-        sync_on_close: SyncOnClose = "none",
+        sync_on_close: SyncOnCloseMethod | None = None,
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
@@ -2980,10 +2980,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 at any point without it being considered a breaking change.
         retries
             Number of retries if accessing a cloud instance fails.
-        sync_on_close
-            Sync to disk when before closing a file..
+        sync_on_close: { None, 'data', 'all' }
+            Sync to disk when before closing a file.
 
-            * `none` does not sync.
+            * `None` does not sync.
             * `data` syncs the file contents.
             * `all` syncs the file contents and metadata.
 
@@ -3029,7 +3029,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             target = path
 
         sink_options = {
-            "sync_on_close": sync_on_close,
+            "sync_on_close": sync_on_close or "none",
         }
 
         return lf.sink_json(

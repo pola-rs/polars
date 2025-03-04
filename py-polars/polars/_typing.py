@@ -150,7 +150,7 @@ StartBy: TypeAlias = Literal[
     "saturday",
     "sunday",
 ]
-SyncOnClose: TypeAlias = Literal["none", "data", "all"]
+SyncOnCloseMethod: TypeAlias = Literal["data", "all"]
 TimeUnit: TypeAlias = Literal["ns", "us", "ms"]
 UnicodeForm: TypeAlias = Literal["NFC", "NFKC", "NFD", "NFKD"]
 UniqueKeepStrategy: TypeAlias = Literal["first", "last", "any", "none"]
