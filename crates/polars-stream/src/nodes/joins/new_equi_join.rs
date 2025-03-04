@@ -5,22 +5,19 @@ use crossbeam_queue::ArrayQueue;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
     use polars_utils::sync::SyncPtr;
-use polars_core::series::IsSorted;
-use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::{config, POOL};
 use polars_expr::idx_table::{new_idx_table, IdxTable};
 use polars_expr::hash_keys::HashKeys;
 use polars_io::pl_async::get_runtime;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
-use polars_ops::prelude::TakeChunked;
 use polars_ops::series::coalesce_columns;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
-    use arrow::array::builder::ShareStrategy;
-    use polars_core::frame::builder::DataFrameBuilder;
+use arrow::array::builder::ShareStrategy;
+use polars_core::frame::builder::DataFrameBuilder;
 use rayon::prelude::*;
 
 use crate::async_primitives::connector::{connector, Receiver, Sender};
@@ -668,6 +665,9 @@ impl ProbeState {
             probe_payload_schema = &params.left_payload_schema;
         };
 
+        let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
+        let mut probe_out = DataFrameBuilder::new(probe_payload_schema.clone());
+
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
@@ -691,10 +691,17 @@ impl ProbeState {
                 if params.preserve_order_probe {
                     todo!()
                 } else {
-                    let mut out_frames = Vec::new();
-                    let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
-                    let mut probe_out = DataFrameBuilder::new(probe_payload_schema.clone());
-                    let mut out_len = 0;
+                    let new_morsel = |mut build_df: DataFrame, mut probe_df: DataFrame| {
+                        let out_df = if params.left_is_build.unwrap() {
+                            build_df.hstack_mut_unchecked(probe_df.get_columns());
+                            build_df
+                        } else {
+                            probe_df.hstack_mut_unchecked(build_df.get_columns());
+                            probe_df
+                        };
+                        let out_df = postprocess_join(out_df, params);
+                        Morsel::new(out_df, seq, src_token.clone())
+                    };
 
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
@@ -706,7 +713,7 @@ impl ProbeState {
                                 &mut probe_match,
                                 mark_matches,
                                 emit_unmatched,
-                                probe_limit - out_len,
+                                probe_limit - probe_out.len() as IdxSize,
                             ) as usize;
 
                             if table_match.is_empty() {
@@ -725,42 +732,19 @@ impl ProbeState {
                             }
                             probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
                             
-                            if probe_out.len() >= probe_limit {
-                                let out_df = if params.left_is_build.unwrap() {
-                                    build_df.hstack_mut_unchecked(probe_df.get_columns());
-                                    build_df
-                                } else {
-                                    probe_df.hstack_mut_unchecked(build_df.get_columns());
-                                    probe_df
-                                };
-                                let out_df = postprocess_join(out_df, params);
-
-                            }
-
-
-                            out_len = out_len
-                                .checked_add(out_df.height().try_into().unwrap())
-                                .unwrap();
-                            out_frames.push(out_df);
-
-                            if out_len >= probe_limit {
-                                out_len = 0;
-                                let df =
-                                    accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
-                                let out_morsel = Morsel::new(df, seq, src_token.clone());
+                            if probe_out.len() >= probe_limit as usize {
+                                let out_morsel = new_morsel(build_out.freeze_reset(), probe_out.freeze_reset());
                                 if send.send(out_morsel).await.is_err() {
-                                    break;
+                                    return Ok(max_seq);
                                 }
                             }
                         }
                     }
-                    */
 
-                    if out_len > 0 {
-                        let df = accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
-                        let out_morsel = Morsel::new(df, seq, src_token.clone());
+                    if !probe_out.is_empty() {
+                        let out_morsel = new_morsel(build_out.freeze_reset(), probe_out.freeze_reset());
                         if send.send(out_morsel).await.is_err() {
-                            break;
+                            return Ok(max_seq);
                         }
                     }
                 }
@@ -771,11 +755,11 @@ impl ProbeState {
 
         Ok(max_seq)
     }
-
+    
     fn ordered_unmatched(
         &mut self,
-        partitioner: &HashPartitioner,
-        params: &EquiJoinParams,
+        _partitioner: &HashPartitioner,
+        _params: &EquiJoinParams,
     ) -> DataFrame {
         todo!()
     }
@@ -804,7 +788,66 @@ impl EmitUnmatchedState {
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
-        todo!()
+        let total_len: usize = self
+            .partitions
+            .iter()
+            .map(|p| p.hash_table.num_keys() as usize)
+            .sum();
+        let ideal_morsel_count = (total_len / get_ideal_morsel_size()).max(1);
+        let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
+        let morsel_size = total_len.div_ceil(morsel_count).max(1);
+
+        let wait_group = WaitGroup::default();
+        let source_token = SourceToken::new();
+        let mut unmarked_idxs = Vec::new();
+        while let Some(p) = self.partitions.get(self.active_partition_idx) {
+            loop {
+                // Generate a chunk of unmarked key indices.
+                self.offset_in_active_p += p.hash_table.unmarked_keys(
+                    &mut unmarked_idxs,
+                    self.offset_in_active_p as IdxSize,
+                    morsel_size as IdxSize,
+                ) as usize;
+                if unmarked_idxs.is_empty() {
+                    break;
+                }
+
+                // Gather and create full-null counterpart.
+                let out_df = unsafe {
+                    let mut build_df =
+                        p.payload.take_slice_unchecked_impl(&unmarked_idxs, false);
+                    let len = build_df.height();
+                    if params.left_is_build.unwrap() {
+                        let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
+                        build_df.hstack_mut_unchecked(probe_df.get_columns());
+                        build_df
+                    } else {
+                        let mut probe_df = DataFrame::full_null(&params.left_payload_schema, len);
+                        probe_df.hstack_mut_unchecked(build_df.get_columns());
+                        probe_df
+                    }
+                };
+                let out_df = postprocess_join(out_df, params);
+
+                // Send and wait until consume token is consumed.
+                let mut morsel = Morsel::new(out_df, self.morsel_seq, source_token.clone());
+                self.morsel_seq = self.morsel_seq.successor();
+                morsel.set_consume_token(wait_group.token());
+                if send.send(morsel).await.is_err() {
+                    return Ok(());
+                }
+
+                wait_group.wait().await;
+                if source_token.stop_requested() {
+                    return Ok(());
+                }
+            }
+
+            self.active_partition_idx += 1;
+            self.offset_in_active_p = 0;
+        }
+
+        Ok(())
     }
 }
 

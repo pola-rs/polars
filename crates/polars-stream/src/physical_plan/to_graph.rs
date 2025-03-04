@@ -9,6 +9,7 @@ use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, Expressio
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
+use polars_ops::frame::MaintainOrderJoin;
 use polars_plan::dsl::{JoinOptions, PartitionVariant};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
@@ -808,21 +809,40 @@ fn to_graph_rec<'a>(
                 .map(|e| create_stream_expr(e, ctx, &right_input_schema))
                 .try_collect_vec()?;
 
-            ctx.graph.add_node(
-                nodes::joins::equi_join::EquiJoinNode::new(
-                    left_input_schema,
-                    right_input_schema,
-                    left_key_schema,
-                    right_key_schema,
-                    left_key_selectors,
-                    right_key_selectors,
-                    args,
-                )?,
-                [
-                    (left_input_key, input_left.port),
-                    (right_input_key, input_right.port),
-                ],
-            )
+            // TODO: implement order-maintaining join in new join impl.
+            if args.maintain_order == MaintainOrderJoin::None {
+                ctx.graph.add_node(
+                    nodes::joins::new_equi_join::EquiJoinNode::new(
+                        left_input_schema,
+                        right_input_schema,
+                        left_key_schema,
+                        right_key_schema,
+                        left_key_selectors,
+                        right_key_selectors,
+                        args,
+                    )?,
+                    [
+                        (left_input_key, input_left.port),
+                        (right_input_key, input_right.port),
+                    ],
+                )
+            } else {
+                ctx.graph.add_node(
+                    nodes::joins::equi_join::EquiJoinNode::new(
+                        left_input_schema,
+                        right_input_schema,
+                        left_key_schema,
+                        right_key_schema,
+                        left_key_selectors,
+                        right_key_selectors,
+                        args,
+                    )?,
+                    [
+                        (left_input_key, input_left.port),
+                        (right_input_key, input_right.port),
+                    ],
+                )
+            }
         },
 
         #[cfg(feature = "merge_sorted")]

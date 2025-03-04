@@ -41,7 +41,7 @@ impl RowEncodedIdxTable {
         if let Some(idxs) = self.idx_map.get(hash, key) {
             for idx in &idxs[..] {
                 // Create matches, making sure to clear top bit.
-                table_match.push(idx.load(Ordering::Relaxed) & !(1 << 63));
+                table_match.push((idx.load(Ordering::Relaxed) & !(1 << 63)) as IdxSize);
                 probe_match.push(key_idx);
             }
 
@@ -148,10 +148,10 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(*hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(AtomicU64::new(idx));
+                        o.into_mut().push(AtomicU64::new(idx as u64));
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![AtomicU64::new(idx)]);
+                        v.insert(unitvec![AtomicU64::new(idx as u64)]);
                     },
                 }
             } else if track_unmatchable {
@@ -176,10 +176,10 @@ impl IdxTable for RowEncodedIdxTable {
             if let Some(key) = key {
                 match self.idx_map.entry(hash, key) {
                     Entry::Occupied(o) => {
-                        o.into_mut().push(AtomicU64::new(idx));
+                        o.into_mut().push(AtomicU64::new(idx as u64));
                     },
                     Entry::Vacant(v) => {
-                        v.insert(unitvec![AtomicU64::new(idx)]);
+                        v.insert(unitvec![AtomicU64::new(idx as u64)]);
                     },
                 }
             } else if track_unmatchable {
@@ -317,7 +317,7 @@ impl IdxTable for RowEncodedIdxTable {
             let first_idx_val = first_idx.load(Ordering::Acquire);
             if first_idx_val >> 63 == 0 {
                 for idx in &idxs[..] {
-                    out.push(idx.load(Ordering::Relaxed) & !(1 << 63));
+                    out.push((idx.load(Ordering::Relaxed) & !(1 << 63)) as IdxSize);
                 }
             }
 
