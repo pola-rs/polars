@@ -691,7 +691,7 @@ impl PyLazyFrame {
     #[cfg(all(feature = "streaming", feature = "parquet"))]
     #[pyo3(signature = (
         target, compression, compression_level, statistics, row_group_size, data_page_size,
-        cloud_options, credential_provider, retries, sink_options
+        cloud_options, credential_provider, retries, sink_options, engine
     ))]
     fn sink_parquet(
         &self,
@@ -706,6 +706,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
+        engine: Wrap<Engine>,
     ) -> PyResult<()> {
         let compression = parse_parquet_compression(compression, compression_level)?;
 
@@ -738,6 +739,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    engine.0,
                 ),
                 SinkTarget::Partition(partition) => ldf.sink_parquet_partitioned(
                     partition.path.as_ref(),
@@ -745,13 +747,16 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    engine.0,
                 ),
             }
         })
     }
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
-    #[pyo3(signature = (target, compression, cloud_options, credential_provider, retries, sink_options))]
+    #[pyo3(signature = (
+        target, compression, cloud_options, credential_provider, retries, sink_options, engine
+    ))]
     fn sink_ipc(
         &self,
         py: Python,
@@ -761,6 +766,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
+        engine: Wrap<Engine>,
     ) -> PyResult<()> {
         let options = IpcWriterOptions {
             compression: compression.map(|c| c.0),
@@ -788,7 +794,7 @@ impl PyLazyFrame {
             let ldf = self.ldf.clone();
             match target {
                 SinkTarget::Path(path) => {
-                    ldf.sink_ipc(path, options, cloud_options, sink_options.0)
+                    ldf.sink_ipc(path, options, cloud_options, sink_options.0, engine.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_ipc_partitioned(
                     partition.path.as_ref(),
@@ -796,6 +802,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    engine.0,
                 ),
             }
         })
@@ -805,7 +812,7 @@ impl PyLazyFrame {
     #[pyo3(signature = (
         target, include_bom, include_header, separator, line_terminator, quote_char, batch_size,
         datetime_format, date_format, time_format, float_scientific, float_precision, null_value,
-        quote_style, cloud_options, credential_provider, retries, sink_options
+        quote_style, cloud_options, credential_provider, retries, sink_options, engine
     ))]
     fn sink_csv(
         &self,
@@ -828,6 +835,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
+        engine: Wrap<Engine>,
     ) -> PyResult<()> {
         let quote_style = quote_style.map_or(QuoteStyle::default(), |wrap| wrap.0);
         let null_value = null_value.unwrap_or(SerializeOptions::default().null);
@@ -874,7 +882,7 @@ impl PyLazyFrame {
             let ldf = self.ldf.clone();
             match target {
                 SinkTarget::Path(path) => {
-                    ldf.sink_csv(path, options, cloud_options, sink_options.0)
+                    ldf.sink_csv(path, options, cloud_options, sink_options.0, engine.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_csv_partitioned(
                     partition.path.as_ref(),
@@ -882,6 +890,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    engine.0,
                 ),
             }
         })
@@ -889,7 +898,7 @@ impl PyLazyFrame {
 
     #[allow(clippy::too_many_arguments)]
     #[cfg(all(feature = "streaming", feature = "json"))]
-    #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options))]
+    #[pyo3(signature = (target, cloud_options, credential_provider, retries, sink_options, engine))]
     fn sink_json(
         &self,
         py: Python,
@@ -898,6 +907,7 @@ impl PyLazyFrame {
         credential_provider: Option<PyObject>,
         retries: usize,
         sink_options: Wrap<SinkOptions>,
+        engine: Wrap<Engine>,
     ) -> PyResult<()> {
         let options = JsonWriterOptions {};
 
@@ -919,7 +929,7 @@ impl PyLazyFrame {
             let ldf = self.ldf.clone();
             match target {
                 SinkTarget::Path(path) => {
-                    ldf.sink_json(path, options, cloud_options, sink_options.0)
+                    ldf.sink_json(path, options, cloud_options, sink_options.0, engine.0)
                 },
                 SinkTarget::Partition(partition) => ldf.sink_json_partitioned(
                     partition.path.as_ref(),
@@ -927,6 +937,7 @@ impl PyLazyFrame {
                     options,
                     cloud_options,
                     sink_options.0,
+                    engine.0,
                 ),
             }
         })

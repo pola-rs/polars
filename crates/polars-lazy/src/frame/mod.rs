@@ -751,7 +751,8 @@ impl LazyFrame {
         #[cfg(feature = "new_streaming")]
         {
             let mut slf = self;
-            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory) {
+            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory, Engine::InMemory)
+            {
                 return Ok(df?.unwrap());
             }
 
@@ -809,6 +810,7 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
@@ -817,6 +819,7 @@ impl LazyFrame {
                 file_type: FileType::Parquet(options),
                 cloud_options,
             },
+            engine,
             "collect().write_parquet()",
         )
     }
@@ -831,6 +834,7 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
@@ -839,6 +843,7 @@ impl LazyFrame {
                 file_type: FileType::Ipc(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ipc()",
         )
     }
@@ -853,6 +858,7 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
@@ -861,6 +867,7 @@ impl LazyFrame {
                 file_type: FileType::Csv(options),
                 cloud_options,
             },
+            engine,
             "collect().write_csv()",
         )
     }
@@ -875,6 +882,7 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::File {
@@ -883,6 +891,7 @@ impl LazyFrame {
                 file_type: FileType::Json(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ndjson()` or `collect().write_json()",
         )
     }
@@ -898,6 +907,7 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -907,6 +917,7 @@ impl LazyFrame {
                 file_type: FileType::Parquet(options),
                 cloud_options,
             },
+            engine,
             "collect().write_parquet()",
         )
     }
@@ -922,6 +933,7 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -931,6 +943,7 @@ impl LazyFrame {
                 file_type: FileType::Ipc(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ipc()",
         )
     }
@@ -946,6 +959,7 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -955,6 +969,7 @@ impl LazyFrame {
                 file_type: FileType::Csv(options),
                 cloud_options,
             },
+            engine,
             "collect().write_csv()",
         )
     }
@@ -970,6 +985,7 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -979,6 +995,7 @@ impl LazyFrame {
                 file_type: FileType::Json(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ndjson()` or `collect().write_json()",
         )
     }
@@ -987,14 +1004,14 @@ impl LazyFrame {
     pub fn try_new_streaming_if_requested(
         &mut self,
         payload: SinkType,
+        engine: Engine,
     ) -> Option<PolarsResult<Option<DataFrame>>> {
         let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
-        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
+        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1")
+            || self.opt_state.contains(OptFlags::NEW_STREAMING)
+            || engine == Engine::Streaming;
 
-        if self.opt_state.contains(OptFlags::NEW_STREAMING)
-            || auto_new_streaming
-            || force_new_streaming
-        {
+        if auto_new_streaming || force_new_streaming {
             // Try to run using the new streaming engine, falling back
             // if it fails in a todo!() error if auto_new_streaming is set.
             let mut new_stream_lazy = self.clone();
@@ -1017,6 +1034,7 @@ impl LazyFrame {
                     &mut alp_plan.expr_arena,
                 )
             };
+
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
                 Ok(v) => return Some(v),
                 Err(e) => {
@@ -1047,20 +1065,28 @@ impl LazyFrame {
         feature = "csv",
         feature = "json",
     ))]
-    fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
+    fn sink(
+        mut self,
+        payload: SinkType,
+        engine: Engine,
+        msg_alternative: &str,
+    ) -> Result<(), PolarsError> {
+        polars_ensure!(engine != Engine::Gpu, InvalidOperation: "sink is not supported for the gpu engine");
+        polars_ensure!(engine != Engine::InMemory, InvalidOperation: "sink is not supported for the in-memory engine");
+
         #[cfg(feature = "new_streaming")]
         {
-            if self
-                .try_new_streaming_if_requested(payload.clone())
-                .is_some()
-            {
-                return Ok(());
+            if let Some(result) = self.try_new_streaming_if_requested(payload.clone(), engine) {
+                return result.map(|_| ());
             }
         }
 
-        if matches!(payload, SinkType::Partition { .. }) {
-            polars_bail!(InvalidOperation: "partition sinks are not supported on the old streaming engine");
-        }
+        assert_ne!(
+            engine,
+            Engine::Streaming,
+            "feature for streaming engine is not active (new_streaming)"
+        );
+        polars_ensure!(!matches!(payload, SinkType::Partition { .. }), InvalidOperation: "partition sinks are not supported on the old streaming engine");
 
         self.logical_plan = DslPlan::Sink {
             input: Arc::new(self.logical_plan),
