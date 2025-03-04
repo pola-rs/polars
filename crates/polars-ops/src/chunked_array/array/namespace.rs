@@ -30,7 +30,7 @@ pub trait ArrayNameSpace: AsArray {
     fn array_lengths(&self) -> Column {
         let ca = self.as_array();
         Series::new(ca.name().clone(), vec![ca.width() as IdxSize; ca.len()]).into_column()
-   }
+    }
 
     fn array_max(&self) -> Series {
         let ca = self.as_array();

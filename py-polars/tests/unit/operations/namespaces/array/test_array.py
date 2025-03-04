@@ -73,6 +73,7 @@ def test_array_lengths() -> None:
     )
     assert_frame_equal(out, expected_df)
 
+
 def test_arr_unique() -> None:
     df = pl.DataFrame(
         {"a": pl.Series("a", [[1, 1], [4, 3]], dtype=pl.Array(pl.Int64, 2))}
