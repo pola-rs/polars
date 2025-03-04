@@ -27,6 +27,16 @@ impl SeriesBuilder {
         }
     }
 
+    pub fn freeze_reset(&mut self, name: PlSmallStr) -> Series {
+        unsafe {
+            Series::from_chunks_and_dtype_unchecked(
+                name,
+                vec![self.builder.freeze_reset()],
+                &self.dtype,
+            )
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.builder.len()
     }

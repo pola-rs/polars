@@ -28,6 +28,9 @@ pub trait StaticArrayBuilder {
     /// Consume this builder returning the built array.
     fn freeze(self) -> Self::Array;
 
+    /// Return the built array and reset to an empty state.
+    fn freeze_reset(&mut self) -> Self::Array;
+
     /// Returns the length of this builder (so far).
     fn len(&self) -> usize;
 
@@ -97,6 +100,11 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
     }
 
     #[inline(always)]
+    fn freeze_reset(&mut self) -> Box<dyn Array> {
+        Box::new(StaticArrayBuilder::freeze_reset(self))
+    }
+
+    #[inline(always)]
     fn len(&self) -> usize {
         StaticArrayBuilder::len(self)
     }
@@ -151,6 +159,9 @@ pub trait ArrayBuilder: ArrayBuilderBoxedHelper {
 
     /// Consume this builder returning the built array.
     fn freeze(self) -> Box<dyn Array>;
+
+    /// Return the built array and reset to an empty state.
+    fn freeze_reset(&mut self) -> Box<dyn Array>;
 
     /// Returns the length of this builder (so far).
     fn len(&self) -> usize;
@@ -225,6 +236,11 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
     #[inline(always)]
     fn freeze(self) -> Box<dyn Array> {
         self.freeze_boxed()
+    }
+
+    #[inline(always)]
+    fn freeze_reset(&mut self) -> Box<dyn Array> {
+        (**self).freeze_reset()
     }
 
     #[inline(always)]

@@ -45,6 +45,13 @@ impl<O: Offset, B: ArrayBuilder> StaticArrayBuilder for ListArrayBuilder<O, B> {
         ListArray::new(self.dtype, offsets, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let offsets = OffsetsBuffer::from(core::mem::take(&mut self.offsets));
+        let values = self.inner_builder.freeze_reset();
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        ListArray::new(self.dtype.clone(), offsets, values, validity)
+    }
+
     fn len(&self) -> usize {
         self.offsets.len()
     }
