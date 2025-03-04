@@ -27,13 +27,10 @@ fn get_agg(ca: &ArrayChunked, agg_type: AggType) -> Series {
 }
 
 pub trait ArrayNameSpace: AsArray {
-    fn array_lengths(&self) -> IdxCa {
+    fn array_lengths(&self) -> Column {
         let ca = self.as_array();
-        IdxCa::from_iter_options(
-            ca.name().clone(),
-            ca.iter().map(|opt_s| opt_s.map(|_| ca.width() as IdxSize)),
-        )
-    }
+        Series::new(ca.name().clone(), vec![ca.width() as IdxSize; ca.len()]).into_column()
+   }
 
     fn array_max(&self) -> Series {
         let ca = self.as_array();

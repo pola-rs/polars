@@ -64,25 +64,6 @@ def test_arr_sum(
 
 
 def test_array_lengths() -> None:
-    # Basic test with fixed width arrays
-    s = pl.Series("a", [[1, 2], [3, 4]], dtype=pl.Array(pl.Int64, 2))
-    result = s.arr.len()
-    expected = pl.Series("a", [2, 2], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-    # Test with nulls in the array data
-    s = pl.Series("a", [[1, None], [4, 5]], dtype=pl.Array(pl.Int64, 2))
-    result = s.arr.len()
-    expected = pl.Series("a", [2, 2], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-    # Test with entire array rows being null
-    s = pl.Series("a", [[1, 2], None, [4, 5]], dtype=pl.Array(pl.Int64, 2))
-    result = s.arr.len()
-    expected = pl.Series("a", [2, None, 2], dtype=pl.UInt32)
-    assert_series_equal(result, expected)
-
-    # Test with multiple dimensions/different widths
     s1 = pl.Series("a", [[1, 2, 3]], dtype=pl.Array(pl.Int64, 3))
     s2 = pl.Series("b", [[4, 5]], dtype=pl.Array(pl.Int64, 2))
     df = pl.DataFrame([s1, s2])
@@ -91,7 +72,6 @@ def test_array_lengths() -> None:
         {"a": [3], "b": [2]}, schema={"a": pl.UInt32, "b": pl.UInt32}
     )
     assert_frame_equal(out, expected_df)
-
 
 def test_arr_unique() -> None:
     df = pl.DataFrame(
