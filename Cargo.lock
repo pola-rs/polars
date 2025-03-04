@@ -3523,6 +3523,7 @@ dependencies = [
  "memmap2",
  "parking_lot",
  "pin-project-lite",
+ "polars-arrow",
  "polars-core",
  "polars-error",
  "polars-expr",

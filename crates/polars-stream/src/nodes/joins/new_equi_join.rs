@@ -4,10 +4,11 @@ use std::sync::{Arc, LazyLock};
 use crossbeam_queue::ArrayQueue;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
+    use polars_utils::sync::SyncPtr;
 use polars_core::series::IsSorted;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_core::{config, POOL};
-use polars_expr::chunked_idx_table::{new_chunked_idx_table, ChunkedIdxTable};
+use polars_expr::idx_table::{new_idx_table, IdxTable};
 use polars_expr::hash_keys::HashKeys;
 use polars_io::pl_async::get_runtime;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
@@ -18,6 +19,8 @@ use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
+    use arrow::array::builder::ShareStrategy;
+    use polars_core::frame::builder::DataFrameBuilder;
 use rayon::prelude::*;
 
 use crate::async_primitives::connector::{connector, Receiver, Sender};
@@ -311,7 +314,7 @@ impl SampleState {
         recv: &[PortState],
         num_pipelines: usize,
         params: &mut EquiJoinParams,
-        table: &mut Option<Box<dyn ChunkedIdxTable>>,
+        table: &mut Option<Box<dyn IdxTable>>,
     ) -> PolarsResult<Option<BuildState>> {
         let left_saturated = self.left_len >= *SAMPLE_LIMIT;
         let right_saturated = self.right_len >= *SAMPLE_LIMIT;
@@ -401,9 +404,9 @@ impl SampleState {
         // Transition to building state.
         params.left_is_build = Some(left_is_build);
         *table = Some(if left_is_build {
-            new_chunked_idx_table(params.left_key_schema.clone())
+            new_idx_table(params.left_key_schema.clone())
         } else {
-            new_chunked_idx_table(params.right_key_schema.clone())
+            new_idx_table(params.right_key_schema.clone())
         });
 
         let mut sampled_build_morsels =
@@ -416,7 +419,7 @@ impl SampleState {
 
         let partitioner = HashPartitioner::new(num_pipelines, 0);
         let mut build_state = BuildState {
-            partitions_per_worker: (0..num_pipelines).map(|_| Vec::new()).collect(),
+            local_builders: (0..num_pipelines).map(|_| LocalBuilder::default()).collect(),
             sampled_probe_morsels,
         };
 
@@ -429,13 +432,13 @@ impl SampleState {
                     .reinsert(num_pipelines, None, scope, &mut join_handles)
                     .unwrap();
 
-                for (worker_ps, recv) in build_state.partitions_per_worker.iter_mut().zip(receivers)
+                for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers)
                 {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
                         BuildState::partition_and_sink(
                             recv,
-                            worker_ps,
+                            local_builder,
                             partitioner.clone(),
                             params,
                             &state,
@@ -457,30 +460,48 @@ impl SampleState {
 }
 
 #[derive(Default)]
-struct BuildPartition {
-    hash_keys: Vec<HashKeys>,
-    frames: Vec<(MorselSeq, DataFrame)>,
-    sketch: Option<CardinalitySketch>,
+struct LocalBuilder {
+    // The complete list of morsels and their computed hashes seen by this builder.
+    morsels: Vec<(MorselSeq, DataFrame, HashKeys)>,
+
+    // A cardinality sketch per partition for the keys seen by this builder.
+    sketch_per_p: Vec<CardinalitySketch>,
+
+    // morsel_idxs_values_per_p[p][start..stop] contains the offsets into morsels[i]
+    // for partition p, where start, stop are:
+    // let start = morsel_idxs_offsets[i * num_partitions + p];
+    // let stop = morsel_idxs_offsets[(i + 1) * num_partitions + p];
+    morsel_idxs_values_per_p: Vec<Vec<IdxSize>>,
+    morsel_idxs_offsets_per_p: Vec<usize>,
 }
 
 #[derive(Default)]
 struct BuildState {
-    partitions_per_worker: Vec<Vec<BuildPartition>>,
+    local_builders: Vec<LocalBuilder>,
     sampled_probe_morsels: BufferedStream,
 }
 
 impl BuildState {
     async fn partition_and_sink(
         mut recv: Receiver<Morsel>,
-        partitions: &mut Vec<BuildPartition>,
+        local: &mut LocalBuilder,
         partitioner: HashPartitioner,
         params: &EquiJoinParams,
         state: &ExecutionState,
     ) -> PolarsResult<()> {
         let track_unmatchable = params.emit_unmatched_build();
-        let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
-        partitions.resize_with(partitioner.num_partitions(), BuildPartition::default);
-        let mut sketches = vec![CardinalitySketch::default(); partitioner.num_partitions()];
+        local
+            .sketch_per_p
+            .resize_with(partitioner.num_partitions(), Default::default);
+        local
+            .morsel_idxs_values_per_p
+            .resize_with(partitioner.num_partitions(), Default::default);
+
+        if local.morsel_idxs_offsets_per_p.is_empty() {
+            local
+                .morsel_idxs_offsets_per_p
+                .resize(partitioner.num_partitions(), 0);
+        }
 
         let (key_selectors, payload_selector);
         if params.left_is_build.unwrap() {
@@ -493,140 +514,115 @@ impl BuildState {
 
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
-            // later chunked gathers.
+            // later gathers.
             let hash_keys = select_keys(morsel.df(), key_selectors, params, state).await?;
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
-            payload._deshare_views_mut();
 
-            unsafe {
-                for p in partition_idxs.iter_mut() {
-                    p.clear();
-                }
-                hash_keys.gen_partition_idxs(
-                    &partitioner,
-                    &mut partition_idxs,
-                    &mut sketches,
-                    track_unmatchable,
-                );
-                for (p, idxs_in_p) in partitions.iter_mut().zip(&partition_idxs) {
-                    let payload_for_partition = payload.take_slice_unchecked_impl(idxs_in_p, false);
-                    p.hash_keys.push(hash_keys.gather(idxs_in_p));
-                    p.frames.push((morsel.seq(), payload_for_partition));
-                }
-            }
+            hash_keys.gen_partition_idxs(
+                &partitioner,
+                &mut local.morsel_idxs_values_per_p,
+                &mut local.sketch_per_p,
+                track_unmatchable,
+            );
+
+            local
+                .morsel_idxs_offsets_per_p
+                .extend(local.morsel_idxs_values_per_p.iter().map(|vp| vp.len()));
+            local.morsels.push((morsel.seq(), payload, hash_keys));
         }
-
-        for (p, sketch) in sketches.into_iter().enumerate() {
-            partitions[p].sketch = Some(sketch);
-        }
-
         Ok(())
     }
 
-    fn finalize(&mut self, params: &EquiJoinParams, table: &dyn ChunkedIdxTable) -> ProbeState {
-        // Transpose.
-        let num_workers = self.partitions_per_worker.len();
-        let num_partitions = self.partitions_per_worker[0].len();
-        let mut results_per_partition = (0..num_partitions)
-            .map(|_| Vec::with_capacity(num_workers))
+    fn finalize(&mut self, params: &EquiJoinParams, table: &dyn IdxTable) -> ProbeState {
+        let track_unmatchable = params.emit_unmatched_build();
+        let payload_schema = if params.left_is_build.unwrap() {
+            &params.left_payload_schema
+        } else {
+            &params.right_payload_schema
+        };
+
+        // To reduce maximum memory usage we want to drop the morsels
+        // as soon as they're processed, so we move into Arcs.
+        let morsels_per_local_builder = self
+            .local_builders
+            .iter_mut()
+            .map(|b| Arc::new(core::mem::take(&mut b.morsels)))
             .collect_vec();
-        for worker in self.partitions_per_worker.drain(..) {
-            for (p, result) in worker.into_iter().enumerate() {
-                results_per_partition[p].push(result);
+        let num_partitions = self.local_builders[0].sketch_per_p.len();
+        let local_builders = &self.local_builders;
+        
+
+        let mut probe_tables = POOL.scope(|s| {
+            let mut probe_tables: Vec<ProbeTable> = Vec::with_capacity(num_partitions);
+            let probe_table_ptr = unsafe { SyncPtr::new(probe_tables.as_mut_ptr()) };
+
+            // Wrap in outer Arc to move to each thread, performing the
+            // expensive clone on that thread.
+            let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
+            for p in 0..num_partitions {
+                let arc_morsels_per_local_builder = Arc::clone(&arc_morsels_per_local_builder);
+                s.spawn(move |_| {
+                    // Extract from outer arc and drop outer arc.
+                    let morsels_per_local_builder = Arc::unwrap_or_clone(arc_morsels_per_local_builder);
+                    
+                    // Compute cardinality estimate and total amount of
+                    // payload for this partition.
+                    let mut sketch = CardinalitySketch::new();
+                    let mut payload_rows = 0;
+                    for l in local_builders {
+                        sketch.combine(&l.sketch_per_p[p]);
+                        let offsets_len = l.morsel_idxs_offsets_per_p.len();
+                        payload_rows += l.morsel_idxs_offsets_per_p[offsets_len - num_partitions + p];
+                    }
+                    
+                    // Allocate hash table and payload builder.
+                    let mut p_table = table.new_empty();
+                    p_table.reserve(sketch.estimate() * 5 / 4);
+                    let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
+                    p_payload.reserve(payload_rows);
+                    
+                    // Build.
+                    for (l, l_morsels) in local_builders.iter().zip(morsels_per_local_builder) {
+                        for (i, morsel) in l_morsels.iter().enumerate() {
+                            let (_mseq, payload, keys) = morsel;
+                            unsafe {
+                                let p_morsel_idxs_start = l.morsel_idxs_offsets_per_p[i * num_partitions + p];
+                                let p_morsel_idxs_stop = l.morsel_idxs_offsets_per_p[(i + 1) * num_partitions + p];
+                                let p_morsel_idxs = &l.morsel_idxs_values_per_p[p][p_morsel_idxs_start..p_morsel_idxs_stop];
+                                p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
+                                p_payload.gather_extend(payload, p_morsel_idxs, ShareStrategy::Never);
+                            }
+                        }
+                    }
+                    
+                    unsafe {
+                        probe_table_ptr.get().add(p).write(ProbeTable {
+                            hash_table: p_table,
+                            payload: p_payload.freeze(),
+                        });
+                    }
+                });
             }
+
+            // Drop outer arc after spawning each thread so the inner arcs
+            // can get dropped as soon as they're processed.
+            drop(arc_morsels_per_local_builder);
+            probe_tables
+        });
+        
+        unsafe {
+            // SAFETY: all entries are initialized now.
+            probe_tables.set_len(num_partitions);
         }
 
-        POOL.install(|| {
-            let track_unmatchable = params.emit_unmatched_build();
-            let table_per_partition: Vec<_> = results_per_partition
-                .into_par_iter()
-                .with_max_len(1)
-                .map(|results| {
-                    // Estimate sizes and cardinality.
-                    let mut sketch = CardinalitySketch::new();
-                    let mut num_frames = 0;
-                    for result in &results {
-                        sketch.combine(result.sketch.as_ref().unwrap());
-                        num_frames += result.frames.len();
-                    }
-
-                    // Build table for this partition.
-                    let mut combined_frames = Vec::with_capacity(num_frames);
-                    let mut chunk_seq_ids = Vec::with_capacity(num_frames);
-                    let mut table = table.new_empty();
-                    table.reserve(sketch.estimate() * 5 / 4);
-                    if params.preserve_order_build {
-                        let mut combined = Vec::with_capacity(num_frames);
-                        for result in results {
-                            for (hash_keys, (seq, frame)) in
-                                result.hash_keys.into_iter().zip(result.frames)
-                            {
-                                combined.push((seq, hash_keys, frame));
-                            }
-                        }
-
-                        combined.sort_unstable_by_key(|c| c.0);
-                        for (seq, hash_keys, frame) in combined {
-                            // Zero-sized chunks can get deleted, so skip entirely to avoid messing
-                            // up the chunk counter.
-                            if frame.height() == 0 {
-                                continue;
-                            }
-
-                            table.insert_key_chunk(hash_keys, track_unmatchable);
-                            combined_frames.push(frame);
-                            chunk_seq_ids.push(seq);
-                        }
-                    } else {
-                        for result in results {
-                            for (hash_keys, (_, frame)) in
-                                result.hash_keys.into_iter().zip(result.frames)
-                            {
-                                // Zero-sized chunks can get deleted, so skip entirely to avoid messing
-                                // up the chunk counter.
-                                if frame.height() == 0 {
-                                    continue;
-                                }
-
-                                table.insert_key_chunk(hash_keys, track_unmatchable);
-                                combined_frames.push(frame);
-                            }
-                        }
-                    }
-
-                    let df = if combined_frames.is_empty() {
-                        if params.left_is_build.unwrap() {
-                            DataFrame::empty_with_schema(&params.left_payload_schema)
-                        } else {
-                            DataFrame::empty_with_schema(&params.right_payload_schema)
-                        }
-                    } else {
-                        accumulate_dataframes_vertical_unchecked(combined_frames)
-                    };
-                    ProbeTable {
-                        hash_table: table,
-                        payload: df,
-                        chunk_seq_ids,
-                    }
-                })
-                .collect();
-
-            ProbeState {
-                table_per_partition,
-                max_seq_sent: MorselSeq::default(),
-                sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
-            }
-        })
+        todo!()
     }
 }
 
 struct ProbeTable {
-    // Important that df is not rechunked, the chunks it was inserted with
-    // into the table must be preserved for chunked gathers.
-    hash_table: Box<dyn ChunkedIdxTable>,
+    hash_table: Box<dyn IdxTable>,
     payload: DataFrame,
-    chunk_seq_ids: Vec<MorselSeq>,
 }
 
 struct ProbeState {
@@ -645,6 +641,8 @@ impl ProbeState {
         params: &EquiJoinParams,
         state: &ExecutionState,
     ) -> PolarsResult<MorselSeq> {
+        todo!()
+        /*
         // TODO: shuffle after partitioning and keep probe tables thread-local.
         let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
         let mut table_match = Vec::new();
@@ -828,6 +826,7 @@ impl ProbeState {
         }
 
         Ok(max_seq)
+        */
     }
 
     fn ordered_unmatched(
@@ -835,62 +834,7 @@ impl ProbeState {
         partitioner: &HashPartitioner,
         params: &EquiJoinParams,
     ) -> DataFrame {
-        let mut out_per_partition = Vec::with_capacity(partitioner.num_partitions());
-        let seq_name = PlSmallStr::from_static("__POLARS_PROBE_PRESERVE_ORDER_SEQ");
-        let idx_name = PlSmallStr::from_static("__POLARS_PROBE_PRESERVE_ORDER_IDX");
-        let mut unmarked_idxs = Vec::new();
-        unsafe {
-            for p in self.table_per_partition.iter() {
-                p.hash_table.unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
-
-                // Gather and create full-null counterpart.
-                let mut build_df =
-                    p.payload.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
-                let len = build_df.height();
-                let mut out_df = if params.left_is_build.unwrap() {
-                    let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
-                    build_df.hstack_mut_unchecked(probe_df.get_columns());
-                    build_df
-                } else {
-                    let mut probe_df = DataFrame::full_null(&params.left_payload_schema, len);
-                    probe_df.hstack_mut_unchecked(build_df.get_columns());
-                    probe_df
-                };
-
-                // The indices are not ordered globally, but within each chunk they are, so sorting
-                // by chunk sequence id, breaking ties by inner chunk idx works.
-                let (chunk_seqs, idx_in_chunk) = unmarked_idxs
-                    .iter()
-                    .map(|chunk_id| {
-                        let (chunk, idx_in_chunk) = chunk_id.extract();
-                        (p.chunk_seq_ids[chunk as usize].to_u64(), idx_in_chunk)
-                    })
-                    .unzip();
-
-                let chunk_seqs_ca = UInt64Chunked::from_vec(seq_name.clone(), chunk_seqs);
-                let idxs_ca = IdxCa::from_vec(idx_name.clone(), idx_in_chunk);
-                out_df.with_column_unchecked(chunk_seqs_ca.into_column());
-                out_df.with_column_unchecked(idxs_ca.into_column());
-                out_per_partition.push(out_df);
-            }
-
-            // Sort by chunk sequence id, then by inner chunk idx.
-            let sort_options = SortMultipleOptions {
-                descending: vec![false],
-                nulls_last: vec![false],
-                multithreaded: true,
-                maintain_order: false,
-                limit: None,
-            };
-            let mut out_df = accumulate_dataframes_vertical_unchecked(out_per_partition);
-            out_df
-                .sort_in_place([seq_name.clone(), idx_name.clone()], sort_options)
-                .unwrap();
-            out_df.drop_in_place(&seq_name).unwrap();
-            out_df.drop_in_place(&idx_name).unwrap();
-            out_df = postprocess_join(out_df, params);
-            out_df
-        }
+        todo!()
     }
 }
 
@@ -917,68 +861,10 @@ impl EmitUnmatchedState {
         params: &EquiJoinParams,
         num_pipelines: usize,
     ) -> PolarsResult<()> {
-        let total_len: usize = self
-            .partitions
-            .iter()
-            .map(|p| p.hash_table.num_keys() as usize)
-            .sum();
-        let ideal_morsel_count = (total_len / get_ideal_morsel_size()).max(1);
-        let morsel_count = ideal_morsel_count.next_multiple_of(num_pipelines);
-        let morsel_size = total_len.div_ceil(morsel_count).max(1);
-
-        let wait_group = WaitGroup::default();
-        let source_token = SourceToken::new();
-        let mut unmarked_idxs = Vec::new();
-        while let Some(p) = self.partitions.get(self.active_partition_idx) {
-            loop {
-                // Generate a chunk of unmarked key indices.
-                self.offset_in_active_p += p.hash_table.unmarked_keys(
-                    &mut unmarked_idxs,
-                    self.offset_in_active_p as IdxSize,
-                    morsel_size as IdxSize,
-                ) as usize;
-                if unmarked_idxs.is_empty() {
-                    break;
-                }
-
-                // Gather and create full-null counterpart.
-                let out_df = unsafe {
-                    let mut build_df =
-                        p.payload.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
-                    let len = build_df.height();
-                    if params.left_is_build.unwrap() {
-                        let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
-                        build_df.hstack_mut_unchecked(probe_df.get_columns());
-                        build_df
-                    } else {
-                        let mut probe_df = DataFrame::full_null(&params.left_payload_schema, len);
-                        probe_df.hstack_mut_unchecked(build_df.get_columns());
-                        probe_df
-                    }
-                };
-                let out_df = postprocess_join(out_df, params);
-
-                // Send and wait until consume token is consumed.
-                let mut morsel = Morsel::new(out_df, self.morsel_seq, source_token.clone());
-                self.morsel_seq = self.morsel_seq.successor();
-                morsel.set_consume_token(wait_group.token());
-                if send.send(morsel).await.is_err() {
-                    return Ok(());
-                }
-
-                wait_group.wait().await;
-                if source_token.stop_requested() {
-                    return Ok(());
-                }
-            }
-
-            self.active_partition_idx += 1;
-            self.offset_in_active_p = 0;
-        }
-
-        Ok(())
+        todo!()
     }
 }
+
 
 enum EquiJoinState {
     Sample(SampleState),
@@ -1029,7 +915,7 @@ pub struct EquiJoinNode {
     state: EquiJoinState,
     params: EquiJoinParams,
     num_pipelines: usize,
-    table: Option<Box<dyn ChunkedIdxTable>>,
+    table: Option<Box<dyn IdxTable>>,
 }
 
 impl EquiJoinNode {
@@ -1056,9 +942,9 @@ impl EquiJoinNode {
 
         let table = left_is_build.map(|lib| {
             if lib {
-                new_chunked_idx_table(left_key_schema.clone())
+                new_idx_table(left_key_schema.clone())
             } else {
-                new_chunked_idx_table(right_key_schema.clone())
+                new_idx_table(right_key_schema.clone())
             }
         });
 
@@ -1327,16 +1213,16 @@ impl ComputeNode for EquiJoinNode {
                 let receivers = recv_ports[build_idx].take().unwrap().parallel();
 
                 build_state
-                    .partitions_per_worker
-                    .resize_with(self.num_pipelines, Vec::new);
+                    .local_builders
+                    .resize_with(self.num_pipelines, Default::default);
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
-                for (worker_ps, recv) in build_state.partitions_per_worker.iter_mut().zip(receivers)
+                for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers)
                 {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
                         BuildState::partition_and_sink(
                             recv,
-                            worker_ps,
+                            local_builder,
                             partitioner.clone(),
                             &self.params,
                             state,
