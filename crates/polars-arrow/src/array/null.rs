@@ -240,6 +240,10 @@ impl StaticArrayBuilder for NullArrayBuilder {
         NullArray::new(self.dtype, self.length)
     }
 
+    fn extend_nulls(&mut self, length: usize) {
+        self.length += length;
+    }
+
     fn subslice_extend(
         &mut self,
         _other: &NullArray,
@@ -267,6 +271,10 @@ impl StaticArrayBuilder for NullArrayBuilder {
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(&mut self, _other: &NullArray, idxs: &[IdxSize], _share: ShareStrategy) {
         self.length += idxs.len();
     }
 }

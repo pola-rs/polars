@@ -37,6 +37,14 @@ impl StaticArrayBuilder for StructArrayBuilder {
         self.validity.reserve(additional);
     }
 
+    fn extend_nulls(&mut self, length: usize) {
+        for builder in &mut self.inner_builders {
+            builder.extend_nulls(length);
+        }
+        self.validity.extend_constant(length, false);
+        self.length += length;
+    }
+
     fn freeze(self) -> StructArray {
         let values = self
             .inner_builders
@@ -73,6 +81,15 @@ impl StaticArrayBuilder for StructArrayBuilder {
         }
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+        self.length += idxs.len();
+    }
+
+    fn opt_gather_extend(&mut self, other: &StructArray, idxs: &[IdxSize], share: ShareStrategy) {
+        for (builder, other_values) in self.inner_builders.iter_mut().zip(other.values()) {
+            builder.opt_gather_extend(&**other_values, idxs, share);
+        }
+        self.validity
+            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
         self.length += idxs.len();
     }
 }

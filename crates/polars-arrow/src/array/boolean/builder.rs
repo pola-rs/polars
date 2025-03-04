@@ -39,6 +39,11 @@ impl StaticArrayBuilder for BooleanArrayBuilder {
         BooleanArray::try_new(self.dtype, values, validity).unwrap()
     }
 
+    fn extend_nulls(&mut self, length: usize) {
+        self.values.extend_constant(length, false);
+        self.validity.extend_constant(length, false);
+    }
+
     fn subslice_extend(
         &mut self,
         other: &BooleanArray,
@@ -65,5 +70,23 @@ impl StaticArrayBuilder for BooleanArrayBuilder {
         }
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
+    }
+
+    fn opt_gather_extend(&mut self, other: &BooleanArray, idxs: &[IdxSize], _share: ShareStrategy) {
+        self.values.reserve(idxs.len());
+        unsafe {
+            for idx in idxs {
+                let val = if (*idx as usize) < other.len() {
+                    // We don't use get here as that double-checks the validity
+                    // which we don't care about here.
+                    other.value_unchecked(*idx as usize)
+                } else {
+                    false
+                };
+                self.values.push_unchecked(val);
+            }
+        }
+        self.validity
+            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
     }
 }

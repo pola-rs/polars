@@ -28,6 +28,9 @@ pub trait StaticArrayBuilder {
     /// Consume this builder returning the built array.
     fn freeze(self) -> Self::Array;
 
+    /// Extend this builder with the given number of null elements.
+    fn extend_nulls(&mut self, length: usize);
+
     /// Extends this builder with the contents of the given array. May panic if
     /// other does not match the dtype of this array.
     fn extend(&mut self, other: &Self::Array, share: ShareStrategy) {
@@ -66,6 +69,12 @@ pub trait StaticArrayBuilder {
     /// # Safety
     /// The indices must be in-bounds.
     unsafe fn gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy);
+
+    /// Extends this builder with the contents of the given array at the given
+    /// indices. That is, `other[idxs[i]]` is appended to this array in order,
+    /// for each i=0..idxs.len(). May panic if other does not match the
+    /// dtype of this array. Out-of-bounds indices are mapped to nulls.
+    fn opt_gather_extend(&mut self, other: &Self::Array, idxs: &[IdxSize], share: ShareStrategy);
 }
 
 impl<T: StaticArrayBuilder> ArrayBuilder for T {
@@ -85,6 +94,11 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
     }
 
     #[inline(always)]
+    fn extend_nulls(&mut self, length: usize) {
+        StaticArrayBuilder::extend_nulls(self, length);
+    }
+
+    #[inline(always)]
     fn subslice_extend(
         &mut self,
         other: &dyn Array,
@@ -96,6 +110,7 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
         StaticArrayBuilder::subslice_extend(self, other, start, length, share);
     }
 
+    #[inline(always)]
     fn subslice_extend_repeated(
         &mut self,
         other: &dyn Array,
@@ -113,6 +128,12 @@ impl<T: StaticArrayBuilder> ArrayBuilder for T {
         let other: &T::Array = other.as_any().downcast_ref().unwrap();
         StaticArrayBuilder::gather_extend(self, other, idxs, share);
     }
+
+    #[inline(always)]
+    fn opt_gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
+        let other: &T::Array = other.as_any().downcast_ref().unwrap();
+        StaticArrayBuilder::opt_gather_extend(self, other, idxs, share);
+    }
 }
 
 #[allow(private_bounds)]
@@ -122,6 +143,9 @@ pub trait ArrayBuilder: ArrayBuilderBoxedHelper {
 
     /// Consume this builder returning the built array.
     fn freeze(self) -> Box<dyn Array>;
+
+    /// Extend this builder with the given number of null elements.
+    fn extend_nulls(&mut self, length: usize);
 
     /// Extends this builder with the contents of the given array. May panic if
     /// other does not match the dtype of this array.
@@ -157,6 +181,12 @@ pub trait ArrayBuilder: ArrayBuilderBoxedHelper {
     /// # Safety
     /// The indices must be in-bounds.
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy);
+
+    /// Extends this builder with the contents of the given array at the given
+    /// indices. That is, `other[idxs[i]]` is appended to this array in order,
+    /// for each i=0..idxs.len(). May panic if other does not match the
+    /// dtype of this array. Out-of-bounds indices are mapped to nulls.
+    fn opt_gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy);
 }
 
 /// A hack that lets us call the consuming `freeze` method on Box<dyn ArrayBuilder>.
@@ -183,6 +213,10 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
         self.freeze_boxed()
     }
 
+    fn extend_nulls(&mut self, length: usize) {
+        (**self).extend_nulls(length);
+    }
+
     fn subslice_extend(
         &mut self,
         other: &dyn Array,
@@ -206,6 +240,10 @@ impl ArrayBuilder for Box<dyn ArrayBuilder> {
 
     unsafe fn gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
         (**self).gather_extend(other, idxs, share);
+    }
+
+    fn opt_gather_extend(&mut self, other: &dyn Array, idxs: &[IdxSize], share: ShareStrategy) {
+        (**self).opt_gather_extend(other, idxs, share);
     }
 }
 
