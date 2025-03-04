@@ -32,7 +32,7 @@ impl IpcSink {
         let io_thread_handle = Arc::new(Some(init_writer_thread(
             receiver,
             writer,
-            options.maintain_order,
+            true,
             morsels_per_sink,
         )));
 

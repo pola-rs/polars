@@ -50,6 +50,25 @@ impl DataFrameBuilder {
         unsafe { DataFrame::new_no_checks(self.height, columns) }
     }
 
+    pub fn freeze_reset(&mut self) -> DataFrame {
+        let columns = self
+            .schema
+            .iter_names()
+            .zip(&mut self.builders)
+            .map(|(n, b)| {
+                let s = b.freeze_reset(n.clone());
+                assert!(s.len() == self.height);
+                Column::from(s)
+            })
+            .collect();
+
+        // SAFETY: we checked the lengths and the names are unique because they
+        // come from Schema.
+        let out = unsafe { DataFrame::new_no_checks(self.height, columns) };
+        self.height = 0;
+        out
+    }
+
     pub fn len(&self) -> usize {
         self.height
     }

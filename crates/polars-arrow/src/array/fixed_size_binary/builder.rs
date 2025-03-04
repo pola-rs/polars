@@ -48,6 +48,16 @@ impl StaticArrayBuilder for FixedSizeBinaryArrayBuilder {
         FixedSizeBinaryArray::new(self.dtype, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        // TODO: FixedSizeBinaryArray should track its own length to be correct
+        // for size-0 inner.
+        let values = Buffer::from(core::mem::take(&mut self.values));
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        let out = FixedSizeBinaryArray::new(self.dtype.clone(), values, validity);
+        self.length = 0;
+        out
+    }
+
     fn len(&self) -> usize {
         self.length
     }

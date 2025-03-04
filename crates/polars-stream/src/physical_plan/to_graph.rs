@@ -307,6 +307,7 @@ fn to_graph_rec<'a>(
                             input_schema,
                             *max_size,
                             create_new,
+                            sink_options.clone(),
                         ),
                     ),
                     [(input_key, input.port)],

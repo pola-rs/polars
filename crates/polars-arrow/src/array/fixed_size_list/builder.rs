@@ -42,6 +42,14 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
         FixedSizeListArray::new(self.dtype, self.length, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let values = self.inner_builder.freeze_reset();
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        let out = FixedSizeListArray::new(self.dtype.clone(), self.length, values, validity);
+        self.length = 0;
+        out
+    }
+
     fn len(&self) -> usize {
         self.length
     }

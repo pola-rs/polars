@@ -240,6 +240,12 @@ impl StaticArrayBuilder for NullArrayBuilder {
         NullArray::new(self.dtype, self.length)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let out = NullArray::new(self.dtype.clone(), self.length);
+        self.length = 0;
+        out
+    }
+
     fn len(&self) -> usize {
         self.length
     }

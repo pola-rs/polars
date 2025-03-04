@@ -185,6 +185,7 @@ fn buffer_and_distribute_columns_task(
 pub trait SinkNode {
     fn name(&self) -> &str;
     fn is_sink_input_parallel(&self) -> bool;
+    fn do_maintain_order(&self) -> bool;
 
     fn spawn_sink(
         &mut self,
@@ -304,7 +305,7 @@ impl ComputeNode for SinkComputeNode {
         let sink_input = if self.sink.is_sink_input_parallel() {
             SinkInputPort::Parallel(recv.parallel())
         } else {
-            SinkInputPort::Serial(recv.serial())
+            SinkInputPort::Serial(recv.serial_with_maintain_order(self.sink.do_maintain_order()))
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (token, outcome) = PhaseOutcome::new_shared_wait(wait_group.token());

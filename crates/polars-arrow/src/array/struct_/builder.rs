@@ -47,6 +47,18 @@ impl StaticArrayBuilder for StructArrayBuilder {
         StructArray::new(self.dtype, self.length, values, validity)
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let values = self
+            .inner_builders
+            .iter_mut()
+            .map(|b| b.freeze_reset())
+            .collect();
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        let out = StructArray::new(self.dtype.clone(), self.length, values, validity);
+        self.length = 0;
+        out
+    }
+
     fn len(&self) -> usize {
         self.length
     }

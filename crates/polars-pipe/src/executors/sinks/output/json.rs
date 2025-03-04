@@ -24,7 +24,7 @@ impl JsonSink {
     #[allow(clippy::new_ret_no_self)]
     pub fn new(
         path: &Path,
-        options: JsonWriterOptions,
+        _options: JsonWriterOptions,
         _schema: &Schema,
         cloud_options: Option<&CloudOptions>,
     ) -> PolarsResult<FilesSink> {
@@ -38,7 +38,7 @@ impl JsonSink {
         let io_thread_handle = Arc::new(Some(init_writer_thread(
             receiver,
             writer,
-            options.maintain_order,
+            true,
             morsels_per_sink,
         )));
 
