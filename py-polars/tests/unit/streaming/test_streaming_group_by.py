@@ -529,5 +529,5 @@ def test_streaming_group_by_all_null_21593() -> None:
         }
     )
 
-    out = df.lazy().group_by(pl.all()).min().collect(new_streaming=True)
+    out = df.lazy().group_by(pl.all()).min().collect(new_streaming=True)  # type: ignore[call-overload]
     assert_frame_equal(df, out, check_row_order=False)
