@@ -41,7 +41,7 @@ impl WriterState {
                     self.try_with_writer(func)
                 },
             },
-            Self::Err(e) => Err(std::io::Error::new(e.kind(), e.to_string())),
+            Self::Err(e) => Err(clone_io_err(e)),
         }
     }
 }
@@ -149,7 +149,7 @@ impl tokio::io::AsyncWrite for CloudWriter {
                 },
                 v => v,
             },
-            WriterState::Err(e) => Poll::Ready(Err(std::io::Error::new(e.kind(), e.to_string()))),
+            WriterState::Err(e) => Poll::Ready(Err(clone_io_err(e))),
         }
     }
 
@@ -165,7 +165,7 @@ impl tokio::io::AsyncWrite for CloudWriter {
                 },
                 v => v,
             },
-            WriterState::Err(e) => Poll::Ready(Err(std::io::Error::new(e.kind(), e.to_string()))),
+            WriterState::Err(e) => Poll::Ready(Err(clone_io_err(e))),
         }
     }
 
@@ -181,7 +181,7 @@ impl tokio::io::AsyncWrite for CloudWriter {
                 },
                 v => v,
             },
-            WriterState::Err(e) => Poll::Ready(Err(std::io::Error::new(e.kind(), e.to_string()))),
+            WriterState::Err(e) => Poll::Ready(Err(clone_io_err(e))),
         }
     }
 }
@@ -195,6 +195,10 @@ impl Drop for CloudWriter {
             WriterState::Err(_) => {},
         }
     }
+}
+
+fn clone_io_err(e: &std::io::Error) -> std::io::Error {
+    std::io::Error::new(e.kind(), e.to_string())
 }
 
 #[cfg(feature = "csv")]
