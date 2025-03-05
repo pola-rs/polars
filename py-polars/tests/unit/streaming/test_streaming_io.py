@@ -286,11 +286,20 @@ def test_nyi_scan_in_memory(method: str) -> None:
 )
 @pytest.mark.write_disk
 def test_sink_phases(tmp_path: Path, method: str) -> None:
-    df = pl.DataFrame({
-        'a': [1, 2, 3, 4, 5, 6, 7],
-        'b': ["some", "text", "over-here-is-very-long", "and", "some", "more",
-        "text"],
-    })
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6, 7],
+            "b": [
+                "some",
+                "text",
+                "over-here-is-very-long",
+                "and",
+                "some",
+                "more",
+                "text",
+            ],
+        }
+    )
 
     # Ordered Unions lead to many phase transitions.
     ref_df = pl.concat([df] * 100)
@@ -302,7 +311,11 @@ def test_sink_phases(tmp_path: Path, method: str) -> None:
     assert_frame_equal(df, ref_df)
 
     (getattr(lf, f"sink_{method}"))(tmp_path / f"t.{method}", maintain_order=False)
-    height = (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}").select(pl.len()).collect()[0, 0]
+    height = (
+        (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}")
+        .select(pl.len())
+        .collect()[0, 0]
+    )
     assert height == ref_df.height
 
 
