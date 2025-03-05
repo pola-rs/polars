@@ -99,7 +99,7 @@ fig_path = "docs/assets/images/plotnine.png"
     ggplot(df, mapping=aes(x="sepal_width", y="sepal_length", color="species"))
     + geom_point()
     + labs(title="Irises", x="Sepal Width", y="Sepal Length")
-).save(fig_path, dpi=300)
+).save(fig_path, dpi=300, verbose=False)
 
 with open(fig_path, "rb") as f:
     png = base64.b64encode(f.read()).decode()
