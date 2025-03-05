@@ -76,8 +76,8 @@ values so that it can be passed as an argument to `c`.
 
 ## Plotnine
 
-[Plotnine](https://plotnine.org/) is a reimplementation of ggplot2 in Python, bringing the
-Grammar of Graphics to Python users with an interface similar to its R counterpart. It
+[Plotnine](https://plotnine.org/) is a reimplementation of ggplot2 in Python, bringing the 
+Grammar of Graphics to Python users with an interface similar to its R counterpart. It 
 supports Polars `DataFrame` by internally converting it to a pandas `DataFrame`.
 
 {{code_block('user-guide/misc/visualization','plotnine_show_plot',[])}}
