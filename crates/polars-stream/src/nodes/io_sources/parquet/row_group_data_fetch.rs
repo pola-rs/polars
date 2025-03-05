@@ -50,7 +50,7 @@ impl RowGroupDataFetcher {
             let current_row_offset = self.row_offset;
 
             let num_rows = row_group_metadata.num_rows();
-            let sorting_map = create_sorting_map(&row_group_metadata);
+            let sorting_map = create_sorting_map(row_group_metadata);
 
             self.row_offset = current_row_offset.saturating_add(num_rows);
 
@@ -93,7 +93,7 @@ impl RowGroupDataFetcher {
 
                             if let Some(columns) = projection.as_ref() {
                                 for range in get_row_group_byte_ranges_for_projection(
-                                    &row_group_metadata,
+                                    row_group_metadata,
                                     columns.as_ref(),
                                 ) {
                                     memory_prefetch_func(unsafe { slice.get_unchecked(range) })
@@ -116,7 +116,7 @@ impl RowGroupDataFetcher {
                         }
                     } else if let Some(columns) = projection.as_ref() {
                         let mut ranges = get_row_group_byte_ranges_for_projection(
-                            &row_group_metadata,
+                            row_group_metadata,
                             columns.as_ref(),
                         )
                         .collect::<Vec<_>>();

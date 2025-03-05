@@ -54,7 +54,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
             .collect();
         columns.push(Column::new("len".into(), lengths));
         for c in live_columns.iter() {
-            let dtype = DataType::from_arrow_field(reader_schema.get(&c).unwrap());
+            let dtype = DataType::from_arrow_field(reader_schema.get(c).unwrap());
             columns.push(Column::new_empty(format_pl_smallstr!("{c}_min"), &dtype));
             columns.push(Column::new_empty(format_pl_smallstr!("{c}_max"), &dtype));
             columns.push(Column::new_empty(format_pl_smallstr!("{c}_nc"), &IDX_DTYPE));
@@ -153,7 +153,7 @@ impl ParquetSourceNode {
         }
 
         let metadata = self.metadata.clone();
-        let normalized_pre_slice = self.normalized_pre_slice.clone();
+        let normalized_pre_slice = self.normalized_pre_slice;
         let scan_sources = self.scan_sources.clone();
         let byte_source_builder = self.byte_source_builder.clone();
         let cloud_options = self.cloud_options.clone();

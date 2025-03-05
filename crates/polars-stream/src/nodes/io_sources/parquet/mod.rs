@@ -99,13 +99,9 @@ impl ParquetSourceNode {
             .take()
             .map(|ri| Arc::new((ri.name, AtomicIdxSize::new(ri.offset))));
 
-        let normalized_pre_slice = file_options.pre_slice.map(|(offset, length)| {
-            slice_offsets(
-                offset,
-                length,
-                metadata.num_rows as usize,
-            )
-        });
+        let normalized_pre_slice = file_options
+            .pre_slice
+            .map(|(offset, length)| slice_offsets(offset, length, metadata.num_rows));
 
         Self {
             scan_sources,
