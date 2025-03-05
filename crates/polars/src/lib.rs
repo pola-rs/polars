@@ -177,6 +177,7 @@
 //! * `lazy` - Lazy API
 //!     - `regex` - Use regexes in [column selection]
 //!     - `dot_diagram` - Create dot diagrams from lazy logical plans.
+//!     - `mermaid` - Create mermaid diagrams from lazy logical plans.
 //! * `sql` - Pass SQL queries to Polars.
 //! * `streaming` - Process datasets larger than RAM.
 //! * `random` - Generate arrays with randomly sampled values
