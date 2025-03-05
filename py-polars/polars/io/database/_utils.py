@@ -35,33 +35,28 @@ def _read_sql_connectorx(
     pre_execution_query: str | list[str] | None = None,
 ) -> DataFrame:
     cx = import_optional("connectorx")
-
-    if parse_version(cx.__version__) < (0, 4, 2) and pre_execution_query:
-        msg = "pre_execution_query is only supported in connectorx version 0.4.2 or later."
-        raise ValueError(msg)
-
+    
     try:
         if parse_version(cx.__version__) < (0, 4, 2):
-            tbl = cx.read_sql(
-                conn=connection_uri,
-                query=query,
-                return_type="arrow2",
-                partition_on=partition_on,
-                partition_range=partition_range,
-                partition_num=partition_num,
-                protocol=protocol,
-            )
+            if pre_execution_query:
+                msg = "pre_execution_query is only supported in connectorx version 0.4.2 or later."
+                raise ValueError(msg)
+            return_type = "arrow2"
+            pre_execution_args = {}
         else:
-            tbl = cx.read_sql(
-                conn=connection_uri,
-                query=query,
-                return_type="arrow",
-                partition_on=partition_on,
-                partition_range=partition_range,
-                partition_num=partition_num,
-                protocol=protocol,
-                pre_execution_query=pre_execution_query,
-            )
+            return_type = "arrow"
+            pre_execution_args = {"pre_execution_query": pre_execution_query}
+            
+        tbl = cx.read_sql(
+            conn=connection_uri,
+            query=query,
+            return_type=return_type,
+            partition_on=partition_on,
+            partition_range=partition_range,
+            partition_num=partition_num,
+            protocol=protocol,
+            **pre_execution_args,
+        )
     except BaseException as err:
         # basic sanitisation of /user:pass/ credentials exposed in connectorx errs
         errmsg = re.sub("://[^:]+:[^:]+@", "://***:***@", str(err))
