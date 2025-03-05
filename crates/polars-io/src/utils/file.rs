@@ -14,6 +14,8 @@ use crate::{is_cloud_url, resolve_homedir};
 
 /// Non-async writeable file, abstracted over local files or cloud files.
 ///
+/// This `DerefMut`s into a trait object supporting `std::io::Write`.
+///
 /// Also see: `Writeable::into_async_writeable` and `AsyncWriteable`.
 pub enum Writeable {
     Local(std::fs::File),
@@ -167,6 +169,8 @@ mod async_writeable {
     use super::Writeable;
 
     /// Construct this using [`Writeable::try_new()`] and then [`Writeable::into_async_writeable`]
+    ///
+    /// This derefs to [`tokio::io::AsyncWrite`] (i.e. `&mut *async_writeable`)
     pub enum AsyncWriteable {
         Local(tokio::fs::File),
         Cloud(crate::cloud::CloudWriter),
@@ -190,7 +194,7 @@ mod async_writeable {
             match self {
                 Self::Local(v) => v,
                 #[cfg(feature = "cloud")]
-                Self::Cloud(v) => v,
+                Self::Cloud(v) => v.get_buf_writer(),
             }
         }
     }
@@ -200,7 +204,7 @@ mod async_writeable {
             match self {
                 Self::Local(v) => v,
                 #[cfg(feature = "cloud")]
-                Self::Cloud(v) => v,
+                Self::Cloud(v) => v.get_buf_writer_mut(),
             }
         }
     }

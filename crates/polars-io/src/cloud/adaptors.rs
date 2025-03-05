@@ -2,13 +2,11 @@
 
 use std::future::Future;
 use std::sync::Arc;
-use std::task::Poll;
 
-use futures::FutureExt;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
 use object_store::ObjectStore;
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::{PolarsError, PolarsResult};
 use tokio::io::AsyncWriteExt;
 
 use super::{object_path_from_str, CloudOptions};
@@ -21,31 +19,6 @@ fn block_in_place_on<T>(func: impl Future<Output = T>) -> T {
     tokio::task::block_in_place(|| rt.block_on(func))
 }
 
-enum WriterState {
-    Open(BufWriter),
-    /// Note: `Err` state is also used as the close state on success.
-    Err(std::io::Error),
-}
-
-impl WriterState {
-    fn try_with_writer<F, O>(&mut self, func: F) -> std::io::Result<O>
-    where
-        F: Fn(&mut BufWriter) -> std::io::Result<O>,
-    {
-        match self {
-            Self::Open(writer) => match func(writer) {
-                Ok(v) => Ok(v),
-                Err(e) => {
-                    let _ = block_in_place_on(writer.abort());
-                    *self = Self::Err(e);
-                    self.try_with_writer(func)
-                },
-            },
-            Self::Err(e) => Err(clone_io_err(e)),
-        }
-    }
-}
-
 /// Adaptor which wraps the interface of [ObjectStore::BufWriter] exposing a synchronous interface
 /// which implements `std::io::Write`.
 ///
@@ -54,8 +27,8 @@ impl WriterState {
 ///
 /// [ObjectStore::BufWriter]: https://docs.rs/object_store/latest/object_store/buffered/struct.BufWriter.html
 pub struct CloudWriter {
-    // Internal writer, constructed at creation
-    inner: WriterState,
+    writer: BufWriter,
+    last_err: Option<std::io::Error>,
 }
 
 impl CloudWriter {
@@ -70,7 +43,8 @@ impl CloudWriter {
     ) -> PolarsResult<Self> {
         let writer = BufWriter::with_capacity(object_store, path, get_upload_chunk_size());
         Ok(CloudWriter {
-            inner: WriterState::Open(writer),
+            writer,
+            last_err: None,
         })
     }
 
@@ -97,18 +71,54 @@ impl CloudWriter {
         )
     }
 
+    pub fn get_buf_writer(&self) -> &BufWriter {
+        &self.writer
+    }
+
+    pub fn get_buf_writer_mut(&mut self) -> &mut BufWriter {
+        &mut self.writer
+    }
+
+    fn try_with_writer_sync<F, O>(&mut self, func: F) -> std::io::Result<O>
+    where
+        F: Fn(&mut BufWriter) -> std::io::Result<O>,
+    {
+        if let Some(e) = &self.last_err {
+            return Err(clone_io_err(e));
+        }
+
+        match func(&mut self.writer) {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                self.last_err.replace(clone_io_err(&e));
+                Err(e)
+            },
+        }
+    }
+
+    async fn try_with_writer<'a, F, Fut, O>(&'a mut self, func: F) -> std::io::Result<O>
+    where
+        F: Fn(&'a mut BufWriter) -> Fut,
+        Fut: Future<Output = std::io::Result<O>> + 'a,
+    {
+        if let Some(e) = &self.last_err {
+            return Err(clone_io_err(e));
+        }
+
+        match func(&mut self.writer).await {
+            Ok(v) => Ok(v),
+            Err(e) => {
+                self.last_err = Some(clone_io_err(&e));
+                Err(e)
+            },
+        }
+    }
+
     pub async fn close(&mut self) -> PolarsResult<()> {
-        let WriterState::Open(writer) = &mut self.inner else {
-            panic!();
-        };
-
-        writer.shutdown().await.map_err(to_compute_err)?;
-
-        self.inner = WriterState::Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "already closed",
-        ));
-
+        self.try_with_writer(|writer| writer.shutdown())
+            .await
+            .map_err(PolarsError::from)?;
+        self.last_err = Some(std::io::Error::new(std::io::ErrorKind::Other, "closed"));
         Ok(())
     }
 
@@ -124,65 +134,13 @@ impl std::io::Write for CloudWriter {
         // async runtime here
         let buf = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(buf) };
 
-        self.inner.try_with_writer(|writer| {
+        self.try_with_writer_sync(|writer| {
             block_in_place_on(async { writer.write_all(buf).await.map(|_t| buf.len()) })
         })
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.inner
-            .try_with_writer(|writer| block_in_place_on(async { writer.flush().await }))
-    }
-}
-
-impl tokio::io::AsyncWrite for CloudWriter {
-    fn poll_write(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<Result<usize, std::io::Error>> {
-        match &mut self.inner {
-            WriterState::Open(writer) => match Box::pin(writer.write(buf)).poll_unpin(cx) {
-                Poll::Ready(Err(e)) => {
-                    self.inner = WriterState::Err(e);
-                    Self::poll_write(self, cx, buf)
-                },
-                v => v,
-            },
-            WriterState::Err(e) => Poll::Ready(Err(clone_io_err(e))),
-        }
-    }
-
-    fn poll_flush(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        match &mut self.inner {
-            WriterState::Open(writer) => match Box::pin(writer.flush()).poll_unpin(cx) {
-                Poll::Ready(Err(e)) => {
-                    self.inner = WriterState::Err(e);
-                    Self::poll_flush(self, cx)
-                },
-                v => v,
-            },
-            WriterState::Err(e) => Poll::Ready(Err(clone_io_err(e))),
-        }
-    }
-
-    fn poll_shutdown(
-        mut self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), std::io::Error>> {
-        match &mut self.inner {
-            WriterState::Open(writer) => match Box::pin(writer.shutdown()).poll_unpin(cx) {
-                Poll::Ready(Err(e)) => {
-                    self.inner = WriterState::Err(e);
-                    Self::poll_shutdown(self, cx)
-                },
-                v => v,
-            },
-            WriterState::Err(e) => Poll::Ready(Err(clone_io_err(e))),
-        }
+        self.try_with_writer_sync(|writer| block_in_place_on(async { writer.flush().await }))
     }
 }
 
@@ -190,11 +148,8 @@ impl Drop for CloudWriter {
     fn drop(&mut self) {
         // TODO: Once we are properly calling `close()` from all contexts this can instead be a
         // debug_assert that we are in an `Err(_)` state when dropping.
-        if !std::thread::panicking() {
-            match self.inner {
-                WriterState::Open(_) => self.close_sync().unwrap(),
-                WriterState::Err(_) => {},
-            }
+        if !std::thread::panicking() && self.last_err.is_none() {
+            self.close_sync().unwrap();
         }
     }
 }
@@ -203,15 +158,11 @@ fn clone_io_err(e: &std::io::Error) -> std::io::Error {
     std::io::Error::new(e.kind(), e.to_string())
 }
 
-#[cfg(feature = "csv")]
 #[cfg(test)]
 mod tests {
+
     use polars_core::df;
     use polars_core::prelude::DataFrame;
-
-    use super::*;
-    use crate::prelude::CsvReadOptions;
-    use crate::SerReader;
 
     fn example_dataframe() -> DataFrame {
         df!(
@@ -222,7 +173,9 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "csv")]
     fn csv_to_local_objectstore_cloudwriter() {
+        use super::*;
         use crate::csv::write::CsvWriter;
         use crate::prelude::SerWriter;
 
@@ -243,10 +196,13 @@ mod tests {
 
     // Skip this tests on Windows since it does not have a convenient /tmp/ location.
     #[cfg_attr(target_os = "windows", ignore)]
+    #[cfg(feature = "csv")]
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
+        use super::*;
         use crate::csv::write::CsvWriter;
-        use crate::prelude::SerWriter;
+        use crate::prelude::{CsvReadOptions, SerWriter};
+        use crate::SerReader;
 
         let mut df = example_dataframe();
 
