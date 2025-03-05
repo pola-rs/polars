@@ -454,9 +454,7 @@ def read_database_uri(
             msg = "only a single SQL query string is accepted for adbc"
             raise ValueError(msg)
         if pre_execution_query:
-            msg = (
-                "the 'adbc' engine does not support use of `pre_execution_query`"
-            )
+            msg = "the 'adbc' engine does not support use of `pre_execution_query`"
             raise ValueError(msg)
         return _read_sql_adbc(
             query,
