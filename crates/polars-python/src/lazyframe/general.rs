@@ -490,37 +490,24 @@ impl PyLazyFrame {
         Ok(LazyFrame::scan_from_python_function(Either::Left(schema_fn), scan_fn, false).into())
     }
 
-    fn describe_plan(&self) -> PyResult<String> {
-        self.ldf
-            .describe_plan()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    fn describe_plan(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_plan())
     }
 
-    fn describe_optimized_plan(&self) -> PyResult<String> {
-        self.ldf
-            .describe_optimized_plan()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    fn describe_optimized_plan(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_optimized_plan())
     }
 
-    fn describe_plan_tree(&self) -> PyResult<String> {
-        self.ldf
-            .describe_plan_tree()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    fn describe_plan_tree(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_plan_tree())
     }
 
-    fn describe_optimized_plan_tree(&self) -> PyResult<String> {
-        self.ldf
-            .describe_optimized_plan_tree()
-            .map_err(PyPolarsErr::from)
-            .map_err(Into::into)
+    fn describe_optimized_plan_tree(&self, py: Python) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.describe_optimized_plan_tree())
     }
 
-    fn to_dot(&self, optimized: bool) -> PyResult<String> {
-        let result = self.ldf.to_dot(optimized).map_err(PyPolarsErr::from)?;
-        Ok(result)
+    fn to_dot(&self, py: Python, optimized: bool) -> PyResult<String> {
+        py.enter_polars(|| self.ldf.to_dot(optimized))
     }
 
     fn optimization_toggle(
