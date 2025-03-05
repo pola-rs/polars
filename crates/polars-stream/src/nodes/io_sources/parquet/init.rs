@@ -41,6 +41,8 @@ impl ParquetSourceNode {
         let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
 
+        // @TODO: Make this parallelized somehow.
+
         let mut row_group_data_fetcher = RowGroupDataFetcher {
             metadata_rx,
             use_statistics,

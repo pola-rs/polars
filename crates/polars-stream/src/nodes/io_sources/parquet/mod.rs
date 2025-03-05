@@ -70,10 +70,6 @@ pub struct ParquetSourceNode {
 #[derive(Debug)]
 struct Config {
     num_pipelines: usize,
-    /// Number of files to pre-fetch metadata for concurrently
-    metadata_prefetch_size: usize,
-    /// Number of files to decode metadata for in parallel in advance
-    metadata_decode_ahead_size: usize,
     /// Number of row groups to pre-fetch concurrently, this can be across files
     row_group_prefetch_size: usize,
     /// Minimum number of values for a parallel spawned task to process to amortize
@@ -127,8 +123,6 @@ impl ParquetSourceNode {
             config: Config {
                 // Initialized later
                 num_pipelines: 0,
-                metadata_prefetch_size: 0,
-                metadata_decode_ahead_size: 0,
                 row_group_prefetch_size: 0,
                 min_values_per_thread: 0,
             },
@@ -166,10 +160,6 @@ impl SourceNode for ParquetSourceNode {
             .collect::<(Vec<_>, Vec<_>)>();
 
         self.config = {
-            let metadata_prefetch_size = polars_core::config::get_file_prefetch_size();
-            // Limit metadata decode to the number of threads.
-            let metadata_decode_ahead_size =
-                (metadata_prefetch_size / 2).min(1 + num_pipelines).max(1);
             let row_group_prefetch_size = polars_core::config::get_rg_prefetch_size();
 
             // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
@@ -179,8 +169,6 @@ impl SourceNode for ParquetSourceNode {
 
             Config {
                 num_pipelines,
-                metadata_prefetch_size,
-                metadata_decode_ahead_size,
                 row_group_prefetch_size,
                 min_values_per_thread,
             }
