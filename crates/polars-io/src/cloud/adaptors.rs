@@ -190,9 +190,11 @@ impl Drop for CloudWriter {
     fn drop(&mut self) {
         // TODO: Once we are properly calling `close()` from all contexts this can instead be a
         // debug_assert that we are in an `Err(_)` state when dropping.
-        match self.inner {
-            WriterState::Open(_) => self.close_sync().unwrap(),
-            WriterState::Err(_) => {},
+        if !std::thread::panicking() {
+            match self.inner {
+                WriterState::Open(_) => self.close_sync().unwrap(),
+                WriterState::Err(_) => {},
+            }
         }
     }
 }
