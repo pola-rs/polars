@@ -30,7 +30,7 @@ pub(super) struct RowGroupDataFetcher {
         usize,
         usize,
         Arc<DynByteSource>,
-        FileMetadata,
+        Arc<FileMetadata>,
     )>,
     pub(super) use_statistics: bool,
     pub(super) verbose: bool,
@@ -40,10 +40,11 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) predicate: Option<ScanIOPredicate>,
     pub(super) slice_range: Option<std::ops::Range<usize>>,
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
+    pub(super) metadata: Arc<FileMetadata>,
     pub(super) current_path_index: usize,
     pub(super) current_byte_source: Arc<DynByteSource>,
-    pub(super) current_row_groups: std::vec::IntoIter<RowGroupMetadata>,
     pub(super) current_row_group_idx: usize,
+    pub(super) current_end_row_group: usize,
     pub(super) current_max_row_group_height: usize,
     pub(super) current_row_offset: usize,
 }
@@ -62,7 +63,7 @@ impl RowGroupDataFetcher {
         // during slice pushdown.
         self.current_row_offset = row_offset;
         self.current_row_group_idx = 0;
-        self.current_row_groups = metadata.row_groups.into_iter();
+        self.current_end_row_group = metadata.row_groups.len();
 
         true
     }
@@ -71,7 +72,9 @@ impl RowGroupDataFetcher {
         &mut self,
     ) -> Option<PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
         'main: loop {
-            for row_group_metadata in self.current_row_groups.by_ref() {
+            while self.current_row_group_idx < self.current_end_row_group {
+                let idx = self.current_row_group_idx;
+                let row_group_metadata = &self.metadata.row_groups[idx];
                 let current_row_offset = self.current_row_offset;
                 let current_row_group_idx = self.current_row_group_idx;
 
@@ -132,7 +135,7 @@ impl RowGroupDataFetcher {
                                     (remaining {} row groups will not be read)",
                                     current_row_group_idx,
                                     self.current_path_index,
-                                    self.current_row_groups.len(),
+                                    self.metadata.row_groups.len() - self.current_row_group_idx,
                                 );
                             };
                             break 'main;
@@ -145,12 +148,14 @@ impl RowGroupDataFetcher {
                     None
                 };
 
+                let metadata = self.metadata.clone();
                 let current_byte_source = self.current_byte_source.clone();
                 let projection = self.projection.clone();
                 let memory_prefetch_func = self.memory_prefetch_func;
                 let io_runtime = polars_io::pl_async::get_runtime();
 
                 let handle = io_runtime.spawn(async move {
+                    let row_group_metadata = &metadata.row_groups[idx];
                     let fetched_bytes =
                         if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
                             // Skip byte range calculation for `no_prefetch`.
@@ -220,7 +225,8 @@ impl RowGroupDataFetcher {
                         fetched_bytes,
                         row_offset: current_row_offset,
                         slice,
-                        row_group_metadata,
+                        // @TODO: Remove clone
+                        row_group_metadata: row_group_metadata.clone(),
                         sorting_map,
                     })
                 });

@@ -4,6 +4,7 @@ use polars_core::config;
 use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
+use polars_core::utils::slice_offsets;
 use polars_error::{polars_err, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
@@ -48,7 +49,8 @@ pub struct ParquetSourceNode {
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
-    first_metadata: Option<Arc<FileMetadata>>,
+    normalized_pre_slice: Option<(usize, usize)>,
+    metadata: Arc<FileMetadata>,
     // Run-time vars
     config: Config,
     verbose: bool,
@@ -88,7 +90,7 @@ impl ParquetSourceNode {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         mut file_options: FileScanOptions,
-        first_metadata: Option<Arc<FileMetadata>>,
+        metadata: Arc<FileMetadata>,
     ) -> Self {
         let verbose = config::verbose();
 
@@ -104,6 +106,14 @@ impl ParquetSourceNode {
             .take()
             .map(|ri| Arc::new((ri.name, AtomicIdxSize::new(ri.offset))));
 
+        let normalized_pre_slice = file_options.pre_slice.map(|(offset, length)| {
+            slice_offsets(
+                offset,
+                length,
+                metadata.num_rows as usize,
+            )
+        });
+
         Self {
             scan_sources,
             file_info,
@@ -111,7 +121,8 @@ impl ParquetSourceNode {
             options,
             cloud_options,
             file_options,
-            first_metadata,
+            normalized_pre_slice,
+            metadata,
 
             config: Config {
                 // Initialized later
@@ -179,7 +190,7 @@ impl SourceNode for ParquetSourceNode {
             eprintln!("[ParquetSource]: {:?}", &self.config);
         }
 
-        let num_rows = self.first_metadata.as_ref().unwrap().num_rows;
+        let num_rows = self.metadata.num_rows;
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
         self.init_projected_arrow_schema();
 
@@ -336,7 +347,7 @@ impl MultiScanable for ParquetSourceNode {
             options,
             cloud_options.cloned(),
             file_options,
-            Some(Arc::new(file_metadata)),
+            Arc::new(file_metadata),
         ))
     }
 
@@ -376,7 +387,7 @@ impl MultiScanable for ParquetSourceNode {
     }
 
     async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
-        let num_rows = self.first_metadata.as_ref().unwrap().num_rows;
+        let num_rows = self.metadata.num_rows;
         IdxSize::try_from(num_rows)
             .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))
     }

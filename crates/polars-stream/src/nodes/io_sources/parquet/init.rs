@@ -51,10 +51,11 @@ impl ParquetSourceNode {
             predicate,
             slice_range: None, // Initialized later
             memory_prefetch_func,
+            metadata: self.metadata.clone(),
             current_path_index: 0,
             current_byte_source: Default::default(),
-            current_row_groups: Default::default(),
             current_row_group_idx: 0,
+            current_end_row_group: 0,
             current_max_row_group_height: 0,
             current_row_offset: 0,
         };
