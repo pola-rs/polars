@@ -84,6 +84,7 @@ from polars.dependencies import (
 from polars.dependencies import polars_cloud as pc
 from polars.dependencies import pyarrow as pa
 from polars.exceptions import PerformanceWarning
+from polars.interchange.protocol import CompatLevel
 from polars.lazyframe.engine_config import GPUEngine
 from polars.lazyframe.group_by import LazyGroupBy
 from polars.lazyframe.in_process import InProcessQuery
@@ -115,6 +116,7 @@ if TYPE_CHECKING:
         FrameInitTypes,
         IntoExpr,
         IntoExprColumn,
+        IpcCompression,
         JoinStrategy,
         JoinValidation,
         Label,
@@ -1677,7 +1679,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
-        engine: EngineType = "in-memory",
+        engine: EngineType = "auto",
         _check_order: bool = True,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
@@ -1723,8 +1725,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run parts of the query in a streaming fashion (this is in an alpha state)
         engine
             Select the engine used to process the query, optional.
-            If set to `"in-memory"` (default), the query is run using the
-            polars CPU engine. If set to `"gpu"`, the GPU engine is
+            At the moment, if set to `"auto"` (default), the query is run using
+            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
             devices, is possible by providing a :class:`~.GPUEngine` object
@@ -1875,7 +1877,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "in-memory",
+        engine: EngineType = "auto",
         background: Literal[True],
         _eager: bool = False,
         _check_order: bool = True,
@@ -1897,7 +1899,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "in-memory",
+        engine: EngineType = "auto",
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1918,7 +1920,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "in-memory",
+        engine: EngineType = "auto",
         background: bool = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1966,8 +1968,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mode.
         engine
             Select the engine used to process the query, optional.
-            If set to `"in-memory"` (default), the query is run using the
-            polars CPU engine. If set to `"gpu"`, the GPU engine is
+            At the moment, If set to `"auto"` (default), the query is run using
+            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
             used. Fine-grained control over the GPU engine, for
             example which device to use on a system with multiple
             devices, is possible by providing a :class:`~.GPUEngine` object
@@ -2028,7 +2030,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         Collect in streaming mode
 
         >>> lf.group_by("a").agg(pl.all().sum()).collect(
-        ...     streaming=True
+        ...     engine="streaming"
         ... )  # doctest: +SKIP
         shape: (3, 3)
         ┌─────┬─────┬─────┐
@@ -2374,7 +2376,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
-        engine: EngineType = "old-streaming",
+        engine: EngineType = "auto",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a Parquet file.
@@ -2475,8 +2477,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         engine
             Select the engine used to process the query, optional.
-            If set to `"old-streaming"` (default), the query is run using the
-            polars old streaming engine.
+            At the moment, if set to `"auto"` (default), the query is run using
+            the polars old streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2491,6 +2493,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
         """
         lf = self._set_sink_optimizations(
+            engine,
             type_coercion=type_coercion,
             _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
@@ -2563,7 +2566,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         self,
         path: str | Path,
         *,
-        compression: str | None = "zstd",
+        compression: IpcCompression | None = "zstd",
+        compat_level: CompatLevel | None = None,
         maintain_order: bool = True,
         type_coercion: bool = True,
         _type_check: bool = True,
@@ -2579,7 +2583,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
-        engine: EngineType = "old-streaming",
+        engine: EngineType = "auto",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an IPC file.
@@ -2594,9 +2598,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ----------
         path
             File path to which the file should be written.
-        compression : {'lz4', 'zstd'}
+        compression : {'uncompressed', 'lz4', 'zstd'}
             Choose "zstd" for good compression performance.
             Choose "lz4" for fast compression/decompression.
+        compat_level
+            Use a specific compatibility level
+            when exporting Polars' internal data structures.
         maintain_order
             Maintain the order in which data is processed.
             Setting this to `False` will be slightly faster.
@@ -2646,8 +2653,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         engine
             Select the engine used to process the query, optional.
-            If set to `"old-streaming"` (default), the query is run using the
-            polars old streaming engine.
+            At the moment, if set to `"auto"` (default), the query is run using
+            the polars old streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2662,6 +2669,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
         """
         lf = self._set_sink_optimizations(
+            engine,
             type_coercion=type_coercion,
             _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
@@ -2698,9 +2706,18 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             "maintain_order": maintain_order,
         }
 
+        if compat_level is None:
+            compat_level = True  # type: ignore[assignment]
+        elif isinstance(compat_level, CompatLevel):
+            compat_level = compat_level._version  # type: ignore[attr-defined]
+
+        if compression is None:
+            compression = "uncompressed"
+
         return lf.sink_ipc(
             target=target,
             compression=compression,
+            compat_level=compat_level,
             cloud_options=storage_options,
             credential_provider=credential_provider_builder,
             retries=retries,
@@ -2741,7 +2758,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
-        engine: EngineType = "old-streaming",
+        engine: EngineType = "auto",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to a CSV file.
@@ -2856,8 +2873,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         engine
             Select the engine used to process the query, optional.
-            If set to `"old-streaming"` (default), the query is run using the
-            polars old streaming engine.
+            At the moment, if set to `"auto"` (default), the query is run using
+            the polars old streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2879,6 +2896,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             null_value = None
 
         lf = self._set_sink_optimizations(
+            engine,
             type_coercion=type_coercion,
             _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
@@ -2957,7 +2975,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         | None = "auto",
         retries: int = 2,
         sync_on_close: SyncOnCloseMethod | None = None,
-        engine: EngineType = "old-streaming",
+        engine: EngineType = "auto",
     ) -> None:
         """
         Evaluate the query in streaming mode and write to an NDJSON file.
@@ -3021,8 +3039,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             * `all` syncs the file contents and metadata.
         engine
             Select the engine used to process the query, optional.
-            If set to `"old-streaming"` (default), the query is run using the
-            polars old streaming engine.
+            At the moment, if set to `"auto"` (default), the query is run using
+            the polars old streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -3037,6 +3055,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
         """
         lf = self._set_sink_optimizations(
+            engine,
             type_coercion=type_coercion,
             _type_check=_type_check,
             predicate_pushdown=predicate_pushdown,
@@ -3084,6 +3103,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
     def _set_sink_optimizations(
         self,
+        engine: EngineType = "auto",
         *,
         type_coercion: bool = True,
         _type_check: bool = True,
@@ -3115,10 +3135,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=True,
+            streaming=engine in ("auto", "old-streaming"),
             _eager=False,
             _check_order=_check_order,
-            new_streaming=False,
+            new_streaming=engine == "streaming",
         )
 
     @deprecate_function(

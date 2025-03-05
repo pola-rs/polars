@@ -755,13 +755,15 @@ impl PyLazyFrame {
 
     #[cfg(all(feature = "streaming", feature = "ipc"))]
     #[pyo3(signature = (
-        target, compression, cloud_options, credential_provider, retries, sink_options, engine
+        target, compression, compat_level, cloud_options, credential_provider, retries,
+        sink_options, engine
     ))]
     fn sink_ipc(
         &self,
         py: Python,
         target: SinkTarget,
         compression: Option<Wrap<IpcCompression>>,
+        compat_level: PyCompatLevel,
         cloud_options: Option<Vec<(String, String)>>,
         credential_provider: Option<PyObject>,
         retries: usize,
@@ -770,6 +772,7 @@ impl PyLazyFrame {
     ) -> PyResult<()> {
         let options = IpcWriterOptions {
             compression: compression.map(|c| c.0),
+            compat_level: compat_level.0,
         };
 
         #[cfg(feature = "cloud")]
