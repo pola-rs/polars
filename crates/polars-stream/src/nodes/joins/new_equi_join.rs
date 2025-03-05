@@ -667,15 +667,30 @@ impl ProbeState {
 
         let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
         let mut probe_out = DataFrameBuilder::new(probe_payload_schema.clone());
+        
+        // A simple estimate used to size reserves.
+        let mut selectivity_estimate = 1.0;
 
         while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
+            max_seq = seq;
+
+            let df_height = df.height();
+            if df_height == 0 {
+                continue;
+            }
+
             let hash_keys = select_keys(&df, key_selectors, params, state).await?;
             let mut payload = select_payload(df, payload_selector);
             let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
-
-            max_seq = seq;
+            let mut total_matches = 0;
+            
+            // Use selectivity estimate to reserve for morsel builders.
+            let max_match_per_key_est = selectivity_estimate as usize + 16;
+            let out_est_size = ((selectivity_estimate * 1.2 * df_height as f64) as usize).min(probe_limit as usize);
+            build_out.reserve(out_est_size + max_match_per_key_est);
+            probe_out.reserve(out_est_size + max_match_per_key_est);
 
             unsafe {
                 // Partition and probe the tables.
@@ -715,10 +730,11 @@ impl ProbeState {
                                 emit_unmatched,
                                 probe_limit - probe_out.len() as IdxSize,
                             ) as usize;
-
-                            if table_match.is_empty() {
+                            
+                            if probe_match.is_empty() {
                                 continue;
                             }
+                            total_matches += probe_match.len();
 
                             // Gather output and send.
                             if emit_unmatched {
@@ -737,6 +753,10 @@ impl ProbeState {
                                 if send.send(out_morsel).await.is_err() {
                                     return Ok(max_seq);
                                 }
+                                // We had enough matches to need a mid-partition flush, let's assume there are a lot of
+                                // matches and just do a large reserve.
+                                build_out.reserve(probe_limit as usize + max_match_per_key_est);
+                                probe_out.reserve(probe_limit as usize + max_match_per_key_est);
                             }
                         }
                     }
@@ -751,6 +771,9 @@ impl ProbeState {
             }
 
             drop(wait_token);
+            
+            // Move selectivity estimate a bit towards latest value.
+            selectivity_estimate = 0.8 * selectivity_estimate + 0.2 * (total_matches as f64 / df_height as f64);
         }
 
         Ok(max_seq)
