@@ -11,6 +11,10 @@ use crate::prelude::*;
 pub struct ArrayNameSpace(pub Expr);
 
 impl ArrayNameSpace {
+    pub fn len(self) -> Expr {
+        self.0
+            .map_private(FunctionExpr::ArrayExpr(ArrayFunction::Length))
+    }
     /// Compute the maximum of the items in every subarray.
     pub fn max(self) -> Expr {
         self.0

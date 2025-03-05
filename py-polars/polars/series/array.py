@@ -210,6 +210,27 @@ class ArrayNameSpace:
         ]
         """
 
+    def len(self) -> Series:
+        """
+        Return the number of elements in each array.
+
+        Returns
+        -------
+        Series
+            Series of data type :class:`UInt32`.
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [[1, 2], [4, 3]], dtype=pl.Array(pl.Int64, 2))
+        >>> s.arr.len()
+        shape: (2,)
+        Series: 'a' [u32]
+        [
+            2
+            2
+        ]
+        """
+
     def all(self) -> Series:
         """
         Evaluate whether all boolean values are true for every subarray.
