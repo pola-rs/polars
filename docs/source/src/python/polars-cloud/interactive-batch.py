@@ -42,19 +42,18 @@ lf = lf.select(
     (pl.col("weight") / (pl.col("height") ** 2)).alias("bmi"),
 ).sort(by="bmi")
 
-res1 = lf.remote(ctx).collect().await_result()
+res1 = lf.remote(ctx).collect()
 
 # --8<-- [end:interactive]
 
 # --8<-- [start:interactive-next]
 res2 = (
-    res1.lazy()
+    res1
     .filter(
         pl.col("birth_year").is_in([1983, 1985]),
     )
     .remote(ctx)
     .collect()
-    .await_result()
 )
 # --8<-- [end:interactive-next]
 """

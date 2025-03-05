@@ -50,21 +50,25 @@ The initial query remains the same. In the compute context the parameter `intera
 to `True`.
 
 When calling `.collect()` on your remote query execution, the output is written to a temporary
-location. These intermediate result files are automatically deleted after several hours. You can see
-the location of this folder when printing the query results.
-
-Users can call `.lazy()` on the result and continue working with the previous result.
+location. These intermediate result files are automatically deleted after several hours. The output
+of the remote query is a LazyFrame.
 
 ```python
-print(res1)
+print(type(res1))
+```
+
+```
+<class 'polars.lazyframe.frame.LazyFrame'>
+```
+
+If you want to inspect the results you can call collect again.
+
+```python
+print(res1.collect())
 ```
 
 ```text
-total_stages: 1
-finished_stages: 1
-total_rows: 4
-location: ['s3://polars-cloud-<workspace_id>/query_outputs/<query_id>/<random id>.parquet']
-head:
+shape: (4, 3)
 ┌────────────────┬────────────┬───────────┐
 │ name           ┆ birth_year ┆ bmi       │
 │ ---            ┆ ---        ┆ ---       │
@@ -77,20 +81,16 @@ head:
 └────────────────┴────────────┴───────────┘
 ```
 
-To continue your query we can read the result to a new LazyFrame and continue your exploration.
+To continue your exploration you can use the returned LazyFrame to build another query.
 
 {{code_block('polars-cloud/interactive-batch','interactive-next',[])}}
 
 ```python
-print(res2)
+print(res2.collect())
 ```
 
 ```text
-total_stages: 1
-finished_stages: 1
-total_rows: 2
-location: ['s3://polars-cloud-<workspace_id>/query_outputs/<query_id>/<random id>.parquet']
-head:
+shape: (2, 3)
 ┌──────────────┬────────────┬───────────┐
 │ name         ┆ birth_year ┆ bmi       │
 │ ---          ┆ ---        ┆ ---       │

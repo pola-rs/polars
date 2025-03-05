@@ -18,7 +18,7 @@ demonstrate the workflow. Here we will create the LazyFrame ourselves, but it co
 ```python
 import polars as pl
 
-lf = pl.DataFrame(
+lf = pl.LazyFrame(
     {
         "region": [
             "Australia",
@@ -102,8 +102,7 @@ import polars_cloud as pc
 ctx = pc.ComputeContext(
     workspace="environmental-analysis",
     memory=32,
-    cpus=8,
-    cluster_size=4
+    cpus=8
 )
 
 query.remote(ctx).sink_parquet("s3://bucket/result.parquet")
@@ -119,21 +118,16 @@ ctx = pc.ComputeContext(
     workspace="environmental-analysis",
     memory=32,
     cpus=8,
-    cluster_size=4,
     interactive=True,  # set interactive to True
 )
 
-result = query.remote(ctx).collect().await_result()
+result = query.remote(ctx).collect()
 
-print(result)
+print(result.collect())
 ```
 
 ```text
-total_stages: 1
-finished_stages: 1
-total_rows: 4
-location: ['s3://polars-cloud-xxx-xxx-xxx-xxx-eddc267994b8/query_outputs/22079a94-6424-4dc1-b1d7-3ea0dc4cafcc/7e966528-4238-4b34-aa52-6242be285723.parquet']
-head:
+shape: (4, 6)
 ┌───────────────┬─────────────┬──────────┬───────────┬────────────────────┬───────────┐
 │ region        ┆ temperature ┆ humidity ┆ burn_area ┆ vegetation_density ┆ fire_risk │
 │ ---           ┆ ---         ┆ ---      ┆ ---       ┆ ---                ┆ ---       │
@@ -147,15 +141,15 @@ head:
 ```
 
 We can call `.collect()` instead of `.sink_parquet()`. This will store your results to a temporary
-location which can be used to further iterate upon. To continue on the result from `collect` simply
-call `lazy` and you can get back a `LazyFrame` for further analysis.
+location which can be used to further iterate upon. A LazyFrame is returned that can be used in the
+next steps of the workflow.
 
 ```python
 res2 = (
-    result.lazy()
+    result
     .filter(pl.col("fire_risk") > 1)
     .sink_parquet("s3://bucket/output-interactive.parquet")
 )
 ```
 
-Finally, the results of your interactive workflow can be written to S3.
+The result of your interactive workflow can be written to S3.
