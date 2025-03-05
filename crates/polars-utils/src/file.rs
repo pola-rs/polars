@@ -1,6 +1,5 @@
 use std::fs::File;
 use std::io::{Read, Seek, Write};
-use std::os::fd::IntoRawFd;
 
 impl From<File> for ClosableFile {
     fn from(value: File) -> Self {
@@ -21,6 +20,7 @@ pub struct ClosableFile {
 impl ClosableFile {
     #[cfg(unix)]
     pub fn close(self) -> std::io::Result<()> {
+        use std::os::fd::IntoRawFd;
         let fd = self.inner.into_raw_fd();
 
         match unsafe { libc::close(fd) } {
