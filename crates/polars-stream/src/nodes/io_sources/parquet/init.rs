@@ -64,7 +64,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
             if let Some(stats) = collect_statistics(rg, reader_schema.as_ref())? {
                 // @TODO:
                 // 1. Only collect statistics for live columns
-                // 2. Gather into a contigious buffer, not this rechunking
+                // 2. Gather into a contiguous buffer, not this rechunking
                 for col in stats.column_stats().iter() {
                     let Some(idx) = live_columns.get_index_of(col.field_name()) else {
                         continue;
