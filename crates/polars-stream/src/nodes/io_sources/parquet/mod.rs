@@ -31,7 +31,6 @@ use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
 mod init;
-mod metadata_fetch;
 mod metadata_utils;
 mod row_group_data_fetch;
 mod row_group_decode;
@@ -63,8 +62,6 @@ pub struct ParquetSourceNode {
     /// so the row index offset needs to be updated by the initializer to
     /// reflect this (https://github.com/pola-rs/polars/issues/19607).
     row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
-    // This permit blocks execution until the first morsel is requested.
-    morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 #[derive(Debug)]
@@ -132,8 +129,6 @@ impl ParquetSourceNode {
             byte_source_builder,
             memory_prefetch_func,
             row_index,
-
-            morsel_stream_starter: None,
         }
     }
 }
@@ -183,19 +178,12 @@ impl SourceNode for ParquetSourceNode {
         self.init_projected_arrow_schema();
 
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
-        let mut morsel_stream_starter = self.morsel_stream_starter.take();
 
         join_handles.push(spawn(TaskPriority::Low, async move {
             if let Some(rc) = unrestricted_row_count {
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))?;
                 _ = rc.send(num_rows);
-            }
-
-            if let Some(v) = morsel_stream_starter.take() {
-                if v.send(()).is_err() {
-                    return Ok(());
-                }
             }
 
             // Every phase we are given a new send port.

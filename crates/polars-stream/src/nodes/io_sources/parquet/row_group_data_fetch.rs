@@ -26,12 +26,6 @@ pub(super) struct RowGroupData {
 }
 
 pub(super) struct RowGroupDataFetcher {
-    pub(super) metadata_rx: crate::async_primitives::connector::Receiver<(
-        usize,
-        usize,
-        Arc<DynByteSource>,
-        Arc<FileMetadata>,
-    )>,
     pub(super) use_statistics: bool,
     pub(super) verbose: bool,
     pub(super) reader_schema: Arc<ArrowSchema>,
@@ -41,204 +35,175 @@ pub(super) struct RowGroupDataFetcher {
     pub(super) slice_range: Option<std::ops::Range<usize>>,
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
     pub(super) metadata: Arc<FileMetadata>,
-    pub(super) current_path_index: usize,
-    pub(super) current_byte_source: Arc<DynByteSource>,
-    pub(super) current_row_group_idx: usize,
-    pub(super) current_end_row_group: usize,
-    pub(super) current_max_row_group_height: usize,
-    pub(super) current_row_offset: usize,
+    pub(super) byte_source: Arc<DynByteSource>,
+    pub(super) row_group_idx: usize,
+    pub(super) row_offset: usize,
 }
 
 impl RowGroupDataFetcher {
-    pub(super) async fn init_next_file_state(&mut self) -> bool {
-        let Ok((path_index, row_offset, byte_source, metadata)) = self.metadata_rx.recv().await
-        else {
-            return false;
-        };
-
-        self.current_path_index = path_index;
-        self.current_byte_source = byte_source;
-        self.current_max_row_group_height = metadata.max_row_group_height;
-        // The metadata task also sends a row offset to start counting from as it may skip files
-        // during slice pushdown.
-        self.current_row_offset = row_offset;
-        self.current_row_group_idx = 0;
-        self.current_end_row_group = metadata.row_groups.len();
-
-        true
-    }
-
     pub(super) async fn next(
         &mut self,
     ) -> Option<PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
-        'main: loop {
-            while self.current_row_group_idx < self.current_end_row_group {
-                let idx = self.current_row_group_idx;
-                let row_group_metadata = &self.metadata.row_groups[idx];
-                let current_row_offset = self.current_row_offset;
-                let current_row_group_idx = self.current_row_group_idx;
+        while self.row_group_idx < self.metadata.row_groups.len() {
+            let idx = self.row_group_idx;
+            let row_group_metadata = &self.metadata.row_groups[idx];
+            let current_row_offset = self.row_offset;
+            let current_row_group_idx = self.row_group_idx;
 
-                let num_rows = row_group_metadata.num_rows();
-                let sorting_map = create_sorting_map(&row_group_metadata);
+            let num_rows = row_group_metadata.num_rows();
+            let sorting_map = create_sorting_map(&row_group_metadata);
 
-                self.current_row_offset = current_row_offset.saturating_add(num_rows);
-                self.current_row_group_idx += 1;
+            self.row_offset = current_row_offset.saturating_add(num_rows);
+            self.row_group_idx += 1;
 
-                if self.use_statistics
-                    && !match read_this_row_group(
-                        self.predicate.as_ref(),
-                        &row_group_metadata,
-                        self.reader_schema.as_ref(),
-                    ) {
-                        Ok(v) => v,
-                        Err(e) => return Some(Err(e)),
-                    }
-                {
-                    if self.verbose {
-                        eprintln!(
-                            "[ParquetSource]: Predicate pushdown: \
-                            Skipped row group {} in file {} ({} rows)",
-                            current_row_group_idx, self.current_path_index, num_rows
-                        );
-                    }
-                    continue;
+            if self.use_statistics
+                && !match read_this_row_group(
+                    self.predicate.as_ref(),
+                    &row_group_metadata,
+                    self.reader_schema.as_ref(),
+                ) {
+                    Ok(v) => v,
+                    Err(e) => return Some(Err(e)),
                 }
-
-                if num_rows > IdxSize::MAX as usize {
-                    let msg = operation_exceeded_idxsize_msg(
-                        format!("number of rows in row group ({})", num_rows).as_str(),
+            {
+                if self.verbose {
+                    eprintln!(
+                        "[ParquetSource]: Predicate pushdown: \
+                            Skipped row group {} in file ({} rows)",
+                        current_row_group_idx, num_rows
                     );
-                    return Some(Err(polars_err!(ComputeError: msg)));
                 }
+                continue;
+            }
 
-                let slice = if let Some(slice_range) = self.slice_range.clone() {
-                    let (offset, len) = match SplitSlicePosition::split_slice_at_file(
-                        current_row_offset,
-                        num_rows,
-                        slice_range,
-                    ) {
-                        SplitSlicePosition::Before => {
-                            if self.verbose {
-                                eprintln!(
-                                    "[ParquetSource]: Slice pushdown: \
-                                    Skipped row group {} in file {} ({} rows)",
-                                    current_row_group_idx, self.current_path_index, num_rows
-                                );
-                            }
-                            continue;
-                        },
-                        SplitSlicePosition::After => {
-                            if self.verbose {
-                                eprintln!(
-                                    "[ParquetSource]: Slice pushdown: \
-                                    Stop at row group {} in file {} \
+            if num_rows > IdxSize::MAX as usize {
+                let msg = operation_exceeded_idxsize_msg(
+                    format!("number of rows in row group ({})", num_rows).as_str(),
+                );
+                return Some(Err(polars_err!(ComputeError: msg)));
+            }
+
+            let slice = if let Some(slice_range) = self.slice_range.clone() {
+                let (offset, len) = match SplitSlicePosition::split_slice_at_file(
+                    current_row_offset,
+                    num_rows,
+                    slice_range,
+                ) {
+                    SplitSlicePosition::Before => {
+                        if self.verbose {
+                            eprintln!(
+                                "[ParquetSource]: Slice pushdown: \
+                                    Skipped row group {} ({} rows)",
+                                current_row_group_idx, num_rows
+                            );
+                        }
+                        continue;
+                    },
+                    SplitSlicePosition::After => {
+                        if self.verbose {
+                            eprintln!(
+                                "[ParquetSource]: Slice pushdown: \
+                                    Stop at row group {} \
                                     (remaining {} row groups will not be read)",
-                                    current_row_group_idx,
-                                    self.current_path_index,
-                                    self.metadata.row_groups.len() - self.current_row_group_idx,
-                                );
-                            };
-                            break 'main;
-                        },
-                        SplitSlicePosition::Overlapping(offset, len) => (offset, len),
-                    };
-
-                    Some((offset, len))
-                } else {
-                    None
+                                current_row_group_idx,
+                                self.metadata.row_groups.len() - self.row_group_idx,
+                            );
+                        };
+                        return None;
+                    },
+                    SplitSlicePosition::Overlapping(offset, len) => (offset, len),
                 };
 
-                let metadata = self.metadata.clone();
-                let current_byte_source = self.current_byte_source.clone();
-                let projection = self.projection.clone();
-                let memory_prefetch_func = self.memory_prefetch_func;
-                let io_runtime = polars_io::pl_async::get_runtime();
+                Some((offset, len))
+            } else {
+                None
+            };
 
-                let handle = io_runtime.spawn(async move {
-                    let row_group_metadata = &metadata.row_groups[idx];
-                    let fetched_bytes =
-                        if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
-                            // Skip byte range calculation for `no_prefetch`.
-                            if memory_prefetch_func as usize
-                                != polars_utils::mem::prefetch::no_prefetch as usize
-                            {
-                                let slice = mem_slice.0.as_ref();
+            let metadata = self.metadata.clone();
+            let current_byte_source = self.byte_source.clone();
+            let projection = self.projection.clone();
+            let memory_prefetch_func = self.memory_prefetch_func;
+            let io_runtime = polars_io::pl_async::get_runtime();
 
-                                if let Some(columns) = projection.as_ref() {
-                                    for range in get_row_group_byte_ranges_for_projection(
-                                        &row_group_metadata,
-                                        columns.as_ref(),
-                                    ) {
-                                        memory_prefetch_func(unsafe { slice.get_unchecked(range) })
-                                    }
-                                } else {
-                                    let range = row_group_metadata.full_byte_range();
-                                    let range = range.start as usize..range.end as usize;
+            let handle = io_runtime.spawn(async move {
+                let row_group_metadata = &metadata.row_groups[idx];
+                let fetched_bytes =
+                    if let DynByteSource::MemSlice(mem_slice) = current_byte_source.as_ref() {
+                        // Skip byte range calculation for `no_prefetch`.
+                        if memory_prefetch_func as usize
+                            != polars_utils::mem::prefetch::no_prefetch as usize
+                        {
+                            let slice = mem_slice.0.as_ref();
 
+                            if let Some(columns) = projection.as_ref() {
+                                for range in get_row_group_byte_ranges_for_projection(
+                                    &row_group_metadata,
+                                    columns.as_ref(),
+                                ) {
                                     memory_prefetch_func(unsafe { slice.get_unchecked(range) })
-                                };
-                            }
+                                }
+                            } else {
+                                let range = row_group_metadata.full_byte_range();
+                                let range = range.start as usize..range.end as usize;
 
-                            // We have a mmapped or in-memory slice representing the entire
-                            // file that can be sliced directly, so we can skip the byte-range
-                            // calculations and HashMap allocation.
-                            let mem_slice = mem_slice.0.clone();
-                            FetchedBytes::MemSlice {
-                                offset: 0,
-                                mem_slice,
-                            }
-                        } else if let Some(columns) = projection.as_ref() {
-                            let mut ranges = get_row_group_byte_ranges_for_projection(
-                                &row_group_metadata,
-                                columns.as_ref(),
-                            )
+                                memory_prefetch_func(unsafe { slice.get_unchecked(range) })
+                            };
+                        }
+
+                        // We have a mmapped or in-memory slice representing the entire
+                        // file that can be sliced directly, so we can skip the byte-range
+                        // calculations and HashMap allocation.
+                        let mem_slice = mem_slice.0.clone();
+                        FetchedBytes::MemSlice {
+                            offset: 0,
+                            mem_slice,
+                        }
+                    } else if let Some(columns) = projection.as_ref() {
+                        let mut ranges = get_row_group_byte_ranges_for_projection(
+                            &row_group_metadata,
+                            columns.as_ref(),
+                        )
+                        .collect::<Vec<_>>();
+
+                        let n_ranges = ranges.len();
+
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+
+                        assert_eq!(bytes_map.len(), n_ranges);
+
+                        FetchedBytes::BytesMap(bytes_map)
+                    } else {
+                        // We still prefer `get_ranges()` over a single `get_range()` for downloading
+                        // the entire row group, as it can have less memory-copying. A single `get_range()`
+                        // would naively concatenate the memory blocks of the entire row group, while
+                        // `get_ranges()` can skip concatenation since the downloaded blocks are
+                        // aligned to the columns.
+                        let mut ranges = row_group_metadata
+                            .byte_ranges_iter()
+                            .map(|x| x.start as usize..x.end as usize)
                             .collect::<Vec<_>>();
 
-                            let n_ranges = ranges.len();
+                        let n_ranges = ranges.len();
 
-                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
 
-                            assert_eq!(bytes_map.len(), n_ranges);
+                        assert_eq!(bytes_map.len(), n_ranges);
 
-                            FetchedBytes::BytesMap(bytes_map)
-                        } else {
-                            // We still prefer `get_ranges()` over a single `get_range()` for downloading
-                            // the entire row group, as it can have less memory-copying. A single `get_range()`
-                            // would naively concatenate the memory blocks of the entire row group, while
-                            // `get_ranges()` can skip concatenation since the downloaded blocks are
-                            // aligned to the columns.
-                            let mut ranges = row_group_metadata
-                                .byte_ranges_iter()
-                                .map(|x| x.start as usize..x.end as usize)
-                                .collect::<Vec<_>>();
+                        FetchedBytes::BytesMap(bytes_map)
+                    };
 
-                            let n_ranges = ranges.len();
+                PolarsResult::Ok(RowGroupData {
+                    fetched_bytes,
+                    row_offset: current_row_offset,
+                    slice,
+                    // @TODO: Remove clone
+                    row_group_metadata: row_group_metadata.clone(),
+                    sorting_map,
+                })
+            });
 
-                            let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
-
-                            assert_eq!(bytes_map.len(), n_ranges);
-
-                            FetchedBytes::BytesMap(bytes_map)
-                        };
-
-                    PolarsResult::Ok(RowGroupData {
-                        fetched_bytes,
-                        row_offset: current_row_offset,
-                        slice,
-                        // @TODO: Remove clone
-                        row_group_metadata: row_group_metadata.clone(),
-                        sorting_map,
-                    })
-                });
-
-                let handle = task_handles_ext::AbortOnDropHandle(handle);
-                return Some(Ok(handle));
-            }
-
-            // Initialize state to the next file.
-            if !self.init_next_file_state().await {
-                break;
-            }
+            let handle = task_handles_ext::AbortOnDropHandle(handle);
+            return Some(Ok(handle));
         }
 
         None

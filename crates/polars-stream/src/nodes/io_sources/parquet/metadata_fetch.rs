@@ -15,12 +15,7 @@ impl ParquetSourceNode {
     pub(super) fn init_metadata_fetcher(
         &mut self,
     ) -> (
-        crate::async_primitives::connector::Receiver<(
-            usize,
-            usize,
-            Arc<DynByteSource>,
-            Arc<FileMetadata>,
-        )>,
+        crate::async_primitives::connector::Receiver<Arc<DynByteSource>>,
         task_handles_ext::AbortOnDropHandle<PolarsResult<()>>,
     ) {
         let verbose = self.verbose;
@@ -37,9 +32,6 @@ impl ParquetSourceNode {
             );
         }
 
-        let (start_tx, start_rx) = tokio::sync::oneshot::channel();
-        self.morsel_stream_starter = Some(start_tx);
-
         let metadata = self.metadata.clone();
         let scan_sources = self.scan_sources.clone();
         let cloud_options = self.cloud_options.clone();
@@ -47,10 +39,6 @@ impl ParquetSourceNode {
         let metadata_task_handle = io_runtime.spawn(async move {
             let current_row_offset_ref = &mut 0usize;
             let current_path_index_ref = &mut 0usize;
-
-            if start_rx.await.is_err() {
-                return Ok(());
-            }
 
             if verbose {
                 eprintln!("[ParquetSource]: Starting data fetch")
@@ -69,11 +57,7 @@ impl ParquetSourceNode {
             let current_row_offset = *current_row_offset_ref;
             *current_row_offset_ref = current_row_offset.saturating_add(metadata.num_rows);
 
-            if metadata_tx
-                .send((0, current_row_offset, byte_source, metadata))
-                .await
-                .is_err()
-            {
+            if metadata_tx.send(byte_source).await.is_err() {
                 return Ok(());
             }
 

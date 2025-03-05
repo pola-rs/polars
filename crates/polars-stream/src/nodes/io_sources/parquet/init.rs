@@ -34,32 +34,10 @@ impl ParquetSourceNode {
 
         let reader_schema = self.schema.clone().unwrap();
 
-        let (metadata_rx, metadata_task) = self.init_metadata_fetcher();
-
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
         let projection = self.file_options.with_columns.clone();
         let predicate = self.predicate.clone();
         let memory_prefetch_func = self.memory_prefetch_func;
-
-        // @TODO: Make this parallelized somehow.
-
-        let mut row_group_data_fetcher = RowGroupDataFetcher {
-            metadata_rx,
-            use_statistics,
-            verbose,
-            reader_schema,
-            projection,
-            predicate,
-            slice_range: None, // Initialized later
-            memory_prefetch_func,
-            metadata: self.metadata.clone(),
-            current_path_index: 0,
-            current_byte_source: Default::default(),
-            current_row_group_idx: 0,
-            current_end_row_group: 0,
-            current_max_row_group_height: 0,
-            current_row_offset: 0,
-        };
 
         let row_group_decoder = self.init_row_group_decoder();
         let row_group_decoder = Arc::new(row_group_decoder);
@@ -70,6 +48,11 @@ impl ParquetSourceNode {
             eprintln!("[ParquetSource]: ideal_morsel_size: {}", ideal_morsel_size);
         }
 
+        let metadata = self.metadata.clone();
+        let scan_sources = self.scan_sources.clone();
+        let byte_source_builder = self.byte_source_builder.clone();
+        let cloud_options = self.cloud_options.clone();
+
         // Prefetch loop (spawns prefetches on the tokio scheduler).
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(row_group_prefetch_size);
@@ -77,7 +60,27 @@ impl ParquetSourceNode {
             .normalized_pre_slice
             .map(|(offset, length)| offset..offset + length);
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            row_group_data_fetcher.slice_range = slice_range;
+            let byte_source = Arc::new(
+                scan_sources
+                    .get(0)
+                    .unwrap()
+                    .to_dyn_byte_source(&byte_source_builder, cloud_options.as_ref())
+                    .await?,
+            );
+
+            let mut row_group_data_fetcher = RowGroupDataFetcher {
+                use_statistics,
+                verbose,
+                reader_schema,
+                projection,
+                predicate,
+                slice_range,
+                memory_prefetch_func,
+                metadata,
+                byte_source,
+                row_group_idx: 0,
+                row_offset: 0,
+            };
 
             loop {
                 let Some(prefetch) = row_group_data_fetcher.next().await else {
@@ -157,7 +160,6 @@ impl ParquetSourceNode {
         });
 
         let join_task = io_runtime.spawn(async move {
-            metadata_task.await.unwrap()?;
             prefetch_task.await.unwrap()?;
             decode_task.await.unwrap()?;
             distribute_task.await?;
