@@ -99,10 +99,6 @@ impl ParquetSourceNode {
             .take()
             .map(|ri| Arc::new((ri.name, AtomicIdxSize::new(ri.offset))));
 
-        let normalized_pre_slice = file_options
-            .pre_slice
-            .map(|(offset, length)| slice_offsets(offset, length, metadata.num_rows));
-
         Self {
             scan_sources,
             file_info,
@@ -110,7 +106,7 @@ impl ParquetSourceNode {
             options,
             cloud_options,
             file_options,
-            normalized_pre_slice,
+            normalized_pre_slice: None,
             metadata,
 
             config: Config {
@@ -168,6 +164,11 @@ impl SourceNode for ParquetSourceNode {
         if self.verbose {
             eprintln!("[ParquetSource]: {:?}", &self.config);
         }
+
+        self.normalized_pre_slice = self
+            .file_options
+            .pre_slice
+            .map(|(offset, length)| slice_offsets(offset, length, self.metadata.num_rows));
 
         let num_rows = self.metadata.num_rows;
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());

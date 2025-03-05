@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, IntoColumn, IDX_DTYPE};
+use polars_core::schema::{Schema, SchemaExt};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::datatypes::ArrowSchemaRef;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::_internal::{collect_statistics, PrefilterMaskSetting};
+use polars_io::prelude::_internal::{collect_statistics_with_live_columns, PrefilterMaskSetting};
 use polars_io::prelude::{FileMetadata, ParallelStrategy};
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
@@ -46,6 +47,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
     let live_columns = predicate.live_columns.clone();
     let reader_schema = reader_schema.clone();
     let skip_row_group_mask = async_executor::spawn(TaskPriority::High, async move {
+        let pl_schema = Arc::new(Schema::from_arrow_schema(reader_schema.as_ref()));
         let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
 
         let lengths: Vec<IdxSize> = metadata.row_groups[row_group_slice.clone()]
@@ -61,7 +63,12 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
         }
 
         for rg in &metadata.row_groups[row_group_slice.clone()] {
-            if let Some(stats) = collect_statistics(rg, reader_schema.as_ref())? {
+            if let Some(stats) = collect_statistics_with_live_columns(
+                rg,
+                reader_schema.as_ref(),
+                &pl_schema,
+                &live_columns,
+            )? {
                 // @TODO:
                 // 1. Only collect statistics for live columns
                 // 2. Gather into a contiguous buffer, not this rechunking
