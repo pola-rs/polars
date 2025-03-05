@@ -37,6 +37,7 @@ pub mod sys;
 pub mod total_ord;
 
 pub use functions::*;
+pub mod file;
 
 pub mod aliases;
 pub mod fixedringbuffer;

@@ -1,19 +1,23 @@
-use std::io::Write;
 use std::path::Path;
 
 use polars_core::config;
 use polars_error::{feature_gated, PolarsResult};
 use polars_utils::create_file;
+use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
 
 use crate::cloud::CloudOptions;
+#[cfg(feature = "cloud")]
+use crate::cloud::CloudWriter;
 use crate::{is_cloud_url, resolve_homedir};
+#[cfg(feature = "cloud")]
+impl WriteClose for CloudWriter {}
 
 /// Open a path for writing. Supports cloud paths.
 pub fn try_get_writeable(
     path: &str,
     #[cfg_attr(not(feature = "cloud"), allow(unused))] cloud_options: Option<&CloudOptions>,
-) -> PolarsResult<Box<dyn Write + Send>> {
+) -> PolarsResult<Box<dyn WriteClose + Send>> {
     let is_cloud = is_cloud_url(path);
     let verbose = config::verbose();
 
@@ -80,6 +84,7 @@ pub fn try_get_writeable(
             )
         }
 
-        Ok(Box::new(polars_utils::open_file_write(&path)?))
+        let f: ClosableFile = polars_utils::open_file_write(&path)?.into();
+        Ok(Box::new(f))
     }
 }
