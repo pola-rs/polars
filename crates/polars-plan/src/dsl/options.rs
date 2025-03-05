@@ -205,6 +205,28 @@ pub struct FileScanOptions {
     pub allow_missing_columns: bool,
 }
 
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Engine {
+    Auto,
+    OldStreaming,
+    Streaming,
+    InMemory,
+    Gpu,
+}
+
+impl Engine {
+    pub fn into_static_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::OldStreaming => "old-streaming",
+            Self::Streaming => "streaming",
+            Self::InMemory => "in-memory",
+            Self::Gpu => "gpu",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {

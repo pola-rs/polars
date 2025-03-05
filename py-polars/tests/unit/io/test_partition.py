@@ -36,14 +36,13 @@ def test_max_size_partition(
     io_type: IOType,
     length: int,
     max_size: int,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     lf = pl.Series("a", range(length), pl.Int64).to_frame().lazy()
 
-    monkeypatch.setenv("POLARS_FORCE_NEW_STREAMING", "1")
     (io_type["sink"])(
         lf,
         PartitionMaxSize(tmp_path / f"{{part}}.{io_type['ext']}", max_size=max_size),
+        engine="streaming",
         # We need to sync here because platforms do not guarantee that a close on
         # one thread is immediately visible on another thread.
         #
