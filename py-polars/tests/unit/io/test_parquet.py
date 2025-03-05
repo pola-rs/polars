@@ -3088,3 +3088,34 @@ def test_filter_nulls_21538(ty: tuple[Callable[[int], Any], pl.DataType, bool]) 
                 pl.scan_parquet(f).filter(pl.col(f"p{i}").is_not_null()).collect(),
                 df.filter(pl.col(f"p{i}").is_not_null()),
             )
+
+
+def test_unspecialized_decoding_prefiltering() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, None, None, "abc"],
+            "b": [False, True, False, True],
+        }
+    )
+
+    cols = df.columns
+
+    encodings = dict.fromkeys(cols, "DELTA_LENGTH_BYTE_ARRAY")
+    encodings["b"] = "PLAIN"
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        column_encoding=encodings,
+    )
+
+    f.seek(0)
+    expr = pl.col("b")
+    result = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(expr)
+        .collect(new_streaming=True)
+    )
+    assert_frame_equal(result, df.filter(expr))

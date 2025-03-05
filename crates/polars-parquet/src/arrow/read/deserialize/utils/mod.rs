@@ -7,6 +7,7 @@ use arrow::array::{Array, IntoBoxedArray, Splitable};
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::pushable::Pushable;
+use polars_compute::filter::filter_boolean_kernel;
 
 use self::filter::Filter;
 use super::{BasicDecompressor, InitNested, NestedState, PredicateFilter};
@@ -240,17 +241,17 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             let mut iter = |mut f: u64, mut v: u64| {
                 while f != 0 {
-                    let offset = f.trailing_ones();
+                    let offset = f.trailing_zeros();
+
+                    let skip = (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
+                    for _ in 0..skip {
+                        decode_one()?;
+                    }
 
                     if (v >> offset) & 1 != 0 {
                         target.push(decode_one()?);
                     } else {
                         target.push(T::default());
-                    }
-
-                    let skip = (v & (1u64 << offset).wrapping_sub(1)).count_ones() as usize;
-                    for _ in 0..skip {
-                        decode_one()?;
                     }
 
                     v >>= offset + 1;
@@ -275,7 +276,7 @@ pub(crate) fn unspecialized_decode<T: Default>(
 
             iter(f, v)?;
 
-            validity.extend_from_bitmap(&page_validity);
+            validity.extend_from_bitmap(&filter_boolean_kernel(&page_validity, &mask));
         },
         (Some(Filter::Predicate(_)), _) => todo!(),
     }
