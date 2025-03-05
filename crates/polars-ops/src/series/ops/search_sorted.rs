@@ -1,6 +1,7 @@
 use polars_core::chunked_array::ops::search_sorted::{binary_search_ca, SearchSortedSide};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
+use row_encode::encode_rows_unordered;
 
 pub fn search_sorted(
     s: &Series,
@@ -14,6 +15,14 @@ pub fn search_sorted(
         // See https://github.com/pola-rs/polars/issues/20171
         polars_bail!(InvalidOperation: "'search_sorted' is not supported on dtype: {}", s.dtype())
     }
+
+    let (s, search_values) = if s.dtype().is_array() || s.dtype().is_list() {
+        let s = encode_rows_unordered(&[s.clone().into_column()])?;
+        let search_values = encode_rows_unordered(&[search_values.clone().into_column()])?;
+        (&s.into_series(), &search_values.into_series())
+    } else {
+        (s, search_values)
+    };
 
     let s = s.to_physical_repr();
     let phys_dtype = s.dtype();
@@ -66,6 +75,24 @@ pub fn search_sorted(
 
             Ok(IdxCa::new_vec(s.name().clone(), idx))
         },
+        DataType::BinaryOffset => {
+            let ca = s.binary_offset().unwrap();
+
+            let idx = match search_values.dtype() {
+                DataType::BinaryOffset => {
+                    let search_values = search_values.binary_offset().unwrap();
+                    binary_search_ca(ca, search_values.iter(), side, descending)
+                },
+                DataType::Binary => {
+                    let search_values = search_values.binary().unwrap();
+                    binary_search_ca(ca, search_values.iter(), side, descending)
+                },
+                _ => unreachable!(),
+            };
+
+            Ok(IdxCa::new_vec(s.name().clone(), idx))
+        },
+
         dt if dt.is_primitive_numeric() => {
             let search_values = search_values.to_physical_repr();
 
