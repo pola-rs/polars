@@ -10,7 +10,6 @@ mod deserialize;
 pub use deserialize::deserialize;
 use polars_error::PolarsResult;
 
-mod nested;
 mod schema;
 mod util;
 
