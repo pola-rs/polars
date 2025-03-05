@@ -32,7 +32,7 @@ fn pyobject_to_first_path_and_scan_sources(
         PythonScanSourceInput::Path(path) => {
             (Some(path.clone()), ScanSources::Paths([path].into()))
         },
-        PythonScanSourceInput::File(file) => (None, ScanSources::Files([file].into())),
+        PythonScanSourceInput::File(file) => (None, ScanSources::Files([file.into()].into())),
         PythonScanSourceInput::Buffer(buff) => (None, ScanSources::Buffers([buff].into())),
     })
 }

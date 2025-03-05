@@ -372,10 +372,10 @@ impl PyDataFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            CsvWriter::new(f)
+            CsvWriter::new(&mut f)
                 .include_bom(include_bom)
                 .include_header(include_header)
                 .with_separator(separator)
@@ -389,7 +389,9 @@ impl PyDataFrame {
                 .with_float_precision(float_precision)
                 .with_null_value(null)
                 .with_quote_style(quote_style.map(|wrap| wrap.0).unwrap_or_default())
-                .finish(&mut self.df)
+                .finish(&mut self.df)?;
+
+            crate::file::close_file(f)
         })
     }
 
@@ -466,37 +468,36 @@ impl PyDataFrame {
                 .with_data_page_size(data_page_size)
                 .finish(&mut self.df)?;
 
-            let _ = f.close()?;
-
-            Ok(())
+            crate::file::close_file(f)
         })
     }
 
     #[cfg(feature = "json")]
-    pub fn write_json(&mut self, py_f: PyObject) -> PyResult<()> {
+    pub fn write_json(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
+        py.enter_polars(|| {
+            // TODO: Cloud support
 
-        // TODO: Cloud support
-
-        JsonWriter::new(file)
-            .with_json_format(JsonFormat::Json)
-            .finish(&mut self.df)
-            .map_err(PyPolarsErr::from)?;
-        Ok(())
+            JsonWriter::new(file)
+                .with_json_format(JsonFormat::Json)
+                .finish(&mut self.df)
+        })
     }
 
     #[cfg(feature = "json")]
-    pub fn write_ndjson(&mut self, py_f: PyObject) -> PyResult<()> {
+    pub fn write_ndjson(&mut self, py: Python, py_f: PyObject) -> PyResult<()> {
         let file = BufWriter::new(get_file_like(py_f, true)?);
 
         // TODO: Cloud support
 
-        JsonWriter::new(file)
-            .with_json_format(JsonFormat::JsonLines)
-            .finish(&mut self.df)
-            .map_err(PyPolarsErr::from)?;
+        py.enter_polars(|| {
+            // TODO: Cloud support
 
-        Ok(())
+            JsonWriter::new(file)
+                .with_json_format(JsonFormat::JsonLines)
+                .finish(&mut self.df)
+                .map_err(PyPolarsErr::from)
+        })
     }
 
     #[cfg(feature = "ipc")]
@@ -530,13 +531,15 @@ impl PyDataFrame {
         #[cfg(not(feature = "cloud"))]
         let cloud_options = None;
 
-        let f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
+        let mut f = crate::file::try_get_writeable(py_f, cloud_options.as_ref())?;
 
         py.enter_polars(|| {
-            IpcWriter::new(f)
+            IpcWriter::new(&mut f)
                 .with_compression(compression.0)
                 .with_compat_level(compat_level.0)
-                .finish(&mut self.df)
+                .finish(&mut self.df)?;
+
+            crate::file::close_file(f)
         })
     }
 

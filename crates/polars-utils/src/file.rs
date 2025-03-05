@@ -8,6 +8,12 @@ impl From<File> for ClosableFile {
     }
 }
 
+impl From<ClosableFile> for File {
+    fn from(value: ClosableFile) -> Self {
+        value.inner
+    }
+}
+
 pub struct ClosableFile {
     inner: File,
 }
@@ -60,5 +66,18 @@ impl Write for ClosableFile {
 
     fn flush(&mut self) -> std::io::Result<()> {
         self.inner.flush()
+    }
+}
+
+pub trait WriteClose: Write {
+    fn close(self: Box<Self>) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl WriteClose for ClosableFile {
+    fn close(self: Box<Self>) -> std::io::Result<()> {
+        let f = *self;
+        f.close()
     }
 }
