@@ -6,7 +6,7 @@ use polars_parquet::read::RowGroupMetadata;
 use crate::predicates::{BatchStats, ColumnStats, ScanIOPredicate};
 
 /// Collect the statistics in a row-group
-pub(crate) fn collect_statistics(
+pub fn collect_statistics(
     md: &RowGroupMetadata,
     schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {

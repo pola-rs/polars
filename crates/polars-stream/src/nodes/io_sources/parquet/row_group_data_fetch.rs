@@ -1,18 +1,16 @@
+use std::ops::Range;
 use std::sync::Arc;
 
-use polars_core::prelude::{ArrowSchema, PlHashMap};
+use polars_core::prelude::PlHashMap;
 use polars_core::series::IsSorted;
-use polars_core::utils::operation_exceeded_idxsize_msg;
-use polars_error::{polars_err, PolarsResult};
+use polars_core::utils::arrow::bitmap::Bitmap;
+use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::_internal::read_this_row_group;
 use polars_io::prelude::{create_sorting_map, FileMetadata};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
-use polars_io::utils::slice::SplitSlicePosition;
 use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use crate::utils::task_handles_ext;
 
@@ -26,17 +24,17 @@ pub(super) struct RowGroupData {
 }
 
 pub(super) struct RowGroupDataFetcher {
-    pub(super) use_statistics: bool,
-    pub(super) verbose: bool,
-    pub(super) reader_schema: Arc<ArrowSchema>,
     pub(super) projection: Option<Arc<[PlSmallStr]>>,
     #[allow(unused)] // TODO: Fix!
     pub(super) predicate: Option<ScanIOPredicate>,
-    pub(super) slice_range: Option<std::ops::Range<usize>>,
+    pub(super) slice_range: Option<Range<usize>>,
     pub(super) memory_prefetch_func: fn(&[u8]) -> (),
     pub(super) metadata: Arc<FileMetadata>,
     pub(super) byte_source: Arc<DynByteSource>,
-    pub(super) row_group_idx: usize,
+
+    pub(super) row_group_slice: Range<usize>,
+    pub(super) row_group_mask: Option<Bitmap>,
+
     pub(super) row_offset: usize,
 }
 
@@ -44,80 +42,38 @@ impl RowGroupDataFetcher {
     pub(super) async fn next(
         &mut self,
     ) -> Option<PolarsResult<task_handles_ext::AbortOnDropHandle<PolarsResult<RowGroupData>>>> {
-        while self.row_group_idx < self.metadata.row_groups.len() {
-            let idx = self.row_group_idx;
+        while !self.row_group_slice.is_empty() {
+            let idx = self.row_group_slice.start;
+            self.row_group_slice.start += 1;
+
             let row_group_metadata = &self.metadata.row_groups[idx];
             let current_row_offset = self.row_offset;
-            let current_row_group_idx = self.row_group_idx;
 
             let num_rows = row_group_metadata.num_rows();
             let sorting_map = create_sorting_map(&row_group_metadata);
 
             self.row_offset = current_row_offset.saturating_add(num_rows);
-            self.row_group_idx += 1;
 
-            if self.use_statistics
-                && !match read_this_row_group(
-                    self.predicate.as_ref(),
-                    &row_group_metadata,
-                    self.reader_schema.as_ref(),
-                ) {
-                    Ok(v) => v,
-                    Err(e) => return Some(Err(e)),
-                }
-            {
-                if self.verbose {
-                    eprintln!(
-                        "[ParquetSource]: Predicate pushdown: \
-                            Skipped row group {} in file ({} rows)",
-                        current_row_group_idx, num_rows
-                    );
-                }
-                continue;
-            }
+            let slice = if let Some(slice_range) = self.slice_range.as_mut() {
+                let rg_row_start = slice_range.start;
+                let rg_row_end = slice_range.end.min(num_rows);
 
-            if num_rows > IdxSize::MAX as usize {
-                let msg = operation_exceeded_idxsize_msg(
-                    format!("number of rows in row group ({})", num_rows).as_str(),
-                );
-                return Some(Err(polars_err!(ComputeError: msg)));
-            }
+                *slice_range = slice_range.start.saturating_sub(num_rows)
+                    ..slice_range.end.saturating_sub(num_rows);
 
-            let slice = if let Some(slice_range) = self.slice_range.clone() {
-                let (offset, len) = match SplitSlicePosition::split_slice_at_file(
-                    current_row_offset,
-                    num_rows,
-                    slice_range,
-                ) {
-                    SplitSlicePosition::Before => {
-                        if self.verbose {
-                            eprintln!(
-                                "[ParquetSource]: Slice pushdown: \
-                                    Skipped row group {} ({} rows)",
-                                current_row_group_idx, num_rows
-                            );
-                        }
-                        continue;
-                    },
-                    SplitSlicePosition::After => {
-                        if self.verbose {
-                            eprintln!(
-                                "[ParquetSource]: Slice pushdown: \
-                                    Stop at row group {} \
-                                    (remaining {} row groups will not be read)",
-                                current_row_group_idx,
-                                self.metadata.row_groups.len() - self.row_group_idx,
-                            );
-                        };
-                        return None;
-                    },
-                    SplitSlicePosition::Overlapping(offset, len) => (offset, len),
-                };
-
-                Some((offset, len))
+                Some((rg_row_start, rg_row_end - rg_row_start))
             } else {
                 None
             };
+
+            if let Some(row_group_mask) = self.row_group_mask.as_mut() {
+                let do_skip = row_group_mask.get_bit(0);
+                row_group_mask.slice(1, self.row_group_slice.len());
+
+                if do_skip {
+                    continue;
+                }
+            }
 
             let metadata = self.metadata.clone();
             let current_byte_source = self.byte_source.clone();
