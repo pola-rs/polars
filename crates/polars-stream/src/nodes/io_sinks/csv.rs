@@ -122,11 +122,14 @@ impl SinkNode for CsvSinkNode {
                     writer.write_batch(&df)?;
 
                     allocation_size = allocation_size.max(buffer.len());
+
+                    // Must drop before linearizer insert or will deadlock.
+                    drop(consume_token); // Keep the consume_token until here to increase the
+                                         // backpressure.
+
                     if lin_tx.insert(Priority(Reverse(seq), buffer)).await.is_err() {
                         return Ok(());
                     }
-                    drop(consume_token); // Keep the consume_token until here to increase the
-                                         // backpressure.
                 }
 
                 PolarsResult::Ok(())
