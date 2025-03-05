@@ -773,6 +773,7 @@ impl PyLazyFrame {
         let options = IpcWriterOptions {
             compression: compression.map(|c| c.0),
             compat_level: compat_level.0,
+            ..Default::default()
         };
 
         #[cfg(feature = "cloud")]
