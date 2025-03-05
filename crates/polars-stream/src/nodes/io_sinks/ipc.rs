@@ -107,9 +107,7 @@ impl SinkNode for IpcSinkNode {
             compression: self.write_options.compression.map(Into::into),
         };
 
-        let chunk_size = self
-            .write_options
-            .chunk_size;
+        let chunk_size = self.write_options.chunk_size;
 
         let ipc_fields = self
             .input_schema
