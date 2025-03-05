@@ -50,6 +50,11 @@ where
         self
     }
 
+    pub fn _with_options(mut self, options: CsvReadOptions) -> Self {
+        self.options = options;
+        self
+    }
+
     // TODO: Investigate if we can remove this
     pub(crate) fn with_schema(mut self, schema: SchemaRef) -> Self {
         self.options.schema = Some(schema);
