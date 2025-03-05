@@ -455,7 +455,7 @@ def read_database_uri(
             raise ValueError(msg)
         if pre_execution_query:
             msg = (
-                "the 'connectorx' engine does not support use of `pre_execution_query`"
+                "the 'adbc' engine does not support use of `pre_execution_query`"
             )
             raise ValueError(msg)
         return _read_sql_adbc(

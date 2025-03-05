@@ -695,7 +695,7 @@ def test_read_database_mocked(
                 query="SELECT * FROM test_data",
                 protocol="sqlite",
                 errclass=ValueError,
-                errmsg="the 'connectorx' engine does not support use of `pre_execution_query`",
+                errmsg="the 'adbc' engine does not support use of `pre_execution_query`",
                 engine="adbc",
                 pre_execution_query="SET statement_timeout = 2151",
             ),
