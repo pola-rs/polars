@@ -34,8 +34,7 @@ impl ParquetSourceNode {
 
         let reader_schema = self.schema.clone().unwrap();
 
-        let (normalized_slice_oneshot_rx, metadata_rx, metadata_task) =
-            self.init_metadata_fetcher();
+        let (metadata_rx, metadata_task) = self.init_metadata_fetcher();
 
         let row_group_prefetch_size = self.config.row_group_prefetch_size;
         let projection = self.file_options.with_columns.clone();
@@ -72,17 +71,10 @@ impl ParquetSourceNode {
         // Prefetch loop (spawns prefetches on the tokio scheduler).
         let (prefetch_send, mut prefetch_recv) =
             tokio::sync::mpsc::channel(row_group_prefetch_size);
+        let slice_range = self
+            .normalized_pre_slice
+            .map(|(offset, length)| offset..offset + length);
         let prefetch_task = AbortOnDropHandle(io_runtime.spawn(async move {
-            let slice_range = {
-                let Ok(slice) = normalized_slice_oneshot_rx.await else {
-                    // If we are here then the producer probably errored.
-                    drop(row_group_data_fetcher);
-                    return PolarsResult::Ok(());
-                };
-
-                slice.map(|(offset, len)| offset..offset + len)
-            };
-
             row_group_data_fetcher.slice_range = slice_range;
 
             loop {

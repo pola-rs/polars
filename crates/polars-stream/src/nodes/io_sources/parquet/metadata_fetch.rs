@@ -22,7 +22,6 @@ impl ParquetSourceNode {
     pub(super) fn init_metadata_fetcher(
         &mut self,
     ) -> (
-        tokio::sync::oneshot::Receiver<Option<(usize, usize)>>,
         crate::async_primitives::connector::Receiver<(
             usize,
             usize,
@@ -36,8 +35,6 @@ impl ParquetSourceNode {
 
         let projected_arrow_schema = self.projected_arrow_schema.clone().unwrap();
 
-        let (normalized_slice_oneshot_tx, normalized_slice_oneshot_rx) =
-            tokio::sync::oneshot::channel();
         let (mut metadata_tx, metadata_rx) = connector();
 
         let byte_source_builder = self.byte_source_builder.clone();
@@ -155,8 +152,6 @@ impl ParquetSourceNode {
         let (start_tx, start_rx) = tokio::sync::oneshot::channel();
         self.morsel_stream_starter = Some(start_tx);
 
-        normalized_slice_oneshot_tx.send(self.normalized_pre_slice).unwrap();
-
         // Safety: `offset + len` does not overflow.
         let slice_range = self
             .file_options
@@ -263,7 +258,6 @@ impl ParquetSourceNode {
         let metadata_task_handle = task_handles_ext::AbortOnDropHandle(metadata_task_handle);
 
         (
-            normalized_slice_oneshot_rx,
             metadata_rx,
             metadata_task_handle,
         )
