@@ -519,3 +519,15 @@ def test_streaming_group_by_boolean_mean_15610(
     )
 
     assert_frame_equal(out, expect)
+
+
+def test_streaming_group_by_all_null_21593() -> None:
+    df = pl.DataFrame(
+        {
+            "col_1": ["A", "B", "C", "D"],
+            "col_2": ["test", None, None, None],
+        }
+    )
+
+    out = df.lazy().group_by(pl.all()).min().collect(new_streaming=True)  # type: ignore[call-overload]
+    assert_frame_equal(df, out, check_row_order=False)
