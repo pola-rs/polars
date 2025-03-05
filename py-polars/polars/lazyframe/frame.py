@@ -158,7 +158,7 @@ def _gpu_engine_callback(
     is_gpu = (is_config_obj := isinstance(engine, GPUEngine)) or engine == "gpu"
     if not (
         is_config_obj
-        or engine in ("cpu", "in-memory", "streaming", "old-streaming", "gpu")
+        or engine in ("auto", "cpu", "in-memory", "streaming", "old-streaming", "gpu")
     ):
         msg = f"Invalid engine argument {engine=}"
         raise ValueError(msg)

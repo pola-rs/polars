@@ -305,7 +305,7 @@ MultiColSelector: TypeAlias = Union[MultiIndexSelector, MultiNameSelector, Boole
 
 # LazyFrame engine selection
 EngineType: TypeAlias = Union[
-    Literal["in-memory", "streaming", "old-streaming", "gpu"], "GPUEngine"
+    Literal["auto", "in-memory", "streaming", "old-streaming", "gpu"], "GPUEngine"
 ]
 
 FileSource: TypeAlias = Union[
