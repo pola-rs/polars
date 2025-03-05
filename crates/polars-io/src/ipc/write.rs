@@ -16,6 +16,8 @@ pub struct IpcWriterOptions {
     pub compression: Option<IpcCompression>,
     /// Compatibility level
     pub compat_level: CompatLevel,
+    /// Size of each written chunk.
+    pub chunk_size: IdxSize,
 }
 
 impl Default for IpcWriterOptions {
@@ -23,6 +25,7 @@ impl Default for IpcWriterOptions {
         Self {
             compression: None,
             compat_level: CompatLevel::newest(),
+            chunk_size: 1 << 18,
         }
     }
 }
