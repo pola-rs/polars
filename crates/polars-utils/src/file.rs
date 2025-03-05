@@ -29,7 +29,7 @@ impl ClosableFile {
         }
     }
 
-    #[cfg(windows)]
+    #[cfg(not(unix))]
     pub fn close(self) -> std::io::Result<()> {
         Ok(())
     }
