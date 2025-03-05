@@ -6,9 +6,11 @@ use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
 
-use crate::cloud::{CloudOptions, CloudWriter};
+use crate::cloud::CloudOptions;
+#[cfg(feature = "cloud")]
+use crate::cloud::CloudWriter;
 use crate::{is_cloud_url, resolve_homedir};
-
+#[cfg(feature = "cloud")]
 impl WriteClose for CloudWriter {}
 
 /// Open a path for writing. Supports cloud paths.
