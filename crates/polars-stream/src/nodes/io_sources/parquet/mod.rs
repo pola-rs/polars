@@ -4,6 +4,7 @@ use polars_core::config;
 use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
+use polars_core::utils::slice_offsets;
 use polars_error::{polars_err, PolarsResult};
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
@@ -30,7 +31,6 @@ use crate::nodes::TaskPriority;
 use crate::utils::task_handles_ext;
 
 mod init;
-mod metadata_fetch;
 mod metadata_utils;
 mod row_group_data_fetch;
 mod row_group_decode;
@@ -48,7 +48,8 @@ pub struct ParquetSourceNode {
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
     file_options: FileScanOptions,
-    first_metadata: Option<Arc<FileMetadata>>,
+    normalized_pre_slice: Option<(usize, usize)>,
+    metadata: Arc<FileMetadata>,
     // Run-time vars
     config: Config,
     verbose: bool,
@@ -61,17 +62,11 @@ pub struct ParquetSourceNode {
     /// so the row index offset needs to be updated by the initializer to
     /// reflect this (https://github.com/pola-rs/polars/issues/19607).
     row_index: Option<Arc<(PlSmallStr, AtomicIdxSize)>>,
-    // This permit blocks execution until the first morsel is requested.
-    morsel_stream_starter: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 #[derive(Debug)]
 struct Config {
     num_pipelines: usize,
-    /// Number of files to pre-fetch metadata for concurrently
-    metadata_prefetch_size: usize,
-    /// Number of files to decode metadata for in parallel in advance
-    metadata_decode_ahead_size: usize,
     /// Number of row groups to pre-fetch concurrently, this can be across files
     row_group_prefetch_size: usize,
     /// Minimum number of values for a parallel spawned task to process to amortize
@@ -88,7 +83,7 @@ impl ParquetSourceNode {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         mut file_options: FileScanOptions,
-        first_metadata: Option<Arc<FileMetadata>>,
+        metadata: Arc<FileMetadata>,
     ) -> Self {
         let verbose = config::verbose();
 
@@ -111,13 +106,12 @@ impl ParquetSourceNode {
             options,
             cloud_options,
             file_options,
-            first_metadata,
+            normalized_pre_slice: None,
+            metadata,
 
             config: Config {
                 // Initialized later
                 num_pipelines: 0,
-                metadata_prefetch_size: 0,
-                metadata_decode_ahead_size: 0,
                 row_group_prefetch_size: 0,
                 min_values_per_thread: 0,
             },
@@ -127,8 +121,6 @@ impl ParquetSourceNode {
             byte_source_builder,
             memory_prefetch_func,
             row_index,
-
-            morsel_stream_starter: None,
         }
     }
 }
@@ -155,10 +147,6 @@ impl SourceNode for ParquetSourceNode {
             .collect::<(Vec<_>, Vec<_>)>();
 
         self.config = {
-            let metadata_prefetch_size = polars_core::config::get_file_prefetch_size();
-            // Limit metadata decode to the number of threads.
-            let metadata_decode_ahead_size =
-                (metadata_prefetch_size / 2).min(1 + num_pipelines).max(1);
             let row_group_prefetch_size = polars_core::config::get_rg_prefetch_size();
 
             // This can be set to 1 to force column-per-thread parallelism, e.g. for bug reproduction.
@@ -168,8 +156,6 @@ impl SourceNode for ParquetSourceNode {
 
             Config {
                 num_pipelines,
-                metadata_prefetch_size,
-                metadata_decode_ahead_size,
                 row_group_prefetch_size,
                 min_values_per_thread,
             }
@@ -179,24 +165,22 @@ impl SourceNode for ParquetSourceNode {
             eprintln!("[ParquetSource]: {:?}", &self.config);
         }
 
-        let num_rows = self.first_metadata.as_ref().unwrap().num_rows;
+        self.normalized_pre_slice = self
+            .file_options
+            .pre_slice
+            .map(|(offset, length)| slice_offsets(offset, length, self.metadata.num_rows));
+
+        let num_rows = self.metadata.num_rows;
         self.schema = Some(self.file_info.reader_schema.take().unwrap().unwrap_left());
         self.init_projected_arrow_schema();
 
         let (raw_morsel_receivers, morsel_stream_task_handle) = self.init_raw_morsel_distributor();
-        let mut morsel_stream_starter = self.morsel_stream_starter.take();
 
         join_handles.push(spawn(TaskPriority::Low, async move {
             if let Some(rc) = unrestricted_row_count {
                 let num_rows = IdxSize::try_from(num_rows)
                     .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))?;
                 _ = rc.send(num_rows);
-            }
-
-            if let Some(v) = morsel_stream_starter.take() {
-                if v.send(()).is_err() {
-                    return Ok(());
-                }
             }
 
             // Every phase we are given a new send port.
@@ -336,7 +320,7 @@ impl MultiScanable for ParquetSourceNode {
             options,
             cloud_options.cloned(),
             file_options,
-            Some(Arc::new(file_metadata)),
+            Arc::new(file_metadata),
         ))
     }
 
@@ -376,7 +360,7 @@ impl MultiScanable for ParquetSourceNode {
     }
 
     async fn unrestricted_row_count(&mut self) -> PolarsResult<IdxSize> {
-        let num_rows = self.first_metadata.as_ref().unwrap().num_rows;
+        let num_rows = self.metadata.num_rows;
         IdxSize::try_from(num_rows)
             .map_err(|_| polars_err!(bigidx, ctx = "parquet file", size = num_rows))
     }

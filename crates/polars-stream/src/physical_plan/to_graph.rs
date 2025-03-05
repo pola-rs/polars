@@ -604,7 +604,7 @@ fn to_graph_rec<'a>(
                                 options,
                                 cloud_options,
                                 file_options,
-                                first_metadata,
+                                first_metadata.unwrap(),
                             ),
                         ),
                         [],
