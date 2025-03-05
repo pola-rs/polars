@@ -3116,6 +3116,6 @@ def test_unspecialized_decoding_prefiltering() -> None:
     result = (
         pl.scan_parquet(f, parallel="prefiltered")
         .filter(expr)
-        .collect(new_streaming=True)
+        .collect(new_streaming=True)  # type: ignore[call-overload]
     )
     assert_frame_equal(result, df.filter(expr))
