@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
 use super::*;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
 
