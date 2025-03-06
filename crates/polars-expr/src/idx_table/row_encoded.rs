@@ -1,3 +1,5 @@
+#![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
+
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use arrow::array::Array;
