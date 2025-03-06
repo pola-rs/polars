@@ -2526,3 +2526,17 @@ def test_header_only_column_selection_17173() -> None:
     result = pl.read_csv(io.StringIO(csv), columns=["B"])
     expected = pl.Series("B", [], pl.String()).to_frame()
     assert_frame_equal(result, expected)
+
+
+def test_csv_enum_raise() -> None:
+    ENUM_DTYPE = pl.Enum(["foo", "bar"])
+    with (
+        io.StringIO("col\nfoo\nbaz\n") as csv,
+        pytest.raises(
+            pl.exceptions.ComputeError, match="category baz doesn't exist in Enum dtype"
+        ),
+    ):
+        pl.read_csv(
+            csv,
+            schema={"col": ENUM_DTYPE},
+        )
