@@ -100,14 +100,6 @@ impl Writeable {
         }
     }
 
-    pub fn into_box_dyn_write(self) -> Box<dyn WriteClose + Send> {
-        match self {
-            Self::Local(v) => Box::new(ClosableFile::from(v)),
-            #[cfg(feature = "cloud")]
-            Self::Cloud(v) => Box::new(v),
-        }
-    }
-
     /// This returns `Result<>` - if a write was performed before calling this,
     /// `CloudWriter` can be in an Err(_) state.
     #[cfg(feature = "cloud")]
@@ -161,7 +153,11 @@ pub fn try_get_writeable(
     path: &str,
     cloud_options: Option<&CloudOptions>,
 ) -> PolarsResult<Box<dyn WriteClose + Send>> {
-    Writeable::try_new(path, cloud_options).map(|x| x.into_box_dyn_write())
+    Writeable::try_new(path, cloud_options).map(|x| match x {
+        Writeable::Local(v) => Box::new(ClosableFile::from(v)) as Box<dyn WriteClose + Send>,
+        #[cfg(feature = "cloud")]
+        Writeable::Cloud(v) => Box::new(v) as Box<dyn WriteClose + Send>,
+    })
 }
 
 #[cfg(feature = "cloud")]
