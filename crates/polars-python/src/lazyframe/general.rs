@@ -651,7 +651,12 @@ impl PyLazyFrame {
     }
 
     #[pyo3(signature = (engine, lambda_post_opt=None))]
-    fn collect(&self, py: Python, engine: Wrap<Engine>, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
+    fn collect(
+        &self,
+        py: Python,
+        engine: Wrap<Engine>,
+        lambda_post_opt: Option<PyObject>,
+    ) -> PyResult<PyDataFrame> {
         py.enter_polars_df(|| {
             let ldf = self.ldf.clone();
             if let Some(lambda) = lambda_post_opt {

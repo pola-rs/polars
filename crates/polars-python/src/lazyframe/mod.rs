@@ -33,7 +33,10 @@ impl From<LazyFrame> for PyLazyFrame {
 
 impl<'py> FromPyObject<'py> for Wrap<Engine> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = ob.extract::<PyBackedStr>()?.parse().map_err(PyValueError::new_err)?;
+        let parsed = ob
+            .extract::<PyBackedStr>()?
+            .parse()
+            .map_err(PyValueError::new_err)?;
         Ok(Wrap(parsed))
     }
 }
