@@ -759,8 +759,7 @@ impl LazyFrame {
         #[cfg(feature = "new_streaming")]
         {
             let mut slf = self;
-            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory, engine)
-            {
+            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory, engine) {
                 return Ok(df?.unwrap());
             }
 
@@ -818,9 +817,10 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
         if engine == Engine::InMemory {
+            use std::ops::DerefMut;
             use std::io::BufWriter;
 
             use polars_io::parquet::write::ParquetWriter;
@@ -828,13 +828,14 @@ impl LazyFrame {
             let mut df = self.collect()?;
 
             let path = path.as_ref().display().to_string();
-            let f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
-            ParquetWriter::new(BufWriter::new(f))
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            ParquetWriter::new(BufWriter::new(f.deref_mut()))
                 .with_compression(options.compression)
                 .with_statistics(options.statistics)
                 .with_row_group_size(options.row_group_size)
                 .with_data_page_size(options.data_page_size)
                 .finish(&mut df)?;
+            f.close()?;
 
             return Ok(());
         }
@@ -861,8 +862,10 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
+        use std::ops::DerefMut;
+
         if engine == Engine::InMemory {
             use std::io::BufWriter;
 
@@ -872,11 +875,12 @@ impl LazyFrame {
             let mut df = self.collect()?;
 
             let path = path.as_ref().display().to_string();
-            let f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
-            IpcWriter::new(BufWriter::new(f))
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            IpcWriter::new(BufWriter::new(f.deref_mut()))
                 .with_compression(options.compression)
                 .with_compat_level(options.compat_level)
                 .finish(&mut df)?;
+            f.close()?;
 
             return Ok(());
         }
@@ -903,8 +907,10 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
+        use std::ops::DerefMut;
+
         if engine == Engine::InMemory {
             use std::io::BufWriter;
 
@@ -914,8 +920,8 @@ impl LazyFrame {
             let mut df = self.collect()?;
 
             let path = path.as_ref().display().to_string();
-            let f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
-            CsvWriter::new(BufWriter::new(f))
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            CsvWriter::new(BufWriter::new(f.deref_mut()))
                 .include_bom(options.include_bom)
                 .include_header(options.include_header)
                 .with_separator(options.serialize_options.separator)
@@ -930,6 +936,7 @@ impl LazyFrame {
                 .with_null_value(options.serialize_options.null)
                 .with_quote_style(options.serialize_options.quote_style)
                 .finish(&mut df)?;
+            f.close()?;
 
             return Ok(());
         }
@@ -956,10 +963,11 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
         if engine == Engine::InMemory {
             use std::io::BufWriter;
+            use std::ops::DerefMut;
 
             use polars_io::json::{JsonFormat, JsonWriter};
             use polars_io::SerWriter;
@@ -967,10 +975,11 @@ impl LazyFrame {
             let mut df = self.collect()?;
 
             let path = path.as_ref().display().to_string();
-            let f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
-            JsonWriter::new(BufWriter::new(f))
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            JsonWriter::new(BufWriter::new(f.deref_mut()))
                 .with_json_format(JsonFormat::JsonLines)
                 .finish(&mut df)?;
+            f.close()?;
 
             return Ok(());
         }
@@ -998,13 +1007,8 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
-        polars_ensure!(
-            engine != Engine::InMemory,
-            nyi = "partitioned sinks are not implemented for the in-memory engine"
-        );
-
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
@@ -1029,13 +1033,8 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
-        polars_ensure!(
-            engine != Engine::InMemory,
-            nyi = "partitioned sinks are not implemented for the in-memory engine"
-        );
-
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
@@ -1060,13 +1059,8 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
-        polars_ensure!(
-            engine != Engine::InMemory,
-            nyi = "partitioned sinks are not implemented for the in-memory engine"
-        );
-
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
@@ -1091,13 +1085,8 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        mut engine: Engine,
+        engine: Engine,
     ) -> PolarsResult<()> {
-        polars_ensure!(
-            engine != Engine::InMemory,
-            nyi = "partitioned sinks are not implemented for the in-memory engine"
-        );
-
         self.sink(
             SinkType::Partition {
                 path_f_string: Arc::new(path_f_string.as_ref().to_path_buf()),
@@ -1217,9 +1206,9 @@ impl LazyFrame {
             Engine::Gpu => {
                 Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
             },
-            Engine::InMemory => {
-                Err(polars_err!(InvalidOperation: "this sink is not supported for the in-memory engine"))
-            },
+            Engine::InMemory => Err(
+                polars_err!(InvalidOperation: "this sink is not supported for the in-memory engine"),
+            ),
             Engine::OldStreaming => {
                 self.logical_plan = DslPlan::Sink {
                     input: Arc::new(self.logical_plan),
