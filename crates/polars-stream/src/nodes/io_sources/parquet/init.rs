@@ -3,14 +3,13 @@ use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, DataType, IntoColumn, IDX_DTYPE};
-use polars_core::schema::{Schema, SchemaExt};
+use polars_core::series::Series;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::datatypes::ArrowSchemaRef;
 use polars_error::{polars_ensure, PolarsResult};
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::_internal::{collect_statistics_with_live_columns, PrefilterMaskSetting};
 use polars_io::prelude::{FileMetadata, ParallelStrategy};
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, IdxSize};
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
@@ -47,7 +46,12 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
     let live_columns = predicate.live_columns.clone();
     let reader_schema = reader_schema.clone();
     let skip_row_group_mask = async_executor::spawn(TaskPriority::High, async move {
-        let pl_schema = Arc::new(Schema::from_arrow_schema(reader_schema.as_ref()));
+        let stats = collect_statistics_with_live_columns(
+            &metadata.row_groups[row_group_slice.clone()],
+            reader_schema.as_ref(),
+            &live_columns,
+        )?;
+
         let mut columns = Vec::with_capacity(1 + live_columns.len() * 3);
 
         let lengths: Vec<IdxSize> = metadata.row_groups[row_group_slice.clone()]
@@ -55,56 +59,51 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
             .map(|rg| rg.num_rows() as IdxSize)
             .collect();
         columns.push(Column::new("len".into(), lengths));
-        for c in live_columns.iter() {
-            let dtype = DataType::from_arrow_field(reader_schema.get(c).unwrap());
-            columns.push(Column::new_empty(format_pl_smallstr!("{c}_min"), &dtype));
-            columns.push(Column::new_empty(format_pl_smallstr!("{c}_max"), &dtype));
-            columns.push(Column::new_empty(format_pl_smallstr!("{c}_nc"), &IDX_DTYPE));
-        }
+        for (c, stat) in live_columns.iter().zip(stats) {
+            let field = reader_schema.get(c).unwrap();
 
-        for rg in &metadata.row_groups[row_group_slice.clone()] {
-            if let Some(stats) = collect_statistics_with_live_columns(
-                rg,
-                reader_schema.as_ref(),
-                &pl_schema,
-                &live_columns,
-            )? {
-                // @TODO:
-                // 1. Only collect statistics for live columns
-                // 2. Gather into a contiguous buffer, not this rechunking
-                for col in stats.column_stats().iter() {
-                    let Some(idx) = live_columns.get_index_of(col.field_name()) else {
-                        continue;
-                    };
+            let min_name = format_pl_smallstr!("{c}_min");
+            let max_name = format_pl_smallstr!("{c}_max");
+            let nc_name = format_pl_smallstr!("{c}_nc");
 
-                    let min = col.to_min().map_or(
-                        Column::full_null(PlSmallStr::EMPTY, 1, columns[1 + idx * 3].dtype()),
-                        |s| s.clone().into_column(),
-                    );
-                    let max = col.to_max().map_or(
-                        Column::full_null(PlSmallStr::EMPTY, 1, columns[1 + idx * 3].dtype()),
-                        |s| s.clone().into_column(),
-                    );
-                    let nc = col
-                        .null_count()
-                        .map_or(Column::full_null(PlSmallStr::EMPTY, 1, &IDX_DTYPE), |nc| {
-                            Column::new_scalar(PlSmallStr::EMPTY, (nc as IdxSize).into(), 1)
-                        });
+            let (min, max, nc) = match stat {
+                None => {
+                    let dtype = DataType::from_arrow_field(field);
 
-                    columns[1 + idx * 3].append_owned(min)?;
-                    columns[1 + idx * 3 + 1].append_owned(max)?;
-                    columns[1 + idx * 3 + 2].append_owned(nc)?;
-                }
-            } else {
-                for i in 0..live_columns.len() {
-                    let min = Column::full_null(PlSmallStr::EMPTY, 1, columns[1 + i * 3].dtype());
-                    let max = Column::full_null(PlSmallStr::EMPTY, 1, columns[1 + i * 3].dtype());
-                    let nc = Column::full_null(PlSmallStr::EMPTY, 1, &IDX_DTYPE);
-                    columns[1 + i * 3].append_owned(min)?;
-                    columns[1 + i * 3 + 1].append_owned(max)?;
-                    columns[1 + i * 3 + 2].append_owned(nc)?;
-                }
-            }
+                    (
+                        Column::new_empty(min_name, &dtype),
+                        Column::new_empty(max_name, &dtype),
+                        Column::new_empty(nc_name, &IDX_DTYPE),
+                    )
+                },
+                Some(stat) => {
+                    let md = field.metadata.as_deref();
+
+                    (
+                        unsafe {
+                            Series::_try_from_arrow_unchecked_with_md(
+                                min_name,
+                                vec![stat.min_value],
+                                field.dtype(),
+                                md,
+                            )
+                        }?
+                        .into_column(),
+                        unsafe {
+                            Series::_try_from_arrow_unchecked_with_md(
+                                max_name,
+                                vec![stat.max_value],
+                                field.dtype(),
+                                md,
+                            )
+                        }?
+                        .into_column(),
+                        Series::from_arrow(nc_name, stat.null_count.boxed())?.into_column(),
+                    )
+                },
+            };
+
+            columns.extend([min, max, nc]);
         }
 
         let mut statistics_df = DataFrame::new_with_height(num_row_groups, columns)?;
