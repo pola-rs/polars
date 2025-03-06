@@ -232,7 +232,7 @@ def read_csv(
     --------
     Calling `read_csv().lazy()` is an antipattern as this forces Polars to materialize
     a full csv file and therefore cannot push any optimizations into the reader.
-    Therefore always prefer ``scan_csv`` if you want to work with ``LazyFrame``s.
+    Therefore always prefer `scan_csv` if you want to work with `LazyFrame`s.
 
     Notes
     -----
