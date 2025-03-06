@@ -175,7 +175,8 @@ def read_parquet(
 
     See Also
     --------
-    scan_parquet : Lazily read from a Parquet file or multiple files via glob patterns.
+    scan_parquet: Lazily read from a parquet file or multiple files via glob patterns.
+    scan_pyarrow_dataset
 
     Warnings
     --------
@@ -184,10 +185,6 @@ def read_parquet(
     into the reader. Therefore always prefer ``scan_parquet`` if you want to work
     with ``LazyFrame``s.
 
-    See Also
-    --------
-    scan_parquet : Lazily read from a parquet file or multiple files via glob patterns.
-    scan_pyarrow_dataset
     """
     if schema is not None:
         msg = "The `schema` parameter of `read_parquet` is considered unstable."
