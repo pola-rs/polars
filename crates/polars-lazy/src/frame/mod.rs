@@ -746,6 +746,7 @@ impl LazyFrame {
         match engine {
             #[cfg(feature = "new_streaming")]
             Engine::Streaming => self = self.with_new_streaming(true),
+            #[cfg(feature = "streaming")]
             Engine::OldStreaming => self = self.with_streaming(true),
             _ => {},
         }
