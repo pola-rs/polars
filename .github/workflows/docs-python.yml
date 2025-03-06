@@ -75,15 +75,21 @@ jobs:
         run: |
           tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
           regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
-          [[ $tag =~ $regex ]]
-          version=${BASH_REMATCH[1]}
-          
-          echo "Parsed major version: $version"
-          if [[ -z "$version" ]]; then
-            echo "Error: Parsed version is empty. Cancelling workflow."
+          if [[ $tag =~ $regex ]]; then
+            major=${BASH_REMATCH[1]}
+            minor=${BASH_REMATCH[2]}
+
+            if [[ "$major" == "0" ]]; then
+              version="$major.$minor"  # Keep "0.X" for 0.x.y versions
+            else
+              version="$major"          # Use only major for 1.x.y+
+            fi
+
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "Error: Invalid version format. Cancelling workflow."
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Python docs for latest release version - versioned
         if: github.event_name == 'repository_dispatch' 
