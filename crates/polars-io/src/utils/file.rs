@@ -14,8 +14,7 @@ use crate::{is_cloud_url, resolve_homedir};
 
 /// Holds a non-async writeable file, abstracted over local files or cloud files.
 ///
-/// This is used via `DerefMut` - i.e. `&mut *writeable` provides a trait object
-/// implementing [`std::io::Write`] .
+/// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
 ///
 /// Also see: `Writeable::try_into_async_writeable` and `AsyncWriteable`.
 pub enum Writeable {
@@ -178,8 +177,7 @@ mod async_writeable {
 
     /// Holds an async writeable file, abstracted over local files or cloud files.
     ///
-    /// This is used via `DerefMut` - i.e. `&mut *async_writeable` provides a trait object
-    /// implementing [`tokio::io::AsyncWrite`] .
+    /// This implements `DerefMut` to a trait object implementing [`tokio::io::AsyncWrite`].
     ///
     /// Note: It is important that you do not call `shutdown()` on the deref'ed `AsyncWrite` object.
     /// You should instead call the [`AsyncWriteable::close`] at the end.
