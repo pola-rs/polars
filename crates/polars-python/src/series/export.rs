@@ -35,7 +35,7 @@ impl PySeries {
                     series.categorical().map_err(PyPolarsErr::from)?.iter_str(),
                 )?,
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => {
+                DataType::Object(_) => {
                     let v = PyList::empty(py);
                     for i in 0..series.len() {
                         let obj: Option<&ObjectValue> = series.get_object(i).map(|any| any.into());

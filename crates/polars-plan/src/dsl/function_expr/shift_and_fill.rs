@@ -86,7 +86,7 @@ pub(super) fn shift_and_fill(args: &[Column]) -> PolarsResult<Column> {
                 }
             },
             #[cfg(feature = "object")]
-            Object(_, _) => shift_and_fill_with_mask(s, n, fill_value_s),
+            Object(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-struct")]
             Struct(_) => shift_and_fill_with_mask(s, n, fill_value_s),
             #[cfg(feature = "dtype-categorical")]

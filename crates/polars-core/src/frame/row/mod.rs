@@ -70,7 +70,7 @@ impl DataFrame {
         for (col_i, s) in self.materialized_column_iter().enumerate() {
             match s.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => {
+                DataType::Object(_) => {
                     for row_i in 0..s.len() {
                         let av = s.get(row_i).unwrap();
                         buf[row_i * width + col_i] = av

@@ -133,7 +133,7 @@ pub fn schema_to_arrow_checked(
             #[cfg(feature = "object")]
             {
                 polars_ensure!(
-                    !matches!(field.dtype(), DataType::Object(_, _)),
+                    !matches!(field.dtype(), DataType::Object(_)),
                     ComputeError: "cannot write 'Object' datatype to {}",
                     _file_name
                 );

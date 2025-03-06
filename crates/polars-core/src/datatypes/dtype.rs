@@ -10,7 +10,7 @@ use strum_macros::IntoStaticStr;
 
 use super::*;
 #[cfg(feature = "object")]
-use crate::chunked_array::object::registry::ObjectRegistry;
+use crate::chunked_array::object::registry::get_object_physical_type;
 use crate::utils::materialize_dyn_int;
 
 pub type TimeZone = PlSmallStr;
@@ -131,7 +131,7 @@ pub enum DataType {
     /// A generic type that can be used in a `Series`
     /// &'static str can be used to determine/set inner type
     #[cfg(feature = "object")]
-    Object(&'static str, Option<Arc<ObjectRegistry>>),
+    Object(&'static str),
     Null,
     // The RevMapping has the internal state.
     // This is ignored with comparisons, hashing etc.
@@ -190,7 +190,7 @@ impl PartialEq for DataType {
                     is_prec_eq && is_scale_eq
                 },
                 #[cfg(feature = "object")]
-                (Object(lhs, _), Object(rhs, _)) => lhs == rhs,
+                (Object(lhs), Object(rhs)) => lhs == rhs,
                 #[cfg(feature = "dtype-struct")]
                 (Struct(lhs), Struct(rhs)) => Vec::as_ptr(lhs) == Vec::as_ptr(rhs) || lhs == rhs,
                 #[cfg(feature = "dtype-array")]
@@ -386,9 +386,9 @@ impl DataType {
             | (D::Binary, D::Categorical(_, _) | D::Enum(_, _)) => false,
 
             #[cfg(feature = "object")]
-            (D::Object(_, _), D::Object(_, _)) => true,
+            (D::Object(_), D::Object(_)) => true,
             #[cfg(feature = "object")]
-            (D::Object(_, _), _) | (_, D::Object(_, _)) => false,
+            (D::Object(_), _) | (_, D::Object(_)) => false,
 
             (D::Boolean, dt) | (dt, D::Boolean) => match dt {
                 dt if dt.is_primitive_numeric() => true,
@@ -538,7 +538,7 @@ impl DataType {
     pub fn is_object(&self) -> bool {
         #[cfg(feature = "object")]
         {
-            matches!(self, DataType::Object(_, _))
+            matches!(self, DataType::Object(_))
         }
         #[cfg(not(feature = "object"))]
         {
@@ -585,7 +585,7 @@ impl DataType {
         use DataType::*;
         match self {
             #[cfg(feature = "object")]
-            Object(_, _) => true,
+            Object(_) => true,
             List(inner) => inner.contains_objects(),
             #[cfg(feature = "dtype-array")]
             Array(inner, _) => inner.contains_objects(),
@@ -831,14 +831,7 @@ impl DataType {
             ))),
             Null => Ok(ArrowDataType::Null),
             #[cfg(feature = "object")]
-            Object(_, Some(reg)) => Ok(reg.physical_dtype.clone()),
-            #[cfg(feature = "object")]
-            Object(_, None) => {
-                // FIXME: find out why we have Objects floating around without a
-                // known dtype.
-                // polars_bail!(InvalidOperation: "cannot convert Object dtype without registry to Arrow")
-                Ok(ArrowDataType::Unknown)
-            },
+            Object(_) => Ok(get_object_physical_type()),
             #[cfg(feature = "dtype-categorical")]
             Categorical(_, _) | Enum(_, _) => {
                 let values = if compat_level.0 >= 1 {
@@ -975,7 +968,7 @@ impl Display for DataType {
             },
             DataType::List(tp) => return write!(f, "list[{tp}]"),
             #[cfg(feature = "object")]
-            DataType::Object(s, _) => s,
+            DataType::Object(s) => s,
             #[cfg(feature = "dtype-categorical")]
             DataType::Categorical(_, _) => "cat",
             #[cfg(feature = "dtype-categorical")]

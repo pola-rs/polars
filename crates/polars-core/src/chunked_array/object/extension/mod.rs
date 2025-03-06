@@ -140,7 +140,6 @@ mod test {
     use std::hash::{Hash, Hasher};
 
     use polars_utils::total_ord::TotalHash;
-    use polars_utils::unitvec;
 
     use super::*;
 
@@ -195,57 +194,5 @@ mod test {
 
         let vals = vec![Some(foo), Some(foo2)];
         create_extension(vals.into_iter());
-    }
-
-    #[test]
-    fn test_extension_to_list() {
-        set_polars_allow_extension(true);
-        let foo1 = Foo {
-            a: 1,
-            b: 1,
-            other_heap: "foo".into(),
-        };
-        let foo2 = Foo {
-            a: 1,
-            b: 1,
-            other_heap: "bar".into(),
-        };
-
-        let values = &[Some(foo1), None, Some(foo2), None];
-        let ca = ObjectChunked::new(PlSmallStr::EMPTY, values);
-
-        let groups =
-            GroupsType::Idx(vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into());
-        let out = unsafe { ca.agg_list(&groups) };
-        assert!(matches!(out.dtype(), DataType::List(_)));
-        assert_eq!(out.len(), groups.len());
-    }
-
-    #[test]
-    fn test_extension_to_list_explode() {
-        set_polars_allow_extension(true);
-        let foo1 = Foo {
-            a: 1,
-            b: 1,
-            other_heap: "foo".into(),
-        };
-        let foo2 = Foo {
-            a: 1,
-            b: 1,
-            other_heap: "bar".into(),
-        };
-
-        let values = &[Some(foo1.clone()), None, Some(foo2.clone()), None];
-        let ca = ObjectChunked::new(PlSmallStr::EMPTY, values);
-
-        let groups = vec![(0, unitvec![0, 1]), (2, unitvec![2]), (3, unitvec![3])].into();
-        let out = unsafe { ca.agg_list(&GroupsType::Idx(groups)) };
-        let a = out.explode().unwrap();
-
-        let ca_foo = a.as_any().downcast_ref::<ObjectChunked<Foo>>().unwrap();
-        assert_eq!(ca_foo.get(0).unwrap(), &foo1);
-        assert_eq!(ca_foo.get(1), None);
-        assert_eq!(ca_foo.get(2).unwrap(), &foo2);
-        assert_eq!(ca_foo.get(3), None);
     }
 }

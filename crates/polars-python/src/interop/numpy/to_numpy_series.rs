@@ -264,7 +264,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
             df_to_numpy(py, &df, IndexOrder::Fortran, writable, true).unwrap()
         },
         #[cfg(feature = "object")]
-        Object(_, _) => {
+        Object(_) => {
             let ca = s
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()

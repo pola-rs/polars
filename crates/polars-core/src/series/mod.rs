@@ -180,7 +180,7 @@ impl Series {
         } else {
             match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => self
+                DataType::Object(_) => self
                     .take(&ChunkedArray::<IdxType>::new_vec(PlSmallStr::EMPTY, vec![]))
                     .unwrap(),
                 dt => Series::new_empty(self.name().clone(), dt),
@@ -994,7 +994,7 @@ impl Series {
                 },
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let ArrowDataType::FixedSizeBinary(size) = self.chunks()[0].dtype() else {
                     unreachable!()
                 };

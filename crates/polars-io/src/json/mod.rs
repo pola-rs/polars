@@ -145,7 +145,7 @@ where
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;
@@ -190,7 +190,7 @@ where
             .iter()
             .map(|s| {
                 #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                polars_ensure!(!matches!(s.dtype(), DataType::Object(_)), ComputeError: "cannot write 'Object' datatype to json");
                 Ok(s.field().to_arrow(CompatLevel::newest()))
             })
             .collect::<PolarsResult<Vec<_>>>()?;

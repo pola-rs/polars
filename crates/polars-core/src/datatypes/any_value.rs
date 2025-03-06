@@ -436,9 +436,9 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
             #[cfg(feature = "object")]
-            Object(o) => DataType::Object(o.type_name(), None),
+            Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
-            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
+            ObjectOwned(o) => DataType::Object(o.0.type_name()),
         }
     }
 

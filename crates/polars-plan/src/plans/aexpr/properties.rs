@@ -288,7 +288,7 @@ pub fn can_pre_agg(agg: Node, expr_arena: &Arena<AExpr>, _input_schema: &Schema)
                 for name in aexpr_to_leaf_names(agg, expr_arena) {
                     let dtype = _input_schema.get(&name).unwrap();
 
-                    if let DataType::Object(_, _) = dtype {
+                    if let DataType::Object(_) = dtype {
                         return false;
                     }
                 }

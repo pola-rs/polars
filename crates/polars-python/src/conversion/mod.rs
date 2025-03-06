@@ -273,7 +273,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 duration_class.call1((tu.to_ascii(),))
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
@@ -374,7 +374,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME, None),
+                    "Object" => DataType::Object(OBJECT_NAME),
                     "Unknown" => DataType::Unknown(Default::default()),
                     dt => {
                         return Err(PyTypeError::new_err(format!(
@@ -451,7 +451,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]
-            "Object" => DataType::Object(OBJECT_NAME, None),
+            "Object" => DataType::Object(OBJECT_NAME),
             "Unknown" => DataType::Unknown(Default::default()),
             dt => {
                 return Err(PyTypeError::new_err(format!(

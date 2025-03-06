@@ -107,7 +107,7 @@ impl StructChunked {
 
             match s.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => {
+                DataType::Object(_) => {
                     polars_bail!(InvalidOperation: "nested objects are not allowed")
                 },
                 _ => {},

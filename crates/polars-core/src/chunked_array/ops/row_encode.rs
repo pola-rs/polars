@@ -100,7 +100,7 @@ pub fn get_row_encoding_context(dtype: &DataType, ordered: bool) -> Option<RowEn
         DataType::Unknown(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => panic!("Unsupported in row encoding"),
+        DataType::Object(_) => panic!("Unsupported in row encoding"),
 
         #[cfg(feature = "dtype-decimal")]
         DataType::Decimal(precision, _) => {

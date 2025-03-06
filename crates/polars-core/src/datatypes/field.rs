@@ -224,7 +224,7 @@ impl DataType {
             ArrowDataType::Extension(ext) if ext.name.as_str() == EXTENSION_NAME => {
                 #[cfg(feature = "object")]
                 {
-                    DataType::Object("object", None)
+                    DataType::Object("object")
                 }
                 #[cfg(not(feature = "object"))]
                 {

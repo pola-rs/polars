@@ -65,7 +65,7 @@ impl PySeries {
 
     #[cfg(feature = "object")]
     fn get_object<'py>(&self, py: Python<'py>, index: usize) -> PyResult<Bound<'py, PyAny>> {
-        if matches!(self.series.dtype(), DataType::Object(_, _)) {
+        if matches!(self.series.dtype(), DataType::Object(_)) {
             let obj: Option<&ObjectValue> = self.series.get_object(index).map(|any| any.into());
             Ok(obj.into_pyobject(py)?)
         } else {

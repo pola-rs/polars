@@ -164,7 +164,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
     pub fn rechunk(&self) -> Cow<'_, Self> {
         match self.dtype() {
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 panic!("implementation error")
             },
             _ => {
@@ -256,7 +256,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
         match length {
             0 => match self.dtype() {
                 #[cfg(feature = "object")]
-                DataType::Object(_, _) => exec(),
+                DataType::Object(_) => exec(),
                 _ => self.clear(),
             },
             _ => exec(),
