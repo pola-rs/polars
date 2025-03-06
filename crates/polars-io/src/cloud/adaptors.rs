@@ -77,9 +77,7 @@ impl BlockingCloudWriter {
     /// Closes the writer, or returns the existing error if it exists. After this function is called
     /// the writer is guaranteed to be in an error state.
     pub fn close(&mut self) -> std::io::Result<()> {
-        match self
-            .try_with_writer(|writer| get_runtime().block_on_potential_spawn(writer.shutdown()))
-        {
+        match self.try_with_writer(|writer| get_runtime().block_in_place_on(writer.shutdown())) {
             Ok(_) => {
                 self.state = Err(std::io::Error::new(std::io::ErrorKind::Other, "closed"));
                 Ok(())
@@ -112,12 +110,12 @@ impl std::io::Write for BlockingCloudWriter {
 
         self.try_with_writer(|writer| {
             get_runtime()
-                .block_on_potential_spawn(async { writer.write_all(buf).await.map(|_t| buf.len()) })
+                .block_in_place_on(async { writer.write_all(buf).await.map(|_t| buf.len()) })
         })
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.try_with_writer(|writer| get_runtime().block_on_potential_spawn(writer.flush()))
+        self.try_with_writer(|writer| get_runtime().block_in_place_on(writer.flush()))
     }
 }
 

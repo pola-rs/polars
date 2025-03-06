@@ -44,7 +44,7 @@ impl Writeable {
                 }
 
                 let writer = crate::pl_async::get_runtime()
-                    .block_on_potential_spawn(BlockingCloudWriter::new(path, cloud_options))?;
+                    .block_in_place_on(BlockingCloudWriter::new(path, cloud_options))?;
                 Ok(Self::Cloud(writer))
             })
         } else if config::force_async() {
@@ -79,7 +79,7 @@ impl Writeable {
                 }
 
                 let writer = crate::pl_async::get_runtime()
-                    .block_on_potential_spawn(BlockingCloudWriter::new(&path, cloud_options))?;
+                    .block_in_place_on(BlockingCloudWriter::new(&path, cloud_options))?;
                 Ok(Self::Cloud(writer))
             })
         } else {

@@ -64,7 +64,7 @@ pub fn init_entries_from_uri_list(
         .unwrap_or_else(get_env_file_cache_ttl);
 
     if is_cloud_url(first_uri) {
-        let object_stores = pl_async::get_runtime().block_on_potential_spawn(async {
+        let object_stores = pl_async::get_runtime().block_in_place_on(async {
             futures::future::try_join_all(
                 (0..if first_uri.starts_with("http") {
                     // Object stores for http are tied to the path.

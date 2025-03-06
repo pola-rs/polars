@@ -329,14 +329,14 @@ impl ParquetSource {
 
                     let batched_readers = if needs_exact_processed_rows_count {
                         // We run serially to ensure we have a correct processed_rows count.
-                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                        polars_io::pl_async::get_runtime().block_in_place_on(async {
                             futures::stream::iter(init_iter)
                                 .then(|x| x)
                                 .try_collect()
                                 .await
                         })?
                     } else {
-                        polars_io::pl_async::get_runtime().block_on_potential_spawn(async {
+                        polars_io::pl_async::get_runtime().block_in_place_on(async {
                             futures::future::try_join_all(init_iter).await
                         })?
                     };
@@ -364,8 +364,7 @@ impl Source for ParquetSource {
             return Ok(SourceResult::Finished);
         };
 
-        let batches =
-            get_runtime().block_on_potential_spawn(reader.next_batches(self.n_threads))?;
+        let batches = get_runtime().block_in_place_on(reader.next_batches(self.n_threads))?;
 
         Ok(match batches {
             None => {

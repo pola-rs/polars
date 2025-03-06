@@ -517,7 +517,7 @@ impl ParquetExec {
                     eprintln!("ASYNC READING FORCED");
                 }
 
-                polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
+                polars_io::pl_async::get_runtime().block_in_place_on(self.read_async())?
             })
         } else {
             self.read_par()?
@@ -566,8 +566,7 @@ impl ParquetExec {
 
         #[cfg(feature = "cloud")]
         if self.sources.is_cloud_url() {
-            return polars_io::pl_async::get_runtime()
-                .block_on_potential_spawn(self.metadata_async());
+            return polars_io::pl_async::get_runtime().block_in_place_on(self.metadata_async());
         }
 
         self.metadata_sync()
