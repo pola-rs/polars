@@ -46,7 +46,7 @@ def test_streaming_full_outer_joins() -> None:
             .sort(["idx"])
         )
         a = q.collect(engine="old-streaming")
-        b = q.collect(streaming=False)
+        b = q.collect(engine="in-memory")
         assert_frame_equal(a, b, check_row_order=False)
 
 
@@ -148,16 +148,18 @@ def test_join_null_matches(streaming: bool) -> None:
     )
     # Semi
     assert df_a.join(df_b, on="a", how="semi", nulls_equal=True).collect(
-        streaming=streaming
+        engine="old-streaming" if streaming else "in-memory"
     )["idx_a"].to_list() == [0, 1, 2]
     assert df_a.join(df_b, on="a", how="semi", nulls_equal=False).collect(
-        streaming=streaming
+        engine="old-streaming" if streaming else "in-memory"
     )["idx_a"].to_list() == [1, 2]
 
     # Inner
     expected = pl.DataFrame({"idx_a": [2, 1], "a": [2, 1], "idx_b": [1, 2]})
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="inner").collect(streaming=streaming),
+        df_a.join(df_b, on="a", how="inner").collect(
+            engine="old-streaming" if streaming else "in-memory"
+        ),
         expected,
         check_row_order=False,
     )
@@ -167,7 +169,9 @@ def test_join_null_matches(streaming: bool) -> None:
         {"idx_a": [0, 1, 2], "a": [None, 1, 2], "idx_b": [None, 2, 1]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on="a", how="left").collect(streaming=streaming),
+        df_a.join(df_b, on="a", how="left").collect(
+            engine="old-streaming" if streaming else "in-memory"
+        ),
         expected,
         check_row_order=False,
     )
@@ -204,7 +208,9 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
 
     expected = pl.DataFrame({"a": [1], "idx": [1], "c": [50]})
     assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="inner").collect(streaming=streaming),
+        df_a.join(df_b, on=["a", "idx"], how="inner").collect(
+            engine="old-streaming" if streaming else "in-memory"
+        ),
         expected,
         check_row_order=False,
     )
@@ -212,7 +218,9 @@ def test_join_null_matches_multiple_keys(streaming: bool) -> None:
         {"a": [None, 1, 2], "idx": [0, 1, 2], "c": [None, 50, None]}
     )
     assert_frame_equal(
-        df_a.join(df_b, on=["a", "idx"], how="left").collect(streaming=streaming),
+        df_a.join(df_b, on=["a", "idx"], how="left").collect(
+            engine="old-streaming" if streaming else "in-memory"
+        ),
         expected,
         check_row_order=False,
     )
@@ -244,7 +252,7 @@ def test_streaming_join_and_union() -> None:
     q = pl.concat([a, b, c])
 
     out = q.collect(engine="old-streaming")
-    assert_frame_equal(out, q.collect(streaming=False))
+    assert_frame_equal(out, q.collect(engine="in-memory"))
     assert out.to_series().to_list() == [1, 2, 1, 2, 4, 8, 1, 2]
 
 

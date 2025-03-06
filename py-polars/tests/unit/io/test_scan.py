@@ -480,7 +480,12 @@ def test_scan_limit_0_does_not_panic(
     path = tmp_path / "data.bin"
     df = pl.DataFrame({"x": 1})
     write_func(df, path)
-    assert_frame_equal(scan_func(path).head(0).collect(streaming=streaming), df.clear())
+    assert_frame_equal(
+        scan_func(path)
+        .head(0)
+        .collect(engine="old-streaming" if streaming else "in-memory"),
+        df.clear(),
+    )
 
 
 @pytest.mark.write_disk
@@ -674,39 +679,48 @@ def test_scan_include_file_paths(
         pl.exceptions.DuplicateError,
         match=r'column name for file paths "x" conflicts with column name from file',
     ):
-        scan_func(tmp_path, include_file_paths="x").collect(streaming=streaming)
+        scan_func(tmp_path, include_file_paths="x").collect(
+            engine="old-streaming" if streaming else "in-memory"
+        )
 
     f = scan_func
     if scan_func in [pl.scan_csv, pl.scan_ndjson]:
         f = partial(f, schema=df.drop("path").schema)
 
     lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
-    assert_frame_equal(lf.collect(streaming=streaming), df)
+    assert_frame_equal(
+        lf.collect(engine="old-streaming" if streaming else "in-memory"), df
+    )
 
     # Test projecting only the path column
     q = lf.select("path")
     assert q.collect_schema() == {"path": pl.String}
     assert_frame_equal(
-        q.collect(streaming=streaming),
+        q.collect(engine="old-streaming" if streaming else "in-memory"),
         df.select("path"),
     )
 
     q = q.select("path").head(3)
     assert q.collect_schema() == {"path": pl.String}
     assert_frame_equal(
-        q.collect(streaming=streaming),
+        q.collect(engine="old-streaming" if streaming else "in-memory"),
         df.select("path").head(3),
     )
 
     # Test predicates
     for predicate in [pl.col("path") != pl.col("x"), pl.col("path") != ""]:
         assert_frame_equal(
-            lf.filter(predicate).collect(streaming=streaming),
+            lf.filter(predicate).collect(
+                engine="old-streaming" if streaming else "in-memory"
+            ),
             df,
         )
 
     # Test codepaths that materialize empty DataFrames
-    assert_frame_equal(lf.head(0).collect(streaming=streaming), df.head(0))
+    assert_frame_equal(
+        lf.head(0).collect(engine="old-streaming" if streaming else "in-memory"),
+        df.head(0),
+    )
 
 
 @pytest.mark.write_disk
@@ -958,7 +972,7 @@ def test_scan_csv_bytesio_memory_usage(
     assert (
         pl.scan_csv(f)
         .filter(pl.col("mydata") == 999_999)
-        .collect(new_streaming=streaming)  # type: ignore[call-overload]
+        .collect(engine="streaming" if streaming else "in-memory")  # type: ignore[call-overload]
         .item()
         == 999_999
     )

@@ -23,7 +23,7 @@ lf = left.lazy().merge_sorted(right.lazy(), "b")
 @pytest.mark.parametrize("streaming", [False, True])
 def test_merge_sorted(streaming: bool) -> None:
     assert_frame_equal(
-        lf.collect(new_streaming=streaming),  # type: ignore[call-overload]
+        lf.collect(engine="streaming" if streaming else "in-memory"),  # type: ignore[call-overload]
         expected,
     )
 
@@ -114,7 +114,7 @@ def test_merge_sorted_unbalanced(size: int, ra: list[int]) -> None:
     )
 
     lf = lhs.lazy().merge_sorted(rhs.lazy(), "a")
-    df = lf.collect(new_streaming=True)  # type: ignore[call-overload]
+    df = lf.collect(engine="streaming")  # type: ignore[call-overload]
 
     nulls_last = ra[0] is not None
 

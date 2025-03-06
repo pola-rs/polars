@@ -194,7 +194,7 @@ def test_streaming_group_by_sorted_fast_path() -> None:
                     ]
                 )
                 .sort("a")
-                .collect(streaming=streaming)
+                .collect(engine="old-streaming" if streaming else "in-memory")
             )
             results.append(out)
 
@@ -413,7 +413,7 @@ def test_group_by_min_max_string_type() -> None:
             table.lazy()
             .group_by("a")
             .agg([pl.min("b").alias("min"), pl.max("b").alias("max")])
-            .collect(streaming=streaming)
+            .collect(engine="old-streaming" if streaming else "in-memory")
             .sort("a")
             .to_dict(as_series=False)
             == expected
@@ -446,7 +446,7 @@ def test_group_by_multiple_keys_one_literal(streaming: bool) -> None:
         .group_by("a", pl.lit(1))
         .agg(pl.col("b").max())
         .sort(["a", "b"])
-        .collect(streaming=streaming)
+        .collect(engine="old-streaming" if streaming else "in-memory")
         .to_dict(as_series=False)
         == expected
     )

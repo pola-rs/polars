@@ -46,7 +46,7 @@ def test_scan_csv_overwrite_small_dtypes(
 ) -> None:
     file_path = io_files_path / "foods1.csv"
     df = pl.scan_csv(file_path, schema_overrides={"sugars_g": dtype}).collect(
-        streaming=True
+        engine="old-streaming"
     )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float64, dtype]
 
@@ -228,7 +228,11 @@ def test_parquet_eq_statistics(
         pl.col("idx") == 150,
         pl.col("idx") == 210,
     ]:
-        result = pl.scan_parquet(file_path).filter(pred).collect(streaming=streaming)
+        result = (
+            pl.scan_parquet(file_path)
+            .filter(pred)
+            .collect(engine="old-streaming" if streaming else "in-memory")
+        )
         assert_frame_equal(result, df.filter(pred))
 
     captured = capfd.readouterr().err

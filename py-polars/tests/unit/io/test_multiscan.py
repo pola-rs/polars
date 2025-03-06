@@ -133,9 +133,9 @@ def test_multiscan_projection(
     ]:
         assert_frame_equal(
             scan(multiscan_path, **args)
-            .collect(new_streaming=True)  # type: ignore[call-overload]
+            .collect(engine="streaming")  # type: ignore[call-overload]
             .select(projection),
-            scan(multiscan_path, **args).select(projection).collect(new_streaming=True),  # type: ignore[call-overload]
+            scan(multiscan_path, **args).select(projection).collect(engine="streaming"),  # type: ignore[call-overload]
         )
 
     for remove in range(len(base_projection)):
@@ -149,11 +149,11 @@ def test_multiscan_projection(
             print(projection)
             assert_frame_equal(
                 scan(multiscan_path, **args)
-                .collect(new_streaming=True)  # type: ignore[call-overload]
+                .collect(engine="streaming")  # type: ignore[call-overload]
                 .select(projection),
                 scan(multiscan_path, **args)
                 .select(projection)
-                .collect(new_streaming=True),  # type: ignore[call-overload]
+                .collect(engine="streaming"),  # type: ignore[call-overload]
             )
 
 
@@ -188,7 +188,7 @@ def test_multiscan_hive_predicate(
     write(b, b_path)
     write(c, c_path)
 
-    full = scan(multiscan_path).collect(new_streaming=True)  # type: ignore[call-overload]
+    full = scan(multiscan_path).collect(engine="streaming")  # type: ignore[call-overload]
     full_ri = full.with_row_index("ri", 42)
 
     last_pred = None
@@ -209,7 +209,7 @@ def test_multiscan_hive_predicate(
             last_pred = pred
             assert_frame_equal(
                 full.filter(pred),
-                scan(multiscan_path).filter(pred).collect(new_streaming=True),  # type: ignore[call-overload]
+                scan(multiscan_path).filter(pred).collect(engine="streaming"),  # type: ignore[call-overload]
             )
 
             assert_frame_equal(
@@ -217,7 +217,7 @@ def test_multiscan_hive_predicate(
                 scan(multiscan_path)
                 .with_row_index("ri", 42)
                 .filter(pred)
-                .collect(new_streaming=True),  # type: ignore[call-overload]
+                .collect(engine="streaming"),  # type: ignore[call-overload]
             )
     except Exception as _:
         print(last_pred)
@@ -337,7 +337,7 @@ def test_schema_mismatch_type_mismatch(
         pl.exceptions.SchemaError,
         match="data type mismatch for column xyz_col: expected: i64, found: str",
     ):
-        q.collect(new_streaming=True)  # type: ignore[call-overload]
+        q.collect(engine="streaming")  # type: ignore[call-overload]
 
 
 @pytest.mark.parametrize(
@@ -377,7 +377,7 @@ def test_schema_mismatch_order_mismatch(
     q = scan(multiscan_path)
 
     with pytest.raises(pl.exceptions.SchemaError):
-        q.collect(new_streaming=True)  # type: ignore[call-overload]
+        q.collect(engine="streaming")  # type: ignore[call-overload]
 
 
 @pytest.mark.parametrize(
@@ -403,7 +403,7 @@ def test_multiscan_head(
         f.seek(0)
 
     assert_frame_equal(
-        scan([a, b]).head(5).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan([a, b]).head(5).collect(engine="streaming"),  # type: ignore[call-overload]
         pl.Series("c1", range(5)).to_frame(),
     )
 
@@ -431,7 +431,7 @@ def test_multiscan_tail(
         f.seek(0)
 
     assert_frame_equal(
-        scan([a, b]).tail(5).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan([a, b]).tail(5).collect(engine="streaming"),  # type: ignore[call-overload]
         pl.Series("c1", range(5, 10)).to_frame(),
     )
 
@@ -469,22 +469,22 @@ def test_multiscan_slice_middle(
     ] + expected_series
 
     assert_frame_equal(
-        scan(fs).slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs).slice(offset, 17).collect(engine="streaming"),  # type: ignore[call-overload]
         pl.DataFrame(expected_series),
     )
     assert_frame_equal(
-        scan(fs, row_index_name="ri").slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs, row_index_name="ri").slice(offset, 17).collect(engine="streaming"),  # type: ignore[call-overload]
         pl.DataFrame(ri_expected_series),
     )
 
     # Negative slices
     offset = -(13 * 7 - offset)
     assert_frame_equal(
-        scan(fs).slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs).slice(offset, 17).collect(engine="streaming"),  # type: ignore[call-overload]
         pl.DataFrame(expected_series),
     )
     assert_frame_equal(
-        scan(fs, row_index_name="ri").slice(offset, 17).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs, row_index_name="ri").slice(offset, 17).collect(engine="streaming"),  # type: ignore[call-overload]
         pl.DataFrame(ri_expected_series),
     )
 
@@ -517,7 +517,7 @@ def test_multiscan_slice_parametric(
 
     assert_frame_equal(
         scan(ref).slice(offset, length).collect(),
-        scan(fs).slice(offset, length).collect(new_streaming=True),  # type: ignore[call-overload]
+        scan(fs).slice(offset, length).collect(engine="streaming"),  # type: ignore[call-overload]
     )
 
     ref.seek(0)
@@ -530,7 +530,7 @@ def test_multiscan_slice_parametric(
         .collect(),
         scan(fs, row_index_name="ri", row_index_offset=42)
         .slice(offset, length)
-        .collect(new_streaming=True),  # type: ignore[call-overload]
+        .collect(engine="streaming"),  # type: ignore[call-overload]
     )
 
 

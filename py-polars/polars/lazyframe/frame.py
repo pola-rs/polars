@@ -1064,6 +1064,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         df_summary.insert_column(0, pl.Series("statistic", metrics))
         return df_summary
 
+    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
     def explain(
         self,
         *,
@@ -1080,6 +1081,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        engine: EngineType = "auto",
         tree_format: bool | None = None,
         _check_order: bool = True,
     ) -> str:
@@ -1115,12 +1117,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Combine sequential independent calls to with_columns
         collapse_joins
             Collapse a join and filters into a faster join
-        streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query is run using
+            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
+            used. Fine-grained control over the GPU engine, for
+            example which device to use on a system with multiple
+            devices, is possible by providing a :class:`~.GPUEngine` object
+            with configuration options.
 
-            .. warning::
-                Streaming mode is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, if streaming
+               is enabled then GPU execution is switched off.
 
         tree_format
             Format the output as a tree.
@@ -1151,6 +1167,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 format = "tree"
 
         if streaming:
+            engine = "old-streaming"
+        if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("Streaming mode is considered unstable.")
 
         if optimized:
@@ -1166,10 +1184,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subexpr_elim=comm_subexpr_elim,
                 cluster_with_columns=cluster_with_columns,
                 collapse_joins=collapse_joins,
-                streaming=streaming,
+                streaming=engine == "old-streaming",
                 _eager=False,
                 _check_order=_check_order,
-                new_streaming=False,
+                new_streaming=engine == "streaming",
             )
             if format == "tree":
                 return ldf.describe_optimized_plan_tree()
@@ -1181,6 +1199,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             return self._ldf.describe_plan()
 
+    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
     def show_graph(
         self,
         *,
@@ -1200,6 +1219,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        engine: EngineType = "auto",
         _check_order: bool = True,
     ) -> str | None:
         """
@@ -1238,8 +1258,26 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Combine sequential independent calls to with_columns.
         collapse_joins
             Collapse a join and filters into a faster join.
-        streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state).
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, if set to `"auto"` (default), the query is run using
+            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
+            used. Fine-grained control over the GPU engine, for
+            example which device to use on a system with multiple
+            devices, is possible by providing a :class:`~.GPUEngine` object
+            with configuration options.
+
+            .. note::
+               GPU mode is considered **unstable**. Not all queries will run
+               successfully on the GPU, however, they should fall back transparently
+               to the default engine if execution is not supported.
+
+               Running with `POLARS_VERBOSE=1` will provide information if a query
+               falls back (and why).
+
+            .. note::
+               The GPU engine does not support streaming, if streaming
+               is enabled then GPU execution is switched off.
 
         Examples
         --------
@@ -1254,6 +1292,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
         """
+        if streaming:
+            engine = "old-streaming"
+        if engine in ("streaming", "old-streaming"):
+            issue_unstable_warning("Streaming mode is considered unstable.")
+
         type_check = _type_check
         _ldf = self._ldf.optimization_toggle(
             type_coercion=type_coercion,
@@ -1266,10 +1309,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=streaming,
+            streaming=engine == "old-streaming",
             _eager=False,
             _check_order=_check_order,
-            new_streaming=False,
+            new_streaming=engine == "streaming",
         )
 
         dot = _ldf.to_dot(optimized)
@@ -2126,6 +2169,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             _check_order=_check_order,
             new_streaming=False,
         )
+
+        if isinstance(engine, GPUEngine):
+            engine = "gpu"
 
         if background:
             issue_unstable_warning("Background mode is considered unstable.")
@@ -3202,7 +3248,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=streaming,
+            engine="old-streaming" if streaming else "in-memory",
         )
 
     def _fetch(
@@ -7173,7 +7219,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         }
         ...     )
         ...     .map_batches(lambda x: 2 * x, streamable=True)
-        ...     .collect(engine='streaming')
+        ...     .collect(engine="streaming")
         ... )
         shape: (100_000, 2)
         ┌─────────┬────────┐

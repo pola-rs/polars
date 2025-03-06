@@ -230,7 +230,7 @@ def test_streaming_sort_varying_order_and_dtypes(
     q = pl.scan_parquet(io_files_path / "foods*.parquet")
     df = q.collect()
     assert_df_sorted_by(df, q.sort(sort_by).collect(engine="old-streaming"), sort_by)
-    assert_df_sorted_by(df, q.sort(sort_by).collect(streaming=False), sort_by)
+    assert_df_sorted_by(df, q.sort(sort_by).collect(engine="in-memory"), sort_by)
 
 
 def test_streaming_sort_fixed_reverse() -> None:
@@ -247,7 +247,7 @@ def test_streaming_sort_fixed_reverse() -> None:
         df, q.collect(engine="old-streaming"), ["a", "b"], descending=descending
     )
     assert_df_sorted_by(
-        df, q.collect(streaming=False), ["a", "b"], descending=descending
+        df, q.collect(engine="in-memory"), ["a", "b"], descending=descending
     )
 
 
@@ -268,7 +268,7 @@ def test_reverse_variable_sort_13573() -> None:
 
 def test_nulls_last_streaming_sort() -> None:
     assert pl.LazyFrame({"x": [1, None]}).sort("x", nulls_last=True).collect(
-        streaming=True
+        engine="old-streaming"
     ).to_dict(as_series=False) == {"x": [1, None]}
 
 

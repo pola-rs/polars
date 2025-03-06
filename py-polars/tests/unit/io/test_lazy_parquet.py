@@ -407,7 +407,7 @@ def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
     a.write_parquet(f1)
     b.write_parquet(f2)
     assert pl.scan_parquet([f1, f2]).select("b").collect(
-        streaming=streaming
+        engine="old-streaming" if streaming else "in-memory"
     ).columns == ["b"]
 
 
@@ -452,7 +452,9 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
     pl.DataFrame({"c": [1, 2, 3], "d": [4, 5, 6]}).write_parquet(tmp_path / "2.parquet")
 
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
-        pl.scan_parquet(tmp_path).collect(streaming=streaming)
+        pl.scan_parquet(tmp_path).collect(
+            engine="old-streaming" if streaming else "in-memory"
+        )
 
 
 @pytest.mark.write_disk
@@ -507,21 +509,29 @@ def test_parquet_slice_pushdown_non_zero_offset(
     assert pl.read_parquet_schema(paths[0]) == dfs[0].schema
     # * Attempting to read any data will error
     with pytest.raises(ComputeError):
-        pl.scan_parquet(paths[0]).collect(streaming=streaming)
+        pl.scan_parquet(paths[0]).collect(
+            engine="old-streaming" if streaming else "in-memory"
+        )
 
     df = dfs[1]
     assert_frame_equal(
-        pl.scan_parquet(paths).slice(1, 1).collect(streaming=streaming), df
+        pl.scan_parquet(paths)
+        .slice(1, 1)
+        .collect(engine="old-streaming" if streaming else "in-memory"),
+        df,
     )
     assert_frame_equal(
-        pl.scan_parquet(paths[1:]).head(1).collect(streaming=streaming), df
+        pl.scan_parquet(paths[1:])
+        .head(1)
+        .collect(engine="old-streaming" if streaming else "in-memory"),
+        df,
     )
     assert_frame_equal(
         (
             pl.scan_parquet([paths[1], paths[1], paths[1]])
             .with_row_index()
             .slice(1, 1)
-            .collect(streaming=streaming)
+            .collect(engine="old-streaming" if streaming else "in-memory")
         ),
         df.with_row_index(offset=1),
     )
@@ -530,12 +540,15 @@ def test_parquet_slice_pushdown_non_zero_offset(
             pl.scan_parquet([paths[1], paths[1], paths[1]])
             .with_row_index(offset=1)
             .slice(1, 1)
-            .collect(streaming=streaming)
+            .collect(engine="old-streaming" if streaming else "in-memory")
         ),
         df.with_row_index(offset=2),
     )
     assert_frame_equal(
-        pl.scan_parquet(paths[1:]).head(1).collect(streaming=streaming), df
+        pl.scan_parquet(paths[1:])
+        .head(1)
+        .collect(engine="old-streaming" if streaming else "in-memory"),
+        df,
     )
 
     # Negative slice unsupported in streaming
@@ -604,7 +617,9 @@ def test_parquet_row_groups_shift_bug_18739(tmp_path: Path, streaming: bool) -> 
     df.write_parquet(path, row_group_size=1)
 
     lf = pl.scan_parquet(path)
-    assert_frame_equal(df, lf.collect(streaming=streaming))
+    assert_frame_equal(
+        df, lf.collect(engine="old-streaming" if streaming else "in-memory")
+    )
 
 
 @pytest.mark.write_disk
@@ -626,7 +641,9 @@ def test_dsl2ir_cached_metadata(tmp_path: Path, streaming: bool) -> None:
         path.write_bytes(v[:-metadata_and_footer_len] + b"PAR1")
 
     remove_metadata(path)
-    assert_frame_equal(lf.collect(streaming=streaming), df)
+    assert_frame_equal(
+        lf.collect(engine="old-streaming" if streaming else "in-memory"), df
+    )
 
 
 @pytest.mark.write_disk
@@ -646,16 +663,21 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
     lf = pl.scan_parquet(paths)
 
     assert_frame_equal(
-        lf.select("a").collect(streaming=streaming), pl.DataFrame({"a": [1, 2, 3]})
+        lf.select("a").collect(engine="old-streaming" if streaming else "in-memory"),
+        pl.DataFrame({"a": [1, 2, 3]}),
     )
 
     assert_frame_equal(
-        lf.select("b", "a").collect(streaming=streaming),
+        lf.select("b", "a").collect(
+            engine="old-streaming" if streaming else "in-memory"
+        ),
         pl.DataFrame({"b": [10, 11, 12], "a": [1, 2, 3]}),
     )
 
     assert_frame_equal(
-        pl.scan_parquet(paths[:2]).collect(streaming=streaming),
+        pl.scan_parquet(paths[:2]).collect(
+            engine="old-streaming" if streaming else "in-memory"
+        ),
         pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
     )
 
@@ -663,7 +685,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
         pl.exceptions.SchemaError,
         match="parquet file contained extra columns and no selection was given",
     ):
-        lf.collect(streaming=streaming)
+        lf.collect(engine="old-streaming" if streaming else "in-memory")
 
 
 @pytest.mark.write_disk
@@ -684,7 +706,7 @@ def test_parquet_unaligned_schema_read_dtype_mismatch(
     lf = pl.scan_parquet(paths)
 
     with pytest.raises(pl.exceptions.SchemaError, match="data type mismatch"):
-        lf.collect(streaming=streaming)
+        lf.collect(engine="old-streaming" if streaming else "in-memory")
 
 
 @pytest.mark.write_disk
@@ -708,7 +730,7 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
         pl.exceptions.ColumnNotFoundError,
         match="did not find column in file: a",
     ):
-        lf.collect(streaming=streaming)
+        lf.collect(engine="old-streaming" if streaming else "in-memory")
 
 
 @pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
@@ -737,14 +759,14 @@ def test_parquet_schema_arg(
     lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
 
     with pytest.raises(pl.exceptions.ColumnNotFoundError):
-        lf.collect(streaming=streaming)
+        lf.collect(engine="old-streaming" if streaming else "in-memory")
 
     lf = pl.scan_parquet(
         paths, parallel=parallel, schema=schema, allow_missing_columns=True
     )
 
     assert_frame_equal(
-        lf.collect(streaming=streaming),
+        lf.collect(engine="old-streaming" if streaming else "in-memory"),
         pl.DataFrame({"1": None, "a": [1, 2], "b": [1, 2]}, schema=schema),
     )
 
@@ -764,7 +786,7 @@ def test_parquet_schema_arg(
         paths, parallel=parallel, schema=schema, allow_missing_columns=True
     ).select("1")
 
-    s = lf.collect(streaming=streaming).to_series()
+    s = lf.collect(engine="old-streaming" if streaming else "in-memory").to_series()
     assert s.len() == 2
     assert s.null_count() == 2
 
@@ -783,12 +805,12 @@ def test_parquet_schema_arg(
         with pytest.raises(
             pl.exceptions.SchemaError, match="file contained extra columns"
         ):
-            lf.collect(streaming=streaming)
+            lf.collect(engine="old-streaming" if streaming else "in-memory")
 
     lf = pl.scan_parquet(paths, parallel=parallel, schema=schema).select("a")
 
     assert_frame_equal(
-        lf.collect(streaming=streaming),
+        lf.collect(engine="old-streaming" if streaming else "in-memory"),
         pl.DataFrame({"a": [1, 2]}, schema=schema),
     )
 
@@ -800,7 +822,7 @@ def test_parquet_schema_arg(
         pl.exceptions.SchemaError,
         match="data type mismatch for column b: expected: i8, found: i64",
     ):
-        lf.collect(streaming=streaming)
+        lf.collect(engine="old-streaming" if streaming else "in-memory")
 
 
 def test_scan_parquet_schema_specified_with_empty_files_list(tmp_path: Path) -> None:
@@ -856,7 +878,7 @@ def test_scan_parquet_ignores_dtype_mismatch_for_non_projected_columns_19249(
     assert_frame_equal(
         pl.scan_parquet(paths, allow_missing_columns=allow_missing_columns)
         .select("a")
-        .collect(streaming=streaming),
+        .collect(engine="old-streaming" if streaming else "in-memory"),
         pl.DataFrame({"a": [1, 1]}, schema={"a": pl.Int32}),
     )
 
@@ -875,7 +897,9 @@ def test_scan_parquet_streaming_row_index_19606(
         df.write_parquet(p)
 
     assert_frame_equal(
-        pl.scan_parquet(tmp_path).with_row_index().collect(streaming=streaming),
+        pl.scan_parquet(tmp_path)
+        .with_row_index()
+        .collect(engine="old-streaming" if streaming else "in-memory"),
         pl.DataFrame(
             {"index": [0, 1], "x": [0, 1]}, schema={"index": pl.UInt32, "x": pl.Int64}
         ),

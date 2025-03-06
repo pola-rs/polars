@@ -44,12 +44,12 @@ def test_streaming_unique(monkeypatch: Any, capfd: Any) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.DataFrame({"a": [1, 2, 2, 2], "b": [3, 4, 4, 4], "c": [5, 6, 7, 7]})
     q = df.lazy().unique(subset=["a", "c"], maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(streaming=False))
+    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(engine="in-memory"))
 
     q = df.lazy().unique(subset=["b", "c"], maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(streaming=False))
+    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(engine="in-memory"))
 
     q = df.lazy().unique(subset=None, maintain_order=False).sort(["a", "b", "c"])
-    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(streaming=False))
+    assert_frame_equal(q.collect(engine="old-streaming"), q.collect(engine="in-memory"))
     (_, err) = capfd.readouterr()
     assert "df -> re-project-sink -> sort_multiple" in err
