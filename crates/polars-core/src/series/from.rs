@@ -15,6 +15,7 @@ use polars_utils::itertools::Itertools;
 use crate::chunked_array::cast::{cast_chunks, CastOptions};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
+#[cfg(feature = "object")]
 use crate::chunked_array::object::registry::get_object_builder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::parse_fixed_offset;

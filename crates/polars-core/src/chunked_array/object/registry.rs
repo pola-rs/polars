@@ -42,7 +42,7 @@ static GLOBAL_OBJECT_REGISTRY: Lazy<RwLock<Option<ObjectRegistry>>> = Lazy::new(
 /// can be used to materialize object types
 pub trait AnonymousObjectBuilder {
     /// # Safety
-    /// Expect ObjectArray<T> arrays.
+    /// Expect `ObjectArray<T>` arrays.
     unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series;
 
     /// Append a `null` value.
