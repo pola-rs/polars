@@ -78,7 +78,10 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
     ) {
         // TODO: SIMD gather kernels?
         let other_values_slice = other.values().as_slice();
-        self.values.extend(idxs.iter().map(|idx| *other_values_slice.get_unchecked(*idx as usize)));
+        self.values.extend(
+            idxs.iter()
+                .map(|idx| *other_values_slice.get_unchecked(*idx as usize)),
+        );
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
     }

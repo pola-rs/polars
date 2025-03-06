@@ -710,7 +710,8 @@ impl ProbeState {
                         let mut build_df = if emit_unmatched {
                             p.payload.take_opt_chunked_unchecked(&table_match, false)
                         } else {
-                            p.payload.take_chunked_unchecked(&table_match, IsSorted::Not, false)
+                            p.payload
+                                .take_chunked_unchecked(&table_match, IsSorted::Not, false)
                         };
 
                         if !payload_rechunked {
@@ -781,7 +782,8 @@ impl ProbeState {
                             let mut build_df = if emit_unmatched {
                                 p.payload.take_opt_chunked_unchecked(&table_match, false)
                             } else {
-                                p.payload.take_chunked_unchecked(&table_match, IsSorted::Not, false)
+                                p.payload
+                                    .take_chunked_unchecked(&table_match, IsSorted::Not, false)
                             };
                             if !payload_rechunked {
                                 // TODO: can avoid rechunk? We have to rechunk here or else we do it
@@ -845,11 +847,13 @@ impl ProbeState {
         let mut unmarked_idxs = Vec::new();
         unsafe {
             for p in self.table_per_partition.iter() {
-                p.hash_table.unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
+                p.hash_table
+                    .unmarked_keys(&mut unmarked_idxs, 0, IdxSize::MAX);
 
                 // Gather and create full-null counterpart.
                 let mut build_df =
-                    p.payload.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
+                    p.payload
+                        .take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                 let len = build_df.height();
                 let mut out_df = if params.left_is_build.unwrap() {
                     let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
@@ -948,7 +952,8 @@ impl EmitUnmatchedState {
                 // Gather and create full-null counterpart.
                 let out_df = unsafe {
                     let mut build_df =
-                        p.payload.take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
+                        p.payload
+                            .take_chunked_unchecked(&unmarked_idxs, IsSorted::Not, false);
                     let len = build_df.height();
                     if params.left_is_build.unwrap() {
                         let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
@@ -1094,7 +1099,8 @@ impl EquiJoinNode {
         };
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
-        let right_payload_schema = Arc::new(select_schema(&right_input_schema, &right_payload_select));
+        let right_payload_schema =
+            Arc::new(select_schema(&right_input_schema, &right_payload_select));
         Ok(Self {
             state,
             num_pipelines: 0,

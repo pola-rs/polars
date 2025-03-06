@@ -19,11 +19,16 @@ pub trait IdxTable: Any + Send + Sync {
 
     /// Inserts the given keys into this IdxTable.
     fn insert_keys(&mut self, keys: &HashKeys, track_unmatchable: bool);
-    
+
     /// Inserts a subset of the given keys into this IdxTable.
     /// # Safety
     /// The provided subset indices must be in-bounds.
-    unsafe fn insert_keys_subset(&mut self, keys: &HashKeys, subset: &[IdxSize], track_unmatchable: bool);
+    unsafe fn insert_keys_subset(
+        &mut self,
+        keys: &HashKeys,
+        subset: &[IdxSize],
+        track_unmatchable: bool,
+    );
 
     /// Probe the table, adding an entry to table_match and probe_match for each
     /// match. Will stop processing new keys once limit matches have been
@@ -59,8 +64,7 @@ pub trait IdxTable: Any + Send + Sync {
     ) -> IdxSize;
 
     /// Get the ChunkIds for each key which was never marked during probing.
-    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize)
-        -> IdxSize;
+    fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize;
 }
 
 pub fn new_idx_table(_key_schema: Arc<Schema>) -> Box<dyn IdxTable> {

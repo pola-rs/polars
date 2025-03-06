@@ -132,8 +132,13 @@ impl IdxTable for RowEncodedIdxTable {
         let HashKeys::RowEncoded(hash_keys) = hash_keys else {
             unreachable!()
         };
-        let new_idx_offset = (self.idx_offset as usize).checked_add(hash_keys.keys.len()).unwrap();
-        assert!(new_idx_offset < IdxSize::MAX as usize, "overly large index in RowEncodedIdxTable");
+        let new_idx_offset = (self.idx_offset as usize)
+            .checked_add(hash_keys.keys.len())
+            .unwrap();
+        assert!(
+            new_idx_offset < IdxSize::MAX as usize,
+            "overly large index in RowEncodedIdxTable"
+        );
 
         for (i, (hash, key)) in hash_keys
             .hashes
@@ -159,12 +164,22 @@ impl IdxTable for RowEncodedIdxTable {
         self.idx_offset = new_idx_offset as IdxSize;
     }
 
-    unsafe fn insert_keys_subset(&mut self, hash_keys: &HashKeys, subset: &[IdxSize], track_unmatchable: bool) {
+    unsafe fn insert_keys_subset(
+        &mut self,
+        hash_keys: &HashKeys,
+        subset: &[IdxSize],
+        track_unmatchable: bool,
+    ) {
         let HashKeys::RowEncoded(hash_keys) = hash_keys else {
             unreachable!()
         };
-        let new_idx_offset = (self.idx_offset as usize).checked_add(subset.len()).unwrap();
-        assert!(new_idx_offset < IdxSize::MAX as usize, "overly large index in RowEncodedIdxTable");
+        let new_idx_offset = (self.idx_offset as usize)
+            .checked_add(subset.len())
+            .unwrap();
+        assert!(
+            new_idx_offset < IdxSize::MAX as usize,
+            "overly large index in RowEncodedIdxTable"
+        );
 
         for (i, subset_idx) in subset.iter().enumerate_idx() {
             let hash = unsafe { hash_keys.hashes.value_unchecked(*subset_idx as usize) };

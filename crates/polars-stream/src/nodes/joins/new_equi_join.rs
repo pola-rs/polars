@@ -1,13 +1,14 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, LazyLock};
 
+use arrow::array::builder::ShareStrategy;
 use crossbeam_queue::ArrayQueue;
+use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
-    use polars_utils::sync::SyncPtr;
 use polars_core::{config, POOL};
-use polars_expr::idx_table::{new_idx_table, IdxTable};
 use polars_expr::hash_keys::HashKeys;
+use polars_expr::idx_table::{new_idx_table, IdxTable};
 use polars_io::pl_async::get_runtime;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
@@ -15,9 +16,8 @@ use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
+use polars_utils::sync::SyncPtr;
 use polars_utils::{format_pl_smallstr, IdxSize};
-use arrow::array::builder::ShareStrategy;
-use polars_core::frame::builder::DataFrameBuilder;
 use rayon::prelude::*;
 
 use crate::async_primitives::connector::{connector, Receiver, Sender};
@@ -416,7 +416,9 @@ impl SampleState {
 
         let partitioner = HashPartitioner::new(num_pipelines, 0);
         let mut build_state = BuildState {
-            local_builders: (0..num_pipelines).map(|_| LocalBuilder::default()).collect(),
+            local_builders: (0..num_pipelines)
+                .map(|_| LocalBuilder::default())
+                .collect(),
             sampled_probe_morsels,
         };
 
@@ -429,8 +431,7 @@ impl SampleState {
                     .reinsert(num_pipelines, None, scope, &mut join_handles)
                     .unwrap();
 
-                for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers)
-                {
+                for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
                         BuildState::partition_and_sink(
@@ -548,7 +549,6 @@ impl BuildState {
             .collect_vec();
         let num_partitions = self.local_builders[0].sketch_per_p.len();
         let local_builders = &self.local_builders;
-        
 
         let mut probe_tables = POOL.scope(|s| {
             let mut probe_tables: Vec<ProbeTable> = Vec::with_capacity(num_partitions);
@@ -561,8 +561,9 @@ impl BuildState {
                 let arc_morsels_per_local_builder = Arc::clone(&arc_morsels_per_local_builder);
                 s.spawn(move |_| {
                     // Extract from outer arc and drop outer arc.
-                    let morsels_per_local_builder = Arc::unwrap_or_clone(arc_morsels_per_local_builder);
-                    
+                    let morsels_per_local_builder =
+                        Arc::unwrap_or_clone(arc_morsels_per_local_builder);
+
                     // Compute cardinality estimate and total amount of
                     // payload for this partition.
                     let mut sketch = CardinalitySketch::new();
@@ -570,29 +571,37 @@ impl BuildState {
                     for l in local_builders {
                         sketch.combine(&l.sketch_per_p[p]);
                         let offsets_len = l.morsel_idxs_offsets_per_p.len();
-                        payload_rows += l.morsel_idxs_offsets_per_p[offsets_len - num_partitions + p];
+                        payload_rows +=
+                            l.morsel_idxs_offsets_per_p[offsets_len - num_partitions + p];
                     }
-                    
+
                     // Allocate hash table and payload builder.
                     let mut p_table = table.new_empty();
                     p_table.reserve(sketch.estimate() * 5 / 4);
                     let mut p_payload = DataFrameBuilder::new(payload_schema.clone());
                     p_payload.reserve(payload_rows);
-                    
+
                     // Build.
                     for (l, l_morsels) in local_builders.iter().zip(morsels_per_local_builder) {
                         for (i, morsel) in l_morsels.iter().enumerate() {
                             let (_mseq, payload, keys) = morsel;
                             unsafe {
-                                let p_morsel_idxs_start = l.morsel_idxs_offsets_per_p[i * num_partitions + p];
-                                let p_morsel_idxs_stop = l.morsel_idxs_offsets_per_p[(i + 1) * num_partitions + p];
-                                let p_morsel_idxs = &l.morsel_idxs_values_per_p[p][p_morsel_idxs_start..p_morsel_idxs_stop];
+                                let p_morsel_idxs_start =
+                                    l.morsel_idxs_offsets_per_p[i * num_partitions + p];
+                                let p_morsel_idxs_stop =
+                                    l.morsel_idxs_offsets_per_p[(i + 1) * num_partitions + p];
+                                let p_morsel_idxs = &l.morsel_idxs_values_per_p[p]
+                                    [p_morsel_idxs_start..p_morsel_idxs_stop];
                                 p_table.insert_keys_subset(keys, p_morsel_idxs, track_unmatchable);
-                                p_payload.gather_extend(payload, p_morsel_idxs, ShareStrategy::Never);
+                                p_payload.gather_extend(
+                                    payload,
+                                    p_morsel_idxs,
+                                    ShareStrategy::Never,
+                                );
                             }
                         }
                     }
-                    
+
                     unsafe {
                         probe_table_ptr.get().add(p).write(ProbeTable {
                             hash_table: p_table,
@@ -607,7 +616,7 @@ impl BuildState {
             drop(arc_morsels_per_local_builder);
             probe_tables
         });
-        
+
         unsafe {
             // SAFETY: all entries are initialized now.
             probe_tables.set_len(num_partitions);
@@ -669,7 +678,7 @@ impl ProbeState {
 
         let mut build_out = DataFrameBuilder::new(build_payload_schema.clone());
         let mut probe_out = DataFrameBuilder::new(probe_payload_schema.clone());
-        
+
         // A simple estimate used to size reserves.
         let mut selectivity_estimate = 1.0;
 
@@ -687,10 +696,11 @@ impl ProbeState {
             let mut payload = select_payload(df, payload_selector);
             let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
             let mut total_matches = 0;
-            
+
             // Use selectivity estimate to reserve for morsel builders.
             let max_match_per_key_est = selectivity_estimate as usize + 16;
-            let out_est_size = ((selectivity_estimate * 1.2 * df_height as f64) as usize).min(probe_limit as usize);
+            let out_est_size = ((selectivity_estimate * 1.2 * df_height as f64) as usize)
+                .min(probe_limit as usize);
             build_out.reserve(out_est_size + max_match_per_key_est);
 
             unsafe {
@@ -725,8 +735,10 @@ impl ProbeState {
                             continue;
                         };
 
-                        materialized_idxsize_range.extend(materialized_idxsize_range.len() as IdxSize..probe_group_end as IdxSize);
-                        
+                        materialized_idxsize_range.extend(
+                            materialized_idxsize_range.len() as IdxSize..probe_group_end as IdxSize,
+                        );
+
                         while probe_group_start < probe_group_end {
                             let matches_before_limit = probe_limit - probe_match.len() as IdxSize;
                             table_match.clear();
@@ -739,19 +751,33 @@ impl ProbeState {
                                 emit_unmatched,
                                 matches_before_limit,
                             ) as usize;
-                            
+
                             if emit_unmatched {
-                                build_out.opt_gather_extend(&p.payload, &table_match, ShareStrategy::Always);
+                                build_out.opt_gather_extend(
+                                    &p.payload,
+                                    &table_match,
+                                    ShareStrategy::Always,
+                                );
                             } else {
-                                build_out.gather_extend(&p.payload, &table_match, ShareStrategy::Always);
+                                build_out.gather_extend(
+                                    &p.payload,
+                                    &table_match,
+                                    ShareStrategy::Always,
+                                );
                             };
 
-                            if probe_match.len() >= probe_limit as usize || probe_group_start == probe_partitions.len() {
+                            if probe_match.len() >= probe_limit as usize
+                                || probe_group_start == probe_partitions.len()
+                            {
                                 if !payload_rechunked {
                                     payload.rechunk_mut();
                                     payload_rechunked = true;
                                 }
-                                probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                                probe_out.gather_extend(
+                                    &payload,
+                                    &probe_match,
+                                    ShareStrategy::Always,
+                                );
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                                 if send.send(out_morsel).await.is_err() {
@@ -791,24 +817,36 @@ impl ProbeState {
                                 emit_unmatched,
                                 matches_before_limit,
                             ) as usize;
-                            
+
                             if table_match.is_empty() {
                                 continue;
                             }
                             total_matches += table_match.len();
 
                             if emit_unmatched {
-                                build_out.opt_gather_extend(&p.payload, &table_match, ShareStrategy::Always);
+                                build_out.opt_gather_extend(
+                                    &p.payload,
+                                    &table_match,
+                                    ShareStrategy::Always,
+                                );
                             } else {
-                                build_out.gather_extend(&p.payload, &table_match, ShareStrategy::Always);
+                                build_out.gather_extend(
+                                    &p.payload,
+                                    &table_match,
+                                    ShareStrategy::Always,
+                                );
                             };
-                            
+
                             if probe_match.len() >= probe_limit as usize {
                                 if !payload_rechunked {
                                     payload.rechunk_mut();
                                     payload_rechunked = true;
                                 }
-                                probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                                probe_out.gather_extend(
+                                    &payload,
+                                    &probe_match,
+                                    ShareStrategy::Always,
+                                );
                                 probe_match.clear();
                                 let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                                 if send.send(out_morsel).await.is_err() {
@@ -836,14 +874,15 @@ impl ProbeState {
             }
 
             drop(wait_token);
-            
+
             // Move selectivity estimate a bit towards latest value.
-            selectivity_estimate = 0.8 * selectivity_estimate + 0.2 * (total_matches as f64 / df_height as f64);
+            selectivity_estimate =
+                0.8 * selectivity_estimate + 0.2 * (total_matches as f64 / df_height as f64);
         }
 
         Ok(max_seq)
     }
-    
+
     fn ordered_unmatched(
         &mut self,
         _partitioner: &HashPartitioner,
@@ -902,8 +941,7 @@ impl EmitUnmatchedState {
 
                 // Gather and create full-null counterpart.
                 let out_df = unsafe {
-                    let mut build_df =
-                        p.payload.take_slice_unchecked_impl(&unmarked_idxs, false);
+                    let mut build_df = p.payload.take_slice_unchecked_impl(&unmarked_idxs, false);
                     let len = build_df.height();
                     if params.left_is_build.unwrap() {
                         let probe_df = DataFrame::full_null(&params.right_payload_schema, len);
@@ -938,7 +976,6 @@ impl EmitUnmatchedState {
         Ok(())
     }
 }
-
 
 enum EquiJoinState {
     Sample(SampleState),
@@ -1050,7 +1087,8 @@ impl EquiJoinNode {
         };
 
         let left_payload_schema = Arc::new(select_schema(&left_input_schema, &left_payload_select));
-        let right_payload_schema = Arc::new(select_schema(&right_input_schema, &right_payload_select));
+        let right_payload_schema =
+            Arc::new(select_schema(&right_input_schema, &right_payload_select));
         Ok(Self {
             state,
             num_pipelines: 0,
@@ -1290,8 +1328,7 @@ impl ComputeNode for EquiJoinNode {
                     .local_builders
                     .resize_with(self.num_pipelines, Default::default);
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
-                for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers)
-                {
+                for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(
                         TaskPriority::High,
                         BuildState::partition_and_sink(
