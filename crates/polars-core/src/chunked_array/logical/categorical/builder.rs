@@ -54,6 +54,48 @@ impl CategoricalChunkedBuilder {
         }
     }
 
+    fn try_get_cat_idx(&mut self, s: &str, h: u64) -> Option<u32> {
+        // SAFETY: index in hashmap are within bounds of categories
+        unsafe {
+            let r = self.local_mapping.entry(
+                h,
+                |k| self.categories.value_unchecked(*k as usize) == s,
+                |k| {
+                    self.local_hasher
+                        .hash_one(self.categories.value_unchecked(*k as usize))
+                },
+            );
+
+            match r {
+                HTEntry::Occupied(v) => Some(*v.get()),
+                HTEntry::Vacant(_) => None,
+            }
+        }
+    }
+
+    /// Append a new category, but fail if it didn't exist yet in the category state.
+    /// You can register categories up front with `register_value`, or via `append`.
+    #[inline]
+    pub fn try_append_value(&mut self, s: &str) -> PolarsResult<()> {
+        let h = self.local_hasher.hash_one(s);
+        let idx = self.try_get_cat_idx(s, h).ok_or_else(
+            || polars_err!(ComputeError: "category {} doesn't exist in Enum dtype", s),
+        )?;
+        self.cat_builder.push(Some(idx));
+        Ok(())
+    }
+
+    /// Append a new category, but fail if it didn't exist yet in the category state.
+    /// You can register categories up front with `register_value`, or via `append`.
+    #[inline]
+    pub fn try_append(&mut self, opt_s: Option<&str>) -> PolarsResult<()> {
+        match opt_s {
+            None => self.append_null(),
+            Some(s) => self.try_append_value(s)?,
+        }
+        Ok(())
+    }
+
     /// Registers a value to a categorical index without pushing it.
     /// Returns the index and if the value was new.
     #[inline]
