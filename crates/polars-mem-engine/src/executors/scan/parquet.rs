@@ -566,8 +566,7 @@ impl ParquetExec {
 
         #[cfg(feature = "cloud")]
         if self.sources.is_cloud_url() {
-            return polars_io::pl_async::get_runtime()
-                .block_in_place_on(self.metadata_async());
+            return polars_io::pl_async::get_runtime().block_in_place_on(self.metadata_async());
         }
 
         self.metadata_sync()
