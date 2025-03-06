@@ -25,7 +25,7 @@ q5 = (
     pl.scan_csv(f"docs/assets/data/reddit.csv")
     .with_columns(pl.col("name").str.to_uppercase())
     .filter(pl.col("comment_karma") > 0)
-    .collect(streaming=True)
+    .collect(engine='streaming')
 )
 # --8<-- [end:stream]
 # --8<-- [start:partial]

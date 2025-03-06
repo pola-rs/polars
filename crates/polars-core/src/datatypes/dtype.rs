@@ -1084,7 +1084,8 @@ pub fn create_enum_dtype(categories: Utf8ViewArray) -> DataType {
     DataType::Enum(Some(Arc::new(rev_map)), Default::default())
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CompatLevel(pub(crate) u16);
 
 impl CompatLevel {

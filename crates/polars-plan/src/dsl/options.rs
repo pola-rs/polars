@@ -2,6 +2,7 @@ use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
@@ -203,6 +204,46 @@ pub struct FileScanOptions {
     pub glob: bool,
     pub include_file_paths: Option<PlSmallStr>,
     pub allow_missing_columns: bool,
+}
+
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Engine {
+    Auto,
+    OldStreaming,
+    Streaming,
+    InMemory,
+    Gpu,
+}
+
+impl FromStr for Engine {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            // "cpu" for backwards compatibility
+            "auto" => Ok(Engine::Auto),
+            "cpu" | "in-memory" => Ok(Engine::InMemory),
+            "streaming" => Ok(Engine::Streaming),
+            "old-streaming" => Ok(Engine::OldStreaming),
+            "gpu" => Ok(Engine::Gpu),
+            v => Err(format!(
+                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}}, got {v}",
+            )),
+        }
+    }
+}
+
+impl Engine {
+    pub fn into_static_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::OldStreaming => "old-streaming",
+            Self::Streaming => "streaming",
+            Self::InMemory => "in-memory",
+            Self::Gpu => "gpu",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]

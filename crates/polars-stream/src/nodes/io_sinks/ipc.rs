@@ -2,7 +2,6 @@ use std::cmp::Reverse;
 use std::io::BufWriter;
 use std::path::PathBuf;
 
-use polars_core::prelude::CompatLevel;
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow;
 use polars_core::utils::arrow::array::Array;
@@ -27,7 +26,6 @@ use crate::async_executor::spawn;
 use crate::async_primitives::connector::connector;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
-use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::io_sinks::sync_on_close;
 use crate::nodes::{JoinHandle, TaskPriority};
 
@@ -37,10 +35,6 @@ pub struct IpcSinkNode {
     input_schema: SchemaRef,
     write_options: IpcWriterOptions,
     sink_options: SinkOptions,
-
-    compat_level: CompatLevel,
-
-    chunk_size: usize,
     cloud_options: Option<CloudOptions>,
 }
 
@@ -58,10 +52,6 @@ impl IpcSinkNode {
             input_schema,
             write_options,
             sink_options,
-
-            compat_level: CompatLevel::newest(), // @TODO: make this accessible from outside
-
-            chunk_size: get_ideal_morsel_size(), // @TODO: change to something more appropriate
             cloud_options,
         }
     }
@@ -117,13 +107,12 @@ impl SinkNode for IpcSinkNode {
             compression: self.write_options.compression.map(Into::into),
         };
 
-        let compat_level = self.compat_level;
-        let chunk_size = self.chunk_size;
+        let chunk_size = self.write_options.chunk_size;
 
         let ipc_fields = self
             .input_schema
             .iter_fields()
-            .map(|f| f.to_arrow(compat_level))
+            .map(|f| f.to_arrow(self.write_options.compat_level))
             .collect::<Vec<_>>();
         let ipc_fields = default_ipc_fields(ipc_fields.iter());
 
@@ -131,7 +120,7 @@ impl SinkNode for IpcSinkNode {
         join_handles.push(buffer_and_distribute_columns_task(
             buffer_rx,
             dist_tx,
-            chunk_size,
+            chunk_size as usize,
             self.input_schema.clone(),
         ));
 
@@ -143,6 +132,7 @@ impl SinkNode for IpcSinkNode {
                 .into_iter()
                 .zip(lin_txs)
                 .map(|(mut dist_rx, mut lin_tx)| {
+                    let write_options = self.write_options;
                     spawn(TaskPriority::High, async move {
                         while let Ok((seq, col_idx, column)) = dist_rx.recv().await {
                             let mut variadic_buffer_counts = Vec::new();
@@ -158,7 +148,7 @@ impl SinkNode for IpcSinkNode {
                             //
                             // This also properly sets the inner types of the record batches, which is
                             // important for dictionary and nested type encoding.
-                            let array = column.rechunk_to_arrow(compat_level);
+                            let array = column.rechunk_to_arrow(write_options.compat_level);
 
                             // Encode array.
                             encode_array(

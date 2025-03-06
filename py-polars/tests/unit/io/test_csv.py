@@ -2205,7 +2205,9 @@ def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
 
     skip = 2
     expect = df.slice(skip)
-    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(
+        engine="old-streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 
@@ -2397,7 +2399,7 @@ time
     assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
     assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
     assert_frame_equal(
-        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(engine="old-streaming"), df
     )
 
 
