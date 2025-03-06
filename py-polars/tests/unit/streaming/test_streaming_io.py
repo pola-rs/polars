@@ -305,12 +305,14 @@ def test_sink_phases(tmp_path: Path, method: str) -> None:
     ref_df = pl.concat([df] * 100)
     lf = pl.concat([df.lazy()] * 100)
 
-    (getattr(lf, f"sink_{method}"))(tmp_path / f"t.{method}")
+    (getattr(lf, f"sink_{method}"))(tmp_path / f"t.{method}", engine="streaming")
     df = (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}").collect()
 
     assert_frame_equal(df, ref_df)
 
-    (getattr(lf, f"sink_{method}"))(tmp_path / f"t.{method}", maintain_order=False)
+    (getattr(lf, f"sink_{method}"))(
+        tmp_path / f"t.{method}", maintain_order=False, engine="streaming"
+    )
     height = (
         (getattr(pl, f"scan_{method}"))(tmp_path / f"t.{method}")
         .select(pl.len())
