@@ -33,6 +33,29 @@ jobs:
   build-python-docs:
     runs-on: ubuntu-latest
     steps:
+      - name: Parse the tag to find the major version of Polars
+        id: version
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
+          regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
+          if [[ $tag =~ $regex ]]; then
+            major=${BASH_REMATCH[1]}
+            minor=${BASH_REMATCH[2]}
+
+            if [[ "$major" == "0" ]]; then
+              version="$major.$minor"  # Keep "0.X" for 0.x.y versions
+            else
+              version="$major"          # Use only major for 1.x.y+
+            fi
+
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            echo "Error: Invalid version format. Cancelling workflow."
+            exit 1
+          fi
+
       # Chooses the manually given commit if manually triggered.
       - uses: actions/checkout@v4
         with:
@@ -60,37 +83,6 @@ jobs:
           POLARS_VERSION: ${{ github.event.inputs.polars_version || github.event.client_payload.tag || 'main' }}
         run: make html
 
-      - name: Deploy Python docs for latest development version
-        if: github.event_name == 'push' && github.ref_name == 'main'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: py-polars/docs/build/html
-          target-folder: api/python/dev
-          single-commit: true
-
-      - name: Parse the tag to find the major version of Polars
-        id: version
-        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          tag="${{ github.event.inputs.polars_version || github.event.client_payload.tag }}"
-          regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
-          if [[ $tag =~ $regex ]]; then
-            major=${BASH_REMATCH[1]}
-            minor=${BASH_REMATCH[2]}
-
-            if [[ "$major" == "0" ]]; then
-              version="$major.$minor"  # Keep "0.X" for 0.x.y versions
-            else
-              version="$major"          # Use only major for 1.x.y+
-            fi
-
-            echo "version=$version" >> "$GITHUB_OUTPUT"
-          else
-            echo "Error: Invalid version format. Cancelling workflow."
-            exit 1
-          fi
-
       - name: Deploy Python docs for latest release version - versioned
         if: github.event_name == 'repository_dispatch' 
         uses: JamesIves/github-pages-deploy-action@v4
@@ -99,8 +91,16 @@ jobs:
           target-folder: api/python/version/${{ steps.version.outputs.version }}
           single-commit: true
 
+      - name: Deploy Python docs for latest development version
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: py-polars/docs/build/html
+          target-folder: api/python/dev
+          single-commit: true
+
       - name: Deploy Python docs for latest release version - stable
-        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'repository_dispatch' && github.event.client_payload.is_prerelease == 'false' || (github.event_name == 'workflow_dispatch' && steps.version.outputs.version == '1') 
         uses: JamesIves/github-pages-deploy-action@v4 
         with:
           folder: py-polars/docs/build/html
