@@ -84,7 +84,7 @@ jobs:
         run: make html
 
       - name: Deploy Python docs for latest release version - versioned
-        if: github.event_name == 'repository_dispatch' 
+        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         uses: JamesIves/github-pages-deploy-action@v4
         with:
           folder: py-polars/docs/build/html
