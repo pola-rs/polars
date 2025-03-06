@@ -332,7 +332,7 @@ def _post_apply_columns(
             pydf = pydf.with_columns(column_casts)
         if column_subset:
             pydf = pydf.select([F.col(col)._pyexpr for col in column_subset])
-        pydf = pydf.collect()
+        pydf = pydf.collect(engine='in-memory')
 
     return pydf
 

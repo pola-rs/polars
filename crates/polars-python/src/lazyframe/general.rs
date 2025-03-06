@@ -659,7 +659,7 @@ impl PyLazyFrame {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
                 })
             } else {
-                ldf.collect_with_engine(engine)
+                ldf.collect_with_engine(engine.0)
             }
         })
     }
@@ -670,7 +670,7 @@ impl PyLazyFrame {
 
         polars_core::POOL.spawn(move || {
             let result = ldf
-                .collect_with_engine(engine)
+                .collect_with_engine(engine.0)
                 .map(PyDataFrame::new)
                 .map_err(PyPolarsErr::from);
 

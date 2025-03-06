@@ -2133,7 +2133,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # Only for testing purposes
         callback = _kwargs.get("post_opt_callback", callback)
-        return wrap_df(ldf.collect_with_engine(engine, callback))
+        return wrap_df(ldf.collect(engine, callback))
 
     @overload
     def collect_async(
