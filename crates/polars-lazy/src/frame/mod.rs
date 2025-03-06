@@ -748,10 +748,18 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
+        let engine = if self.opt_state.streaming() {
+            Engine::OldStreaming
+        } else if self.opt_state.new_streaming() {
+            Engine::Streaming
+        } else {
+            Engine::InMemory
+        };
+
         #[cfg(feature = "new_streaming")]
         {
             let mut slf = self;
-            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory, Engine::InMemory)
+            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory, engine)
             {
                 return Ok(df?.unwrap());
             }
@@ -810,7 +818,7 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         if engine == Engine::InMemory {
             use std::io::BufWriter;
@@ -853,7 +861,7 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         if engine == Engine::InMemory {
             use std::io::BufWriter;
@@ -895,7 +903,7 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         if engine == Engine::InMemory {
             use std::io::BufWriter;
@@ -948,7 +956,7 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         if engine == Engine::InMemory {
             use std::io::BufWriter;
@@ -990,7 +998,7 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         polars_ensure!(
             engine != Engine::InMemory,
@@ -1021,7 +1029,7 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         polars_ensure!(
             engine != Engine::InMemory,
@@ -1052,7 +1060,7 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         polars_ensure!(
             engine != Engine::InMemory,
@@ -1083,7 +1091,7 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
-        engine: Engine,
+        mut engine: Engine,
     ) -> PolarsResult<()> {
         polars_ensure!(
             engine != Engine::InMemory,
@@ -1174,20 +1182,6 @@ impl LazyFrame {
         mut engine: Engine,
         msg_alternative: &str,
     ) -> Result<(), PolarsError> {
-        // Default to the old streaming engine.
-        if engine == Engine::Auto {
-            engine = Engine::OldStreaming;
-        }
-
-        polars_ensure!(
-            engine == Engine::Streaming || !matches!(payload, SinkType::Partition { .. }),
-            InvalidOperation: "partition sinks are not supported on for the '{}' engine",
-            engine.into_static_str()
-        );
-
-        polars_ensure!(engine != Engine::Gpu, InvalidOperation: "sink is not supported for the gpu engine");
-        polars_ensure!(engine != Engine::InMemory, InvalidOperation: "this sink is not supported for the in-memory engine");
-
         #[cfg(feature = "new_streaming")]
         {
             if let Some(result) = self.try_new_streaming_if_requested(payload.clone(), engine) {
@@ -1195,25 +1189,54 @@ impl LazyFrame {
             }
         }
 
-        assert_ne!(
-            engine,
-            Engine::Streaming,
-            "feature for streaming engine is not active (new_streaming)"
-        );
+        match engine {
+            Engine::Auto | Engine::Streaming => {
+                let mut new_stream_lazy = self.clone();
+                new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
+                new_stream_lazy.opt_state &= !OptFlags::STREAMING;
+                let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
+                let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                    input: alp_plan.lp_top,
+                    payload,
+                });
 
-        self.logical_plan = DslPlan::Sink {
-            input: Arc::new(self.logical_plan),
-            payload,
-        };
-        self.opt_state |= OptFlags::STREAMING;
-        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true, None)?;
-        polars_ensure!(
-            is_streaming,
-            ComputeError: format!("cannot run the whole query in a streaming order; \
-            use `{msg_alternative}` instead", msg_alternative=msg_alternative)
-        );
-        let _ = physical_plan.execute(&mut state)?;
-        Ok(())
+                let string_cache_hold = StringCacheHolder::hold();
+                let result = polars_stream::run_query(
+                    stream_lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )
+                .map(|_| ());
+                drop(string_cache_hold);
+                result
+            },
+            _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
+                InvalidOperation: "partition sinks are not supported on for the '{}' engine",
+                engine.into_static_str()
+            )),
+            Engine::Gpu => {
+                Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
+            },
+            Engine::InMemory => {
+                Err(polars_err!(InvalidOperation: "this sink is not supported for the in-memory engine"))
+            },
+            Engine::OldStreaming => {
+                self.logical_plan = DslPlan::Sink {
+                    input: Arc::new(self.logical_plan),
+                    payload,
+                };
+                self.opt_state |= OptFlags::STREAMING;
+                let (mut state, mut physical_plan, is_streaming) =
+                    self.prepare_collect(true, None)?;
+                polars_ensure!(
+                    is_streaming,
+                    ComputeError: format!("cannot run the whole query in a streaming order; \
+                    use `{msg_alternative}` instead", msg_alternative=msg_alternative)
+                );
+                let _ = physical_plan.execute(&mut state)?;
+                Ok(())
+            },
+        }
     }
 
     /// Filter frame rows that match a predicate expression.

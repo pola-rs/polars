@@ -33,19 +33,7 @@ impl From<LazyFrame> for PyLazyFrame {
 
 impl<'py> FromPyObject<'py> for Wrap<Engine> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
-        let parsed = match &*ob.extract::<PyBackedStr>()? {
-            // "cpu" for backwards compatibility
-            "auto" => Engine::Auto,
-            "cpu" | "in-memory" => Engine::InMemory,
-            "streaming" => Engine::Streaming,
-            "old-streaming" => Engine::OldStreaming,
-            "gpu" => Engine::Gpu,
-            v => {
-                return Err(PyValueError::new_err(format!(
-                    "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}}, got {v}",
-                )))
-            },
-        };
+        let parsed = ob.extract::<PyBackedStr>()?.parse().map_err(PyValueError::new_err)?;
         Ok(Wrap(parsed))
     }
 }

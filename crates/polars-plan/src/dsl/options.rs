@@ -2,6 +2,7 @@ use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
@@ -213,6 +214,24 @@ pub enum Engine {
     Streaming,
     InMemory,
     Gpu,
+}
+
+impl FromStr for Engine {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            // "cpu" for backwards compatibility
+            "auto" => Ok(Engine::Auto),
+            "cpu" | "in-memory" => Ok(Engine::InMemory),
+            "streaming" => Ok(Engine::Streaming),
+            "old-streaming" => Ok(Engine::OldStreaming),
+            "gpu" => Ok(Engine::Gpu),
+            v => Err(format!(
+                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}}, got {v}",
+            )),
+        }
+    }
 }
 
 impl Engine {
