@@ -6,6 +6,7 @@ use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
+use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::{
@@ -134,6 +135,7 @@ pub enum PhysNodeKind {
         sink_options: SinkOptions,
         file_type: FileType,
         input: PhysStream,
+        cloud_options: Option<CloudOptions>,
     },
 
     PartitionSink {
@@ -142,6 +144,7 @@ pub enum PhysNodeKind {
         variant: PartitionVariant,
         file_type: FileType,
         input: PhysStream,
+        cloud_options: Option<CloudOptions>,
     },
 
     /// Generic fallback for (as-of-yet) unsupported streaming mappings.

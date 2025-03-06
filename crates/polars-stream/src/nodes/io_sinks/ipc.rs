@@ -12,7 +12,9 @@ use polars_core::utils::arrow::io::ipc::write::{
 };
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_io::cloud::CloudOptions;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
+use polars_io::utils::file::Writeable;
 use polars_io::SerWriter;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
@@ -39,6 +41,7 @@ pub struct IpcSinkNode {
     compat_level: CompatLevel,
 
     chunk_size: usize,
+    cloud_options: Option<CloudOptions>,
 }
 
 impl IpcSinkNode {
@@ -47,6 +50,7 @@ impl IpcSinkNode {
         path: PathBuf,
         sink_options: SinkOptions,
         write_options: IpcWriterOptions,
+        cloud_options: Option<CloudOptions>,
     ) -> Self {
         Self {
             path,
@@ -58,6 +62,7 @@ impl IpcSinkNode {
             compat_level: CompatLevel::newest(), // @TODO: make this accessible from outside
 
             chunk_size: get_ideal_morsel_size(), // @TODO: change to something more appropriate
+            cloud_options,
         }
     }
 }
@@ -322,18 +327,14 @@ impl SinkNode for IpcSinkNode {
         let path = self.path.clone();
         let sink_options = self.sink_options.clone();
         let write_options = self.write_options;
+        let cloud_options = self.cloud_options.clone();
         let input_schema = self.input_schema.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            use tokio::fs::OpenOptions;
-
-            let file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path.as_path())
-                .await?;
-            let mut file = file.into_std().await;
-            let writer = BufWriter::new(&mut file);
+            let mut file = polars_io::utils::file::Writeable::try_new(
+                path.to_str().unwrap(),
+                cloud_options.as_ref(),
+            )?;
+            let writer = BufWriter::new(&mut *file);
             let mut writer = IpcWriter::new(writer)
                 .with_compression(write_options.compression)
                 .with_parallel(false)
@@ -348,7 +349,12 @@ impl SinkNode for IpcSinkNode {
             writer.finish()?;
             drop(writer);
 
-            sync_on_close(sink_options.sync_on_close, &mut file)?;
+            if let Writeable::Local(file) = &mut file {
+                sync_on_close(sink_options.sync_on_close, file)?;
+            }
+
+            file.close()?;
+
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {

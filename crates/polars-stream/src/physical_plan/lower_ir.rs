@@ -229,11 +229,12 @@ pub fn lower_ir(
                 path,
                 sink_options,
                 file_type,
-                cloud_options: _,
+                cloud_options,
             } => {
                 let path = path.clone();
                 let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
 
                 match file_type {
                     #[cfg(feature = "ipc")]
@@ -244,6 +245,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "parquet")]
@@ -254,6 +256,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "csv")]
@@ -264,6 +267,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "json")]
@@ -274,6 +278,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                 }
@@ -283,12 +288,13 @@ pub fn lower_ir(
                 sink_options,
                 variant,
                 file_type,
-                cloud_options: _,
+                cloud_options,
             } => {
                 let path_f_string = path_f_string.clone();
                 let sink_options = sink_options.clone();
                 let variant = variant.clone();
                 let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
 
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::PartitionSink {
@@ -297,6 +303,7 @@ pub fn lower_ir(
                     variant,
                     file_type,
                     input: phys_input,
+                    cloud_options,
                 }
             },
         },

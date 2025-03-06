@@ -3,7 +3,9 @@ use std::path::PathBuf;
 
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_io::cloud::CloudOptions;
 use polars_io::json::BatchedWriter;
+use polars_io::utils::file::AsyncWriteable;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
@@ -17,10 +19,19 @@ type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct NDJsonSinkNode {
     path: PathBuf,
     sink_options: SinkOptions,
+    cloud_options: Option<CloudOptions>,
 }
 impl NDJsonSinkNode {
-    pub fn new(path: PathBuf, sink_options: SinkOptions) -> Self {
-        Self { path, sink_options }
+    pub fn new(
+        path: PathBuf,
+        sink_options: SinkOptions,
+        cloud_options: Option<CloudOptions>,
+    ) -> Self {
+        Self {
+            path,
+            sink_options,
+            cloud_options,
+        }
     }
 }
 
@@ -102,6 +113,7 @@ impl SinkNode for NDJsonSinkNode {
                 PolarsResult::Ok(())
             })
         }));
+        let cloud_options = self.cloud_options.clone();
 
         // IO task.
         //
@@ -109,22 +121,24 @@ impl SinkNode for NDJsonSinkNode {
         let sink_options = self.sink_options.clone();
         let path = self.path.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            use tokio::fs::OpenOptions;
             use tokio::io::AsyncWriteExt;
 
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path.as_path())
-                .await
-                .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
+            let mut file = polars_io::utils::file::AsyncWriteable::try_new(
+                path.to_str().unwrap(),
+                cloud_options.as_ref(),
+            )
+            .await?;
 
             while let Some(Priority(_, buffer)) = lin_rx.get().await {
                 file.write_all(&buffer).await?;
             }
 
-            tokio_sync_on_close(sink_options.sync_on_close, &mut file).await?;
+            if let AsyncWriteable::Local(file) = &mut file {
+                tokio_sync_on_close(sink_options.sync_on_close, file).await?;
+            }
+
+            file.close().await?;
+
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {

@@ -336,6 +336,28 @@ impl ScanSourceRef<'_> {
         }
     }
 
+    pub fn to_memslice_async_check_latest(&self, run_async: bool) -> PolarsResult<MemSlice> {
+        match self {
+            ScanSourceRef::Path(path) => {
+                let file = if run_async {
+                    feature_gated!("cloud", {
+                        polars_io::file_cache::FILE_CACHE
+                            .get_entry(path.to_str().unwrap())
+                            // Safety: This was initialized by schema inference.
+                            .unwrap()
+                            .try_open_check_latest()?
+                    })
+                } else {
+                    polars_utils::open_file(path)?
+                };
+
+                MemSlice::from_file(&file)
+            },
+            ScanSourceRef::File(file) => MemSlice::from_file(file),
+            ScanSourceRef::Buffer(buff) => Ok((*buff).clone()),
+        }
+    }
+
     pub fn to_memslice_possibly_async(
         &self,
         run_async: bool,

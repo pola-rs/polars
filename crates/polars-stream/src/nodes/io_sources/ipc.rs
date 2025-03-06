@@ -64,7 +64,7 @@ impl IpcSourceNode {
         source: ScanSource,
         file_info: FileInfo,
         options: IpcScanOptions,
-        _cloud_options: Option<CloudOptions>,
+        cloud_options: Option<CloudOptions>,
         file_options: FileScanOptions,
         mut metadata: Option<Arc<FileMetadata>>,
     ) -> PolarsResult<Self> {
@@ -87,10 +87,30 @@ impl IpcSourceNode {
             allow_missing_columns: _,
         } = file_options;
 
-        let memslice = source.as_scan_source_ref().to_memslice()?;
+        let memslice = {
+            if let ScanSourceRef::Path(p) = source.as_scan_source_ref() {
+                if source.run_async() {
+                    polars_io::file_cache::init_entries_from_uri_list(
+                        &[Arc::from(p.to_str().unwrap())],
+                        cloud_options.as_ref(),
+                    )?;
+                }
+            }
+
+            // check_latest: IR resolution does not download IPC.
+
+            source
+                .as_scan_source_ref()
+                .to_memslice_async_check_latest(source.run_async())?
+        };
+
+        #[allow(clippy::match_single_binding)]
         let metadata = match metadata.take() {
-            Some(md) => md,
-            None => Arc::new(read_file_metadata(&mut std::io::Cursor::new(
+            // TODO: Don't know why, this metadata does not match the file. This was during testing
+            // against a cloud scan:
+            // * ComputeError: out-of-spec: InvalidBuffersLength { buffers_size: 7200, file_size: 453 }
+            // Some(md) => md,
+            _ => Arc::new(read_file_metadata(&mut std::io::Cursor::new(
                 memslice.as_ref(),
             ))?),
         };
@@ -138,7 +158,7 @@ fn slice_take(slice: &mut Range<usize>, n: usize) -> Range<usize> {
     let offset = slice.start;
     let length = slice.len();
 
-    assert!(offset < n);
+    assert!(offset <= n);
 
     let chunk_length = (n - offset).min(length);
     let rng = offset..offset + chunk_length;
@@ -498,7 +518,7 @@ impl MultiScanable for IpcSourceNode {
         let options = options.clone();
 
         // TODO
-        // * `to_memslice_async_assume_latest` being a non-async function is not ideal.
+        // * `to_memslice_async_check_latest` being a non-async function is not ideal.
         // * This is also downloading the whole file even if there is a projection
         let memslice = {
             if let ScanSourceRef::Path(p) = source.as_scan_source_ref() {
@@ -510,7 +530,7 @@ impl MultiScanable for IpcSourceNode {
 
             source
                 .as_scan_source_ref()
-                .to_memslice_async_assume_latest(source.run_async())?
+                .to_memslice_async_check_latest(source.run_async())?
         };
         let metadata = Arc::new(read_file_metadata(&mut std::io::Cursor::new(
             memslice.as_ref(),

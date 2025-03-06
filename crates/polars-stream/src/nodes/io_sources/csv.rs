@@ -135,6 +135,7 @@ impl SourceNode for CsvSourceNode {
                             if morsel_output.port.send(morsel).await.is_err() {
                                 break;
                             }
+
                             wait_group.wait().await;
 
                             if source_token.stop_requested() {
