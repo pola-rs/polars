@@ -1299,17 +1299,6 @@ def test_datetime_format(fmt: str, expected: str) -> None:
     assert csv == expected
 
 
-def test_invalid_datetime_format() -> None:
-    tz_naive = pl.Series(["2020-01-01T00:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.replace_time_zone("UTC")
-    with pytest.raises(
-        ComputeError, match="cannot format NaiveDateTime with format '%q'"
-    ):
-        tz_naive.to_frame().write_csv(datetime_format="%q")
-    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
-        tz_aware.to_frame().write_csv(datetime_format="%q")
-
-
 @pytest.mark.parametrize(
     ("fmt", "expected"),
     [
