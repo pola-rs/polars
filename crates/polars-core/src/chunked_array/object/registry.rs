@@ -35,19 +35,6 @@ impl Debug for ObjectRegistry {
     }
 }
 
-impl ObjectRegistry {
-    pub(super) fn new(
-        builder_constructor: BuilderConstructor,
-        physical_dtype: ArrowDataType,
-    ) -> Self {
-        Self {
-            builder_constructor,
-            object_converter: None,
-            physical_dtype,
-        }
-    }
-}
-
 static GLOBAL_OBJECT_REGISTRY: Lazy<RwLock<Option<ObjectRegistry>>> = Lazy::new(Default::default);
 
 /// This trait can be registered, after which that global registration

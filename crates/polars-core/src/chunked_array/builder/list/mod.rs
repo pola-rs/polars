@@ -117,7 +117,7 @@ pub fn get_list_builder(
 
     match &physical_type {
         #[cfg(feature = "object")]
-        DataType::Object(_, _) => {
+        DataType::Object(_) => {
             let builder = get_object_builder(PlSmallStr::EMPTY, 0).get_list_builder(
                 name,
                 value_capacity,

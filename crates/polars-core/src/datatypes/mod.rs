@@ -296,7 +296,7 @@ unsafe impl<T: PolarsObject> PolarsDataType for ObjectType<T> {
     type IsLogical = FalseT;
 
     fn get_dtype() -> DataType {
-        DataType::Object(T::type_name(), None)
+        DataType::Object(T::type_name())
     }
 }
 

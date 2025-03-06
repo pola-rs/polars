@@ -110,7 +110,7 @@ impl Series {
                 ca.into_series()
             },
             #[cfg(feature = "object")]
-            Object(_, _) => {
+            Object(_) => {
                 assert_eq!(chunks.len(), 1);
                 let arr = chunks[0]
                     .as_any()

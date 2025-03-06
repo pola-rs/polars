@@ -45,7 +45,7 @@ impl PySeries {
             ($self:expr, $method:ident, $($args:expr),*) => {
                 match $self.dtype() {
                     #[cfg(feature = "object")]
-                    DataType::Object(_, _) => {
+                    DataType::Object(_) => {
                         let ca = $self.0.unpack::<ObjectType<ObjectValue>>().unwrap();
                         ca.$method($($args),*)
                     },
@@ -269,7 +269,7 @@ impl PySeries {
                     ca.into_series()
                 },
                 #[cfg(feature = "object")]
-                Some(DataType::Object(_, _)) => {
+                Some(DataType::Object(_)) => {
                     let ca = dispatch_apply!(
                         series,
                         apply_lambda_with_object_out_type,
