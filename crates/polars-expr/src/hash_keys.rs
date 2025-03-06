@@ -302,6 +302,7 @@ pub struct SingleKeys {
 }
 
 impl SingleKeys {
+    #[allow(clippy::ptr_arg)] // Remove when implemented.
     pub fn gen_partitions(
         &self,
         _partitioner: &HashPartitioner,
