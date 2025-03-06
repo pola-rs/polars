@@ -10,11 +10,11 @@ q1 = (
     .group_by("species")
     .agg(pl.col("sepal_width").mean())
 )
-df = q1.collect(engine='streaming')
+df = q1.collect(engine="streaming")
 # --8<-- [end:streaming]
 
 # --8<-- [start:example]
-print(q1.explain(engine='streaming'))
+print(q1.explain(engine="streaming"))
 
 # --8<-- [end:example]
 
@@ -23,5 +23,5 @@ q2 = pl.scan_csv("docs/assets/data/iris.csv").with_columns(
     pl.col("sepal_length").mean().over("species")
 )
 
-print(q2.explain(engine='streaming'))
+print(q2.explain(engine="streaming"))
 # --8<-- [end:example2]

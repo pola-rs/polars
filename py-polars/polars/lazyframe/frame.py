@@ -3248,7 +3248,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            engine="old-streaming" if streaming else "in-memory",
+            streaming=streaming,
         )
 
     def _fetch(

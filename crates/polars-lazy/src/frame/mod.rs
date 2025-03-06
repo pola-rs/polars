@@ -744,9 +744,10 @@ impl LazyFrame {
         }
 
         match engine {
-            Engine::Auto | Engine::InMemory | Engine::Gpu => (),
+            #[cfg(feature = "new_streaming")]
             Engine::Streaming => self = self.with_new_streaming(true),
             Engine::OldStreaming => self = self.with_streaming(true),
+            _ => {},
         }
 
         match engine {
@@ -1208,7 +1209,7 @@ impl LazyFrame {
         }
 
         match engine {
-            Engine::Auto | Engine::Streaming => {
+            Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {
                 let mut new_stream_lazy = self.clone();
                 new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
                 new_stream_lazy.opt_state &= !OptFlags::STREAMING;
@@ -1227,7 +1228,7 @@ impl LazyFrame {
                 .map(|_| ());
                 drop(string_cache_hold);
                 result
-            },
+            }),
             _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
                 InvalidOperation: "partition sinks are not supported on for the '{}' engine",
                 engine.into_static_str()
