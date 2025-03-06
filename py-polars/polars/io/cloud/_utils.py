@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from polars._utils.various import is_path_or_str_sequence
+from polars.io.partition import PartitionMaxSize
 
 
 def _first_scan_path(
@@ -13,6 +14,8 @@ def _first_scan_path(
         return source
     elif is_path_or_str_sequence(source) and source:
         return source[0]
+    elif isinstance(source, PartitionMaxSize):
+        return source._path
 
     return None
 

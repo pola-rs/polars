@@ -33,6 +33,11 @@ impl PyPartitioning {
             variant: PartitionVariant::MaxSize(max_size),
         }
     }
+
+    #[getter]
+    fn path(&self) -> &str {
+        self.path.to_str().unwrap()
+    }
 }
 
 impl<'py> FromPyObject<'py> for SinkTarget {

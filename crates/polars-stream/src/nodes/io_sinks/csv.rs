@@ -5,7 +5,9 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{CsvWriter, CsvWriterOptions};
+use polars_io::utils::file::AsyncWriteable;
 use polars_io::SerWriter;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
@@ -22,19 +24,22 @@ pub struct CsvSinkNode {
     schema: SchemaRef,
     sink_options: SinkOptions,
     write_options: CsvWriterOptions,
+    cloud_options: Option<CloudOptions>,
 }
 impl CsvSinkNode {
     pub fn new(
-        schema: SchemaRef,
         path: PathBuf,
+        schema: SchemaRef,
         sink_options: SinkOptions,
         write_options: CsvWriterOptions,
+        cloud_options: Option<CloudOptions>,
     ) -> Self {
         Self {
             path,
             schema,
             sink_options,
             write_options,
+            cloud_options,
         }
     }
 }
@@ -144,35 +149,37 @@ impl SinkNode for CsvSinkNode {
         let schema = self.schema.clone();
         let include_header = self.write_options.include_header;
         let include_bom = self.write_options.include_bom;
+        let cloud_options = self.cloud_options.clone();
         let io_task = polars_io::pl_async::get_runtime().spawn(async move {
-            use tokio::fs::OpenOptions;
             use tokio::io::AsyncWriteExt;
 
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(path.as_path())
-                .await
-                .map_err(|err| polars_utils::_limit_path_len_io_err(path.as_path(), err))?;
+            let mut file = polars_io::utils::file::Writeable::try_new(
+                path.to_str().unwrap(),
+                cloud_options.as_ref(),
+            )?;
 
             // Write the header
             if include_header || include_bom {
-                let mut std_file = file.into_std().await;
-                let mut writer = CsvWriter::new(&mut std_file)
+                let mut writer = CsvWriter::new(&mut *file)
                     .include_bom(include_bom)
                     .include_header(include_header)
                     .n_threads(1) // Disable rayon parallelism
                     .batched(&schema)?;
                 writer.write_batch(&DataFrame::empty_with_schema(&schema))?;
-                file = tokio::fs::File::from_std(std_file);
             }
+
+            let mut file = file.try_into_async_writeable()?;
 
             while let Some(Priority(_, buffer)) = lin_rx.get().await {
                 file.write_all(&buffer).await?;
             }
 
-            tokio_sync_on_close(sink_options.sync_on_close, &mut file).await?;
+            if let AsyncWriteable::Local(file) = &mut file {
+                tokio_sync_on_close(sink_options.sync_on_close, file).await?;
+            }
+
+            file.close().await?;
+
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {

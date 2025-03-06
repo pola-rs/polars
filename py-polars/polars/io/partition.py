@@ -37,3 +37,7 @@ class PartitionMaxSize:
     def __init__(self, path: Path | str, *, max_size: int) -> None:
         issue_unstable_warning("Partitioning strategies are considered unstable.")
         self._p = PyPartitioning.new_max_size(path, max_size)
+
+    @property
+    def _path(self) -> str:
+        return self._p.path
