@@ -156,26 +156,20 @@ impl From<ArrayFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
 pub(super) fn length(s: &Column) -> PolarsResult<Column> {
     let array = s.array()?;
     let width = array.width();
+    let width = IdxSize::try_from(width)
+        .map_err(|_| polars_err!(bigidx, ctx = "array length", size = width))?;
 
-    let width_val = match IDX_DTYPE {
-        DataType::UInt32 => AnyValue::UInt32(width as u32),
-        DataType::UInt64 => AnyValue::UInt64(width as u64),
-        _ => unreachable!("IDX_DTYPE should be UInt32 or UInt64"),
-    };
-
-    let mut c = Column::new_scalar(
-        array.name().clone(),
-        Scalar::new(IDX_DTYPE, width_val),
-        array.len(),
-    );
-
+    let mut c = Column::new_scalar(array.name().clone(), width.into(), array.len());
     if let Some(validity) = array.rechunk_validity() {
         let mut series = c.into_materialized_series().clone();
-        let chunks = unsafe { series.chunks_mut() };
-        let arr = &mut chunks[0];
-        *arr = arr.with_validity(Some(validity));
-        series.compute_len();
 
+        // SAFETY: We keep datatypes intact and call compute_len afterwards.
+        let chunks = unsafe { series.chunks_mut() };
+        assert_eq!(chunks.len(), 1);
+
+        chunks[0] = chunks[0].with_validity(Some(validity));
+
+        series.compute_len();
         c = series.into_column();
     }
 
