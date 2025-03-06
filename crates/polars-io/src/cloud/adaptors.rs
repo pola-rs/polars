@@ -64,6 +64,7 @@ impl BlockingCloudWriter {
         )
     }
 
+    /// Returns the underlying [`object_store::buffered::BufWriter`]
     pub fn try_into_inner(mut self) -> std::io::Result<BufWriter> {
         // We can't just return self.state:
         // * cannot move out of type `adaptors::BlockingCloudWriter`, which implements the `Drop` trait
@@ -75,10 +76,10 @@ impl BlockingCloudWriter {
 
     /// Closes the writer, or returns the existing error if it exists. After this function is called
     /// the writer is guaranteed to be in an error state.
-    pub fn blocking_close(&mut self) -> std::io::Result<()> {
-        match self.blocking_try_with_writer(|writer| {
-            get_runtime().block_on_potential_spawn(writer.shutdown())
-        }) {
+    pub fn close(&mut self) -> std::io::Result<()> {
+        match self
+            .try_with_writer(|writer| get_runtime().block_on_potential_spawn(writer.shutdown()))
+        {
             Ok(_) => {
                 self.state = Err(std::io::Error::new(std::io::ErrorKind::Other, "closed"));
                 Ok(())
@@ -87,7 +88,7 @@ impl BlockingCloudWriter {
         }
     }
 
-    fn blocking_try_with_writer<F, O>(&mut self, func: F) -> std::io::Result<O>
+    fn try_with_writer<F, O>(&mut self, func: F) -> std::io::Result<O>
     where
         F: Fn(&mut BufWriter) -> std::io::Result<O>,
     {
@@ -108,22 +109,20 @@ impl std::io::Write for BlockingCloudWriter {
         // async runtime here
         let buf = unsafe { std::mem::transmute::<&[u8], &'static [u8]>(buf) };
 
-        self.blocking_try_with_writer(|writer| {
+        self.try_with_writer(|writer| {
             get_runtime()
                 .block_on_potential_spawn(async { writer.write_all(buf).await.map(|_t| buf.len()) })
         })
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        self.blocking_try_with_writer(|writer| {
-            get_runtime().block_on_potential_spawn(writer.flush())
-        })
+        self.try_with_writer(|writer| get_runtime().block_on_potential_spawn(writer.flush()))
     }
 }
 
 impl WriteClose for BlockingCloudWriter {
     fn close(mut self: Box<Self>) -> std::io::Result<()> {
-        self.blocking_close()
+        self.close()
     }
 }
 
@@ -135,7 +134,7 @@ impl Drop for BlockingCloudWriter {
 
         // Note: We should not hit here - the writer should instead be explicitly closed.
         // But we still have this here as a safety measure to prevent silently dropping errors.
-        match self.blocking_close() {
+        match self.close() {
             Ok(()) => {},
             e @ Err(_) => {
                 if std::thread::panicking() {
@@ -212,7 +211,7 @@ mod tests {
             .finish(&mut df)
             .expect("Could not write DataFrame as CSV to remote location");
 
-        cloud_writer.blocking_close().unwrap();
+        cloud_writer.close().unwrap();
 
         assert_eq!(
             CsvReadOptions::default()
