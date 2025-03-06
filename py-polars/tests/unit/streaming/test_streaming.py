@@ -28,7 +28,7 @@ def test_streaming_categoricals_5921() -> None:
             .group_by("X")
             .agg(pl.col("Y").min())
             .sort("Y", descending=True)
-            .collect(streaming=True)
+            .collect(engine='old-streaming')
         )
 
         out_eager = (
@@ -64,7 +64,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
         )
-    ).collect(streaming=True).to_dict(as_series=False) == {
+    ).collect(engine='old-streaming').to_dict(as_series=False) == {
         "a": [1, 2, 3],
         "b": [1, 2, 3],
     }
@@ -80,7 +80,7 @@ def test_cross_join_stack() -> None:
     t0 = time.time()
     # this should be instant if directly pushed into sink
     # if not the cross join will first fill the stack with all matches of a single chunk
-    assert a.join(a, how="cross").head().collect(streaming=True).shape == (5, 2)
+    assert a.join(a, how="cross").head().collect(engine='old-streaming').shape == (5, 2)
     t1 = time.time()
     assert (t1 - t0) < 0.5
 
@@ -99,7 +99,7 @@ def test_streaming_literal_expansion() -> None:
         z=pl.col("z"),
     )
 
-    assert q.collect(streaming=True).to_dict(as_series=False) == {
+    assert q.collect(engine='old-streaming').to_dict(as_series=False) == {
         "x": ["constant", "constant"],
         "y": ["a", "b"],
         "z": [1, 2],
@@ -127,7 +127,7 @@ def test_streaming_apply(monkeypatch: Any, capfd: Any) -> None:
         (
             q.select(
                 pl.col("a").map_elements(lambda x: x * 2, return_dtype=pl.Int64)
-            ).collect(streaming=True)
+            ).collect(engine='old-streaming')
         )
         (_, err) = capfd.readouterr()
         assert "df -> projection -> ordered_sink" in err
@@ -140,7 +140,7 @@ def test_streaming_ternary() -> None:
         q.with_columns(
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
-        .explain(streaming=True)
+        .explain(engine='old-streaming')
         .startswith("STREAMING")
     )
 
@@ -157,7 +157,7 @@ def test_streaming_sortedness_propagation_9494() -> None:
         .sort("when")
         .group_by_dynamic("when", every="1mo")
         .agg(pl.col("what").sum())
-        .collect(streaming=True)
+        .collect(engine='old-streaming')
     ).to_dict(as_series=False) == {
         "when": [date(2023, 5, 1), date(2023, 6, 1)],
         "what": [3, 3],
@@ -192,7 +192,7 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     for how in join_strategies:
         q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
         assert_frame_equal(
-            q.collect(streaming=True),
+            q.collect(engine='old-streaming'),
             q.collect(streaming=False),
             check_row_order=how == "left",
         )
@@ -229,7 +229,7 @@ def test_stream_empty_file(tmp_path: Path) -> None:
         schema=schema,
     )
     df.write_parquet(p)
-    assert pl.scan_parquet(p).collect(streaming=True).schema == schema
+    assert pl.scan_parquet(p).collect(engine='old-streaming').schema == schema
 
 
 def test_streaming_empty_df() -> None:
@@ -244,7 +244,7 @@ def test_streaming_empty_df() -> None:
         df.lazy()
         .join(df.lazy(), on="a", how="inner")
         .filter(False)
-        .collect(streaming=True)
+        .collect(engine='old-streaming')
     )
 
     assert result.to_dict(as_series=False) == {"a": [], "b": [], "b_right": []}
@@ -253,7 +253,7 @@ def test_streaming_empty_df() -> None:
 def test_streaming_duplicate_cols_5537() -> None:
     assert pl.DataFrame({"a": [1, 2, 3], "b": [1, 2, 3]}).lazy().with_columns(
         (pl.col("a") * 2).alias("foo"), (pl.col("a") * 3)
-    ).collect(streaming=True).to_dict(as_series=False) == {
+    ).collect(engine='old-streaming').to_dict(as_series=False) == {
         "a": [3, 6, 9],
         "b": [1, 2, 3],
         "foo": [2, 4, 6],
@@ -268,7 +268,7 @@ def test_null_sum_streaming_10455() -> None:
         },
         schema={"x": pl.Int64, "y": pl.Float32},
     )
-    result = df.lazy().group_by("x").sum().collect(streaming=True)
+    result = df.lazy().group_by("x").sum().collect(engine='old-streaming')
     expected = {"x": [1], "y": [0.0]}
     assert result.to_dict(as_series=False) == expected
 
@@ -300,7 +300,7 @@ def test_streaming_csv_headers_but_no_data_13770(tmp_path: Path) -> None:
     df = (
         pl.scan_csv(tmp_path / "header_no_data.csv", schema=schema)
         .head()
-        .collect(streaming=True)
+        .collect(engine='old-streaming')
     )
     assert df.height == 0
     assert df.schema == schema
@@ -315,7 +315,7 @@ def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
     df = s.shuffle().to_frame()
-    df.lazy().sort("idx").collect(streaming=True)
+    df.lazy().sort("idx").collect(engine='old-streaming')
 
     assert os.listdir(tmp_path), f"Temp directory '{tmp_path}' is empty"
 
@@ -346,7 +346,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
         .sort(pl.col("id"))
     )
 
-    plan_lines = [line.strip() for line in query.explain(streaming=True).splitlines()]
+    plan_lines = [line.strip() for line in query.explain(engine='old-streaming').splitlines()]
 
     # Each input of the concatenation should be a streaming section,
     # as these might be streamable even though the horizontal concatenation itself
@@ -357,7 +357,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
                 f"{line} does not contain a streaming section"
             )
 
-    result = query.collect(streaming=True)
+    result = query.collect(engine='old-streaming')
 
     expected = pl.DataFrame(
         {
@@ -396,7 +396,7 @@ def test_streaming_temporal_17669() -> None:
             b=pl.col("a").dt.date(),
             c=pl.col("a").dt.time(),
         )
-        .collect(streaming=True)
+        .collect(engine='old-streaming')
     )
     assert df.schema == {
         "a": pl.Datetime("us"),

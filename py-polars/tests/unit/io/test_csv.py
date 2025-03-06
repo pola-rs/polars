@@ -2397,7 +2397,7 @@ time
     assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
     assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
     assert_frame_equal(
-        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(engine="old-streaming"), df
     )
 
 

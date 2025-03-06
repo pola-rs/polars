@@ -847,7 +847,7 @@ def test_streaming_scan_csv_include_file_paths_18257(io_files_path: Path) -> Non
         include_file_paths="path",
     ).select("category", "path")
 
-    assert lf.collect(streaming=True).columns == ["category", "path"]
+    assert lf.collect(engine="old-streaming").columns == ["category", "path"]
 
 
 def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
@@ -859,7 +859,7 @@ def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
     )
 
     assert_frame_equal(
-        lf.collect(streaming=True),
+        lf.collect(engine="old-streaming"),
         pl.DataFrame(
             {"calories": "45", "index": 0},
             schema={"calories": pl.String, "index": pl.UInt32},
