@@ -102,7 +102,7 @@ def read_ipc(
     --------
     Calling `read_ipc().lazy()` is an antipattern as this forces Polars to materialize
     a full csv file and therefore cannot push any optimizations into the reader.
-    Therefore always prefer `scan_ipc` if you want to work with `LazyFrame`s.
+    Therefore always prefer `scan_ipc` if you want to work with `LazyFrame` s.
 
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that you cannot write to the same filename.
