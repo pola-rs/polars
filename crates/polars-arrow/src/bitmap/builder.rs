@@ -251,6 +251,13 @@ impl BitmapBuilder {
         self.extend_from_slice(slice, bm_offset + start, length);
     }
 
+    pub fn subslice_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, start: usize, length: usize) {
+        match bitmap {
+            Some(bm) => self.subslice_extend_from_bitmap(bm, start, length),
+            None => self.extend_constant(length, true),
+        }
+    }
+
     /// # Safety
     /// The indices must be in-bounds.
     pub unsafe fn gather_extend_from_slice(
@@ -306,6 +313,33 @@ impl BitmapBuilder {
     pub fn opt_gather_extend_from_bitmap(&mut self, bitmap: &Bitmap, idxs: &[IdxSize]) {
         let (slice, offset, length) = bitmap.as_slice();
         self.opt_gather_extend_from_slice(slice, offset, length, idxs);
+    }
+
+    /// # Safety
+    /// The indices must be in-bounds.
+    pub unsafe fn gather_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, idxs: &[IdxSize], length: usize) {
+        if let Some(bm) = bitmap {
+            let (slice, offset, sl_length) = bm.as_slice();
+            debug_assert_eq!(sl_length, length);
+            self.gather_extend_from_slice(slice, offset, length, idxs);
+        } else {
+            self.extend_constant(length, true);
+        }
+    }
+
+    pub fn opt_gather_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, idxs: &[IdxSize], length: usize) {
+        if let Some(bm) = bitmap {
+            let (slice, offset, sl_length) = bm.as_slice();
+            debug_assert_eq!(sl_length, length);
+            self.opt_gather_extend_from_slice(slice, offset, sl_length, idxs);
+        } else {
+            unsafe {
+                self.reserve(idxs.len());
+                for idx in idxs {
+                    self.push_unchecked((*idx as usize) < length);
+                }
+            }
+        }
     }
 
     /// # Safety
