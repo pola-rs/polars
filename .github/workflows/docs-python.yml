@@ -16,10 +16,14 @@ on:
   repository_dispatch:
     types:
       - python-release
+  # To build older versions, specify the commit and the version
   workflow_dispatch:
     inputs:
       polars_version:
         description: 'Specify Polars version (e.g., py-0.20.1)'
+        required: true
+      git_commit:
+        description: 'Which commit to build'
         required: true
 
 concurrency:
@@ -29,9 +33,10 @@ jobs:
   build-python-docs:
     runs-on: ubuntu-latest
     steps:
+      # Chooses the manually given commit if manually triggered.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.client_payload.sha }}
+          ref: ${{ github.event.inputs.git_commit || github.event.client_payload.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -72,6 +77,12 @@ jobs:
           regex="py-([0-9]+)\.[0-9]+\.[0-9]+.*"
           [[ $tag =~ $regex ]]
           version=${BASH_REMATCH[1]}
+          
+          echo "Parsed major version: $version"
+          if [[ -z "$version" ]]; then
+            echo "Error: Parsed version is empty. Cancelling workflow."
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Python docs for latest release version - versioned
@@ -80,14 +91,6 @@ jobs:
         with:
           folder: py-polars/docs/build/html
           target-folder: api/python/version/${{ steps.version.outputs.version }}
-          single-commit: true
-
-      - name: Deploy Python docs for latest release version - manual
-        if:  github.event_name == 'workflow_dispatch'
-        uses: JamesIves/github-pages-deploy-action@v4
-        with:
-          folder: py-polars/docs/build/html
-          target-folder: api/python/version/1
           single-commit: true
 
       - name: Deploy Python docs for latest release version - stable
@@ -100,7 +103,7 @@ jobs:
 
       # Build global docs _after_ this workflow to avoid contention on the gh-pages branch
       - name: Trigger global docs workflow
-        if: github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'repository_dispatch' 
         uses: peter-evans/repository-dispatch@v3
         with:
           event-type: python-release-docs
