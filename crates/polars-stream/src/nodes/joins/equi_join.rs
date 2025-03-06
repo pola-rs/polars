@@ -503,7 +503,7 @@ impl BuildState {
                 for p in partition_idxs.iter_mut() {
                     p.clear();
                 }
-                hash_keys.gen_partition_idxs(
+                hash_keys.gen_idxs_per_partition(
                     &partitioner,
                     &mut partition_idxs,
                     &mut sketches,
@@ -678,7 +678,7 @@ impl ProbeState {
                 for p in partition_idxs.iter_mut() {
                     p.clear();
                 }
-                hash_keys.gen_partition_idxs(
+                hash_keys.gen_idxs_per_partition(
                     &partitioner,
                     &mut partition_idxs,
                     &mut [],
@@ -690,6 +690,8 @@ impl ProbeState {
                     let mut out_per_partition = Vec::with_capacity(partitioner.num_partitions());
                     let name = PlSmallStr::from_static("__POLARS_PROBE_PRESERVE_ORDER_IDX");
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
+                        table_match.clear();
+                        probe_match.clear();
                         p.hash_table.probe_subset(
                             &hash_keys,
                             idxs_in_p,
@@ -759,6 +761,8 @@ impl ProbeState {
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
+                            table_match.clear();
+                            probe_match.clear();
                             offset += p.hash_table.probe_subset(
                                 &hash_keys,
                                 &idxs_in_p[offset..],

@@ -74,10 +74,25 @@ impl HashKeys {
         self.len() == 0
     }
 
+    /// After this call partitions will be extended with the partition for each
+    /// hash. Nulls are assigned IdxSize::MAX or a specific partition depending
+    /// on whether partition_nulls is true.
+    pub fn gen_partitions(
+        &self,
+        partitioner: &HashPartitioner,
+        partitions: &mut Vec<IdxSize>,
+        partition_nulls: bool,
+    ) {
+        match self {
+            Self::RowEncoded(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
+            Self::Single(s) => s.gen_partitions(partitioner, partitions, partition_nulls),
+        }
+    }
+
     /// After this call partition_idxs[p] will be extended with the indices of
     /// hashes that belong to partition p, and the cardinality sketches are
     /// updated accordingly.
-    pub fn gen_partition_idxs(
+    pub fn gen_idxs_per_partition(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
@@ -86,13 +101,13 @@ impl HashKeys {
     ) {
         if sketches.is_empty() {
             match self {
-                Self::RowEncoded(s) => s.gen_partition_idxs::<false>(
+                Self::RowEncoded(s) => s.gen_idxs_per_partition::<false>(
                     partitioner,
                     partition_idxs,
                     sketches,
                     partition_nulls,
                 ),
-                Self::Single(s) => s.gen_partition_idxs::<false>(
+                Self::Single(s) => s.gen_idxs_per_partition::<false>(
                     partitioner,
                     partition_idxs,
                     sketches,
@@ -101,13 +116,13 @@ impl HashKeys {
             }
         } else {
             match self {
-                Self::RowEncoded(s) => s.gen_partition_idxs::<true>(
+                Self::RowEncoded(s) => s.gen_idxs_per_partition::<true>(
                     partitioner,
                     partition_idxs,
                     sketches,
                     partition_nulls,
                 ),
-                Self::Single(s) => s.gen_partition_idxs::<true>(
+                Self::Single(s) => s.gen_idxs_per_partition::<true>(
                     partitioner,
                     partition_idxs,
                     sketches,
@@ -159,7 +174,33 @@ pub struct RowEncodedKeys {
 }
 
 impl RowEncodedKeys {
-    pub fn gen_partition_idxs<const BUILD_SKETCHES: bool>(
+    pub fn gen_partitions(
+        &self,
+        partitioner: &HashPartitioner,
+        partitions: &mut Vec<IdxSize>,
+        partition_nulls: bool,
+    ) {
+        partitions.reserve(self.hashes.len());
+        if let Some(validity) = self.keys.validity() {
+            // Arbitrarily put nulls in partition 0.
+            let null_p = if partition_nulls { 0 } else { IdxSize::MAX };
+            partitions.extend(self.hashes.values_iter().zip(validity).map(|(h, is_v)| {
+                if is_v {
+                    partitioner.hash_to_partition(*h) as IdxSize
+                } else {
+                    null_p
+                }
+            }))
+        } else {
+            partitions.extend(
+                self.hashes
+                    .values_iter()
+                    .map(|h| partitioner.hash_to_partition(*h) as IdxSize),
+            )
+        }
+    }
+
+    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],
@@ -261,7 +302,16 @@ pub struct SingleKeys {
 }
 
 impl SingleKeys {
-    pub fn gen_partition_idxs<const BUILD_SKETCHES: bool>(
+    pub fn gen_partitions(
+        &self,
+        _partitioner: &HashPartitioner,
+        _partitions: &mut Vec<IdxSize>,
+        _partition_nulls: bool,
+    ) {
+        todo!()
+    }
+
+    pub fn gen_idxs_per_partition<const BUILD_SKETCHES: bool>(
         &self,
         partitioner: &HashPartitioner,
         partition_idxs: &mut [Vec<IdxSize>],

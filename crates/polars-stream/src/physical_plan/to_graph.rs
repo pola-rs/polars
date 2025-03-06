@@ -809,8 +809,12 @@ fn to_graph_rec<'a>(
                 .map(|e| create_stream_expr(e, ctx, &right_input_schema))
                 .try_collect_vec()?;
 
-            // TODO: implement order-maintaining join in new join impl.
-            if args.maintain_order == MaintainOrderJoin::None {
+            // TODO: implement build-side order-maintaining join in new join impl.
+            let preserve_order_build = matches!(
+                args.maintain_order,
+                MaintainOrderJoin::LeftRight | MaintainOrderJoin::RightLeft
+            );
+            if !preserve_order_build {
                 ctx.graph.add_node(
                     nodes::joins::new_equi_join::EquiJoinNode::new(
                         left_input_schema,

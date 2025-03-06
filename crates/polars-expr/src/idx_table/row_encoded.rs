@@ -68,9 +68,6 @@ impl RowEncodedIdxTable {
         probe_match: &mut Vec<IdxSize>,
         limit: IdxSize,
     ) -> IdxSize {
-        table_match.clear();
-        probe_match.clear();
-
         let mut keys_processed = 0;
         for (key_idx, hash, key) in hash_keys {
             let found_match = if let Some(key) = key {

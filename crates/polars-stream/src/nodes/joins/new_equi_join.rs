@@ -516,7 +516,7 @@ impl BuildState {
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
 
-            hash_keys.gen_partition_idxs(
+            hash_keys.gen_idxs_per_partition(
                 &partitioner,
                 &mut local.morsel_idxs_values_per_p,
                 &mut local.sketch_per_p,
@@ -644,6 +644,8 @@ impl ProbeState {
     ) -> PolarsResult<MorselSeq> {
         // TODO: shuffle after partitioning and keep probe tables thread-local.
         let mut partition_idxs = vec![Vec::new(); partitioner.num_partitions()];
+        let mut probe_partitions = Vec::new();
+        let mut materialized_idxsize_range = Vec::new();
         let mut table_match = Vec::new();
         let mut probe_match = Vec::new();
         let mut max_seq = MorselSeq::default();
@@ -690,37 +692,96 @@ impl ProbeState {
             let max_match_per_key_est = selectivity_estimate as usize + 16;
             let out_est_size = ((selectivity_estimate * 1.2 * df_height as f64) as usize).min(probe_limit as usize);
             build_out.reserve(out_est_size + max_match_per_key_est);
-            probe_out.reserve(out_est_size + max_match_per_key_est);
 
             unsafe {
-                // Partition and probe the tables.
-                for p in partition_idxs.iter_mut() {
-                    p.clear();
-                }
-                hash_keys.gen_partition_idxs(
-                    &partitioner,
-                    &mut partition_idxs,
-                    &mut [],
-                    emit_unmatched,
-                );
-                if params.preserve_order_probe {
-                    todo!()
-                } else {
-                    let new_morsel = |mut build_df: DataFrame, mut probe_df: DataFrame| {
-                        let out_df = if params.left_is_build.unwrap() {
-                            build_df.hstack_mut_unchecked(probe_df.get_columns());
-                            build_df
-                        } else {
-                            probe_df.hstack_mut_unchecked(build_df.get_columns());
-                            probe_df
-                        };
-                        let out_df = postprocess_join(out_df, params);
-                        Morsel::new(out_df, seq, src_token.clone())
+                let new_morsel = |build: &mut DataFrameBuilder, probe: &mut DataFrameBuilder| {
+                    let mut build_df = build.freeze_reset();
+                    let mut probe_df = probe.freeze_reset();
+                    let out_df = if params.left_is_build.unwrap() {
+                        build_df.hstack_mut_unchecked(probe_df.get_columns());
+                        build_df
+                    } else {
+                        probe_df.hstack_mut_unchecked(build_df.get_columns());
+                        probe_df
                     };
+                    let out_df = postprocess_join(out_df, params);
+                    Morsel::new(out_df, seq, src_token.clone())
+                };
+
+                if params.preserve_order_probe {
+                    // To preserve the order we can't do bulk probes per partition and must follow
+                    // the order of the probe morsel. We can still group probes that are
+                    // consecutively on the same partition.
+                    hash_keys.gen_partitions(&partitioner, &mut probe_partitions, emit_unmatched);
+                    let mut probe_group_start = 0;
+                    while probe_group_start < probe_partitions.len() {
+                        let p_idx = probe_partitions[probe_group_start];
+                        let mut probe_group_end = probe_group_start + 1;
+                        while probe_partitions.get(probe_group_end) == Some(&p_idx) {
+                            probe_group_end += 1;
+                        }
+                        let Some(p) = partitions.get(p_idx as usize) else {
+                            probe_group_start = probe_group_end;
+                            continue;
+                        };
+
+                        materialized_idxsize_range.extend(materialized_idxsize_range.len() as IdxSize..probe_group_end as IdxSize);
+                        
+                        while probe_group_start < probe_group_end {
+                            let matches_before_limit = probe_limit - probe_match.len() as IdxSize;
+                            table_match.clear();
+                            probe_group_start += p.hash_table.probe_subset(
+                                &hash_keys,
+                                &materialized_idxsize_range[probe_group_start..probe_group_end],
+                                &mut table_match,
+                                &mut probe_match,
+                                mark_matches,
+                                emit_unmatched,
+                                matches_before_limit,
+                            ) as usize;
+                            
+                            if emit_unmatched {
+                                build_out.opt_gather_extend(&p.payload, &table_match, ShareStrategy::Always);
+                            } else {
+                                build_out.gather_extend(&p.payload, &table_match, ShareStrategy::Always);
+                            };
+
+                            if probe_match.len() >= probe_limit as usize || probe_group_start == probe_partitions.len() {
+                                if !payload_rechunked {
+                                    payload.rechunk_mut();
+                                    payload_rechunked = true;
+                                }
+                                probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                                probe_match.clear();
+                                let out_morsel = new_morsel(&mut build_out, &mut probe_out);
+                                if send.send(out_morsel).await.is_err() {
+                                    return Ok(max_seq);
+                                }
+                                if probe_group_end != probe_partitions.len() {
+                                    // We had enough matches to need a mid-partition flush, let's assume there are a lot of
+                                    // matches and just do a large reserve.
+                                    build_out.reserve(probe_limit as usize + max_match_per_key_est);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Partition and probe the tables.
+                    for p in partition_idxs.iter_mut() {
+                        p.clear();
+                    }
+                    hash_keys.gen_idxs_per_partition(
+                        &partitioner,
+                        &mut partition_idxs,
+                        &mut [],
+                        emit_unmatched,
+                    );
 
                     for (p, idxs_in_p) in partitions.iter().zip(&partition_idxs) {
                         let mut offset = 0;
                         while offset < idxs_in_p.len() {
+                            let matches_before_limit = probe_limit - probe_match.len() as IdxSize;
+                            table_match.clear();
                             offset += p.hash_table.probe_subset(
                                 &hash_keys,
                                 &idxs_in_p[offset..],
@@ -728,41 +789,45 @@ impl ProbeState {
                                 &mut probe_match,
                                 mark_matches,
                                 emit_unmatched,
-                                probe_limit - probe_out.len() as IdxSize,
+                                matches_before_limit,
                             ) as usize;
                             
-                            if probe_match.is_empty() {
+                            if table_match.is_empty() {
                                 continue;
                             }
-                            total_matches += probe_match.len();
+                            total_matches += table_match.len();
 
-                            // Gather output and send.
                             if emit_unmatched {
                                 build_out.opt_gather_extend(&p.payload, &table_match, ShareStrategy::Always);
                             } else {
                                 build_out.gather_extend(&p.payload, &table_match, ShareStrategy::Always);
                             };
-                            if !payload_rechunked {
-                                payload.rechunk_mut();
-                                payload_rechunked = true;
-                            }
-                            probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
                             
-                            if probe_out.len() >= probe_limit as usize {
-                                let out_morsel = new_morsel(build_out.freeze_reset(), probe_out.freeze_reset());
+                            if probe_match.len() >= probe_limit as usize {
+                                if !payload_rechunked {
+                                    payload.rechunk_mut();
+                                    payload_rechunked = true;
+                                }
+                                probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                                probe_match.clear();
+                                let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                                 if send.send(out_morsel).await.is_err() {
                                     return Ok(max_seq);
                                 }
                                 // We had enough matches to need a mid-partition flush, let's assume there are a lot of
                                 // matches and just do a large reserve.
                                 build_out.reserve(probe_limit as usize + max_match_per_key_est);
-                                probe_out.reserve(probe_limit as usize + max_match_per_key_est);
                             }
                         }
                     }
 
-                    if !probe_out.is_empty() {
-                        let out_morsel = new_morsel(build_out.freeze_reset(), probe_out.freeze_reset());
+                    if !probe_match.is_empty() {
+                        if !payload_rechunked {
+                            payload.rechunk_mut();
+                        }
+                        probe_out.gather_extend(&payload, &probe_match, ShareStrategy::Always);
+                        probe_match.clear();
+                        let out_morsel = new_morsel(&mut build_out, &mut probe_out);
                         if send.send(out_morsel).await.is_err() {
                             return Ok(max_seq);
                         }
