@@ -300,13 +300,14 @@ pub fn expand_paths_hive(
             use crate::cloud::object_path_from_str;
 
             if first_path.starts_with("hf://") {
-                let (expand_start_idx, paths) = crate::pl_async::get_runtime()
-                    .block_on_potential_spawn(hugging_face::expand_paths_hf(
+                let (expand_start_idx, paths) = crate::pl_async::get_runtime().block_in_place_on(
+                    hugging_face::expand_paths_hf(
                         paths,
                         check_directory_level,
                         cloud_options,
                         glob,
-                    ))?;
+                    ),
+                )?;
 
                 return Ok((Arc::from(paths), expand_start_idx));
             }
@@ -322,7 +323,7 @@ pub fn expand_paths_hive(
             let expand_path_cloud = |path: &str,
                                      cloud_options: Option<&CloudOptions>|
              -> PolarsResult<(usize, Vec<PathBuf>)> {
-                crate::pl_async::get_runtime().block_on_potential_spawn(async {
+                crate::pl_async::get_runtime().block_in_place_on(async {
                     let (cloud_location, store) =
                         crate::cloud::build_object_store(path, cloud_options, glob).await?;
                     let prefix = object_path_from_str(&cloud_location.prefix)?;
@@ -425,9 +426,8 @@ pub fn expand_paths_hive(
 
                 hive_idx_tracker.update(0, path_idx)?;
 
-                let iter = crate::pl_async::get_runtime().block_on_potential_spawn(
-                    crate::async_glob(path.to_str().unwrap(), cloud_options),
-                )?;
+                let iter = crate::pl_async::get_runtime()
+                    .block_in_place_on(crate::async_glob(path.to_str().unwrap(), cloud_options))?;
 
                 if is_cloud {
                     out_paths.extend(iter.into_iter().map(PathBuf::from));

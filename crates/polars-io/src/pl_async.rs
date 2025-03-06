@@ -295,21 +295,21 @@ impl RuntimeManager {
         Self { rt }
     }
 
-    /// Keep track of rayon threads that drive the runtime. Every thread
-    /// only allows a single runtime. If this thread calls block_on and this
-    /// rayon thread is already driving an async execution we must start a new thread
-    /// otherwise we panic. This can happen when we parallelize reads over 100s of files.
+    /// Shorthand for `tokio::task::block_in_place(|| block_on(f))`. This is a variant of `block_on`
+    /// that is safe to call from if the current thread has already entered the async runtime, or
+    /// is a rayon thread.
     ///
     /// # Safety
     /// The tokio runtime flavor is multi-threaded.
-    pub fn block_on_potential_spawn<F>(&'static self, future: F) -> F::Output
+    pub fn block_in_place_on<F>(&self, future: F) -> F::Output
     where
-        F: Future + Send,
-        F::Output: Send,
+        F: Future,
     {
         tokio::task::block_in_place(|| self.rt.block_on(future))
     }
 
+    /// Note: `block_in_place_on` should be used instead if the current thread is a rayon thread or
+    /// has already entered the async runtime.
     pub fn block_on<F>(&self, future: F) -> F::Output
     where
         F: Future,
