@@ -94,8 +94,16 @@ def read_ipc(
     -------
     DataFrame
 
+    See Also
+    --------
+    scan_ipc : Lazily read from an IPC file or multiple files via glob patterns.
+
     Warnings
     --------
+    Calling `read_ipc().lazy()` is an antipattern as this forces Polars to materialize
+    a full csv file and therefore cannot push any optimizations into the reader.
+    Therefore always prefer ``scan_ipc`` if you want to work with ``LazyFrame``s.
+
     If `memory_map` is set, the bytes on disk are mapped 1:1 to memory.
     That means that you cannot write to the same filename.
     E.g. `pl.read_ipc("my_file.arrow").write_ipc("my_file.arrow")` will fail.
