@@ -13,6 +13,9 @@ impl<T> ObjectChunkedBuilder<T>
 where
     T: PolarsObject,
 {
+    pub fn field(&self) -> &Field {
+        &self.field
+    }
     pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         ObjectChunkedBuilder {
             field: Field::new(name, DataType::Object(T::type_name())),

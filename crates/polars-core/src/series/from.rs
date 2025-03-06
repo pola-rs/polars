@@ -15,6 +15,7 @@ use polars_utils::itertools::Itertools;
 use crate::chunked_array::cast::{cast_chunks, CastOptions};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
+use crate::chunked_array::object::registry::get_object_builder;
 #[cfg(feature = "timezones")]
 use crate::chunked_array::temporal::parse_fixed_offset;
 #[cfg(feature = "timezones")]
@@ -111,20 +112,20 @@ impl Series {
             },
             #[cfg(feature = "object")]
             Object(_) => {
-                assert_eq!(chunks.len(), 1);
-                let arr = chunks[0]
-                    .as_any()
-                    .downcast_ref::<FixedSizeBinaryArray>()
-                    .unwrap();
-                // SAFETY:
-                // this is highly unsafe. it will dereference a raw ptr on the heap
-                // make sure the ptr is allocated and from this pid
-                // (the pid is checked before dereference)
-                {
-                    let pe = PolarsExtension::new(arr.clone());
-                    let s = pe.get_series(&name);
-                    pe.take_and_forget();
-                    s
+                if let Some(arr) = chunks[0].as_any().downcast_ref::<FixedSizeBinaryArray>() {
+                    assert_eq!(chunks.len(), 1);
+                    // SAFETY:
+                    // this is highly unsafe. it will dereference a raw ptr on the heap
+                    // make sure the ptr is allocated and from this pid
+                    // (the pid is checked before dereference)
+                    {
+                        let pe = PolarsExtension::new(arr.clone());
+                        let s = pe.get_series(&name);
+                        pe.take_and_forget();
+                        s
+                    }
+                } else {
+                    unsafe { get_object_builder(name, 0).from_chunks(chunks) }
                 }
             },
             Null => new_null(name, &chunks),
