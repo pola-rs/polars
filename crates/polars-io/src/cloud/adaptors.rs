@@ -92,7 +92,8 @@ impl BlockingCloudWriter {
     where
         F: Fn(&mut BufWriter) -> std::io::Result<O>,
     {
-        match func(self.state.as_mut().map_err(|e| clone_io_err(e))?) {
+        let writer: &mut BufWriter = self.state.as_mut().map_err(|e| clone_io_err(e))?;
+        match func(writer) {
             Ok(v) => Ok(v),
             Err(e) => {
                 self.state = Err(clone_io_err(&e));
@@ -122,7 +123,7 @@ impl std::io::Write for BlockingCloudWriter {
 
 impl WriteClose for BlockingCloudWriter {
     fn close(mut self: Box<Self>) -> std::io::Result<()> {
-        self.close()
+        BlockingCloudWriter::close(self.as_mut())
     }
 }
 

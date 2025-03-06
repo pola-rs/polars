@@ -128,7 +128,7 @@ impl Writeable {
         match self {
             Self::Local(v) => ClosableFile::from(v).close(),
             #[cfg(feature = "cloud")]
-            Self::Cloud(mut v) => v.blocking_close(),
+            Self::Cloud(mut v) => v.close(),
         }
     }
 }
