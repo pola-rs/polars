@@ -31,6 +31,7 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
 use polars_expr::{create_physical_expr, ExpressionConversionState};
 use polars_io::RowIndex;
@@ -730,6 +731,59 @@ impl LazyFrame {
         self.prepare_collect_post_opt(check_sink, query_start, |_, _, _, _| Ok(()))
     }
 
+    /// Execute all the lazy operations and collect them into a [`DataFrame`] using a specified
+    /// `engine].
+    ///
+    /// The query is optimized prior to execution.
+    pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<DataFrame> {
+        #[cfg(feature = "new_streaming")]
+        {
+            if let Some(df) = self.try_new_streaming_if_requested(SinkType::Memory, engine) {
+                return Ok(df?.unwrap());
+            }
+        }
+
+        match engine {
+            Engine::Auto | Engine::InMemory | Engine::Gpu => (),
+            Engine::Streaming => self = self.with_new_streaming(true),
+            Engine::OldStreaming => self = self.with_streaming(true),
+        }
+
+        match engine {
+            Engine::Streaming => {
+                feature_gated!("new_streaming", {
+                    let mut new_stream_lazy = self.clone();
+                    new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
+                    new_stream_lazy.opt_state &= !OptFlags::STREAMING;
+                    let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
+                    let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                        input: alp_plan.lp_top,
+                        payload: SinkType::Memory,
+                    });
+
+                    let string_cache_hold = StringCacheHolder::hold();
+                    let result = polars_stream::run_query(
+                        stream_lp_top,
+                        &mut alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
+                    );
+                    drop(string_cache_hold);
+                    result.map(|v| v.unwrap())
+                })
+            },
+            _ => {
+                let mut alp_plan = self.to_alp_optimized()?;
+                let mut physical_plan = create_physical_plan(
+                    alp_plan.lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )?;
+                let mut state = ExecutionState::new();
+                physical_plan.execute(&mut state)
+            },
+        }
+    }
+
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
     ///
     /// The query is optimized prior to execution.
@@ -748,30 +802,8 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        let engine = if self.opt_state.streaming() {
-            Engine::OldStreaming
-        } else if self.opt_state.new_streaming() {
-            Engine::Streaming
-        } else {
-            Engine::InMemory
-        };
+        self.collect_with_engine(Engine::InMemory)
 
-        #[cfg(feature = "new_streaming")]
-        {
-            let mut slf = self;
-            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory, engine) {
-                return Ok(df?.unwrap());
-            }
-
-            let mut alp_plan = slf.to_alp_optimized()?;
-            let mut physical_plan = create_physical_plan(
-                alp_plan.lp_top,
-                &mut alp_plan.lp_arena,
-                &mut alp_plan.expr_arena,
-            )?;
-            let mut state = ExecutionState::new();
-            physical_plan.execute(&mut state)
-        }
         #[cfg(not(feature = "new_streaming"))]
         self._collect_post_opt(|_, _, _, _| Ok(()))
     }
@@ -820,8 +852,8 @@ impl LazyFrame {
         engine: Engine,
     ) -> PolarsResult<()> {
         if engine == Engine::InMemory {
-            use std::ops::DerefMut;
             use std::io::BufWriter;
+            use std::ops::DerefMut;
 
             use polars_io::parquet::write::ParquetWriter;
 
@@ -1168,7 +1200,7 @@ impl LazyFrame {
     fn sink(
         mut self,
         payload: SinkType,
-        mut engine: Engine,
+        engine: Engine,
         msg_alternative: &str,
     ) -> Result<(), PolarsError> {
         #[cfg(feature = "new_streaming")]

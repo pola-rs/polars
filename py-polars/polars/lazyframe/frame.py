@@ -1905,6 +1905,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         _eager: bool = False,
     ) -> DataFrame: ...
 
+    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
     def collect(
         self,
         *,
@@ -2082,8 +2083,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 raise TypeError(error_msg)
 
         new_streaming = _kwargs.get("new_streaming", False)
-        new_streaming |= engine == "streaming"
-        streaming |= engine == "old-streaming"
+
+        if new_streaming:
+            engine = "streaming"
+        if streaming:
+            engine = "old-streaming"
 
         if no_optimization or _eager:
             predicate_pushdown = False
@@ -2095,7 +2099,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins = False
             _check_order = False
 
-        if streaming:
+        if engine in ("old-streaming", "streaming"):
             issue_unstable_warning("Streaming mode is considered unstable.")
 
         callback = _gpu_engine_callback(
@@ -2117,10 +2121,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=streaming,
+            streaming=False,
             _eager=_eager,
             _check_order=_check_order,
-            new_streaming=new_streaming,
+            new_streaming=False,
         )
 
         if background:
@@ -2129,7 +2133,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         # Only for testing purposes
         callback = _kwargs.get("post_opt_callback", callback)
-        return wrap_df(ldf.collect(callback))
+        return wrap_df(ldf.collect_with_engine(engine, callback))
 
     @overload
     def collect_async(
@@ -2148,6 +2152,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = True,
+        engine: EngineType = "auto",
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
     @overload
@@ -2167,8 +2172,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = True,
+        engine: EngineType = "auto",
     ) -> Awaitable[DataFrame]: ...
 
+    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
     def collect_async(
         self,
         *,
@@ -2185,6 +2192,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         streaming: bool = False,
+        engine: EngineType = "auto",
         _check_order: bool = True,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
         """
@@ -2225,18 +2233,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Combine sequential independent calls to with_columns
         collapse_joins
             Collapse a join and filters into a faster join
-        streaming
-            Process the query in batches to handle larger-than-memory data.
-            If set to `False` (default), the entire query is processed in a single
-            batch.
-
-            .. warning::
-                Streaming mode is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
+        engine
+            Select the engine used to process the query, optional.
+            At the moment, If set to `"auto"` (default), the query is run using
+            the polars in-memory engine.
 
             .. note::
-                Use :func:`explain` to see if Polars can process the query in
-                streaming mode.
+               The GPU engine does not support async, or running in the
+               background. If either are enabled, then GPU execution is switched off.
 
         Returns
         -------
@@ -2293,6 +2297,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             collapse_joins = False
 
         if streaming:
+            engine = "old-streaming"
+        if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("Streaming mode is considered unstable.")
 
         type_check = _type_check
@@ -2307,7 +2313,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=streaming,
+            streaming=False,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,
@@ -2316,7 +2322,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         result: _GeventDataFrameResult[DataFrame] | _AioDataFrameResult[DataFrame] = (
             _GeventDataFrameResult() if gevent else _AioDataFrameResult()
         )
-        ldf.collect_with_callback(result._callback)
+        ldf.collect_with_callback(engine, result._callback)
         return result
 
     def collect_schema(self) -> Schema:
@@ -3135,10 +3141,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=engine in ("auto", "old-streaming"),
+            streaming=engine == "old-streaming",
             _eager=False,
             _check_order=_check_order,
-            new_streaming=engine == "streaming",
+            new_streaming=engine in ("auto", "streaming"),
         )
 
     @deprecate_function(
@@ -7167,7 +7173,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...         }
         ...     )
         ...     .map_batches(lambda x: 2 * x, streamable=True)
-        ...     .collect(streaming=True)
+        ...     .collect(engine='streaming')
         ... )
         shape: (100_000, 2)
         ┌─────────┬────────┐

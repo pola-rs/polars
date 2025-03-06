@@ -650,8 +650,8 @@ impl PyLazyFrame {
         Ok((df.into(), time_df.into()))
     }
 
-    #[pyo3(signature = (lambda_post_opt=None))]
-    fn collect(&self, py: Python, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
+    #[pyo3(signature = (engine, lambda_post_opt=None))]
+    fn collect(&self, py: Python, engine: Wrap<Engine>, lambda_post_opt: Option<PyObject>) -> PyResult<PyDataFrame> {
         py.enter_polars_df(|| {
             let ldf = self.ldf.clone();
             if let Some(lambda) = lambda_post_opt {
@@ -659,18 +659,18 @@ impl PyLazyFrame {
                     post_opt_callback(&lambda, root, lp_arena, expr_arena, None)
                 })
             } else {
-                ldf.collect()
+                ldf.collect_with_engine(engine)
             }
         })
     }
 
-    #[pyo3(signature = (lambda,))]
-    fn collect_with_callback(&self, lambda: PyObject) {
+    #[pyo3(signature = (engine, lambda))]
+    fn collect_with_callback(&self, engine: Wrap<Engine>, lambda: PyObject) {
         let ldf = self.ldf.clone();
 
         polars_core::POOL.spawn(move || {
             let result = ldf
-                .collect()
+                .collect_with_engine(engine)
                 .map(PyDataFrame::new)
                 .map_err(PyPolarsErr::from);
 
