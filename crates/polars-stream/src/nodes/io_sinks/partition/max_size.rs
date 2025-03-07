@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -14,15 +15,17 @@ use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::CreateNewSinkFn;
 use crate::async_executor::{AbortOnDropHandle, spawn};
-use crate::async_primitives::connector::{self, Receiver, connector};
-use crate::async_primitives::distributor_channel::{self, distributor_channel};
-use crate::async_primitives::wait_group::WaitGroup;
-use crate::nodes::io_sinks::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
+use crate::async_primitives::connector::Receiver;
+use crate::async_primitives::distributor_channel::distributor_channel;
+use crate::nodes::io_sinks::partition::{SinkSender, open_new_sink};
+use crate::nodes::io_sinks::{SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, PhaseOutcome, TaskPriority};
 
 pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
     max_size: IdxSize,
+
+    path_f_string: Arc<PathBuf>,
     create_new: CreateNewSinkFn,
 
     sink_options: SinkOptions,
@@ -42,6 +45,7 @@ impl MaxSizePartitionSinkNode {
     pub fn new(
         input_schema: SchemaRef,
         max_size: IdxSize,
+        path_f_string: Arc<PathBuf>,
         create_new: CreateNewSinkFn,
         sink_options: SinkOptions,
     ) -> Self {
@@ -56,16 +60,12 @@ impl MaxSizePartitionSinkNode {
         Self {
             input_schema,
             max_size,
+            path_f_string,
             create_new,
             sink_options,
             num_retire_tasks,
         }
     }
-}
-
-enum SinkSender {
-    Connector(connector::Sender<Morsel>),
-    Distributor(distributor_channel::Sender<Morsel>),
 }
 
 impl SinkNode for MaxSizePartitionSinkNode {
@@ -87,10 +87,6 @@ impl SinkNode for MaxSizePartitionSinkNode {
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        // Main Task -> Distributor -> Parallel Input Sink
-        let (mut dist_txs, dist_rxs) = (0..num_pipelines)
-            .map(|_| connector())
-            .collect::<(Vec<_>, Vec<_>)>();
         // Main Task -> Retire Tasks
         let (mut retire_tx, retire_rxs) = distributor_channel(self.num_retire_tasks, 1);
 
@@ -102,12 +98,13 @@ impl SinkNode for MaxSizePartitionSinkNode {
         // Takes the morsels coming in and passes them to underlying sink.
         let input_schema = self.input_schema.clone();
         let max_size = self.max_size;
+        let path_f_string = self.path_f_string.clone();
         let create_new = self.create_new.clone();
         let retire_error = has_error_occurred.clone();
         join_handles.push(spawn(TaskPriority::High, async move {
             let part_str = PlSmallStr::from_static("part");
-            let mut args = PlHashMap::with_capacity(1);
-            args.insert(part_str.clone(), PlSmallStr::EMPTY);
+            let mut format_args = PlHashMap::with_capacity(1);
+            format_args.insert(part_str.clone(), PlSmallStr::EMPTY);
 
             struct CurrentSink {
                 sender: SinkSender,
@@ -130,59 +127,24 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         let current_sink = match current_sink_opt.as_mut() {
                             Some(c) => c,
                             None => {
-                                *args.get_mut(&part_str).unwrap() = format_pl_smallstr!("{part}");
+                                *format_args.get_mut(&part_str).unwrap() =
+                                    format_pl_smallstr!("{part}");
                                 part += 1;
 
-                                let path;
-                                let mut node;
-                                (path, node, args) = (create_new)(input_schema.clone(), args)?;
-
-                                if verbose {
-                                    eprintln!(
-                                        "[partition[max_size]]: Start on new file '{}'",
-                                        path.display()
-                                    );
-                                }
-
-                                let (sink_input, sender) = if node.is_sink_input_parallel() {
-                                    let (tx, dist_rxs) = distributor_channel(
-                                        num_pipelines,
-                                        DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
-                                    );
-                                    let (txs, rxs) = (0..num_pipelines)
-                                        .map(|_| connector())
-                                        .collect::<(Vec<_>, Vec<_>)>();
-
-                                    for (i, channels) in dist_rxs.into_iter().zip(txs).enumerate() {
-                                        if dist_txs[i].send(channels).await.is_err() {
-                                            return Ok(());
-                                        }
-                                    }
-
-                                    (SinkInputPort::Parallel(rxs), SinkSender::Distributor(tx))
-                                } else {
-                                    let (tx, rx) = connector();
-                                    (SinkInputPort::Serial(rx), SinkSender::Connector(tx))
+                                let result = open_new_sink(
+                                    path_f_string.as_path(),
+                                    &create_new,
+                                    &format_args,
+                                    input_schema.clone(),
+                                    num_pipelines,
+                                    "max-size",
+                                    verbose,
+                                )
+                                .await?;
+                                let Some((join_handles, sender)) = result else {
+                                    return Ok(());
                                 };
 
-                                let mut join_handles = Vec::new();
-                                let state = ExecutionState::new();
-                                let (mut sink_input_tx, sink_input_rx) = connector();
-                                node.spawn_sink(
-                                    num_pipelines,
-                                    sink_input_rx,
-                                    &state,
-                                    &mut join_handles,
-                                );
-                                let join_handles = FuturesUnordered::from_iter(
-                                    join_handles.into_iter().map(AbortOnDropHandle::new),
-                                );
-
-                                let (_, outcome) =
-                                    PhaseOutcome::new_shared_wait(WaitGroup::default().token());
-                                if sink_input_tx.send((outcome, sink_input)).await.is_err() {
-                                    return Ok(());
-                                }
                                 current_sink_opt.insert(CurrentSink {
                                     sender,
                                     num_remaining: max_size,
@@ -217,14 +179,9 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         let final_sink_morsel =
                             Morsel::new(final_sink_df, seq, source_token.clone());
 
-                        let result = match &mut current_sink.sender {
-                            SinkSender::Connector(s) => s.send(final_sink_morsel).await.ok(),
-                            SinkSender::Distributor(s) => s.send(final_sink_morsel).await.ok(),
-                        };
-
-                        if result.is_none() {
+                        if current_sink.sender.send(final_sink_morsel).await.is_err() {
                             return Ok(());
-                        }
+                        };
 
                         let join_handles = std::mem::take(&mut current_sink.join_handles);
                         drop(current_sink_opt.take());
@@ -250,23 +207,6 @@ impl SinkNode for MaxSizePartitionSinkNode {
             }
 
             Ok(())
-        }));
-
-        // Distributor Pass Tasks.
-        //
-        // If the sink wants to receive morsels in parallel these tasks pass them in parallel from
-        // a distributor.
-        join_handles.extend(dist_rxs.into_iter().map(|mut dist_rx| {
-            spawn(TaskPriority::High, async move {
-                while let Ok((mut rx, mut tx)) = dist_rx.recv().await {
-                    while let Ok(m) = rx.recv().await {
-                        if tx.send(m).await.is_err() {
-                            break;
-                        }
-                    }
-                }
-                Ok(())
-            })
         }));
 
         // Retire Tasks.

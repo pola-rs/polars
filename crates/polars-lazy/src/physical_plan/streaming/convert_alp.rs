@@ -75,7 +75,7 @@ fn insert_file_sink(mut root: Node, lp_arena: &mut Arena<IR>) -> Node {
     if !matches!(lp_arena.get(root), IR::Sink { .. }) {
         root = lp_arena.add(IR::Sink {
             input: root,
-            payload: SinkType::Memory,
+            payload: SinkTypeIR::Memory,
         })
     }
     root

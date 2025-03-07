@@ -169,17 +169,17 @@ fn create_physical_plan_impl(
         Sink { input, payload } => {
             let input = recurse!(input, state)?;
             match payload {
-                SinkType::Memory => Ok(Box::new(SinkExecutor {
+                SinkTypeIR::Memory => Ok(Box::new(SinkExecutor {
                     input,
                     name: "mem".to_string(),
                     f: Box::new(move |df, _state| Ok(Some(df))),
                 })),
-                SinkType::File {
+                SinkTypeIR::File(FileSinkType {
                     file_type,
                     path,
                     sink_options,
                     cloud_options,
-                } => match file_type {
+                }) => match file_type {
                     #[cfg(feature = "parquet")]
                     FileType::Parquet(options) => Ok(Box::new(SinkExecutor {
                         input,
@@ -342,7 +342,7 @@ fn create_physical_plan_impl(
                         }),
                     })),
                 },
-                SinkType::Partition { .. } => {
+                SinkTypeIR::Partition { .. } => {
                     polars_bail!(InvalidOperation:
                         "partition sinks not yet supported in standard engine."
                     )

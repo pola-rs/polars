@@ -10,7 +10,7 @@ use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_plan::dsl::{JoinOptions, PartitionVariant};
+use polars_plan::dsl::{JoinOptions, PartitionVariantIR};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_plan::plans::{AExpr, ArenaExprIter, Context, IR};
@@ -304,23 +304,37 @@ fn to_graph_rec<'a>(
             let input_key = to_graph_rec(input.node, ctx)?;
 
             let path_f_string = path_f_string.clone();
-            let args_to_path =
-                nodes::io_sinks::partition::get_args_to_path_fn(variant, path_f_string);
             let create_new = nodes::io_sinks::partition::get_create_new_fn(
                 file_type.clone(),
                 sink_options.clone(),
-                args_to_path,
                 cloud_options.clone(),
             );
 
             match variant {
-                PartitionVariant::MaxSize(max_size) => ctx.graph.add_node(
+                PartitionVariantIR::MaxSize(max_size) => ctx.graph.add_node(
                     SinkComputeNode::from(
                         nodes::io_sinks::partition::max_size::MaxSizePartitionSinkNode::new(
                             input_schema,
                             *max_size,
+                            path_f_string.clone(),
                             create_new,
                             sink_options.clone(),
+                        ),
+                    ),
+                    [(input_key, input.port)],
+                ),
+                PartitionVariantIR::ByKey {
+                    key_exprs,
+                    include_key,
+                } => ctx.graph.add_node(
+                    SinkComputeNode::from(
+                        nodes::io_sinks::partition::by_key::PartitionByKeySinkNode::new(
+                            input_schema,
+                            key_exprs.iter().map(|e| e.output_name().clone()).collect(),
+                            path_f_string.clone(),
+                            create_new,
+                            sink_options.clone(),
+                            *include_key,
                         ),
                     ),
                     [(input_key, input.port)],

@@ -272,6 +272,28 @@ impl IR {
             },
             IR::Sink { input, payload } => {
                 let input = Arc::new(convert_to_lp(input, lp_arena));
+                let payload = match payload {
+                    SinkTypeIR::Memory => SinkType::Memory,
+                    SinkTypeIR::File(f) => SinkType::File(f),
+                    SinkTypeIR::Partition(f) => SinkType::Partition(PartitionSinkType {
+                        path_f_string: f.path_f_string,
+                        file_type: f.file_type,
+                        sink_options: f.sink_options,
+                        variant: match f.variant {
+                            PartitionVariantIR::MaxSize(max_size) => {
+                                PartitionVariant::MaxSize(max_size)
+                            },
+                            PartitionVariantIR::ByKey {
+                                key_exprs,
+                                include_key,
+                            } => PartitionVariant::ByKey {
+                                key_exprs: expr_irs_to_exprs(key_exprs, expr_arena),
+                                include_key,
+                            },
+                        },
+                        cloud_options: f.cloud_options,
+                    }),
+                };
                 DslPlan::Sink { input, payload }
             },
             #[cfg(feature = "merge_sorted")]

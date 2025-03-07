@@ -206,7 +206,7 @@ pub(super) fn construct(
         // we connect into the original tree.
         Sink {
             input,
-            payload: SinkType::Memory,
+            payload: SinkTypeIR::Memory,
         } => *input,
         // Other sinks were not inserted during conversion,
         // so they are returned as-is

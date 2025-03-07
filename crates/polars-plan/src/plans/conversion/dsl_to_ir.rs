@@ -954,7 +954,37 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
         DslPlan::Sink { input, payload } => {
             let input =
                 to_alp_impl(owned(input), ctxt).map_err(|e| e.context(failed_here!(sink)))?;
-            IR::Sink { input, payload }
+            let payload = match payload {
+                SinkType::Memory => SinkTypeIR::Memory,
+                SinkType::File(f) => SinkTypeIR::File(f),
+                SinkType::Partition(f) => SinkTypeIR::Partition(PartitionSinkTypeIR {
+                    path_f_string: f.path_f_string,
+                    file_type: f.file_type,
+                    sink_options: f.sink_options,
+                    variant: match f.variant {
+                        PartitionVariant::MaxSize(max_size) => {
+                            PartitionVariantIR::MaxSize(max_size)
+                        },
+                        PartitionVariant::ByKey {
+                            key_exprs,
+                            include_key,
+                        } => {
+                            let eirs = to_expr_irs(key_exprs, ctxt.expr_arena)?;
+                            ctxt.conversion_optimizer
+                                .fill_scratch(&eirs, ctxt.expr_arena);
+
+                            PartitionVariantIR::ByKey {
+                                key_exprs: eirs,
+                                include_key,
+                            }
+                        },
+                    },
+                    cloud_options: f.cloud_options,
+                }),
+            };
+
+            let lp = IR::Sink { input, payload };
+            return run_conversion(lp, ctxt, "sink");
         },
         #[cfg(feature = "merge_sorted")]
         DslPlan::MergeSorted {

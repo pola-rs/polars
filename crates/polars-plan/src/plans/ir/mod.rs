@@ -146,7 +146,7 @@ pub enum IR {
     },
     Sink {
         input: Node,
-        payload: SinkType,
+        payload: SinkTypeIR,
     },
     #[cfg(feature = "merge_sorted")]
     MergeSorted {

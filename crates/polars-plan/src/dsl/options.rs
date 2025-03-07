@@ -1,4 +1,4 @@
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -26,12 +26,13 @@ use polars_time::DynamicGroupOptions;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
 use polars_utils::IdxSize;
+use polars_utils::arena::Arena;
 use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
-use super::ExprIR;
+use super::{AExpr, Expr, ExprIR};
 use crate::dsl::Selector;
 
 #[derive(Copy, Clone, PartialEq, Debug, Eq, Hash)]
@@ -358,33 +359,110 @@ impl Default for SinkOptions {
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct FileSinkType {
+    pub path: Arc<PathBuf>,
+    pub file_type: FileType,
+    pub sink_options: SinkOptions,
+    pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SinkTypeIR {
+    Memory,
+    File(FileSinkType),
+    Partition(PartitionSinkTypeIR),
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct PartitionSinkType {
+    pub path_f_string: Arc<PathBuf>,
+    pub file_type: FileType,
+    pub sink_options: SinkOptions,
+    pub variant: PartitionVariant,
+    pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PartitionSinkTypeIR {
+    pub path_f_string: Arc<PathBuf>,
+    pub file_type: FileType,
+    pub sink_options: SinkOptions,
+    pub variant: PartitionVariantIR,
+    pub cloud_options: Option<polars_io::cloud::CloudOptions>,
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SinkType {
     Memory,
-    File {
-        path: Arc<PathBuf>,
-        file_type: FileType,
-        sink_options: SinkOptions,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-    },
-    Partition {
-        path_f_string: Arc<PathBuf>,
-        file_type: FileType,
-        sink_options: SinkOptions,
-        variant: PartitionVariant,
-        cloud_options: Option<polars_io::cloud::CloudOptions>,
-    },
+    File(FileSinkType),
+    Partition(PartitionSinkType),
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PartitionVariant {
     MaxSize(IdxSize),
+    ByKey {
+        key_exprs: Vec<Expr>,
+        include_key: bool,
+    },
+}
+
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PartitionVariantIR {
+    MaxSize(IdxSize),
+    ByKey {
+        key_exprs: Vec<ExprIR>,
+        include_key: bool,
+    },
+}
+
+impl SinkTypeIR {
+    #[cfg(feature = "cse")]
+    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::Memory => {},
+            Self::File(f) => f.hash(state),
+            Self::Partition(f) => {
+                f.path_f_string.hash(state);
+                f.file_type.hash(state);
+                f.sink_options.hash(state);
+                f.variant.traverse_and_hash(expr_arena, state);
+                f.cloud_options.hash(state);
+            },
+        }
+    }
+}
+
+impl PartitionVariantIR {
+    #[cfg(feature = "cse")]
+    pub(crate) fn traverse_and_hash<H: Hasher>(&self, expr_arena: &Arena<AExpr>, state: &mut H) {
+        std::mem::discriminant(self).hash(state);
+        match self {
+            Self::MaxSize(size) => size.hash(state),
+            Self::ByKey {
+                key_exprs,
+                include_key,
+            } => {
+                include_key.hash(state);
+                for key_expr in key_exprs.as_slice() {
+                    key_expr.traverse_and_hash(expr_arena, state);
+                }
+            },
+        }
+    }
 }
 
 impl SinkType {
     pub(crate) fn is_cloud_destination(&self) -> bool {
-        if let Self::File { path, .. } = self {
-            if is_cloud_url(path.as_ref()) {
+        if let Self::File(f) = self {
+            if is_cloud_url(f.path.as_ref()) {
                 return true;
             }
         }
