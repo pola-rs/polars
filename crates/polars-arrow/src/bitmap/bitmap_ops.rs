@@ -185,8 +185,7 @@ where
 pub(crate) fn align(bitmap: &Bitmap, new_offset: usize) -> Bitmap {
     let length = bitmap.len();
 
-    let bitmap: Bitmap = std::iter::repeat(false)
-        .take(new_offset)
+    let bitmap: Bitmap = std::iter::repeat_n(false, new_offset)
         .chain(bitmap.iter())
         .collect();
 

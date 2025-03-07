@@ -269,7 +269,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
     reader: &mut R,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
-    let mut buffer = vec![0; (length + 7) / 8];
+    let mut buffer = vec![0; length.div_ceil(8)];
 
     scratch.clear();
     scratch.try_reserve(bytes)?;

@@ -183,7 +183,7 @@ impl Bitmap {
     ///
     /// The returned tuple contains:
     /// * `.1`: The byte slice, truncated to the start of the first bit. So the start of the slice
-    ///       is within the first 8 bits.
+    ///   is within the first 8 bits.
     /// * `.2`: The start offset in bits on a range `0 <= offsets < 8`.
     /// * `.3`: The length in number of bits.
     #[inline]

@@ -1,3 +1,4 @@
+#![allow(clippy::manual_div_ceil)]
 use std::hint::unreachable_unchecked;
 
 use polars_error::{polars_bail, PolarsResult};

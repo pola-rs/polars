@@ -1,3 +1,4 @@
+#![allow(clippy::manual_div_ceil)]
 mod chunks_exact;
 mod merge;
 
