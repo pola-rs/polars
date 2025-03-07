@@ -26,7 +26,7 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
         "and unexpected issues may arise; if this happens, please report them."
     )
 
-    polars._utils.nest_asyncio.apply()
+    polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
     return asyncio.run(co)
 
 
