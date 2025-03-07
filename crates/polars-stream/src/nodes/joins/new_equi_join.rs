@@ -623,7 +623,7 @@ impl BuildState {
                     }
                     
                     // We're done, help others out by doing drops.
-                    drop(morsel_drop_q_send); // So we don't deadlock.
+                    drop(morsel_drop_q_send); // So we don't deadlock trying to receive from ourselves.
                     while let Ok(l_morsels) = morsel_drop_q_recv.recv() {
                         drop(l_morsels);
                     }
