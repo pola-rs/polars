@@ -19,12 +19,6 @@ def _run_async(co: Coroutine[Any, Any, Any]) -> Any:
     import asyncio
 
     import polars._utils.nest_asyncio
-    from polars._utils.unstable import issue_unstable_warning
-
-    issue_unstable_warning(
-        "Use of asynchronous connections is currently considered unstable "
-        "and unexpected issues may arise; if this happens, please report them."
-    )
 
     polars._utils.nest_asyncio.apply()  # type: ignore[attr-defined]
     return asyncio.run(co)
