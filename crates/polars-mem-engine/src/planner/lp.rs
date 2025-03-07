@@ -4,6 +4,7 @@ use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
 use polars_utils::format_pl_smallstr;
+use recursive::recursive;
 
 use self::expr_ir::OutputName;
 use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate};
@@ -50,22 +51,24 @@ fn partitionable_gb(
 #[derive(Clone)]
 struct ConversionState {
     expr_depth: u16,
-    has_cache: bool,
+    has_cache_child: bool,
+    has_cache_parent: bool,
 }
 
 impl ConversionState {
     fn new() -> PolarsResult<Self> {
         Ok(ConversionState {
             expr_depth: get_expr_depth_limit()?,
-            has_cache: false,
+            has_cache_child: false,
+            has_cache_parent: false,
         })
     }
 
     fn with_new_branch<K, F: FnOnce(&mut Self) -> K>(&mut self, func: F) -> (K, Self) {
         let mut new_state = self.clone();
-        new_state.has_cache = false;
+        new_state.has_cache_child = false;
         let out = func(&mut new_state);
-        self.has_cache = new_state.has_cache;
+        self.has_cache_child = new_state.has_cache_child;
         (out, new_state)
     }
 }
@@ -79,6 +82,7 @@ pub fn create_physical_plan(
     create_physical_plan_impl(root, lp_arena, expr_arena, &mut state)
 }
 
+#[recursive]
 fn create_physical_plan_impl(
     root: Node,
     lp_arena: &mut Arena<IR>,
@@ -87,7 +91,12 @@ fn create_physical_plan_impl(
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
 
-    let logical_plan = lp_arena.get(root).clone();
+    let logical_plan = if state.has_cache_parent {
+        lp_arena.get(root).clone()
+    } else {
+        lp_arena.take(root)
+    };
+
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { mut options } => {
@@ -156,7 +165,7 @@ fn create_physical_plan_impl(
                     .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, new_state))
                     .collect::<PolarsResult<Vec<_>>>()
             });
-            if new_state.has_cache {
+            if new_state.has_cache_child {
                 options.parallel = false
             }
             let inputs = inputs?;
@@ -174,7 +183,7 @@ fn create_physical_plan_impl(
                     .collect::<PolarsResult<Vec<_>>>()
             });
 
-            if new_state.has_cache {
+            if new_state.has_cache_child {
                 options.parallel = false
             }
             let inputs = inputs?;
@@ -413,8 +422,9 @@ fn create_physical_plan_impl(
             id,
             cache_hits,
         } => {
+            state.has_cache_parent = true;
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
-            state.has_cache = true;
+            state.has_cache_child = true;
             Ok(Box::new(executors::CacheExec {
                 id,
                 input,
@@ -549,7 +559,7 @@ fn create_physical_plan_impl(
             let parallel = if options.force_parallel {
                 true
             } else if options.allow_parallel {
-                !new_state.has_cache
+                !new_state.has_cache_child
             } else {
                 false
             };
@@ -682,7 +692,7 @@ fn create_physical_plan_impl(
                 input_left,
                 input_right,
                 key,
-                parallel: new_state.has_cache,
+                parallel: new_state.has_cache_child,
             };
             Ok(Box::new(exec))
         },

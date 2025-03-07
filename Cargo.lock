@@ -3281,6 +3281,7 @@ dependencies = [
  "polars-utils",
  "pyo3",
  "rayon",
+ "recursive",
  "tokio",
 ]
 
