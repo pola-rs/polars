@@ -88,20 +88,20 @@ impl ThreadedSink {
 // into a build table. Once that is done it will replace the build-phase placeholder operator in
 // branch 1. Branch one can then run completely until out.
 pub struct PipeLine {
-    /// All the sources of this pipeline
+    // All the sources of this pipeline
     sources: Vec<Box<dyn Source>>,
-    /// All the operators of this pipeline. Some may be placeholders that will be replaced during
-    /// execution
+    // All the operators of this pipeline. Some may be placeholders that will be replaced during
+    // execution
     operators: Vec<ThreadedOperator>,
-    /// - offset in the operators vec
-    ///   at that point the sink should be called.
-    ///   the pipeline will first call the operators on that point and then
-    ///   push the result in the sink.
-    /// - shared_count
-    ///     when that hits 0, the sink will finalize
-    /// - node of the sink
+    // - offset in the operators vec
+    //   at that point the sink should be called.
+    //   the pipeline will first call the operators on that point and then
+    //   push the result in the sink.
+    // - shared_count
+    //     when that hits 0, the sink will finalize
+    // - node of the sink
     sinks: Vec<ThreadedSink>,
-    /// Log runtime info to stderr
+    // Log runtime info to stderr
     verbose: bool,
 }
 

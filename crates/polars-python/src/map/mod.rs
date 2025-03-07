@@ -320,7 +320,7 @@ fn iterator_to_list(
         match opt_val? {
             None => builder.append_null(),
             Some(s) => {
-                if s.len() == 0 && s.dtype() != dt {
+                if s.is_empty() && s.dtype() != dt {
                     builder
                         .append_series(&Series::full_null(PlSmallStr::EMPTY, 0, dt))
                         .unwrap()

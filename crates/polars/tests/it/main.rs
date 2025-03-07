@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)]
+#![allow(clippy::manual_repeat_n)]
+#![allow(clippy::len_zero)]
 mod core;
 mod io;
 mod joins;
