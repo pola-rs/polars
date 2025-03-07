@@ -9,6 +9,7 @@ use polars_utils::itertools::Itertools;
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
 use crate::morsel::SourceToken;
+use crate::prelude::TracedAwait;
 
 enum ReduceState {
     Sink {
@@ -61,9 +62,10 @@ impl ReduceNode {
                     .collect();
 
                 scope.spawn_task(TaskPriority::High, async move {
-                    while let Ok(morsel) = recv.recv().await {
+                    while let Ok(morsel) = recv.recv().traced_await().await {
                         for (reducer, selector) in local_reducers.iter_mut().zip(selectors) {
-                            let input = selector.evaluate(morsel.df(), state).await?;
+                            let input =
+                                selector.evaluate(morsel.df(), state).traced_await().await?;
                             reducer.update_group(
                                 input.as_materialized_series(),
                                 0,
@@ -79,7 +81,7 @@ impl ReduceNode {
 
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             for task in parallel_tasks {
-                let local_reducers = task.await?;
+                let local_reducers = task.traced_await().await?;
                 for (r1, r2) in reductions.iter_mut().zip(local_reducers) {
                     r1.resize(1);
                     unsafe {
@@ -101,7 +103,7 @@ impl ReduceNode {
         let mut send = send.serial();
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let morsel = Morsel::new(df.take().unwrap(), MorselSeq::new(0), SourceToken::new());
-            let _ = send.send(morsel).await;
+            let _ = send.send(morsel).traced_await().await;
             Ok(())
         }));
     }

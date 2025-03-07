@@ -11,6 +11,7 @@ mod morsel;
 mod nodes;
 mod physical_plan;
 mod pipe;
+pub mod prelude;
 mod utils;
 
 // TODO: experiment with these, and make them configurable through environment variables.

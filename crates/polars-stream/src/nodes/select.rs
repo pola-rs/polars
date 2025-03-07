@@ -5,6 +5,7 @@ use polars_core::schema::Schema;
 
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
+use crate::prelude::TracedAwait;
 
 pub struct SelectNode {
     selectors: Vec<StreamExpr>,
@@ -48,11 +49,11 @@ impl ComputeNode for SelectNode {
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Ok(morsel) = recv.recv().await {
+                while let Ok(morsel) = recv.recv().traced_await().await {
                     let (df, seq, source_token, consume_token) = morsel.into_inner();
                     let mut selected = Vec::new();
                     for selector in slf.selectors.iter() {
-                        let s = selector.evaluate(&df, state).await?;
+                        let s = selector.evaluate(&df, state).traced_await().await?;
                         selected.push(s.into_column());
                     }
 
@@ -69,7 +70,7 @@ impl ComputeNode for SelectNode {
                         morsel.set_consume_token(token);
                     }
 
-                    if send.send(morsel).await.is_err() {
+                    if send.send(morsel).traced_await().await.is_err() {
                         break;
                     }
                 }

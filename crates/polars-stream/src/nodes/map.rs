@@ -3,6 +3,7 @@ use std::sync::Arc;
 use polars_plan::plans::DataFrameUdf;
 
 use super::compute_node_prelude::*;
+use crate::prelude::TracedAwait;
 
 /// A simple mapping node. Assumes the given udf is elementwise.
 pub struct MapNode {
@@ -41,9 +42,9 @@ impl ComputeNode for MapNode {
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Ok(morsel) = recv.recv().await {
+                while let Ok(morsel) = recv.recv().traced_await().await {
                     let morsel = morsel.try_map(|df| slf.map.call_udf(df))?;
-                    if send.send(morsel).await.is_err() {
+                    if send.send(morsel).traced_await().await.is_err() {
                         break;
                     }
                 }

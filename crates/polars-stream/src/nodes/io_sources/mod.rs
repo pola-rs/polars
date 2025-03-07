@@ -14,6 +14,7 @@ use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, Task
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::prelude::TracedAwait;
 
 #[cfg(feature = "csv")]
 pub mod csv;
@@ -127,9 +128,15 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (outcome, wait_group, source_output) = SourceOutput::from_port(source_output);
 
-            if started.output_send.send(source_output).await.is_ok() {
+            if started
+                .output_send
+                .send(source_output)
+                .traced_await()
+                .await
+                .is_ok()
+            {
                 // Wait for the phase to finish.
-                wait_group.wait().await;
+                wait_group.wait().traced_await().await;
                 if !outcome.did_finish() {
                     return Ok(());
                 }
@@ -140,7 +147,7 @@ impl<T: SourceNode> ComputeNode for SourceComputeNode<T> {
             };
 
             // Either the task finished or some error occurred.
-            while let Some(ret) = started.join_handles.next().await {
+            while let Some(ret) = started.join_handles.next().traced_await().await {
                 ret?;
             }
 

@@ -20,6 +20,7 @@ use crate::nodes::io_sinks::{
     SinkInputPort, SinkNode, SinkRecvPort, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE,
 };
 use crate::nodes::{JoinHandle, Morsel, TaskPriority};
+use crate::prelude::TracedAwait;
 
 pub struct MaxSizePartitionSinkNode {
     input_schema: SchemaRef,
@@ -138,7 +139,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
             let mut part = 0;
             let mut current_sink_opt = None;
 
-            'morsel_loop: while let Ok(mut morsel) = recv_port.recv().await {
+            'morsel_loop: while let Ok(mut morsel) = recv_port.recv().traced_await().await {
                 while morsel.df().height() > 0 {
                     if retire_error.load(Ordering::Relaxed) {
                         return Ok(());
@@ -171,7 +172,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
                                     .collect::<(Vec<_>, Vec<_>)>();
 
                                 for (i, channels) in dist_rxs.into_iter().zip(txs).enumerate() {
-                                    if dist_txs[i].send(channels).await.is_err() {
+                                    if dist_txs[i].send(channels).traced_await().await.is_err() {
                                         return Ok(());
                                     }
                                 }
@@ -209,8 +210,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
                         // too much. The sinks are very specific about how they handle consume
                         // tokens and we want to keep that behavior.
                         let result = match &mut current_sink.sender {
-                            SinkSender::Connector(s) => s.send(morsel).await.ok(),
-                            SinkSender::Distributor(s) => s.send(morsel).await.ok(),
+                            SinkSender::Connector(s) => s.send(morsel).traced_await().await.ok(),
+                            SinkSender::Distributor(s) => s.send(morsel).traced_await().await.ok(),
                         };
 
                         if result.is_none() {
@@ -227,8 +228,12 @@ impl SinkNode for MaxSizePartitionSinkNode {
                     let final_sink_morsel = Morsel::new(final_sink_df, seq, source_token.clone());
 
                     let result = match &mut current_sink.sender {
-                        SinkSender::Connector(s) => s.send(final_sink_morsel).await.ok(),
-                        SinkSender::Distributor(s) => s.send(final_sink_morsel).await.ok(),
+                        SinkSender::Connector(s) => {
+                            s.send(final_sink_morsel).traced_await().await.ok()
+                        },
+                        SinkSender::Distributor(s) => {
+                            s.send(final_sink_morsel).traced_await().await.ok()
+                        },
                     };
 
                     if result.is_none() {
@@ -237,7 +242,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
 
                     let join_handles = std::mem::take(&mut current_sink.join_handles);
                     drop(current_sink_opt.take());
-                    if retire_tx.send(join_handles).await.is_err() {
+                    if retire_tx.send(join_handles).traced_await().await.is_err() {
                         return Ok(());
                     };
 
@@ -251,7 +256,7 @@ impl SinkNode for MaxSizePartitionSinkNode {
 
             if let Some(mut current_sink) = current_sink_opt.take() {
                 drop(current_sink.sender);
-                while let Some(res) = current_sink.join_handles.next().await {
+                while let Some(res) = current_sink.join_handles.next().traced_await().await {
                     res?;
                 }
             }
@@ -265,9 +270,9 @@ impl SinkNode for MaxSizePartitionSinkNode {
         // a distributor.
         join_handles.extend(dist_rxs.into_iter().map(|mut dist_rx| {
             spawn(TaskPriority::High, async move {
-                while let Ok((mut rx, mut tx)) = dist_rx.recv().await {
-                    while let Ok(m) = rx.recv().await {
-                        if tx.send(m).await.is_err() {
+                while let Ok((mut rx, mut tx)) = dist_rx.recv().traced_await().await {
+                    while let Ok(m) = rx.recv().traced_await().await {
+                        if tx.send(m).traced_await().await.is_err() {
                             break;
                         }
                     }
@@ -285,8 +290,8 @@ impl SinkNode for MaxSizePartitionSinkNode {
         join_handles.extend(retire_rxs.into_iter().map(|mut retire_rx| {
             let has_error_occurred = has_error_occurred.clone();
             spawn(TaskPriority::High, async move {
-                while let Ok(mut join_handles) = retire_rx.recv().await {
-                    while let Some(ret) = join_handles.next().await {
+                while let Ok(mut join_handles) = retire_rx.recv().traced_await().await {
+                    while let Some(ret) = join_handles.next().traced_await().await {
                         ret.inspect_err(|_| {
                             has_error_occurred.store(true, Ordering::Relaxed);
                         })?;

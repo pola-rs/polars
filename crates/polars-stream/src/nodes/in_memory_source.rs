@@ -4,6 +4,7 @@ use std::sync::Arc;
 use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{get_ideal_morsel_size, MorselSeq, SourceToken};
+use crate::prelude::TracedAwait;
 
 pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,
@@ -92,11 +93,11 @@ impl ComputeNode for InMemorySourceNode {
                     let morsel_seq = MorselSeq::new(seq).offset_by(slf.seq_offset);
                     let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
-                    if send.send(morsel).await.is_err() {
+                    if send.send(morsel).traced_await().await.is_err() {
                         break;
                     }
 
-                    wait_group.wait().await;
+                    wait_group.wait().traced_await().await;
                     if source_token.stop_requested() {
                         break;
                     }

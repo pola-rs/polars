@@ -28,6 +28,7 @@ use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::io_sinks::sync_on_close;
 use crate::nodes::{JoinHandle, TaskPriority};
+use crate::prelude::TracedAwait;
 
 pub struct IpcSinkNode {
     path: PathBuf,
@@ -134,7 +135,7 @@ impl SinkNode for IpcSinkNode {
                 .map(|(mut dist_rx, mut lin_tx)| {
                     let write_options = self.write_options;
                     spawn(TaskPriority::High, async move {
-                        while let Ok((seq, col_idx, column)) = dist_rx.recv().await {
+                        while let Ok((seq, col_idx, column)) = dist_rx.recv().traced_await().await {
                             let mut variadic_buffer_counts = Vec::new();
                             let mut buffers = Vec::new();
                             let mut arrow_data = Vec::new();
@@ -174,7 +175,7 @@ impl SinkNode for IpcSinkNode {
                                     offset,
                                 ),
                             );
-                            if lin_tx.insert(msg).await.is_err() {
+                            if lin_tx.insert(msg).traced_await().await.is_err() {
                                 return Ok(());
                             }
                         }
@@ -222,7 +223,7 @@ impl SinkNode for IpcSinkNode {
             while let Some(Priority(
                 Reverse(seq),
                 (i, array, variadic_buffer_counts, buffers, arrow_data, nodes, offset),
-            )) = lin_rx.get().await
+            )) = lin_rx.get().traced_await().await
             {
                 if current.num_columns_seen == 0 {
                     current.seq = seq;
@@ -299,6 +300,7 @@ impl SinkNode for IpcSinkNode {
                             std::mem::take(&mut current.encoded_dictionaries),
                             encoded_data,
                         ))
+                        .traced_await()
                         .await
                         .is_err()
                     {
@@ -330,7 +332,7 @@ impl SinkNode for IpcSinkNode {
                 .with_parallel(false)
                 .batched(&input_schema)?;
 
-            while let Ok((dicts, record_batch)) = io_rx.recv().await {
+            while let Ok((dicts, record_batch)) = io_rx.recv().traced_await().await {
                 // @TODO: At the moment this is a sync write, this is not ideal because we can only
                 // have so many blocking threads in the tokio threadpool.
                 writer.write_encoded(dicts.as_slice(), &record_batch)?;
@@ -349,6 +351,7 @@ impl SinkNode for IpcSinkNode {
         });
         join_handles.push(spawn(TaskPriority::Low, async move {
             io_task
+                .traced_await()
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));
