@@ -37,7 +37,6 @@ use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
-use crate::prelude::TracedAwait;
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 
 const ROW_COUNT_OVERFLOW_ERR: PolarsError = PolarsError::ComputeError(ErrString::new_static(
@@ -240,20 +239,20 @@ impl SourceNode for IpcSourceNode {
         // available output pipelines.
         join_handles.push(spawn(TaskPriority::High, async move {
             // Every phase we are given a new send port.
-            'phase_loop: while let Ok(phase_output) = output_recv.recv().traced_await().await {
+            'phase_loop: while let Ok(phase_output) = output_recv.recv().await {
                 let mut sender = phase_output.port.serial();
                 let source_token = SourceToken::new();
                 let wait_group = WaitGroup::default();
 
-                while let Some(Priority(Reverse(seq), df)) = decoded_rx.get().traced_await().await {
+                while let Some(Priority(Reverse(seq), df)) = decoded_rx.get().await {
                     let mut morsel = Morsel::new(df, seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
 
-                    if sender.send(morsel).traced_await().await.is_err() {
+                    if sender.send(morsel).await.is_err() {
                         return Ok(());
                     }
 
-                    wait_group.wait().traced_await().await;
+                    wait_group.wait().await;
                     if source_token.stop_requested() {
                         phase_output.outcome.stop();
                         continue 'phase_loop;
@@ -289,7 +288,7 @@ impl SourceNode for IpcSourceNode {
                         .map(|(n, f)| (n.clone(), DataType::from_arrow_field(f)))
                         .collect::<Schema>();
 
-                    while let Ok(m) = rx.recv().traced_await().await {
+                    while let Ok(m) = rx.recv().await {
                         let BatchMessage {
                             row_idx_offset,
                             slice,
@@ -342,7 +341,7 @@ impl SourceNode for IpcSourceNode {
                         for i in 0..df.height().div_ceil(max_morsel_size) {
                             let morsel_df = df.slice((i * max_morsel_size) as i64, max_morsel_size);
                             let seq = MorselSeq::new(morsel_seq_base + i as u64);
-                            if send.insert(Priority(Reverse(seq), morsel_df)).traced_await().await.is_err() {
+                            if send.insert(Priority(Reverse(seq), morsel_df)).await.is_err() {
                                 break;
                             }
                         }
@@ -470,7 +469,7 @@ impl SourceNode for IpcSourceNode {
                             break 'read;
                         }
 
-                        if batch_tx.send(message).traced_await().await.is_err() {
+                        if batch_tx.send(message).await.is_err() {
                             // This should only happen if the receiver of the decoder
                             // has broken off, meaning no further input will be needed.
                             break 'read;
@@ -495,7 +494,7 @@ impl SourceNode for IpcSourceNode {
 
             drop(batch_tx); // Inform decoder tasks to stop.
             for decoder_task in decoder_tasks {
-                decoder_task.traced_await().await?;
+                decoder_task.await?;
             }
 
             PolarsResult::Ok(())

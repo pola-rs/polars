@@ -3,7 +3,6 @@ use polars_core::prelude::IntoColumn;
 use super::compute_node_prelude::*;
 use crate::expression::StreamExpr;
 use crate::morsel::SourceToken;
-use crate::prelude::TracedAwait;
 
 pub struct InputIndependentSelectNode {
     selectors: Vec<StreamExpr>,
@@ -49,7 +48,7 @@ impl ComputeNode for InputIndependentSelectNode {
             let empty_df = DataFrame::empty();
             let mut selected = Vec::new();
             for selector in self.selectors.iter() {
-                let s = selector.evaluate(&empty_df, state).traced_await().await?;
+                let s = selector.evaluate(&empty_df, state).await?;
                 selected.push(s.into_column());
             }
 
@@ -57,7 +56,7 @@ impl ComputeNode for InputIndependentSelectNode {
             let seq = MorselSeq::default();
             let source_token = SourceToken::new();
             let morsel = Morsel::new(ret, seq, source_token);
-            sender.send(morsel).traced_await().await.ok();
+            sender.send(morsel).await.ok();
             self.done = true;
             Ok(())
         }));

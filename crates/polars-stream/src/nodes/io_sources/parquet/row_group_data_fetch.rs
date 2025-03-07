@@ -12,7 +12,6 @@ use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::prelude::TracedAwait;
 use crate::utils::task_handles_ext;
 
 /// Represents byte-data that can be transformed into a DataFrame after some computation.
@@ -124,10 +123,7 @@ impl RowGroupDataFetcher {
 
                         let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source
-                            .get_ranges(&mut ranges)
-                            .traced_await()
-                            .await?;
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
 
                         assert_eq!(bytes_map.len(), n_ranges);
 
@@ -145,10 +141,7 @@ impl RowGroupDataFetcher {
 
                         let n_ranges = ranges.len();
 
-                        let bytes_map = current_byte_source
-                            .get_ranges(&mut ranges)
-                            .traced_await()
-                            .await?;
+                        let bytes_map = current_byte_source.get_ranges(&mut ranges).await?;
 
                         assert_eq!(bytes_map.len(), n_ranges);
 

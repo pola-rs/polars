@@ -15,7 +15,6 @@ use super::compute_node_prelude::*;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-use crate::prelude::TracedAwait;
 use crate::GROUP_BY_MIN_ROWS_PER_PARTITION;
 
 struct LocalGroupBySinkState {
@@ -69,13 +68,13 @@ impl GroupBySinkState {
             let random_state = &self.random_state;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut group_idxs = Vec::new();
-                while let Ok(morsel) = recv.recv().traced_await().await {
+                while let Ok(morsel) = recv.recv().await {
                     // Compute group indices from key.
                     let seq = morsel.seq().to_u64();
                     let df = morsel.into_df();
                     let mut key_columns = Vec::new();
                     for selector in key_selectors {
-                        let s = selector.evaluate(&df, state).traced_await().await?;
+                        let s = selector.evaluate(&df, state).await?;
                         key_columns.push(s.into_column());
                     }
                     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
@@ -93,7 +92,6 @@ impl GroupBySinkState {
                             reduction.update_groups(
                                 selector
                                     .evaluate(&df, state)
-                                    .traced_await()
                                     .await?
                                     .as_materialized_series(),
                                 &group_idxs,

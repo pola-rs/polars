@@ -5,7 +5,6 @@ use polars_utils::pl_str::PlSmallStr;
 use super::compute_node_prelude::*;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::prelude::TracedAwait;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 pub struct WithRowIndexNode {
@@ -52,18 +51,13 @@ impl ComputeNode for WithRowIndexNode {
 
         // To figure out the correct offsets we need to be serial.
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-            while let Ok(morsel) = receiver.recv().traced_await().await {
+            while let Ok(morsel) = receiver.recv().await {
                 let offset = self.offset;
                 self.offset = self
                     .offset
                     .checked_add(morsel.df().len().try_into().unwrap())
                     .unwrap();
-                if distributor
-                    .send((morsel, offset))
-                    .traced_await()
-                    .await
-                    .is_err()
-                {
+                if distributor.send((morsel, offset)).await.is_err() {
                     break;
                 }
             }
@@ -76,14 +70,14 @@ impl ComputeNode for WithRowIndexNode {
             let name = name.clone();
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let wait_group = WaitGroup::default();
-                while let Ok((morsel, offset)) = recv.recv().traced_await().await {
+                while let Ok((morsel, offset)) = recv.recv().await {
                     let mut morsel =
                         morsel.try_map(|df| df.with_row_index(name.clone(), Some(offset)))?;
                     morsel.set_consume_token(wait_group.token());
-                    if send.send(morsel).traced_await().await.is_err() {
+                    if send.send(morsel).await.is_err() {
                         break;
                     }
-                    wait_group.wait().traced_await().await;
+                    wait_group.wait().await;
                 }
 
                 Ok(())

@@ -17,7 +17,6 @@ use crate::async_executor::spawn;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::io_sinks::{tokio_sync_on_close, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE};
 use crate::nodes::{JoinHandle, MorselSeq, TaskPriority};
-use crate::prelude::TracedAwait;
 
 type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct CsvSinkNode {
@@ -105,7 +104,7 @@ impl SinkNode for CsvSinkNode {
                 let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
                 let options = options.clone();
 
-                while let Ok(morsel) = rx.recv().traced_await().await {
+                while let Ok(morsel) = rx.recv().await {
                     let (df, seq, _, consume_token) = morsel.into_inner();
 
                     let mut buffer = Vec::with_capacity(allocation_size);
@@ -133,12 +132,7 @@ impl SinkNode for CsvSinkNode {
                     drop(consume_token); // Keep the consume_token until here to increase the
                                          // backpressure.
 
-                    if lin_tx
-                        .insert(Priority(Reverse(seq), buffer))
-                        .traced_await()
-                        .await
-                        .is_err()
-                    {
+                    if lin_tx.insert(Priority(Reverse(seq), buffer)).await.is_err() {
                         return Ok(());
                     }
                 }
@@ -176,23 +170,20 @@ impl SinkNode for CsvSinkNode {
 
             let mut file = file.try_into_async_writeable()?;
 
-            while let Some(Priority(_, buffer)) = lin_rx.get().traced_await().await {
-                file.write_all(&buffer).traced_await().await?;
+            while let Some(Priority(_, buffer)) = lin_rx.get().await {
+                file.write_all(&buffer).await?;
             }
 
             if let AsyncWriteable::Local(file) = &mut file {
-                tokio_sync_on_close(sink_options.sync_on_close, file)
-                    .traced_await()
-                    .await?;
+                tokio_sync_on_close(sink_options.sync_on_close, file).await?;
             }
 
-            file.close().traced_await().await?;
+            file.close().await?;
 
             PolarsResult::Ok(())
         });
         join_handles.push(spawn(TaskPriority::Low, async move {
             io_task
-                .traced_await()
                 .await
                 .unwrap_or_else(|e| Err(std::io::Error::from(e).into()))
         }));

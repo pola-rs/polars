@@ -7,7 +7,6 @@ use polars_plan::dsl::NDJsonReadOptions;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::nodes::compute_node_prelude::*;
-use crate::prelude::TracedAwait;
 
 /// NDJSON chunk reader.
 #[derive(Default)]

@@ -9,7 +9,6 @@ use polars_plan::dsl::{FileType, PartitionVariant, SinkOptions};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::SinkNode;
-use crate::prelude::TracedAwait;
 
 pub mod max_size;
 

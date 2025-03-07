@@ -28,7 +28,6 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::TaskPriority;
-use crate::prelude::TracedAwait;
 use crate::utils::task_handles_ext;
 
 mod init;
@@ -185,18 +184,18 @@ impl SourceNode for ParquetSourceNode {
             }
 
             // Every phase we are given a new send port.
-            while let Ok(phase_output) = output_recv.recv().traced_await().await {
+            while let Ok(phase_output) = output_recv.recv().await {
                 let morsel_senders = phase_output.port.parallel();
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
                 for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
                     let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
-                    _ = send_to.send(morsel_output).traced_await().await;
+                    _ = send_to.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }
 
                 let mut is_finished = true;
                 for (outcome, wait_group) in morsel_outcomes.into_iter() {
-                    wait_group.wait().traced_await().await;
+                    wait_group.wait().await;
                     is_finished &= outcome.did_finish();
                 }
 
@@ -211,33 +210,25 @@ impl SourceNode for ParquetSourceNode {
             // Safety
             // * We dropped the receivers on the line above
             // * This function is only called once.
-            _ = morsel_stream_task_handle.traced_await().await.unwrap();
+            _ = morsel_stream_task_handle.await.unwrap();
             Ok(())
         }));
 
         join_handles.extend(recv_from.into_iter().zip(raw_morsel_receivers).map(
             |(mut recv_from, mut raw_morsel_rx)| {
                 spawn(TaskPriority::Low, async move {
-                    'port_recv: while let Ok(mut morsel_output) =
-                        recv_from.recv().traced_await().await
-                    {
+                    'port_recv: while let Ok(mut morsel_output) = recv_from.recv().await {
                         let source_token = SourceToken::new();
                         let wait_group = WaitGroup::default();
 
-                        while let Ok((df, seq)) = raw_morsel_rx.recv().traced_await().await {
+                        while let Ok((df, seq)) = raw_morsel_rx.recv().await {
                             let mut morsel = Morsel::new(df, seq, source_token.clone());
                             morsel.set_consume_token(wait_group.token());
-                            if morsel_output
-                                .port
-                                .send(morsel)
-                                .traced_await()
-                                .await
-                                .is_err()
-                            {
+                            if morsel_output.port.send(morsel).await.is_err() {
                                 break;
                             }
 
-                            wait_group.wait().traced_await().await;
+                            wait_group.wait().await;
                             if source_token.stop_requested() {
                                 morsel_output.outcome.stop();
                                 continue 'port_recv;
@@ -290,14 +281,10 @@ impl MultiScanable for ParquetSourceNode {
                         },
                         cloud_options.as_ref(),
                     )
-                    .traced_await()
                     .await?;
 
-                metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose)
-                    .traced_await()
-                    .await
+                metadata_utils::read_parquet_metadata_bytes(&byte_source, verbose).await
             })
-            .traced_await()
             .await
             .unwrap()?;
 

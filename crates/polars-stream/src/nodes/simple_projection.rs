@@ -4,7 +4,6 @@ use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::compute_node_prelude::*;
-use crate::prelude::TracedAwait;
 
 pub struct SimpleProjectionNode {
     columns: Vec<PlSmallStr>,
@@ -46,7 +45,7 @@ impl ComputeNode for SimpleProjectionNode {
         for (mut recv, mut send) in receivers.into_iter().zip(senders) {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                while let Ok(morsel) = recv.recv().traced_await().await {
+                while let Ok(morsel) = recv.recv().await {
                     let morsel = morsel.try_map(|df| {
                         // TODO: can this be unchecked?
                         let check_duplicates = true;
@@ -57,7 +56,7 @@ impl ComputeNode for SimpleProjectionNode {
                         )
                     })?;
 
-                    if send.send(morsel).traced_await().await.is_err() {
+                    if send.send(morsel).await.is_err() {
                         break;
                     }
                 }

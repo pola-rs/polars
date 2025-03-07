@@ -19,7 +19,6 @@ use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::distributor_channel;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::nodes::TaskPriority;
-use crate::prelude::TracedAwait;
 
 #[cfg(feature = "csv")]
 pub mod csv;
@@ -76,22 +75,17 @@ impl SinkRecvPort {
         let wg = WaitGroup::default();
 
         join_handles.push(spawn(TaskPriority::High, async move {
-            while let Ok((outcome, port_rxs)) = self.recv.recv().traced_await().await {
+            while let Ok((outcome, port_rxs)) = self.recv.recv().await {
                 let port_rxs = port_rxs.parallel();
                 for (pass_tx, port_rx) in pass_txs.iter_mut().zip(port_rxs) {
                     let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
-                    if pass_tx
-                        .send((outcome, port_rx))
-                        .traced_await()
-                        .await
-                        .is_err()
-                    {
+                    if pass_tx.send((outcome, port_rx)).await.is_err() {
                         return Ok(());
                     }
                     outcomes.push(token);
                 }
 
-                wg.wait().traced_await().await;
+                wg.wait().await;
                 for outcome_token in &outcomes {
                     if outcome_token.did_finish() {
                         return Ok(());
@@ -105,9 +99,9 @@ impl SinkRecvPort {
         }));
         join_handles.extend(pass_rxs.into_iter().zip(txs).map(|(mut pass_rx, mut tx)| {
             spawn(TaskPriority::High, async move {
-                while let Ok((outcome, mut rx)) = pass_rx.recv().traced_await().await {
-                    while let Ok(morsel) = rx.recv().traced_await().await {
-                        if tx.send(morsel).traced_await().await.is_err() {
+                while let Ok((outcome, mut rx)) = pass_rx.recv().await {
+                    while let Ok(morsel) = rx.recv().await {
+                        if tx.send(morsel).await.is_err() {
                             return Ok(());
                         }
                     }
@@ -127,10 +121,10 @@ impl SinkRecvPort {
     ) -> Receiver<Morsel> {
         let (mut tx, rx) = connector();
         join_handles.push(spawn(TaskPriority::High, async move {
-            while let Ok((outcome, port_rx)) = self.recv.recv().traced_await().await {
+            while let Ok((outcome, port_rx)) = self.recv.recv().await {
                 let mut port_rx = port_rx.serial();
-                while let Ok(morsel) = port_rx.recv().traced_await().await {
-                    if tx.send(morsel).traced_await().await.is_err() {
+                while let Ok(morsel) = port_rx.recv().await {
+                    if tx.send(morsel).await.is_err() {
                         return Ok(());
                     }
                 }
@@ -154,7 +148,7 @@ fn buffer_and_distribute_columns_task(
         let mut seq = 0usize;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
-        while let Ok(morsel) = rx.recv().traced_await().await {
+        while let Ok(morsel) = rx.recv().await {
             let (df, _, _, consume_token) = morsel.into_inner();
             // @NOTE: This also performs schema validation.
             buffer.vstack_mut(&df)?;
@@ -164,7 +158,7 @@ fn buffer_and_distribute_columns_task(
                 (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
                 for (i, column) in df.take_columns().into_iter().enumerate() {
-                    if dist_tx.send((seq, i, column)).traced_await().await.is_err() {
+                    if dist_tx.send((seq, i, column)).await.is_err() {
                         return Ok(());
                     }
                 }
@@ -179,7 +173,7 @@ fn buffer_and_distribute_columns_task(
         // Flush the remaining rows.
         assert!(buffer.height() <= chunk_size);
         for (i, column) in buffer.take_columns().into_iter().enumerate() {
-            if dist_tx.send((seq, i, column)).traced_await().await.is_err() {
+            if dist_tx.send((seq, i, column)).await.is_err() {
                 return Ok(());
             }
         }
@@ -259,7 +253,7 @@ impl ComputeNode for SinkComputeNode {
                 drop(started.input_send);
                 polars_io::pl_async::get_runtime().block_on(async move {
                     // Either the task finished or some error occurred.
-                    while let Some(ret) = started.join_handles.next().traced_await().await {
+                    while let Some(ret) = started.join_handles.next().await {
                         ret?;
                     }
                     PolarsResult::Ok(())
@@ -315,15 +309,9 @@ impl ComputeNode for SinkComputeNode {
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (token, outcome) = PhaseOutcome::new_shared_wait(wait_group.token());
-            if started
-                .input_send
-                .send((outcome, sink_input))
-                .traced_await()
-                .await
-                .is_ok()
-            {
+            if started.input_send.send((outcome, sink_input)).await.is_ok() {
                 // Wait for the phase to finish.
-                wait_group.wait().traced_await().await;
+                wait_group.wait().await;
                 if !token.did_finish() {
                     return Ok(());
                 }
@@ -334,7 +322,7 @@ impl ComputeNode for SinkComputeNode {
             }
 
             // Either the task finished or some error occurred.
-            while let Some(ret) = started.join_handles.next().traced_await().await {
+            while let Some(ret) = started.join_handles.next().await {
                 ret?;
             }
 
@@ -357,7 +345,7 @@ pub async fn tokio_sync_on_close(
 ) -> io::Result<()> {
     match sync_on_close {
         SyncOnCloseType::None => Ok(()),
-        SyncOnCloseType::Data => file.sync_data().traced_await().await,
-        SyncOnCloseType::All => file.sync_all().traced_await().await,
+        SyncOnCloseType::Data => file.sync_data().await,
+        SyncOnCloseType::All => file.sync_all().await,
     }
 }

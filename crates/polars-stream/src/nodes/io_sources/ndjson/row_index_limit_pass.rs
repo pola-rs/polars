@@ -13,7 +13,6 @@ use crate::async_primitives::wait_group::WaitGroup;
 use crate::async_primitives::{connector, distributor_channel};
 use crate::morsel::{Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::MorselOutput;
-use crate::prelude::TracedAwait;
 
 pub struct ApplyRowIndexOrLimit {
     pub morsel_receiver: Linearizer<Priority<Reverse<MorselSeq>, DataFrame>>,
@@ -49,9 +48,7 @@ impl ApplyRowIndexOrLimit {
 
         let mut n_rows_received: usize = 0;
 
-        while let Some(Priority(Reverse(morsel_seq), mut df)) =
-            morsel_receiver.get().traced_await().await
-        {
+        while let Some(Priority(Reverse(morsel_seq), mut df)) = morsel_receiver.get().await {
             if let Some(limit) = &limit {
                 let remaining = *limit - n_rows_received;
                 if remaining < df.height() {
@@ -77,12 +74,7 @@ impl ApplyRowIndexOrLimit {
 
             n_rows_received = n_rows_received.saturating_add(df.height());
 
-            if morsel_distributor
-                .send((morsel_seq, df))
-                .traced_await()
-                .await
-                .is_err()
-            {
+            if morsel_distributor.send((morsel_seq, df)).await.is_err() {
                 break;
             }
 
@@ -100,7 +92,7 @@ impl ApplyRowIndexOrLimit {
         }
 
         for handle in phase_sender_handles {
-            handle.traced_await().await?;
+            handle.await?;
         }
 
         if verbose {
@@ -131,14 +123,14 @@ fn init_morsel_distributor(
         .map(|(mut phase_tx_receiver, mut morsel_rx)| {
             let source_token = source_token.clone();
             AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
-                let Ok(mut morsel_output) = phase_tx_receiver.recv().traced_await().await else {
+                let Ok(mut morsel_output) = phase_tx_receiver.recv().await else {
                     return Ok(());
                 };
 
                 let wait_group = WaitGroup::default();
 
                 'outer: loop {
-                    let Ok((morsel_seq, df)) = morsel_rx.recv().traced_await().await else {
+                    let Ok((morsel_seq, df)) = morsel_rx.recv().await else {
                         return Ok(());
                     };
 
@@ -147,23 +139,17 @@ fn init_morsel_distributor(
 
                     let source_token = morsel.source_token().clone();
 
-                    if morsel_output
-                        .port
-                        .send(morsel)
-                        .traced_await()
-                        .await
-                        .is_err()
-                    {
+                    if morsel_output.port.send(morsel).await.is_err() {
                         break 'outer;
                     }
 
-                    wait_group.wait().traced_await().await;
+                    wait_group.wait().await;
 
                     if source_token.stop_requested() {
                         morsel_output.outcome.stop();
                         drop(morsel_output);
 
-                        let Ok(next_output) = phase_tx_receiver.recv().traced_await().await else {
+                        let Ok(next_output) = phase_tx_receiver.recv().await else {
                             break 'outer;
                         };
 

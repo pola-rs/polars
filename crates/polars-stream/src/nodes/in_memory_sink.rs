@@ -5,7 +5,6 @@ use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 
 use super::compute_node_prelude::*;
-use crate::prelude::TracedAwait;
 use crate::utils::in_memory_linearize::linearize;
 
 pub struct InMemorySinkNode {
@@ -58,7 +57,7 @@ impl ComputeNode for InMemorySinkNode {
             let slf = &*self;
             join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut morsels = Vec::new();
-                while let Ok(mut morsel) = recv.recv().traced_await().await {
+                while let Ok(mut morsel) = recv.recv().await {
                     morsel.take_consume_token();
                     morsels.push(morsel);
                 }

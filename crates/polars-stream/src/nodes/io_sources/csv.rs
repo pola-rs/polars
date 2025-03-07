@@ -34,7 +34,6 @@ use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::MorselOutput;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::prelude::TracedAwait;
 use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 struct LineBatch {
@@ -114,14 +113,14 @@ impl SourceNode for CsvSourceNode {
                 let wait_group = WaitGroup::default();
 
                 spawn(TaskPriority::Low, async move {
-                    while let Ok(mut morsel_output) = recv_from.recv().traced_await().await {
+                    while let Ok(mut morsel_output) = recv_from.recv().await {
                         while let Ok(LineBatch {
                             bytes,
                             n_lines,
                             slice: (offset, len),
                             row_offset,
                             morsel_seq,
-                        }) = line_batch_rx.recv().traced_await().await
+                        }) = line_batch_rx.recv().await
                         {
                             let df = chunk_reader.read_chunk(
                                 &bytes,
@@ -133,17 +132,11 @@ impl SourceNode for CsvSourceNode {
                             let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
                             morsel.set_consume_token(wait_group.token());
 
-                            if morsel_output
-                                .port
-                                .send(morsel)
-                                .traced_await()
-                                .await
-                                .is_err()
-                            {
+                            if morsel_output.port.send(morsel).await.is_err() {
                                 break;
                             }
 
-                            wait_group.wait().traced_await().await;
+                            wait_group.wait().await;
 
                             if source_token.stop_requested() {
                                 morsel_output.outcome.stop();
@@ -159,19 +152,19 @@ impl SourceNode for CsvSourceNode {
 
         join_handles.push(spawn(TaskPriority::Low, async move {
             // Every phase we are given a new send port.
-            while let Ok(phase_output) = output_recv.recv().traced_await().await {
+            while let Ok(phase_output) = output_recv.recv().await {
                 let morsel_senders = phase_output.port.parallel();
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
 
                 for (send_to, port) in send_to.iter_mut().zip(morsel_senders) {
                     let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
-                    _ = send_to.send(morsel_output).traced_await().await;
+                    _ = send_to.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }
 
                 let mut is_finished = true;
                 for (outcome, wait_group) in morsel_outcomes.into_iter() {
-                    wait_group.wait().traced_await().await;
+                    wait_group.wait().await;
                     is_finished &= outcome.did_finish();
                 }
 
@@ -187,7 +180,7 @@ impl SourceNode for CsvSourceNode {
             // Safety
             // * We dropped the receivers on the line above
             // * This function is only called once.
-            line_batch_source_task_handle.traced_await().await
+            line_batch_source_task_handle.await
         }))
     }
 }
@@ -369,7 +362,7 @@ impl CsvSourceNode {
                         row_offset: current_row_offset,
                         morsel_seq,
                     };
-                    if line_batch_sender.send(batch).traced_await().await.is_err() {
+                    if line_batch_sender.send(batch).await.is_err() {
                         break;
                     }
                 }

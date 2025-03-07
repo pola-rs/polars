@@ -26,7 +26,6 @@ use crate::expression::StreamExpr;
 use crate::morsel::{get_ideal_morsel_size, SourceToken};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-use crate::prelude::TracedAwait;
 
 static SAMPLE_LIMIT: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("POLARS_JOIN_SAMPLE_LIMIT")
@@ -128,7 +127,7 @@ async fn select_keys(
         // We use key columns entirely by position, and allow duplicate names,
         // so just assign arbitrary unique names.
         let unique_name = format_pl_smallstr!("__POLARS_KEYCOL_{i}");
-        let s = selector.evaluate(df, state).traced_await().await?;
+        let s = selector.evaluate(df, state).await?;
         key_columns.push(s.into_column().with_name(unique_name));
     }
     let keys = DataFrame::new_with_broadcast_len(key_columns, df.height())?;
@@ -224,10 +223,10 @@ impl BufferedStream {
                     };
                     morsel.replace_source_token(source_token.clone());
                     morsel.set_consume_token(wait_group.token());
-                    if new_send.send(morsel).traced_await().await.is_err() {
+                    if new_send.send(morsel).await.is_err() {
                         return Ok(());
                     }
-                    wait_group.wait().traced_await().await;
+                    wait_group.wait().await;
                     // TODO: Unfortunately we can't actually stop here without
                     // re-buffering morsels from the stream that comes after.
                     // if source_token.stop_requested() {
@@ -236,12 +235,12 @@ impl BufferedStream {
                 }
 
                 if let Some(mut recv) = orig_recv {
-                    while let Ok(mut morsel) = recv.recv().traced_await().await {
+                    while let Ok(mut morsel) = recv.recv().await {
                         if source_token.stop_requested() {
                             morsel.source_token().stop();
                         }
                         morsel.set_seq(morsel.seq().offset_by(self.post_buffer_offset));
-                        if new_send.send(morsel).traced_await().await.is_err() {
+                        if new_send.send(morsel).await.is_err() {
                             break;
                         }
                     }
@@ -289,7 +288,7 @@ impl SampleState {
         this_final_len: Arc<AtomicUsize>,
         other_final_len: Arc<AtomicUsize>,
     ) -> PolarsResult<()> {
-        while let Ok(mut morsel) = recv.recv().traced_await().await {
+        while let Ok(mut morsel) = recv.recv().await {
             *len += morsel.df().height();
             if *len >= *SAMPLE_LIMIT
                 || *len
@@ -446,7 +445,7 @@ impl SampleState {
 
                 polars_io::pl_async::get_runtime().block_on(async move {
                     for handle in join_handles {
-                        handle.traced_await().await?;
+                        handle.await?;
                     }
                     PolarsResult::Ok(())
                 })
@@ -492,12 +491,10 @@ impl BuildState {
             key_selectors = &params.right_key_selectors;
         };
 
-        while let Ok(morsel) = recv.recv().traced_await().await {
+        while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload. We must rechunk the payload for
             // later chunked gathers.
-            let hash_keys = select_keys(morsel.df(), key_selectors, params, state)
-                .traced_await()
-                .await?;
+            let hash_keys = select_keys(morsel.df(), key_selectors, params, state).await?;
             let mut payload = select_payload(morsel.df().clone(), payload_selector);
             payload.rechunk_mut();
             payload._deshare_views_mut();
@@ -664,12 +661,10 @@ impl ProbeState {
             key_selectors = &params.left_key_selectors;
         };
 
-        while let Ok(morsel) = recv.recv().traced_await().await {
+        while let Ok(morsel) = recv.recv().await {
             // Compute hashed keys and payload.
             let (df, seq, src_token, wait_token) = morsel.into_inner();
-            let hash_keys = select_keys(&df, key_selectors, params, state)
-                .traced_await()
-                .await?;
+            let hash_keys = select_keys(&df, key_selectors, params, state).await?;
             let mut payload = select_payload(df, payload_selector);
             let mut payload_rechunked = false; // We don't eagerly rechunk because there might be no matches.
 
@@ -748,7 +743,7 @@ impl ProbeState {
 
                         // TODO: break in smaller morsels.
                         let out_morsel = Morsel::new(out_df, seq, src_token.clone());
-                        if send.send(out_morsel).traced_await().await.is_err() {
+                        if send.send(out_morsel).await.is_err() {
                             break;
                         }
                     }
@@ -806,7 +801,7 @@ impl ProbeState {
                                 let df =
                                     accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
                                 let out_morsel = Morsel::new(df, seq, src_token.clone());
-                                if send.send(out_morsel).traced_await().await.is_err() {
+                                if send.send(out_morsel).await.is_err() {
                                     break;
                                 }
                             }
@@ -816,7 +811,7 @@ impl ProbeState {
                     if out_len > 0 {
                         let df = accumulate_dataframes_vertical_unchecked(out_frames.drain(..));
                         let out_morsel = Morsel::new(df, seq, src_token.clone());
-                        if send.send(out_morsel).traced_await().await.is_err() {
+                        if send.send(out_morsel).await.is_err() {
                             break;
                         }
                     }
@@ -961,11 +956,11 @@ impl EmitUnmatchedState {
                 let mut morsel = Morsel::new(out_df, self.morsel_seq, source_token.clone());
                 self.morsel_seq = self.morsel_seq.successor();
                 morsel.set_consume_token(wait_group.token());
-                if send.send(morsel).traced_await().await.is_err() {
+                if send.send(morsel).await.is_err() {
                     return Ok(());
                 }
 
-                wait_group.wait().traced_await().await;
+                wait_group.wait().await;
                 if source_token.stop_requested() {
                     return Ok(());
                 }
@@ -1378,7 +1373,7 @@ impl ComputeNode for EquiJoinNode {
                 let max_seq_sent = &mut probe_state.max_seq_sent;
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
                     for probe_task in probe_tasks {
-                        *max_seq_sent = (*max_seq_sent).max(probe_task.traced_await().await?);
+                        *max_seq_sent = (*max_seq_sent).max(probe_task.await?);
                     }
                     Ok(())
                 }));

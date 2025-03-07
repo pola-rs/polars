@@ -9,7 +9,6 @@ use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
 use crate::morsel::SourceToken;
-use crate::prelude::TracedAwait;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
 
 /// The head of an input stream.
@@ -222,8 +221,8 @@ impl ComputeNode for ZipNode {
                 let mut serial_recv = recv_port.take()?.serial();
                 let (buf_send, buf_recv) = tokio::sync::mpsc::channel(DEFAULT_ZIP_HEAD_BUFFER_SIZE);
                 join_handles.push(scope.spawn_task(TaskPriority::High, async move {
-                    while let Ok(morsel) = serial_recv.recv().traced_await().await {
-                        if buf_send.send(morsel).traced_await().await.is_err() {
+                    while let Ok(morsel) = serial_recv.recv().await {
+                        if buf_send.send(morsel).await.is_err() {
                             break;
                         }
                     }
@@ -247,7 +246,7 @@ impl ComputeNode for ZipNode {
                 for (recv_idx, opt_recv) in receivers.iter_mut().enumerate() {
                     if let Some(recv) = opt_recv {
                         while !self.input_heads[recv_idx].ready_to_send() {
-                            if let Some(morsel) = recv.recv().traced_await().await {
+                            if let Some(morsel) = recv.recv().await {
                                 self.input_heads[recv_idx].add_morsel(morsel);
                             } else {
                                 break;
@@ -281,7 +280,7 @@ impl ComputeNode for ZipNode {
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
                 self.out_seq = self.out_seq.successor();
-                if sender.send(morsel).traced_await().await.is_err() {
+                if sender.send(morsel).await.is_err() {
                     // Our receiver is no longer interested in any data, no
                     // need store the rest of the incoming stream, can directly
                     // return.
@@ -303,7 +302,7 @@ impl ComputeNode for ZipNode {
 
             for (recv_idx, opt_recv) in receivers.iter_mut().enumerate() {
                 if let Some(recv) = opt_recv {
-                    while let Some(mut morsel) = recv.recv().traced_await().await {
+                    while let Some(mut morsel) = recv.recv().await {
                         morsel.source_token().stop();
                         drop(morsel.take_consume_token());
                         self.input_heads[recv_idx].add_morsel(morsel);
@@ -326,7 +325,7 @@ impl ComputeNode for ZipNode {
 
                 let morsel = Morsel::new(out_df, self.out_seq, source_token.clone());
                 self.out_seq = self.out_seq.successor();
-                let _ = sender.send(morsel).traced_await().await;
+                let _ = sender.send(morsel).await;
             }
 
             Ok(())
