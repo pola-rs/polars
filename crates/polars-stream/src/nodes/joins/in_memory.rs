@@ -5,6 +5,7 @@ use polars_core::schema::Schema;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_sink::InMemorySinkNode;
 use crate::nodes::in_memory_source::InMemorySourceNode;
+use crate::prelude::TracedAwait;
 
 enum InMemoryJoinState {
     Sink {

@@ -6,6 +6,7 @@ use polars_plan::plans::DataFrameUdf;
 use super::compute_node_prelude::*;
 use super::in_memory_sink::InMemorySinkNode;
 use super::in_memory_source::InMemorySourceNode;
+use crate::prelude::TracedAwait;
 
 pub enum InMemoryMapNode {
     Sink {

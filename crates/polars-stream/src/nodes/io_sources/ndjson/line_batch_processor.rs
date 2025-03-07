@@ -15,6 +15,7 @@ use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::MorselOutput;
 use crate::nodes::MorselSeq;
+use crate::prelude::TracedAwait;
 
 /// Parses chunks into DataFrames (or counts rows depending on state).
 pub(super) struct LineBatchProcessor {
@@ -59,7 +60,7 @@ impl LineBatchProcessor {
             );
         }
 
-        if output_port.init().await.is_err() {
+        if output_port.init().traced_await().await.is_err() {
             if verbose {
                 eprintln!(
                     "[NDJSON LineBatchProcessor {}]: phase receiver ended at init, returning",
@@ -72,14 +73,19 @@ impl LineBatchProcessor {
 
         let mut n_rows_processed: usize = 0;
 
-        while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().await {
+        while let Ok(LineBatch { bytes, chunk_idx }) = line_batch_rx.recv().traced_await().await {
             let df = chunk_reader.read_chunk(bytes)?;
 
             n_rows_processed = n_rows_processed.saturating_add(df.height());
 
             let morsel_seq = MorselSeq::new(chunk_idx as u64);
 
-            if output_port.send(morsel_seq, df).await.is_err() {
+            if output_port
+                .send(morsel_seq, df)
+                .traced_await()
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -95,7 +101,7 @@ impl LineBatchProcessor {
             while let Ok(LineBatch {
                 bytes,
                 chunk_idx: _,
-            }) = line_batch_rx.recv().await
+            }) = line_batch_rx.recv().traced_await().await
             {
                 n_rows_processed = n_rows_processed.saturating_add(ndjson::count_rows(bytes));
             }
@@ -152,7 +158,7 @@ impl LineBatchProcessorOutputPort {
         } = self
         {
             assert!(phase_tx.is_none());
-            *phase_tx = Some(phase_tx_receiver.recv().await?);
+            *phase_tx = Some(phase_tx_receiver.recv().traced_await().await?);
         }
 
         Ok(())
@@ -172,28 +178,38 @@ impl LineBatchProcessorOutputPort {
                     let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
                     morsel.set_consume_token(wait_group.token());
 
-                    if phase_tx.as_mut().unwrap().port.send(morsel).await.is_err() {
+                    if phase_tx
+                        .as_mut()
+                        .unwrap()
+                        .port
+                        .send(morsel)
+                        .traced_await()
+                        .await
+                        .is_err()
+                    {
                         return Err(());
                     };
 
-                    wait_group.wait().await;
+                    wait_group.wait().traced_await().await;
 
                     if source_token.stop_requested() {
                         let v = phase_tx.take().unwrap();
                         v.outcome.stop();
                         drop(v);
-                        *phase_tx = Some(phase_tx_receiver.recv().await?);
+                        *phase_tx = Some(phase_tx_receiver.recv().traced_await().await?);
                     }
 
                     Ok(())
                 },
                 Linearize { tx } => tx
                     .insert(Priority(Reverse(morsel_seq), df))
+                    .traced_await()
                     .await
                     .map_err(|_| ()),
                 Closed { .. } => unreachable!(),
             }
         }
+        .traced_await()
         .await;
 
         if result.is_err() {

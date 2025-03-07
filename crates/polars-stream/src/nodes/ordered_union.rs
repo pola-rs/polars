@@ -1,4 +1,5 @@
 use super::compute_node_prelude::*;
+use crate::prelude::TracedAwait;
 
 /// A node that first passes through all data from the first input, then the
 /// second input, etc.
@@ -67,13 +68,13 @@ impl ComputeNode for OrderedUnionNode {
             let morsel_offset = self.morsel_offset;
             inner_handles.push(scope.spawn_task(TaskPriority::High, async move {
                 let mut max_seq = MorselSeq::new(0);
-                while let Ok(mut morsel) = recv.recv().await {
+                while let Ok(mut morsel) = recv.recv().traced_await().await {
                     // Ensure the morsel sequence id stream is monotonic.
                     let seq = morsel.seq().offset_by(morsel_offset);
                     max_seq = max_seq.max(seq);
 
                     morsel.set_seq(seq);
-                    if send.send(morsel).await.is_err() {
+                    if send.send(morsel).traced_await().await.is_err() {
                         break;
                     }
                 }
@@ -84,7 +85,8 @@ impl ComputeNode for OrderedUnionNode {
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             // Update our global maximum.
             for handle in inner_handles {
-                self.max_morsel_seq_sent = self.max_morsel_seq_sent.max(handle.await);
+                self.max_morsel_seq_sent =
+                    self.max_morsel_seq_sent.max(handle.traced_await().await);
             }
             Ok(())
         }));

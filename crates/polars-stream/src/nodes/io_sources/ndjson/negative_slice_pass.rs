@@ -16,6 +16,7 @@ use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::{get_ideal_morsel_size, Morsel, MorselSeq, SourceToken};
 use crate::nodes::io_sources::MorselOutput;
+use crate::prelude::TracedAwait;
 
 /// Outputs a stream of morsels in reverse order from which they were received.
 /// Attaches (properly offsetted) row index if necessary.
@@ -50,7 +51,9 @@ impl MorselStreamReverser {
 
         let mut n_rows_received: usize = 0;
 
-        while let Some(Priority(Reverse(morsel_seq), df)) = morsel_receiver.get().await {
+        while let Some(Priority(Reverse(morsel_seq), df)) =
+            morsel_receiver.get().traced_await().await
+        {
             if acc_morsels.len() == acc_morsels.capacity() {
                 let morsel_seq = acc_morsels.last().unwrap().0;
                 let combined = combine_acc_morsels_reverse(&mut acc_morsels);
@@ -101,7 +104,7 @@ impl MorselStreamReverser {
                 eprintln!("MorselStreamReverser: wait for total row count");
             }
 
-            let Ok(total_count) = total_row_count_rx.await else {
+            let Ok(total_count) = total_row_count_rx.traced_await().await else {
                 // Errored, or empty file.
                 if verbose {
                     eprintln!("MorselStreamReverser: did not receive total row count, returning");
@@ -179,7 +182,8 @@ impl MorselStreamReverser {
                 AbortOnDropHandle::new(async_executor::spawn(
                     async_executor::TaskPriority::Low,
                     async move {
-                        let Ok(mut morsel_output) = phase_tx_receiver.recv().await else {
+                        let Ok(mut morsel_output) = phase_tx_receiver.recv().traced_await().await
+                        else {
                             return Ok(());
                         };
 
@@ -223,17 +227,24 @@ impl MorselStreamReverser {
 
                             morsel.set_consume_token(wait_group.token());
 
-                            if morsel_output.port.send(morsel).await.is_err() {
+                            if morsel_output
+                                .port
+                                .send(morsel)
+                                .traced_await()
+                                .await
+                                .is_err()
+                            {
                                 break 'outer;
                             }
 
-                            wait_group.wait().await;
+                            wait_group.wait().traced_await().await;
 
                             if source_token.stop_requested() {
                                 morsel_output.outcome.stop();
                                 drop(morsel_output);
 
-                                let Ok(next_output) = phase_tx_receiver.recv().await else {
+                                let Ok(next_output) = phase_tx_receiver.recv().traced_await().await
+                                else {
                                     break;
                                 };
 
@@ -248,7 +259,7 @@ impl MorselStreamReverser {
             .collect::<Vec<_>>();
 
         for handle in sender_join_handles {
-            handle.await?;
+            handle.traced_await().await?;
         }
 
         Ok(())

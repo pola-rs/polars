@@ -6,6 +6,7 @@ use polars_utils::mmap::MemSlice;
 
 use super::line_batch_processor::LineBatch;
 use crate::async_primitives::distributor_channel;
+use crate::prelude::TracedAwait;
 
 pub(super) struct LineBatchDistributor {
     pub(super) global_bytes: MemSlice,
@@ -109,6 +110,7 @@ impl LineBatchDistributor {
                             bytes: full_chunk,
                             chunk_idx,
                         })
+                        .traced_await()
                         .await
                         .is_err()
                 {
