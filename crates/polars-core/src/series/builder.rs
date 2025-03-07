@@ -1,6 +1,8 @@
 use arrow::array::builder::{make_builder, ArrayBuilder, ShareStrategy};
 use polars_utils::IdxSize;
 
+#[cfg(feature = "object")]
+use crate::chunked_array::object::registry::get_object_builder;
 use crate::prelude::*;
 use crate::utils::Container;
 
@@ -12,6 +14,13 @@ pub struct SeriesBuilder {
 
 impl SeriesBuilder {
     pub fn new(dtype: DataType) -> Self {
+        // FIXME: get rid of this hack.
+        #[cfg(feature = "object")]
+        if matches!(dtype, DataType::Object(_)) {
+            let builder = get_object_builder(PlSmallStr::EMPTY, 0).as_array_builder();
+            return Self { dtype, builder };
+        }
+
         let builder = make_builder(&dtype.to_physical().to_arrow(CompatLevel::newest()));
         Self { dtype, builder }
     }
