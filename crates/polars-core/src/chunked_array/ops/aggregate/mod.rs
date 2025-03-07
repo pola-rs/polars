@@ -661,7 +661,7 @@ mod test {
     use crate::prelude::*;
 
     #[test]
-    #[cfg(not(miri))]
+    #[cfg(not(miri))] 
     fn test_var() {
         // Validated with numpy. Note that numpy uses ddof as an argument which
         // influences results. The default ddof=0, we chose ddof=1, which is
