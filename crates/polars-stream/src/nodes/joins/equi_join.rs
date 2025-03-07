@@ -160,15 +160,48 @@ fn estimate_cardinality(
     key_selectors: &[StreamExpr],
     params: &EquiJoinParams,
     state: &ExecutionState,
-) -> PolarsResult<usize> {
-    // TODO: parallelize.
-    let mut sketch = CardinalitySketch::new();
-    for morsel in morsels {
-        let hash_keys =
-            get_runtime().block_on(select_keys(morsel.df(), key_selectors, params, state))?;
-        hash_keys.sketch_cardinality(&mut sketch);
+) -> PolarsResult<f64> {
+    let sample_limit = *SAMPLE_LIMIT;
+    if morsels.is_empty() || sample_limit == 0 {
+        return Ok(0.0);
     }
-    Ok(sketch.estimate())
+
+    let mut total_height = 0;
+    let mut to_process_end = 0;
+    while to_process_end < morsels.len() && total_height < sample_limit {
+        total_height += morsels[to_process_end].df().height();
+        to_process_end += 1;
+    }
+    let last_morsel_idx = to_process_end - 1;
+    let last_morsel_len = morsels[last_morsel_idx].df().height();
+    let last_morsel_slice = last_morsel_len - total_height.saturating_sub(sample_limit);
+    let runtime = get_runtime();
+
+    POOL.install(|| {
+        let sample_cardinality = morsels[..to_process_end]
+            .par_iter()
+            .enumerate()
+            .try_fold(
+                || CardinalitySketch::new(),
+                |mut sketch, (morsel_idx, morsel)| {
+                    let sliced;
+                    let df = if morsel_idx == last_morsel_idx {
+                        sliced = morsel.df().slice(0, last_morsel_slice);
+                        &sliced
+                    } else {
+                        &morsel.df()
+                    };
+                    let hash_keys =
+                        runtime.block_on(select_keys(df, key_selectors, params, state))?;
+                    hash_keys.sketch_cardinality(&mut sketch);
+                    PolarsResult::Ok(sketch)
+                },
+            )
+            .map(|sketch| PolarsResult::Ok(sketch?.estimate()))
+            .try_reduce_with(|a, b| Ok(a + b))
+            .unwrap()?;
+        Ok(sample_cardinality as f64 / total_height.min(sample_limit) as f64)
+    })
 }
 
 struct BufferedStream {
@@ -349,38 +382,18 @@ impl SampleState {
                 params,
                 &execution_state,
             )?;
-            let norm_left_factor = self.left_len.min(*SAMPLE_LIMIT) as f64 / self.left_len as f64;
-            let norm_right_factor =
-                self.right_len.min(*SAMPLE_LIMIT) as f64 / self.right_len as f64;
-            let norm_left_cardinality = (left_cardinality as f64 * norm_left_factor) as usize;
-            let norm_right_cardinality = (right_cardinality as f64 * norm_right_factor) as usize;
             if config::verbose() {
-                eprintln!("estimated cardinalities are: {norm_left_cardinality} vs. {norm_right_cardinality}");
+                eprintln!(
+                    "estimated cardinalities are: {left_cardinality} vs. {right_cardinality}"
+                );
             }
-            PolarsResult::Ok((norm_left_cardinality, norm_right_cardinality))
+            PolarsResult::Ok((left_cardinality, right_cardinality))
         };
 
         let left_is_build = match (left_saturated, right_saturated) {
-            (false, false) => {
-                if self.left_len * LOPSIDED_SAMPLE_FACTOR < self.right_len
-                    || self.left_len > self.right_len * LOPSIDED_SAMPLE_FACTOR
-                {
-                    // Don't bother estimating cardinality, just choose smaller as it's highly
-                    // imbalanced.
-                    self.left_len < self.right_len
-                } else {
-                    let (lc, rc) = estimate_cardinalities()?;
-                    // Let's assume for now that per element building a
-                    // table is 3x more expensive than a probe, with
-                    // unique keys getting an additional 3x factor for
-                    // having to update the hash table in addition to the probe.
-                    let left_build_cost = self.left_len * 3 + 3 * lc;
-                    let left_probe_cost = self.left_len;
-                    let right_build_cost = self.right_len * 3 + 3 * rc;
-                    let right_probe_cost = self.right_len;
-                    left_build_cost + right_probe_cost < left_probe_cost + right_build_cost
-                }
-            },
+            // Don't bother estimating cardinality, just choose smaller side as
+            // we have everything in-memory anyway.
+            (false, false) => self.left_len < self.right_len,
 
             // Choose the unsaturated side, the saturated side could be
             // arbitrarily big.
