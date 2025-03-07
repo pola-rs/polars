@@ -12,13 +12,12 @@ use polars_io::SerWriter;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
-use super::{SinkInputPort, SinkNode, SinkRecvPort};
+use super::{SinkInputPort, SinkNode};
 use crate::async_executor::spawn;
-use crate::async_primitives::linearizer::Linearizer;
-use crate::nodes::io_sinks::{tokio_sync_on_close, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE};
-use crate::nodes::{JoinHandle, MorselSeq, TaskPriority};
+use crate::async_primitives::connector::Receiver;
+use crate::nodes::io_sinks::{parallelize_receive_task, tokio_sync_on_close};
+use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
-type Linearized = Priority<Reverse<MorselSeq>, Vec<u8>>;
 pub struct CsvSinkNode {
     path: PathBuf,
     schema: SchemaRef,
@@ -52,39 +51,18 @@ impl SinkNode for CsvSinkNode {
     fn is_sink_input_parallel(&self) -> bool {
         true
     }
-    fn do_maintain_order(&self) -> bool {
-        self.sink_options.maintain_order
-    }
 
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
-        recv_ports_recv: SinkRecvPort,
+        recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        let rxs = recv_ports_recv.parallel(join_handles);
-        self.spawn_sink_once(
-            num_pipelines,
-            SinkInputPort::Parallel(rxs),
-            _state,
+        let (pass_rxs, mut io_rx) = parallelize_receive_task(
             join_handles,
-        );
-    }
-
-    fn spawn_sink_once(
-        &mut self,
-        num_pipelines: usize,
-        recv_port: SinkInputPort,
-        _state: &ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        // .. -> Encode task
-        let rxs = recv_port.parallel();
-        // Encode tasks -> IO task
-        let (mut lin_rx, lin_txs) = Linearizer::<Linearized>::new_with_maintain_order(
+            recv_port_rx,
             num_pipelines,
-            DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
             self.sink_options.maintain_order,
         );
 
@@ -94,7 +72,7 @@ impl SinkNode for CsvSinkNode {
         // Encode task.
         //
         // Task encodes the columns into their corresponding CSV encoding.
-        join_handles.extend(rxs.into_iter().zip(lin_txs).map(|(mut rx, mut lin_tx)| {
+        join_handles.extend(pass_rxs.into_iter().map(|mut pass_rx| {
             let schema = self.schema.clone();
             let options = self.write_options.clone();
 
@@ -104,36 +82,35 @@ impl SinkNode for CsvSinkNode {
                 let mut allocation_size = DEFAULT_ALLOCATION_SIZE;
                 let options = options.clone();
 
-                while let Ok(morsel) = rx.recv().await {
-                    let (df, seq, _, consume_token) = morsel.into_inner();
+                while let Ok((mut rx, mut lin_tx)) = pass_rx.recv().await {
+                    while let Ok(morsel) = rx.recv().await {
+                        let (df, seq, _, consume_token) = morsel.into_inner();
 
-                    let mut buffer = Vec::with_capacity(allocation_size);
-                    let mut writer = CsvWriter::new(&mut buffer)
-                        .include_bom(false) // Handled once in the IO task.
-                        .include_header(false) // Handled once in the IO task.
-                        .with_separator(options.serialize_options.separator)
-                        .with_line_terminator(options.serialize_options.line_terminator.clone())
-                        .with_quote_char(options.serialize_options.quote_char)
-                        .with_datetime_format(options.serialize_options.datetime_format.clone())
-                        .with_date_format(options.serialize_options.date_format.clone())
-                        .with_time_format(options.serialize_options.time_format.clone())
-                        .with_float_scientific(options.serialize_options.float_scientific)
-                        .with_float_precision(options.serialize_options.float_precision)
-                        .with_null_value(options.serialize_options.null.clone())
-                        .with_quote_style(options.serialize_options.quote_style)
-                        .n_threads(1) // Disable rayon parallelism
-                        .batched(&schema)?;
+                        let mut buffer = Vec::with_capacity(allocation_size);
+                        let mut writer = CsvWriter::new(&mut buffer)
+                            .include_bom(false) // Handled once in the IO task.
+                            .include_header(false) // Handled once in the IO task.
+                            .with_separator(options.serialize_options.separator)
+                            .with_line_terminator(options.serialize_options.line_terminator.clone())
+                            .with_quote_char(options.serialize_options.quote_char)
+                            .with_datetime_format(options.serialize_options.datetime_format.clone())
+                            .with_date_format(options.serialize_options.date_format.clone())
+                            .with_time_format(options.serialize_options.time_format.clone())
+                            .with_float_scientific(options.serialize_options.float_scientific)
+                            .with_float_precision(options.serialize_options.float_precision)
+                            .with_null_value(options.serialize_options.null.clone())
+                            .with_quote_style(options.serialize_options.quote_style)
+                            .n_threads(1) // Disable rayon parallelism
+                            .batched(&schema)?;
 
-                    writer.write_batch(&df)?;
+                        writer.write_batch(&df)?;
 
-                    allocation_size = allocation_size.max(buffer.len());
-
-                    // Must drop before linearizer insert or will deadlock.
-                    drop(consume_token); // Keep the consume_token until here to increase the
-                                         // backpressure.
-
-                    if lin_tx.insert(Priority(Reverse(seq), buffer)).await.is_err() {
-                        return Ok(());
+                        allocation_size = allocation_size.max(buffer.len());
+                        if lin_tx.insert(Priority(Reverse(seq), buffer)).await.is_err() {
+                            return Ok(());
+                        }
+                        drop(consume_token); // Keep the consume_token until here to increase the
+                                             // backpressure.
                     }
                 }
 
@@ -170,8 +147,10 @@ impl SinkNode for CsvSinkNode {
 
             let mut file = file.try_into_async_writeable()?;
 
-            while let Some(Priority(_, buffer)) = lin_rx.get().await {
-                file.write_all(&buffer).await?;
+            while let Ok(mut lin_rx) = io_rx.recv().await {
+                while let Some(Priority(_, buffer)) = lin_rx.get().await {
+                    file.write_all(&buffer).await?;
+                }
             }
 
             if let AsyncWriteable::Local(file) = &mut file {
