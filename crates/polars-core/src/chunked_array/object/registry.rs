@@ -77,7 +77,7 @@ pub trait AnonymousObjectBuilder: ArrayBuilder {
 
 impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
     /// # Safety
-    /// Expects ObjectArray<T> arrays.
+    /// Expects `ObjectArray<T>` arrays.
     unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series {
         ObjectChunked::<T>::new_with_compute_len(Arc::new(self.field().clone()), chunks)
             .into_series()
