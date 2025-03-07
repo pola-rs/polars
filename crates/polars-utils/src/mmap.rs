@@ -268,9 +268,9 @@ impl io::Seek for MemReader {
 // Use a btree as it uses less memory than a hashmap and this thing never shrinks.
 // Write handle in Windows is exclusive, so this is only necessary in Unix.
 #[cfg(target_family = "unix")]
-static MEMORY_MAPPED_FILES: once_cell::sync::Lazy<
+static MEMORY_MAPPED_FILES: std::sync::LazyLock<
     std::sync::Mutex<std::collections::BTreeMap<(u64, u64), u32>>,
-> = once_cell::sync::Lazy::new(|| std::sync::Mutex::new(Default::default()));
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(Default::default()));
 
 #[derive(Debug)]
 pub struct MMapSemaphore {

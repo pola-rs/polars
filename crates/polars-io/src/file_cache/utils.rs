@@ -1,8 +1,7 @@
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::UNIX_EPOCH;
 
-use once_cell::sync::Lazy;
 use polars_error::{PolarsError, PolarsResult};
 
 use super::cache::{get_env_file_cache_ttl, FILE_CACHE};
@@ -12,7 +11,7 @@ use crate::cloud::{build_object_store, object_path_from_str, CloudLocation, Clou
 use crate::path_utils::{ensure_directory_init, is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
 use crate::pl_async;
 
-pub static FILE_CACHE_PREFIX: Lazy<Box<Path>> = Lazy::new(|| {
+pub static FILE_CACHE_PREFIX: LazyLock<Box<Path>> = LazyLock::new(|| {
     let path = POLARS_TEMP_DIR_BASE_PATH
         .join("file-cache/")
         .into_boxed_path();

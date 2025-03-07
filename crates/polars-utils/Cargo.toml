@@ -20,7 +20,6 @@ indexmap = { workspace = true }
 libc = { workspace = true }
 memmap = { workspace = true, optional = true }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 polars-error = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }

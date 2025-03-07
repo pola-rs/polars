@@ -1,8 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
-use once_cell::sync::Lazy;
 use polars_core::config::{self, verbose_print_sensitive};
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::aliases::PlHashMap;
@@ -18,8 +17,8 @@ use crate::cloud::CloudConfig;
 /// get rate limited when querying the DNS (can take up to 5s).
 /// Other reasons are connection pools that must be shared between as much as possible.
 #[allow(clippy::type_complexity)]
-static OBJECT_STORE_CACHE: Lazy<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
-    Lazy::new(Default::default);
+static OBJECT_STORE_CACHE: LazyLock<RwLock<PlHashMap<Vec<u8>, PolarsObjectStore>>> =
+    LazyLock::new(Default::default);
 
 #[allow(dead_code)]
 fn err_missing_feature(feature: &str, scheme: &str) -> PolarsResult<Arc<dyn ObjectStore>> {

@@ -1,10 +1,9 @@
 use std::io::{Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use fs4::fs_std::FileExt;
-use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 
@@ -156,7 +155,7 @@ impl Inner {
             // * Some(true)   => always raise
             // * Some(false)  => never raise
             // * None         => do not raise if fallocate() is not permitted, otherwise raise.
-            static RAISE_ALLOC_ERROR: Lazy<Option<bool>> = Lazy::new(|| {
+            static RAISE_ALLOC_ERROR: LazyLock<Option<bool>> = LazyLock::new(|| {
                 let v = match std::env::var("POLARS_IGNORE_FILE_CACHE_ALLOCATE_ERROR").as_deref() {
                     Ok("1") => Some(false),
                     Ok("0") => Some(true),

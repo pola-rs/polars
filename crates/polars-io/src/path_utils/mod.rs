@@ -1,8 +1,7 @@
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
-use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
 use polars_utils::pl_str::PlSmallStr;
@@ -13,7 +12,7 @@ mod hugging_face;
 
 use crate::cloud::CloudOptions;
 
-pub static POLARS_TEMP_DIR_BASE_PATH: Lazy<Box<Path>> = Lazy::new(|| {
+pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
     (|| {
         let verbose = config::verbose();
 
@@ -139,8 +138,8 @@ pub fn resolve_homedir(path: &dyn AsRef<Path>) -> PathBuf {
     path.into()
 }
 
-static CLOUD_URL: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://").unwrap());
+static CLOUD_URL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^(s3a?|gs|gcs|file|abfss?|azure|az|adl|https?|hf)://").unwrap());
 
 /// Check if the path is a cloud url.
 pub fn is_cloud_url<P: AsRef<Path>>(p: P) -> bool {

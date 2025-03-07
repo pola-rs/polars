@@ -1,6 +1,5 @@
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 
-use once_cell::sync::Lazy;
 use sysinfo::System;
 
 /// Startup system is expensive, so we do it once
@@ -20,6 +19,6 @@ impl MemInfo {
     }
 }
 
-pub static MEMINFO: Lazy<MemInfo> = Lazy::new(|| MemInfo {
+pub static MEMINFO: LazyLock<MemInfo> = LazyLock::new(|| MemInfo {
     sys: Mutex::new(System::new()),
 });

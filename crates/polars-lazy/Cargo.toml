@@ -29,7 +29,6 @@ ahash = { workspace = true }
 bitflags = { workspace = true }
 either = { workspace = true }
 memchr = { workspace = true }
-once_cell = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rayon = { workspace = true }
 tokio = { workspace = true, optional = true }

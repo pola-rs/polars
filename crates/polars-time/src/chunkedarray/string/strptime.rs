@@ -1,16 +1,17 @@
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 //!
+use std::sync::LazyLock;
+
 use chrono::{NaiveDate, NaiveDateTime};
-use once_cell::sync::Lazy;
 use regex::Regex;
 
 use crate::chunkedarray::{polars_bail, PolarsResult};
 
-static HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[HkIl]").unwrap());
-static MINUTE_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?M").unwrap());
-static SECOND_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?S").unwrap());
-static TWELVE_HOUR_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[Il]").unwrap());
-static MERIDIEM_PATTERN: Lazy<Regex> = Lazy::new(|| Regex::new(r"%[_-]?[pP]").unwrap());
+static HOUR_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?[HkIl]").unwrap());
+static MINUTE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?M").unwrap());
+static SECOND_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?S").unwrap());
+static TWELVE_HOUR_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?[Il]").unwrap());
+static MERIDIEM_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?[pP]").unwrap());
 
 #[inline]
 fn update_and_parse<T: atoi_simd::Parse>(

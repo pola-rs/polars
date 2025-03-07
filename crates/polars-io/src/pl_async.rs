@@ -2,8 +2,8 @@ use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
+use std::sync::LazyLock;
 
-use once_cell::sync::Lazy;
 use polars_core::config::{self, verbose};
 use polars_core::POOL;
 use tokio::runtime::{Builder, Runtime};
@@ -14,7 +14,7 @@ pub(super) const MAX_BUDGET_PER_REQUEST: usize = 10;
 
 /// Used to determine chunks when splitting large ranges, or combining small
 /// ranges.
-static DOWNLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
+static DOWNLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
     let v: usize = std::env::var("POLARS_DOWNLOAD_CHUNK_SIZE")
         .as_deref()
         .map(|x| x.parse().expect("integer"))
@@ -31,7 +31,7 @@ pub(super) fn get_download_chunk_size() -> usize {
     *DOWNLOAD_CHUNK_SIZE
 }
 
-static UPLOAD_CHUNK_SIZE: Lazy<usize> = Lazy::new(|| {
+static UPLOAD_CHUNK_SIZE: LazyLock<usize> = LazyLock::new(|| {
     let v: usize = std::env::var("POLARS_UPLOAD_CHUNK_SIZE")
         .as_deref()
         .map(|x| x.parse().expect("integer"))
@@ -364,7 +364,7 @@ impl RuntimeManager {
     }
 }
 
-static RUNTIME: Lazy<RuntimeManager> = Lazy::new(RuntimeManager::new);
+static RUNTIME: LazyLock<RuntimeManager> = LazyLock::new(RuntimeManager::new);
 
 pub fn get_runtime() -> &'static RuntimeManager {
     RUNTIME.deref()
