@@ -71,9 +71,9 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
                     let dtype = DataType::from_arrow_field(field);
 
                     (
-                        Column::new_empty(min_name, &dtype),
-                        Column::new_empty(max_name, &dtype),
-                        Column::new_empty(nc_name, &IDX_DTYPE),
+                        Column::full_null(min_name, num_row_groups, &dtype),
+                        Column::full_null(max_name, num_row_groups, &dtype),
+                        Column::full_null(nc_name, num_row_groups, &IDX_DTYPE),
                     )
                 },
                 Some(stat) => {
@@ -106,8 +106,7 @@ async fn calculate_row_group_pred_pushdown_skip_mask(
             columns.extend([min, max, nc]);
         }
 
-        let mut statistics_df = DataFrame::new_with_height(num_row_groups, columns)?;
-        statistics_df.rechunk_mut();
+        let statistics_df = DataFrame::new_with_height(num_row_groups, columns)?;
         sbp.evaluate_with_stat_df(&statistics_df)
     })
     .await?;
