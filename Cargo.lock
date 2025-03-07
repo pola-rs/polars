@@ -3516,6 +3516,7 @@ name = "polars-stream"
 version = "0.46.0"
 dependencies = [
  "atomic-waker",
+ "crossbeam-channel",
  "crossbeam-deque",
  "crossbeam-queue",
  "crossbeam-utils",

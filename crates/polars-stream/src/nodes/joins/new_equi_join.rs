@@ -743,6 +743,7 @@ impl ProbeState {
                     // To preserve the order we can't do bulk probes per partition and must follow
                     // the order of the probe morsel. We can still group probes that are
                     // consecutively on the same partition.
+                    probe_partitions.clear();
                     hash_keys.gen_partitions(&partitioner, &mut probe_partitions, emit_unmatched);
                     let mut probe_group_start = 0;
                     while probe_group_start < probe_partitions.len() {
