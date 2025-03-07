@@ -814,39 +814,21 @@ fn to_graph_rec<'a>(
                 args.maintain_order,
                 MaintainOrderJoin::LeftRight | MaintainOrderJoin::RightLeft
             );
-            if !preserve_order_build {
-                ctx.graph.add_node(
-                    nodes::joins::new_equi_join::EquiJoinNode::new(
-                        left_input_schema,
-                        right_input_schema,
-                        left_key_schema,
-                        right_key_schema,
-                        left_key_selectors,
-                        right_key_selectors,
-                        args,
-                    )?,
-                    [
-                        (left_input_key, input_left.port),
-                        (right_input_key, input_right.port),
-                    ],
-                )
-            } else {
-                ctx.graph.add_node(
-                    nodes::joins::equi_join::EquiJoinNode::new(
-                        left_input_schema,
-                        right_input_schema,
-                        left_key_schema,
-                        right_key_schema,
-                        left_key_selectors,
-                        right_key_selectors,
-                        args,
-                    )?,
-                    [
-                        (left_input_key, input_left.port),
-                        (right_input_key, input_right.port),
-                    ],
-                )
-            }
+            ctx.graph.add_node(
+                nodes::joins::new_equi_join::EquiJoinNode::new(
+                    left_input_schema,
+                    right_input_schema,
+                    left_key_schema,
+                    right_key_schema,
+                    left_key_selectors,
+                    right_key_selectors,
+                    args,
+                )?,
+                [
+                    (left_input_key, input_left.port),
+                    (right_input_key, input_right.port),
+                ],
+            )
         },
 
         #[cfg(feature = "merge_sorted")]
