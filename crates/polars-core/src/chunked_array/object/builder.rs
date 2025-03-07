@@ -179,7 +179,6 @@ pub(crate) fn object_series_to_arrow_array(s: &Series) -> ArrayRef {
     arr.values().to_boxed()
 }
 
-
 impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
     fn dtype(&self) -> &ArrowDataType {
         &ArrowDataType::FixedSizeBinary(size_of::<T>())
@@ -265,7 +264,10 @@ impl<T: PolarsObject> ArrayBuilder for ObjectChunkedBuilder<T> {
                 self.values.push_unchecked(val);
             }
         }
-        self.bitmask_builder
-            .opt_gather_extend_from_opt_validity(other.validity(), idxs, other.len());
+        self.bitmask_builder.opt_gather_extend_from_opt_validity(
+            other.validity(),
+            idxs,
+            other.len(),
+        );
     }
 }

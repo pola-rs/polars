@@ -7,8 +7,8 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
-use arrow::array::ArrayRef;
 use arrow::array::builder::ArrayBuilder;
+use arrow::array::ArrayRef;
 use arrow::datatypes::ArrowDataType;
 use once_cell::sync::Lazy;
 use polars_utils::pl_str::PlSmallStr;
@@ -41,9 +41,9 @@ static GLOBAL_OBJECT_REGISTRY: Lazy<RwLock<Option<ObjectRegistry>>> = Lazy::new(
 
 /// This trait can be registered, after which that global registration
 /// can be used to materialize object types
-pub trait AnonymousObjectBuilder : ArrayBuilder {
+pub trait AnonymousObjectBuilder: ArrayBuilder {
     fn as_array_builder(self: Box<Self>) -> Box<dyn ArrayBuilder>;
-    
+
     /// # Safety
     /// Expect `ObjectArray<T>` arrays.
     unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series;

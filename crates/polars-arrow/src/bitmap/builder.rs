@@ -251,7 +251,12 @@ impl BitmapBuilder {
         self.extend_from_slice(slice, bm_offset + start, length);
     }
 
-    pub fn subslice_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, start: usize, length: usize) {
+    pub fn subslice_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        start: usize,
+        length: usize,
+    ) {
         match bitmap {
             Some(bm) => self.subslice_extend_from_bitmap(bm, start, length),
             None => self.extend_constant(length, true),
@@ -317,7 +322,12 @@ impl BitmapBuilder {
 
     /// # Safety
     /// The indices must be in-bounds.
-    pub unsafe fn gather_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, idxs: &[IdxSize], length: usize) {
+    pub unsafe fn gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+        length: usize,
+    ) {
         if let Some(bm) = bitmap {
             let (slice, offset, sl_length) = bm.as_slice();
             debug_assert_eq!(sl_length, length);
@@ -327,7 +337,12 @@ impl BitmapBuilder {
         }
     }
 
-    pub fn opt_gather_extend_from_opt_validity(&mut self, bitmap: Option<&Bitmap>, idxs: &[IdxSize], length: usize) {
+    pub fn opt_gather_extend_from_opt_validity(
+        &mut self,
+        bitmap: Option<&Bitmap>,
+        idxs: &[IdxSize],
+        length: usize,
+    ) {
         if let Some(bm) = bitmap {
             let (slice, offset, sl_length) = bm.as_slice();
             debug_assert_eq!(sl_length, length);
