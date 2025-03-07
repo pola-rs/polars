@@ -1,5 +1,5 @@
 #
-# Vendored from https://github.com/erdewit/nest_asyncio
+# Originally vendored from https://github.com/erdewit/nest_asyncio
 #
 
 # BSD 2-Clause License
