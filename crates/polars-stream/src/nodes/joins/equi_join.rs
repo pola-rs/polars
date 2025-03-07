@@ -230,6 +230,7 @@ impl BufferedStream {
         self.morsels.is_empty()
     }
 
+    #[allow(clippy::needless_lifetimes)]
     pub fn reinsert<'s, 'env>(
         &'s self,
         num_pipelines: usize,

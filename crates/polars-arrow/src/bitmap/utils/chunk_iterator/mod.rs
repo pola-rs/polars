@@ -1,4 +1,3 @@
-#![allow(clippy::manual_div_ceil)]
 mod chunks_exact;
 mod merge;
 
@@ -63,7 +62,7 @@ impl<'a, T: BitChunk> BitChunks<'a, T> {
         let size_of = size_of::<T>();
 
         let bytes_len = len / 8;
-        let bytes_upper_len = (len + bit_offset + 7) / 8;
+        let bytes_upper_len = (len + bit_offset).div_ceil(8);
         let mut chunks = slice[..bytes_len].chunks_exact(size_of);
 
         let remainder = &slice[bytes_len - chunks.remainder().len()..bytes_upper_len];

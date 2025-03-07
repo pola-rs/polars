@@ -1,4 +1,3 @@
-#![allow(clippy::manual_div_ceil)]
 use std::hint::unreachable_unchecked;
 
 use polars_error::{polars_bail, PolarsResult};
@@ -556,7 +555,7 @@ unsafe fn extend_aligned_trusted_iter_unchecked(
     let chunks = additional_bits / 64;
     let remainder = additional_bits % 64;
 
-    let additional = (additional_bits + 7) / 8;
+    let additional = additional_bits.div_ceil(8);
     assert_eq!(
         additional,
         // a hint of how the following calculation will be done
@@ -688,7 +687,7 @@ impl MutableBitmap {
     {
         let length = iterator.size_hint().1.unwrap();
 
-        let mut buffer = vec![0u8; (length + 7) / 8];
+        let mut buffer = vec![0u8; length.div_ceil(8)];
 
         let chunks = length / 8;
         let reminder = length % 8;
