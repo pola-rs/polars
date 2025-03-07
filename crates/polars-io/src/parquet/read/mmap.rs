@@ -14,14 +14,14 @@ use polars_utils::mmap::{MemReader, MemSlice};
 /// Store columns data in two scenarios:
 /// 1. a local memory mapped file
 /// 2. data fetched from cloud storage on demand, in this case
-///     a. the key in the hashmap is the start in the file
-///     b. the value in the hashmap is the actual data.
+///    a. the key in the hashmap is the start in the file
+///    b. the value in the hashmap is the actual data.
 ///
 /// For the fetched case we use a two phase approach:
-///    a. identify all the needed columns
-///    b. asynchronously fetch them in parallel, for example using object_store
-///    c. store the data in this data structure
-///    d. when all the data is available deserialize on multiple threads, for example using rayon
+///   a. identify all the needed columns
+///   b. asynchronously fetch them in parallel, for example using object_store
+///   c. store the data in this data structure
+///   d. when all the data is available deserialize on multiple threads, for example using rayon
 pub enum ColumnStore {
     Local(MemSlice),
     #[cfg(feature = "async")]

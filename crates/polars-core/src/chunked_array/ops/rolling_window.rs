@@ -59,7 +59,7 @@ mod inner_mod {
     /// utility
     fn window_edges(idx: usize, len: usize, window_size: usize, center: bool) -> (usize, usize) {
         let (start, end) = if center {
-            let right_window = (window_size + 1) / 2;
+            let right_window = window_size.div_ceil(2);
             (
                 idx.saturating_sub(window_size - right_window),
                 len.min(idx + right_window),

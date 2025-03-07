@@ -1160,7 +1160,7 @@ impl ChunkEqualElement for ListChunked {}
 impl ChunkEqualElement for ArrayChunked {}
 
 #[cfg(test)]
-#[clippy::allow(manual_repeat_n)]
+#[allow(clippy::manual_repeat_n)]
 mod test {
     use std::iter::repeat;
 

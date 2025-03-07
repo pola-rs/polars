@@ -26,6 +26,7 @@ use crate::prelude::*;
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[derive(Clone, IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::large_enum_variant)]
 pub enum FunctionIR {
     RowIndex {
         name: PlSmallStr,

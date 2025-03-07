@@ -75,7 +75,7 @@ impl JoinCoalesce {
             Left | Inner | Right => {
                 matches!(self, JoinSpecific | CoalesceColumns)
             },
-            Full { .. } => {
+            Full => {
                 matches!(self, CoalesceColumns)
             },
             #[cfg(feature = "asof_join")]

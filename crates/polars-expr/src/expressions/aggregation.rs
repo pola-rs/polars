@@ -602,7 +602,7 @@ impl PartitionedAggregation for AggregationExpr {
                     offsets.push(length_so_far);
                     values.push(s.chunks()[0].clone());
 
-                    if s.len() == 0 {
+                    if s.is_empty() {
                         can_fast_explode = false;
                     }
                     Ok(())

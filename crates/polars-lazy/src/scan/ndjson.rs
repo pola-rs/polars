@@ -192,7 +192,6 @@ impl LazyFileListReader for LazyJsonLineReader {
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
     fn with_rechunk(mut self, toggle: bool) -> Self {
         self.rechunk = toggle;
         self

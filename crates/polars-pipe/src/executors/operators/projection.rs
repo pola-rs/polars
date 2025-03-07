@@ -69,7 +69,7 @@ impl Operator for ProjectionOperator {
                 let mut s = e.evaluate(chunk, &context.execution_state)?;
 
                 has_literals |= s.len() == 1;
-                has_empty |= s.len() == 0;
+                has_empty |= s.is_empty();
 
                 Ok(s.into_column())
             })
