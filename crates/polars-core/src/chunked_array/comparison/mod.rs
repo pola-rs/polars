@@ -1160,7 +1160,7 @@ impl ChunkEqualElement for ListChunked {}
 impl ChunkEqualElement for ArrayChunked {}
 
 #[cfg(test)]
-#[allow(clippy::manual_repeat_n)]
+#[cfg_attr(feature = "nightly", allow(clippy::manual_repeat_n))] // remove once stable
 mod test {
     use std::iter::repeat;
 
