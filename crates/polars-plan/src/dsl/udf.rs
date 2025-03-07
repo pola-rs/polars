@@ -1,7 +1,7 @@
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ColumnsUdf, Expr, GetOutput, OpaqueColumnUdf};
-use crate::prelude::{new_column_udf, FunctionOptions};
+use crate::prelude::{FunctionOptions, new_column_udf};
 
 /// Represents a user-defined function
 #[derive(Clone)]
