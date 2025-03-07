@@ -65,12 +65,12 @@ impl ConversionState {
         })
     }
 
-    fn with_new_branch<K, F: FnOnce(&mut Self) -> K>(&mut self, func: F) -> (K, Self) {
+    fn with_new_branch<K, F: FnOnce(&mut Self) -> K>(&mut self, func: F) -> K {
         let mut new_state = self.clone();
         new_state.has_cache_child = false;
         let out = func(&mut new_state);
         self.has_cache_child = new_state.has_cache_child;
-        (out, new_state)
+        out
     }
 }
 
@@ -174,37 +174,26 @@ fn create_physical_plan_impl(
                 )
             },
         },
-        Union {
-            inputs,
-            mut options,
-        } => {
-            let (inputs, new_state) = state.with_new_branch(|new_state| {
+        Union { inputs, options } => {
+            let inputs = state.with_new_branch(|new_state| {
                 inputs
                     .into_iter()
                     .map(|node| recurse!(node, new_state))
                     .collect::<PolarsResult<Vec<_>>>()
             });
-            if new_state.has_cache_child {
-                options.parallel = false
-            }
             let inputs = inputs?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         },
         HConcat {
-            inputs,
-            mut options,
-            ..
+            inputs, options, ..
         } => {
-            let (inputs, new_state) = state.with_new_branch(|new_state| {
+            let inputs = state.with_new_branch(|new_state| {
                 inputs
                     .into_iter()
                     .map(|node| recurse!(node, new_state))
                     .collect::<PolarsResult<Vec<_>>>()
             });
 
-            if new_state.has_cache_child {
-                options.parallel = false
-            }
             let inputs = inputs?;
 
             Ok(Box::new(executors::HConcatExec { inputs, options }))
@@ -577,7 +566,7 @@ fn create_physical_plan_impl(
             let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
             let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
-            let ((input_left, input_right), new_state) = state.with_new_branch(|new_state| {
+            let (input_left, input_right) = state.with_new_branch(|new_state| {
                 (
                     recurse!(input_left, new_state),
                     recurse!(input_right, new_state),
@@ -589,10 +578,8 @@ fn create_physical_plan_impl(
             // Todo! remove the force option. It can deadlock.
             let parallel = if options.force_parallel {
                 true
-            } else if options.allow_parallel {
-                !new_state.has_cache_child
             } else {
-                false
+                options.allow_parallel
             };
 
             let left_on = create_physical_expressions_from_irs(
@@ -710,7 +697,7 @@ fn create_physical_plan_impl(
             input_right,
             key,
         } => {
-            let ((input_left, input_right), new_state) = state.with_new_branch(|new_state| {
+            let (input_left, input_right) = state.with_new_branch(|new_state| {
                 (
                     recurse!(input_left, new_state),
                     recurse!(input_right, new_state),
@@ -723,7 +710,6 @@ fn create_physical_plan_impl(
                 input_left,
                 input_right,
                 key,
-                parallel: new_state.has_cache_child,
             };
             Ok(Box::new(exec))
         },

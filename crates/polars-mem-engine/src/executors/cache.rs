@@ -20,7 +20,7 @@ impl Executor for CacheExec {
                 let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
                 debug_assert!(previous >= 0);
 
-                Ok(cache.1.get().unwrap().clone())
+                Ok(cache.1.get().expect("prefilled").clone())
             },
             // Cache Prefill node
             Some(input) => {
@@ -43,10 +43,17 @@ pub struct CachePrefiller {
 
 impl Executor for CachePrefiller {
     fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
-        for cache in self.caches.values_mut().rev() {
+        if state.verbose() {
+            eprintln!("PREFILL CACHES")
+        }
+        // Ensure we traverse in discovery order. This will ensure that caches aren't dependent on each
+        // other.
+        for cache in self.caches.values_mut() {
             let _df = cache.execute(state)?;
         }
-
+        if state.verbose() {
+            eprintln!("EXECUTE PHYS PLAN")
+        }
         self.phys_plan.execute(state)
     }
 }

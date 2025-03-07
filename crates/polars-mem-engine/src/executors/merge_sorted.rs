@@ -6,7 +6,6 @@ pub(crate) struct MergeSorted {
     pub(crate) input_left: Box<dyn Executor>,
     pub(crate) input_right: Box<dyn Executor>,
     pub(crate) key: PlSmallStr,
-    pub(crate) parallel: bool,
 }
 
 impl Executor for MergeSorted {
@@ -18,7 +17,7 @@ impl Executor for MergeSorted {
                 eprintln!("run MergeSorted")
             }
         }
-        let (left, right) = if self.parallel {
+        let (left, right) = {
             let mut state2 = state.split();
             state2.branch_idx += 1;
             let (left, right) = POOL.join(
@@ -26,11 +25,6 @@ impl Executor for MergeSorted {
                 || self.input_right.execute(&mut state2),
             );
             (left?, right?)
-        } else {
-            (
-                self.input_left.execute(state)?,
-                self.input_right.execute(state)?,
-            )
         };
 
         let profile_name = Cow::Borrowed("Merge Sorted");
