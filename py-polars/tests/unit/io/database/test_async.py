@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 import polars as pl
 from polars._utils.various import parse_version
+from polars.io.database._utils import _run_async
 from polars.testing import assert_frame_equal
 from tests.unit.conftest import mock_module_import
 
@@ -132,7 +133,10 @@ async def _nested_async_test(tmp_sqlite_db: Path) -> pl.DataFrame:
     reason="SQLAlchemy 2.0+ required for async tests",
 )
 def test_read_async_nested(tmp_sqlite_db: Path) -> None:
-    # This tests validates that we can handle nested async calls
+    # this tests validates that we can handle nested async calls. without
+    # the nested asyncio handling provided by `nest_asyncio` this test
+    # would raise a RuntimeError
+
     expected_frame = pl.DataFrame({"id": [1, 2], "name": ["misc", "other"]})
     df = asyncio.run(_nested_async_test(tmp_sqlite_db))
     assert_frame_equal(expected_frame, df)
@@ -183,3 +187,18 @@ def test_surrealdb_fetchall(batch_size: int | None) -> None:
             assert_frame_equal(df_expected[:batch_size], frames[0])
         else:
             assert_frame_equal(df_expected, res)  # type: ignore[arg-type]
+
+
+def test_async_nested_captured_loop_21263() -> None:
+    # Tests awaiting a future that has "captured" the original event loop from
+    # within a `_run_async` context.
+    async def test_impl() -> None:
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(asyncio.sleep(0))
+
+        _run_async(await_task(task))
+
+    async def await_task(task: Any) -> None:
+        await task
+
+    asyncio.run(test_impl())
