@@ -9,7 +9,6 @@ use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, Expressio
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
-use polars_ops::frame::MaintainOrderJoin;
 use polars_plan::dsl::{JoinOptions, PartitionVariant};
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;

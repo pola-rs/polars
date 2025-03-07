@@ -560,7 +560,7 @@ impl BuildState {
                     let mut sketch = CardinalitySketch::new();
                     let mut payload_rows = 0;
                     for (l_idx, l) in local_builders.iter().enumerate() {
-                        let Some((seq, _, _)) = l.morsels.get(0) else {
+                        let Some((seq, _, _)) = l.morsels.first() else {
                             continue;
                         };
                         kmerge.push(Priority(Reverse(seq), l_idx));
@@ -585,7 +585,7 @@ impl BuildState {
                     // Linearize and build.
                     unsafe {
                         let mut norm_seq_id = 0 as IdxSize;
-                        while let Some(Priority(Reverse(seq), l_idx)) = kmerge.pop() {
+                        while let Some(Priority(Reverse(_seq), l_idx)) = kmerge.pop() {
                             let l = local_builders.get_unchecked(l_idx);
                             let idx_in_l = *cur_idx_per_loc.get_unchecked(l_idx);
                             *cur_idx_per_loc.get_unchecked_mut(l_idx) += 1;
