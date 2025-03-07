@@ -34,7 +34,7 @@ pub fn verbose() -> bool {
 }
 
 pub fn get_engine_affinity() -> String {
-    std::env::var("POLARS_ENGINE_AFFINITY").unwrap_or_else(|_| "cpu".to_string())
+    std::env::var("POLARS_ENGINE_AFFINITY").unwrap_or_else(|_| "auto".to_string())
 }
 
 /// Prints a log message if sensitive verbose logging has been enabled.

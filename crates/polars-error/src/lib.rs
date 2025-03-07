@@ -342,7 +342,7 @@ macro_rules! polars_err {
         $crate::polars_err!(op = stringify!($op), $lhs, $rhs)
     };
     (bigidx, ctx = $ctx:expr, size = $size:expr) => {
-        polars_err!(ComputeError: "\
+        $crate::polars_err!(ComputeError: "\
 {} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
 consider compiling with bigidx feature (polars-u64-idx package on python)",
             $ctx,

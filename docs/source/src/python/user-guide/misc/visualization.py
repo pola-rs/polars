@@ -77,6 +77,36 @@ with open("docs/assets/images/matplotlib_scatter.png", "rb") as f:
 # --8<-- [end:matplotlib_make_plot]
 
 """
+# --8<-- [start:plotnine_show_plot]
+from plotnine import ggplot, aes, geom_point, labs
+
+(
+    ggplot(df, mapping=aes(x="sepal_width", y="sepal_length", color="species"))
+    + geom_point()
+    + labs(title="Irises", x="Sepal Width", y="Sepal Length")
+)
+# --8<-- [end:plotnine_show_plot]
+"""
+
+# --8<-- [start:plotnine_make_plot]
+import base64
+
+from plotnine import ggplot, aes, geom_point, labs
+
+fig_path = "docs/assets/images/plotnine.png"
+
+(
+    ggplot(df, mapping=aes(x="sepal_width", y="sepal_length", color="species"))
+    + geom_point()
+    + labs(title="Irises", x="Sepal Width", y="Sepal Length")
+).save(fig_path, dpi=300, verbose=False)
+
+with open(fig_path, "rb") as f:
+    png = base64.b64encode(f.read()).decode()
+    print(f'<img src="data:image/png;base64, {png}"/>')
+# --8<-- [end:plotnine_make_plot]
+
+"""
 # --8<-- [start:seaborn_show_plot]
 import seaborn as sns
 import matplotlib.pyplot as plt

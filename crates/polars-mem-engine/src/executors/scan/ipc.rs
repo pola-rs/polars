@@ -38,7 +38,7 @@ impl IpcExec {
                     eprintln!("ASYNC READING FORCED");
                 }
 
-                polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
+                polars_io::pl_async::get_runtime().block_in_place_on(self.read_async())?
             })
         } else {
             self.read_sync().map_err(|e| match &self.sources {

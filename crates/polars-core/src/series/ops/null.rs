@@ -93,7 +93,7 @@ impl Series {
                 Series::full_null(name, size, &dtype)
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let mut builder = get_object_builder(name, size);
                 for _ in 0..size {
                     builder.append_null();

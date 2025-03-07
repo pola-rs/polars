@@ -68,6 +68,10 @@ impl RowGroupMetadata {
         self.column_lookup.get(root_name).map(|x| x.as_slice())
     }
 
+    pub fn parquet_columns(&self) -> &[ColumnChunkMetadata] {
+        self.columns.as_ref().as_slice()
+    }
+
     /// Number of rows in this row group.
     pub fn num_rows(&self) -> usize {
         self.num_rows

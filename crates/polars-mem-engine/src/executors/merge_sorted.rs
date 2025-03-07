@@ -17,8 +17,15 @@ impl Executor for MergeSorted {
                 eprintln!("run MergeSorted")
             }
         }
-        let left = self.input_left.execute(state)?;
-        let right = self.input_right.execute(state)?;
+        let (left, right) = {
+            let mut state2 = state.split();
+            state2.branch_idx += 1;
+            let (left, right) = POOL.join(
+                || self.input_left.execute(state),
+                || self.input_right.execute(&mut state2),
+            );
+            (left?, right?)
+        };
 
         let profile_name = Cow::Borrowed("Merge Sorted");
         state.record(

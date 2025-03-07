@@ -2,6 +2,7 @@ use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
@@ -205,6 +206,46 @@ pub struct FileScanOptions {
     pub allow_missing_columns: bool,
 }
 
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Engine {
+    Auto,
+    OldStreaming,
+    Streaming,
+    InMemory,
+    Gpu,
+}
+
+impl FromStr for Engine {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            // "cpu" for backwards compatibility
+            "auto" => Ok(Engine::Auto),
+            "cpu" | "in-memory" => Ok(Engine::InMemory),
+            "streaming" => Ok(Engine::Streaming),
+            "old-streaming" => Ok(Engine::OldStreaming),
+            "gpu" => Ok(Engine::Gpu),
+            v => Err(format!(
+                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}}, got {v}",
+            )),
+        }
+    }
+}
+
+impl Engine {
+    pub fn into_static_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::OldStreaming => "old-streaming",
+            Self::Streaming => "streaming",
+            Self::InMemory => "in-memory",
+            Self::Gpu => "gpu",
+        }
+    }
+}
+
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct UnionOptions {
@@ -304,11 +345,23 @@ pub enum SyncOnCloseType {
 }
 
 /// Options that apply to all sinks.
-#[derive(Clone, PartialEq, Eq, Debug, Default, Hash)]
+#[derive(Clone, PartialEq, Eq, Debug, Hash)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SinkOptions {
     /// Call sync when closing the file.
     pub sync_on_close: SyncOnCloseType,
+
+    /// The output file needs to maintain order of the data that comes in.
+    pub maintain_order: bool,
+}
+
+impl Default for SinkOptions {
+    fn default() -> Self {
+        Self {
+            sync_on_close: Default::default(),
+            maintain_order: true,
+        }
+    }
 }
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]

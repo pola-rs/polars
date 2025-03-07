@@ -273,7 +273,7 @@ impl<'py> IntoPyObject<'py> for &Wrap<DataType> {
                 duration_class.call1((tu.to_ascii(),))
             },
             #[cfg(feature = "object")]
-            DataType::Object(_, _) => {
+            DataType::Object(_) => {
                 let class = pl.getattr(intern!(py, "Object"))?;
                 class.call0()
             },
@@ -374,7 +374,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
                     "Struct" => DataType::Struct(vec![]),
                     "Null" => DataType::Null,
                     #[cfg(feature = "object")]
-                    "Object" => DataType::Object(OBJECT_NAME, None),
+                    "Object" => DataType::Object(OBJECT_NAME),
                     "Unknown" => DataType::Unknown(Default::default()),
                     dt => {
                         return Err(PyTypeError::new_err(format!(
@@ -451,7 +451,7 @@ impl<'py> FromPyObject<'py> for Wrap<DataType> {
             },
             "Null" => DataType::Null,
             #[cfg(feature = "object")]
-            "Object" => DataType::Object(OBJECT_NAME, None),
+            "Object" => DataType::Object(OBJECT_NAME),
             "Unknown" => DataType::Unknown(Default::default()),
             dt => {
                 return Err(PyTypeError::new_err(format!(
@@ -570,7 +570,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
             },
             PythonScanSourceInput::File(file) => {
                 let mut sources = Vec::with_capacity(num_items);
-                sources.push(file);
+                sources.push(file.into());
                 MutableSources::Files(sources)
             },
             PythonScanSourceInput::Buffer(buffer) => {
@@ -583,7 +583,7 @@ impl<'py> FromPyObject<'py> for Wrap<ScanSources> {
         for source in iter {
             match (&mut sources, source?) {
                 (MutableSources::Paths(v), PythonScanSourceInput::Path(p)) => v.push(p),
-                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f),
+                (MutableSources::Files(v), PythonScanSourceInput::File(f)) => v.push(f.into()),
                 (MutableSources::Buffers(v), PythonScanSourceInput::Buffer(f)) => v.push(f),
                 _ => {
                     return Err(PyTypeError::new_err(

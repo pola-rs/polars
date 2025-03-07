@@ -10,13 +10,13 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_plan::dsl::SyncOnCloseType;
 
-use super::io_sources::PhaseOutcomeToken;
 use super::{
     ComputeNode, JoinHandle, Morsel, PhaseOutcome, PortState, RecvPort, SendPort, TaskScope,
 };
 use crate::async_executor::{spawn, AbortOnDropHandle};
 use crate::async_primitives::connector::{connector, Receiver, Sender};
 use crate::async_primitives::distributor_channel;
+use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::nodes::TaskPriority;
 
@@ -39,11 +39,6 @@ pub enum SinkInputPort {
     Parallel(Vec<Receiver<Morsel>>),
 }
 
-pub struct SinkRecvPort {
-    num_pipelines: usize,
-    recv: Receiver<(PhaseOutcome, SinkInputPort)>,
-}
-
 impl SinkInputPort {
     pub fn serial(self) -> Receiver<Morsel> {
         match self {
@@ -60,86 +55,10 @@ impl SinkInputPort {
     }
 }
 
-impl SinkRecvPort {
-    pub fn parallel(
-        mut self,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) -> Vec<Receiver<Morsel>> {
-        let (txs, rxs) = (0..self.num_pipelines)
-            .map(|_| connector())
-            .collect::<(Vec<_>, Vec<_>)>();
-        let (mut pass_txs, pass_rxs) = (0..self.num_pipelines)
-            .map(|_| connector())
-            .collect::<(Vec<_>, Vec<_>)>();
-        let mut outcomes = Vec::<PhaseOutcomeToken>::with_capacity(self.num_pipelines);
-        let wg = WaitGroup::default();
-
-        join_handles.push(spawn(TaskPriority::High, async move {
-            while let Ok((outcome, port_rxs)) = self.recv.recv().await {
-                let port_rxs = port_rxs.parallel();
-                for (pass_tx, port_rx) in pass_txs.iter_mut().zip(port_rxs) {
-                    let (token, outcome) = PhaseOutcome::new_shared_wait(wg.token());
-                    if pass_tx.send((outcome, port_rx)).await.is_err() {
-                        return Ok(());
-                    }
-                    outcomes.push(token);
-                }
-
-                wg.wait().await;
-                for outcome_token in &outcomes {
-                    if outcome_token.did_finish() {
-                        return Ok(());
-                    }
-                }
-                outcomes.clear();
-                outcome.stopped();
-            }
-
-            Ok(())
-        }));
-        join_handles.extend(pass_rxs.into_iter().zip(txs).map(|(mut pass_rx, mut tx)| {
-            spawn(TaskPriority::High, async move {
-                while let Ok((outcome, mut rx)) = pass_rx.recv().await {
-                    while let Ok(morsel) = rx.recv().await {
-                        if tx.send(morsel).await.is_err() {
-                            return Ok(());
-                        }
-                    }
-                    outcome.stopped();
-                }
-                Ok(())
-            })
-        }));
-
-        rxs
-    }
-
-    /// Serialize the input and allow for long lived lasts to listen to a constant channel.
-    pub fn serial(
-        mut self,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) -> Receiver<Morsel> {
-        let (mut tx, rx) = connector();
-        join_handles.push(spawn(TaskPriority::High, async move {
-            while let Ok((outcome, port_rx)) = self.recv.recv().await {
-                let mut port_rx = port_rx.serial();
-                while let Ok(morsel) = port_rx.recv().await {
-                    if tx.send(morsel).await.is_err() {
-                        return Ok(());
-                    }
-                }
-                outcome.stopped();
-            }
-            Ok(())
-        }));
-        rx
-    }
-}
-
 /// Spawn a task that linearizes and buffers morsels until a given a maximum chunk size is reached
 /// and then distributes the columns amongst worker tasks.
 fn buffer_and_distribute_columns_task(
-    mut rx: Receiver<Morsel>,
+    mut recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
     mut dist_tx: distributor_channel::Sender<(usize, usize, Column)>,
     chunk_size: usize,
     schema: SchemaRef,
@@ -148,26 +67,31 @@ fn buffer_and_distribute_columns_task(
         let mut seq = 0usize;
         let mut buffer = DataFrame::empty_with_schema(schema.as_ref());
 
-        while let Ok(morsel) = rx.recv().await {
-            let (df, _, _, consume_token) = morsel.into_inner();
-            // @NOTE: This also performs schema validation.
-            buffer.vstack_mut(&df)?;
+        while let Ok((outcome, rx)) = recv_port_rx.recv().await {
+            let mut rx = rx.serial();
+            while let Ok(morsel) = rx.recv().await {
+                let (df, _, _, consume_token) = morsel.into_inner();
+                // @NOTE: This also performs schema validation.
+                buffer.vstack_mut(&df)?;
 
-            while buffer.height() >= chunk_size {
-                let df;
-                (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
+                while buffer.height() >= chunk_size {
+                    let df;
+                    (df, buffer) = buffer.split_at(buffer.height().min(chunk_size) as i64);
 
-                for (i, column) in df.take_columns().into_iter().enumerate() {
-                    if dist_tx.send((seq, i, column)).await.is_err() {
-                        return Ok(());
+                    for (i, column) in df.take_columns().into_iter().enumerate() {
+                        if dist_tx.send((seq, i, column)).await.is_err() {
+                            return Ok(());
+                        }
                     }
+                    seq += 1;
                 }
-                seq += 1;
+                drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
+                                     // morsel has started encoding in its entirety. This still
+                                     // allows for parallelism of Morsels, but prevents large
+                                     // bunches of Morsels from stacking up here.
             }
-            drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
-                                 // morsel has started encoding in its entirety. This still
-                                 // allows for parallelism of Morsels, but prevents large
-                                 // bunches of Morsels from stacking up here.
+
+            outcome.stopped();
         }
 
         // Flush the remaining rows.
@@ -182,21 +106,61 @@ fn buffer_and_distribute_columns_task(
     })
 }
 
+#[allow(clippy::type_complexity)]
+pub fn parallelize_receive_task<T: Ord + Send + Sync + 'static>(
+    join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
+    mut recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
+    num_pipelines: usize,
+    maintain_order: bool,
+) -> (
+    Vec<Receiver<(Receiver<Morsel>, Inserter<T>)>>,
+    Receiver<Linearizer<T>>,
+) {
+    // Phase Handling Task -> Encode Tasks.
+    let (mut pass_txs, pass_rxs) = (0..num_pipelines)
+        .map(|_| connector())
+        .collect::<(Vec<_>, Vec<_>)>();
+    let (mut io_tx, io_rx) = connector();
+
+    join_handles.push(spawn(TaskPriority::High, async move {
+        while let Ok((outcome, port_rxs)) = recv_port_rx.recv().await {
+            let port_rxs = port_rxs.parallel();
+            let (lin_rx, lin_txs) = Linearizer::<T>::new_with_maintain_order(
+                num_pipelines,
+                DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+                maintain_order,
+            );
+
+            for ((pass_tx, port_rx), lin_tx) in pass_txs.iter_mut().zip(port_rxs).zip(lin_txs) {
+                if pass_tx.send((port_rx, lin_tx)).await.is_err() {
+                    return Ok(());
+                }
+            }
+            if io_tx.send(lin_rx).await.is_err() {
+                return Ok(());
+            }
+
+            outcome.stopped();
+        }
+
+        Ok(())
+    }));
+
+    (pass_rxs, io_rx)
+}
+
 pub trait SinkNode {
     fn name(&self) -> &str;
+
     fn is_sink_input_parallel(&self) -> bool;
+    fn do_maintain_order(&self) -> bool {
+        true
+    }
 
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
-        recv_ports_recv: SinkRecvPort,
-        state: &ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    );
-    fn spawn_sink_once(
-        &mut self,
-        num_pipelines: usize,
-        recv_ports_recv: SinkInputPort,
+        recv_ports_recv: Receiver<(PhaseOutcome, SinkInputPort)>,
         state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     );
@@ -279,15 +243,8 @@ impl ComputeNode for SinkComputeNode {
             let (tx, rx) = connector();
             let mut join_handles = Vec::new();
 
-            self.sink.spawn_sink(
-                self.num_pipelines,
-                SinkRecvPort {
-                    num_pipelines: self.num_pipelines,
-                    recv: rx,
-                },
-                state,
-                &mut join_handles,
-            );
+            self.sink
+                .spawn_sink(self.num_pipelines, rx, state, &mut join_handles);
             // One of the tasks might throw an error. In which case, we need to cancel all
             // handles and find the error.
             let join_handles: FuturesUnordered<_> =
@@ -304,7 +261,7 @@ impl ComputeNode for SinkComputeNode {
         let sink_input = if self.sink.is_sink_input_parallel() {
             SinkInputPort::Parallel(recv.parallel())
         } else {
-            SinkInputPort::Serial(recv.serial())
+            SinkInputPort::Serial(recv.serial_with_maintain_order(self.sink.do_maintain_order()))
         };
         join_handles.push(scope.spawn_task(TaskPriority::High, async move {
             let (token, outcome) = PhaseOutcome::new_shared_wait(wait_group.token());

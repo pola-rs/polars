@@ -225,6 +225,7 @@ fn to_graph_rec<'a>(
             sink_options,
             file_type,
             input,
+            cloud_options,
         } => {
             let sink_options = sink_options.clone();
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
@@ -238,6 +239,7 @@ fn to_graph_rec<'a>(
                         path.to_path_buf(),
                         sink_options,
                         *ipc_writer_options,
+                        cloud_options.clone(),
                     )),
                     [(input_key, input.port)],
                 ),
@@ -246,6 +248,7 @@ fn to_graph_rec<'a>(
                     SinkComputeNode::from(nodes::io_sinks::json::NDJsonSinkNode::new(
                         path.to_path_buf(),
                         sink_options,
+                        cloud_options.clone(),
                     )),
                     [(input_key, input.port)],
                 ),
@@ -256,16 +259,18 @@ fn to_graph_rec<'a>(
                         path,
                         sink_options,
                         parquet_writer_options,
+                        cloud_options.clone(),
                     )?),
                     [(input_key, input.port)],
                 ),
                 #[cfg(feature = "csv")]
                 FileType::Csv(csv_writer_options) => ctx.graph.add_node(
                     SinkComputeNode::from(nodes::io_sinks::csv::CsvSinkNode::new(
-                        input_schema,
                         path.to_path_buf(),
+                        input_schema,
                         sink_options,
                         csv_writer_options.clone(),
+                        cloud_options.clone(),
                     )),
                     [(input_key, input.port)],
                 ),
@@ -287,6 +292,7 @@ fn to_graph_rec<'a>(
             variant,
             file_type,
             input,
+            cloud_options,
         } => {
             let input_schema = ctx.phys_sm[input.node].output_schema.clone();
             let input_key = to_graph_rec(input.node, ctx)?;
@@ -298,6 +304,7 @@ fn to_graph_rec<'a>(
                 file_type.clone(),
                 sink_options.clone(),
                 args_to_path,
+                cloud_options.clone(),
             );
 
             match variant {
@@ -307,6 +314,7 @@ fn to_graph_rec<'a>(
                             input_schema,
                             *max_size,
                             create_new,
+                            sink_options.clone(),
                         ),
                     ),
                     [(input_key, input.port)],
@@ -603,7 +611,7 @@ fn to_graph_rec<'a>(
                                 options,
                                 cloud_options,
                                 file_options,
-                                first_metadata,
+                                first_metadata.unwrap(),
                             ),
                         ),
                         [],

@@ -358,11 +358,13 @@ def test_file_list_schema_mismatch(
 
     lf = pl.scan_csv(paths)
     with pytest.raises(ComputeError):
-        lf.collect(streaming=streaming)
+        lf.collect(engine="old-streaming" if streaming else "in-memory")
 
     if len({df.width for df in dfs}) == 1:
         expect = pl.concat(df.select(x=pl.first().cast(pl.Int8)) for df in dfs)
-        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(streaming=streaming)
+        out = pl.scan_csv(paths, schema={"x": pl.Int8}).collect(
+            engine="old-streaming" if streaming else "in-memory"
+        )
 
         assert_frame_equal(out, expect)
 
@@ -392,7 +394,9 @@ c
             f.write(data)
 
     expect = pl.Series("a", ["1", "2", "b", "c"]).to_frame()
-    out = pl.scan_csv(paths).collect(streaming=streaming)
+    out = pl.scan_csv(paths).collect(
+        engine="old-streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 
@@ -422,7 +426,9 @@ c
             f.write(data)
 
     expect = pl.Series("a", ["b", "c", "b", "c"]).to_frame()
-    out = pl.scan_csv(paths, comment_prefix="#").collect(streaming=streaming)
+    out = pl.scan_csv(paths, comment_prefix="#").collect(
+        engine="old-streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 

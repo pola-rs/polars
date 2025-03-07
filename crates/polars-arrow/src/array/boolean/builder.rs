@@ -39,6 +39,12 @@ impl StaticArrayBuilder for BooleanArrayBuilder {
         BooleanArray::try_new(self.dtype, values, validity).unwrap()
     }
 
+    fn freeze_reset(&mut self) -> Self::Array {
+        let values = core::mem::take(&mut self.values).freeze();
+        let validity = core::mem::take(&mut self.validity).into_opt_validity();
+        BooleanArray::try_new(self.dtype.clone(), values, validity).unwrap()
+    }
+
     fn len(&self) -> usize {
         self.values.len()
     }

@@ -3,6 +3,7 @@ use std::io::Read;
 #[cfg(feature = "aws")]
 use std::path::Path;
 use std::str::FromStr;
+use std::sync::LazyLock;
 
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
@@ -20,7 +21,6 @@ pub use object_store::gcp::GoogleConfigKey;
 use object_store::ClientOptions;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
-use once_cell::sync::Lazy;
 use polars_error::*;
 #[cfg(feature = "aws")]
 use polars_utils::cache::FastFixedCache;
@@ -41,11 +41,11 @@ use crate::file_cache::get_env_file_cache_ttl;
 use crate::pl_async::with_concurrency_budget;
 
 #[cfg(feature = "aws")]
-static BUCKET_REGION: Lazy<
+static BUCKET_REGION: LazyLock<
     std::sync::Mutex<
         FastFixedCache<polars_utils::pl_str::PlSmallStr, polars_utils::pl_str::PlSmallStr>,
     >,
-> = Lazy::new(|| std::sync::Mutex::new(FastFixedCache::new(32)));
+> = LazyLock::new(|| std::sync::Mutex::new(FastFixedCache::new(32)));
 
 /// The type of the config keys must satisfy the following requirements:
 /// 1. must be easily collected into a HashMap, the type required by the object_crate API.
@@ -91,7 +91,7 @@ impl Default for CloudOptions {
 
 impl CloudOptions {
     pub fn default_static_ref() -> &'static Self {
-        static DEFAULT: Lazy<CloudOptions> = Lazy::new(|| CloudOptions {
+        static DEFAULT: LazyLock<CloudOptions> = LazyLock::new(|| CloudOptions {
             max_retries: 2,
             #[cfg(feature = "file_cache")]
             file_cache_ttl: get_env_file_cache_ttl(),

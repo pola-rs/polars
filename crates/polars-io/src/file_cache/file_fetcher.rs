@@ -93,8 +93,8 @@ impl FileFetcher for CloudFileFetcher {
     }
 
     fn fetch_metadata(&self) -> PolarsResult<RemoteMetadata> {
-        let metadata = pl_async::get_runtime()
-            .block_on_potential_spawn(self.object_store.head(&self.cloud_path))?;
+        let metadata =
+            pl_async::get_runtime().block_in_place_on(self.object_store.head(&self.cloud_path))?;
 
         Ok(RemoteMetadata {
             size: metadata.size as u64,
@@ -108,7 +108,7 @@ impl FileFetcher for CloudFileFetcher {
     }
 
     fn fetch(&self, local_path: &std::path::Path) -> PolarsResult<()> {
-        pl_async::get_runtime().block_on_potential_spawn(async {
+        pl_async::get_runtime().block_in_place_on(async {
             let file = &mut tokio::fs::OpenOptions::new()
                 .write(true)
                 .truncate(true)

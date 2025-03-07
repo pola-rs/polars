@@ -1,7 +1,6 @@
 use arrow::bitmap::BitmapBuilder;
 
 use super::*;
-use crate::chunked_array::object::registry::{AnonymousObjectBuilder, ObjectRegistry};
 use crate::utils::get_iter_capacity;
 
 pub struct ObjectChunkedBuilder<T> {
@@ -14,9 +13,12 @@ impl<T> ObjectChunkedBuilder<T>
 where
     T: PolarsObject,
 {
+    pub fn field(&self) -> &Field {
+        &self.field
+    }
     pub fn new(name: PlSmallStr, capacity: usize) -> Self {
         ObjectChunkedBuilder {
-            field: Field::new(name, DataType::Object(T::type_name(), None)),
+            field: Field::new(name, DataType::Object(T::type_name())),
             values: Vec::with_capacity(capacity),
             bitmask_builder: BitmapBuilder::with_capacity(capacity),
         }
@@ -76,15 +78,7 @@ where
 /// Initialize a polars Object data type. The type has got information needed to
 /// construct new objects.
 pub(crate) fn get_object_type<T: PolarsObject>() -> DataType {
-    let object_builder = Box::new(|name: PlSmallStr, capacity: usize| {
-        Box::new(ObjectChunkedBuilder::<T>::new(name, capacity)) as Box<dyn AnonymousObjectBuilder>
-    });
-
-    let object_size = size_of::<T>();
-    let physical_dtype = ArrowDataType::FixedSizeBinary(object_size);
-
-    let registry = ObjectRegistry::new(object_builder, physical_dtype);
-    DataType::Object(T::type_name(), Some(Arc::new(registry)))
+    DataType::Object(T::type_name())
 }
 
 impl<T> Default for ObjectChunkedBuilder<T>
@@ -135,7 +129,7 @@ where
     T: PolarsObject,
 {
     pub fn new_from_vec(name: PlSmallStr, v: Vec<T>) -> Self {
-        let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
+        let field = Arc::new(Field::new(name, DataType::Object(T::type_name())));
         let len = v.len();
         let arr = Box::new(ObjectArray {
             values: v.into(),
@@ -150,7 +144,7 @@ where
         v: Vec<T>,
         validity: Option<Bitmap>,
     ) -> Self {
-        let field = Arc::new(Field::new(name, DataType::Object(T::type_name(), None)));
+        let field = Arc::new(Field::new(name, DataType::Object(T::type_name())));
         let len = v.len();
         let null_count = validity.as_ref().map(|v| v.unset_bits()).unwrap_or(0);
         let arr = Box::new(ObjectArray {

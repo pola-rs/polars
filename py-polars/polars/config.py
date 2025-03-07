@@ -141,7 +141,7 @@ class ConfigParameters(TypedDict, total=False):
     set_trim_decimal_zeros: bool | None
     set_verbose: bool | None
     set_expr_depth_warning: int
-    set_engine_affinity: Literal["cpu", "gpu", "streaming"] | None
+    set_engine_affinity: Literal["auto", "gpu", "streaming"] | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -1455,14 +1455,14 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     def set_engine_affinity(
-        cls, engine: Literal["cpu", "gpu", "streaming"] | None
+        cls, engine: Literal["auto", "gpu", "streaming"] | None
     ) -> type[Config]:
         """
         Set which engine to use by default.
 
         Parameters
         ----------
-        engine : Literal["cpu", "gpu", "streaming"]
+        engine : Literal["auto", "gpu", "streaming"]
             The default execution engine Polars will attempt to use
             when calling `.collect()`. However, the query is not
             guaranteed to execute with the specified engine.
@@ -1500,12 +1500,12 @@ class Config(contextlib.ContextDecorator):
         ValueError: if engine is not recognised.
         """
         if engine not in {
-            "cpu",
+            "auto",
             "gpu",
             "streaming",
-            "none",
+            None,
         }:
-            msg = 'engine must be one of "cpu", "gpu", "streaming", or None.'
+            msg = 'engine must be one of "auto", "gpu", "streaming", or None.'
             raise ValueError(msg)
         if engine is None:
             os.environ.pop("POLARS_ENGINE_AFFINITY", None)

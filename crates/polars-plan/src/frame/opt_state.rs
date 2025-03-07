@@ -14,8 +14,8 @@ bitflags! {
         const TYPE_COERCION = 1 << 4;
         /// Run many expression optimization rules until fixed point.
         const SIMPLIFY_EXPR = 1 << 5;
-        /// Cache file reads.
-        const FILE_CACHING = 1 << 6;
+        /// Do type checking of the IR.
+        const TYPE_CHECK = 1 << 6;
         /// Pushdown slices/limits.
         const SLICE_PUSHDOWN = 1 << 7;
         /// Run common-subplan-elimination. This elides duplicate plans and caches their
@@ -38,8 +38,6 @@ bitflags! {
         /// Check if operations are order dependent and unset maintaining_order if
         /// the order would not be observed.
         const CHECK_ORDER_OBSERVE = 1 << 16;
-        /// Do type checking of the IR.
-        const TYPE_CHECK = 1 << 17;
     }
 }
 
@@ -87,8 +85,6 @@ impl OptFlags {
 impl Default for OptFlags {
     fn default() -> Self {
         Self::from_bits_truncate(u32::MAX) & !Self::NEW_STREAMING & !Self::STREAMING & !Self::EAGER
-            // will be toggled by a scan operation such as csv scan or parquet scan
-            & !Self::FILE_CACHING
     }
 }
 

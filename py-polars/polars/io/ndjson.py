@@ -117,6 +117,17 @@ def read_ndjson(
     include_file_paths
         Include the path of the source file(s) as a column with this name.
 
+    See Also
+    --------
+    scan_ndjson : Lazily read from an NDJSON file or multiple files via glob patterns.
+
+    Warnings
+    --------
+    Calling `read_ndjson().lazy()` is an antipattern as this forces Polars to
+    materialize a full ndjson file and therefore cannot push any optimizations into
+    the reader. Therefore always prefer `scan_ndjson` if you want to work with
+    `LazyFrame` s.
+
     Examples
     --------
     >>> from io import StringIO

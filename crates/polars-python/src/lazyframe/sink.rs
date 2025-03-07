@@ -33,6 +33,11 @@ impl PyPartitioning {
             variant: PartitionVariant::MaxSize(max_size),
         }
     }
+
+    #[getter]
+    fn path(&self) -> &str {
+        self.path.to_str().unwrap()
+    }
 }
 
 impl<'py> FromPyObject<'py> for SinkTarget {
@@ -74,9 +79,9 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
     fn extract_bound(ob: &Bound<'py, PyAny>) -> PyResult<Self> {
         let parsed = ob.extract::<pyo3::Bound<'_, PyDict>>()?;
 
-        if parsed.len() != 1 {
+        if parsed.len() != 2 {
             return Err(PyValueError::new_err(
-                "`sink_options` must be a dictionary with the exactly 1 field.",
+                "`sink_options` must be a dictionary with the exactly 2 field.",
             ));
         }
 
@@ -84,6 +89,15 @@ impl<'py> FromPyObject<'py> for Wrap<SinkOptions> {
             .ok_or_else(|| PyValueError::new_err("`sink_options` must be `sync_on_close` field"))?;
         let sync_on_close = sync_on_close.extract::<Wrap<SyncOnCloseType>>()?.0;
 
-        Ok(Wrap(SinkOptions { sync_on_close }))
+        let maintain_order =
+            PyDictMethods::get_item(&parsed, "maintain_order")?.ok_or_else(|| {
+                PyValueError::new_err("`sink_options` must be `maintain_order` field")
+            })?;
+        let maintain_order = maintain_order.extract::<bool>()?;
+
+        Ok(Wrap(SinkOptions {
+            sync_on_close,
+            maintain_order,
+        }))
     }
 }

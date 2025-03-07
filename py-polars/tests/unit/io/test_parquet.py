@@ -2005,7 +2005,7 @@ def test_allow_missing_columns(
         match="enabling `allow_missing_columns`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
-            streaming=streaming
+            engine="old-streaming" if streaming else "in-memory"
         )
 
     assert_frame_equal(
@@ -2020,7 +2020,7 @@ def test_allow_missing_columns(
     assert_frame_equal(
         pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
         .select(projection)
-        .collect(streaming=streaming),
+        .collect(engine="old-streaming" if streaming else "in-memory"),
         expected,
     )
 
@@ -3088,3 +3088,34 @@ def test_filter_nulls_21538(ty: tuple[Callable[[int], Any], pl.DataType, bool]) 
                 pl.scan_parquet(f).filter(pl.col(f"p{i}").is_not_null()).collect(),
                 df.filter(pl.col(f"p{i}").is_not_null()),
             )
+
+
+def test_unspecialized_decoding_prefiltering() -> None:
+    df = pl.DataFrame(
+        {
+            "a": [None, None, None, "abc"],
+            "b": [False, True, False, True],
+        }
+    )
+
+    cols = df.columns
+
+    encodings = dict.fromkeys(cols, "DELTA_LENGTH_BYTE_ARRAY")
+    encodings["b"] = "PLAIN"
+
+    f = io.BytesIO()
+    pq.write_table(
+        df.to_arrow(),
+        f,
+        use_dictionary=False,
+        column_encoding=encodings,
+    )
+
+    f.seek(0)
+    expr = pl.col("b")
+    result = (
+        pl.scan_parquet(f, parallel="prefiltered")
+        .filter(expr)
+        .collect(engine="streaming")
+    )
+    assert_frame_equal(result, df.filter(expr))

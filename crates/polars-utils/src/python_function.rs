@@ -125,7 +125,8 @@ mod _serde_impls {
 
 #[cfg(feature = "serde")]
 mod serde_wrap {
-    use once_cell::sync::Lazy;
+    use std::sync::LazyLock;
+
     use polars_error::PolarsResult;
 
     use super::*;
@@ -134,7 +135,7 @@ mod serde_wrap {
 
     pub const SERDE_MAGIC_BYTE_MARK: &[u8] = "PLPYFN".as_bytes();
     /// [minor, micro]
-    pub static PYTHON3_VERSION: Lazy<[u8; 2]> = Lazy::new(super::get_python3_version);
+    pub static PYTHON3_VERSION: LazyLock<[u8; 2]> = LazyLock::new(super::get_python3_version);
 
     /// Serializes a Python object without additional system metadata. This is intended to be used
     /// together with `PySerializeWrap`, which attaches e.g. Python version metadata.

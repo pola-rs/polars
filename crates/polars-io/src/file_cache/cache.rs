@@ -1,8 +1,7 @@
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
-use once_cell::sync::Lazy;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
@@ -13,7 +12,7 @@ use super::file_fetcher::FileFetcher;
 use super::utils::FILE_CACHE_PREFIX;
 use crate::path_utils::{ensure_directory_init, is_cloud_url};
 
-pub static FILE_CACHE: Lazy<FileCache> = Lazy::new(|| {
+pub static FILE_CACHE: LazyLock<FileCache> = LazyLock::new(|| {
     let prefix = FILE_CACHE_PREFIX.as_ref();
     let prefix = Arc::<Path>::from(prefix);
 

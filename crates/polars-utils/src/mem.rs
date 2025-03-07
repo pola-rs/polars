@@ -8,8 +8,8 @@ pub unsafe fn to_mutable_slice<T: Copy>(s: &[T]) -> &mut [T] {
 }
 
 pub mod prefetch {
-    use once_cell::sync::Lazy;
-    static PAGE_SIZE: Lazy<usize> = Lazy::new(|| {
+    use std::sync::LazyLock;
+    static PAGE_SIZE: LazyLock<usize> = LazyLock::new(|| {
         #[cfg(target_family = "unix")]
         unsafe {
             libc::sysconf(libc::_SC_PAGESIZE) as usize

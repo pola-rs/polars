@@ -9,6 +9,7 @@ use polars_io::parquet::write::{
     BatchedWriter, ParquetWriteOptions, ParquetWriter, RowGroupIterColumns,
 };
 use polars_io::utils::file::try_get_writeable;
+use polars_utils::file::WriteClose;
 
 use crate::executors::sinks::output::file_sink::SinkWriter;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
@@ -58,7 +59,7 @@ where
 
 #[derive(Clone)]
 pub struct ParquetSink {
-    writer: Arc<BatchedWriter<Box<dyn std::io::Write + Send + 'static>>>,
+    writer: Arc<BatchedWriter<Box<dyn WriteClose + Send + 'static>>>,
     io_thread_handle: Arc<Option<JoinHandle<()>>>,
     sender: Sender<Option<(IdxSize, RowGroups)>>,
 }
