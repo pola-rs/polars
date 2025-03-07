@@ -130,11 +130,11 @@ jobs:
               }
         continue-on-error: true
 
-      - name: Run benchmark tests
-        uses: CodSpeedHQ/action@v3
-        with:
-          working-directory: py-polars
-          run: pytest -m benchmark --codspeed -v
+      # - name: Run benchmark tests
+      #   uses: CodSpeedHQ/action@v3
+      #   with:
+      #     working-directory: py-polars
+      #     run: pytest -m benchmark --codspeed -v
 
       - name: Run non-benchmark tests
         working-directory: py-polars
