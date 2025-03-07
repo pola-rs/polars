@@ -16,7 +16,7 @@ use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::sync::SyncPtr;
+use polars_utils::sparse_init_vec::SparseInitVec;
 use polars_utils::{format_pl_smallstr, IdxSize};
 use rayon::prelude::*;
 
@@ -541,24 +541,28 @@ impl BuildState {
         };
 
         // To reduce maximum memory usage we want to drop the morsels
-        // as soon as they're processed, so we move into Arcs.
+        // as soon as they're processed, so we move into Arcs. The drops might
+        // also be expensive, so instead of directly dropping we put that on
+        // a work queue.
         let morsels_per_local_builder = self
             .local_builders
             .iter_mut()
             .map(|b| Arc::new(core::mem::take(&mut b.morsels)))
             .collect_vec();
+        let (morsel_drop_q_send, morsel_drop_q_recv) = crossbeam_channel::bounded(morsels_per_local_builder.len());
         let num_partitions = self.local_builders[0].sketch_per_p.len();
         let local_builders = &self.local_builders;
+        let probe_tables: SparseInitVec<ProbeTable> = SparseInitVec::with_capacity(num_partitions);
 
-        let mut probe_tables = POOL.scope(|s| {
-            let mut probe_tables: Vec<ProbeTable> = Vec::with_capacity(num_partitions);
-            let probe_table_ptr = unsafe { SyncPtr::new(probe_tables.as_mut_ptr()) };
-
+        POOL.scope(|s| {
             // Wrap in outer Arc to move to each thread, performing the
             // expensive clone on that thread.
             let arc_morsels_per_local_builder = Arc::new(morsels_per_local_builder);
             for p in 0..num_partitions {
                 let arc_morsels_per_local_builder = Arc::clone(&arc_morsels_per_local_builder);
+                let morsel_drop_q_send = morsel_drop_q_send.clone();
+                let morsel_drop_q_recv = morsel_drop_q_recv.clone();
+                let probe_tables = &probe_tables;
                 s.spawn(move |_| {
                     // Extract from outer arc and drop outer arc.
                     let morsels_per_local_builder =
@@ -582,7 +586,13 @@ impl BuildState {
                     p_payload.reserve(payload_rows);
 
                     // Build.
+                    let mut skip_drop_attempt = false;
                     for (l, l_morsels) in local_builders.iter().zip(morsels_per_local_builder) {
+                        // Try to help with dropping the processed morsels.
+                        if !skip_drop_attempt {
+                            drop(morsel_drop_q_recv.try_recv());
+                        }
+
                         for (i, morsel) in l_morsels.iter().enumerate() {
                             let (_mseq, payload, keys) = morsel;
                             unsafe {
@@ -600,30 +610,41 @@ impl BuildState {
                                 );
                             }
                         }
+                        
+                        if let Some(l) = Arc::into_inner(l_morsels) {
+                            // If we're the last thread to process this set of morsels we're probably
+                            // falling behind the rest, since the drop can be quite expensive we skip
+                            // a drop attempt hoping someone else will pick up the slack.
+                            morsel_drop_q_send.send(l).unwrap();
+                            skip_drop_attempt = true;
+                        } else {
+                            skip_drop_attempt = false;
+                        }
+                    }
+                    
+                    // We're done, help others out by doing drops.
+                    drop(morsel_drop_q_send); // So we don't deadlock.
+                    while let Ok(l_morsels) = morsel_drop_q_recv.recv() {
+                        drop(l_morsels);
                     }
 
-                    unsafe {
-                        probe_table_ptr.get().add(p).write(ProbeTable {
-                            hash_table: p_table,
-                            payload: p_payload.freeze(),
-                        });
-                    }
+                    probe_tables.try_set(p, ProbeTable {
+                        hash_table: p_table,
+                        payload: p_payload.freeze(),
+                    }).ok().unwrap();
                 });
             }
 
             // Drop outer arc after spawning each thread so the inner arcs
-            // can get dropped as soon as they're processed.
+            // can get dropped as soon as they're processed. We also have to
+            // drop the drop queue sender so we don't deadlock waiting for it
+            // to end.
             drop(arc_morsels_per_local_builder);
-            probe_tables
+            drop(morsel_drop_q_send);
         });
 
-        unsafe {
-            // SAFETY: all entries are initialized now.
-            probe_tables.set_len(num_partitions);
-        }
-
         ProbeState {
-            table_per_partition: probe_tables,
+            table_per_partition: probe_tables.try_assume_init().ok().unwrap(),
             max_seq_sent: MorselSeq::default(),
             sampled_probe_morsels: core::mem::take(&mut self.sampled_probe_morsels),
         }
