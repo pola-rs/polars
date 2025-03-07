@@ -322,7 +322,7 @@ impl LazyCsvReader {
 impl LazyFileListReader for LazyCsvReader {
     /// Get the final [LazyFrame].
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let mut lf: LazyFrame = DslBuilder::scan_csv(
+        let lf: LazyFrame = DslBuilder::scan_csv(
             self.sources,
             self.read_options,
             self.cache,
@@ -332,7 +332,6 @@ impl LazyFileListReader for LazyCsvReader {
         )?
         .build()
         .into();
-        lf.opt_state |= OptFlags::FILE_CACHING;
         Ok(lf)
     }
 

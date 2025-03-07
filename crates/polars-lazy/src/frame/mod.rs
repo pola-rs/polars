@@ -86,7 +86,7 @@ impl From<DslPlan> for LazyFrame {
     fn from(plan: DslPlan) -> Self {
         Self {
             logical_plan: plan,
-            opt_state: OptFlags::default() | OptFlags::FILE_CACHING,
+            opt_state: OptFlags::default(),
             cached_arena: Default::default(),
         }
     }
@@ -1696,17 +1696,12 @@ impl LazyFrame {
     }
 
     fn _join_impl(
-        mut self,
+        self,
         other: LazyFrame,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         args: JoinArgs,
     ) -> LazyFrame {
-        // if any of the nodes reads from files we must activate this plan as well.
-        if other.opt_state.contains(OptFlags::FILE_CACHING) {
-            self.opt_state |= OptFlags::FILE_CACHING;
-        }
-
         let JoinArgs {
             how,
             validation,
@@ -2486,13 +2481,8 @@ impl JoinBuilder {
 
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
-        let mut opt_state = self.lf.opt_state;
+        let opt_state = self.lf.opt_state;
         let other = self.other.expect("'with' not set in join builder");
-
-        // If any of the nodes reads from files we must activate this plan as well.
-        if other.opt_state.contains(OptFlags::FILE_CACHING) {
-            opt_state |= OptFlags::FILE_CACHING;
-        }
 
         let args = JoinArgs {
             how: self.how,
@@ -2525,13 +2515,8 @@ impl JoinBuilder {
 
     // Finish with join predicates
     pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
-        let mut opt_state = self.lf.opt_state;
+        let opt_state = self.lf.opt_state;
         let other = self.other.expect("with not set");
-
-        // If any of the nodes reads from files we must activate this plan as well.
-        if other.opt_state.contains(OptFlags::FILE_CACHING) {
-            opt_state |= OptFlags::FILE_CACHING;
-        }
 
         // Decompose `And` conjunctions into their component expressions
         fn decompose_and(predicate: Expr, expanded_predicates: &mut Vec<Expr>) {
