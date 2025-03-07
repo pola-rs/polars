@@ -1,8 +1,8 @@
 use std::borrow::Cow;
+#[cfg(feature = "timezones")]
+use std::sync::LazyLock;
 
 use arrow::legacy::utils::CustomIterTools;
-#[cfg(feature = "timezones")]
-use once_cell::sync::Lazy;
 #[cfg(feature = "timezones")]
 use polars_core::chunked_array::temporal::validate_time_zone;
 use polars_core::utils::handle_casting_failures;
@@ -17,8 +17,8 @@ use super::*;
 use crate::{map, map_as_slice};
 
 #[cfg(all(feature = "regex", feature = "timezones"))]
-static TZ_AWARE_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
+static TZ_AWARE_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(%z)|(%:z)|(%::z)|(%:::z)|(%#z)|(^%\+$)").unwrap());
 
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[derive(Clone, PartialEq, Debug, Eq, Hash)]

@@ -1,10 +1,9 @@
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
-use std::sync::{Mutex, RwLock};
+use std::sync::{Mutex, OnceLock, RwLock};
 use std::time::Duration;
 
 use bitflags::bitflags;
-use once_cell::sync::OnceCell;
 use polars_core::config::verbose;
 use polars_core::prelude::*;
 use polars_ops::prelude::ChunkJoinOptIds;
@@ -101,7 +100,7 @@ impl From<u8> for StateFlags {
     }
 }
 
-type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
+type CachedValue = Arc<(AtomicI64, OnceLock<DataFrame>)>;
 
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
@@ -229,7 +228,7 @@ impl ExecutionState {
                 guard
                     .entry(key)
                     .or_insert_with(|| {
-                        Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new()))
+                        Arc::new((AtomicI64::new(cache_hits as i64), OnceLock::new()))
                     })
                     .clone()
             },

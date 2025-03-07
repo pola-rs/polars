@@ -1,14 +1,13 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, LazyLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::Duration;
 
 use fs4::fs_std::FileExt;
-use once_cell::sync::Lazy;
 
 use super::utils::FILE_CACHE_PREFIX;
 use crate::pl_async;
 
-pub(super) static GLOBAL_FILE_CACHE_LOCK: Lazy<GlobalLock> = Lazy::new(|| {
+pub(super) static GLOBAL_FILE_CACHE_LOCK: LazyLock<GlobalLock> = LazyLock::new(|| {
     let path = FILE_CACHE_PREFIX.join(".process-lock");
 
     let file = std::fs::OpenOptions::new()

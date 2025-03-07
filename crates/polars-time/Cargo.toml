@@ -22,7 +22,6 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true, optional = true }
 now = { version = "0.1" }
 num-traits = { workspace = true }
-once_cell = { workspace = true }
 rayon = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true, optional = true }
