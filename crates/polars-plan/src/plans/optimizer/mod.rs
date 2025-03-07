@@ -108,10 +108,6 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     #[cfg(not(feature = "cse"))]
     let comm_subexpr_elim = false;
 
-    #[allow(unused_variables)]
-    let agg_scan_projection =
-        opt_flags.contains(OptFlags::FILE_CACHING) && !opt_flags.streaming() && !opt_flags.eager();
-
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]
     let prev_schema = lp_arena.get(lp_top).schema(lp_arena).into_owned();

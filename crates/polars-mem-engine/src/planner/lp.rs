@@ -12,7 +12,6 @@ use self::python_dsl::PythonScanSource;
 use super::super::executors::{self, Executor};
 use super::*;
 use crate::predicate::PhysicalColumnPredicates;
-use crate::utils::*;
 use crate::ScanPredicate;
 
 fn partitionable_gb(
@@ -48,15 +47,26 @@ fn partitionable_gb(
     }
 }
 
+#[derive(Clone)]
 struct ConversionState {
     expr_depth: u16,
+    has_cache: bool,
 }
 
 impl ConversionState {
     fn new() -> PolarsResult<Self> {
         Ok(ConversionState {
             expr_depth: get_expr_depth_limit()?,
+            has_cache: false,
         })
+    }
+
+    fn with_new_branch<K, F: FnOnce(&mut Self) -> K>(&mut self, func: F) -> (K, Self) {
+        let mut new_state = self.clone();
+        new_state.has_cache = false;
+        let out = func(&mut new_state);
+        self.has_cache = new_state.has_cache;
+        (out, new_state)
     }
 }
 
@@ -65,15 +75,15 @@ pub fn create_physical_plan(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Box<dyn Executor>> {
-    let state = ConversionState::new()?;
-    create_physical_plan_impl(root, lp_arena, expr_arena, &state)
+    let mut state = ConversionState::new()?;
+    create_physical_plan_impl(root, lp_arena, expr_arena, &mut state)
 }
 
 fn create_physical_plan_impl(
     root: Node,
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
-    state: &ConversionState,
+    state: &mut ConversionState,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
 
@@ -136,20 +146,39 @@ fn create_physical_plan_impl(
                 )
             },
         },
-        Union { inputs, options } => {
-            let inputs = inputs
-                .into_iter()
-                .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, state))
-                .collect::<PolarsResult<Vec<_>>>()?;
+        Union {
+            inputs,
+            mut options,
+        } => {
+            let (inputs, new_state) = state.with_new_branch(|new_state| {
+                inputs
+                    .into_iter()
+                    .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, new_state))
+                    .collect::<PolarsResult<Vec<_>>>()
+            });
+            if new_state.has_cache {
+                options.parallel = false
+            }
+            let inputs = inputs?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         },
         HConcat {
-            inputs, options, ..
+            inputs,
+            mut options,
+            ..
         } => {
-            let inputs = inputs
-                .into_iter()
-                .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, state))
-                .collect::<PolarsResult<Vec<_>>>()?;
+            let (inputs, new_state) = state.with_new_branch(|new_state| {
+                inputs
+                    .into_iter()
+                    .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, new_state))
+                    .collect::<PolarsResult<Vec<_>>>()
+            });
+
+            if new_state.has_cache {
+                options.parallel = false
+            }
+            let inputs = inputs?;
+
             Ok(Box::new(executors::HConcatExec { inputs, options }))
         },
         Slice { input, offset, len } => {
@@ -385,6 +414,7 @@ fn create_physical_plan_impl(
             cache_hits,
         } => {
             let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            state.has_cache = true;
             Ok(Box::new(executors::CacheExec {
                 id,
                 input,
@@ -503,25 +533,26 @@ fn create_physical_plan_impl(
             schema,
             ..
         } => {
-            let parallel = if options.force_parallel {
-                true
-            } else if options.allow_parallel {
-                // check if two DataFrames come from a separate source.
-                // If they don't we can parallelize,
-                // we may deadlock if we don't check this
-                let mut sources_left = PlHashSet::new();
-                agg_source_paths(input_left, &mut sources_left, lp_arena);
-                let mut sources_right = PlHashSet::new();
-                agg_source_paths(input_right, &mut sources_right, lp_arena);
-                sources_left.intersection(&sources_right).next().is_none()
-            } else {
-                false
-            };
             let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
             let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
-            let input_left = create_physical_plan_impl(input_left, lp_arena, expr_arena, state)?;
-            let input_right = create_physical_plan_impl(input_right, lp_arena, expr_arena, state)?;
+            let ((input_left, input_right), new_state) = state.with_new_branch(|new_state| {
+                (
+                    create_physical_plan_impl(input_left, lp_arena, expr_arena, new_state),
+                    create_physical_plan_impl(input_right, lp_arena, expr_arena, new_state),
+                )
+            });
+            let input_left = input_left?;
+            let input_right = input_right?;
+
+            // Todo! remove the force option. It can deadlock.
+            let parallel = if options.force_parallel {
+                true
+            } else if options.allow_parallel {
+                !new_state.has_cache
+            } else {
+                false
+            };
 
             let left_on = create_physical_expressions_from_irs(
                 &left_on,
@@ -638,13 +669,20 @@ fn create_physical_plan_impl(
             input_right,
             key,
         } => {
-            let input_left = create_physical_plan_impl(input_left, lp_arena, expr_arena, state)?;
-            let input_right = create_physical_plan_impl(input_right, lp_arena, expr_arena, state)?;
+            let ((input_left, input_right), new_state) = state.with_new_branch(|new_state| {
+                (
+                    create_physical_plan_impl(input_left, lp_arena, expr_arena, new_state),
+                    create_physical_plan_impl(input_right, lp_arena, expr_arena, new_state),
+                )
+            });
+            let input_left = input_left?;
+            let input_right = input_right?;
 
             let exec = executors::MergeSorted {
                 input_left,
                 input_right,
                 key,
+                parallel: new_state.has_cache,
             };
             Ok(Box::new(exec))
         },
