@@ -1,7 +1,7 @@
-pub mod chunked_idx_table;
 mod expressions;
 pub mod groups;
 pub mod hash_keys;
+pub mod idx_table;
 pub mod planner;
 pub mod prelude;
 pub mod reduce;
