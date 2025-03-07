@@ -520,6 +520,24 @@ fn lower_exprs_with_ctx(
                 input_streams.insert(PhysStream::first(node_key));
                 transformed_exprs.push(ctx.expr_arena.add(AExpr::Column(out_name)));
             },
+
+            ref node @ AExpr::Function {
+                input: ref inner_exprs,
+                options,
+                ..
+            }
+            | ref node @ AExpr::AnonymousFunction {
+                input: ref inner_exprs,
+                options,
+                ..
+            } if options.is_elementwise() => {
+                let inner_exprs = inner_exprs.iter().map(|expr| expr.node()).collect_vec();
+                let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &inner_exprs, ctx)?;
+                let func_expr = node.clone().replace_inputs(&trans_exprs);
+                input_streams.insert(trans_input);
+                transformed_exprs.push(ctx.expr_arena.add(func_expr));
+            },
+
             AExpr::BinaryExpr { left, op, right } => {
                 let (trans_input, trans_exprs) = lower_exprs_with_ctx(input, &[left, right], ctx)?;
                 let bin_expr = AExpr::BinaryExpr {
