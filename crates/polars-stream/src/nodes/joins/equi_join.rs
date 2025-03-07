@@ -182,14 +182,14 @@ fn estimate_cardinality(
             .par_iter()
             .enumerate()
             .try_fold(
-                || CardinalitySketch::new(),
+                CardinalitySketch::new,
                 |mut sketch, (morsel_idx, morsel)| {
                     let sliced;
                     let df = if morsel_idx == last_morsel_idx {
                         sliced = morsel.df().slice(0, last_morsel_slice);
                         &sliced
                     } else {
-                        &morsel.df()
+                        morsel.df()
                     };
                     let hash_keys =
                         runtime.block_on(select_keys(df, key_selectors, params, state))?;
