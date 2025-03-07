@@ -12,6 +12,7 @@ use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate
 use self::python_dsl::PythonScanSource;
 use super::super::executors::{self, Executor};
 use super::*;
+use crate::executors::CachePrefiller;
 use crate::predicate::PhysicalColumnPredicates;
 use crate::ScanPredicate;
 
@@ -64,12 +65,12 @@ impl ConversionState {
         })
     }
 
-    fn with_new_branch<K, F: FnOnce(&mut Self) -> K>(&mut self, func: F) -> (K, Self) {
+    fn with_new_branch<K, F: FnOnce(&mut Self) -> K>(&mut self, func: F) -> K {
         let mut new_state = self.clone();
         new_state.has_cache_child = false;
         let out = func(&mut new_state);
         self.has_cache_child = new_state.has_cache_child;
-        (out, new_state)
+        out
     }
 }
 
@@ -79,7 +80,17 @@ pub fn create_physical_plan(
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<Box<dyn Executor>> {
     let mut state = ConversionState::new()?;
-    create_physical_plan_impl(root, lp_arena, expr_arena, &mut state)
+    let mut cache_nodes = Default::default();
+    let plan = create_physical_plan_impl(root, lp_arena, expr_arena, &mut state, &mut cache_nodes)?;
+
+    if cache_nodes.is_empty() {
+        Ok(plan)
+    } else {
+        Ok(Box::new(CachePrefiller {
+            caches: cache_nodes,
+            phys_plan: plan,
+        }))
+    }
 }
 
 #[recursive]
@@ -88,8 +99,16 @@ fn create_physical_plan_impl(
     lp_arena: &mut Arena<IR>,
     expr_arena: &mut Arena<AExpr>,
     state: &mut ConversionState,
+    // Cache nodes in order of discovery
+    cache_nodes: &mut PlIndexMap<usize, Box<dyn Executor>>,
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
+
+    macro_rules! recurse {
+        ($node:expr, $state: expr) => {
+            create_physical_plan_impl($node, lp_arena, expr_arena, $state, cache_nodes)
+        };
+    }
 
     let logical_plan = if state.has_cache_parent {
         lp_arena.get(root).clone()
@@ -155,43 +174,32 @@ fn create_physical_plan_impl(
                 )
             },
         },
-        Union {
-            inputs,
-            mut options,
-        } => {
-            let (inputs, new_state) = state.with_new_branch(|new_state| {
+        Union { inputs, options } => {
+            let inputs = state.with_new_branch(|new_state| {
                 inputs
                     .into_iter()
-                    .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, new_state))
+                    .map(|node| recurse!(node, new_state))
                     .collect::<PolarsResult<Vec<_>>>()
             });
-            if new_state.has_cache_child {
-                options.parallel = false
-            }
             let inputs = inputs?;
             Ok(Box::new(executors::UnionExec { inputs, options }))
         },
         HConcat {
-            inputs,
-            mut options,
-            ..
+            inputs, options, ..
         } => {
-            let (inputs, new_state) = state.with_new_branch(|new_state| {
+            let inputs = state.with_new_branch(|new_state| {
                 inputs
                     .into_iter()
-                    .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, new_state))
+                    .map(|node| recurse!(node, new_state))
                     .collect::<PolarsResult<Vec<_>>>()
             });
 
-            if new_state.has_cache_child {
-                options.parallel = false
-            }
             let inputs = inputs?;
 
             Ok(Box::new(executors::HConcatExec { inputs, options }))
         },
         Slice { input, offset, len } => {
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             Ok(Box::new(executors::SliceExec { input, offset, len }))
         },
         Filter { input, predicate } => {
@@ -215,7 +223,7 @@ fn create_physical_plan_impl(
                         }
                     }
             }
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let predicate = create_physical_expr(
                 &predicate,
@@ -359,7 +367,7 @@ fn create_physical_plan_impl(
             ..
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             let mut state = ExpressionConversionState::new(
                 POOL.current_num_threads() > expr.len(),
                 state.expr_depth,
@@ -409,7 +417,7 @@ fn create_physical_plan_impl(
                 input_schema.as_ref(),
                 &mut ExpressionConversionState::new(true, state.expr_depth),
             )?;
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             Ok(Box::new(executors::SortExec {
                 input,
                 by_column,
@@ -423,16 +431,28 @@ fn create_physical_plan_impl(
             cache_hits,
         } => {
             state.has_cache_parent = true;
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
             state.has_cache_child = true;
+
+            if !cache_nodes.contains_key(&id) {
+                let input = recurse!(input, state)?;
+
+                let cache = Box::new(executors::CacheExec {
+                    id,
+                    input: Some(input),
+                    count: cache_hits,
+                });
+
+                cache_nodes.insert(id, cache);
+            }
+
             Ok(Box::new(executors::CacheExec {
                 id,
-                input,
+                input: None,
                 count: cache_hits,
             }))
         },
         Distinct { input, options } => {
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             Ok(Box::new(executors::UniqueExec { input, options }))
         },
         GroupBy {
@@ -464,7 +484,7 @@ fn create_physical_plan_impl(
             let _slice = options.slice;
             #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.dynamic {
-                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+                let input = recurse!(input, state)?;
                 return Ok(Box::new(executors::GroupByDynamicExec {
                     input,
                     keys: phys_keys,
@@ -478,7 +498,7 @@ fn create_physical_plan_impl(
 
             #[cfg(feature = "dynamic_group_by")]
             if let Some(options) = options.rolling {
-                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+                let input = recurse!(input, state)?;
                 return Ok(Box::new(executors::GroupByRollingExec {
                     input,
                     keys: phys_keys,
@@ -500,7 +520,7 @@ fn create_physical_plan_impl(
                         false
                     }
                 });
-                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+                let input = recurse!(input, state)?;
                 let keys = keys
                     .iter()
                     .map(|e| e.to_expr(expr_arena))
@@ -522,7 +542,7 @@ fn create_physical_plan_impl(
                     aggs,
                 )))
             } else {
-                let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+                let input = recurse!(input, state)?;
                 Ok(Box::new(executors::GroupByExec::new(
                     input,
                     phys_keys,
@@ -546,10 +566,10 @@ fn create_physical_plan_impl(
             let schema_left = lp_arena.get(input_left).schema(lp_arena).into_owned();
             let schema_right = lp_arena.get(input_right).schema(lp_arena).into_owned();
 
-            let ((input_left, input_right), new_state) = state.with_new_branch(|new_state| {
+            let (input_left, input_right) = state.with_new_branch(|new_state| {
                 (
-                    create_physical_plan_impl(input_left, lp_arena, expr_arena, new_state),
-                    create_physical_plan_impl(input_right, lp_arena, expr_arena, new_state),
+                    recurse!(input_left, new_state),
+                    recurse!(input_right, new_state),
                 )
             });
             let input_left = input_left?;
@@ -558,10 +578,8 @@ fn create_physical_plan_impl(
             // Todo! remove the force option. It can deadlock.
             let parallel = if options.force_parallel {
                 true
-            } else if options.allow_parallel {
-                !new_state.has_cache_child
             } else {
-                false
+                options.allow_parallel
             };
 
             let left_on = create_physical_expressions_from_irs(
@@ -623,7 +641,7 @@ fn create_physical_plan_impl(
             options,
         } => {
             let input_schema = lp_arena.get(input).schema(lp_arena).into_owned();
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
 
             let allow_vertical_parallelism = options.should_broadcast
                 && exprs
@@ -655,21 +673,21 @@ fn create_physical_plan_impl(
         MapFunction {
             input, function, ..
         } => {
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             Ok(Box::new(executors::UdfExec { input, function }))
         },
         ExtContext {
             input, contexts, ..
         } => {
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             let contexts = contexts
                 .into_iter()
-                .map(|node| create_physical_plan_impl(node, lp_arena, expr_arena, state))
+                .map(|node| recurse!(node, state))
                 .collect::<PolarsResult<_>>()?;
             Ok(Box::new(executors::ExternalContext { input, contexts }))
         },
         SimpleProjection { input, columns } => {
-            let input = create_physical_plan_impl(input, lp_arena, expr_arena, state)?;
+            let input = recurse!(input, state)?;
             let exec = executors::ProjectionSimple { input, columns };
             Ok(Box::new(exec))
         },
@@ -679,10 +697,10 @@ fn create_physical_plan_impl(
             input_right,
             key,
         } => {
-            let ((input_left, input_right), new_state) = state.with_new_branch(|new_state| {
+            let (input_left, input_right) = state.with_new_branch(|new_state| {
                 (
-                    create_physical_plan_impl(input_left, lp_arena, expr_arena, new_state),
-                    create_physical_plan_impl(input_right, lp_arena, expr_arena, new_state),
+                    recurse!(input_left, new_state),
+                    recurse!(input_right, new_state),
                 )
             });
             let input_left = input_left?;
@@ -692,7 +710,6 @@ fn create_physical_plan_impl(
                 input_left,
                 input_right,
                 key,
-                parallel: new_state.has_cache_child,
             };
             Ok(Box::new(exec))
         },

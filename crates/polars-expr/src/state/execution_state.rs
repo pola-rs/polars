@@ -106,7 +106,7 @@ type CachedValue = Arc<(AtomicI64, OnceCell<DataFrame>)>;
 /// State/ cache that is maintained during the Execution of the physical plan.
 pub struct ExecutionState {
     // cached by a `.cache` call and kept in memory for the duration of the plan.
-    df_cache: Arc<Mutex<PlHashMap<usize, CachedValue>>>,
+    df_cache: Arc<RwLock<PlHashMap<usize, CachedValue>>>,
     pub schema_cache: RwLock<Option<SchemaRef>>,
     /// Used by Window Expressions to cache intermediate state
     pub window_cache: Arc<WindowCache>,
@@ -218,15 +218,26 @@ impl ExecutionState {
     }
 
     pub fn get_df_cache(&self, key: usize, cache_hits: u32) -> CachedValue {
-        let mut guard = self.df_cache.lock().unwrap();
-        guard
-            .entry(key)
-            .or_insert_with(|| Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new())))
-            .clone()
+        let guard = self.df_cache.read().unwrap();
+
+        match guard.get(&key) {
+            Some(v) => v.clone(),
+            None => {
+                drop(guard);
+                let mut guard = self.df_cache.write().unwrap();
+
+                guard
+                    .entry(key)
+                    .or_insert_with(|| {
+                        Arc::new((AtomicI64::new(cache_hits as i64), OnceCell::new()))
+                    })
+                    .clone()
+            },
+        }
     }
 
     pub fn remove_df_cache(&self, key: usize) {
-        let mut guard = self.df_cache.lock().unwrap();
+        let mut guard = self.df_cache.write().unwrap();
         let _ = guard.remove(&key).unwrap();
     }
 
