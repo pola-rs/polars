@@ -38,6 +38,7 @@ pub struct IRPlanRef<'a> {
 #[derive(Clone, Debug, Default, IntoStaticStr)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[allow(clippy::large_enum_variant)]
 pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {

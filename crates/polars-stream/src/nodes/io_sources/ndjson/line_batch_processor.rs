@@ -140,7 +140,7 @@ impl LineBatchProcessorOutputPort {
         match self {
             Direct { .. } => "direct",
             Linearize { .. } => "linearize",
-            Closed { .. } => "closed",
+            Closed => "closed",
         }
     }
 
@@ -191,7 +191,7 @@ impl LineBatchProcessorOutputPort {
                     .insert(Priority(Reverse(morsel_seq), df))
                     .await
                     .map_err(|_| ()),
-                Closed { .. } => unreachable!(),
+                Closed => unreachable!(),
             }
         }
         .await;

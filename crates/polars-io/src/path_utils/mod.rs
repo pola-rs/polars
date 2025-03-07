@@ -50,8 +50,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
             if let Ok(v) = id {
                 std::env::temp_dir().join(format!("polars-{}/", v))
             } else {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(std::io::Error::other(
                     "could not load $USER or $HOME environment variables",
                 ));
             }
@@ -84,10 +83,10 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
                 let perms = std::fs::metadata(path.as_ref())?.permissions();
 
                 if (perms.mode() % 0o1000) != 0o700 {
-                    std::io::Result::Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("permission mismatch: {:?}", perms),
-                    ))
+                    std::io::Result::Err(std::io::Error::other(format!(
+                        "permission mismatch: {:?}",
+                        perms
+                    )))
                 } else {
                     std::io::Result::Ok(())
                 }

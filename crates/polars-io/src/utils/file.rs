@@ -17,6 +17,7 @@ use crate::{is_cloud_url, resolve_homedir};
 /// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
 ///
 /// Also see: `Writeable::try_into_async_writeable` and `AsyncWriteable`.
+#[allow(clippy::large_enum_variant)]
 pub enum Writeable {
     Local(std::fs::File),
     #[cfg(feature = "cloud")]

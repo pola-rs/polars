@@ -219,7 +219,7 @@ pub fn convert_inner_type(array: &dyn Array, dtype: &ArrowDataType) -> Box<dyn A
             let length = if width == array.size() {
                 array.len()
             } else {
-                assert!(array.values().len() > 0 || width != 0);
+                assert!(!array.values().is_empty() || width != 0);
                 if width == 0 {
                     0
                 } else {

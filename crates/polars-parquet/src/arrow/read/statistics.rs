@@ -21,6 +21,7 @@ use crate::read::{
 
 /// Parquet statistics for a nesting level
 #[derive(Debug, PartialEq)]
+#[allow(clippy::large_enum_variant)]
 pub enum Statistics {
     Column(ColumnStatistics),
 

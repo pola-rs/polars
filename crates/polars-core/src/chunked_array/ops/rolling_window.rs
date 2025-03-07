@@ -59,7 +59,7 @@ mod inner_mod {
     /// utility
     fn window_edges(idx: usize, len: usize, window_size: usize, center: bool) -> (usize, usize) {
         let (start, end) = if center {
-            let right_window = (window_size + 1) / 2;
+            let right_window = window_size.div_ceil(2);
             (
                 idx.saturating_sub(window_size - right_window),
                 len.min(idx + right_window),
@@ -231,7 +231,7 @@ mod inner_mod {
             let validity_slice = validity.as_mut_slice();
 
             let mut values = Vec::with_capacity(ca.len());
-            values.extend(std::iter::repeat(T::Native::default()).take(window_size - 1));
+            values.extend(std::iter::repeat_n(T::Native::default(), window_size - 1));
 
             for offset in 0..self.len() + 1 - window_size {
                 debug_assert!(offset + window_size <= arr.len());

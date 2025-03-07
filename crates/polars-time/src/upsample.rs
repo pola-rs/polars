@@ -12,7 +12,7 @@ pub trait PolarsUpsample {
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
     /// * `time_column` - Will be used to determine a date_range.
-    ///                   Note that this column has to be sorted for the output to make sense.
+    ///   Note that this column has to be sorted for the output to make sense.
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///
@@ -53,7 +53,7 @@ pub trait PolarsUpsample {
     /// # Arguments
     /// * `by` - First group by these columns and then upsample for every group
     /// * `time_column` - Will be used to determine a date_range.
-    ///                   Note that this column has to be sorted for the output to make sense.
+    ///   Note that this column has to be sorted for the output to make sense.
     /// * `every` - interval will start 'every' duration
     /// * `offset` - change the start of the date_range by this offset.
     ///

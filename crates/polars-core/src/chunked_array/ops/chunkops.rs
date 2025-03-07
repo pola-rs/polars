@@ -308,7 +308,7 @@ impl<T: PolarsDataType> ChunkedArray<T> {
                     true
                 } else {
                     // Remove the empty chunks
-                    arr.len() > 0
+                    !arr.is_empty()
                 }
             })
         }

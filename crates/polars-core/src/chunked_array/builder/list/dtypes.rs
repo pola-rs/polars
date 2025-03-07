@@ -1,5 +1,6 @@
 use super::*;
 
+#[allow(clippy::large_enum_variant)]
 pub(super) enum DtypeMerger {
     #[cfg(feature = "dtype-categorical")]
     Categorical(GlobalRevMapMerger, CategoricalOrdering),

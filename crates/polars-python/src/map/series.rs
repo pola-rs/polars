@@ -258,7 +258,7 @@ where
     I: Iterator<Item = Option<T>> + 'a,
 {
     let mut avs = Vec::with_capacity(len);
-    avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+    avs.extend(std::iter::repeat_n(AnyValue::Null, init_null_count));
     avs.push(first_value);
 
     for opt_val in iter {
@@ -1184,7 +1184,7 @@ impl<'a> ApplyLambda<'a> for ListChunked {
     ) -> PyResult<Series> {
         let pypolars = polars(py).bind(py);
         let mut avs = Vec::with_capacity(self.len());
-        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.extend(std::iter::repeat_n(AnyValue::Null, init_null_count));
         avs.push(first_value);
 
         let call_with_value = |val: Series| {
@@ -1499,7 +1499,7 @@ impl<'a> ApplyLambda<'a> for ArrayChunked {
     ) -> PyResult<Series> {
         let pypolars = polars(py).bind(py);
         let mut avs = Vec::with_capacity(self.len());
-        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.extend(std::iter::repeat_n(AnyValue::Null, init_null_count));
         avs.push(first_value);
 
         let call_with_value = |val: Series| {
@@ -1951,7 +1951,7 @@ impl<'a> ApplyLambda<'a> for StructChunked {
         first_value: AnyValue<'a>,
     ) -> PyResult<Series> {
         let mut avs = Vec::with_capacity(self.len());
-        avs.extend(std::iter::repeat(AnyValue::Null).take(init_null_count));
+        avs.extend(std::iter::repeat_n(AnyValue::Null, init_null_count));
         avs.push(first_value);
 
         for val in iter_struct(self).skip(init_null_count + 1) {

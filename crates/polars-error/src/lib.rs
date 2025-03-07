@@ -150,11 +150,7 @@ impl From<regex::Error> for PolarsError {
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("object-store error: {err:?}"),
-        )
-        .into()
+        std::io::Error::other(format!("object-store error: {err:?}")).into()
     }
 }
 

@@ -10,7 +10,7 @@ use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 pub fn is_last_distinct(s: &Series) -> PolarsResult<BooleanChunked> {
     // fast path.
-    if s.len() == 0 {
+    if s.is_empty() {
         return Ok(BooleanChunked::full_null(s.name().clone(), 0));
     } else if s.len() == 1 {
         return Ok(BooleanChunked::new(s.name().clone(), &[true]));

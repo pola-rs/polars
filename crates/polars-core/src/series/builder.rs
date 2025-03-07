@@ -70,7 +70,7 @@ impl SeriesBuilder {
         mut length: usize,
         share: ShareStrategy,
     ) {
-        if length == 0 || other.len() == 0 {
+        if length == 0 || other.is_empty() {
             return;
         }
 
@@ -99,7 +99,7 @@ impl SeriesBuilder {
         repeats: usize,
         share: ShareStrategy,
     ) {
-        if length == 0 || other.len() == 0 {
+        if length == 0 || other.is_empty() {
             return;
         }
 

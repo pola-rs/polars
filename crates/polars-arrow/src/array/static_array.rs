@@ -95,7 +95,7 @@ pub trait StaticArray:
     fn full_null(length: usize, dtype: ArrowDataType) -> Self;
 
     fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
-        Self::arr_from_iter_with_dtype(dtype, std::iter::repeat(value).take(length))
+        Self::arr_from_iter_with_dtype(dtype, std::iter::repeat_n(value, length))
     }
 }
 

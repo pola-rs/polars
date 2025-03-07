@@ -608,7 +608,7 @@ impl Display for DataFrame {
             let padding = 2; // eg: one char either side of the value
 
             let (n_first, n_last) = if self.width() > max_n_cols {
-                ((max_n_cols + 1) / 2, max_n_cols / 2)
+                (max_n_cols.div_ceil(2), max_n_cols / 2)
             } else {
                 (self.width(), 0)
             };
@@ -839,15 +839,14 @@ fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> St
         } else {
             0
         };
-        let int_body = num[sign_offset..]
-            .as_bytes()
+        let int_body = &num.as_bytes()[sign_offset..]
             .rchunks(group_size as usize)
             .rev()
             .map(str::from_utf8)
             .collect::<Result<Vec<&str>, _>>()
             .unwrap()
             .join(group_separator);
-        out.push_str(&int_body);
+        out.push_str(int_body);
         out
     }
 }

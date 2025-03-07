@@ -110,10 +110,10 @@ impl PySeries {
                 DataType::Null => {
                     let null: Option<u8> = None;
                     let n = series.len();
-                    let iter = std::iter::repeat(null).take(n);
-                    use std::iter::{Repeat, Take};
+                    let iter = std::iter::repeat_n(null, n);
+                    use std::iter::RepeatN;
                     struct NullIter {
-                        iter: Take<Repeat<Option<u8>>>,
+                        iter: RepeatN<Option<u8>>,
                         n: usize,
                     }
                     impl Iterator for NullIter {

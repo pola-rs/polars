@@ -238,20 +238,14 @@ impl io::Seek for MemReader {
             io::SeekFrom::Start(position) => usize::min(position as usize, self.total_len()),
             io::SeekFrom::End(offset) => {
                 let Some(position) = self.total_len().checked_add_signed(offset as isize) else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "Seek before to before buffer",
-                    ));
+                    return Err(io::Error::other("Seek before to before buffer"));
                 };
 
                 position
             },
             io::SeekFrom::Current(offset) => {
                 let Some(position) = self.position.checked_add_signed(offset as isize) else {
-                    return Err(io::Error::new(
-                        io::ErrorKind::Other,
-                        "Seek before to before buffer",
-                    ));
+                    return Err(io::Error::other("Seek before to before buffer"));
                 };
 
                 position

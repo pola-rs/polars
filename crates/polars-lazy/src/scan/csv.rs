@@ -367,7 +367,6 @@ impl LazyFileListReader for LazyCsvReader {
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
     fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.read_options.rechunk = rechunk;
         self

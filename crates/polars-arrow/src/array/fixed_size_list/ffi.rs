@@ -36,7 +36,7 @@ impl<A: ffi::ArrowArrayRef> FromFfi<A> for FixedSizeListArray {
         let child = unsafe { array.child(0) }?;
         let values = ffi::try_from(child)?;
 
-        let length = if values.len() == 0 {
+        let length = if values.is_empty() {
             0
         } else {
             polars_ensure!(width > 0, InvalidOperation: "Zero-width array with values");

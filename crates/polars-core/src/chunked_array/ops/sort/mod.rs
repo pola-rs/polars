@@ -208,7 +208,7 @@ where
         let mut vals = Vec::with_capacity(ca.len());
 
         if !options.nulls_last {
-            let iter = std::iter::repeat(T::Native::default()).take(null_count);
+            let iter = std::iter::repeat_n(T::Native::default(), null_count);
             vals.extend(iter);
         }
 
@@ -225,7 +225,7 @@ where
         sort_impl_unstable(mut_slice, options);
 
         if options.nulls_last {
-            vals.extend(std::iter::repeat(T::Native::default()).take(ca.null_count()));
+            vals.extend(std::iter::repeat_n(T::Native::default(), ca.null_count()));
         }
 
         let arr = PrimitiveArray::new(
@@ -534,7 +534,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                     length_so_far = values.len() as i64;
                     offsets.push(length_so_far);
                 }
-                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
+                offsets.extend(std::iter::repeat_n(length_so_far, null_count));
 
                 // SAFETY: offsets are correctly created.
                 let arr = unsafe {
@@ -547,7 +547,7 @@ impl ChunkSort<BinaryOffsetType> for BinaryOffsetChunked {
                 ChunkedArray::with_chunk(self.name().clone(), arr)
             },
             (_, false) => {
-                offsets.extend(std::iter::repeat(length_so_far).take(null_count));
+                offsets.extend(std::iter::repeat_n(length_so_far, null_count));
 
                 for val in v {
                     values.extend_from_slice(val);

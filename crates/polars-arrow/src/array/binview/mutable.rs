@@ -340,7 +340,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             self.init_validity(false);
         }
         self.views
-            .extend(std::iter::repeat(View::default()).take(additional));
+            .extend(std::iter::repeat_n(View::default(), additional));
         if let Some(validity) = &mut self.validity {
             validity.extend_constant(additional, false);
         }
@@ -365,7 +365,7 @@ impl<T: ViewType + ?Sized> MutableBinaryViewArray<T> {
             })
             .unwrap_or_default();
         self.views
-            .extend(std::iter::repeat(view_value).take(additional));
+            .extend(std::iter::repeat_n(view_value, additional));
     }
 
     impl_mutable_array_mut_validity!();

@@ -68,10 +68,7 @@ impl BlockingCloudWriter {
     pub fn try_into_inner(mut self) -> std::io::Result<BufWriter> {
         // We can't just return self.state:
         // * cannot move out of type `adaptors::BlockingCloudWriter`, which implements the `Drop` trait
-        std::mem::replace(
-            &mut self.state,
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "")),
-        )
+        std::mem::replace(&mut self.state, Err(std::io::Error::other("")))
     }
 
     /// Closes the writer, or returns the existing error if it exists. After this function is called
@@ -79,7 +76,7 @@ impl BlockingCloudWriter {
     pub fn close(&mut self) -> std::io::Result<()> {
         match self.try_with_writer(|writer| get_runtime().block_in_place_on(writer.shutdown())) {
             Ok(_) => {
-                self.state = Err(std::io::Error::new(std::io::ErrorKind::Other, "closed"));
+                self.state = Err(std::io::Error::other("closed"));
                 Ok(())
             },
             Err(e) => Err(e),

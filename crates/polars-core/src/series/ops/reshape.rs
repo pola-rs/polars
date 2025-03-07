@@ -248,7 +248,7 @@ impl Series {
                 let rows = dimensions[0];
                 let cols = dimensions[1];
 
-                if s_ref.len() == 0_usize {
+                if s_ref.is_empty() {
                     if rows.get_or_infer(0) == 0 && cols.get_or_infer(0) <= 1 {
                         let s = reshape_fast_path(s.name().clone(), s_ref);
                         return Ok(s);

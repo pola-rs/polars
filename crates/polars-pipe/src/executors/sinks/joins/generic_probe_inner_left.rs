@@ -164,7 +164,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                     let indexes_right = &indexes_right.0;
                     self.join_tuples_a.extend_from_slice(indexes_right);
                     self.join_tuples_b
-                        .extend(std::iter::repeat(df_idx_left).take(indexes_right.len()));
+                        .extend(std::iter::repeat_n(df_idx_left, indexes_right.len()));
                 },
                 None => {
                     self.join_tuples_b.push(df_idx_left);
@@ -238,7 +238,7 @@ impl<K: ExtraPayload> GenericJoinProbe<K> {
                 let indexes_left = &indexes_left.0;
                 self.join_tuples_a.extend_from_slice(indexes_left);
                 self.join_tuples_b
-                    .extend(std::iter::repeat(df_idx_right).take(indexes_left.len()));
+                    .extend(std::iter::repeat_n(df_idx_right, indexes_left.len()));
             }
         }
     }

@@ -145,7 +145,7 @@ impl ComputeNode for ZipNode {
         assert!(send.len() == 1);
         assert!(recv.len() == self.input_heads.len());
 
-        let any_input_blocked = recv.iter().any(|s| *s == PortState::Blocked);
+        let any_input_blocked = recv.contains(&PortState::Blocked);
 
         let mut all_broadcast = true;
         let mut all_done_or_broadcast = true;
