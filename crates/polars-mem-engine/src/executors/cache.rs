@@ -17,10 +17,13 @@ impl Executor for CacheExec {
                     eprintln!("CACHE HIT: cache id: {:x}", self.id);
                 }
                 let cache = state.get_df_cache(self.id, self.count);
+                let out = cache.1.get().expect("prefilled").clone();
                 let previous = cache.0.fetch_sub(1, Ordering::Relaxed);
-                debug_assert!(previous >= 0);
+                if previous == 0 {
+                    state.remove_df_cache(self.id);
+                }
 
-                Ok(cache.1.get().expect("prefilled").clone())
+                Ok(out)
             },
             // Cache Prefill node
             Some(input) => {
