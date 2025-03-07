@@ -5,11 +5,10 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
 use arrow::array::ArrayRef;
 use arrow::datatypes::ArrowDataType;
-use once_cell::sync::Lazy;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
@@ -36,7 +35,8 @@ impl Debug for ObjectRegistry {
     }
 }
 
-static GLOBAL_OBJECT_REGISTRY: Lazy<RwLock<Option<ObjectRegistry>>> = Lazy::new(Default::default);
+static GLOBAL_OBJECT_REGISTRY: LazyLock<RwLock<Option<ObjectRegistry>>> =
+    LazyLock::new(Default::default);
 
 /// This trait can be registered, after which that global registration
 /// can be used to materialize object types
