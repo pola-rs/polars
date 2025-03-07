@@ -53,7 +53,7 @@ impl LazyFileListReader for LazyIpcReader {
 
         let options = IpcScanOptions {};
 
-        let mut lf: LazyFrame = DslBuilder::scan_ipc(
+        let lf: LazyFrame = DslBuilder::scan_ipc(
             self.sources,
             options,
             args.n_rows,
@@ -66,7 +66,6 @@ impl LazyFileListReader for LazyIpcReader {
         )?
         .build()
         .into();
-        lf.opt_state |= OptFlags::FILE_CACHING;
 
         Ok(lf)
     }
