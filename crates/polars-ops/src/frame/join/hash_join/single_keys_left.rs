@@ -171,7 +171,7 @@ where
                     match value {
                         // left and right matches
                         Some(indexes_b) => {
-                            result_idx_left.extend(std::iter::repeat(idx_a).take(indexes_b.len()));
+                            result_idx_left.extend(std::iter::repeat_n(idx_a, indexes_b.len()));
                             result_idx_right.extend_from_slice(bytemuck::cast_slice(indexes_b));
                         },
                         // only left values, right = null

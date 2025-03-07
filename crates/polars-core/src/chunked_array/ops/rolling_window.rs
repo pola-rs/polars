@@ -231,7 +231,7 @@ mod inner_mod {
             let validity_slice = validity.as_mut_slice();
 
             let mut values = Vec::with_capacity(ca.len());
-            values.extend(std::iter::repeat(T::Native::default()).take(window_size - 1));
+            values.extend(std::iter::repeat_n(T::Native::default(), window_size - 1));
 
             for offset in 0..self.len() + 1 - window_size {
                 debug_assert!(offset + window_size <= arr.len());

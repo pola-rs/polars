@@ -567,8 +567,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 )
                 .map_err(|e| e.context(failed_here!(sort)))?;
 
-                nulls_last.extend(std::iter::repeat(n).take(exprs.len()));
-                descending.extend(std::iter::repeat(d).take(exprs.len()));
+                nulls_last.extend(std::iter::repeat_n(n, exprs.len()));
+                descending.extend(std::iter::repeat_n(d, exprs.len()));
                 expanded_cols.extend(exprs);
             }
             sort_options.nulls_last = nulls_last;

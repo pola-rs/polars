@@ -794,7 +794,7 @@ fn is_in_null(s: &Series, other: &Series, nulls_equal: bool) -> PolarsResult<Boo
                 // If other has null values, then all are true, else all are false.
                 BooleanChunked::from_iter_values(
                     ca_in.name().clone(),
-                    std::iter::repeat(other.has_nulls()).take(ca_in.len()),
+                    std::iter::repeat_n(other.has_nulls(), ca_in.len()),
                 )
             },
         })

@@ -274,7 +274,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
         },
         Null => {
             let n = s.len();
-            let values = std::iter::repeat(f32::NAN).take(n);
+            let values = std::iter::repeat_n(f32::NAN, n);
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Unknown(_) | BinaryOffset => unreachable!(),

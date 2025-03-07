@@ -331,7 +331,7 @@ impl MutableBitmap {
             let required = (self.length + additional).saturating_add(7) / 8;
             // add remaining as full bytes
             self.buffer
-                .extend(std::iter::repeat(0b11111111u8).take(required - existing));
+                .extend(std::iter::repeat_n(0b11111111u8, required - existing));
             self.length += additional;
         }
     }

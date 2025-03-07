@@ -79,8 +79,8 @@ fn read_array_impl<I: Iterator<Item = i64>>(
         (def_level_encoding.0, max_def_level == 0),
     ) {
         ((Encoding::Rle, true), (Encoding::Rle, true)) => compose_array(
-            std::iter::repeat(0).take(length),
-            std::iter::repeat(0).take(length),
+            std::iter::repeat_n(0, length),
+            std::iter::repeat_n(0, length),
             max_rep_level,
             max_def_level,
             values,
@@ -90,7 +90,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let rep_levels = HybridRleDecoder::new(rep_levels, num_bits, length);
             compose_array(
                 hybrid_rle_iter(rep_levels)?,
-                std::iter::repeat(0).take(length),
+                std::iter::repeat_n(0, length),
                 max_rep_level,
                 max_def_level,
                 values,
@@ -100,7 +100,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let num_bits = get_bit_width(def_level_encoding.1);
             let def_levels = HybridRleDecoder::new(def_levels, num_bits, length);
             compose_array(
-                std::iter::repeat(0).take(length),
+                std::iter::repeat_n(0, length),
                 hybrid_rle_iter(def_levels)?,
                 max_rep_level,
                 max_def_level,
