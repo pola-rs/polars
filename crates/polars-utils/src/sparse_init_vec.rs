@@ -1,17 +1,16 @@
-use std::sync::atomic::{AtomicUsize, AtomicU8, Ordering};
-
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 pub struct SparseInitVec<T> {
     ptr: *mut T,
     len: usize,
     cap: usize,
-    
+
     num_init: AtomicUsize,
     init_mask: Vec<AtomicU8>,
 }
 
-unsafe impl<T: Send> Send for SparseInitVec<T> { }
-unsafe impl<T: Send> Sync for SparseInitVec<T> { }
+unsafe impl<T: Send> Send for SparseInitVec<T> {}
+unsafe impl<T: Send> Sync for SparseInitVec<T> {}
 
 impl<T> SparseInitVec<T> {
     pub fn with_capacity(len: usize) -> Self {
@@ -28,7 +27,7 @@ impl<T> SparseInitVec<T> {
             init_mask,
         }
     }
-    
+
     pub fn try_set(&self, idx: usize, value: T) -> Result<(), T> {
         unsafe {
             if idx >= self.len {
@@ -42,14 +41,14 @@ impl<T> SparseInitVec<T> {
             if init_mask_byte.fetch_or(bit_mask, Ordering::Relaxed) & bit_mask != 0 {
                 return Err(value);
             }
-            
+
             self.ptr.add(idx).write(value);
             self.num_init.fetch_add(1, Ordering::Relaxed);
         }
-        
+
         Ok(())
     }
-    
+
     pub fn try_assume_init(mut self) -> Result<Vec<T>, Self> {
         unsafe {
             if *self.num_init.get_mut() == self.len {
@@ -69,7 +68,7 @@ impl<T> Drop for SparseInitVec<T> {
         unsafe {
             // Make sure storage gets dropped even if element drop panics.
             let _storage = Vec::from_raw_parts(self.ptr, 0, self.cap);
-            
+
             for idx in 0..self.len {
                 let init_mask_byte = self.init_mask.get_unchecked_mut(idx / 8);
                 let bit_mask = 1 << (idx % 8);
