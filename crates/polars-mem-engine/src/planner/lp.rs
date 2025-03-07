@@ -87,7 +87,7 @@ fn create_physical_plan_impl(
 ) -> PolarsResult<Box<dyn Executor>> {
     use IR::*;
 
-    let logical_plan = lp_arena.take(root);
+    let logical_plan = lp_arena.get(root).clone();
     match logical_plan {
         #[cfg(feature = "python")]
         PythonScan { mut options } => {
