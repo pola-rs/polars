@@ -328,52 +328,63 @@ pub(super) fn set_cache_states(
                 }
                 return Ok(());
             }
+            // Below we restart projection and predicates pushdown
+            // on the first cache node. As it are cache nodes, the others are the same
+            // and we can reuse the optimized state for all inputs.
+            // See #21637
 
             // # RUN PROJECTION PUSHDOWN
             if !v.names_union.is_empty() {
-                for &child in &v.children {
-                    let columns = &v.names_union;
-                    let child_lp = lp_arena.take(child);
+                let first_child = *v.children.first().expect("at least on child");
 
-                    // Make sure we project in the order of the schema
-                    // if we don't a union may fail as we would project by the
-                    // order we discovered all values.
-                    let child_schema = child_lp.schema(lp_arena);
-                    let child_schema = child_schema.as_ref();
-                    let projection = child_schema
-                        .iter_names()
-                        .flat_map(|name| columns.get(name.as_str()).cloned())
-                        .collect::<Vec<_>>();
+                let columns = &v.names_union;
+                let child_lp = lp_arena.take(first_child);
 
-                    let new_child = lp_arena.add(child_lp);
+                // Make sure we project in the order of the schema
+                // if we don't a union may fail as we would project by the
+                // order we discovered all values.
+                let child_schema = child_lp.schema(lp_arena);
+                let child_schema = child_schema.as_ref();
+                let projection = child_schema
+                    .iter_names()
+                    .flat_map(|name| columns.get(name.as_str()).cloned())
+                    .collect::<Vec<_>>();
 
-                    let lp = IRBuilder::new(new_child, expr_arena, lp_arena)
-                        .project_simple(projection)
-                        .expect("unique names")
-                        .build();
+                let new_child = lp_arena.add(child_lp);
 
-                    let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
-                    // Optimization can lead to a double projection. Only take the last.
-                    let lp = if let IR::SimpleProjection { input, columns } = lp {
-                        let input = if let IR::SimpleProjection { input: input2, .. } =
-                            lp_arena.get(input)
-                        {
+                let lp = IRBuilder::new(new_child, expr_arena, lp_arena)
+                    .project_simple(projection)
+                    .expect("unique names")
+                    .build();
+
+                let lp = proj_pd.optimize(lp, lp_arena, expr_arena)?;
+                // Optimization can lead to a double projection. Only take the last.
+                let lp = if let IR::SimpleProjection { input, columns } = lp {
+                    let input =
+                        if let IR::SimpleProjection { input: input2, .. } = lp_arena.get(input) {
                             *input2
                         } else {
                             input
                         };
-                        IR::SimpleProjection { input, columns }
-                    } else {
-                        lp
-                    };
-                    lp_arena.replace(child, lp);
+                    IR::SimpleProjection { input, columns }
+                } else {
+                    lp
+                };
+                lp_arena.replace(first_child, lp.clone());
+
+                // Set the remaining children to the same node.
+                for &child in &v.children[1..] {
+                    lp_arena.replace(child, lp.clone());
                 }
             } else {
                 // No upper projections to include, run projection pushdown from cache node.
-                for &child in &v.children {
-                    let child_lp = lp_arena.take(child);
-                    let lp = proj_pd.optimize(child_lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(child, lp);
+                let first_child = *v.children.first().expect("at least on child");
+                let child_lp = lp_arena.take(first_child);
+                let lp = proj_pd.optimize(child_lp, lp_arena, expr_arena)?;
+                lp_arena.replace(first_child, lp.clone());
+
+                for &child in &v.children[1..] {
+                    lp_arena.replace(child, lp.clone());
                 }
             }
 
@@ -387,17 +398,25 @@ pub(super) fn set_cache_states(
                 *count == v.children.len() as u32
             };
 
-            for (&child, parents) in v.children.iter().zip(v.parents) {
-                if allow_parent_predicate_pushdown {
+            if allow_parent_predicate_pushdown {
+                let parents = *v.parents.first().unwrap();
+                let node = get_filter_node(parents, lp_arena)
+                    .expect("expected filter; this is an optimizer bug");
+                let start_lp = lp_arena.take(node);
+                let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
+                lp_arena.replace(node, lp.clone());
+                for &parents in &v.parents[1..] {
                     let node = get_filter_node(parents, lp_arena)
                         .expect("expected filter; this is an optimizer bug");
-                    let start_lp = lp_arena.take(node);
-                    let lp = pred_pd.optimize(start_lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(node, lp);
-                } else {
-                    let child_lp = lp_arena.take(child);
-                    let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
-                    lp_arena.replace(child, lp);
+                    lp_arena.replace(node, lp.clone());
+                }
+            } else {
+                let child = *v.children.first().unwrap();
+                let child_lp = lp_arena.take(child);
+                let lp = pred_pd.optimize(child_lp, lp_arena, expr_arena)?;
+                lp_arena.replace(child, lp.clone());
+                for &child in &v.children[1..] {
+                    lp_arena.replace(child, lp.clone());
                 }
             }
         }
