@@ -3,7 +3,7 @@ use std::sync::atomic::Ordering;
 use super::*;
 
 pub struct CacheExec {
-    pub input: Box<dyn Executor>,
+    pub input: Option<Box<dyn Executor>>,
     pub id: usize,
     pub count: u32,
 }
@@ -17,7 +17,10 @@ impl Executor for CacheExec {
 
         let df = cache.1.get_or_try_init(|| {
             cache_hit = false;
-            self.input.execute(state)
+            self.input
+                .as_mut()
+                .expect("should be set on pre-fill cache")
+                .execute(state)
         })?;
 
         // Decrement count on cache hits.
@@ -34,5 +37,20 @@ impl Executor for CacheExec {
         }
 
         Ok(df.clone())
+    }
+}
+
+pub struct CachePrefiller {
+    pub caches: PlIndexMap<usize, Box<dyn Executor>>,
+    pub phys_plan: Box<dyn Executor>,
+}
+
+impl Executor for CachePrefiller {
+    fn execute(&mut self, state: &mut ExecutionState) -> PolarsResult<DataFrame> {
+        for cache in self.caches.values_mut().rev() {
+            let _df = cache.execute(state)?;
+        }
+
+        self.phys_plan.execute(state)
     }
 }
