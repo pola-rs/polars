@@ -22,15 +22,15 @@ use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
 use super::{
-    buffer_and_distribute_columns_task, SinkInputPort, SinkNode, SinkRecvPort,
+    buffer_and_distribute_columns_task, SinkInputPort, SinkNode,
     DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
 };
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::connector;
+use crate::async_primitives::connector::{connector, Receiver};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::io_sinks::sync_on_close;
-use crate::nodes::{JoinHandle, TaskPriority};
+use crate::nodes::{JoinHandle, PhaseOutcome, TaskPriority};
 
 pub struct ParquetSinkNode {
     path: PathBuf,
@@ -90,28 +90,10 @@ impl SinkNode for ParquetSinkNode {
     fn spawn_sink(
         &mut self,
         num_pipelines: usize,
-        recv_ports_recv: SinkRecvPort,
+        recv_port_rx: Receiver<(PhaseOutcome, SinkInputPort)>,
         _state: &ExecutionState,
         join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
     ) {
-        let rx = recv_ports_recv.serial(join_handles);
-        self.spawn_sink_once(
-            num_pipelines,
-            SinkInputPort::Serial(rx),
-            _state,
-            join_handles,
-        );
-    }
-
-    fn spawn_sink_once(
-        &mut self,
-        num_pipelines: usize,
-        recv_port: SinkInputPort,
-        _state: &ExecutionState,
-        join_handles: &mut Vec<JoinHandle<PolarsResult<()>>>,
-    ) {
-        // .. -> Buffer task
-        let buffer_rx = recv_port.serial();
         // Buffer task -> Encode tasks
         let (dist_tx, dist_rxs) =
             distributor_channel(num_pipelines, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE);
@@ -132,7 +114,7 @@ impl SinkNode for ParquetSinkNode {
 
         // Buffer task.
         join_handles.push(buffer_and_distribute_columns_task(
-            buffer_rx,
+            recv_port_rx,
             dist_tx,
             write_options
                 .row_group_size
