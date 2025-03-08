@@ -1,5 +1,6 @@
 use super::*;
 
+// Allow large enum as this shouldn't be moved much
 #[allow(clippy::large_enum_variant)]
 pub(super) enum DtypeMerger {
     #[cfg(feature = "dtype-categorical")]

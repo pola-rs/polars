@@ -21,9 +21,8 @@ use crate::read::{
 
 /// Parquet statistics for a nesting level
 #[derive(Debug, PartialEq)]
-#[allow(clippy::large_enum_variant)]
 pub enum Statistics {
-    Column(ColumnStatistics),
+    Column(Box<ColumnStatistics>),
 
     List(Option<Box<Statistics>>),
     FixedSizeList(Option<Box<Statistics>>, usize),
@@ -582,14 +581,14 @@ pub fn deserialize<'a>(
             Ok(column.statistics().transpose()?.map(|statistics| {
                 let primitive_type = &column.descriptor().descriptor.primitive_type;
 
-                Statistics::Column(ColumnStatistics {
+                Statistics::Column(Box::new(ColumnStatistics {
                     field: field.clone(),
 
                     logical_type: primitive_type.logical_type,
                     physical_type: primitive_type.physical_type,
 
                     statistics,
-                })
+                }))
             }))
         },
     }
