@@ -1285,3 +1285,11 @@ def test_struct_arithmetic_broadcast_21376() -> None:
         .select((pl.col("struct1") + pl.col("list_struct")).alias("add_struct"))
     )
     assert_frame_equal(out, expected)
+
+
+def test_struct_cast_string_multiple_chunks_21650() -> None:
+    df = pl.DataFrame({"a": [{"a": 1, "b": 2}]})
+    df = pl.concat([df, df], rechunk=False)
+    result = df.select(pl.col("a").cast(pl.String))
+    expected = pl.DataFrame({"a": ["{1,2}", "{1,2}"]})
+    assert_frame_equal(result, expected)

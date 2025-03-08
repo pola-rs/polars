@@ -263,9 +263,7 @@ impl StructChunked {
                 Ok(out.into_series())
             },
             DataType::String => {
-                let ca = self.clone();
-                ca.rechunk();
-
+                let ca = self.rechunk();
                 let fields = ca.fields_as_series();
                 let mut iters = fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
                 let cap = ca.len();
