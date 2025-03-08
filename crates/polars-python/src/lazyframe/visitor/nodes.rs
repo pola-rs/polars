@@ -342,7 +342,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             file_info: py.None(),
             predicate: predicate.as_ref().map(|e| e.into()),
             file_options: PyFileOptions {
-                inner: file_options.clone(),
+                inner: (**file_options).clone(),
             },
             scan_type: match &**scan_type {
                 #[cfg(feature = "csv")]

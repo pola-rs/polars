@@ -319,7 +319,7 @@ fn create_physical_plan_impl(
                     file_info,
                     predicate,
                     options,
-                    file_options,
+                    file_options: *file_options,
                     hive_parts: hive_parts.map(|h| h.into_statistics()),
                     cloud_options,
                     metadata,

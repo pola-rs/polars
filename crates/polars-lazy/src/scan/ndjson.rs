@@ -122,7 +122,7 @@ impl LazyJsonLineReader {
 
 impl LazyFileListReader for LazyJsonLineReader {
     fn finish(self) -> PolarsResult<LazyFrame> {
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             pre_slice: self.n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
@@ -138,7 +138,7 @@ impl LazyFileListReader for LazyJsonLineReader {
             glob: true,
             include_file_paths: self.include_file_paths,
             allow_missing_columns: false,
-        };
+        });
 
         let options = NDJsonReadOptions {
             n_threads: None,

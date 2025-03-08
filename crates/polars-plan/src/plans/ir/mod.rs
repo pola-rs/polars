@@ -61,7 +61,7 @@ pub enum IR {
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScan>,
         /// generic options that can be used for all file types.
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,

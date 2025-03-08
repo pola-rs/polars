@@ -35,7 +35,7 @@ impl LateMaterializedDataFrame {
                 options,
                 function: self,
             }),
-            file_options: FileScanOptions::default(),
+            file_options: Box::new(FileScanOptions::default()),
         }
     }
 }

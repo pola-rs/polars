@@ -132,7 +132,7 @@ fn source_to_exec(
                 None,
                 options,
                 cloud_options.clone(),
-                file_options.clone(),
+                Box::new(file_options.clone()),
                 metadata.cloned(),
             ))
         },
@@ -152,7 +152,7 @@ fn source_to_exec(
                 sources: source,
                 file_info,
                 options,
-                file_options,
+                file_options: Box::new(file_options),
                 predicate: None,
             })
         },
@@ -192,7 +192,7 @@ fn source_to_exec(
             Box::new(JsonExec::new(
                 source,
                 options,
-                file_options,
+                Box::new(file_options),
                 file_info,
                 None,
             ))
@@ -207,7 +207,7 @@ pub struct MultiScanExec {
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<ScanPredicate>,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     scan_type: Box<FileScan>,
 }
 
@@ -217,7 +217,7 @@ impl MultiScanExec {
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ScanPredicate>,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         scan_type: Box<FileScan>,
     ) -> Self {
         Self {

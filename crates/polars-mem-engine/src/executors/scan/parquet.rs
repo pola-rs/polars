@@ -25,7 +25,7 @@ pub struct ParquetExec {
     pub(crate) options: ParquetOptions,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     #[allow(dead_code)]
     metadata: Option<FileMetadataRef>,
 }
@@ -39,7 +39,7 @@ impl ParquetExec {
         predicate: Option<ScanPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         metadata: Option<FileMetadataRef>,
     ) -> Self {
         ParquetExec {

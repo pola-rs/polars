@@ -53,7 +53,7 @@ type AsyncTaskData = (
 pub struct CsvSourceNode {
     scan_source: ScanSource,
     file_info: FileInfo,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     options: CsvReadOptions,
     schema: Option<SchemaRef>,
     verbose: bool,
@@ -63,7 +63,7 @@ impl CsvSourceNode {
     pub fn new(
         scan_source: ScanSource,
         file_info: FileInfo,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         options: CsvReadOptions,
     ) -> Self {
         let verbose = config::verbose();
@@ -559,10 +559,10 @@ impl MultiScanable for CsvSourceNode {
     ) -> PolarsResult<Self> {
         let has_row_index = row_index.is_some();
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let mut csv_options = options.clone();
         let mut file_info = isolated_csv_file_info(

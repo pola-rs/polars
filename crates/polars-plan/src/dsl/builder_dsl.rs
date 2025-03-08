@@ -40,7 +40,7 @@ impl DslBuilder {
         };
 
         let file_info = FileInfo::new(schema.clone(), None, (n_rows, n_rows.unwrap_or(usize::MAX)));
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             pre_slice: n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
@@ -55,7 +55,7 @@ impl DslBuilder {
             glob: false,
             include_file_paths: None,
             allow_missing_columns: false,
-        };
+        });
 
         Ok(DslPlan::Scan {
             sources: ScanSources::Buffers(Arc::default()),
@@ -91,7 +91,7 @@ impl DslBuilder {
         include_file_paths: Option<PlSmallStr>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        let options = FileScanOptions {
+        let options = Box::new(FileScanOptions {
             with_columns: None,
             cache,
             pre_slice: n_rows.map(|x| (0, x)),
@@ -102,7 +102,7 @@ impl DslBuilder {
             glob,
             include_file_paths,
             allow_missing_columns,
-        };
+        });
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
@@ -138,7 +138,7 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
-            file_options: FileScanOptions {
+            file_options: Box::new(FileScanOptions {
                 with_columns: None,
                 cache,
                 pre_slice: n_rows.map(|x| (0, x)),
@@ -149,7 +149,7 @@ impl DslBuilder {
                 glob: true,
                 include_file_paths,
                 allow_missing_columns: false,
-            },
+            }),
             scan_type: Box::new(FileScan::Ipc {
                 options,
                 cloud_options,
@@ -173,7 +173,7 @@ impl DslBuilder {
         // This gets partially moved by FileScanOptions
         let read_options_clone = read_options.clone();
 
-        let options = FileScanOptions {
+        let options = Box::new(FileScanOptions {
             with_columns: None,
             cache,
             pre_slice: read_options_clone.n_rows.map(|x| (0, x)),
@@ -188,7 +188,7 @@ impl DslBuilder {
             glob,
             include_file_paths,
             allow_missing_columns: false,
-        };
+        });
         Ok(DslPlan::Scan {
             sources,
             file_info: None,

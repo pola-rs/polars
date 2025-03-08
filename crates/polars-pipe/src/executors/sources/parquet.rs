@@ -39,7 +39,7 @@ pub struct ParquetSource {
     iter: Range<usize>,
     sources: ScanSources,
     options: ParquetOptions,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     first_metadata: Option<FileMetadataRef>,
@@ -73,7 +73,7 @@ impl ParquetSource {
     ) -> PolarsResult<(
         &PathBuf,
         ParquetOptions,
-        FileScanOptions,
+        Box<FileScanOptions>,
         usize,
         Option<Vec<Series>>,
     )> {
@@ -249,7 +249,7 @@ impl ParquetSource {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         first_metadata: Option<FileMetadataRef>,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,

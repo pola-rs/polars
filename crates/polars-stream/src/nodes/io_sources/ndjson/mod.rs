@@ -44,7 +44,7 @@ mod row_index_limit_pass;
 pub struct NDJsonSourceNode {
     scan_source: ScanSource,
     file_info: FileInfo,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     options: NDJsonReadOptions,
     schema: Option<SchemaRef>,
     verbose: bool,
@@ -54,7 +54,7 @@ impl NDJsonSourceNode {
     pub fn new(
         scan_source: ScanSource,
         file_info: FileInfo,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         options: NDJsonReadOptions,
     ) -> Self {
         let verbose = config::verbose();
@@ -487,10 +487,10 @@ impl MultiScanable for NDJsonSourceNode {
     ) -> PolarsResult<Self> {
         let has_row_index = row_index.as_ref().is_some();
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let ndjson_options = options.clone();
         let mut file_info = ndjson_file_info(

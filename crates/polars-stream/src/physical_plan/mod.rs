@@ -216,7 +216,7 @@ pub enum PhysNodeKind {
         predicate: Option<ExprIR>,
         output_schema: Option<SchemaRef>,
         scan_type: Box<FileScan>,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
     },
 
     GroupBy {
