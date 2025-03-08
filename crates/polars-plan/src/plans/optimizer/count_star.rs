@@ -35,7 +35,7 @@ impl OptimizationRule for CountStar {
                         input: placeholder_node,
                         function: FunctionIR::FastCount {
                             sources: count_star_expr.sources,
-                            scan_type: count_star_expr.scan_type,
+                            scan_type: Box::new(count_star_expr.scan_type),
                             alias: count_star_expr.alias,
                         },
                     };

@@ -26,7 +26,6 @@ use crate::prelude::*;
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[derive(Clone, IntoStaticStr)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(clippy::large_enum_variant)]
 pub enum FunctionIR {
     RowIndex {
         name: PlSmallStr,
@@ -40,7 +39,7 @@ pub enum FunctionIR {
 
     FastCount {
         sources: ScanSources,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         alias: Option<PlSmallStr>,
     },
 
@@ -326,7 +325,7 @@ impl Display for FunctionIR {
                 scan_type,
                 alias,
             } => {
-                let scan_type: &str = scan_type.into();
+                let scan_type: &str = (&(**scan_type)).into();
                 let default_column_name = PlSmallStr::from_static(crate::constants::LEN);
                 let alias = alias.as_ref().unwrap_or(&default_column_name);
 
