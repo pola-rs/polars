@@ -60,7 +60,7 @@ pub enum IR {
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         /// generic options that can be used for all file types.
         file_options: FileScanOptions,
     },

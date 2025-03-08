@@ -187,7 +187,7 @@ pub enum PhysNodeKind {
     MultiScan {
         scan_sources: ScanSources,
         hive_parts: Option<HivePartitionsDf>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
 
@@ -215,7 +215,7 @@ pub enum PhysNodeKind {
         file_info: FileInfo,
         predicate: Option<ExprIR>,
         output_schema: Option<SchemaRef>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         file_options: FileScanOptions,
     },
 

@@ -150,10 +150,10 @@ impl LazyFileListReader for LazyJsonLineReader {
             schema_overwrite: self.schema_overwrite,
         };
 
-        let scan_type = FileScan::NDJson {
+        let scan_type = Box::new(FileScan::NDJson {
             options,
             cloud_options: self.cloud_options,
-        };
+        });
 
         Ok(LazyFrame::from(DslPlan::Scan {
             sources: self.sources,

@@ -442,7 +442,7 @@ impl ProjectionPushDown {
                 if self.is_count_star {
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
-                let do_optimization = match scan_type {
+                let do_optimization = match &*scan_type {
                     FileScan::Anonymous { ref function, .. } => {
                         function.allows_projection_pushdown()
                     },
@@ -466,7 +466,7 @@ impl ProjectionPushDown {
 
                     if let Some(projection) = file_options.with_columns.as_mut() {
                         if projection.is_empty() {
-                            match &scan_type {
+                            match &*scan_type {
                                 #[cfg(feature = "parquet")]
                                 FileScan::Parquet { .. } => {},
                                 #[cfg(feature = "ipc")]

@@ -34,7 +34,7 @@ pub enum DslPlan {
         /// Materialized at IR except for AnonymousScan.
         file_info: Option<FileInfo>,
         file_options: FileScanOptions,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         /// Local use cases often repeatedly collect the same `LazyFrame` (e.g. in interactive notebook use-cases),
         /// so we cache the IR conversion here, as the path expansion can be quite slow (especially for cloud paths).
         #[cfg_attr(feature = "serde", serde(skip))]

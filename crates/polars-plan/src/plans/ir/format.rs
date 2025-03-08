@@ -251,7 +251,7 @@ impl<'a> IRDisplay<'a> {
 
                 write_scan(
                     f,
-                    scan_type.into(),
+                    (&**scan_type).into(),
                     sources,
                     indent,
                     n_columns,

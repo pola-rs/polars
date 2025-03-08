@@ -208,7 +208,7 @@ pub struct MultiScanExec {
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<ScanPredicate>,
     file_options: FileScanOptions,
-    scan_type: FileScan,
+    scan_type: Box<FileScan>,
 }
 
 impl MultiScanExec {
@@ -218,7 +218,7 @@ impl MultiScanExec {
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ScanPredicate>,
         file_options: FileScanOptions,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
     ) -> Self {
         Self {
             sources,
@@ -343,7 +343,7 @@ impl MultiScanExec {
         let mut dfs = Vec::with_capacity(self.sources.len());
 
         // @TODO: This should be moved outside of the FileScan::Parquet
-        let use_statistics = match &self.scan_type {
+        let use_statistics = match &*self.scan_type {
             #[cfg(feature = "parquet")]
             FileScan::Parquet { options, .. } => options.use_statistics,
             _ => true,

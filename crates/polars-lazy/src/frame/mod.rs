@@ -2165,7 +2165,7 @@ impl LazyFrame {
 
         match &self.logical_plan {
             v @ DslPlan::Scan { scan_type, .. }
-                if !matches!(scan_type, FileScan::Anonymous { .. }) =>
+                if !matches!(&**scan_type, FileScan::Anonymous { .. }) =>
             {
                 let DslPlan::Scan {
                     sources,

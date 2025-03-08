@@ -81,20 +81,20 @@ where
             // Add predicate to operators.
             // Except for parquet, as that format can use statistics to prune file/row-groups.
             #[cfg(feature = "parquet")]
-            let is_parquet = matches!(scan_type, FileScan::Parquet { .. });
+            let is_parquet = matches!(&*scan_type, FileScan::Parquet { .. });
             #[cfg(not(feature = "parquet"))]
             let is_parquet = false;
 
             if let (false, true, Some(predicate)) = (is_parquet, push_predicate, predicate.clone())
             {
                 #[cfg(feature = "parquet")]
-                debug_assert!(!matches!(scan_type, FileScan::Parquet { .. }));
+                debug_assert!(!matches!(&*scan_type, FileScan::Parquet { .. }));
                 let predicate = to_physical(&predicate, expr_arena, schema)?;
                 let op = operators::FilterOperator { predicate };
                 let op = Box::new(op) as Box<dyn Operator>;
                 operator_objects.push(op)
             }
-            match scan_type {
+            match *scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => {
                     let src = sources::CsvSource::new(

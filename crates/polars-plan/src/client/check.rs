@@ -32,7 +32,7 @@ pub(super) fn assert_cloud_eligible(dsl: &DslPlan) -> PolarsResult<()> {
                     },
                 }
 
-                if matches!(scan_type, FileScan::Anonymous { .. }) {
+                if matches!(&**scan_type, FileScan::Anonymous { .. }) {
                     return ineligible_error("contains anonymous scan");
                 }
             },

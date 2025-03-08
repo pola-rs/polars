@@ -61,13 +61,13 @@ impl DslBuilder {
             sources: ScanSources::Buffers(Arc::default()),
             file_info: Some(file_info),
             file_options,
-            scan_type: FileScan::Anonymous {
+            scan_type: Box::new(FileScan::Anonymous {
                 function,
                 options: Arc::new(AnonymousScanOptions {
                     fmt_str: name,
                     skip_rows,
                 }),
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -107,7 +107,7 @@ impl DslBuilder {
             sources,
             file_info: None,
             file_options: options,
-            scan_type: FileScan::Parquet {
+            scan_type: Box::new(FileScan::Parquet {
                 options: ParquetOptions {
                     schema,
                     parallel,
@@ -116,7 +116,7 @@ impl DslBuilder {
                 },
                 cloud_options,
                 metadata: None,
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -150,11 +150,11 @@ impl DslBuilder {
                 include_file_paths,
                 allow_missing_columns: false,
             },
-            scan_type: FileScan::Ipc {
+            scan_type: Box::new(FileScan::Ipc {
                 options,
                 cloud_options,
                 metadata: None,
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -193,10 +193,10 @@ impl DslBuilder {
             sources,
             file_info: None,
             file_options: options,
-            scan_type: FileScan::Csv {
+            scan_type: Box::new(FileScan::Csv {
                 options: read_options,
                 cloud_options,
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())

@@ -177,7 +177,7 @@ fn visualize_plan_rec(
             predicate,
             file_options,
         } => {
-            let name = match scan_type {
+            let name = match &**scan_type {
                 #[cfg(feature = "parquet")]
                 FileScan::Parquet { .. } => "parquet-source",
                 #[cfg(feature = "csv")]
