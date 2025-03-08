@@ -1,6 +1,11 @@
+use std::any::Any;
+use std::fmt::Debug;
+
+use polars_error::PolarsResult;
+
 use crate::array::{
-    new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray,
-    PrimitiveArray, StructArray, ViewType,
+    make_mutable_array_dyn, new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray,
+    MutableArray, MutableBinaryViewArray, PrimitiveArray, StructArray, ViewType,
 };
 use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;
@@ -16,6 +21,7 @@ pub mod null;
 pub mod slice;
 pub mod utf8;
 
+mod nested;
 pub use slice::*;
 
 use crate::legacy::prelude::LargeListArray;
@@ -181,6 +187,55 @@ pub trait ListFromIter {
         Ref: AsRef<[u8]>,
     {
         Self::from_iter_binview_trusted_len(iter, n_elements)
+    }
+
+    /// # Safety
+    /// Will produce incorrect arrays if size hint is incorrect.
+    unsafe fn from_iter_nested_trusted_len<I, II, T>(
+        iter: I,
+        dtype: ArrowDataType,
+    ) -> PolarsResult<ListArray<i64>>
+    where
+        I: IntoIterator<Item = Option<II>>,
+        II: IntoIterator<Item = Option<T>>,
+        T: Any + Debug,
+    {
+        let iterator = iter.into_iter();
+        let (lower, _) = iterator.size_hint();
+
+        let mut validity = BitmapBuilder::with_capacity(lower);
+        let mut offsets = Vec::<i64>::with_capacity(lower + 1);
+        let mut length_so_far = 0i64;
+        offsets.push(length_so_far);
+
+        let mut values = make_mutable_array_dyn(&dtype, lower, None)?;
+        for opt_iter in iterator {
+            match opt_iter {
+                Some(x) => {
+                    let it = x.into_iter();
+                    length_so_far += it.size_hint().0 as i64;
+                    validity.push(true);
+                    offsets.push(length_so_far);
+                    for item in it {
+                        nested::dyn_array_push(&mut values, item.as_ref(), &dtype)?;
+                    }
+                },
+                None => {
+                    validity.push(false);
+                    offsets.push(length_so_far);
+                    values.push_null();
+                },
+            }
+        }
+
+        // SAFETY:
+        // offsets are monotonically increasing
+        Ok(ListArray::new(
+            ListArray::<i64>::default_datatype(dtype),
+            Offsets::new_unchecked(offsets).into(),
+            values.as_box(),
+            validity.into_opt_validity(),
+        ))
     }
 }
 impl ListFromIter for ListArray<i64> {}

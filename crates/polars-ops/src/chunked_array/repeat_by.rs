@@ -111,6 +111,65 @@ fn repeat_by_binary(ca: &BinaryChunked, by: &IdxCa) -> PolarsResult<ListChunked>
     }
 }
 
+fn repeat_by_list(ca: &ListChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
+    check_lengths(ca.len(), by.len())?;
+
+    match (ca.len(), by.len()) {
+        (left_len, right_len) if left_len == right_len => Ok(arity::binary(ca, by, |arr, by| {
+            let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
+                opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
+            });
+            unsafe {
+                LargeListArray::from_iter_nested_trusted_len(
+                    iter,
+                    ca.dtype().to_physical().to_arrow(CompatLevel::newest()),
+                )
+                .unwrap()
+            }
+        })),
+        (_, 1) => {
+            let by = new_by(by, ca.len());
+            repeat_by_list(ca, &by)
+        },
+        (1, _) => {
+            let new_array = ca.new_from_index(0, by.len());
+            repeat_by_list(&new_array, by)
+        },
+        // we have already checked the length
+        _ => unreachable!(),
+    }
+}
+
+#[cfg(feature = "dtype-struct")]
+fn repeat_by_struct(ca: &StructChunked, by: &IdxCa) -> PolarsResult<ListChunked> {
+    check_lengths(ca.len(), by.len())?;
+
+    match (ca.len(), by.len()) {
+        (left_len, right_len) if left_len == right_len => Ok(arity::binary(ca, by, |arr, by| {
+            let iter = arr.into_iter().zip(by).map(|(opt_v, opt_by)| {
+                opt_by.map(|by| std::iter::repeat(opt_v).take(*by as usize))
+            });
+            unsafe {
+                LargeListArray::from_iter_nested_trusted_len(
+                    iter,
+                    ca.dtype().to_physical().to_arrow(CompatLevel::newest()),
+                )
+                .unwrap()
+            }
+        })),
+        (_, 1) => {
+            let by = new_by(by, ca.len());
+            repeat_by_struct(ca, &by)
+        },
+        (1, _) => {
+            let new_array = ca.new_from_index(0, by.len());
+            repeat_by_struct(&new_array, by)
+        },
+        // we have already checked the length
+        _ => unreachable!(),
+    }
+}
+
 pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
     let s_phys = s.to_physical_repr();
     use DataType::*;
@@ -128,6 +187,9 @@ pub fn repeat_by(s: &Series, by: &IdxCa) -> PolarsResult<ListChunked> {
                 repeat_by_primitive(ca, by)
             })
         },
+        List(_) => repeat_by_list(s_phys.list().unwrap(), by),
+        #[cfg(feature = "dtype-struct")]
+        Struct(_) => repeat_by_struct(s_phys.struct_().unwrap(), by),
         _ => polars_bail!(opq = repeat_by, s.dtype()),
     };
     out.and_then(|ca| {

@@ -121,14 +121,14 @@ impl<O: Offset> MutableArray for DynMutableListArray<O> {
 }
 
 #[derive(Debug)]
-pub struct FixedItemsUtf8Dictionary {
+pub struct FixedItemsUtf8Dictionary<O: Offset> {
     dtype: ArrowDataType,
     keys: MutablePrimitiveArray<i32>,
-    values: Utf8Array<i32>,
+    values: Utf8Array<O>,
 }
 
-impl FixedItemsUtf8Dictionary {
-    pub fn with_capacity(values: Utf8Array<i32>, capacity: usize) -> Self {
+impl<O: Offset> FixedItemsUtf8Dictionary<O> {
+    pub fn with_capacity(values: Utf8Array<O>, capacity: usize) -> Self {
         Self {
             dtype: ArrowDataType::Dictionary(
                 IntegerType::Int32,
@@ -150,7 +150,7 @@ impl FixedItemsUtf8Dictionary {
     }
 }
 
-impl MutableArray for FixedItemsUtf8Dictionary {
+impl<O: Offset> MutableArray for FixedItemsUtf8Dictionary<O> {
     fn len(&self) -> usize {
         self.keys.len()
     }
