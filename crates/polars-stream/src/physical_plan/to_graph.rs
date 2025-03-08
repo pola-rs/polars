@@ -632,7 +632,7 @@ fn to_graph_rec<'a>(
                                     file_info,
                                     options,
                                     cloud_options,
-                                    file_options,
+                                    *file_options,
                                     first_metadata,
                                 )?,
                             ),

@@ -65,7 +65,7 @@ impl IpcSourceNode {
         file_info: FileInfo,
         options: IpcScanOptions,
         cloud_options: Option<CloudOptions>,
-        file_options: Box<FileScanOptions>,
+        file_options: FileScanOptions,
         mut metadata: Option<Arc<FileMetadata>>,
     ) -> PolarsResult<Self> {
         // All these things should be handled by the MultiScan node
@@ -85,7 +85,7 @@ impl IpcSourceNode {
             glob: _,
             include_file_paths: _,
             allow_missing_columns: _,
-        } = *file_options;
+        } = file_options;
 
         let memslice = {
             if let ScanSourceRef::Path(p) = source.as_scan_source_ref() {
@@ -540,7 +540,7 @@ impl MultiScanable for IpcSourceNode {
         let schema = Schema::from_arrow_schema(arrow_schema.as_ref());
         let schema = Arc::new(schema);
 
-        let mut file_options = Box::new(FileScanOptions::default());
+        let mut file_options = FileScanOptions::default();
         if let Some(name) = row_index {
             file_options.row_index = Some(RowIndex { name, offset: 0 });
         }
