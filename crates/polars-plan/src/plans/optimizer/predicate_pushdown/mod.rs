@@ -378,7 +378,7 @@ impl PredicatePushDown<'_> {
                     blocked_names.push(col);
                 }
 
-                match &scan_type {
+                match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => {},
                     #[cfg(feature = "ipc")]
@@ -459,7 +459,7 @@ impl PredicatePushDown<'_> {
                     }
                 }
 
-                let mut do_optimization = match &scan_type {
+                let mut do_optimization = match &*scan_type {
                     #[cfg(feature = "csv")]
                     FileScan::Csv { .. } => options.pre_slice.is_none(),
                     FileScan::Anonymous { function, .. } => function.allows_predicate_pushdown(),

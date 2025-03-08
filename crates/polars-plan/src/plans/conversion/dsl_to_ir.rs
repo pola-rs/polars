@@ -161,7 +161,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
                 }
 
-                let sources = match &scan_type {
+                let sources = match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
@@ -179,7 +179,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     FileScan::Anonymous { .. } => sources,
                 };
 
-                let mut file_info = match &mut scan_type {
+                let mut file_info = match &mut *scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
@@ -291,17 +291,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
 
                 file_options.include_file_paths =
-                    file_options.include_file_paths.filter(|_| match scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => true,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => true,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => true,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => true,
-                        FileScan::Anonymous { .. } => false,
-                    });
+                    file_options
+                        .include_file_paths
+                        .filter(|_| match &*scan_type {
+                            #[cfg(feature = "parquet")]
+                            FileScan::Parquet { .. } => true,
+                            #[cfg(feature = "ipc")]
+                            FileScan::Ipc { .. } => true,
+                            #[cfg(feature = "csv")]
+                            FileScan::Csv { .. } => true,
+                            #[cfg(feature = "json")]
+                            FileScan::NDJson { .. } => true,
+                            FileScan::Anonymous { .. } => false,
+                        });
 
                 if let Some(ref file_path_col) = file_options.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);
@@ -336,7 +338,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .unwrap();
                 }
 
-                let ir = if sources.is_empty() && !matches!(scan_type, FileScan::Anonymous { .. }) {
+                let ir = if sources.is_empty() && !matches!(&*scan_type, FileScan::Anonymous { .. })
+                {
                     IR::DataFrameScan {
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,

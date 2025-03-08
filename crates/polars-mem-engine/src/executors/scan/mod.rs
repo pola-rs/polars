@@ -57,7 +57,7 @@ impl Executor for DataFrameExec {
 
 pub(crate) struct AnonymousScanExec {
     pub(crate) function: Arc<dyn AnonymousScan>,
-    pub(crate) file_options: FileScanOptions,
+    pub(crate) file_options: Box<FileScanOptions>,
     pub(crate) file_info: FileInfo,
     pub(crate) predicate: Option<ScanPredicate>,
     pub(crate) output_schema: Option<SchemaRef>,

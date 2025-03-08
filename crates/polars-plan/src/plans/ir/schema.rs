@@ -18,7 +18,7 @@ impl IR {
     pub fn name(&self) -> &'static str {
         use IR::*;
         match self {
-            Scan { scan_type, .. } => scan_type.into(),
+            Scan { scan_type, .. } => (&**scan_type).into(),
             #[cfg(feature = "python")]
             PythonScan { .. } => "python_scan",
             Slice { .. } => "slice",

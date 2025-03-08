@@ -446,7 +446,7 @@ pub fn lower_ir(
                                 Option<RowIndex>,
                                 Option<(i64, usize)>,
                                 Option<ExprIR>,
-                            ) = match &scan_type {
+                            ) = match &*scan_type {
                                 #[cfg(feature = "parquet")]
                                 FileScan::Parquet { .. } => (None, None, None),
                                 #[cfg(feature = "ipc")]

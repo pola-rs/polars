@@ -47,7 +47,7 @@ pub struct ParquetSourceNode {
     predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     normalized_pre_slice: Option<(usize, usize)>,
     metadata: Arc<FileMetadata>,
     // Run-time vars
@@ -82,7 +82,7 @@ impl ParquetSourceNode {
         predicate: Option<ScanIOPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        mut file_options: FileScanOptions,
+        mut file_options: Box<FileScanOptions>,
         metadata: Arc<FileMetadata>,
     ) -> Self {
         let verbose = config::verbose();
@@ -302,10 +302,10 @@ impl MultiScanable for ParquetSourceNode {
         let mut options = options.clone();
         options.schema = Some(schema.clone());
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let file_info = FileInfo::new(
             schema.clone(),

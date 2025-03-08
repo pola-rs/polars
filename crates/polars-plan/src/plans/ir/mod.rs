@@ -38,7 +38,6 @@ pub struct IRPlanRef<'a> {
 #[derive(Clone, Debug, Default, IntoStaticStr)]
 #[cfg_attr(feature = "ir_serde", derive(Serialize, Deserialize))]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[allow(clippy::large_enum_variant)]
 pub enum IR {
     #[cfg(feature = "python")]
     PythonScan {
@@ -60,9 +59,9 @@ pub enum IR {
         predicate: Option<ExprIR>,
         /// schema of the projected file
         output_schema: Option<SchemaRef>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         /// generic options that can be used for all file types.
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
     },
     DataFrameScan {
         df: Arc<DataFrame>,
