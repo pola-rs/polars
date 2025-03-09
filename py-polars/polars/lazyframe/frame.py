@@ -92,7 +92,7 @@ from polars.schema import Schema
 from polars.selectors import by_dtype, expand_selector
 
 with contextlib.suppress(ImportError):  # Module not available when building docs
-    from polars.polars import PyLazyFrame
+    from polars.polars import PyLazyFrame, get_engine_affinity
 
 
 if TYPE_CHECKING:
@@ -1722,7 +1722,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
-        engine: EngineType = "auto",
+        engine: None | EngineType = None,
         _check_order: bool = True,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
@@ -1768,10 +1768,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run parts of the query in a streaming fashion (this is in an alpha state)
         engine
             Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run using
-            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
-            used. Fine-grained control over the GPU engine, for
-            example which device to use on a system with multiple
+            If set to `None` (default), polars will attempt to run the query
+            using the engine set from the `POLARS_ENGINE_AFFINITY` environment
+            variable. If it cannot run the query using the selected engine,
+            the query is run using the polars in-memory engine (ie. `engine="auto"`).
+            If set to `"gpu"`, the GPU engine is used. Fine-grained control over the
+            GPU engine, for example which device to use on a system with multiple
             devices, is possible by providing a :class:`~.GPUEngine` object
             with configuration options.
 
@@ -1827,6 +1829,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
+        if engine is None:
+            engine = get_engine_affinity()
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
@@ -1920,7 +1924,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "auto",
+        engine: None | EngineType = None,
         background: Literal[True],
         _eager: bool = False,
         _check_order: bool = True,
@@ -1942,7 +1946,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "auto",
+        engine: None | EngineType = None,
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1964,7 +1968,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: EngineType = "auto",
+        engine: None | EngineType = None,
         background: bool = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -2012,10 +2016,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mode.
         engine
             Select the engine used to process the query, optional.
-            At the moment, If set to `"auto"` (default), the query is run using
-            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
-            used. Fine-grained control over the GPU engine, for
-            example which device to use on a system with multiple
+            If set to `None` (default), polars will attempt to run the query
+            using the engine set from the `POLARS_ENGINE_AFFINITY` environment
+            variable. If it cannot run the query using the selected engine,
+            the query is run using the polars in-memory engine (ie. `engine="auto"`).
+            If set to `"gpu"`, the GPU engine is used. Fine-grained control over the
+            GPU engine, for example which device to use on a system with multiple
             devices, is possible by providing a :class:`~.GPUEngine` object
             with configuration options.
 
@@ -2125,7 +2131,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        new_streaming = _kwargs.get("new_streaming", False)
+        if engine is None:
+            engine = get_engine_affinity()
+
+        new_streaming = (
+            _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
+        )
 
         if new_streaming:
             engine = "streaming"
