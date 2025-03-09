@@ -37,6 +37,10 @@ pub(crate) mod type_coercion;
 
 pub(crate) use expr_expansion::{expand_selectors, is_regex_projection, prepare_projection};
 
+#[cfg(feature = "rolling_window")]
+pub(super) use self::rolling::RollingFunction;
+#[cfg(feature = "rolling_window_by")]
+pub(super) use self::rolling_by::RollingFunctionBy;
 use crate::constants::get_len_name;
 use crate::prelude::*;
 
