@@ -1372,3 +1372,45 @@ class ExprListNameSpace:
         """  # noqa: W505.
         other = parse_into_expression(other, str_as_lit=False)
         return wrap_expr(self._pyexpr.list_set_operation(other, "symmetric_difference"))
+
+    def struct_field(self, name: str) -> Expr:
+        """
+        Extract a single struct field from a series of type `List(Struct(...))`.
+
+        Parameters
+        ----------
+        name
+            The name of the struct field to extract.
+
+        Notes
+        -----
+        This method is functionally equivalent to using
+        `.list.eval(pl.element().struct.field("..."))`. However, it is zero-copy and,
+        thus, considerably faster.
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [
+        ...             [{"x": 1, "y": 2}],
+        ...             [{"x": 3, "y": 4}, {"x": 5, "y": 6}, None],
+        ...             [],
+        ...             None,
+        ...         ],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("a").list.struct_field("x"))
+        shape: (4, 2)
+        ┌──────────────────────┬──────────────┐
+        │ a                    ┆ x            │
+        │ ---                  ┆ ---          │
+        │ list[struct[2]]      ┆ list[i64]    │
+        ╞══════════════════════╪══════════════╡
+        │ [{1,2}]              ┆ [1]          │
+        │ [{3,4}, {5,6}, null] ┆ [3, 5, null] │
+        │ []                   ┆ []           │
+        │ null                 ┆ null         │
+        └──────────────────────┴──────────────┘
+        """
+        return wrap_expr(self._pyexpr.list_struct_field(name))
