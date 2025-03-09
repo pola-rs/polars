@@ -178,15 +178,15 @@ df.with_columns(
 
 In PySpark however this is not allowed. They allow expressions such as
 `F.mean(F.abs("price")).over(window)` because `F.abs` is an elementwise function, but not
-`F.mean(F.lag("price", 1)).over(window)`. To produce the same result, you need to use `over` for
-both `lag` and `mean`, with slightly different windows.
+`F.mean(F.lag("price", 1)).over(window)` because `F.lag` is a window function.
+To produce the same result, both `F.lag` and `F.mean` need their own window.
 
 ```python
 from pyspark.sql import Window
 from pyspark.sql import functions as F
 
 window = Window().partitionBy("store").orderBy("date")
-rolling_window = Window().partitionBy("store").orderBy("date").rowsBetween(-6, 0)
+rolling_window = window.rowsBetween(-6, 0)
 (
     df.withColumn("lagged_price", F.lag("price", 7).over(window)).withColumn(
         "feature",
