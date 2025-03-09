@@ -77,12 +77,12 @@ fn find_runnable_subgraph(graph: &mut Graph) -> (PlHashSet<GraphNodeKey>, Vec<Lo
     // TODO: choose which expensive pipeline blocker to run more intelligently.
     expensive.sort_by_key(|node_key| {
         // Prefer to run nodes whose outputs are ready to be consumed.
-        let outputs_ready_to_receive = graph.nodes[*node_key]
+        // outputs_ready_to_receive
+        graph.nodes[*node_key]
             .outputs
             .iter()
             .filter(|o| graph.pipes[**o].recv_state == PortState::Ready)
-            .count();
-        outputs_ready_to_receive
+            .count()
     });
 
     let mut to_run = cheap;

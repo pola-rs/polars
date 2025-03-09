@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::pin::Pin;

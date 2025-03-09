@@ -95,7 +95,7 @@ where
 
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = self.first_non_null().unwrap();
                 unsafe { self.get_unchecked(idx) }
@@ -108,9 +108,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::min_ignore_nan_kernel)
                 .reduce(MinMax::min_ignore_nan),
-        };
-
-        result
+        }
     }
 
     fn max(&self) -> Option<T::Native> {
@@ -119,7 +117,7 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let idx = if T::get_dtype().is_float() {
                     float_arg_max_sorted_ascending(self)
@@ -142,9 +140,7 @@ where
                 .downcast_iter()
                 .filter_map(MinMaxKernel::max_ignore_nan_kernel)
                 .reduce(MinMax::max_ignore_nan),
-        };
-
-        result
+        }
     }
 
     fn min_max(&self) -> Option<(T::Native, T::Native)> {
@@ -153,7 +149,7 @@ where
         }
         // There is at least one non-null value.
 
-        let result = match self.is_sorted_flag() {
+        match self.is_sorted_flag() {
             IsSorted::Ascending => {
                 let min = unsafe { self.get_unchecked(self.first_non_null().unwrap()) };
                 let max = {
@@ -190,9 +186,7 @@ where
                         MinMax::max_ignore_nan(max1, max2),
                     )
                 }),
-        };
-
-        result
+        }
     }
 
     fn mean(&self) -> Option<f64> {

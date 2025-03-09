@@ -240,9 +240,7 @@ impl StringGroupbySink {
     #[inline]
     fn get_partitions(&mut self, h: u64) -> &mut PlIdHashMap<Key, IdxSize> {
         let partition = hash_to_partition(h, self.pre_agg_partitions.len());
-        let current_partition = unsafe { self.pre_agg_partitions.get_unchecked_mut(partition) };
-
-        current_partition
+        unsafe { self.pre_agg_partitions.get_unchecked_mut(partition) }
     }
 
     fn sink_ooc(

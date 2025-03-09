@@ -149,7 +149,7 @@ impl RevMapping {
                     .iter()
                     // SAFETY:
                     // value is always within bounds
-                    .find(|&(ref _k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
+                    .find(|&(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
                     .map(|(k, _v)| *k)
             },
 

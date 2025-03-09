@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ffi::{c_int, c_void};
 
 use ndarray::{Dim, Dimension};

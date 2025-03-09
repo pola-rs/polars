@@ -1335,7 +1335,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1347,7 +1347,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1359,7 +1359,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1371,7 +1371,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1383,7 +1383,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1405,7 +1405,7 @@ Series: 'a' [list[i32]]
         builder.append_opt_slice(None);
         let list_short = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1417,7 +1417,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1429,7 +1429,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1451,7 +1451,7 @@ Series: 'a' [list[i32]]
         builder.append_opt_slice(None);
         let list_empty = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)

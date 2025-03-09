@@ -195,7 +195,7 @@ impl ArrayChunked {
         F: FnMut(Option<AmortSeries>) -> Option<K> + Copy,
         V::Array: ArrayFromIter<Option<K>>,
     {
-        { self.amortized_iter().map(f).collect_ca(self.name().clone()) }
+        self.amortized_iter().map(f).collect_ca(self.name().clone())
     }
 
     /// Try apply a closure `F` elementwise.
@@ -216,7 +216,7 @@ impl ArrayChunked {
     where
         F: FnMut(Option<AmortSeries>),
     {
-        { self.amortized_iter().for_each(f) }
+        self.amortized_iter().for_each(f)
     }
 }
 
