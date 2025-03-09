@@ -168,7 +168,8 @@ Output:
 ### Example 3: Composing expressions
 
 Polars allows you compose expressions quite liberally. For example, if you want to find the rolling
-mean of a lagged variable, you can write
+mean of a lagged variable, you can compose `shift` and `rolling_mean` and evaluate them in a single
+`over` expression:
 
 ```python
 df.with_columns(
@@ -176,7 +177,7 @@ df.with_columns(
 )
 ```
 
-In PySpark however this is not allowed. They allow expressions such as
+In PySpark however this is not allowed. They allow composing expressions such as
 `F.mean(F.abs("price")).over(window)` because `F.abs` is an elementwise function, but not
 `F.mean(F.lag("price", 1)).over(window)` because `F.lag` is a window function. To produce the same
 result, both `F.lag` and `F.mean` need their own window.
