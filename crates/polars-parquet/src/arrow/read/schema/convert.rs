@@ -3,11 +3,11 @@ use arrow::datatypes::{ArrowDataType, ArrowSchema, Field, IntervalUnit, TimeUnit
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::arrow::read::schema::SchemaInferenceOptions;
+use crate::parquet::schema::Repetition;
 use crate::parquet::schema::types::{
     FieldInfo, GroupConvertedType, GroupLogicalType, IntegerType, ParquetType, PhysicalType,
     PrimitiveConvertedType, PrimitiveLogicalType, PrimitiveType, TimeUnit as ParquetTimeUnit,
 };
-use crate::parquet::schema::Repetition;
 
 /// Converts [`ParquetType`]s to a [`Field`], ignoring parquet fields that do not contain
 /// any physical column.

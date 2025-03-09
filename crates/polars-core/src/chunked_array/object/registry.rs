@@ -5,15 +5,16 @@
 use std::any::Any;
 use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, LazyLock, RwLock};
 
+use arrow::array::ArrayRef;
+use arrow::array::builder::ArrayBuilder;
 use arrow::datatypes::ArrowDataType;
-use once_cell::sync::Lazy;
 use polars_utils::pl_str::PlSmallStr;
 
 use crate::chunked_array::object::builder::ObjectChunkedBuilder;
 use crate::datatypes::AnyValue;
-use crate::prelude::{ListBuilderTrait, PolarsObject};
+use crate::prelude::{ListBuilderTrait, ObjectChunked, PolarsObject};
 use crate::series::{IntoSeries, Series};
 
 /// Takes a `name` and `capacity` and constructs a new builder.
@@ -35,24 +36,18 @@ impl Debug for ObjectRegistry {
     }
 }
 
-impl ObjectRegistry {
-    pub(super) fn new(
-        builder_constructor: BuilderConstructor,
-        physical_dtype: ArrowDataType,
-    ) -> Self {
-        Self {
-            builder_constructor,
-            object_converter: None,
-            physical_dtype,
-        }
-    }
-}
-
-static GLOBAL_OBJECT_REGISTRY: Lazy<RwLock<Option<ObjectRegistry>>> = Lazy::new(Default::default);
+static GLOBAL_OBJECT_REGISTRY: LazyLock<RwLock<Option<ObjectRegistry>>> =
+    LazyLock::new(Default::default);
 
 /// This trait can be registered, after which that global registration
 /// can be used to materialize object types
-pub trait AnonymousObjectBuilder {
+pub trait AnonymousObjectBuilder: ArrayBuilder {
+    fn as_array_builder(self: Box<Self>) -> Box<dyn ArrayBuilder>;
+
+    /// # Safety
+    /// Expect `ObjectArray<T>` arrays.
+    unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series;
+
     /// Append a `null` value.
     fn append_null(&mut self);
 
@@ -81,6 +76,17 @@ pub trait AnonymousObjectBuilder {
 }
 
 impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
+    /// # Safety
+    /// Expects `ObjectArray<T>` arrays.
+    unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series {
+        ObjectChunked::<T>::new_with_compute_len(Arc::new(self.field().clone()), chunks)
+            .into_series()
+    }
+
+    fn as_array_builder(self: Box<Self>) -> Box<dyn ArrayBuilder> {
+        self
+    }
+
     fn append_null(&mut self) {
         self.append_null()
     }

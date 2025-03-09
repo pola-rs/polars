@@ -2,14 +2,14 @@ use std::iter::Peekable;
 use std::path::PathBuf;
 use std::time::Instant;
 
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, split_df};
-use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::memory::MemTracker;
-use crate::executors::sinks::sort::ooc::{read_df, PartitionSpiller};
+use crate::executors::sinks::sort::ooc::{PartitionSpiller, read_df};
 use crate::executors::sinks::sort::sink::sort_accumulated;
 use crate::executors::sources::get_source_index;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};

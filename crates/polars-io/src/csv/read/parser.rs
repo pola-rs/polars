@@ -3,16 +3,16 @@ use std::path::Path;
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
-use polars_core::{config, POOL};
+use polars_core::{POOL, config};
 use polars_error::feature_gated;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
+use super::CsvParseOptions;
 use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
-use super::CsvParseOptions;
 use crate::path_utils::is_cloud_url;
 use crate::utils::compression::maybe_decompress_bytes;
 
@@ -906,10 +906,10 @@ pub(super) fn skip_this_line_naive(input: &[u8], eol_char: u8) -> &[u8] {
 /// # Arguments
 /// * `bytes` - input to parse
 /// * `offset` - offset in bytes in total input. This is 0 if single threaded. If multi-threaded every
-///              thread has a different offset.
+///   thread has a different offset.
 /// * `projection` - Indices of the columns to project.
 /// * `buffers` - Parsed output will be written to these buffers. Except for UTF8 data. The offsets of the
-///               fields are written to the buffers. The UTF8 data will be parsed later.
+///   fields are written to the buffers. The UTF8 data will be parsed later.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn parse_lines(
     mut bytes: &[u8],

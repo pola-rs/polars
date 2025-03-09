@@ -57,10 +57,10 @@ where
         let mut rng = SmallRng::seed_from_u64(seed.unwrap_or_else(get_global_random_u64));
         (0..size)
             .map(|_| {
-                if rng.gen::<f32>() < null_density {
+                if rng.r#gen::<f32>() < null_density {
                     None
                 } else {
-                    Some(rng.gen())
+                    Some(rng.r#gen())
                 }
             })
             .collect()
@@ -314,72 +314,80 @@ mod test {
         .unwrap();
 
         // Default samples are random and don't require seeds.
-        assert!(df
-            .sample_n(
+        assert!(
+            df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
                 false,
                 None
             )
-            .is_ok());
-        assert!(df
-            .sample_frac(
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
                 false,
                 None
             )
-            .is_ok());
+            .is_ok()
+        );
         // With seeding.
-        assert!(df
-            .sample_n(
+        assert!(
+            df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 false,
                 false,
                 Some(0)
             )
-            .is_ok());
-        assert!(df
-            .sample_frac(
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 false,
                 false,
                 Some(0)
             )
-            .is_ok());
+            .is_ok()
+        );
         // Without replacement can not sample more than 100%.
-        assert!(df
-            .sample_frac(
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 false,
                 false,
                 Some(0)
             )
-            .is_err());
-        assert!(df
-            .sample_n(
+            .is_err()
+        );
+        assert!(
+            df.sample_n(
                 &Series::new(PlSmallStr::from_static("s"), &[3]),
                 true,
                 false,
                 Some(0)
             )
-            .is_ok());
-        assert!(df
-            .sample_frac(
+            .is_ok()
+        );
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[0.4]),
                 true,
                 false,
                 Some(0)
             )
-            .is_ok());
+            .is_ok()
+        );
         // With replacement can sample more than 100%.
-        assert!(df
-            .sample_frac(
+        assert!(
+            df.sample_frac(
                 &Series::new(PlSmallStr::from_static("frac"), &[2.0]),
                 true,
                 false,
                 Some(0)
             )
-            .is_ok());
+            .is_ok()
+        );
     }
 }

@@ -231,12 +231,14 @@ pub(crate) fn insert_streaming_nodes(
             },
             Scan {
                 scan_type,
-                file_options:
-                    FileScanOptions {
-                        pre_slice: slice, ..
-                    },
+                file_options,
                 ..
-            } if scan_type.streamable() && slice.map(|slice| slice.0 >= 0).unwrap_or(true) => {
+            } if scan_type.streamable()
+                && file_options
+                    .pre_slice
+                    .map(|slice| slice.0 >= 0)
+                    .unwrap_or(true) =>
+            {
                 if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)
@@ -347,7 +349,7 @@ pub(crate) fn insert_streaming_nodes(
                 fn allowed_dtype(dt: &DataType, string_cache: bool) -> bool {
                     match dt {
                         #[cfg(feature = "object")]
-                        DataType::Object(_, _) => false,
+                        DataType::Object(_) => false,
                         #[cfg(feature = "dtype-categorical")]
                         DataType::Categorical(_, _) => string_cache,
                         DataType::List(inner) => allowed_dtype(inner, string_cache),

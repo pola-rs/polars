@@ -10,21 +10,24 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars_error::polars_err;
+use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_utils::create_file;
+use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::MemSlice;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
-use pyo3::IntoPyObjectExt;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
 
-pub struct PyFileLikeObject {
+pub(crate) struct PyFileLikeObject {
     inner: PyObject,
 }
+
+impl WriteClose for PyFileLikeObject {}
 
 impl Clone for PyFileLikeObject {
     fn clone(&self) -> Self {
@@ -39,11 +42,11 @@ impl PyFileLikeObject {
     /// Creates an instance of a `PyFileLikeObject` from a `PyObject`.
     /// To assert the object has the required methods,
     /// instantiate it with `PyFileLikeObject::require`
-    pub fn new(object: PyObject) -> Self {
+    pub(crate) fn new(object: PyObject) -> Self {
         PyFileLikeObject { inner: object }
     }
 
-    pub fn to_memslice(&self) -> MemSlice {
+    pub(crate) fn to_memslice(&self) -> MemSlice {
         Python::with_gil(|py| {
             let bytes = self
                 .inner
@@ -70,7 +73,7 @@ impl PyFileLikeObject {
     /// Validates that the underlying
     /// python object has a `read`, `write`, and `seek` methods in respect to parameters.
     /// Will return a `TypeError` if object does not have `read`, `seek`, and `write` methods.
-    pub fn ensure_requirements(
+    pub(crate) fn ensure_requirements(
         object: &Bound<PyAny>,
         read: bool,
         write: bool,
@@ -105,10 +108,10 @@ fn pyerr_to_io_err(e: PyErr) -> io::Error {
 
         match e_as_object.call_method(py, "__str__", (), None) {
             Ok(repr) => match repr.extract::<String>(py) {
-                Ok(s) => io::Error::new(io::ErrorKind::Other, s),
-                Err(_e) => io::Error::new(io::ErrorKind::Other, "An unknown error has occurred"),
+                Ok(s) => io::Error::other(s),
+                Err(_e) => io::Error::other("An unknown error has occurred"),
             },
-            Err(_) => io::Error::new(io::ErrorKind::Other, "Err doesn't have __str__"),
+            Err(_) => io::Error::other("Err doesn't have __str__"),
         }
     })
 }
@@ -185,19 +188,20 @@ impl Seek for PyFileLikeObject {
     }
 }
 
-pub trait FileLike: Read + Write + Seek + Sync + Send {}
+pub(crate) trait FileLike: Read + Write + Seek + Sync + Send {}
 
 impl FileLike for File {}
+impl FileLike for ClosableFile {}
 impl FileLike for PyFileLikeObject {}
 impl MmapBytesReader for PyFileLikeObject {}
 
-pub enum EitherRustPythonFile {
+pub(crate) enum EitherRustPythonFile {
     Py(PyFileLikeObject),
-    Rust(File),
+    Rust(ClosableFile),
 }
 
 impl EitherRustPythonFile {
-    pub fn into_dyn(self) -> Box<dyn FileLike> {
+    pub(crate) fn into_dyn(self) -> Box<dyn FileLike> {
         match self {
             EitherRustPythonFile::Py(f) => Box::new(f),
             EitherRustPythonFile::Rust(f) => Box::new(f),
@@ -211,7 +215,7 @@ impl EitherRustPythonFile {
         }
     }
 
-    pub fn into_dyn_writeable(self) -> Box<dyn Write + Send> {
+    pub(crate) fn into_dyn_writeable(self) -> Box<dyn WriteClose + Send> {
         match self {
             EitherRustPythonFile::Py(f) => Box::new(f),
             EitherRustPythonFile::Rust(f) => Box::new(f),
@@ -219,10 +223,10 @@ impl EitherRustPythonFile {
     }
 }
 
-pub enum PythonScanSourceInput {
+pub(crate) enum PythonScanSourceInput {
     Buffer(MemSlice),
     Path(PathBuf),
-    File(File),
+    File(ClosableFile),
 }
 
 fn try_get_pyfile(
@@ -282,7 +286,7 @@ fn try_get_pyfile(
     .map(|fileno| fileno as RawFd)
     {
         return Ok((
-            EitherRustPythonFile::Rust(unsafe { File::from_raw_fd(fd) }),
+            EitherRustPythonFile::Rust(unsafe { File::from_raw_fd(fd).into() }),
             // This works on Linux and BSD with procfs mounted,
             // otherwise it fails silently.
             fs::canonicalize(format!("/proc/self/fd/{fd}")).ok(),
@@ -317,7 +321,7 @@ fn try_get_pyfile(
     Ok((EitherRustPythonFile::Py(f), None))
 }
 
-pub fn get_python_scan_source_input(
+pub(crate) fn get_python_scan_source_input(
     py_f: PyObject,
     write: bool,
 ) -> PyResult<PythonScanSourceInput> {
@@ -361,7 +365,7 @@ fn get_either_buffer_or_path(
             } else {
                 polars_utils::open_file(&file_path).map_err(PyPolarsErr::from)?
             };
-            Ok((EitherRustPythonFile::Rust(f), Some(file_path)))
+            Ok((EitherRustPythonFile::Rust(f.into()), Some(file_path)))
         } else {
             try_get_pyfile(py, py_f, write)
         }
@@ -371,11 +375,11 @@ fn get_either_buffer_or_path(
 ///
 /// # Arguments
 /// * `write` - open for writing; will truncate existing file and create new file if not.
-pub fn get_either_file(py_f: PyObject, write: bool) -> PyResult<EitherRustPythonFile> {
+pub(crate) fn get_either_file(py_f: PyObject, write: bool) -> PyResult<EitherRustPythonFile> {
     Ok(get_either_buffer_or_path(py_f, write)?.0)
 }
 
-pub fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>> {
+pub(crate) fn get_file_like(f: PyObject, truncate: bool) -> PyResult<Box<dyn FileLike>> {
     Ok(get_either_file(f, truncate)?.into_dyn())
 }
 
@@ -395,11 +399,11 @@ fn read_if_bytesio(py_f: Bound<PyAny>) -> Bound<PyAny> {
 }
 
 /// Create reader from PyBytes or a file-like object.
-pub fn get_mmap_bytes_reader(py_f: &Bound<PyAny>) -> PyResult<Box<dyn MmapBytesReader>> {
+pub(crate) fn get_mmap_bytes_reader(py_f: &Bound<PyAny>) -> PyResult<Box<dyn MmapBytesReader>> {
     get_mmap_bytes_reader_and_path(py_f).map(|t| t.0)
 }
 
-pub fn get_mmap_bytes_reader_and_path(
+pub(crate) fn get_mmap_bytes_reader_and_path(
     py_f: &Bound<PyAny>,
 ) -> PyResult<(Box<dyn MmapBytesReader>, Option<PathBuf>)> {
     let py_f = read_if_bytesio(py_f.clone());
@@ -425,10 +429,10 @@ pub fn get_mmap_bytes_reader_and_path(
     }
 }
 
-pub fn try_get_writeable(
+pub(crate) fn try_get_writeable(
     py_f: PyObject,
     cloud_options: Option<&CloudOptions>,
-) -> PyResult<Box<dyn Write + Send>> {
+) -> PyResult<Box<dyn WriteClose + Send>> {
     Python::with_gil(|py| {
         let py_f = py_f.into_bound(py);
 
@@ -439,5 +443,12 @@ pub fn try_get_writeable(
         } else {
             Ok(try_get_pyfile(py, py_f, true)?.0.into_dyn_writeable())
         }
+    })
+}
+
+pub(crate) fn close_file(f: Box<dyn WriteClose>) -> PolarsResult<()> {
+    f.close().map_err(|e| {
+        let err: polars_error::PolarsError = e.into();
+        err
     })
 }

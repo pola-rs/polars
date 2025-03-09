@@ -1,12 +1,49 @@
 use polars_core::config;
 use polars_core::prelude::*;
-use polars_parquet::read::statistics::{deserialize, Statistics};
 use polars_parquet::read::RowGroupMetadata;
+use polars_parquet::read::statistics::{
+    ArrowColumnStatisticsArrays, Statistics, deserialize, deserialize_all,
+};
 
 use crate::predicates::{BatchStats, ColumnStats, ScanIOPredicate};
 
 /// Collect the statistics in a row-group
-pub(crate) fn collect_statistics(
+pub fn collect_statistics_with_live_columns(
+    row_groups: &[RowGroupMetadata],
+    schema: &ArrowSchema,
+    live_columns: &PlIndexSet<PlSmallStr>,
+) -> PolarsResult<Vec<Option<ArrowColumnStatisticsArrays>>> {
+    if row_groups.is_empty() {
+        return Ok((0..live_columns.len()).map(|_| None).collect());
+    }
+
+    let md = &row_groups[0];
+    live_columns
+        .iter()
+        .map(|c| {
+            let field = schema.get(c).unwrap();
+
+            // This can be None in the allow_missing_columns case.
+            let Some(idxs) = md.columns_idxs_under_root_iter(&field.name) else {
+                return Ok(None);
+            };
+
+            // 0 is possible for possible for empty structs.
+            //
+            // 2+ is for structs. We don't support reading nested statistics for now. It does not
+            // really make any sense at the moment with how we structure statistics.
+            if idxs.is_empty() || idxs.len() > 1 {
+                return Ok(None);
+            }
+
+            let idx = idxs[0];
+            Ok(deserialize_all(field, row_groups, idx)?)
+        })
+        .collect::<PolarsResult<Vec<_>>>()
+}
+
+/// Collect the statistics in a row-group
+pub fn collect_statistics(
     md: &RowGroupMetadata,
     schema: &ArrowSchema,
 ) -> PolarsResult<Option<BatchStats>> {
@@ -100,7 +137,7 @@ pub fn read_this_row_group(
                 // a parquet file may not have statistics of all columns
                 match pred_result {
                     Err(PolarsError::ColumnNotFound(errstr)) => {
-                        return Err(PolarsError::ColumnNotFound(errstr))
+                        return Err(PolarsError::ColumnNotFound(errstr));
                     },
                     Ok(true) => should_read = false,
                     _ => {},
@@ -113,7 +150,7 @@ pub fn read_this_row_group(
                 // a parquet file may not have statistics of all columns
                 match pred_result {
                     Err(PolarsError::ColumnNotFound(errstr)) => {
-                        return Err(PolarsError::ColumnNotFound(errstr))
+                        return Err(PolarsError::ColumnNotFound(errstr));
                     },
                     Ok(false) => should_read = false,
                     _ => {},
@@ -127,7 +164,9 @@ pub fn read_this_row_group(
                     "parquet row group must be read, statistics not sufficient for predicate."
                 );
             } else {
-                eprintln!("parquet row group can be skipped, the statistics were sufficient to apply the predicate.");
+                eprintln!(
+                    "parquet row group can be skipped, the statistics were sufficient to apply the predicate."
+                );
             }
         }
     }

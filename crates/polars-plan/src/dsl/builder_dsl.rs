@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+use polars_io::HiveOptions;
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
+use polars_io::RowIndex;
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -9,9 +12,6 @@ use polars_io::csv::read::CsvReadOptions;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
-use polars_io::HiveOptions;
-#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
-use polars_io::RowIndex;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;
@@ -40,7 +40,7 @@ impl DslBuilder {
         };
 
         let file_info = FileInfo::new(schema.clone(), None, (n_rows, n_rows.unwrap_or(usize::MAX)));
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             pre_slice: n_rows.map(|x| (0, x)),
             with_columns: None,
             cache: false,
@@ -55,19 +55,19 @@ impl DslBuilder {
             glob: false,
             include_file_paths: None,
             allow_missing_columns: false,
-        };
+        });
 
         Ok(DslPlan::Scan {
             sources: ScanSources::Buffers(Arc::default()),
             file_info: Some(file_info),
             file_options,
-            scan_type: FileScan::Anonymous {
+            scan_type: Box::new(FileScan::Anonymous {
                 function,
                 options: Arc::new(AnonymousScanOptions {
                     fmt_str: name,
                     skip_rows,
                 }),
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -91,7 +91,7 @@ impl DslBuilder {
         include_file_paths: Option<PlSmallStr>,
         allow_missing_columns: bool,
     ) -> PolarsResult<Self> {
-        let options = FileScanOptions {
+        let options = Box::new(FileScanOptions {
             with_columns: None,
             cache,
             pre_slice: n_rows.map(|x| (0, x)),
@@ -102,12 +102,12 @@ impl DslBuilder {
             glob,
             include_file_paths,
             allow_missing_columns,
-        };
+        });
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
             file_options: options,
-            scan_type: FileScan::Parquet {
+            scan_type: Box::new(FileScan::Parquet {
                 options: ParquetOptions {
                     schema,
                     parallel,
@@ -116,7 +116,7 @@ impl DslBuilder {
                 },
                 cloud_options,
                 metadata: None,
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -138,7 +138,7 @@ impl DslBuilder {
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
-            file_options: FileScanOptions {
+            file_options: Box::new(FileScanOptions {
                 with_columns: None,
                 cache,
                 pre_slice: n_rows.map(|x| (0, x)),
@@ -149,12 +149,12 @@ impl DslBuilder {
                 glob: true,
                 include_file_paths,
                 allow_missing_columns: false,
-            },
-            scan_type: FileScan::Ipc {
+            }),
+            scan_type: Box::new(FileScan::Ipc {
                 options,
                 cloud_options,
                 metadata: None,
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())
@@ -173,7 +173,7 @@ impl DslBuilder {
         // This gets partially moved by FileScanOptions
         let read_options_clone = read_options.clone();
 
-        let options = FileScanOptions {
+        let options = Box::new(FileScanOptions {
             with_columns: None,
             cache,
             pre_slice: read_options_clone.n_rows.map(|x| (0, x)),
@@ -188,15 +188,15 @@ impl DslBuilder {
             glob,
             include_file_paths,
             allow_missing_columns: false,
-        };
+        });
         Ok(DslPlan::Scan {
             sources,
             file_info: None,
             file_options: options,
-            scan_type: FileScan::Csv {
+            scan_type: Box::new(FileScan::Csv {
                 options: read_options,
                 cloud_options,
-            },
+            }),
             cached_ir: Default::default(),
         }
         .into())

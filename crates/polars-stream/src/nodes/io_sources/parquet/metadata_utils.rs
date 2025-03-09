@@ -1,5 +1,4 @@
-use polars_core::prelude::{ArrowSchema, DataType};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::PolarsResult;
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_utils::mmap::MemSlice;
 
@@ -9,8 +8,8 @@ pub(super) async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
 ) -> PolarsResult<(MemSlice, Option<MemSlice>)> {
-    use polars_parquet::parquet::error::ParquetError;
     use polars_parquet::parquet::PARQUET_MAGIC;
+    use polars_parquet::parquet::error::ParquetError;
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 
@@ -117,30 +116,4 @@ pub(super) async fn read_parquet_metadata_bytes(
             Ok((metadata_bytes, None))
         }
     }
-}
-
-/// Ensures that a parquet file has all the necessary columns for a projection with the correct
-/// dtype. There are no ordering requirements and extra columns are permitted.
-pub(super) fn ensure_schema_has_projected_fields(
-    schema: &ArrowSchema,
-    projected_fields: &ArrowSchema,
-) -> PolarsResult<()> {
-    for field in projected_fields.iter_values() {
-        // Note: We convert to Polars-native dtypes for timezone normalization.
-        let expected_dtype = DataType::from_arrow_field(field);
-        let dtype = {
-            let Some(field) = schema.get(&field.name) else {
-                polars_bail!(ColumnNotFound: "error with column selection, consider enabling `allow_missing_columns`: did not find column in file: {}", field.name)
-            };
-            DataType::from_arrow_field(field)
-        };
-
-        if dtype != expected_dtype {
-            polars_bail!(SchemaMismatch: "data type mismatch for column {}: expected: {}, found: {}",
-                &field.name, expected_dtype, dtype
-            )
-        }
-    }
-
-    Ok(())
 }

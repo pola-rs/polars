@@ -1,9 +1,9 @@
 use polars_compute::arithmetic::ArithmeticKernel;
 use polars_core::chunked_array::ops::arity::apply_binary_kernel_broadcast;
 use polars_core::prelude::*;
-use polars_core::series::arithmetic::NumericListOp;
 #[cfg(feature = "dtype-struct")]
 use polars_core::series::arithmetic::_struct_arithmetic;
+use polars_core::series::arithmetic::NumericListOp;
 use polars_core::with_match_physical_numeric_polars_type;
 
 fn floor_div_ca<T: PolarsNumericType>(

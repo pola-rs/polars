@@ -1,6 +1,6 @@
 use polars_core::prelude::{
-    polars_bail, polars_ensure, ChunkedArray, Column, Int64Chunked, IntoColumn, ListBuilderTrait,
-    ListPrimitiveChunkedBuilder, PolarsIntegerType, PolarsNumericType, PolarsResult,
+    ChunkedArray, Column, Int64Chunked, IntoColumn, ListBuilderTrait, ListPrimitiveChunkedBuilder,
+    PolarsIntegerType, PolarsNumericType, PolarsResult, polars_bail, polars_ensure,
 };
 
 pub(super) fn temporal_series_to_i64_scalar(s: &Column) -> Option<i64> {

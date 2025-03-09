@@ -9,7 +9,9 @@ repository = { workspace = true }
 description = "Private crate for the streaming execution engine for the Polars DataFrame library"
 
 [dependencies]
+arrow = { workspace = true }
 atomic-waker = { workspace = true }
+crossbeam-channel = { workspace = true }
 crossbeam-deque = { workspace = true }
 crossbeam-queue = { workspace = true }
 crossbeam-utils = { workspace = true }

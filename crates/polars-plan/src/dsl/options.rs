@@ -2,6 +2,7 @@ use std::hash::Hash;
 #[cfg(feature = "json")]
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
@@ -14,7 +15,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::{is_cloud_url, HiveOptions, RowIndex};
+use polars_io::{HiveOptions, RowIndex, is_cloud_url};
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
 use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
@@ -23,8 +24,8 @@ use polars_ops::prelude::{JoinArgs, JoinType};
 use polars_time::DynamicGroupOptions;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
@@ -203,6 +204,46 @@ pub struct FileScanOptions {
     pub glob: bool,
     pub include_file_paths: Option<PlSmallStr>,
     pub allow_missing_columns: bool,
+}
+
+#[derive(Clone, Debug, Copy, Eq, PartialEq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum Engine {
+    Auto,
+    OldStreaming,
+    Streaming,
+    InMemory,
+    Gpu,
+}
+
+impl FromStr for Engine {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            // "cpu" for backwards compatibility
+            "auto" => Ok(Engine::Auto),
+            "cpu" | "in-memory" => Ok(Engine::InMemory),
+            "streaming" => Ok(Engine::Streaming),
+            "old-streaming" => Ok(Engine::OldStreaming),
+            "gpu" => Ok(Engine::Gpu),
+            v => Err(format!(
+                "`engine` must be one of {{'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}}, got {v}",
+            )),
+        }
+    }
+}
+
+impl Engine {
+    pub fn into_static_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::OldStreaming => "old-streaming",
+            Self::Streaming => "streaming",
+            Self::InMemory => "in-memory",
+            Self::Gpu => "gpu",
+        }
+    }
 }
 
 #[derive(Clone, Debug, Copy, Default, Eq, PartialEq, Hash)]

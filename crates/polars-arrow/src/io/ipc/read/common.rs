@@ -2,12 +2,12 @@ use std::collections::VecDeque;
 use std::io::{Read, Seek};
 use std::sync::Arc;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 
-use super::deserialize::{read, skip};
 use super::Dictionaries;
+use super::deserialize::{read, skip};
 use crate::array::*;
 use crate::datatypes::{ArrowDataType, ArrowSchema, Field};
 use crate::io::ipc::read::OutOfSpecKind;

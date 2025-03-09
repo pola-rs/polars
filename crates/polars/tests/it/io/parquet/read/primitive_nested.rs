@@ -1,13 +1,13 @@
 use polars_parquet::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
-use polars_parquet::parquet::encoding::{bitpacked, uleb128, Encoding};
+use polars_parquet::parquet::encoding::{Encoding, bitpacked, uleb128};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::types::NativeType;
 
 use super::dictionary::PrimitivePageDict;
-use super::{hybrid_rle_iter, Array};
+use super::{Array, hybrid_rle_iter};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
     let chunks = values.chunks_exact(size_of::<T>());
@@ -79,8 +79,8 @@ fn read_array_impl<I: Iterator<Item = i64>>(
         (def_level_encoding.0, max_def_level == 0),
     ) {
         ((Encoding::Rle, true), (Encoding::Rle, true)) => compose_array(
-            std::iter::repeat(0).take(length),
-            std::iter::repeat(0).take(length),
+            std::iter::repeat_n(0, length),
+            std::iter::repeat_n(0, length),
             max_rep_level,
             max_def_level,
             values,
@@ -90,7 +90,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let rep_levels = HybridRleDecoder::new(rep_levels, num_bits, length);
             compose_array(
                 hybrid_rle_iter(rep_levels)?,
-                std::iter::repeat(0).take(length),
+                std::iter::repeat_n(0, length),
                 max_rep_level,
                 max_def_level,
                 values,
@@ -100,7 +100,7 @@ fn read_array_impl<I: Iterator<Item = i64>>(
             let num_bits = get_bit_width(def_level_encoding.1);
             let def_levels = HybridRleDecoder::new(def_levels, num_bits, length);
             compose_array(
-                std::iter::repeat(0).take(length),
+                std::iter::repeat_n(0, length),
                 hybrid_rle_iter(def_levels)?,
                 max_rep_level,
                 max_def_level,

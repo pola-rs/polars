@@ -6,7 +6,7 @@ use polars_io::cloud::CloudOptions;
 use polars_io::json::{BatchedWriter, JsonWriterOptions};
 use polars_io::utils::file::try_get_writeable;
 
-use crate::executors::sinks::output::file_sink::{init_writer_thread, FilesSink, SinkWriter};
+use crate::executors::sinks::output::file_sink::{FilesSink, SinkWriter, init_writer_thread};
 use crate::pipeline::morsels_per_sink;
 
 impl<W: std::io::Write> SinkWriter for BatchedWriter<W> {

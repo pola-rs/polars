@@ -7,7 +7,7 @@ use std::str::FromStr;
     feature = "json"
 ))]
 use polars_core::prelude::polars_ensure;
-use polars_core::prelude::{polars_bail, PolarsError, PolarsResult};
+use polars_core::prelude::{PolarsError, PolarsResult, polars_bail};
 #[cfg(feature = "csv")]
 use polars_lazy::prelude::LazyCsvReader;
 use polars_lazy::prelude::LazyFrame;

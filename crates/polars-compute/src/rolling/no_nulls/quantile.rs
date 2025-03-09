@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::legacy::utils::CustomIterTools;
 use num_traits::ToPrimitive;
 use polars_error::polars_ensure;
@@ -13,19 +14,19 @@ pub struct QuantileWindow<'a, T: NativeType> {
 }
 
 impl<
-        'a,
-        T: NativeType
-            + Float
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Div<Output = T>
-            + NumCast
-            + One
-            + Zero
-            + SealedRolling
-            + Sub<Output = T>,
-    > RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
+    'a,
+    T: NativeType
+        + Float
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Div<Output = T>
+        + NumCast
+        + One
+        + Zero
+        + SealedRolling
+        + Sub<Output = T>,
+> RollingAggWindowNoNulls<'a, T> for QuantileWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         let params = params.unwrap();
@@ -214,11 +215,7 @@ where
         },
         (_, Equiprobable) => {
             let threshold = (wsum * p).ceil() - 1.0;
-            if s > threshold {
-                vk
-            } else {
-                v_old
-            }
+            if s > threshold { vk } else { v_old }
         },
         (_, Midpoint) => (vk + v_old) * NumCast::from(0.5).unwrap(),
         // This is seemingly the canonical way to do it.

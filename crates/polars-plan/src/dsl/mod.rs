@@ -64,12 +64,12 @@ use polars_compute::rolling::QuantileMethod;
 use polars_core::chunked_array::cast::CastOptions;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
+use polars_core::series::IsSorted;
 #[cfg(feature = "diff")]
 use polars_core::series::ops::NullBehavior;
-use polars_core::series::IsSorted;
 #[cfg(any(feature = "search_sorted", feature = "is_between"))]
 use polars_core::utils::SuperTypeFlags;
-use polars_core::utils::{try_get_supertype, SuperTypeOptions};
+use polars_core::utils::{SuperTypeOptions, try_get_supertype};
 pub use selector::Selector;
 #[cfg(feature = "dtype-struct")]
 pub use struct_::*;

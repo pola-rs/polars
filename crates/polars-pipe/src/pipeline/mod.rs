@@ -3,11 +3,11 @@ mod convert;
 mod dispatcher;
 
 pub use convert::{
-    create_pipeline, get_dummy_operator, get_operator, get_sink, swap_join_order, CallBacks,
+    CallBacks, create_pipeline, get_dummy_operator, get_operator, get_sink, swap_join_order,
 };
-pub use dispatcher::{execute_pipeline, PipeLine};
-use polars_core::prelude::*;
+pub use dispatcher::{PipeLine, execute_pipeline};
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_utils::cell::SyncUnsafeCell;
 
 pub use crate::executors::sinks::group_by::aggregates::can_convert_to_hash_agg;

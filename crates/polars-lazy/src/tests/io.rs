@@ -115,7 +115,7 @@ fn test_parquet_statistics_no_skip() {
 fn test_parquet_statistics() -> PolarsResult<()> {
     let _guard = SINGLE_LOCK.lock().unwrap();
     init_files();
-    std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1");
+    unsafe { std::env::set_var("POLARS_PANIC_IF_PARQUET_PARSED", "1") };
     let par = true;
 
     // Test single predicates
@@ -350,7 +350,7 @@ fn test_parquet_statistics() -> PolarsResult<()> {
         .collect()?;
     assert_eq!(out.shape(), (0, 4));
 
-    std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED");
+    unsafe { std::env::remove_var("POLARS_PANIC_IF_PARQUET_PARSED") };
 
     Ok(())
 }

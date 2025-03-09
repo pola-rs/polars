@@ -5,9 +5,9 @@ use arrow::bitmap::Bitmap;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_core::utils::_split_offsets;
-use polars_core::{downcast_as_macro_arg_physical, POOL};
-use polars_ops::frame::join::{private_left_join_multiple_keys, ChunkJoinOptIds};
+use polars_core::{POOL, downcast_as_macro_arg_physical};
 use polars_ops::frame::SeriesJoin;
+use polars_ops::frame::join::{ChunkJoinOptIds, private_left_join_multiple_keys};
 use polars_ops::prelude::*;
 use polars_plan::prelude::*;
 use polars_utils::sort::perfect_sort;
@@ -694,9 +694,7 @@ fn set_by_groups(
         let s = s.to_physical_repr();
 
         macro_rules! dispatch {
-            ($ca:expr) => {{
-                Some(set_numeric($ca, groups, len))
-            }};
+            ($ca:expr) => {{ Some(set_numeric($ca, groups, len)) }};
         }
         downcast_as_macro_arg_physical!(&s, dispatch)
             .map(|s| unsafe { s.from_physical_unchecked(dtype) }.unwrap())

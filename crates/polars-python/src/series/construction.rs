@@ -9,13 +9,13 @@ use polars_core::utils::CustomIterTools;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 
+use crate::PySeries;
 use crate::conversion::any_value::py_object_to_any_value;
-use crate::conversion::{reinterpret_vec, Wrap};
+use crate::conversion::{Wrap, reinterpret_vec};
 use crate::error::PyPolarsErr;
 use crate::interop::arrow::to_rust::array_to_rust;
 use crate::prelude::ObjectValue;
 use crate::utils::EnterPolarsExt;
-use crate::PySeries;
 
 // Init with numpy arrays.
 macro_rules! init_method {

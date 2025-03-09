@@ -1,7 +1,7 @@
 use std::io::Write;
 
-use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 use polars_parquet_format::RowGroup;
+use polars_parquet_format::thrift::protocol::TCompactOutputProtocol;
 
 use super::indexes::{write_column_index, write_offset_index};
 use super::page::PageWriteSpec;

@@ -1,6 +1,6 @@
 use std::collections::BinaryHeap;
 
-use tokio::sync::mpsc::{channel, Receiver, Sender};
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 
 /// Stores the state for which inserter we need to poll.
 enum PollState {

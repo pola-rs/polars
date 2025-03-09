@@ -9,7 +9,7 @@ use pyo3::types::PyDict;
 
 use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
-use crate::file::{get_either_file, EitherRustPythonFile};
+use crate::file::{EitherRustPythonFile, get_either_file};
 use crate::prelude::ArrowDataType;
 
 #[cfg(feature = "ipc")]

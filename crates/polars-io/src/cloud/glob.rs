@@ -2,13 +2,13 @@ use futures::TryStreamExt;
 use object_store::path::Path;
 use polars_core::error::to_compute_err;
 use polars_core::prelude::polars_ensure;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
 use regex::Regex;
 use url::Url;
 
-use super::{parse_url, CloudOptions};
+use super::{CloudOptions, parse_url};
 
 const DELIMITER: char = '/';
 

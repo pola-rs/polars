@@ -697,7 +697,9 @@ impl CommonSubExprOptimizer {
 
             if !valid {
                 if verbose() {
-                    eprintln!("materialized names collided in common subexpression elimination.\n backtrace and run without CSE")
+                    eprintln!(
+                        "materialized names collided in common subexpression elimination.\n backtrace and run without CSE"
+                    )
                 }
                 return Ok(None);
             }
@@ -751,22 +753,28 @@ impl CommonSubExprOptimizer {
                         }
 
                         match expr_arena.get_many_mut([original, new]) {
-                            [AExpr::Function {
-                                input: input_original,
-                                ..
-                            }, AExpr::Function {
-                                input: input_new, ..
-                            }] => {
+                            [
+                                AExpr::Function {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::Function {
+                                    input: input_new, ..
+                                },
+                            ] => {
                                 for (new, original) in input_new.iter_mut().zip(input_original) {
                                     new.set_alias(original.output_name().clone());
                                 }
                             },
-                            [AExpr::AnonymousFunction {
-                                input: input_original,
-                                ..
-                            }, AExpr::AnonymousFunction {
-                                input: input_new, ..
-                            }] => {
+                            [
+                                AExpr::AnonymousFunction {
+                                    input: input_original,
+                                    ..
+                                },
+                                AExpr::AnonymousFunction {
+                                    input: input_new, ..
+                                },
+                            ] => {
                                 for (new, original) in input_new.iter_mut().zip(input_original) {
                                     new.set_alias(original.output_name().clone());
                                 }

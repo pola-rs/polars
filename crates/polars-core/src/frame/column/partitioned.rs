@@ -2,9 +2,9 @@ use std::borrow::Cow;
 use std::convert::identity;
 use std::sync::{Arc, OnceLock};
 
-use polars_error::{polars_ensure, PolarsResult};
-use polars_utils::pl_str::PlSmallStr;
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::{AnyValue, Column, DataType, Field, IntoColumn, Series};
 use crate::chunked_array::cast::CastOptions;

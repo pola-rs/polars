@@ -1,4 +1,4 @@
-use polars_core::chunked_array::ops::search_sorted::{binary_search_ca, SearchSortedSide};
+use polars_core::chunked_array::ops::search_sorted::{SearchSortedSide, binary_search_ca};
 use polars_core::prelude::*;
 use polars_core::with_match_physical_numeric_polars_type;
 

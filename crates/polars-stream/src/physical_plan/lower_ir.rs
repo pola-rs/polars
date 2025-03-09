@@ -11,7 +11,7 @@ use polars_io::RowIndex;
 use polars_mem_engine::create_physical_plan;
 use polars_plan::dsl::{FileScan, ScanFlags, ScanSource};
 use polars_plan::plans::expr_ir::{ExprIR, OutputName};
-use polars_plan::plans::{AExpr, FunctionIR, IRAggExpr, LiteralValue, IR};
+use polars_plan::plans::{AExpr, FunctionIR, IR, IRAggExpr, LiteralValue};
 use polars_plan::prelude::{FileType, GroupbyOptions, SinkType};
 use polars_utils::arena::{Arena, Node};
 use polars_utils::itertools::Itertools;
@@ -19,11 +19,11 @@ use polars_utils::unique_column_name;
 use slotmap::SlotMap;
 
 use super::{PhysNode, PhysNodeKey, PhysNodeKind, PhysStream};
-use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::nodes::io_sources::RowRestriction;
+use crate::nodes::io_sources::multi_scan::MultiscanRowRestriction;
 use crate::physical_plan::lower_expr::{
-    build_length_preserving_select_stream, build_select_stream, is_elementwise_rec_cached,
-    lower_exprs, ExprCache,
+    ExprCache, build_length_preserving_select_stream, build_select_stream,
+    is_elementwise_rec_cached, lower_exprs,
 };
 use crate::physical_plan::lower_group_by::build_group_by_stream;
 use crate::utils::late_materialized_df::LateMaterializedDataFrame;
@@ -229,11 +229,12 @@ pub fn lower_ir(
                 path,
                 sink_options,
                 file_type,
-                cloud_options: _,
+                cloud_options,
             } => {
                 let path = path.clone();
                 let sink_options = sink_options.clone();
                 let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
 
                 match file_type {
                     #[cfg(feature = "ipc")]
@@ -244,6 +245,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "parquet")]
@@ -254,6 +256,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "csv")]
@@ -264,6 +267,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                     #[cfg(feature = "json")]
@@ -274,6 +278,7 @@ pub fn lower_ir(
                             sink_options,
                             file_type,
                             input: phys_input,
+                            cloud_options,
                         }
                     },
                 }
@@ -283,12 +288,13 @@ pub fn lower_ir(
                 sink_options,
                 variant,
                 file_type,
-                cloud_options: _,
+                cloud_options,
             } => {
                 let path_f_string = path_f_string.clone();
                 let sink_options = sink_options.clone();
                 let variant = variant.clone();
                 let file_type = file_type.clone();
+                let cloud_options = cloud_options.clone();
 
                 let phys_input = lower_ir!(*input)?;
                 PhysNodeKind::PartitionSink {
@@ -297,6 +303,7 @@ pub fn lower_ir(
                     variant,
                     file_type,
                     input: phys_input,
+                    cloud_options,
                 }
             },
         },
@@ -439,7 +446,7 @@ pub fn lower_ir(
                                 Option<RowIndex>,
                                 Option<(i64, usize)>,
                                 Option<ExprIR>,
-                            ) = match &scan_type {
+                            ) = match &*scan_type {
                                 #[cfg(feature = "parquet")]
                                 FileScan::Parquet { .. } => (None, None, None),
                                 #[cfg(feature = "ipc")]

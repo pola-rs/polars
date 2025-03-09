@@ -26,8 +26,8 @@ pub(super) fn cum_max(s: &Column, reverse: bool) -> PolarsResult<Column> {
 }
 
 pub(super) mod dtypes {
-    use polars_core::utils::materialize_dyn_int;
     use DataType::*;
+    use polars_core::utils::materialize_dyn_int;
 
     use super::*;
 

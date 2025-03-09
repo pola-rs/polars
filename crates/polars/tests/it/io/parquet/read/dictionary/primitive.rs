@@ -1,5 +1,5 @@
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::types::{decode, NativeType};
+use polars_parquet::parquet::types::{NativeType, decode};
 
 #[derive(Debug)]
 pub struct PrimitivePageDict<T: NativeType> {

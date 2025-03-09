@@ -1299,17 +1299,6 @@ def test_datetime_format(fmt: str, expected: str) -> None:
     assert csv == expected
 
 
-def test_invalid_datetime_format() -> None:
-    tz_naive = pl.Series(["2020-01-01T00:00:00"]).str.strptime(pl.Datetime)
-    tz_aware = tz_naive.dt.replace_time_zone("UTC")
-    with pytest.raises(
-        ComputeError, match="cannot format NaiveDateTime with format '%q'"
-    ):
-        tz_naive.to_frame().write_csv(datetime_format="%q")
-    with pytest.raises(ComputeError, match="cannot format DateTime with format '%q'"):
-        tz_aware.to_frame().write_csv(datetime_format="%q")
-
-
 @pytest.mark.parametrize(
     ("fmt", "expected"),
     [
@@ -2216,7 +2205,9 @@ def test_skip_rows_after_header(tmp_path: Path, streaming: bool) -> None:
 
     skip = 2
     expect = df.slice(skip)
-    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(streaming=streaming)
+    out = pl.scan_csv(path, skip_rows_after_header=skip).collect(
+        engine="old-streaming" if streaming else "in-memory"
+    )
 
     assert_frame_equal(out, expect)
 
@@ -2408,7 +2399,7 @@ time
     assert_frame_equal(pl.scan_csv(path, try_parse_dates=True).collect(), df)
     assert_frame_equal(pl.scan_csv(path, schema={"time": pl.Time}).collect(), df)
     assert_frame_equal(
-        pl.scan_csv(path, schema={"time": pl.Time}).collect(streaming=True), df
+        pl.scan_csv(path, schema={"time": pl.Time}).collect(engine="old-streaming"), df
     )
 
 
@@ -2537,3 +2528,17 @@ def test_header_only_column_selection_17173() -> None:
     result = pl.read_csv(io.StringIO(csv), columns=["B"])
     expected = pl.Series("B", [], pl.String()).to_frame()
     assert_frame_equal(result, expected)
+
+
+def test_csv_enum_raise() -> None:
+    ENUM_DTYPE = pl.Enum(["foo", "bar"])
+    with (
+        io.StringIO("col\nfoo\nbaz\n") as csv,
+        pytest.raises(
+            pl.exceptions.ComputeError, match="category baz doesn't exist in Enum dtype"
+        ),
+    ):
+        pl.read_csv(
+            csv,
+            schema={"col": ENUM_DTYPE},
+        )

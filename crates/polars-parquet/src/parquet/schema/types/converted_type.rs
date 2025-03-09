@@ -134,7 +134,7 @@ impl TryFrom<(ConvertedType, Option<(i32, i32)>)> for PrimitiveConvertedType {
                 return Err(ParquetError::oos(format!(
                     "Converted type \"{:?}\" cannot be applied to a primitive type",
                     ty
-                )))
+                )));
             },
         })
     }

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
 use arrow::types::PrimitiveType;
@@ -258,7 +259,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         return Err(serde::de::Error::unknown_variant(
                             &String::from_utf8_lossy(v),
                             VARIANTS,
-                        ))
+                        ));
                     },
                 };
                 Ok(field)
@@ -436,9 +437,9 @@ impl<'a> AnyValue<'a> {
             #[cfg(feature = "dtype-decimal")]
             Decimal(_, scale) => DataType::Decimal(None, Some(*scale)),
             #[cfg(feature = "object")]
-            Object(o) => DataType::Object(o.type_name(), None),
+            Object(o) => DataType::Object(o.type_name()),
             #[cfg(feature = "object")]
-            ObjectOwned(o) => DataType::Object(o.0.type_name(), None),
+            ObjectOwned(o) => DataType::Object(o.0.type_name()),
         }
     }
 

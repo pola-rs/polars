@@ -20,7 +20,7 @@ pub use string::*;
 
 use crate::chunked_array::to_primitive;
 use crate::prelude::*;
-use crate::utils::{get_iter_capacity, NoNull};
+use crate::utils::{NoNull, get_iter_capacity};
 
 // N: the value type; T: the sentinel type
 pub trait ChunkedBuilder<N, T: PolarsDataType> {

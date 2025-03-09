@@ -3,7 +3,7 @@ use arrow_format::ipc;
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
-use super::common::{pad_to_64, Compression};
+use super::common::{Compression, pad_to_64};
 use crate::array::*;
 use crate::bitmap::Bitmap;
 use crate::datatypes::PhysicalType;

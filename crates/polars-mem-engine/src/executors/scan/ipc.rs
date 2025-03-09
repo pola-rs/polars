@@ -4,7 +4,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use polars_error::feature_gated;
 use polars_io::cloud::CloudOptions;
 use polars_io::path_utils::is_cloud_url;
-use polars_io::predicates::{apply_predicate, SkipBatchPredicate};
+use polars_io::predicates::{SkipBatchPredicate, apply_predicate};
 use polars_utils::mmap::MemSlice;
 use polars_utils::open_file;
 use rayon::prelude::*;
@@ -38,7 +38,7 @@ impl IpcExec {
                     eprintln!("ASYNC READING FORCED");
                 }
 
-                polars_io::pl_async::get_runtime().block_on_potential_spawn(self.read_async())?
+                polars_io::pl_async::get_runtime().block_in_place_on(self.read_async())?
             })
         } else {
             self.read_sync().map_err(|e| match &self.sources {
@@ -61,12 +61,16 @@ impl IpcExec {
         idx_to_cached_file: impl Fn(usize) -> Option<PolarsResult<std::fs::File>> + Send + Sync,
     ) -> PolarsResult<DataFrame> {
         if config::verbose() {
-            eprintln!("executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
+            eprintln!(
+                "executing ipc read sync with row_index = {:?}, n_rows = {:?}, predicate = {:?} for paths {:?}",
                 self.file_options.row_index.as_ref(),
-                self.file_options.pre_slice.map(|x| {
-                    assert_eq!(x.0, 0);
-                    x.1
-                }).as_ref(),
+                self.file_options
+                    .pre_slice
+                    .map(|x| {
+                        assert_eq!(x.0, 0);
+                        x.1
+                    })
+                    .as_ref(),
                 self.predicate.is_some(),
                 self.sources,
             );

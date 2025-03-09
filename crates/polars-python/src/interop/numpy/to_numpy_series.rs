@@ -5,15 +5,15 @@ use numpy::{Element, PyArray1};
 use polars_core::prelude::*;
 use pyo3::exceptions::PyRuntimeError;
 use pyo3::prelude::*;
-use pyo3::{intern, IntoPyObjectExt};
+use pyo3::{IntoPyObjectExt, intern};
 
 use super::to_numpy_df::df_to_numpy;
 use super::utils::{
     create_borrowed_np_array, dtype_supports_view, polars_dtype_to_np_temporal_dtype,
     reshape_numpy_array, series_contains_null,
 };
-use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::conversion::ObjectValue;
+use crate::conversion::chunked_array::{decimal_to_pyobject_iter, time_to_pyobject_iter};
 use crate::series::PySeries;
 
 #[pymethods]
@@ -202,7 +202,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
         Boolean => boolean_series_to_numpy(py, s),
         Date => date_series_to_numpy(py, s),
         Datetime(tu, _) => {
-            use numpy::datetime::{units, Datetime};
+            use numpy::datetime::{Datetime, units};
             match tu {
                 TimeUnit::Milliseconds => {
                     temporal_series_to_numpy::<Datetime<units::Milliseconds>>(py, s)
@@ -216,7 +216,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
             }
         },
         Duration(tu) => {
-            use numpy::datetime::{units, Timedelta};
+            use numpy::datetime::{Timedelta, units};
             match tu {
                 TimeUnit::Milliseconds => {
                     temporal_series_to_numpy::<Timedelta<units::Milliseconds>>(py, s)
@@ -264,7 +264,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
             df_to_numpy(py, &df, IndexOrder::Fortran, writable, true).unwrap()
         },
         #[cfg(feature = "object")]
-        Object(_, _) => {
+        Object(_) => {
             let ca = s
                 .as_any()
                 .downcast_ref::<ObjectChunked<ObjectValue>>()
@@ -274,7 +274,7 @@ fn series_to_numpy_with_copy(py: Python, s: &Series, writable: bool) -> PyObject
         },
         Null => {
             let n = s.len();
-            let values = std::iter::repeat(f32::NAN).take(n);
+            let values = std::iter::repeat_n(f32::NAN, n);
             PyArray1::from_iter(py, values).into_py_any(py).unwrap()
         },
         Unknown(_) | BinaryOffset => unreachable!(),
@@ -318,7 +318,7 @@ fn boolean_series_to_numpy(py: Python, s: &Series) -> PyObject {
 }
 /// Convert dates directly to i64 with i64::MIN representing a null value.
 fn date_series_to_numpy(py: Python, s: &Series) -> PyObject {
-    use numpy::datetime::{units, Datetime};
+    use numpy::datetime::{Datetime, units};
 
     let s_phys = s.to_physical_repr();
     let ca = s_phys.i32().unwrap();

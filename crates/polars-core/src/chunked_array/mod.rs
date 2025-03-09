@@ -1,4 +1,5 @@
 //! The typed heart of every Series column.
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::iter::Map;
 use std::sync::Arc;
 
@@ -1010,7 +1011,7 @@ pub(crate) mod test {
     #[test]
     #[cfg(feature = "dtype-categorical")]
     fn test_iter_categorical() {
-        use crate::{disable_string_cache, SINGLE_LOCK};
+        use crate::{SINGLE_LOCK, disable_string_cache};
         let _lock = SINGLE_LOCK.lock();
         disable_string_cache();
         let ca = StringChunked::new(

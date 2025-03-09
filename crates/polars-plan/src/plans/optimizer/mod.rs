@@ -41,9 +41,9 @@ pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
-use crate::plans::optimizer::cse::prune_unused_caches;
-#[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
+#[cfg(feature = "cse")]
+use crate::plans::optimizer::cse::prune_unused_caches;
 use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;
@@ -107,10 +107,6 @@ More information on the new streaming engine: https://github.com/pola-rs/polars/
     let comm_subexpr_elim = opt_flags.contains(OptFlags::COMM_SUBEXPR_ELIM);
     #[cfg(not(feature = "cse"))]
     let comm_subexpr_elim = false;
-
-    #[allow(unused_variables)]
-    let agg_scan_projection =
-        opt_flags.contains(OptFlags::FILE_CACHING) && !opt_flags.streaming() && !opt_flags.eager();
 
     // During debug we check if the optimizations have not modified the final schema.
     #[cfg(debug_assertions)]

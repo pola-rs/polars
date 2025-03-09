@@ -98,11 +98,7 @@ impl<T: PolarsNumericType> Reducer for VarStdReducer<T> {
             .into_iter()
             .map(|s| {
                 let var = s.finalize(self.ddof);
-                if self.is_std {
-                    var.map(f64::sqrt)
-                } else {
-                    var
-                }
+                if self.is_std { var.map(f64::sqrt) } else { var }
             })
             .collect_ca(PlSmallStr::EMPTY);
         Ok(ca.into_series())

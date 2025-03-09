@@ -150,11 +150,7 @@ impl From<regex::Error> for PolarsError {
 #[cfg(feature = "object_store")]
 impl From<object_store::Error> for PolarsError {
     fn from(err: object_store::Error) -> Self {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("object-store error: {err:?}"),
-        )
-        .into()
+        std::io::Error::other(format!("object-store error: {err:?}")).into()
     }
 }
 
@@ -342,7 +338,7 @@ macro_rules! polars_err {
         $crate::polars_err!(op = stringify!($op), $lhs, $rhs)
     };
     (bigidx, ctx = $ctx:expr, size = $size:expr) => {
-        polars_err!(ComputeError: "\
+        $crate::polars_err!(ComputeError: "\
 {} produces {} rows which is more than maximum allowed pow(2, 32) rows; \
 consider compiling with bigidx feature (polars-u64-idx package on python)",
             $ctx,

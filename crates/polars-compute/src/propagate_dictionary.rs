@@ -23,11 +23,7 @@ pub fn propagate_dictionary_value_nulls(
         .map(|i| {
             let is_valid = unsafe { values_validity.get_bit_unchecked(i) };
             offset += usize::from(!is_valid);
-            if is_valid {
-                (i - offset) as u32
-            } else {
-                0
-            }
+            if is_valid { (i - offset) as u32 } else { 0 }
         })
         .collect();
 

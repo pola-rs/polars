@@ -2,7 +2,7 @@ use chrono::NaiveTime;
 use polars_core::utils::arrow::temporal_conversions::date32_to_date;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyList, PyNone, PyTuple};
-use pyo3::{intern, BoundObject};
+use pyo3::{BoundObject, intern};
 
 use super::datetime::{
     datetime_to_py_object, elapsed_offset_to_timedelta, nanos_since_midnight_to_naivetime,

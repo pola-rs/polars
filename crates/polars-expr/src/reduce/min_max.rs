@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 use std::marker::PhantomData;
 

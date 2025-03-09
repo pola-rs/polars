@@ -3,11 +3,11 @@ use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::datatypes::ArrowDataType;
 use arrow::types::{AlignedBytes, NativeType};
 
-use super::binview::BinViewDecoder;
-use super::utils::{self, dict_indices_decoder, freeze_validity, Decoder, StateTranslation};
 use super::PredicateFilter;
-use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
+use super::binview::BinViewDecoder;
+use super::utils::{self, Decoder, StateTranslation, dict_indices_decoder, freeze_validity};
 use crate::parquet::encoding::Encoding;
+use crate::parquet::encoding::hybrid_rle::HybridRleDecoder;
 use crate::parquet::error::ParquetResult;
 use crate::parquet::page::{DataPage, DictPage};
 

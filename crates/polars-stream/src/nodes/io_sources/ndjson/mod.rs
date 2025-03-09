@@ -8,25 +8,25 @@ use negative_slice_pass::MorselStreamReverser;
 use polars_core::config;
 use polars_core::schema::SchemaRef;
 use polars_core::utils::arrow::bitmap::Bitmap;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::estimate_n_lines_in_file;
 use polars_io::utils::compression::maybe_decompress_bytes;
-use polars_io::{ndjson, RowIndex};
+use polars_io::{RowIndex, ndjson};
 use polars_plan::dsl::{NDJsonReadOptions, ScanSource};
-use polars_plan::plans::{ndjson_file_info, FileInfo};
+use polars_plan::plans::{FileInfo, ndjson_file_info};
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::IdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
-use polars_utils::IdxSize;
 use row_index_limit_pass::ApplyRowIndexOrLimit;
 
 use super::multi_scan::MultiScanable;
 use super::{RowRestriction, SourceNode, SourceOutput};
-use crate::async_executor::{spawn, AbortOnDropHandle};
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
@@ -44,7 +44,7 @@ mod row_index_limit_pass;
 pub struct NDJsonSourceNode {
     scan_source: ScanSource,
     file_info: FileInfo,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     options: NDJsonReadOptions,
     schema: Option<SchemaRef>,
     verbose: bool,
@@ -54,7 +54,7 @@ impl NDJsonSourceNode {
     pub fn new(
         scan_source: ScanSource,
         file_info: FileInfo,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         options: NDJsonReadOptions,
     ) -> Self {
         let verbose = config::verbose();
@@ -487,10 +487,10 @@ impl MultiScanable for NDJsonSourceNode {
     ) -> PolarsResult<Self> {
         let has_row_index = row_index.as_ref().is_some();
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let ndjson_options = options.clone();
         let mut file_info = ndjson_file_info(

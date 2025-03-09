@@ -8,7 +8,7 @@ mod schema;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-pub use field::{Field, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES};
+pub use field::{DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field};
 pub use physical_type::*;
 use polars_utils::pl_str::PlSmallStr;
 pub use schema::{ArrowSchema, ArrowSchemaRef};
@@ -204,11 +204,7 @@ impl UnionMode {
     /// Constructs a [`UnionMode::Sparse`] if the input bool is true,
     /// or otherwise constructs a [`UnionMode::Dense`]
     pub fn sparse(is_sparse: bool) -> Self {
-        if is_sparse {
-            Self::Sparse
-        } else {
-            Self::Dense
-        }
+        if is_sparse { Self::Sparse } else { Self::Dense }
     }
 
     /// Returns whether the mode is sparse

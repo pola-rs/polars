@@ -7,7 +7,7 @@ use chrono_tz::Tz;
 use polars::datatypes::TimeUnit;
 use polars_core::datatypes::TimeZone;
 use pyo3::types::PyAnyMethods;
-use pyo3::{intern, Bound, IntoPyObject, PyAny, PyResult, Python};
+use pyo3::{Bound, IntoPyObject, PyAny, PyResult, Python, intern};
 
 use crate::error::PyPolarsErr;
 use crate::py_modules::pl_utils;

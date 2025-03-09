@@ -247,7 +247,7 @@ impl<'a> IRDotDisplay<'a> {
                 file_options: options,
                 output_schema: _,
             } => {
-                let name: &str = scan_type.into();
+                let name: &str = (&**scan_type).into();
                 let path = ScanSourcesDisplay(sources);
                 let with_columns = options.with_columns.as_ref().map(|cols| cols.as_ref());
                 let with_columns = NumColumns(with_columns);

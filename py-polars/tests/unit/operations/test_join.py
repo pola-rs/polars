@@ -1078,14 +1078,14 @@ def test_join_empty_literal_17027() -> None:
     assert (
         df1.lazy()
         .join(df2.lazy(), on=pl.lit(0), how="inner")
-        .collect(streaming=True)
+        .collect(engine="old-streaming")
         .height
         == 0
     )
     assert (
         df1.lazy()
         .join(df2.lazy(), on=pl.lit(0), how="left")
-        .collect(streaming=True)
+        .collect(engine="old-streaming")
         .height
         == 1
     )

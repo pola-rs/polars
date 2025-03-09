@@ -305,18 +305,21 @@ fn test_missing_data() {
 
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish().unwrap();
-    assert!(df
-        .column("column_1")
-        .unwrap()
-        .equals(&Column::new("column_1".into(), &[1_i64, 1])));
-    assert!(df
-        .column("column_2")
-        .unwrap()
-        .equals_missing(&Column::new("column_2".into(), &[Some(2_i64), None])));
-    assert!(df
-        .column("column_3")
-        .unwrap()
-        .equals(&Column::new("column_3".into(), &[3_i64, 3])));
+    assert!(
+        df.column("column_1")
+            .unwrap()
+            .equals(&Column::new("column_1".into(), &[1_i64, 1]))
+    );
+    assert!(
+        df.column("column_2")
+            .unwrap()
+            .equals_missing(&Column::new("column_2".into(), &[Some(2_i64), None]))
+    );
+    assert!(
+        df.column("column_3")
+            .unwrap()
+            .equals(&Column::new("column_3".into(), &[3_i64, 3]))
+    );
 }
 
 #[test]
@@ -328,10 +331,11 @@ fn test_escape_comma() {
     let file = Cursor::new(csv);
     let df = CsvReader::new(file).finish().unwrap();
     assert_eq!(df.shape(), (2, 3));
-    assert!(df
-        .column("column_3")
-        .unwrap()
-        .equals(&Column::new("column_3".into(), &[11_i64, 12])));
+    assert!(
+        df.column("column_3")
+            .unwrap()
+            .equals(&Column::new("column_3".into(), &[11_i64, 12]))
+    );
 }
 
 #[test]
@@ -399,10 +403,11 @@ hello,","," ",world,"!"
         ("column_4", "world"),
         ("column_5", "!"),
     ] {
-        assert!(df
-            .column(col)
-            .unwrap()
-            .equals(&Column::new(col.into(), &[val; 4])));
+        assert!(
+            df.column(col)
+                .unwrap()
+                .equals(&Column::new(col.into(), &[val; 4]))
+        );
     }
 }
 

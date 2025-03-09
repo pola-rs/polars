@@ -2,8 +2,8 @@ use polars::prelude::*;
 use pyo3::prelude::*;
 
 use super::PyLazyFrame;
-use crate::utils::EnterPolarsExt;
 use crate::PyDataFrame;
+use crate::utils::EnterPolarsExt;
 
 #[pymethods]
 #[cfg(not(target_arch = "wasm32"))]

@@ -56,7 +56,9 @@ def impl_test_hive_partitioned_predicate_pushdown(
             (pl.col("fats_g") == 0.5) & (pl.col("category") == "vegetables"),
         ]:
             assert_frame_equal(
-                q.filter(pred).sort(sort_by).collect(streaming=streaming),
+                q.filter(pred)
+                .sort(sort_by)
+                .collect(engine="old-streaming" if streaming else "in-memory"),
                 df.filter(pred).sort(sort_by),
             )
             err = capfd.readouterr().err
@@ -162,9 +164,14 @@ def test_hive_partitioned_slice_pushdown(
     expect_count = pl.select(pl.lit(1, dtype=pl.UInt32).alias(x) for x in schema)
 
     assert_frame_equal(
-        q.head(1).collect(streaming=streaming).select(pl.all().len()), expect_count
+        q.head(1)
+        .collect(engine="old-streaming" if streaming else "in-memory")
+        .select(pl.all().len()),
+        expect_count,
     )
-    assert q.head(0).collect(streaming=streaming).columns == [
+    assert q.head(0).collect(
+        engine="old-streaming" if streaming else "in-memory"
+    ).columns == [
         "calories",
         "sugars_g",
         "category",
@@ -193,7 +200,12 @@ def test_hive_partitioned_projection_pushdown(
     q = pl.scan_parquet(root / "**/*.parquet", hive_partitioning=True)
     columns = ["sugars_g", "category"]
     for streaming in [True, False]:
-        assert q.select(columns).collect(streaming=streaming).columns == columns
+        assert (
+            q.select(columns)
+            .collect(engine="old-streaming" if streaming else "in-memory")
+            .columns
+            == columns
+        )
 
     # test that hive partition columns are projected with the correct height when
     # the projection contains only hive partition columns (11796)

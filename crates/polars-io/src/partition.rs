@@ -2,9 +2,9 @@
 
 use std::path::Path;
 
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::POOL;
 use rayon::prelude::*;
 
 use crate::cloud::CloudOptions;
@@ -13,7 +13,7 @@ use crate::parquet::write::ParquetWriteOptions;
 use crate::prelude::IpcWriterOptions;
 use crate::prelude::URL_ENCODE_CHAR_SET;
 use crate::utils::file::try_get_writeable;
-use crate::{is_cloud_url, SerWriter, WriteDataFrameToFile};
+use crate::{SerWriter, WriteDataFrameToFile, is_cloud_url};
 
 impl WriteDataFrameToFile for ParquetWriteOptions {
     fn write_df_to_file(

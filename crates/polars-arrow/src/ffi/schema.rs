@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::ptr;
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ArrowSchema;

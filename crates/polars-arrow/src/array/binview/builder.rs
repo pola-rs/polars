@@ -2,8 +2,8 @@ use std::marker::PhantomData;
 use std::sync::{Arc, LazyLock};
 
 use hashbrown::hash_map::Entry;
-use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::IdxSize;
+use polars_utils::aliases::{InitHashMaps, PlHashMap};
 
 use crate::array::binview::{DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE};
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
@@ -137,10 +137,10 @@ impl<V: ViewType + ?Sized> BinaryViewArrayGenericBuilder<V> {
         for mut view in views {
             if view.length > View::MAX_INLINE_SIZE {
                 // Translate from old array-local buffer idx to global stolen buffer idx.
-                let (mut new_buffer_idx, gen) = *self
+                let (mut new_buffer_idx, gen_) = *self
                     .buffer_set_translation_idxs
                     .get_unchecked(view.buffer_idx as usize);
-                if gen != self.buffer_set_translation_generation {
+                if gen_ != self.buffer_set_translation_generation {
                     // This buffer index wasn't seen before for this array, do a dedup lookup.
                     // Since we map by starting pointer and different subslices may have different lengths, we expand
                     // the buffer to the maximum it could be.

@@ -1,10 +1,9 @@
 use std::hash::{Hash, Hasher};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{LazyLock, Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use hashbrown::hash_table::Entry;
 use hashbrown::HashTable;
-use once_cell::sync::Lazy;
+use hashbrown::hash_table::Entry;
 use polars_utils::aliases::PlRandomState;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -250,4 +249,4 @@ impl StringCache {
     }
 }
 
-pub(crate) static STRING_CACHE: Lazy<StringCache> = Lazy::new(Default::default);
+pub(crate) static STRING_CACHE: LazyLock<StringCache> = LazyLock::new(Default::default);

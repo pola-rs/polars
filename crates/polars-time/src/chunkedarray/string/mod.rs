@@ -2,8 +2,8 @@ pub mod infer;
 use chrono::DateTime;
 mod patterns;
 mod strptime;
-use chrono::format::ParseErrorKind;
 use chrono::ParseError;
+use chrono::format::ParseErrorKind;
 pub use patterns::Pattern;
 #[cfg(feature = "dtype-time")]
 use polars_core::chunked_array::temporal::time_to_time64ns;

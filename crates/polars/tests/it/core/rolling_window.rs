@@ -86,13 +86,14 @@ fn test_rolling_mean() {
     .into_series();
 
     // check err on wrong input
-    assert!(s
-        .rolling_mean(RollingOptionsFixedWindow {
+    assert!(
+        s.rolling_mean(RollingOptionsFixedWindow {
             window_size: 1,
             min_periods: 2,
             ..Default::default()
         })
-        .is_err());
+        .is_err()
+    );
 
     // validate that we divide by the proper window length. (same as pandas)
     let a = s

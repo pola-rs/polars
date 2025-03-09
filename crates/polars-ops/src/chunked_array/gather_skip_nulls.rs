@@ -170,7 +170,7 @@ mod test {
 
     fn random_filter<T: Clone, R: Rng>(rng: &mut R, v: &[T], pr: Range<f64>) -> Vec<Option<T>> {
         let p = rng.gen_range(pr);
-        let rand_filter = |x| Some(x).filter(|_| rng.gen::<f64>() < p);
+        let rand_filter = |x| Some(x).filter(|_| rng.r#gen::<f64>() < p);
         v.iter().cloned().map(rand_filter).collect()
     }
 

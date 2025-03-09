@@ -5,8 +5,8 @@ use polars_utils::arena::Arena;
 
 use super::*;
 use crate::plans::{AExpr, IR};
-use crate::prelude::aexpr::traverse_and_hash_aexpr;
 use crate::prelude::ExprIR;
+use crate::prelude::aexpr::traverse_and_hash_aexpr;
 
 impl IRNode {
     pub(crate) fn hashable_and_cmp<'a>(

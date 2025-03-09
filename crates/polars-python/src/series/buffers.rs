@@ -82,7 +82,9 @@ impl PySeries {
                 }))
             },
             dt => {
-                let msg = format!("`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first");
+                let msg = format!(
+                    "`_get_buffer_info` not implemented for non-physical type {dt}; try to select a buffer first"
+                );
                 Err(PyTypeError::new_err(msg))
             },
         }
@@ -246,11 +248,7 @@ fn get_boolean_buffer_length_in_bytes(length: usize, offset: usize) -> usize {
     let n_bits = offset + length;
     let n_bytes = n_bits / 8;
     let rest = n_bits % 8;
-    if rest == 0 {
-        n_bytes
-    } else {
-        n_bytes + 1
-    }
+    if rest == 0 { n_bytes } else { n_bytes + 1 }
 }
 
 #[pymethods]
@@ -322,9 +320,11 @@ impl PySeries {
                         }
                         series_to_offsets(s)
                     },
-                    None => return Err(PyTypeError::new_err(
-                        "`_from_buffers` cannot create a String column without an offsets buffer",
-                    )),
+                    None => {
+                        return Err(PyTypeError::new_err(
+                            "`_from_buffers` cannot create a String column without an offsets buffer",
+                        ));
+                    },
                 };
                 let values = series_to_buffer::<UInt8Type>(values);
                 py.enter_polars(|| from_buffers_string_impl(values, validity, offsets))?

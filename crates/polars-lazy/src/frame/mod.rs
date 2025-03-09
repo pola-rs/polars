@@ -31,10 +31,11 @@ pub use ndjson::*;
 #[cfg(feature = "parquet")]
 pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
+use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
-use polars_mem_engine::{create_physical_plan, Executor};
+use polars_mem_engine::{Executor, create_physical_plan};
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
@@ -85,7 +86,7 @@ impl From<DslPlan> for LazyFrame {
     fn from(plan: DslPlan) -> Self {
         Self {
             logical_plan: plan,
-            opt_state: OptFlags::default() | OptFlags::FILE_CACHING,
+            opt_state: OptFlags::default(),
             cached_arena: Default::default(),
         }
     }
@@ -500,7 +501,7 @@ impl LazyFrame {
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.select(vec![
-            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into())
+            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into()),
         ])
     }
 
@@ -730,6 +731,61 @@ impl LazyFrame {
         self.prepare_collect_post_opt(check_sink, query_start, |_, _, _, _| Ok(()))
     }
 
+    /// Execute all the lazy operations and collect them into a [`DataFrame`] using a specified
+    /// `engine].
+    ///
+    /// The query is optimized prior to execution.
+    pub fn collect_with_engine(mut self, engine: Engine) -> PolarsResult<DataFrame> {
+        #[cfg(feature = "new_streaming")]
+        {
+            if let Some(df) = self.try_new_streaming_if_requested(SinkType::Memory, engine) {
+                return Ok(df?.unwrap());
+            }
+        }
+
+        match engine {
+            #[cfg(feature = "new_streaming")]
+            Engine::Streaming => self = self.with_new_streaming(true),
+            #[cfg(feature = "streaming")]
+            Engine::OldStreaming => self = self.with_streaming(true),
+            _ => {},
+        }
+
+        match engine {
+            Engine::Streaming => {
+                feature_gated!("new_streaming", {
+                    let mut new_stream_lazy = self.clone();
+                    new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
+                    new_stream_lazy.opt_state &= !OptFlags::STREAMING;
+                    let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
+                    let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                        input: alp_plan.lp_top,
+                        payload: SinkType::Memory,
+                    });
+
+                    let string_cache_hold = StringCacheHolder::hold();
+                    let result = polars_stream::run_query(
+                        stream_lp_top,
+                        &mut alp_plan.lp_arena,
+                        &mut alp_plan.expr_arena,
+                    );
+                    drop(string_cache_hold);
+                    result.map(|v| v.unwrap())
+                })
+            },
+            _ => {
+                let mut alp_plan = self.to_alp_optimized()?;
+                let mut physical_plan = create_physical_plan(
+                    alp_plan.lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )?;
+                let mut state = ExecutionState::new();
+                physical_plan.execute(&mut state)
+            },
+        }
+    }
+
     /// Execute all the lazy operations and collect them into a [`DataFrame`].
     ///
     /// The query is optimized prior to execution.
@@ -748,24 +804,7 @@ impl LazyFrame {
     /// }
     /// ```
     pub fn collect(self) -> PolarsResult<DataFrame> {
-        #[cfg(feature = "new_streaming")]
-        {
-            let mut slf = self;
-            if let Some(df) = slf.try_new_streaming_if_requested(SinkType::Memory) {
-                return Ok(df?.unwrap());
-            }
-
-            let mut alp_plan = slf.to_alp_optimized()?;
-            let mut physical_plan = create_physical_plan(
-                alp_plan.lp_top,
-                &mut alp_plan.lp_arena,
-                &mut alp_plan.expr_arena,
-            )?;
-            let mut state = ExecutionState::new();
-            physical_plan.execute(&mut state)
-        }
-        #[cfg(not(feature = "new_streaming"))]
-        self._collect_post_opt(|_, _, _, _| Ok(()))
+        self.collect_with_engine(Engine::InMemory)
     }
 
     // post_opt: A function that is called after optimization. This can be used to modify the IR jit.
@@ -809,7 +848,29 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
+        if engine == Engine::InMemory {
+            use std::io::BufWriter;
+            use std::ops::DerefMut;
+
+            use polars_io::parquet::write::ParquetWriter;
+
+            let mut df = self.collect()?;
+
+            let path = path.as_ref().display().to_string();
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            ParquetWriter::new(BufWriter::new(f.deref_mut()))
+                .with_compression(options.compression)
+                .with_statistics(options.statistics)
+                .with_row_group_size(options.row_group_size)
+                .with_data_page_size(options.data_page_size)
+                .finish(&mut df)?;
+            f.close()?;
+
+            return Ok(());
+        }
+
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
@@ -817,6 +878,7 @@ impl LazyFrame {
                 file_type: FileType::Parquet(options),
                 cloud_options,
             },
+            engine,
             "collect().write_parquet()",
         )
     }
@@ -831,7 +893,29 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
+        use std::ops::DerefMut;
+
+        if engine == Engine::InMemory {
+            use std::io::BufWriter;
+
+            use polars_io::SerWriter;
+            use polars_io::ipc::IpcWriter;
+
+            let mut df = self.collect()?;
+
+            let path = path.as_ref().display().to_string();
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            IpcWriter::new(BufWriter::new(f.deref_mut()))
+                .with_compression(options.compression)
+                .with_compat_level(options.compat_level)
+                .finish(&mut df)?;
+            f.close()?;
+
+            return Ok(());
+        }
+
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
@@ -839,6 +923,7 @@ impl LazyFrame {
                 file_type: FileType::Ipc(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ipc()",
         )
     }
@@ -853,7 +938,40 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
+        use std::ops::DerefMut;
+
+        if engine == Engine::InMemory {
+            use std::io::BufWriter;
+
+            use polars_io::SerWriter;
+            use polars_io::csv::write::CsvWriter;
+
+            let mut df = self.collect()?;
+
+            let path = path.as_ref().display().to_string();
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            CsvWriter::new(BufWriter::new(f.deref_mut()))
+                .include_bom(options.include_bom)
+                .include_header(options.include_header)
+                .with_separator(options.serialize_options.separator)
+                .with_line_terminator(options.serialize_options.line_terminator)
+                .with_quote_char(options.serialize_options.quote_char)
+                .with_batch_size(options.batch_size)
+                .with_datetime_format(options.serialize_options.datetime_format)
+                .with_date_format(options.serialize_options.date_format)
+                .with_time_format(options.serialize_options.time_format)
+                .with_float_scientific(options.serialize_options.float_scientific)
+                .with_float_precision(options.serialize_options.float_precision)
+                .with_null_value(options.serialize_options.null)
+                .with_quote_style(options.serialize_options.quote_style)
+                .finish(&mut df)?;
+            f.close()?;
+
+            return Ok(());
+        }
+
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
@@ -861,6 +979,7 @@ impl LazyFrame {
                 file_type: FileType::Csv(options),
                 cloud_options,
             },
+            engine,
             "collect().write_csv()",
         )
     }
@@ -875,7 +994,27 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
+        if engine == Engine::InMemory {
+            use std::io::BufWriter;
+            use std::ops::DerefMut;
+
+            use polars_io::SerWriter;
+            use polars_io::json::{JsonFormat, JsonWriter};
+
+            let mut df = self.collect()?;
+
+            let path = path.as_ref().display().to_string();
+            let mut f = polars_io::utils::file::try_get_writeable(&path, cloud_options.as_ref())?;
+            JsonWriter::new(BufWriter::new(f.deref_mut()))
+                .with_json_format(JsonFormat::JsonLines)
+                .finish(&mut df)?;
+            f.close()?;
+
+            return Ok(());
+        }
+
         self.sink(
             SinkType::File {
                 path: Arc::new(path.as_ref().to_path_buf()),
@@ -883,6 +1022,7 @@ impl LazyFrame {
                 file_type: FileType::Json(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ndjson()` or `collect().write_json()",
         )
     }
@@ -898,6 +1038,7 @@ impl LazyFrame {
         options: ParquetWriteOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -907,6 +1048,7 @@ impl LazyFrame {
                 file_type: FileType::Parquet(options),
                 cloud_options,
             },
+            engine,
             "collect().write_parquet()",
         )
     }
@@ -922,6 +1064,7 @@ impl LazyFrame {
         options: IpcWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -931,6 +1074,7 @@ impl LazyFrame {
                 file_type: FileType::Ipc(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ipc()",
         )
     }
@@ -946,6 +1090,7 @@ impl LazyFrame {
         options: CsvWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -955,6 +1100,7 @@ impl LazyFrame {
                 file_type: FileType::Csv(options),
                 cloud_options,
             },
+            engine,
             "collect().write_csv()",
         )
     }
@@ -970,6 +1116,7 @@ impl LazyFrame {
         options: JsonWriterOptions,
         cloud_options: Option<polars_io::cloud::CloudOptions>,
         sink_options: SinkOptions,
+        engine: Engine,
     ) -> PolarsResult<()> {
         self.sink(
             SinkType::Partition {
@@ -979,6 +1126,7 @@ impl LazyFrame {
                 file_type: FileType::Json(options),
                 cloud_options,
             },
+            engine,
             "collect().write_ndjson()` or `collect().write_json()",
         )
     }
@@ -987,14 +1135,14 @@ impl LazyFrame {
     pub fn try_new_streaming_if_requested(
         &mut self,
         payload: SinkType,
+        engine: Engine,
     ) -> Option<PolarsResult<Option<DataFrame>>> {
         let auto_new_streaming = std::env::var("POLARS_AUTO_NEW_STREAMING").as_deref() == Ok("1");
-        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1");
+        let force_new_streaming = std::env::var("POLARS_FORCE_NEW_STREAMING").as_deref() == Ok("1")
+            || self.opt_state.contains(OptFlags::NEW_STREAMING)
+            || engine == Engine::Streaming;
 
-        if self.opt_state.contains(OptFlags::NEW_STREAMING)
-            || auto_new_streaming
-            || force_new_streaming
-        {
+        if auto_new_streaming || force_new_streaming {
             // Try to run using the new streaming engine, falling back
             // if it fails in a todo!() error if auto_new_streaming is set.
             let mut new_stream_lazy = self.clone();
@@ -1017,6 +1165,7 @@ impl LazyFrame {
                     &mut alp_plan.expr_arena,
                 )
             };
+
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
                 Ok(v) => return Some(v),
                 Err(e) => {
@@ -1029,7 +1178,9 @@ impl LazyFrame {
                             .unwrap_or(false)
                     {
                         if polars_core::config::verbose() {
-                            eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
+                            eprintln!(
+                                "caught unimplemented error in new streaming engine, falling back to normal engine"
+                            );
                         }
                     } else {
                         std::panic::resume_unwind(e);
@@ -1047,34 +1198,67 @@ impl LazyFrame {
         feature = "csv",
         feature = "json",
     ))]
-    fn sink(mut self, payload: SinkType, msg_alternative: &str) -> Result<(), PolarsError> {
+    fn sink(
+        mut self,
+        payload: SinkType,
+        engine: Engine,
+        msg_alternative: &str,
+    ) -> Result<(), PolarsError> {
         #[cfg(feature = "new_streaming")]
         {
-            if self
-                .try_new_streaming_if_requested(payload.clone())
-                .is_some()
-            {
-                return Ok(());
+            if let Some(result) = self.try_new_streaming_if_requested(payload.clone(), engine) {
+                return result.map(|_| ());
             }
         }
 
-        if matches!(payload, SinkType::Partition { .. }) {
-            polars_bail!(InvalidOperation: "partition sinks are not supported on the old streaming engine");
-        }
+        match engine {
+            Engine::Auto | Engine::Streaming => feature_gated!("new_streaming", {
+                let mut new_stream_lazy = self.clone();
+                new_stream_lazy.opt_state |= OptFlags::NEW_STREAMING;
+                new_stream_lazy.opt_state &= !OptFlags::STREAMING;
+                let mut alp_plan = new_stream_lazy.to_alp_optimized()?;
+                let stream_lp_top = alp_plan.lp_arena.add(IR::Sink {
+                    input: alp_plan.lp_top,
+                    payload,
+                });
 
-        self.logical_plan = DslPlan::Sink {
-            input: Arc::new(self.logical_plan),
-            payload,
-        };
-        self.opt_state |= OptFlags::STREAMING;
-        let (mut state, mut physical_plan, is_streaming) = self.prepare_collect(true, None)?;
-        polars_ensure!(
-            is_streaming,
-            ComputeError: format!("cannot run the whole query in a streaming order; \
-            use `{msg_alternative}` instead", msg_alternative=msg_alternative)
-        );
-        let _ = physical_plan.execute(&mut state)?;
-        Ok(())
+                let string_cache_hold = StringCacheHolder::hold();
+                let result = polars_stream::run_query(
+                    stream_lp_top,
+                    &mut alp_plan.lp_arena,
+                    &mut alp_plan.expr_arena,
+                )
+                .map(|_| ());
+                drop(string_cache_hold);
+                result
+            }),
+            _ if matches!(payload, SinkType::Partition { .. }) => Err(polars_err!(
+                InvalidOperation: "partition sinks are not supported on for the '{}' engine",
+                engine.into_static_str()
+            )),
+            Engine::Gpu => {
+                Err(polars_err!(InvalidOperation: "sink is not supported for the gpu engine"))
+            },
+            Engine::InMemory => Err(
+                polars_err!(InvalidOperation: "this sink is not supported for the in-memory engine"),
+            ),
+            Engine::OldStreaming => {
+                self.logical_plan = DslPlan::Sink {
+                    input: Arc::new(self.logical_plan),
+                    payload,
+                };
+                self.opt_state |= OptFlags::STREAMING;
+                let (mut state, mut physical_plan, is_streaming) =
+                    self.prepare_collect(true, None)?;
+                polars_ensure!(
+                    is_streaming,
+                    ComputeError: format!("cannot run the whole query in a streaming order; \
+                    use `{msg_alternative}` instead", msg_alternative=msg_alternative)
+                );
+                let _ = physical_plan.execute(&mut state)?;
+                Ok(())
+            },
+        }
     }
 
     /// Filter frame rows that match a predicate expression.
@@ -1514,17 +1698,12 @@ impl LazyFrame {
     }
 
     fn _join_impl(
-        mut self,
+        self,
         other: LazyFrame,
         left_on: Vec<Expr>,
         right_on: Vec<Expr>,
         args: JoinArgs,
     ) -> LazyFrame {
-        // if any of the nodes reads from files we must activate this plan as well.
-        if other.opt_state.contains(OptFlags::FILE_CACHING) {
-            self.opt_state |= OptFlags::FILE_CACHING;
-        }
-
         let JoinArgs {
             how,
             validation,
@@ -1988,7 +2167,7 @@ impl LazyFrame {
 
         match &self.logical_plan {
             v @ DslPlan::Scan { scan_type, .. }
-                if !matches!(scan_type, FileScan::Anonymous { .. }) =>
+                if !matches!(&**scan_type, FileScan::Anonymous { .. }) =>
             {
                 let DslPlan::Scan {
                     sources,
@@ -2304,13 +2483,8 @@ impl JoinBuilder {
 
     /// Finish builder
     pub fn finish(self) -> LazyFrame {
-        let mut opt_state = self.lf.opt_state;
+        let opt_state = self.lf.opt_state;
         let other = self.other.expect("'with' not set in join builder");
-
-        // If any of the nodes reads from files we must activate this plan as well.
-        if other.opt_state.contains(OptFlags::FILE_CACHING) {
-            opt_state |= OptFlags::FILE_CACHING;
-        }
 
         let args = JoinArgs {
             how: self.how,
@@ -2343,13 +2517,8 @@ impl JoinBuilder {
 
     // Finish with join predicates
     pub fn join_where(self, predicates: Vec<Expr>) -> LazyFrame {
-        let mut opt_state = self.lf.opt_state;
+        let opt_state = self.lf.opt_state;
         let other = self.other.expect("with not set");
-
-        // If any of the nodes reads from files we must activate this plan as well.
-        if other.opt_state.contains(OptFlags::FILE_CACHING) {
-            opt_state |= OptFlags::FILE_CACHING;
-        }
 
         // Decompose `And` conjunctions into their component expressions
         fn decompose_and(predicate: Expr, expanded_predicates: &mut Vec<Expr>) {

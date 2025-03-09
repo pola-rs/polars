@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! General utilities for bitmaps representing items where LSB is the first item.
 mod chunk_iterator;
 mod chunks_exact_mut;

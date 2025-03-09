@@ -228,16 +228,18 @@ def read_csv(
     --------
     scan_csv : Lazily read from a CSV file or multiple files via glob patterns.
 
+    Warnings
+    --------
+    Calling `read_csv().lazy()` is an antipattern as this forces Polars to materialize
+    a full csv file and therefore cannot push any optimizations into the reader.
+    Therefore always prefer `scan_csv` if you want to work with `LazyFrame` s.
+
     Notes
     -----
     If the schema is inferred incorrectly (e.g. as `pl.Int64` instead of `pl.Float64`),
     try to increase the number of lines used to infer the schema with
     `infer_schema_length` or override the inferred dtype for those columns with
     `schema_overrides`.
-
-    This operation defaults to a `rechunk` operation at the end, meaning that all data
-    will be stored continuously in memory. Set `rechunk=False` if you are benchmarking
-    the csv-reader. A `rechunk` is an expensive operation.
 
     Examples
     --------

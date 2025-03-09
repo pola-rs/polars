@@ -27,18 +27,17 @@ pub mod testing;
 #[cfg(test)]
 mod tests;
 
-use std::sync::Mutex;
+use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub use datatypes::SchemaExtPl;
 pub use hashing::IdBuildHasher;
-use once_cell::sync::Lazy;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 
 #[cfg(feature = "dtype-categorical")]
 pub use crate::chunked_array::logical::categorical::string_cache::*;
 
-pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
+pub static PROCESS_ID: LazyLock<u128> = LazyLock::new(|| {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
@@ -47,7 +46,7 @@ pub static PROCESS_ID: Lazy<u128> = Lazy::new(|| {
 
 // this is re-exported in utils for polars child crates
 #[cfg(not(target_family = "wasm"))] // only use this on non wasm targets
-pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
+pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     let thread_name = std::env::var("POLARS_THREAD_NAME").unwrap_or_else(|_| "polars".to_string());
     ThreadPoolBuilder::new()
         .num_threads(
@@ -65,7 +64,7 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
 });
 
 #[cfg(all(target_os = "emscripten", target_family = "wasm"))] // Use 1 rayon thread on emscripten
-pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
+pub static POOL: LazyLock<ThreadPool> = LazyLock::new(|| {
     ThreadPoolBuilder::new()
         .num_threads(1)
         .use_current_thread()
@@ -74,10 +73,10 @@ pub static POOL: Lazy<ThreadPool> = Lazy::new(|| {
 });
 
 #[cfg(all(not(target_os = "emscripten"), target_family = "wasm"))] // use this on other wasm targets
-pub static POOL: Lazy<polars_utils::wasm::Pool> = Lazy::new(|| polars_utils::wasm::Pool);
+pub static POOL: LazyLock<polars_utils::wasm::Pool> = LazyLock::new(|| polars_utils::wasm::Pool);
 
 // utility for the tests to ensure a single thread can execute
-pub static SINGLE_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+pub static SINGLE_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
 /// Default length for a `.head()` call
 pub(crate) const HEAD_DEFAULT_LENGTH: usize = 10;
