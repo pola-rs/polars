@@ -1,4 +1,4 @@
-use super::{new_empty_array, new_null_array, Array, ArrayRef, Splitable};
+use super::{Array, ArrayRef, Splitable, new_empty_array, new_null_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 
@@ -10,7 +10,7 @@ mod builder;
 pub use builder::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 use polars_utils::pl_str::PlSmallStr;
 

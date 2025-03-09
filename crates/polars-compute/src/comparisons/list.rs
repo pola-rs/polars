@@ -4,7 +4,7 @@ use arrow::array::{
 };
 use arrow::bitmap::Bitmap;
 use arrow::legacy::utils::CustomIterTools;
-use arrow::types::{days_ms, f16, i256, months_days_ns, Offset};
+use arrow::types::{Offset, days_ms, f16, i256, months_days_ns};
 
 use super::TotalEqKernel;
 

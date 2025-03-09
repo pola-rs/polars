@@ -5,7 +5,7 @@ use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};

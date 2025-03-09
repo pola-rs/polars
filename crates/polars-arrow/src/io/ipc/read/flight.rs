@@ -5,7 +5,7 @@ use std::sync::Arc;
 use arrow_format::ipc::planus::ReadAsRoot;
 use arrow_format::ipc::{Block, FooterRef, MessageHeaderRef};
 use futures::{Stream, StreamExt};
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt};
 
 use crate::datatypes::ArrowSchema;

@@ -5,9 +5,9 @@ use std::sync::Arc;
 
 #[cfg(feature = "cloud")]
 use cloud::credential_provider::PlCredentialProvider;
+use polars::io::RowIndex;
 #[cfg(feature = "avro")]
 use polars::io::avro::AvroCompression;
-use polars::io::RowIndex;
 use polars::prelude::*;
 #[cfg(feature = "parquet")]
 use polars_parquet::arrow::write::StatisticsOptions;
@@ -15,17 +15,17 @@ use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
 
 use super::PyDataFrame;
+use crate::conversion::Wrap;
 #[cfg(feature = "parquet")]
 use crate::conversion::parse_parquet_compression;
-use crate::conversion::Wrap;
 use crate::error::PyPolarsErr;
 use crate::file::{
-    get_either_file, get_file_like, get_mmap_bytes_reader, get_mmap_bytes_reader_and_path,
-    EitherRustPythonFile,
+    EitherRustPythonFile, get_either_file, get_file_like, get_mmap_bytes_reader,
+    get_mmap_bytes_reader_and_path,
 };
+use crate::prelude::PyCompatLevel;
 #[cfg(feature = "cloud")]
 use crate::prelude::parse_cloud_options;
-use crate::prelude::PyCompatLevel;
 use crate::utils::EnterPolarsExt;
 
 #[pymethods]

@@ -4,7 +4,7 @@ use polars_error::PolarsResult;
 
 use super::common::*;
 use super::file::{get_message_from_block, get_record_batch};
-use super::{read_batch, read_file_dictionaries, Dictionaries, FileMetadata};
+use super::{Dictionaries, FileMetadata, read_batch, read_file_dictionaries};
 use crate::array::Array;
 use crate::datatypes::ArrowSchema;
 use crate::record_batch::RecordBatchT;

@@ -1,11 +1,12 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::hint::unreachable_unchecked;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::vec::PushUnchecked;
 
 use super::bitmask::BitMask;
-use super::utils::{count_zeros, fmt, BitChunk, BitChunks, BitChunksExactMut, BitmapIter};
-use super::{intersects_with_mut, Bitmap};
+use super::utils::{BitChunk, BitChunks, BitChunksExactMut, BitmapIter, count_zeros, fmt};
+use super::{Bitmap, intersects_with_mut};
 use crate::bitmap::utils::{get_bit_unchecked, merge_reversed, set_bit_in_byte};
 use crate::storage::SharedStorage;
 use crate::trusted_len::TrustedLen;

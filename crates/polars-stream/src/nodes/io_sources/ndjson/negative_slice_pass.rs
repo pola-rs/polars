@@ -1,20 +1,20 @@
 use std::cmp::Reverse;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use polars_core::frame::DataFrame;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
-use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
+use polars_utils::priority::Priority;
 
 use crate::async_executor;
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, Morsel, MorselSeq, SourceToken};
+use crate::morsel::{Morsel, MorselSeq, SourceToken, get_ideal_morsel_size};
 use crate::nodes::io_sources::MorselOutput;
 
 /// Outputs a stream of morsels in reverse order from which they were received.

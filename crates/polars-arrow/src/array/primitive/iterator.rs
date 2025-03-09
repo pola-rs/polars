@@ -1,7 +1,7 @@
 use super::{MutablePrimitiveArray, PrimitiveArray};
 use crate::array::{ArrayAccessor, MutableArray};
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::IntoIter as BitmapIntoIter;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::IntoIter;
 use crate::types::NativeType;
 

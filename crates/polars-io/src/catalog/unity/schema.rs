@@ -1,6 +1,6 @@
 use polars_core::prelude::{DataType, Field};
 use polars_core::schema::{Schema, SchemaRef};
-use polars_error::{polars_bail, polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err, to_compute_err};
 use polars_utils::error::TruncateErrorDetail;
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_str::PlSmallStr;
@@ -185,8 +185,8 @@ fn parse_type_json_type(type_json_type: &ColumnTypeJsonType) -> PolarsResult<Dat
 ///   the `type_text`, but from testing they aren't actually used - e.g. a decimal type would have a
 ///   `type_text` of `decimal(18, 2)`
 fn parse_type_text(type_text: &str) -> PolarsResult<DataType> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     let dtype = match type_text {
         "boolean" => Boolean,
@@ -269,8 +269,8 @@ pub fn schema_to_column_info_list(schema: &Schema) -> PolarsResult<Vec<ColumnInf
 
 /// Creates the `type_text` field of the API. Opposite of [`parse_type_text`]
 fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     macro_rules! S {
         ($e:expr) => {
@@ -349,8 +349,8 @@ fn dtype_to_type_text(dtype: &DataType) -> PolarsResult<PlSmallStr> {
 
 /// Creates the `type_name` field, from testing this wasn't exactly the same as the `type_text` field.
 fn dtype_to_type_name(dtype: &DataType) -> PolarsResult<PlSmallStr> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     macro_rules! S {
         ($e:expr) => {
@@ -412,8 +412,8 @@ fn field_to_type_json(name: PlSmallStr, dtype: &DataType) -> PolarsResult<Column
 }
 
 fn dtype_to_type_json(dtype: &DataType) -> PolarsResult<ColumnTypeJsonType> {
-    use polars_core::prelude::TimeUnit;
     use DataType::*;
+    use polars_core::prelude::TimeUnit;
 
     macro_rules! S {
         ($e:expr) => {

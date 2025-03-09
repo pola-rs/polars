@@ -4,11 +4,11 @@ use std::time::UNIX_EPOCH;
 
 use polars_error::{PolarsError, PolarsResult};
 
-use super::cache::{get_env_file_cache_ttl, FILE_CACHE};
+use super::cache::{FILE_CACHE, get_env_file_cache_ttl};
 use super::entry::FileCacheEntry;
 use super::file_fetcher::{CloudFileFetcher, LocalFileFetcher};
-use crate::cloud::{build_object_store, object_path_from_str, CloudLocation, CloudOptions};
-use crate::path_utils::{ensure_directory_init, is_cloud_url, POLARS_TEMP_DIR_BASE_PATH};
+use crate::cloud::{CloudLocation, CloudOptions, build_object_store, object_path_from_str};
+use crate::path_utils::{POLARS_TEMP_DIR_BASE_PATH, ensure_directory_init, is_cloud_url};
 use crate::pl_async;
 
 pub static FILE_CACHE_PREFIX: LazyLock<Box<Path>> = LazyLock::new(|| {

@@ -10,7 +10,7 @@ mod iterator;
 pub use builder::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 
 /// The Arrow's equivalent to an immutable `Vec<Option<[u8; size]>>`.
 /// Cloning and slicing this struct is `O(1)`.

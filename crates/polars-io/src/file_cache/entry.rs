@@ -5,7 +5,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use fs4::fs_std::FileExt;
 use polars_core::config;
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 
 use super::cache_lock::{self, GLOBAL_FILE_CACHE_LOCK};
 use super::file_fetcher::{FileFetcher, RemoteMetadata};
@@ -62,7 +62,10 @@ impl Inner {
 
                 if metadata.compare_local_state(data_file_path).is_ok() {
                     if verbose {
-                        eprintln!("[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}", self.uri.clone());
+                        eprintln!(
+                            "[file_cache::entry] try_open_assume_latest: opening already fetched file for uri = {}",
+                            self.uri.clone()
+                        );
                     }
                     return Ok(finish_open(data_file_path, metadata_file));
                 }
@@ -94,7 +97,10 @@ impl Inner {
 
                     if metadata.compare_local_state(data_file_path).is_ok() {
                         if verbose {
-                            eprintln!("[file_cache::entry] try_open_check_latest: opening already fetched file for uri = {}", self.uri.clone());
+                            eprintln!(
+                                "[file_cache::entry] try_open_check_latest: opening already fetched file for uri = {}",
+                                self.uri.clone()
+                            );
                         }
                         return Ok(finish_open(data_file_path, metadata_file));
                     }

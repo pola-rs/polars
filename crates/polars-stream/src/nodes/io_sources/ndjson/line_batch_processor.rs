@@ -12,9 +12,9 @@ use crate::async_primitives::distributor_channel;
 use crate::async_primitives::linearizer::Inserter;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
+use crate::nodes::MorselSeq;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::MorselOutput;
-use crate::nodes::MorselSeq;
 
 /// Parses chunks into DataFrames (or counts rows depending on state).
 pub(super) struct LineBatchProcessor {

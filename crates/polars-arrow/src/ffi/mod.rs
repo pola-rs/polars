@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! contains FFI bindings to import and export [`Array`](crate::array::Array) via
 //! Arrow's [C Data Interface](https://arrow.apache.org/docs/format/CDataInterface.html)
 mod array;
@@ -7,11 +8,11 @@ pub mod mmap;
 mod schema;
 mod stream;
 
-pub(crate) use array::{try_from, ArrowArrayRef, InternalArrowArray};
+pub(crate) use array::{ArrowArrayRef, InternalArrowArray, try_from};
 pub(crate) use bridge::align_to_c_data_interface;
 pub use generated::{ArrowArray, ArrowArrayStream, ArrowSchema};
 use polars_error::PolarsResult;
-pub use stream::{export_iterator, ArrowArrayStreamReader};
+pub use stream::{ArrowArrayStreamReader, export_iterator};
 
 use self::schema::to_field;
 use crate::array::Array;

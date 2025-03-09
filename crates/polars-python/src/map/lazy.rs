@@ -188,9 +188,7 @@ pub(crate) fn call_lambda_with_columns_slice(
         let ps = PySeries::new(s.as_materialized_series().clone());
 
         // Wrap this PySeries object in the python side Series wrapper
-        let python_series_wrapper = pypolars.getattr("wrap_s").unwrap().call1((ps,)).unwrap();
-
-        python_series_wrapper
+        pypolars.getattr("wrap_s").unwrap().call1((ps,)).unwrap()
     });
     let wrapped_s = PyList::new(py, iter).unwrap();
 

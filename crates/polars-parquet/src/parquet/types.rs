@@ -1,5 +1,5 @@
 use arrow::types::{
-    AlignedBytes, AlignedBytesCast, Bytes12Alignment4, Bytes4Alignment4, Bytes8Alignment8,
+    AlignedBytes, AlignedBytesCast, Bytes4Alignment4, Bytes8Alignment8, Bytes12Alignment4,
 };
 
 use crate::parquet::schema::types::PhysicalType;

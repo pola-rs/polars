@@ -2,7 +2,7 @@ use core::fmt::{Debug, Formatter};
 use core::hash::{Hash, Hasher};
 
 use indexmap::map::MutableKeys;
-use polars_error::{polars_bail, polars_ensure, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlIndexMap};
 use polars_utils::pl_str::PlSmallStr;
 

@@ -12,7 +12,7 @@ mod semi_anti_join;
 use arrow::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::{hive, RowIndex};
+use polars_io::{RowIndex, hive};
 use recursive::recursive;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
@@ -443,9 +443,7 @@ impl ProjectionPushDown {
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
                 let do_optimization = match &*scan_type {
-                    FileScan::Anonymous { ref function, .. } => {
-                        function.allows_projection_pushdown()
-                    },
+                    FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,
                     #[cfg(feature = "ipc")]

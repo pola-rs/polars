@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use arrow::bitmap::MutableBitmap;
 
-use crate::chunked_array::builder::{get_list_builder, AnonymousOwnedListBuilder};
+use crate::chunked_array::builder::{AnonymousOwnedListBuilder, get_list_builder};
 use crate::prelude::*;
 use crate::utils::any_values_to_supertype;
 

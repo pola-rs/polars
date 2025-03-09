@@ -86,7 +86,7 @@ impl SinkNode for NDJsonSinkNode {
                             return Ok(());
                         }
                         drop(consume_token); // Keep the consume_token until here to increase the
-                                             // backpressure.
+                        // backpressure.
                     }
                 }
 

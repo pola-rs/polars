@@ -10,23 +10,23 @@ use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::array::TryExtend;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::io::ipc::read::{
-    get_row_count_from_blocks, prepare_projection, read_file_metadata, FileMetadata, FileReader,
-    ProjectionInfo,
+    FileMetadata, FileReader, ProjectionInfo, get_row_count_from_blocks, prepare_projection,
+    read_file_metadata,
 };
 use polars_core::utils::slice_offsets;
-use polars_error::{polars_err, ErrString, PolarsError, PolarsResult};
+use polars_error::{ErrString, PolarsError, PolarsResult, polars_err};
 use polars_expr::state::ExecutionState;
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::IpcScanOptions;
 use polars_io::utils::columns_to_projection;
-use polars_io::RowIndex;
 use polars_plan::dsl::{ScanSource, ScanSourceRef};
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
-use polars_utils::IdxSize;
 
 use super::multi_scan::MultiScanable;
 use super::{RowRestriction, SourceNode, SourceOutput};
@@ -35,7 +35,7 @@ use crate::async_primitives::connector::Receiver;
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, SourceToken};
+use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::{JoinHandle, Morsel, MorselSeq, TaskPriority};
 use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_LINEARIZER_BUFFER_SIZE};
 

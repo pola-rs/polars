@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arrow::array::UInt32Vec;
 use arrow::bitmap::MutableBitmap;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::pl_str::PlSmallStr;
 

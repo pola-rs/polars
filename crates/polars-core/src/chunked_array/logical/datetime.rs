@@ -49,7 +49,7 @@ impl LogicalType for DatetimeChunked {
                     (Microseconds, Milliseconds) => (None, Some(1_000i64)),
                     _ => return self.0.cast_with_options(dtype, cast_options),
                 };
-                let result = match multiplier {
+                match multiplier {
                     // scale to higher precision (eg: ms → us, ms → ns, us → ns)
                     Some(m) => Ok((self.0.as_ref() * m)
                         .into_datetime(*to_unit, tz.clone())
@@ -63,8 +63,7 @@ impl LogicalType for DatetimeChunked {
                             .into_series()),
                         None => unreachable!("must always have a time unit divisor here"),
                     },
-                };
-                result
+                }
             },
             #[cfg(feature = "dtype-date")]
             Date => {
@@ -102,7 +101,7 @@ impl LogicalType for DatetimeChunked {
                     .into_series());
             },
             dt if dt.is_primitive_numeric() => {
-                return self.0.cast_with_options(dtype, cast_options)
+                return self.0.cast_with_options(dtype, cast_options);
             },
             dt => {
                 polars_bail!(

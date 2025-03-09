@@ -1,7 +1,7 @@
 use std::fs::File;
 
 use polars_core::error::feature_gated;
-use polars_core::{config, POOL};
+use polars_core::{POOL, config};
 use polars_io::csv::read::{BatchedCsvReader, CsvReadOptions, CsvReader};
 use polars_io::path_utils::is_cloud_url;
 use polars_plan::dsl::ScanSources;

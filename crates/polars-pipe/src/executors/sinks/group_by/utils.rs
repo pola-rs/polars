@@ -3,7 +3,7 @@ use polars_core::prelude::*;
 use polars_core::utils::{accumulate_dataframes_vertical_unchecked, slice_offsets};
 
 use crate::executors::sinks::group_by::ooc::GroupBySource;
-use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
+use crate::executors::sinks::io::{IOThread, block_thread_until_io_thread_done};
 use crate::operators::{DataChunk, FinalizedSink, Sink};
 
 pub(super) fn default_slices<K, V, HB>(

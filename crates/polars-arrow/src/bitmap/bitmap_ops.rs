@@ -1,7 +1,7 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
-use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
 use super::Bitmap;
+use super::utils::{BitChunk, BitChunkIterExact, BitChunksExact};
 use crate::bitmap::MutableBitmap;
 use crate::trusted_len::TrustedLen;
 

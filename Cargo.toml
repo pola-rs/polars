@@ -12,7 +12,7 @@ default-members = [
 [workspace.package]
 version = "0.46.0"
 authors = ["Ritchie Vink <ritchie46@gmail.com>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://www.pola.rs/"
 license = "MIT"
 repository = "https://github.com/pola-rs/polars"

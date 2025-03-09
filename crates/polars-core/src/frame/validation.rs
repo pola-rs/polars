@@ -1,8 +1,8 @@
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::{InitHashMaps, PlHashSet};
 
-use super::column::Column;
 use super::DataFrame;
+use super::column::Column;
 
 impl DataFrame {
     /// Ensure all equal height and names are unique.

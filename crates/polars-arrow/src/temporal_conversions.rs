@@ -1,8 +1,8 @@
 //! Conversion methods for dates and times.
 
-use chrono::format::{parse, Parsed, StrftimeItems};
+use chrono::format::{Parsed, StrftimeItems, parse};
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 
 use crate::datatypes::TimeUnit;
 

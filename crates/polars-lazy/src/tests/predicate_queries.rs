@@ -17,9 +17,11 @@ fn test_multiple_roots() -> PolarsResult<()> {
     let root = lf.clone().optimize(&mut lp_arena, &mut expr_arena)?;
     assert!(predicate_at_scan(lf));
     // and that we don't have any filter node
-    assert!(!(&lp_arena)
-        .iter(root)
-        .any(|(_, lp)| matches!(lp, IR::Filter { .. })));
+    assert!(
+        !(&lp_arena)
+            .iter(root)
+            .any(|(_, lp)| matches!(lp, IR::Filter { .. }))
+    );
 
     Ok(())
 }

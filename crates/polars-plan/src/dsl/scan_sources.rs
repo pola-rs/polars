@@ -3,7 +3,7 @@ use std::fs::File;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use polars_core::error::{feature_gated, PolarsResult};
+use polars_core::error::{PolarsResult, feature_gated};
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "cloud")]
 use polars_io::utils::byte_source::{DynByteSource, DynByteSourceBuilder};

@@ -12,8 +12,8 @@ use arrow::datatypes::ExtensionType;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
 
-use crate::prelude::*;
 use crate::PROCESS_ID;
+use crate::prelude::*;
 
 static POLARS_ALLOW_EXTENSION: AtomicBool = AtomicBool::new(false);
 

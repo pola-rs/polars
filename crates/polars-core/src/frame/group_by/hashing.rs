@@ -1,5 +1,5 @@
 use hashbrown::hash_map::Entry;
-use polars_utils::hashing::{hash_to_partition, DirtyHash};
+use polars_utils::hashing::{DirtyHash, hash_to_partition};
 use polars_utils::idx_vec::IdxVec;
 use polars_utils::itertools::Itertools;
 use polars_utils::sync::SyncPtr;
@@ -7,10 +7,10 @@ use polars_utils::total_ord::{ToTotalOrd, TotalHash, TotalOrdWrap};
 use polars_utils::unitvec;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::hashing::*;
 use crate::prelude::*;
 use crate::utils::flatten;
-use crate::POOL;
 
 fn get_init_size() -> usize {
     // we check if this is executed from the main thread

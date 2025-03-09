@@ -1,13 +1,13 @@
 use polars_parquet::parquet::encoding::bitpacked::{Unpackable, Unpacked};
 use polars_parquet::parquet::encoding::hybrid_rle::HybridRleDecoder;
-use polars_parquet::parquet::encoding::{bitpacked, uleb128, Encoding};
+use polars_parquet::parquet::encoding::{Encoding, bitpacked, uleb128};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::types::NativeType;
 
 use super::dictionary::PrimitivePageDict;
-use super::{hybrid_rle_iter, Array};
+use super::{Array, hybrid_rle_iter};
 
 fn read_buffer<T: NativeType>(values: &[u8]) -> impl Iterator<Item = T> + '_ {
     let chunks = values.chunks_exact(size_of::<T>());

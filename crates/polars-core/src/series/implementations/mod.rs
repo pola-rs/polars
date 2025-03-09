@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(feature = "dtype-array")]
 mod array;
 mod binary;
@@ -30,11 +31,11 @@ use std::borrow::Cow;
 use polars_compute::rolling::QuantileMethod;
 
 use super::*;
+use crate::chunked_array::AsSinglePtr;
 use crate::chunked_array::comparison::*;
 use crate::chunked_array::ops::compare_inner::{
     IntoTotalEqInner, IntoTotalOrdInner, TotalEqInner, TotalOrdInner,
 };
-use crate::chunked_array::AsSinglePtr;
 
 // Utility wrapper struct
 pub(crate) struct SeriesWrap<T>(pub T);

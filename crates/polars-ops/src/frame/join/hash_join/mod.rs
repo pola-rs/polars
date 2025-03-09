@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 pub(super) mod single_keys;
 mod single_keys_dispatch;
 mod single_keys_inner;
@@ -7,13 +8,13 @@ mod single_keys_outer;
 mod single_keys_semi_anti;
 pub(super) mod sort_merge;
 use arrow::array::ArrayRef;
-use polars_core::utils::_set_partition_size;
 use polars_core::POOL;
+use polars_core::utils::_set_partition_size;
 use polars_utils::index::ChunkId;
 pub(super) use single_keys::*;
+pub use single_keys_dispatch::SeriesJoin;
 #[cfg(feature = "asof_join")]
 pub(super) use single_keys_dispatch::prepare_binary;
-pub use single_keys_dispatch::SeriesJoin;
 use single_keys_inner::*;
 use single_keys_left::*;
 use single_keys_outer::*;

@@ -1,7 +1,7 @@
 use polars_error::PolarsResult;
 
-use super::super::ffi::ToFfi;
 use super::super::Array;
+use super::super::ffi::ToFfi;
 use super::MapArray;
 use crate::array::FromFfi;
 use crate::bitmap::align;

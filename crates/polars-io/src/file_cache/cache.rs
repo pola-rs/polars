@@ -6,7 +6,7 @@ use polars_core::config;
 use polars_error::PolarsResult;
 use polars_utils::aliases::PlHashMap;
 
-use super::entry::{FileCacheEntry, DATA_PREFIX, METADATA_PREFIX};
+use super::entry::{DATA_PREFIX, FileCacheEntry, METADATA_PREFIX};
 use super::eviction::EvictionManager;
 use super::file_fetcher::FileFetcher;
 use super::utils::FILE_CACHE_PREFIX;
@@ -136,7 +136,10 @@ impl FileCache {
             // May have been raced
             if let Some(entry) = entries.get(uri.as_ref()) {
                 if verbose {
-                    eprintln!("[file_cache] init_entry: return existing entry for uri = {} (lost init race)", uri.clone());
+                    eprintln!(
+                        "[file_cache] init_entry: return existing entry for uri = {} (lost init race)",
+                        uri.clone()
+                    );
                 }
                 entry.update_ttl(ttl);
                 return Ok(entry.clone());

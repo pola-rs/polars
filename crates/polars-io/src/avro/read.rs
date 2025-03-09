@@ -6,7 +6,7 @@ use polars_core::error::to_compute_err;
 use polars_core::prelude::*;
 
 use crate::prelude::*;
-use crate::shared::{finish_reader, ArrowReader};
+use crate::shared::{ArrowReader, finish_reader};
 
 /// Read [Apache Avro] format into a [`DataFrame`]
 ///

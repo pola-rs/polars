@@ -2,7 +2,7 @@ use polars_core::prelude::*;
 #[cfg(feature = "moment")]
 use {
     crate::series::ops::moment::MomentSeries,
-    num_traits::{pow::Pow, Float, FromPrimitive},
+    num_traits::{Float, FromPrimitive, pow::Pow},
     polars_core::utils::with_unstable_series,
     std::ops::SubAssign,
 };

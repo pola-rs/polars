@@ -1,7 +1,7 @@
 use polars_parquet_format::{BoundaryOrder, ColumnIndex, OffsetIndex, PageLocation};
 
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::write::page::{is_data_page, PageWriteSpec};
+use crate::parquet::write::page::{PageWriteSpec, is_data_page};
 
 pub fn serialize_column_index(pages: &[PageWriteSpec]) -> ParquetResult<ColumnIndex> {
     let mut null_pages = Vec::with_capacity(pages.len());

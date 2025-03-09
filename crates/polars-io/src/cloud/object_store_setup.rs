@@ -1,16 +1,16 @@
 use std::sync::{Arc, LazyLock};
 
-use object_store::local::LocalFileSystem;
 use object_store::ObjectStore;
+use object_store::local::LocalFileSystem;
 use polars_core::config::{self, verbose_print_sensitive};
-use polars_error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::{format_pl_smallstr, pl_serialize};
 use tokio::sync::RwLock;
 use url::Url;
 
-use super::{parse_url, CloudLocation, CloudOptions, CloudType, PolarsObjectStore};
+use super::{CloudLocation, CloudOptions, CloudType, PolarsObjectStore, parse_url};
 use crate::cloud::CloudConfig;
 
 /// Object stores must be cached. Every object-store will do DNS lookups and

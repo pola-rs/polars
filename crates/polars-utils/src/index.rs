@@ -1,6 +1,7 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::{Debug, Formatter};
 
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 
 use crate::nulls::IsNull;
 

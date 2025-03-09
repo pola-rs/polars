@@ -1,12 +1,13 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ops::Deref;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use either::Either;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
-use super::utils::{self, count_zeros, fmt, get_bit_unchecked, BitChunk, BitChunks, BitmapIter};
-use super::{chunk_iter_to_vec, intersects_with, num_intersections_with, IntoIter, MutableBitmap};
+use super::utils::{self, BitChunk, BitChunks, BitmapIter, count_zeros, fmt, get_bit_unchecked};
+use super::{IntoIter, MutableBitmap, chunk_iter_to_vec, intersects_with, num_intersections_with};
 use crate::array::Splitable;
 use crate::bitmap::aligned::AlignedBitmapSlice;
 use crate::bitmap::iterator::{

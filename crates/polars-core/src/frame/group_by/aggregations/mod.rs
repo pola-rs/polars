@@ -19,7 +19,7 @@ use polars_compute::rolling::no_nulls::{
 use polars_compute::rolling::nulls::RollingAggWindowNulls;
 use polars_compute::rolling::quantile_filter::SealedRolling;
 use polars_compute::rolling::{
-    self, quantile_filter, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams,
+    self, QuantileMethod, RollingFnParams, RollingQuantileParams, RollingVarParams, quantile_filter,
 };
 use polars_utils::float::IsFloat;
 use polars_utils::idx_vec::IdxVec;
@@ -33,10 +33,10 @@ use crate::frame::group_by::GroupsIdx;
 #[cfg(feature = "object")]
 use crate::frame::group_by::GroupsIndicator;
 use crate::prelude::*;
-use crate::series::implementations::SeriesWrap;
 use crate::series::IsSorted;
+use crate::series::implementations::SeriesWrap;
 use crate::utils::NoNull;
-use crate::{apply_method_physical_integer, POOL};
+use crate::{POOL, apply_method_physical_integer};
 
 fn idx2usize(idx: &[IdxSize]) -> impl ExactSizeIterator<Item = usize> + '_ {
     idx.iter().map(|i| *i as usize)
@@ -236,20 +236,12 @@ macro_rules! impl_take_extremum {
         impl TakeExtremum for $tp {
             #[inline(always)]
             fn take_min(self, other: Self) -> Self {
-                if self < other {
-                    self
-                } else {
-                    other
-                }
+                if self < other { self } else { other }
             }
 
             #[inline(always)]
             fn take_max(self, other: Self) -> Self {
-                if self > other {
-                    self
-                } else {
-                    other
-                }
+                if self > other { self } else { other }
             }
         }
     };

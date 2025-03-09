@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
+use polars_core::POOL;
 use polars_core::prelude::{IntoColumn, PlRandomState};
 use polars_core::schema::Schema;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_core::POOL;
 use polars_expr::groups::Grouper;
 use polars_expr::hash_keys::HashKeys;
 use polars_expr::reduce::GroupedReduction;
@@ -12,10 +12,10 @@ use polars_utils::hashing::HashPartitioner;
 use rayon::prelude::*;
 
 use super::compute_node_prelude::*;
+use crate::GROUP_BY_MIN_ROWS_PER_PARTITION;
 use crate::async_primitives::connector::Receiver;
 use crate::expression::StreamExpr;
 use crate::nodes::in_memory_source::InMemorySourceNode;
-use crate::GROUP_BY_MIN_ROWS_PER_PARTITION;
 
 struct LocalGroupBySinkState {
     grouper: Box<dyn Grouper>,

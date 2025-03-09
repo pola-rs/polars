@@ -2,9 +2,9 @@ use arrow::datatypes::IntegerType;
 use arrow::record_batch::RecordBatch;
 use polars::prelude::*;
 use polars_compute::cast::CastOptionsImpl;
+use pyo3::IntoPyObjectExt;
 use pyo3::prelude::*;
 use pyo3::types::{PyCapsule, PyList, PyTuple};
-use pyo3::IntoPyObjectExt;
 
 use super::PyDataFrame;
 use crate::conversion::{ObjectValue, Wrap};

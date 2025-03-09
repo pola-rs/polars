@@ -105,7 +105,7 @@ fn converted_group_from_str(s: &str) -> ParquetResult<GroupConvertedType> {
             return Err(ParquetError::oos(format!(
                 "Invalid converted type {}",
                 other
-            )))
+            )));
         },
     })
 }

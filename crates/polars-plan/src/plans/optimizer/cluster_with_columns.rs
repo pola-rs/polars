@@ -8,7 +8,7 @@ use polars_utils::vec::inplace_zip_filtermap;
 
 use super::aexpr::AExpr;
 use super::ir::IR;
-use super::{aexpr_to_leaf_names_iter, PlSmallStr};
+use super::{PlSmallStr, aexpr_to_leaf_names_iter};
 
 type ColumnMap = PlHashMap<PlSmallStr, usize>;
 
@@ -53,19 +53,19 @@ pub fn optimize(root: Node, lp_arena: &mut Arena<IR>, expr_arena: &Arena<AExpr>)
         let [current_ir, input_ir] = lp_arena.get_many_mut([current, input]);
 
         let IR::HStack {
-            input: ref mut current_input,
-            exprs: ref mut current_exprs,
-            schema: ref mut current_schema,
-            options: ref mut current_options,
+            input: current_input,
+            exprs: current_exprs,
+            schema: current_schema,
+            options: current_options,
         } = current_ir
         else {
             unreachable!();
         };
         let IR::HStack {
-            input: ref mut input_input,
-            exprs: ref mut input_exprs,
-            schema: ref mut input_schema,
-            options: ref mut input_options,
+            input: input_input,
+            exprs: input_exprs,
+            schema: input_schema,
+            options: input_options,
         } = input_ir
         else {
             continue;

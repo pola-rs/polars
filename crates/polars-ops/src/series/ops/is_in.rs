@@ -2,7 +2,7 @@ use std::hash::Hash;
 
 use polars_core::prelude::arity::{unary_elementwise, unary_elementwise_values};
 use polars_core::prelude::*;
-use polars_core::utils::{try_get_supertype, CustomIterTools};
+use polars_core::utils::{CustomIterTools, try_get_supertype};
 use polars_core::with_match_physical_numeric_polars_type;
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::itertools::Itertools;
@@ -184,11 +184,9 @@ fn is_in_string_list_categorical(
     let mut ca = if ca_in.len() == 1 && other.len() != 1 {
         let opt_val = ca_in.get(0);
         match opt_val.map(|val| rev_map.find(val)) {
-            None => other.list()?.apply_amortized_generic(|opt_s| {
-                {
-                    opt_s.map(|s| s.as_ref().null_count() > 0)
-                }
-            }),
+            None => other
+                .list()?
+                .apply_amortized_generic(|opt_s| opt_s.map(|s| s.as_ref().null_count() > 0)),
             Some(None) => other
                 .list()?
                 .apply_amortized_generic(|opt_s| opt_s.map(|_| false)),

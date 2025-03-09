@@ -112,7 +112,7 @@ impl<T> Arena<T> {
     /// # Safety
     /// Doesn't do any bound checks
     pub unsafe fn get_unchecked(&self, idx: Node) -> &T {
-        self.items.get_unchecked(idx.0)
+        unsafe { self.items.get_unchecked(idx.0) }
     }
 
     #[inline]

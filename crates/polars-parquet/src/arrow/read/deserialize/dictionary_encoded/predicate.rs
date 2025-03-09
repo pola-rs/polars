@@ -1,7 +1,7 @@
 use arrow::bitmap::{Bitmap, BitmapBuilder};
 use arrow::types::AlignedBytes;
 
-use super::{oob_dict_idx, verify_dict_indices, IndexMapping};
+use super::{IndexMapping, oob_dict_idx, verify_dict_indices};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
 use crate::read::PredicateFilter;

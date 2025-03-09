@@ -8,7 +8,7 @@ use polars_utils::mmap::MMapSemaphore;
 use super::ipc_file::IpcReader;
 use crate::mmap::MmapBytesReader;
 use crate::predicates::PhysicalIoExpr;
-use crate::shared::{finish_reader, ArrowReader};
+use crate::shared::{ArrowReader, finish_reader};
 use crate::utils::{apply_projection, columns_to_projection};
 
 impl<R: MmapBytesReader> IpcReader<R> {

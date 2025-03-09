@@ -9,13 +9,13 @@ use polars_core::prelude::*;
 use polars_parquet::read::RowGroupMetadata;
 use polars_parquet::write::FileMetadata;
 use polars_utils::pl_str::PlSmallStr;
-use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::Mutex;
+use tokio::sync::mpsc::{Receiver, Sender, channel};
 
 use super::mmap::ColumnStore;
 use super::predicates::read_this_row_group;
 use crate::cloud::{
-    build_object_store, object_path_from_str, CloudLocation, CloudOptions, PolarsObjectStore,
+    CloudLocation, CloudOptions, PolarsObjectStore, build_object_store, object_path_from_str,
 };
 use crate::parquet::metadata::FileMetadataRef;
 use crate::pl_async::get_runtime;

@@ -9,7 +9,7 @@ use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
-use regex::{escape, NoExpand, Regex};
+use regex::{NoExpand, Regex, escape};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 

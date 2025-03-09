@@ -1,9 +1,9 @@
 use arrow::record_batch::RecordBatch;
 use rayon::prelude::*;
 
+use crate::POOL;
 use crate::prelude::*;
 use crate::utils::{_split_offsets, accumulate_dataframes_vertical_unchecked, split_df_as_ref};
-use crate::POOL;
 
 impl From<RecordBatch> for DataFrame {
     fn from(rb: RecordBatch) -> DataFrame {

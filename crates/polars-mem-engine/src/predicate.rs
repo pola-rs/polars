@@ -7,13 +7,13 @@ use polars_core::prelude::{AnyValue, Column, Field, GroupPositions, PlHashMap, P
 use polars_core::scalar::Scalar;
 use polars_core::schema::{Schema, SchemaRef};
 use polars_error::PolarsResult;
-use polars_expr::prelude::{phys_expr_to_io_expr, AggregationContext, PhysicalExpr};
+use polars_expr::prelude::{AggregationContext, PhysicalExpr, phys_expr_to_io_expr};
 use polars_expr::state::ExecutionState;
 use polars_io::predicates::{
     ColumnPredicates, ScanIOPredicate, SkipBatchPredicate, SpecializedColumnPredicateExpr,
 };
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{format_pl_smallstr, IdxSize};
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 /// All the expressions and metadata used to filter out rows using predicates.
 #[derive(Clone)]

@@ -118,11 +118,7 @@ fn business_day_count_impl(
         start_date += 1;
         start_day_of_week = increment_day_of_week(start_day_of_week);
     }
-    if swapped {
-        -count
-    } else {
-        count
-    }
+    if swapped { -count } else { count }
 }
 
 /// Add a given number of business days.
@@ -378,17 +374,9 @@ fn get_day_of_week(x: i32) -> usize {
 }
 
 fn increment_day_of_week(x: usize) -> usize {
-    if x == 6 {
-        0
-    } else {
-        x + 1
-    }
+    if x == 6 { 0 } else { x + 1 }
 }
 
 fn decrement_day_of_week(x: usize) -> usize {
-    if x == 0 {
-        6
-    } else {
-        x - 1
-    }
+    if x == 0 { 6 } else { x - 1 }
 }

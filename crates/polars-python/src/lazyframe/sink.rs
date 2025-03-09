@@ -6,7 +6,7 @@ use polars_utils::IdxSize;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
 use pyo3::types::{PyAnyMethods, PyDict, PyDictMethods};
-use pyo3::{pyclass, pymethods, Bound, FromPyObject, PyAny, PyResult};
+use pyo3::{Bound, FromPyObject, PyAny, PyResult, pyclass, pymethods};
 
 use crate::prelude::Wrap;
 
@@ -68,7 +68,7 @@ impl<'py> FromPyObject<'py> for Wrap<SyncOnCloseType> {
             v => {
                 return Err(PyValueError::new_err(format!(
                     "`sync_on_close` must be one of {{'none', 'data', 'all'}}, got {v}",
-                )))
+                )));
             },
         };
         Ok(Wrap(parsed))

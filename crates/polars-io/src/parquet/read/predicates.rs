@@ -1,9 +1,9 @@
 use polars_core::config;
 use polars_core::prelude::*;
-use polars_parquet::read::statistics::{
-    deserialize, deserialize_all, ArrowColumnStatisticsArrays, Statistics,
-};
 use polars_parquet::read::RowGroupMetadata;
+use polars_parquet::read::statistics::{
+    ArrowColumnStatisticsArrays, Statistics, deserialize, deserialize_all,
+};
 
 use crate::predicates::{BatchStats, ColumnStats, ScanIOPredicate};
 
@@ -137,7 +137,7 @@ pub fn read_this_row_group(
                 // a parquet file may not have statistics of all columns
                 match pred_result {
                     Err(PolarsError::ColumnNotFound(errstr)) => {
-                        return Err(PolarsError::ColumnNotFound(errstr))
+                        return Err(PolarsError::ColumnNotFound(errstr));
                     },
                     Ok(true) => should_read = false,
                     _ => {},
@@ -150,7 +150,7 @@ pub fn read_this_row_group(
                 // a parquet file may not have statistics of all columns
                 match pred_result {
                     Err(PolarsError::ColumnNotFound(errstr)) => {
-                        return Err(PolarsError::ColumnNotFound(errstr))
+                        return Err(PolarsError::ColumnNotFound(errstr));
                     },
                     Ok(false) => should_read = false,
                     _ => {},
@@ -164,7 +164,9 @@ pub fn read_this_row_group(
                     "parquet row group must be read, statistics not sufficient for predicate."
                 );
             } else {
-                eprintln!("parquet row group can be skipped, the statistics were sufficient to apply the predicate.");
+                eprintln!(
+                    "parquet row group can be skipped, the statistics were sufficient to apply the predicate."
+                );
             }
         }
     }

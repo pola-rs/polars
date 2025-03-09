@@ -12,7 +12,7 @@ use polars_compute::cast::cast_unchecked as cast;
 use polars_error::feature_gated;
 use polars_utils::itertools::Itertools;
 
-use crate::chunked_array::cast::{cast_chunks, CastOptions};
+use crate::chunked_array::cast::{CastOptions, cast_chunks};
 #[cfg(feature = "object")]
 use crate::chunked_array::object::extension::polars_extension::PolarsExtension;
 #[cfg(feature = "object")]

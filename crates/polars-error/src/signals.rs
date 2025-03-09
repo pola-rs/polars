@@ -1,5 +1,5 @@
 use std::any::Any;
-use std::panic::{catch_unwind, UnwindSafe};
+use std::panic::{UnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Python hooks SIGINT to instead generate a KeyboardInterrupt exception.

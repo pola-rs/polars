@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;

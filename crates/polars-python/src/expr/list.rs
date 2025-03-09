@@ -6,8 +6,8 @@ use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::types::PySequence;
 
-use crate::conversion::Wrap;
 use crate::PyExpr;
+use crate::conversion::Wrap;
 
 #[pymethods]
 impl PyExpr {

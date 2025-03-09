@@ -121,7 +121,7 @@ impl PySeries {
         let av = match self.series.get(index) {
             Ok(v) => v,
             Err(PolarsError::OutOfBounds(err)) => {
-                return Err(PyIndexError::new_err(err.to_string()))
+                return Err(PyIndexError::new_err(err.to_string()));
             },
             Err(e) => return Err(PyPolarsErr::from(e).into()),
         };

@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use arrow::bitmap::BitmapBuilder;
 use polars::chunked_array::builder::get_list_builder;
 use polars::prelude::*;
-use polars_core::utils::CustomIterTools;
 use polars_core::POOL;
+use polars_core::utils::CustomIterTools;
 use polars_utils::pl_str::PlSmallStr;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedStr;
@@ -48,7 +48,7 @@ fn iterator_to_struct<'a>(
         _ => {
             return Err(crate::exceptions::ComputeError::new_err(format!(
                 "expected struct got {first_value:?}",
-            )))
+            )));
         },
     };
 

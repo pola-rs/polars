@@ -289,12 +289,11 @@ pub(super) fn compute_col_idx(
                 .as_materialized_series()
                 .phys_iter()
                 .map(|v| {
-                    let idx = *col_to_idx.entry(v).or_insert_with(|| {
+                    *col_to_idx.entry(v).or_insert_with(|| {
                         let old_idx = idx;
                         idx += 1;
                         old_idx
-                    });
-                    idx
+                    })
                 })
                 .collect()
         },
@@ -458,12 +457,11 @@ pub(super) fn compute_row_idx(
                     .as_materialized_series()
                     .phys_iter()
                     .map(|v| {
-                        let idx = *row_to_idx.entry(v).or_insert_with(|| {
+                        *row_to_idx.entry(v).or_insert_with(|| {
                             let old_idx = idx;
                             idx += 1;
                             old_idx
-                        });
-                        idx
+                        })
                     })
                     .collect::<Vec<_>>();
 

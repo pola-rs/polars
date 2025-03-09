@@ -3,16 +3,16 @@ use std::path::Path;
 use memchr::memchr2_iter;
 use num_traits::Pow;
 use polars_core::prelude::*;
-use polars_core::{config, POOL};
+use polars_core::{POOL, config};
 use polars_error::feature_gated;
 use polars_utils::select::select_unpredictable;
 use rayon::prelude::*;
 
+use super::CsvParseOptions;
 use super::buffer::Buffer;
 use super::options::{CommentPrefix, NullValuesCompiled};
 use super::splitfields::SplitFields;
 use super::utils::get_file_chunks;
-use super::CsvParseOptions;
 use crate::path_utils::is_cloud_url;
 use crate::utils::compression::maybe_decompress_bytes;
 

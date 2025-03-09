@@ -6,8 +6,8 @@ use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
-use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
+use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::{
     FileScan, JoinTypeOptionsIR, PartitionVariant, ScanSource, ScanSources, SinkOptions,

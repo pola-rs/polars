@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(feature = "dtype-categorical")]
 use polars_utils::sync::SyncPtr;
 

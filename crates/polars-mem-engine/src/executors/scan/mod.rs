@@ -28,8 +28,8 @@ use polars_plan::global::_set_n_rows_for_scan;
 #[cfg(feature = "python")]
 pub(crate) use self::python_scan::*;
 use super::*;
-use crate::prelude::*;
 use crate::ScanPredicate;
+use crate::prelude::*;
 
 /// Producer of an in memory DataFrame
 pub struct DataFrameExec {

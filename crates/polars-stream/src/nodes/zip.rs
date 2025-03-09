@@ -8,8 +8,8 @@ use polars_error::polars_ensure;
 use polars_utils::itertools::Itertools;
 
 use super::compute_node_prelude::*;
-use crate::morsel::SourceToken;
 use crate::DEFAULT_ZIP_HEAD_BUFFER_SIZE;
+use crate::morsel::SourceToken;
 
 /// The head of an input stream.
 #[derive(Debug)]

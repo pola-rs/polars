@@ -2,7 +2,7 @@ use std::borrow::{Borrow, Cow};
 
 use arrow_format::ipc;
 use arrow_format::ipc::planus::Builder;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use super::super::IpcField;
 use super::{write, write_dictionary};

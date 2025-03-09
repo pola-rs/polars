@@ -98,8 +98,8 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                     },
                     _ => {
                         polars_bail!(
-                        nyi = "Mismatch bit repr Hash Left Join between {lhs_dtype} and {rhs_dtype}",
-                    );
+                            nyi = "Mismatch bit repr Hash Left Join between {lhs_dtype} and {rhs_dtype}",
+                        );
                     },
                 }
             },
@@ -361,7 +361,9 @@ pub trait SeriesJoin: SeriesSealed + Sized {
                         hash_join_outer::<UInt64Type>(&lhs, &rhs, validate, nulls_equal)
                     },
                     _ => {
-                        polars_bail!(nyi = "Mismatch bit repr Hash Join Outer between {lhs_dtype} and {rhs_dtype}");
+                        polars_bail!(
+                            nyi = "Mismatch bit repr Hash Join Outer between {lhs_dtype} and {rhs_dtype}"
+                        );
                     },
                 }
             },

@@ -1,11 +1,11 @@
-use polars_error::{polars_bail, PolarsError};
+use polars_error::{PolarsError, polars_bail};
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
 use pyo3::types::PyBytes;
 #[cfg(feature = "serde")]
 pub use serde_wrap::{
-    PySerializeWrap, TrySerializeToBytes, PYTHON3_VERSION,
-    SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
+    PYTHON3_VERSION, PySerializeWrap, SERDE_MAGIC_BYTE_MARK as PYTHON_SERDE_MAGIC_BYTE_MARK,
+    TrySerializeToBytes,
 };
 
 /// Wrapper around PyObject from pyo3 with additional trait impls.
@@ -58,7 +58,7 @@ impl PartialEq for PythonObject {
 
 #[cfg(feature = "serde")]
 mod _serde_impls {
-    use super::{serde_wrap, PySerializeWrap, PythonObject, TrySerializeToBytes};
+    use super::{PySerializeWrap, PythonObject, TrySerializeToBytes, serde_wrap};
     use crate::pl_serialize::deserialize_map_bytes;
 
     impl PythonObject {

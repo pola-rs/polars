@@ -1,4 +1,4 @@
-use arrow::datatypes::{Metadata, DTYPE_ENUM_VALUES};
+use arrow::datatypes::{DTYPE_ENUM_VALUES, Metadata};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::*;

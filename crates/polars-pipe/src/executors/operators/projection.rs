@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use polars_core::error::PolarsResult;
-use polars_core::frame::column::{Column, IntoColumn};
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::{Column, IntoColumn};
 use polars_core::schema::SchemaRef;
 use polars_plan::prelude::ProjectionOptions;
 use polars_utils::pl_str::PlSmallStr;

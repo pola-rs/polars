@@ -1,8 +1,8 @@
 use std::hash::Hash;
 
 use polars_compute::hyperloglogplus::HyperLogLog;
-use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 use polars_utils::IdxSize;
+use polars_utils::total_ord::{ToTotalOrd, TotalEq, TotalHash};
 
 use super::{ChunkApproxNUnique, ChunkedArray, PolarsDataType};
 

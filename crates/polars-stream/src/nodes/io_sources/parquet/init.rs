@@ -2,15 +2,15 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use polars_core::frame::DataFrame;
-use polars_core::prelude::{Column, DataType, IntoColumn, IDX_DTYPE};
+use polars_core::prelude::{Column, DataType, IDX_DTYPE, IntoColumn};
 use polars_core::series::Series;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::arrow::datatypes::ArrowSchemaRef;
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::_internal::{collect_statistics_with_live_columns, PrefilterMaskSetting};
+use polars_io::prelude::_internal::{PrefilterMaskSetting, collect_statistics_with_live_columns};
 use polars_io::prelude::{FileMetadata, ParallelStrategy};
-use polars_utils::{format_pl_smallstr, IdxSize};
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::row_group_data_fetch::RowGroupDataFetcher;
 use super::row_group_decode::RowGroupDecoder;
@@ -19,7 +19,7 @@ use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::morsel::get_ideal_morsel_size;
 use crate::nodes::{MorselSeq, TaskPriority};
 use crate::utils::task_handles_ext::{self, AbortOnDropHandle};
-use crate::{async_executor, DEFAULT_DISTRIBUTOR_BUFFER_SIZE};
+use crate::{DEFAULT_DISTRIBUTOR_BUFFER_SIZE, async_executor};
 
 async fn calculate_row_group_pred_pushdown_skip_mask(
     row_group_slice: Range<usize>,
