@@ -96,6 +96,15 @@ impl<'a> Row<'a> {
     }
 }
 
+impl<'a> IntoIterator for Row<'a> {
+    type Item = <Vec<AnyValue<'a>> as IntoIterator>::Item;
+    type IntoIter = <Vec<AnyValue<'a>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        IntoIterator::into_iter(self.0)
+    }
+}
+
 type Tracker = PlIndexMap<PlSmallStr, PlHashSet<DataType>>;
 
 pub fn infer_schema(
