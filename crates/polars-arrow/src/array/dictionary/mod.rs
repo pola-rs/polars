@@ -1,10 +1,10 @@
 use std::hash::Hash;
 use std::hint::unreachable_unchecked;
 
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::datatypes::{ArrowDataType, IntegerType};
-use crate::scalar::{new_scalar, Scalar};
+use crate::scalar::{Scalar, new_scalar};
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
 
@@ -18,11 +18,11 @@ mod value_map;
 
 pub use iterator::*;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::primitive::PrimitiveArray;
 use super::specification::check_indexes;
-use super::{new_empty_array, new_null_array, Array, Splitable};
+use super::{Array, Splitable, new_empty_array, new_null_array};
 use crate::array::dictionary::typed_iterator::{
     DictValue, DictionaryIterTyped, DictionaryValuesIterTyped,
 };

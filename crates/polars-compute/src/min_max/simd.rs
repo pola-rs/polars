@@ -2,8 +2,8 @@ use std::simd::prelude::*;
 use std::simd::{LaneCount, SimdElement, SupportedLaneCount};
 
 use arrow::array::PrimitiveArray;
-use arrow::bitmap::bitmask::BitMask;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::bitmask::BitMask;
 use arrow::types::NativeType;
 use polars_utils::min_max::MinMax;
 

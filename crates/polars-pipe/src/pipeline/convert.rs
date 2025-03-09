@@ -12,8 +12,8 @@ use polars_plan::prelude::expr_ir::{ExprIR, OutputName};
 use polars_plan::prelude::*;
 
 use crate::executors::operators::{HstackOperator, PlaceHolder};
-use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::group_by::GenericGroupby2;
+use crate::executors::sinks::group_by::aggregates::convert_to_hash_agg;
 use crate::executors::sinks::*;
 use crate::executors::{operators, sources};
 use crate::expressions::PhysicalPipedExpr;

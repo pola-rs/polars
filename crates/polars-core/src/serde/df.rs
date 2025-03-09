@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use arrow::datatypes::Metadata;
-use arrow::io::ipc::read::{read_stream_metadata, StreamReader, StreamState};
+use arrow::io::ipc::read::{StreamReader, StreamState, read_stream_metadata};
 use arrow::io::ipc::write::WriteOptions;
-use polars_error::{polars_err, to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err, to_compute_err};
 use polars_utils::format_pl_smallstr;
 use polars_utils::pl_serialize::deserialize_map_bytes;
 use polars_utils::pl_str::PlSmallStr;

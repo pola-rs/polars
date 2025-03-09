@@ -4,10 +4,11 @@ use hive::HivePartitions;
 use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_io::predicates::SkipBatchPredicate;
 use polars_io::RowIndex;
+use polars_io::predicates::SkipBatchPredicate;
 
 use super::Executor;
+use crate::ScanPredicate;
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
 #[cfg(feature = "ipc")]
@@ -17,7 +18,6 @@ use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
-use crate::ScanPredicate;
 
 pub struct PhysicalExprWithConstCols {
     constants: Vec<(PlSmallStr, Scalar)>,

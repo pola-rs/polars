@@ -9,24 +9,24 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::BatchedWriter;
-use polars_io::prelude::{get_encodings, ParquetWriteOptions};
+use polars_io::prelude::{ParquetWriteOptions, get_encodings};
 use polars_io::schema_to_arrow_checked;
 use polars_io::utils::file::Writeable;
 use polars_parquet::parquet::error::ParquetResult;
 use polars_parquet::read::ParquetError;
 use polars_parquet::write::{
-    array_to_columns, to_parquet_schema, CompressedPage, Compressor, Encoding, FileWriter,
-    SchemaDescriptor, Version, WriteOptions,
+    CompressedPage, Compressor, Encoding, FileWriter, SchemaDescriptor, Version, WriteOptions,
+    array_to_columns, to_parquet_schema,
 };
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
 use super::{
-    buffer_and_distribute_columns_task, SinkInputPort, SinkNode,
-    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE, SinkInputPort,
+    SinkNode, buffer_and_distribute_columns_task,
 };
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::io_sinks::sync_on_close;

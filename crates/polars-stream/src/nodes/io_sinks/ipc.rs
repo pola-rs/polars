@@ -6,24 +6,24 @@ use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow;
 use polars_core::utils::arrow::array::Array;
 use polars_core::utils::arrow::io::ipc::write::{
-    commit_encoded_arrays, default_ipc_fields, encode_array, encode_new_dictionaries,
-    DictionaryTracker, EncodedData, WriteOptions,
+    DictionaryTracker, EncodedData, WriteOptions, commit_encoded_arrays, default_ipc_fields,
+    encode_array, encode_new_dictionaries,
 };
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::ipc::{IpcWriter, IpcWriterOptions};
 use polars_io::utils::file::Writeable;
-use polars_io::SerWriter;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
 use super::{
-    buffer_and_distribute_columns_task, SinkInputPort, SinkNode,
-    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE,
+    DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, DEFAULT_SINK_LINEARIZER_BUFFER_SIZE, SinkInputPort,
+    SinkNode, buffer_and_distribute_columns_task,
 };
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::nodes::io_sinks::sync_on_close;

@@ -150,9 +150,9 @@ mod private {
 }
 
 use memmap::MmapOptions;
+use polars_error::PolarsResult;
 #[cfg(target_family = "unix")]
 use polars_error::polars_bail;
-use polars_error::PolarsResult;
 pub use private::MemSlice;
 
 /// A cursor over a [`MemSlice`].

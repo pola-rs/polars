@@ -1,5 +1,5 @@
-use polars_core::frame::DataFrame;
 use polars_core::POOL;
+use polars_core::frame::DataFrame;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_utils::aliases::PlHashSet;

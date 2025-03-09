@@ -4,7 +4,7 @@ use crate::parquet::page::{
     CompressedDataPage, CompressedDictPage, CompressedPage, DataPage, DataPageHeader, DictPage,
     Page,
 };
-use crate::parquet::{compression, CowBuffer, FallibleStreamingIterator};
+use crate::parquet::{CowBuffer, FallibleStreamingIterator, compression};
 
 /// Compresses a [`DataPage`] into a [`CompressedDataPage`].
 fn compress_data(

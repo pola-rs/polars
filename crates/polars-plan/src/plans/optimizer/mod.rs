@@ -41,9 +41,9 @@ pub use crate::frame::{AllowedOptimizations, OptFlags};
 pub use crate::plans::conversion::type_coercion::TypeCoercionRule;
 use crate::plans::optimizer::count_star::CountStar;
 #[cfg(feature = "cse")]
-use crate::plans::optimizer::cse::prune_unused_caches;
-#[cfg(feature = "cse")]
 use crate::plans::optimizer::cse::CommonSubExprOptimizer;
+#[cfg(feature = "cse")]
+use crate::plans::optimizer::cse::prune_unused_caches;
 use crate::plans::optimizer::predicate_pushdown::ExprEval;
 #[cfg(feature = "cse")]
 use crate::plans::visitor::*;

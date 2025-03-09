@@ -1,6 +1,6 @@
 use std::any::Any;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::IdxSize;
 
 use super::Splitable;

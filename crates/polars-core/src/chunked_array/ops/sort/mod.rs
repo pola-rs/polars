@@ -19,12 +19,12 @@ use compare_inner::NonNull;
 use rayon::prelude::*;
 pub use slice::*;
 
+use crate::POOL;
 use crate::prelude::compare_inner::TotalOrdInner;
 use crate::prelude::sort::arg_sort_multiple::*;
 use crate::prelude::*;
 use crate::series::IsSorted;
 use crate::utils::NoNull;
-use crate::POOL;
 
 fn partition_nulls<T: Copy>(
     values: &mut [T],

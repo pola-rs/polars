@@ -8,9 +8,9 @@ use crossbeam_queue::ArrayQueue;
 use polars_core::frame::builder::DataFrameBuilder;
 use polars_core::prelude::*;
 use polars_core::schema::{Schema, SchemaExt};
-use polars_core::{config, POOL};
+use polars_core::{POOL, config};
 use polars_expr::hash_keys::HashKeys;
-use polars_expr::idx_table::{new_idx_table, IdxTable};
+use polars_expr::idx_table::{IdxTable, new_idx_table};
 use polars_io::pl_async::get_runtime;
 use polars_ops::frame::{JoinArgs, JoinType, MaintainOrderJoin};
 use polars_ops::series::coalesce_columns;
@@ -20,13 +20,13 @@ use polars_utils::itertools::Itertools;
 use polars_utils::pl_str::PlSmallStr;
 use polars_utils::priority::Priority;
 use polars_utils::sparse_init_vec::SparseInitVec;
-use polars_utils::{format_pl_smallstr, IdxSize};
+use polars_utils::{IdxSize, format_pl_smallstr};
 use rayon::prelude::*;
 
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::expression::StreamExpr;
-use crate::morsel::{get_ideal_morsel_size, SourceToken};
+use crate::morsel::{SourceToken, get_ideal_morsel_size};
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::in_memory_source::InMemorySourceNode;
 

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::fmt::{Debug, Formatter};
 use std::hash::{BuildHasher, Hash, Hasher};
 
@@ -148,7 +149,7 @@ impl RevMapping {
                     .iter()
                     // SAFETY:
                     // value is always within bounds
-                    .find(|(_k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
+                    .find(|&(ref _k, &v)| (unsafe { a.value_unchecked(v as usize) } == value))
                     .map(|(k, _v)| *k)
             },
 

@@ -1,7 +1,7 @@
 use std::{fs, io};
 
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::frame::DataFrame;
 use polars_core::prelude::Column;
@@ -13,8 +13,8 @@ use polars_plan::dsl::SyncOnCloseType;
 use super::{
     ComputeNode, JoinHandle, Morsel, PhaseOutcome, PortState, RecvPort, SendPort, TaskScope,
 };
-use crate::async_executor::{spawn, AbortOnDropHandle};
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel;
 use crate::async_primitives::linearizer::{Inserter, Linearizer};
 use crate::async_primitives::wait_group::WaitGroup;
@@ -86,9 +86,9 @@ fn buffer_and_distribute_columns_task(
                     seq += 1;
                 }
                 drop(consume_token); // Increase the backpressure. Only free up a pipeline when the
-                                     // morsel has started encoding in its entirety. This still
-                                     // allows for parallelism of Morsels, but prevents large
-                                     // bunches of Morsels from stacking up here.
+                // morsel has started encoding in its entirety. This still
+                // allows for parallelism of Morsels, but prevents large
+                // bunches of Morsels from stacking up here.
             }
 
             outcome.stopped();

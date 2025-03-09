@@ -7,8 +7,8 @@ use std::fmt::{Debug, Formatter};
 use std::ops::Deref;
 use std::sync::{Arc, LazyLock, RwLock};
 
-use arrow::array::builder::ArrayBuilder;
 use arrow::array::ArrayRef;
+use arrow::array::builder::ArrayBuilder;
 use arrow::datatypes::ArrowDataType;
 use polars_utils::pl_str::PlSmallStr;
 

@@ -10,7 +10,7 @@ use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use crate::array::binview::iterator::MutableBinaryViewValueIter;
 use crate::array::binview::view::validate_utf8_only;
 use crate::array::binview::{
-    BinaryViewArrayGeneric, ViewType, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE,
+    BinaryViewArrayGeneric, DEFAULT_BLOCK_SIZE, MAX_EXP_BLOCK_SIZE, ViewType,
 };
 use crate::array::{Array, MutableArray, TryExtend, TryPush, View};
 use crate::bitmap::MutableBitmap;

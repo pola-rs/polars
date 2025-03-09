@@ -5,7 +5,7 @@ use polars_error::to_compute_err;
 use polars_time::chunkedarray::string::Pattern;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::string::infer::{
-    infer_pattern_single, DatetimeInfer, StrpTimeParser, TryFromWithUnit,
+    DatetimeInfer, StrpTimeParser, TryFromWithUnit, infer_pattern_single,
 };
 use polars_utils::vec::PushUnchecked;
 

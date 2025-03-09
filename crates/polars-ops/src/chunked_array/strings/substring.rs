@@ -1,7 +1,7 @@
 use arrow::array::View;
 use polars_core::prelude::arity::{binary_elementwise, ternary_elementwise, unary_elementwise};
 use polars_core::prelude::{ChunkFullNull, Int64Chunked, StringChunked, UInt64Chunked};
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 
 fn head_binary(opt_str_val: Option<&str>, opt_n: Option<i64>) -> Option<&str> {
     if let (Some(str_val), Some(n)) = (opt_str_val, opt_n) {

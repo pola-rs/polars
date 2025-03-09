@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use polars_core::prelude::*;
+use polars_io::HiveOptions;
+#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
+use polars_io::RowIndex;
 #[cfg(any(feature = "parquet", feature = "ipc", feature = "csv"))]
 use polars_io::cloud::CloudOptions;
 #[cfg(feature = "csv")]
@@ -9,9 +12,6 @@ use polars_io::csv::read::CsvReadOptions;
 use polars_io::ipc::IpcScanOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::read::ParquetOptions;
-use polars_io::HiveOptions;
-#[cfg(any(feature = "parquet", feature = "csv", feature = "ipc"))]
-use polars_io::RowIndex;
 
 #[cfg(feature = "python")]
 use crate::dsl::python_dsl::PythonFunction;

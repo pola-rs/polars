@@ -235,7 +235,9 @@ fn check_asof_columns(
             b.ensure_sorted_arg("asof_join")?;
         } else {
             let msg = |side| {
-                format!("{side} key of asof join is not sorted.\n\nThis can lead to invalid results. Ensure the asof key is sorted")
+                format!(
+                    "{side} key of asof join is not sorted.\n\nThis can lead to invalid results. Ensure the asof key is sorted"
+                )
             };
             if a.ensure_sorted_arg("asof_join").is_err() {
                 polars_warn!(msg("left"))

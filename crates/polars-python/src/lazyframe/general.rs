@@ -27,7 +27,7 @@ use crate::{PyDataFrame, PyExpr, PyLazyGroupBy};
 fn pyobject_to_first_path_and_scan_sources(
     obj: PyObject,
 ) -> PyResult<(Option<PathBuf>, ScanSources)> {
-    use crate::file::{get_python_scan_source_input, PythonScanSourceInput};
+    use crate::file::{PythonScanSourceInput, get_python_scan_source_input};
     Ok(match get_python_scan_source_input(obj, false)? {
         PythonScanSourceInput::Path(path) => {
             (Some(path.clone()), ScanSources::Paths([path].into()))

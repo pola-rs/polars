@@ -4,9 +4,9 @@ use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+use polars_core::POOL;
 use polars_core::error::PolarsResult;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_core::POOL;
 use polars_expr::state::ExecutionState;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;

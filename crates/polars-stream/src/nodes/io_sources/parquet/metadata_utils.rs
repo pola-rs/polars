@@ -8,8 +8,8 @@ pub(super) async fn read_parquet_metadata_bytes(
     byte_source: &DynByteSource,
     verbose: bool,
 ) -> PolarsResult<(MemSlice, Option<MemSlice>)> {
-    use polars_parquet::parquet::error::ParquetError;
     use polars_parquet::parquet::PARQUET_MAGIC;
+    use polars_parquet::parquet::error::ParquetError;
 
     const FOOTER_HEADER_SIZE: usize = polars_parquet::parquet::FOOTER_SIZE as usize;
 

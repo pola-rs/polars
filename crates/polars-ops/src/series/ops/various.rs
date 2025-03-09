@@ -131,8 +131,8 @@ pub trait SeriesMethods: SeriesSealed {
         }
 
         let cmp_len = s_len - null_count - 1; // Number of comparisons we might have to do
-                                              // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
-                                              // Compare adjacent elements with no-copy slices that don't include any nulls
+        // TODO! Change this, allocation of a full boolean series is too expensive and doesn't fail fast.
+        // Compare adjacent elements with no-copy slices that don't include any nulls
         let offset = !options.nulls_last as i64 * null_count as i64;
         let (s1, s2) = (s.slice(offset, cmp_len), s.slice(offset + 1, cmp_len));
         let cmp_op = if options.descending {

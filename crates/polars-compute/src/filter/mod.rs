@@ -6,12 +6,12 @@ mod scalar;
 #[cfg(all(target_arch = "x86_64", feature = "simd"))]
 mod avx512;
 
-use arrow::array::builder::{make_builder, ArrayBuilder, ShareStrategy};
+use arrow::array::builder::{ArrayBuilder, ShareStrategy, make_builder};
 use arrow::array::{
-    new_empty_array, Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray,
+    Array, BinaryViewArray, BooleanArray, PrimitiveArray, Utf8ViewArray, new_empty_array,
 };
-use arrow::bitmap::utils::SlicesIterator;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::SlicesIterator;
 use arrow::with_match_primitive_type_full;
 pub use boolean::filter_boolean_kernel;
 

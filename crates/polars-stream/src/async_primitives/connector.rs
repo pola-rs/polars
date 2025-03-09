@@ -1,8 +1,8 @@
 use std::cell::UnsafeCell;
 use std::mem::MaybeUninit;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::task::{Context, Poll, Waker};
 
 use atomic_waker::AtomicWaker;

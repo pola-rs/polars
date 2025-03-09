@@ -1,12 +1,12 @@
 #![allow(unused)] // TODO: remove me
 use std::cmp::Reverse;
 
-use polars_core::prelude::*;
 use polars_core::POOL;
-use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
-use polars_plan::plans::{Context, IRPlan, IR};
-use polars_plan::prelude::expr_ir::ExprIR;
+use polars_core::prelude::*;
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
+use polars_plan::plans::{Context, IR, IRPlan};
 use polars_plan::prelude::AExpr;
+use polars_plan::prelude::expr_ir::ExprIR;
 use polars_utils::arena::{Arena, Node};
 use slotmap::{SecondaryMap, SlotMap};
 

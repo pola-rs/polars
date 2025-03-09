@@ -12,6 +12,7 @@ use polars_utils::hashing::hash_to_partition;
 use rayon::prelude::*;
 
 use super::aggregates::AggregateFn;
+use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::executors::sinks::group_by::aggregates::AggregateFunction;
 use crate::executors::sinks::group_by::ooc_state::OocState;
 use crate::executors::sinks::group_by::physical_agg_to_logical;
@@ -19,7 +20,6 @@ use crate::executors::sinks::group_by::primitive::apply_aggregation;
 use crate::executors::sinks::group_by::utils::{compute_slices, finalize_group_by, prepare_key};
 use crate::executors::sinks::io::IOThread;
 use crate::executors::sinks::utils::load_vec;
-use crate::executors::sinks::HASHMAP_INIT_SIZE;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
 

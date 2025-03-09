@@ -82,14 +82,14 @@ fn visit_logical_plan_for_scan_paths(
                         match (expr.sources, &mut sources) {
                             (
                                 ScanSources::Paths(paths),
-                                Some(MutableSources::Paths(ref mut mutable_paths)),
+                                Some(MutableSources::Paths(mutable_paths)),
                             ) => mutable_paths.extend_from_slice(&paths[..]),
                             (ScanSources::Paths(paths), None) => {
                                 sources = Some(MutableSources::Paths(paths.to_vec()))
                             },
                             (
                                 ScanSources::Buffers(buffers),
-                                Some(MutableSources::Buffers(ref mut mutable_buffers)),
+                                Some(MutableSources::Buffers(mutable_buffers)),
                             ) => mutable_buffers.extend_from_slice(&buffers[..]),
                             (ScanSources::Buffers(buffers), None) => {
                                 sources = Some(MutableSources::Buffers(buffers.to_vec()))

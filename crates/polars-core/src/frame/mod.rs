@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! DataFrame module.
 use std::sync::OnceLock;
 use std::{mem, ops};
@@ -14,7 +15,7 @@ use crate::chunked_array::ops::unique::is_unique_helper;
 use crate::prelude::*;
 #[cfg(feature = "row_hash")]
 use crate::utils::split_df;
-use crate::utils::{slice_offsets, try_get_supertype, Container, NoNull};
+use crate::utils::{Container, NoNull, slice_offsets, try_get_supertype};
 use crate::{HEAD_DEFAULT_LENGTH, TAIL_DEFAULT_LENGTH};
 
 #[cfg(feature = "dataframe_arithmetic")]
@@ -40,11 +41,11 @@ use polars_utils::pl_str::PlSmallStr;
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;
 
+use crate::POOL;
 #[cfg(feature = "row_hash")]
 use crate::hashing::_df_rows_to_hashes_threaded_vertical;
 use crate::prelude::sort::{argsort_multiple_row_fmt, prepare_arg_sort};
 use crate::series::IsSorted;
-use crate::POOL;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Default, Hash, IntoStaticStr)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -3504,12 +3505,14 @@ mod test {
         }
         .unwrap();
         // check if column is replaced
-        assert!(df
-            .with_column(Series::new("foo".into(), &[1, 2, 3]))
-            .is_ok());
-        assert!(df
-            .with_column(Series::new("bar".into(), &[1, 2, 3]))
-            .is_ok());
+        assert!(
+            df.with_column(Series::new("foo".into(), &[1, 2, 3]))
+                .is_ok()
+        );
+        assert!(
+            df.with_column(Series::new("bar".into(), &[1, 2, 3]))
+                .is_ok()
+        );
         assert!(df.column("bar").is_ok())
     }
 

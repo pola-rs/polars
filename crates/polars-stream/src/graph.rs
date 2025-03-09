@@ -109,7 +109,10 @@ impl Graph {
             for (input, state) in node.inputs.iter().zip(recv_state.iter()) {
                 let pipe = &mut self.pipes[*input];
                 if pipe.recv_state != *state {
-                    assert!(pipe.recv_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
+                    assert!(
+                        pipe.recv_state != PortState::Done,
+                        "implementation error: state transition from Done to Blocked/Ready attempted"
+                    );
                     pipe.recv_state = *state;
                     if scheduled_for_update.insert(pipe.sender, ()).is_none() {
                         to_update.push(pipe.sender);
@@ -120,7 +123,10 @@ impl Graph {
             for (output, state) in node.outputs.iter().zip(send_state.iter()) {
                 let pipe = &mut self.pipes[*output];
                 if pipe.send_state != *state {
-                    assert!(pipe.send_state != PortState::Done, "implementation error: state transition from Done to Blocked/Ready attempted");
+                    assert!(
+                        pipe.send_state != PortState::Done,
+                        "implementation error: state transition from Done to Blocked/Ready attempted"
+                    );
                     pipe.send_state = *state;
                     if scheduled_for_update.insert(pipe.receiver, ()).is_none() {
                         to_update.push(pipe.receiver);

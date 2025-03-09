@@ -1,8 +1,8 @@
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_core::prelude::{InitHashMaps, PlHashMap};
 use polars_core::schema::SchemaRef;
@@ -10,14 +10,14 @@ use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::{format_pl_smallstr, IdxSize};
+use polars_utils::{IdxSize, format_pl_smallstr};
 
 use super::CreateNewSinkFn;
-use crate::async_executor::{spawn, AbortOnDropHandle};
-use crate::async_primitives::connector::{self, connector, Receiver};
+use crate::async_executor::{AbortOnDropHandle, spawn};
+use crate::async_primitives::connector::{self, Receiver, connector};
 use crate::async_primitives::distributor_channel::{self, distributor_channel};
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::nodes::io_sinks::{SinkInputPort, SinkNode, DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE};
+use crate::nodes::io_sinks::{DEFAULT_SINK_DISTRIBUTOR_BUFFER_SIZE, SinkInputPort, SinkNode};
 use crate::nodes::{JoinHandle, Morsel, PhaseOutcome, TaskPriority};
 
 pub struct MaxSizePartitionSinkNode {

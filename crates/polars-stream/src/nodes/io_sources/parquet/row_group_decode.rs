@@ -6,16 +6,16 @@ use polars_core::prelude::{
 };
 use polars_core::series::{IsSorted, Series};
 use polars_core::utils::arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::hive;
 use polars_io::predicates::{ColumnPredicateExpr, ScanIOPredicate, SpecializedColumnPredicateExpr};
-use polars_io::prelude::_internal::calc_prefilter_cost;
 pub use polars_io::prelude::_internal::PrefilterMaskSetting;
+use polars_io::prelude::_internal::calc_prefilter_cost;
 use polars_io::prelude::try_set_sorted_flag;
 use polars_parquet::read::{Filter, PredicateFilter};
+use polars_utils::IdxSize;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use super::row_group_data_fetch::RowGroupData;
 use crate::async_executor;

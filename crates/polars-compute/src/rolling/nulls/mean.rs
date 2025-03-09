@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use super::*;
 
 pub struct MeanWindow<'a, T> {
@@ -5,16 +6,16 @@ pub struct MeanWindow<'a, T> {
 }
 
 impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + Add<Output = T>
-            + Sub<Output = T>
-            + NumCast
-            + Div<Output = T>
-            + AddAssign
-            + SubAssign,
-    > RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
+    'a,
+    T: NativeType
+        + IsFloat
+        + Add<Output = T>
+        + Sub<Output = T>
+        + NumCast
+        + Div<Output = T>
+        + AddAssign
+        + SubAssign,
+> RollingAggWindowNulls<'a, T> for MeanWindow<'a, T>
 {
     unsafe fn new(
         slice: &'a [T],

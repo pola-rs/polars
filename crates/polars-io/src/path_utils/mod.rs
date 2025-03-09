@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
 use polars_core::config;
-use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_core::error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 use regex::Regex;
 
@@ -514,11 +514,7 @@ pub fn expand_paths_hive(
 pub(crate) fn ensure_directory_init(path: &Path) -> std::io::Result<()> {
     let result = std::fs::create_dir_all(path);
 
-    if path.is_dir() {
-        Ok(())
-    } else {
-        result
-    }
+    if path.is_dir() { Ok(()) } else { result }
 }
 
 #[cfg(test)]

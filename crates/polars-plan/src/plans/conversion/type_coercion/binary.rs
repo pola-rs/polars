@@ -169,21 +169,21 @@ pub(super) fn process_binary(
         (DataType::String, dt, op) | (dt, DataType::String, op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (String | Unknown(UnknownKind::Str) | Categorical(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Categorical(_, _), op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-categorical")]
         (Unknown(UnknownKind::Str) | String | Enum(_, _), dt, op)
         | (dt, Unknown(UnknownKind::Str) | String | Enum(_, _), op)
             if op.is_comparison_or_bitwise() && dt.is_primitive_numeric() =>
         {
-            return Ok(None)
+            return Ok(None);
         },
         #[cfg(feature = "dtype-date")]
         (Date, String | Unknown(UnknownKind::Str), op)
@@ -232,7 +232,7 @@ pub(super) fn process_binary(
             (Struct(_), a) | (a, Struct(_)) if a.is_primitive_numeric() => {
                 return process_struct_numeric_arithmetic(
                     type_left, type_right, node_left, node_right, op, expr_arena,
-                )
+                );
             },
             _ => {},
         }

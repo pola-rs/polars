@@ -7,7 +7,7 @@ use bytes::Bytes;
 use polars_core::datatypes::PlHashMap;
 use polars_error::PolarsResult;
 use polars_parquet::read::{
-    column_iter_to_arrays, BasicDecompressor, ColumnChunkMetadata, Filter, PageReader,
+    BasicDecompressor, ColumnChunkMetadata, Filter, PageReader, column_iter_to_arrays,
 };
 use polars_utils::mmap::{MemReader, MemSlice};
 

@@ -1,8 +1,9 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Contains the declaration of [`Offset`]
 use std::hint::unreachable_unchecked;
 use std::ops::Deref;
 
-use polars_error::{polars_bail, polars_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, polars_bail, polars_err};
 
 use crate::array::Splitable;
 use crate::buffer::Buffer;

@@ -33,9 +33,9 @@ pub use parquet::*;
 use polars_compute::rolling::QuantileMethod;
 use polars_core::error::feature_gated;
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::RowIndex;
-use polars_mem_engine::{create_physical_plan, Executor};
+use polars_mem_engine::{Executor, create_physical_plan};
 use polars_ops::frame::{JoinCoalesce, MaintainOrderJoin};
 #[cfg(feature = "is_between")]
 use polars_ops::prelude::ClosedInterval;
@@ -501,7 +501,7 @@ impl LazyFrame {
     /// See the method on [Series](polars_core::series::SeriesTrait::shift) for more info on the `shift` operation.
     pub fn shift_and_fill<E: Into<Expr>, IE: Into<Expr>>(self, n: E, fill_value: IE) -> Self {
         self.select(vec![
-            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into())
+            col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into()),
         ])
     }
 
@@ -900,8 +900,8 @@ impl LazyFrame {
         if engine == Engine::InMemory {
             use std::io::BufWriter;
 
-            use polars_io::ipc::IpcWriter;
             use polars_io::SerWriter;
+            use polars_io::ipc::IpcWriter;
 
             let mut df = self.collect()?;
 
@@ -945,8 +945,8 @@ impl LazyFrame {
         if engine == Engine::InMemory {
             use std::io::BufWriter;
 
-            use polars_io::csv::write::CsvWriter;
             use polars_io::SerWriter;
+            use polars_io::csv::write::CsvWriter;
 
             let mut df = self.collect()?;
 
@@ -1000,8 +1000,8 @@ impl LazyFrame {
             use std::io::BufWriter;
             use std::ops::DerefMut;
 
-            use polars_io::json::{JsonFormat, JsonWriter};
             use polars_io::SerWriter;
+            use polars_io::json::{JsonFormat, JsonWriter};
 
             let mut df = self.collect()?;
 
@@ -1178,7 +1178,9 @@ impl LazyFrame {
                             .unwrap_or(false)
                     {
                         if polars_core::config::verbose() {
-                            eprintln!("caught unimplemented error in new streaming engine, falling back to normal engine");
+                            eprintln!(
+                                "caught unimplemented error in new streaming engine, falling back to normal engine"
+                            );
                         }
                     } else {
                         std::panic::resume_unwind(e);

@@ -4,7 +4,7 @@ use std::path::Path;
 #[cfg(feature = "cloud")]
 pub use async_writeable::AsyncWriteable;
 use polars_core::config;
-use polars_error::{feature_gated, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;

@@ -15,7 +15,7 @@ use polars_io::ipc::IpcWriterOptions;
 use polars_io::json::JsonWriterOptions;
 #[cfg(feature = "parquet")]
 use polars_io::parquet::write::ParquetWriteOptions;
-use polars_io::{is_cloud_url, HiveOptions, RowIndex};
+use polars_io::{HiveOptions, RowIndex, is_cloud_url};
 #[cfg(feature = "iejoin")]
 use polars_ops::frame::IEJoinOptions;
 use polars_ops::frame::{CrossJoinFilter, CrossJoinOptions, JoinTypeOptions};
@@ -24,8 +24,8 @@ use polars_ops::prelude::{JoinArgs, JoinType};
 use polars_time::DynamicGroupOptions;
 #[cfg(feature = "dynamic_group_by")]
 use polars_time::RollingGroupOptions;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use strum_macros::IntoStaticStr;

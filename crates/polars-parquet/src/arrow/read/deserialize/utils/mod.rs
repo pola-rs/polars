@@ -13,7 +13,7 @@ use self::filter::Filter;
 use super::{BasicDecompressor, InitNested, NestedState, PredicateFilter};
 use crate::parquet::encoding::hybrid_rle::{self, HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::{ParquetError, ParquetResult};
-use crate::parquet::page::{split_buffer, DataPage, DictPage};
+use crate::parquet::page::{DataPage, DictPage, split_buffer};
 use crate::parquet::schema::Repetition;
 
 #[derive(Debug)]

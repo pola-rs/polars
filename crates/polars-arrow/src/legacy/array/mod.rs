@@ -1,6 +1,7 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use crate::array::{
-    new_null_array, Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray,
-    PrimitiveArray, StructArray, ViewType,
+    Array, BooleanArray, FixedSizeListArray, ListArray, MutableBinaryViewArray, PrimitiveArray,
+    StructArray, ViewType, new_null_array,
 };
 use crate::bitmap::BitmapBuilder;
 use crate::datatypes::ArrowDataType;

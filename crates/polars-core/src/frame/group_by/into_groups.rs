@@ -9,8 +9,8 @@ use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ops::row_encode::_get_rows_encoded_ca_unordered;
 use crate::config::verbose;
 use crate::series::BitRepr;
-use crate::utils::flatten::flatten_par;
 use crate::utils::Container;
+use crate::utils::flatten::flatten_par;
 
 /// Used to create the tuples for a group_by operation.
 pub trait IntoGroupsType {

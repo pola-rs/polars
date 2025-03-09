@@ -1,16 +1,17 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{BinaryArray, PrimitiveArray, UInt64Array};
 use arrow::compute::utils::combine_validities_and_many;
 use polars_compute::gather::binary::take_unchecked;
 use polars_core::frame::DataFrame;
-use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::prelude::PlRandomState;
+use polars_core::prelude::row_encode::_get_rows_encoded_unordered;
 use polars_core::series::Series;
+use polars_utils::IdxSize;
 use polars_utils::cardinality_sketch::CardinalitySketch;
 use polars_utils::hashing::HashPartitioner;
 use polars_utils::index::ChunkId;
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;
-use polars_utils::IdxSize;
 
 /// Represents a DataFrame plus a hash per row, intended for keys in grouping
 /// or joining. The hashes may or may not actually be physically pre-computed,

@@ -4,7 +4,7 @@
 pub unsafe fn to_mutable_slice<T: Copy>(s: &[T]) -> &mut [T] {
     let ptr = s.as_ptr() as *mut T;
     let len = s.len();
-    std::slice::from_raw_parts_mut(ptr, len)
+    unsafe { std::slice::from_raw_parts_mut(ptr, len) }
 }
 
 pub mod prefetch {
@@ -151,8 +151,8 @@ pub mod prefetch {
                 #[cfg(not(target_os = "linux"))]
                 {
                     panic!(
-                    "POLARS_MEMORY_PREFETCH=madvise_populate_read is not supported by this system"
-                );
+                        "POLARS_MEMORY_PREFETCH=madvise_populate_read is not supported by this system"
+                    );
                 }
             },
             Some("force_populate_read") => force_populate_read,

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{BinaryArray, BinaryViewArray};
 use arrow::datatypes::ArrowDataType;
 use arrow::ffi::mmap;

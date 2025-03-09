@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
@@ -12,9 +12,9 @@ use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate
 use self::python_dsl::PythonScanSource;
 use super::super::executors::{self, Executor};
 use super::*;
+use crate::ScanPredicate;
 use crate::executors::CachePrefiller;
 use crate::predicate::PhysicalColumnPredicates;
-use crate::ScanPredicate;
 
 fn partitionable_gb(
     keys: &[ExprIR],

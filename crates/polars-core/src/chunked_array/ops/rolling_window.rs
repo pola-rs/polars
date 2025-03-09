@@ -36,8 +36,8 @@ impl Default for RollingOptionsFixedWindow {
 mod inner_mod {
     use std::ops::SubAssign;
 
-    use arrow::bitmap::utils::set_bit_unchecked;
     use arrow::bitmap::MutableBitmap;
+    use arrow::bitmap::utils::set_bit_unchecked;
     use arrow::legacy::trusted_len::TrustedLenPush;
     use num_traits::pow::Pow;
     use num_traits::{Float, Zero};

@@ -4,14 +4,14 @@ use arrow::array::{Array, BinaryArray, MutablePrimitiveArray};
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
 use polars_ops::frame::join::_finish_join;
-use polars_ops::prelude::{TakeChunked, _coalesce_full_join};
+use polars_ops::prelude::{_coalesce_full_join, TakeChunked};
 use polars_utils::pl_str::PlSmallStr;
 
+use crate::executors::sinks::ExtraPayload;
+use crate::executors::sinks::joins::PartitionedMap;
 use crate::executors::sinks::joins::generic_build::*;
 use crate::executors::sinks::joins::row_values::RowValues;
-use crate::executors::sinks::joins::PartitionedMap;
 use crate::executors::sinks::utils::hash_rows;
-use crate::executors::sinks::ExtraPayload;
 use crate::expressions::PhysicalPipedExpr;
 use crate::operators::{DataChunk, Operator, OperatorResult, PExecutionContext};
 

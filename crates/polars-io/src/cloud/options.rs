@@ -5,6 +5,8 @@ use std::path::Path;
 use std::str::FromStr;
 use std::sync::LazyLock;
 
+#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
+use object_store::ClientOptions;
 #[cfg(feature = "aws")]
 use object_store::aws::AmazonS3Builder;
 #[cfg(feature = "aws")]
@@ -17,8 +19,6 @@ use object_store::azure::MicrosoftAzureBuilder;
 use object_store::gcp::GoogleCloudStorageBuilder;
 #[cfg(feature = "gcp")]
 pub use object_store::gcp::GoogleConfigKey;
-#[cfg(any(feature = "aws", feature = "gcp", feature = "azure", feature = "http"))]
-use object_store::ClientOptions;
 #[cfg(any(feature = "aws", feature = "gcp", feature = "azure"))]
 use object_store::{BackoffConfig, RetryConfig};
 use polars_error::*;
@@ -357,7 +357,9 @@ impl CloudOptions {
                         // See: #13042
                         builder = builder.with_config(AmazonS3ConfigKey::Region, "us-east-1");
                     } else {
-                        polars_warn!("'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning.");
+                        polars_warn!(
+                            "'(default_)region' not set; polars will try to get it from bucket\n\nSet the region manually to silence this warning."
+                        );
                         let result = with_concurrency_budget(1, || async {
                             reqwest::Client::builder()
                                 .build()

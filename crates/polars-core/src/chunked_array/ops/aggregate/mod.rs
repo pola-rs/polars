@@ -7,7 +7,7 @@ use num_traits::{Float, One, ToPrimitive, Zero};
 use polars_compute::float_sum;
 use polars_compute::min_max::MinMaxKernel;
 use polars_compute::rolling::QuantileMethod;
-use polars_compute::sum::{wrapping_sum_arr, WrappingSum};
+use polars_compute::sum::{WrappingSum, wrapping_sum_arr};
 use polars_utils::min_max::MinMax;
 use polars_utils::sync::SyncPtr;
 pub use quantile::*;
@@ -228,11 +228,7 @@ impl BooleanChunked {
             return None;
         }
         if nc == 0 {
-            if self.all() {
-                Some(true)
-            } else {
-                Some(false)
-            }
+            if self.all() { Some(true) } else { Some(false) }
         } else {
             // we can unwrap as we already checked empty and all null above
             if (self.sum().unwrap() + nc as IdxSize) == len as IdxSize {
@@ -247,11 +243,7 @@ impl BooleanChunked {
         if self.is_empty() || self.null_count() == self.len() {
             return None;
         }
-        if self.any() {
-            Some(true)
-        } else {
-            Some(false)
-        }
+        if self.any() { Some(true) } else { Some(false) }
     }
     pub fn mean(&self) -> Option<f64> {
         if self.is_empty() || self.null_count() == self.len() {

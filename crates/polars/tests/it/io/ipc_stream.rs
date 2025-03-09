@@ -146,7 +146,7 @@ mod test {
     fn write_and_read_ipc_stream_empty_series() {
         fn df() -> DataFrame {
             DataFrame::new(vec![
-                Float64Chunked::new("empty".into(), &[0_f64; 0]).into_column()
+                Float64Chunked::new("empty".into(), &[0_f64; 0]).into_column(),
             ])
             .unwrap()
         }

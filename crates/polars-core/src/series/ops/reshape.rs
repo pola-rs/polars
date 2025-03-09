@@ -4,7 +4,7 @@ use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::gather::sublist::list::array_to_unit_list;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 
 use crate::chunked_array::builder::get_list_builder;

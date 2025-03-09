@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use super::BooleanArray;
 use crate::array::physical_binary::extend_validity;
@@ -69,8 +69,8 @@ impl MutableBooleanArray {
         }
 
         if dtype.to_physical_type() != PhysicalType::Boolean {
-            polars_bail!(oos =
-                "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
+            polars_bail!(
+                oos = "MutableBooleanArray can only be initialized with a DataType whose physical type is Boolean",
             )
         }
 

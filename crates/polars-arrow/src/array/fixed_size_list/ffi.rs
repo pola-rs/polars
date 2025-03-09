@@ -1,8 +1,8 @@
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 
 use super::FixedSizeListArray;
-use crate::array::ffi::{FromFfi, ToFfi};
 use crate::array::Array;
+use crate::array::ffi::{FromFfi, ToFfi};
 use crate::ffi;
 
 unsafe impl ToFfi for FixedSizeListArray {

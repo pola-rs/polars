@@ -5,18 +5,18 @@ use arrow::array::{
     PrimitiveArray, Utf8ViewArray,
 };
 use arrow::datatypes::{ArrowDataType, Field, IntegerType, IntervalUnit, TimeUnit};
-use arrow::types::{days_ms, f16, i256, NativeType};
+use arrow::types::{NativeType, days_ms, f16, i256};
 use ethnum::I256;
-use polars_utils::pl_str::PlSmallStr;
 use polars_utils::IdxSize;
+use polars_utils::pl_str::PlSmallStr;
 
 use super::{ParquetTimeUnit, RowGroupMetadata};
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::schema::types::PhysicalType as ParquetPhysicalType;
 use crate::parquet::statistics::Statistics as ParquetStatistics;
 use crate::read::{
-    convert_days_ms, convert_i128, convert_i256, convert_year_month, int96_to_i64_ns,
-    ColumnChunkMetadata, PrimitiveLogicalType,
+    ColumnChunkMetadata, PrimitiveLogicalType, convert_days_ms, convert_i128, convert_i256,
+    convert_year_month, int96_to_i64_ns,
 };
 
 /// Parquet statistics for a nesting level
@@ -234,7 +234,7 @@ impl ColumnStatistics {
             (D::Decimal(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
                 return Err(ParquetError::not_supported(format!(
                     "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}",
-                )))
+                )));
             },
             (D::Decimal(_, _), PPT::FixedLenByteArray(n)) => rmap!(
                 expect_fixedlen,
@@ -250,7 +250,7 @@ impl ColumnStatistics {
             (D::Decimal256(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
                 return Err(ParquetError::not_supported(format!(
                     "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
-                )))
+                )));
             },
             (D::Decimal256(_, _), PPT::FixedLenByteArray(_)) => rmap!(
                 expect_fixedlen,
@@ -486,7 +486,7 @@ pub fn deserialize_all(
                 (D::Decimal(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
                     return Err(ParquetError::not_supported(format!(
                         "Can't decode Decimal128 type from Fixed Size Byte Array of len {n:?}",
-                    )))
+                    )));
                 },
                 (D::Decimal(_, _), PPT::FixedLenByteArray(n)) => rmap!(
                     expect_fixedlen,
@@ -503,7 +503,7 @@ pub fn deserialize_all(
                 (D::Decimal256(_, _), PPT::FixedLenByteArray(n)) if *n > 16 => {
                     return Err(ParquetError::not_supported(format!(
                         "Can't decode Decimal256 type from Fixed Size Byte Array of len {n:?}",
-                    )))
+                    )));
                 },
                 (D::Decimal256(_, _), PPT::FixedLenByteArray(_)) => rmap!(
                     expect_fixedlen,

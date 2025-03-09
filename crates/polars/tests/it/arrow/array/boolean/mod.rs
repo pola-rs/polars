@@ -56,12 +56,14 @@ fn split_at() {
 #[test]
 fn try_new_invalid() {
     assert!(BooleanArray::try_new(ArrowDataType::Int32, [true].into(), None).is_err());
-    assert!(BooleanArray::try_new(
-        ArrowDataType::Boolean,
-        [true].into(),
-        Some([false, true].into())
-    )
-    .is_err());
+    assert!(
+        BooleanArray::try_new(
+            ArrowDataType::Boolean,
+            [true].into(),
+            Some([false, true].into())
+        )
+        .is_err()
+    );
 }
 
 #[test]

@@ -10,15 +10,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::MemSlice;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
-use pyo3::IntoPyObjectExt;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;

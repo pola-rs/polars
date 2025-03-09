@@ -1,4 +1,4 @@
-use polars_core::error::{polars_err, PolarsResult};
+use polars_core::error::{PolarsResult, polars_err};
 use polars_core::frame::DataFrame;
 use polars_core::prelude::Column;
 use polars_core::schema::SchemaRef;

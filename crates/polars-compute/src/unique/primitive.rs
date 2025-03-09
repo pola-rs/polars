@@ -175,7 +175,7 @@ where
         debug_assert_eq!(self.size(), other.size());
         match (&mut self.seen, &other.seen) {
             (Seen::Small(lhs), Seen::Small(rhs)) => *lhs |= rhs,
-            (Seen::Large(lhs), Seen::Large(ref rhs)) => {
+            (Seen::Large(lhs), Seen::Large(rhs)) => {
                 let mut lhs = lhs;
                 <&mut MutableBitmap as std::ops::BitOrAssign<&MutableBitmap>>::bitor_assign(
                     &mut lhs, rhs,

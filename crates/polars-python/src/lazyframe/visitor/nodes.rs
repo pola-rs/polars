@@ -1,17 +1,17 @@
-use polars::prelude::python_dsl::PythonScanSource;
 #[cfg(feature = "iejoin")]
 use polars::prelude::JoinTypeOptionsIR;
+use polars::prelude::python_dsl::PythonScanSource;
 use polars_core::prelude::IdxSize;
 use polars_ops::prelude::JoinType;
 use polars_plan::plans::IR;
 use polars_plan::prelude::{FileCount, FileScan, FileScanOptions, FunctionIR, PythonPredicate};
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::{PyNotImplementedError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::IntoPyObjectExt;
 
 use super::expr_nodes::PyGroupbyOptions;
-use crate::lazyframe::visit::PyExprIR;
 use crate::PyDataFrame;
+use crate::lazyframe::visit::PyExprIR;
 
 #[pyclass]
 /// Scan a table with an optional predicate from a python function
@@ -380,7 +380,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     ("ndjson", options).into_py_any(py)?
                 },
                 FileScan::Anonymous { .. } => {
-                    return Err(PyNotImplementedError::new_err("anonymous scan"))
+                    return Err(PyNotImplementedError::new_err("anonymous scan"));
                 },
             },
         }
@@ -484,7 +484,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                     match how {
                         #[cfg(feature = "asof_join")]
                         JoinType::AsOf(_) => {
-                            return Err(PyNotImplementedError::new_err("asof join"))
+                            return Err(PyNotImplementedError::new_err("asof join"));
                         },
                         #[cfg(feature = "iejoin")]
                         JoinType::IEJoin => {
@@ -505,7 +505,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         // This is a cross join fused with a predicate. Shown in the IR::explain as
                         // NESTED LOOP JOIN
                         JoinType::Cross if options.options.is_some() => {
-                            return Err(PyNotImplementedError::new_err("nested loop join"))
+                            return Err(PyNotImplementedError::new_err("nested loop join"));
                         },
                         _ => name.into_any().unbind(),
                     },
@@ -553,7 +553,7 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
             input: input.0,
             function: match function {
                 FunctionIR::OpaquePython(_) => {
-                    return Err(PyNotImplementedError::new_err("opaque python mapfunction"))
+                    return Err(PyNotImplementedError::new_err("opaque python mapfunction"));
                 },
                 FunctionIR::Opaque {
                     function: _,

@@ -5,10 +5,10 @@ use polars_core::frame::DataFrame;
 use polars_core::schema::SchemaRef;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
+use polars_io::SerWriter;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::{CsvWriter, CsvWriterOptions};
 use polars_io::utils::file::AsyncWriteable;
-use polars_io::SerWriter;
 use polars_plan::dsl::SinkOptions;
 use polars_utils::priority::Priority;
 
@@ -110,7 +110,7 @@ impl SinkNode for CsvSinkNode {
                             return Ok(());
                         }
                         drop(consume_token); // Keep the consume_token until here to increase the
-                                             // backpressure.
+                        // backpressure.
                     }
                 }
 

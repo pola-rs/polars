@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Much more opinionated, but also much faster strptrime than the one given in Chrono.
 //!
 use std::sync::LazyLock;
@@ -5,7 +6,7 @@ use std::sync::LazyLock;
 use chrono::{NaiveDate, NaiveDateTime};
 use regex::Regex;
 
-use crate::chunkedarray::{polars_bail, PolarsResult};
+use crate::chunkedarray::{PolarsResult, polars_bail};
 
 static HOUR_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?[HkIl]").unwrap());
 static MINUTE_PATTERN: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"%[_-]?M").unwrap());

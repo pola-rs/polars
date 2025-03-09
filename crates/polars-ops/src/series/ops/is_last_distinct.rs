@@ -76,31 +76,19 @@ fn is_last_distinct_boolean(ca: &BooleanChunked) -> BooleanChunked {
                     first_true_found = true;
                     all_found &= first_true_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 Some(false) if !first_false_found => {
                     first_false_found = true;
                     all_found &= first_false_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 None if !first_null_found => {
                     first_null_found = true;
                     all_found &= first_null_found;
                     out.set(idx, true);
-                    if all_found {
-                        Some(())
-                    } else {
-                        None
-                    }
+                    if all_found { Some(()) } else { None }
                 },
                 _ => None,
             });

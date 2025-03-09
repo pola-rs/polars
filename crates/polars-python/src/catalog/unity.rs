@@ -11,11 +11,11 @@ use polars_io::pl_async;
 use pyo3::exceptions::PyValueError;
 use pyo3::sync::GILOnceCell;
 use pyo3::types::{PyAnyMethods, PyDict, PyList, PyNone, PyTuple};
-use pyo3::{pyclass, pymethods, Bound, IntoPyObject, Py, PyAny, PyObject, PyResult, Python};
+use pyo3::{Bound, IntoPyObject, Py, PyAny, PyObject, PyResult, Python, pyclass, pymethods};
 
 use crate::lazyframe::PyLazyFrame;
-use crate::prelude::{parse_cloud_options, Wrap};
-use crate::utils::{to_py_err, EnterPolarsExt};
+use crate::prelude::{Wrap, parse_cloud_options};
+use crate::utils::{EnterPolarsExt, to_py_err};
 
 macro_rules! pydict_insert_keys {
     ($dict:expr, {$a:expr}) => {
@@ -187,11 +187,11 @@ impl PyCatalogClient {
         let storage_update_options = PyDict::new(py);
 
         {
+            use TableCredentialsVariants::*;
             use polars_io::catalog::unity::models::{
                 TableCredentialsAws, TableCredentialsAzure, TableCredentialsGcp,
                 TableCredentialsVariants,
             };
-            use TableCredentialsVariants::*;
 
             match table_credentials.into_enum() {
                 Some(Aws(TableCredentialsAws {

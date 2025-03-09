@@ -1,5 +1,5 @@
 use super::specification::try_check_offsets_bounds;
-use super::{new_empty_array, Array, Splitable};
+use super::{Array, Splitable, new_empty_array};
 use crate::bitmap::Bitmap;
 use crate::datatypes::{ArrowDataType, Field};
 use crate::offset::{Offset, Offsets, OffsetsBuffer};
@@ -12,7 +12,7 @@ mod iterator;
 pub use iterator::*;
 mod mutable;
 pub use mutable::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 /// An [`Array`] semantically equivalent to `Vec<Option<Vec<Option<T>>>>` with Arrow's in-memory.

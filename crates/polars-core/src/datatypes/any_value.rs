@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::borrow::Cow;
 
 use arrow::types::PrimitiveType;
@@ -258,7 +259,7 @@ impl<'a> Deserialize<'a> for AnyValue<'static> {
                         return Err(serde::de::Error::unknown_variant(
                             &String::from_utf8_lossy(v),
                             VARIANTS,
-                        ))
+                        ));
                     },
                 };
                 Ok(field)

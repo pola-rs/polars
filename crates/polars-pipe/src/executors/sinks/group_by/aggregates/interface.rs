@@ -5,13 +5,13 @@ use num_traits::NumCast;
 use polars_core::datatypes::DataType;
 use polars_core::prelude::{AnyValue, Series};
 
+use crate::executors::sinks::group_by::aggregates::SumAgg;
 use crate::executors::sinks::group_by::aggregates::count::CountAgg;
 use crate::executors::sinks::group_by::aggregates::first::FirstAgg;
 use crate::executors::sinks::group_by::aggregates::last::LastAgg;
 use crate::executors::sinks::group_by::aggregates::mean::MeanAgg;
 use crate::executors::sinks::group_by::aggregates::min_max::MinMaxAgg;
 use crate::executors::sinks::group_by::aggregates::null::NullAgg;
-use crate::executors::sinks::group_by::aggregates::SumAgg;
 use crate::operators::IdxSize;
 
 #[enum_dispatch(AggregateFunction)]

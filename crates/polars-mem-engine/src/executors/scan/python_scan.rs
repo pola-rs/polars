@@ -3,7 +3,7 @@ use polars_core::utils::accumulate_dataframes_vertical;
 use pyo3::exceptions::PyStopIteration;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyNone};
-use pyo3::{intern, IntoPyObjectExt, PyTypeInfo};
+use pyo3::{IntoPyObjectExt, PyTypeInfo, intern};
 
 use self::python_dsl::PythonScanSource;
 use super::*;

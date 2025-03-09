@@ -1,9 +1,9 @@
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::compute_node_prelude::*;
 use crate::async_primitives::wait_group::WaitGroup;
-use crate::morsel::{get_ideal_morsel_size, MorselSeq, SourceToken};
+use crate::morsel::{MorselSeq, SourceToken, get_ideal_morsel_size};
 
 pub struct InMemorySourceNode {
     source: Option<Arc<DataFrame>>,

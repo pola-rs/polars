@@ -5,9 +5,9 @@ use num_traits::NumCast;
 use polars_core::frame::row::AnyValueBuffer;
 use polars_core::prelude::*;
 #[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
-use polars_time::prelude::string::infer::{infer_pattern_single, DatetimeInfer, TryFromWithUnit};
-#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
 use polars_time::prelude::string::Pattern;
+#[cfg(any(feature = "dtype-datetime", feature = "dtype-date"))]
+use polars_time::prelude::string::infer::{DatetimeInfer, TryFromWithUnit, infer_pattern_single};
 use simd_json::{BorrowedValue as Value, KnownKey, StaticNode};
 
 #[derive(Debug, Clone, PartialEq)]

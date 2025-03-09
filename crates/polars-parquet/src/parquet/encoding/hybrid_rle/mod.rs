@@ -2,8 +2,8 @@
 mod bitmap;
 mod encoder;
 
-pub use bitmap::{encode_bool as bitpacked_encode, BitmapIter};
-pub use encoder::{encode, Encoder};
+pub use bitmap::{BitmapIter, encode_bool as bitpacked_encode};
+pub use encoder::{Encoder, encode};
 
 use super::{bitpacked, uleb128};
 use crate::parquet::error::{ParquetError, ParquetResult};

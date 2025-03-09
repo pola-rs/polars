@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use either::Either;
-use polars_core::error::{polars_err, PolarsResult};
+use polars_core::error::{PolarsResult, polars_err};
 use polars_core::schema::SchemaRef;
 use polars_utils::python_function::PythonFunction;
 use pyo3::prelude::*;

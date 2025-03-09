@@ -1,9 +1,9 @@
 use polars_parquet::parquet::encoding::hybrid_rle::{self, BitmapIter, HybridRleDecoder};
 use polars_parquet::parquet::error::{ParquetError, ParquetResult};
-use polars_parquet::parquet::page::{split_buffer, DataPage, EncodedSplitBuffer};
+use polars_parquet::parquet::page::{DataPage, EncodedSplitBuffer, split_buffer};
 use polars_parquet::parquet::read::levels::get_bit_width;
 use polars_parquet::parquet::schema::Repetition;
-use polars_parquet::parquet::types::{decode, NativeType};
+use polars_parquet::parquet::types::{NativeType, decode};
 use polars_parquet::read::PhysicalType;
 use polars_parquet::write::Encoding;
 

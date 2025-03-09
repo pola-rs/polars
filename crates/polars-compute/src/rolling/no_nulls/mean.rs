@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use polars_error::polars_ensure;
 
 use super::*;
@@ -7,17 +8,17 @@ pub struct MeanWindow<'a, T> {
 }
 
 impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Div<Output = T>
-            + NumCast
-            + Add<Output = T>
-            + Sub<Output = T>,
-    > RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
+    'a,
+    T: NativeType
+        + IsFloat
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Div<Output = T>
+        + NumCast
+        + Add<Output = T>
+        + Sub<Output = T>,
+> RollingAggWindowNoNulls<'a, T> for MeanWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, params: Option<RollingFnParams>) -> Self {
         Self {

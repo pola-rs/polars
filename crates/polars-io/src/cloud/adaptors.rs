@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
+use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
-use object_store::ObjectStore;
 use polars_error::PolarsResult;
 use polars_utils::file::WriteClose;
 use tokio::io::AsyncWriteExt;
 
-use super::{object_path_from_str, CloudOptions};
+use super::{CloudOptions, object_path_from_str};
 use crate::pl_async::{get_runtime, get_upload_chunk_size};
 
 fn clone_io_err(e: &std::io::Error) -> std::io::Error {
@@ -186,9 +186,9 @@ mod tests {
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
         use super::*;
+        use crate::SerReader;
         use crate::csv::write::CsvWriter;
         use crate::prelude::{CsvReadOptions, SerWriter};
-        use crate::SerReader;
 
         let mut df = example_dataframe();
 

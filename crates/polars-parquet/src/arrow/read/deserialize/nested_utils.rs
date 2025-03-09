@@ -2,10 +2,10 @@ use arrow::bitmap::utils::BitmapIter;
 use arrow::bitmap::{Bitmap, BitmapBuilder, MutableBitmap};
 
 use super::utils::PageDecoder;
-use super::{utils, Filter};
+use super::{Filter, utils};
 use crate::parquet::encoding::hybrid_rle::{HybridRleChunk, HybridRleDecoder};
 use crate::parquet::error::ParquetResult;
-use crate::parquet::page::{split_buffer, DataPage};
+use crate::parquet::page::{DataPage, split_buffer};
 use crate::parquet::read::levels::get_bit_width;
 
 pub struct Nested {
@@ -90,10 +90,11 @@ impl Nested {
                 validity.extend_constant(self.num_invalids, false);
             }
 
-            debug_assert!(self
-                .validity
-                .as_ref()
-                .is_none_or(|v| v.len() == self.length));
+            debug_assert!(
+                self.validity
+                    .as_ref()
+                    .is_none_or(|v| v.len() == self.length)
+            );
         }
 
         self.num_valids = 0;

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(feature = "decompress")]
 use std::io::Read;
 use std::mem::MaybeUninit;

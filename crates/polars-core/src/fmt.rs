@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::{fmt, str};
 
 #[cfg(any(
@@ -104,11 +105,7 @@ fn parse_env_var_limit(name: &str, default: usize) -> usize {
     parse_env_var(name).map_or(
         default,
         |n: i64| {
-            if n < 0 {
-                usize::MAX
-            } else {
-                n as usize
-            }
+            if n < 0 { usize::MAX } else { n as usize }
         },
     )
 }
@@ -1312,6 +1309,7 @@ fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
     feature = "dtype-date",
     feature = "dtype-datetime"
 ))]
+#[allow(unsafe_op_in_unsafe_fn)]
 mod test {
     use crate::prelude::*;
 

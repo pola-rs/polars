@@ -1,5 +1,5 @@
-use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
+use polars_utils::vec::PushUnchecked;
 
 use super::PrimitiveArray;
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};

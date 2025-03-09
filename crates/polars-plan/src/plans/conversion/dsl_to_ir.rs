@@ -668,7 +668,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt,
             )
             .map_err(|e| e.context(failed_here!(join)))
-            .map(|t| t.0)
+            .map(|t| t.0);
         },
         DslPlan::HStack {
             input,
@@ -948,7 +948,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 Ok(node.unwrap())
             } else {
                 to_alp_impl(owned(dsl), ctxt)
-            }
+            };
         },
     };
     Ok(ctxt.lp_arena.add(v))
@@ -1001,11 +1001,15 @@ fn expand_filter(
                 }
 
                 let msg = if cfg!(feature = "python") {
-                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
+                    format!(
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
+                    )
                 } else {
-                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
+                    format!(
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
+                    )
                 };
                 polars_bail!(ComputeError: msg)
             },

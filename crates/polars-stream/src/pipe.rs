@@ -4,7 +4,7 @@ use polars_error::PolarsResult;
 use polars_utils::priority::Priority;
 
 use crate::async_executor::{JoinHandle, TaskPriority, TaskScope};
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
