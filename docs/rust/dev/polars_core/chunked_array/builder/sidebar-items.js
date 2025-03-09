@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["list"],"struct":["BinViewChunkedBuilder","BooleanChunkedBuilder","NullChunkedBuilder","PrimitiveChunkedBuilder"],"trait":["ChunkedBuilder","NewChunkedArray"],"type":["BinaryChunkedBuilder","StringChunkedBuilder"]};
