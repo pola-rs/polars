@@ -5,14 +5,16 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
+from polars._typing import EngineType
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
+from polars.lazyframe.engine_config import GPUEngine
 
 if TYPE_CHECKING:
     import sys
     from types import TracebackType
 
-    from polars._typing import EngineType, FloatFmt
+    from polars._typing import FloatFmt
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -1498,6 +1500,9 @@ class Config(contextlib.ContextDecorator):
         ValueError: if engine is not recognised.
         """
         supported_engines = set(get_args(get_args(EngineType)[0]))
+        if isinstance(engine, GPUEngine):
+            msg = "GPU engine with non-defaults not yet supported"
+            raise NotImplementedError(msg)
         if engine not in {*supported_engines, None}:
             msg = "Invalid engine"
             raise ValueError(msg)
