@@ -2853,7 +2853,7 @@ class ExprStringNameSpace:
 
     @deprecate_function(
          "Use `str.join` instead. Note that the default `delimiter` for `str.join`"
-         " is an empty string instead of a hyphen.", 
+         " is an empty string instead of a hyphen.",
          version="1.0.0",
     )
     def concat(
