@@ -318,7 +318,6 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
         Arc::new([Buffer::from(new_buffer)]) as Arc<[_]>
     };
 
-    dbg!(buffers.len());
     unsafe {
         BinaryViewArrayGeneric::new_unchecked(
             dtype,
