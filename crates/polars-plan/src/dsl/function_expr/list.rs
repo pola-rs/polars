@@ -83,8 +83,8 @@ impl ListFunction {
             Sum => mapper.nested_sum_type(),
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
-            Mean => mapper.with_dtype(DataType::Float64),
-            Median => mapper.map_to_float_dtype(),
+            Mean => mapper.nested_mean_median_type(),
+            Median => mapper.nested_mean_median_type(),
             Std(_) => mapper.map_to_float_dtype(), // Need to also have this sometimes marked as float32 or duration..
             Var(_) => mapper.map_to_float_dtype(),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
