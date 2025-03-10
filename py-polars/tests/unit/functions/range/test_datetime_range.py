@@ -640,4 +640,4 @@ def test_dt_range_with_nanosecond_interval_19931() -> None:
 def test_datetime_range_with_nanoseconds_overflow() -> None:
     s = pl.datetime_range(date(2000, 1, 1), date(2300, 1, 1), "24h", eager=True)
     assert s.dtype == pl.Datetime("us")
-    assert s.shape == (109574, )
+    assert s.shape == (109574,)
