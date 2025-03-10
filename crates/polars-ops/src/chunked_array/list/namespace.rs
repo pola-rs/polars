@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fmt::Write;
 
 use arrow::array::ValueSize;
@@ -511,6 +512,134 @@ pub trait ListNameSpaceImpl: AsList {
         let list_ca = self.as_list();
 
         list_ca.apply_amortized(|s| s.as_ref().drop_nulls())
+    }
+
+    #[cfg(feature = "list_pad")]
+    fn lst_pad_start(&self, fill_value: &Column, length: &Column) -> PolarsResult<ListChunked> {
+        let ca = self.as_list();
+        let inner_dtype = ca.inner_dtype();
+        let fill_dtype = fill_value.dtype();
+        let super_type = try_get_supertype(inner_dtype, fill_dtype)?;
+
+        let dtype = &DataType::List(Box::new(super_type.clone()));
+        let ca = ca.cast(dtype)?;
+        let ca = ca.list().unwrap();
+
+        let length = if length.len() == 1 {
+            &length.new_from_index(0, ca.len())
+        } else {
+            length
+        };
+        let length = length.strict_cast(&DataType::UInt64)?;
+        let mut length = length.u64()?.into_iter();
+
+        let fill_value = if fill_value.len() == 1 {
+            &fill_value.new_from_index(0, ca.len())
+        } else {
+            fill_value
+        };
+        let fill_value = fill_value.cast(&super_type)?;
+
+        let out: ListChunked = match super_type {
+            DataType::Int64 => {
+                let fill_value = fill_value.i64()?;
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.i64().unwrap();
+                    let length = length.next().unwrap().unwrap() as usize;
+                    let mut fill_values;
+                    match length.cmp(&ca.len()) {
+                        Ordering::Equal | Ordering::Less => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Greater => {
+                            fill_values = Int64Chunked::new_vec(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); length - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
+                    };
+                    Some(fill_values.into())
+                })
+            },
+
+            DataType::Float64 => {
+                let fill_value = fill_value.f64()?;
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.f64().unwrap();
+                    let length = length.next().unwrap().unwrap() as usize;
+                    let mut fill_values;
+                    match length.cmp(&ca.len()) {
+                        Ordering::Equal | Ordering::Less => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Greater => {
+                            fill_values = Float64Chunked::new_vec(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); length - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
+                    };
+                    Some(fill_values.into())
+                })
+            },
+            DataType::String => {
+                let fill_value = fill_value.str()?;
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.str().unwrap();
+                    let length = length.next().unwrap().unwrap() as usize;
+                    let mut fill_values;
+                    match length.cmp(&ca.len()) {
+                        Ordering::Equal | Ordering::Less => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Greater => {
+                            fill_values = StringChunked::new(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); length - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
+                    };
+                    Some(fill_values.into())
+                })
+            },
+            DataType::Boolean => {
+                let fill_value = fill_value.bool()?;
+                ca.zip_and_apply_amortized(fill_value, |s, fill_value| {
+                    let binding = s.unwrap();
+                    let s: &Series = binding.as_ref();
+                    let ca = s.bool().unwrap();
+                    let length = length.next().unwrap().unwrap() as usize;
+                    let mut fill_values;
+                    match length.cmp(&ca.len()) {
+                        Ordering::Equal | Ordering::Less => {
+                            fill_values = ca.clone();
+                        },
+                        Ordering::Greater => {
+                            fill_values = BooleanChunked::new(
+                                PlSmallStr::EMPTY,
+                                vec![fill_value.unwrap(); length - ca.len()],
+                            );
+                            let _ = fill_values.append(ca);
+                        },
+                    };
+                    Some(fill_values.into())
+                })
+            },
+            dt => {
+                polars_bail!(InvalidOperation: "list.pad_start() doesn't work on data type {}", dt)
+            },
+        };
+
+        Ok(out)
     }
 
     #[cfg(feature = "list_sample")]
