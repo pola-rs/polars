@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Type agnostic columnar data structure.
 use crate::chunked_array::flags::StatisticsFlags;
 pub use crate::prelude::ChunkCompareEq;
@@ -38,11 +39,11 @@ use num_traits::NumCast;
 use polars_error::feature_gated;
 pub use series_trait::{IsSorted, *};
 
+use crate::POOL;
 use crate::chunked_array::cast::CastOptions;
 #[cfg(feature = "zip_with")]
 use crate::series::arithmetic::coerce_lhs_rhs;
-use crate::utils::{handle_casting_failures, materialize_dyn_int, Wrap};
-use crate::POOL;
+use crate::utils::{Wrap, handle_casting_failures, materialize_dyn_int};
 
 /// # Series
 /// The columnar data type for a DataFrame.

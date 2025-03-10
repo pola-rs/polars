@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::ListArray;

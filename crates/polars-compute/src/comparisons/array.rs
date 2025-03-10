@@ -3,8 +3,8 @@ use arrow::array::{
     FixedSizeListArray, ListArray, NullArray, PrimitiveArray, StructArray, Utf8Array,
     Utf8ViewArray,
 };
-use arrow::bitmap::utils::count_zeros;
 use arrow::bitmap::Bitmap;
+use arrow::bitmap::utils::count_zeros;
 use arrow::datatypes::ArrowDataType;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::types::{days_ms, f16, i256, months_days_ns};

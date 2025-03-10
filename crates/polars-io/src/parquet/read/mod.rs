@@ -43,6 +43,6 @@ pub use utils::materialize_empty_df;
 pub mod _internal {
     pub use super::mmap::to_deserializer;
     pub use super::predicates::{collect_statistics_with_live_columns, read_this_row_group};
-    pub use super::read_impl::{calc_prefilter_cost, PrefilterMaskSetting};
+    pub use super::read_impl::{PrefilterMaskSetting, calc_prefilter_cost};
     pub use super::utils::ensure_matching_dtypes_if_found;
 }

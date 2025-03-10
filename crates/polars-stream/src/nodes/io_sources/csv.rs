@@ -1,40 +1,40 @@
 use std::sync::Arc;
 
+#[cfg(feature = "dtype-categorical")]
+use polars_core::StringCacheHolder;
 use polars_core::config;
 use polars_core::prelude::Field;
 use polars_core::schema::{SchemaExt, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
-#[cfg(feature = "dtype-categorical")]
-use polars_core::StringCacheHolder;
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::prelude::_csv_read_internal::{
-    cast_columns, find_starting_point, prepare_csv_schema, read_chunk, CountLines,
-    NullValuesCompiled,
+    CountLines, NullValuesCompiled, cast_columns, find_starting_point, prepare_csv_schema,
+    read_chunk,
 };
 use polars_io::prelude::buffer::validate_utf8;
 use polars_io::prelude::{CsvEncoding, CsvParseOptions, CsvReadOptions};
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::slice::SplitSlicePosition;
-use polars_io::RowIndex;
 use polars_plan::dsl::ScanSource;
-use polars_plan::plans::{isolated_csv_file_info, FileInfo};
+use polars_plan::plans::{FileInfo, isolated_csv_file_info};
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::IdxSize;
 use polars_utils::mmap::MemSlice;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use super::multi_scan::MultiScanable;
 use super::{RowRestriction, SourceNode, SourceOutput};
+use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 use crate::async_executor::{self, spawn};
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
 use crate::nodes::compute_node_prelude::*;
 use crate::nodes::io_sources::MorselOutput;
 use crate::nodes::{MorselSeq, TaskPriority};
-use crate::DEFAULT_DISTRIBUTOR_BUFFER_SIZE;
 
 struct LineBatch {
     bytes: MemSlice,
@@ -53,7 +53,7 @@ type AsyncTaskData = (
 pub struct CsvSourceNode {
     scan_source: ScanSource,
     file_info: FileInfo,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     options: CsvReadOptions,
     schema: Option<SchemaRef>,
     verbose: bool,
@@ -63,7 +63,7 @@ impl CsvSourceNode {
     pub fn new(
         scan_source: ScanSource,
         file_info: FileInfo,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         options: CsvReadOptions,
     ) -> Self {
         let verbose = config::verbose();
@@ -559,10 +559,10 @@ impl MultiScanable for CsvSourceNode {
     ) -> PolarsResult<Self> {
         let has_row_index = row_index.is_some();
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let mut csv_options = options.clone();
         let mut file_info = isolated_csv_file_info(

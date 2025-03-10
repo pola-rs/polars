@@ -36,14 +36,14 @@ impl fmt::Display for TreeFmtAExpr<'_> {
                     write!(f, "strict cast({})", dtype)
                 } else {
                     write!(f, "cast({})", dtype)
-                }
+                };
             },
             AExpr::Sort { options, .. } => {
                 return write!(
                     f,
                     "sort: {}{}{}",
                     options.descending as u8, options.nulls_last as u8, options.multithreaded as u8
-                )
+                );
             },
             AExpr::Gather { .. } => "gather",
             AExpr::SortBy { sort_options, .. } => {
@@ -64,7 +64,7 @@ impl fmt::Display for TreeFmtAExpr<'_> {
             },
             AExpr::Ternary { .. } => "ternary",
             AExpr::AnonymousFunction { options, .. } => {
-                return write!(f, "anonymous_function: {}", options.fmt_str)
+                return write!(f, "anonymous_function: {}", options.fmt_str);
             },
             AExpr::Function { function, .. } => return write!(f, "function: {function}"),
             AExpr::Window { .. } => "window",
@@ -165,7 +165,7 @@ impl<'a> TreeFmtNode<'a> {
     }
 
     fn node_data(&self) -> TreeFmtNodeData<'_> {
-        use {with_header as wh, TreeFmtNodeContent as C, TreeFmtNodeData as ND};
+        use {TreeFmtNodeContent as C, TreeFmtNodeData as ND, with_header as wh};
 
         let lp = &self.lp;
         let h = &self.h;
@@ -823,11 +823,7 @@ impl From<TreeView<'_>> for Canvas {
         }
 
         fn even_odd(a: usize, b: usize) -> usize {
-            if a % 2 == 0 && b % 2 == 1 {
-                1
-            } else {
-                0
-            }
+            if a % 2 == 0 && b % 2 == 1 { 1 } else { 0 }
         }
 
         for (i, row) in value.matrix.iter().enumerate() {

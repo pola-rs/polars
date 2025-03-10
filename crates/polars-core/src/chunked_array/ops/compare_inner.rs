@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 //! Used to speed up TotalEq and TotalOrd of elements within an array.
 
 use std::cmp::Ordering;

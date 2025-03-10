@@ -12,9 +12,9 @@ pub mod string;
 pub mod take_agg;
 mod time;
 
+pub use time::{Ambiguous, NonExistent};
 #[cfg(feature = "timezones")]
 pub use time::{convert_to_naive_local, convert_to_naive_local_opt};
-pub use time::{Ambiguous, NonExistent};
 
 /// Internal state of [SlicesIterator]
 #[derive(Debug, PartialEq)]

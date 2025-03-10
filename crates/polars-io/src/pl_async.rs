@@ -1,11 +1,11 @@
 use std::error::Error;
 use std::future::Future;
 use std::ops::Deref;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
 
-use polars_core::config::{self, verbose};
 use polars_core::POOL;
+use polars_core::config::{self, verbose};
 use tokio::runtime::{Builder, Runtime};
 use tokio::sync::Semaphore;
 

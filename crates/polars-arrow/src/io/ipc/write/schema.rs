@@ -150,8 +150,8 @@ fn serialize_time_unit(unit: &TimeUnit) -> arrow_format::ipc::TimeUnit {
 }
 
 fn serialize_type(dtype: &ArrowDataType) -> arrow_format::ipc::Type {
-    use arrow_format::ipc;
     use ArrowDataType::*;
+    use arrow_format::ipc;
     match dtype {
         Null => ipc::Type::Null(Box::new(ipc::Null {})),
         Boolean => ipc::Type::Bool(Box::new(ipc::Bool {})),

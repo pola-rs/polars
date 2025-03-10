@@ -1,10 +1,10 @@
-use arrow::legacy::error::{polars_bail, PolarsResult};
+use arrow::legacy::error::{PolarsResult, polars_bail};
 use polars_core::prelude::Field;
 use polars_core::schema::Schema;
 use polars_utils::pl_str::PlSmallStr;
 
 use super::{ColumnsUdf, Expr, GetOutput, OpaqueColumnUdf};
-use crate::prelude::{new_column_udf, Context, FunctionOptions};
+use crate::prelude::{Context, FunctionOptions, new_column_udf};
 
 /// Represents a user-defined function
 #[derive(Clone)]

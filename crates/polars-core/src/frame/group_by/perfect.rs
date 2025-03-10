@@ -6,11 +6,11 @@ use polars_utils::idx_vec::IdxVec;
 use polars_utils::sync::SyncPtr;
 use rayon::prelude::*;
 
+use crate::POOL;
 #[cfg(all(feature = "dtype-categorical", feature = "performant"))]
 use crate::config::verbose;
 use crate::datatypes::*;
 use crate::prelude::*;
-use crate::POOL;
 
 impl<T> ChunkedArray<T>
 where

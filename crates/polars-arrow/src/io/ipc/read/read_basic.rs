@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::io::{Read, Seek, SeekFrom};
 
-use polars_error::{polars_bail, polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_err};
 
 use super::super::compression;
 use super::super::endianness::is_native_little_endian;
@@ -269,7 +269,7 @@ fn read_compressed_bitmap<R: Read + Seek>(
     reader: &mut R,
     scratch: &mut Vec<u8>,
 ) -> PolarsResult<Vec<u8>> {
-    let mut buffer = vec![0; (length + 7) / 8];
+    let mut buffer = vec![0; length.div_ceil(8)];
 
     scratch.clear();
     scratch.try_reserve(bytes)?;

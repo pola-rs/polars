@@ -4,7 +4,7 @@ use arrow::array::*;
 use arrow::bitmap::Bitmap;
 use arrow::offset::{Offsets, OffsetsBuffer};
 use polars_compute::gather::sublist::list::array_to_unit_list;
-use polars_error::{polars_bail, polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_bail, polars_ensure};
 use polars_utils::format_tuple;
 
 use crate::chunked_array::builder::get_list_builder;
@@ -248,7 +248,7 @@ impl Series {
                 let rows = dimensions[0];
                 let cols = dimensions[1];
 
-                if s_ref.len() == 0_usize {
+                if s_ref.is_empty() {
                     if rows.get_or_infer(0) == 0 && cols.get_or_infer(0) <= 1 {
                         let s = reshape_fast_path(s.name().clone(), s_ref);
                         return Ok(s);

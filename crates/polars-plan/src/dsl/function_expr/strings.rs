@@ -9,7 +9,7 @@ use polars_core::utils::handle_casting_failures;
 #[cfg(feature = "dtype-struct")]
 use polars_utils::format_pl_smallstr;
 #[cfg(feature = "regex")]
-use regex::{escape, NoExpand, Regex};
+use regex::{NoExpand, Regex, escape};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
@@ -225,7 +225,7 @@ impl Display for StringFunction {
             #[cfg(feature = "regex")]
             Contains { .. } => "contains",
             CountMatches(_) => "count_matches",
-            EndsWith { .. } => "ends_with",
+            EndsWith => "ends_with",
             Extract(_) => "extract",
             #[cfg(feature = "concat_str")]
             ConcatHorizontal { .. } => "concat_horizontal",
@@ -238,8 +238,8 @@ impl Display for StringFunction {
             ToInteger { .. } => "to_integer",
             #[cfg(feature = "regex")]
             Find { .. } => "find",
-            Head { .. } => "head",
-            Tail { .. } => "tail",
+            Head => "head",
+            Tail => "tail",
             #[cfg(feature = "extract_jsonpath")]
             JsonDecode { .. } => "json_decode",
             #[cfg(feature = "extract_jsonpath")]
@@ -266,7 +266,7 @@ impl Display for StringFunction {
             #[cfg(feature = "binary_encoding")]
             Base64Decode(_) => "base64_decode",
             Slice => "slice",
-            StartsWith { .. } => "starts_with",
+            StartsWith => "starts_with",
             StripChars => "strip_chars",
             StripCharsStart => "strip_chars_start",
             StripCharsEnd => "strip_chars_end",
@@ -322,8 +322,8 @@ impl From<StringFunction> for SpecialEq<Arc<dyn ColumnsUdf>> {
             CountMatches(literal) => {
                 map_as_slice!(strings::count_matches, literal)
             },
-            EndsWith { .. } => map_as_slice!(strings::ends_with),
-            StartsWith { .. } => map_as_slice!(strings::starts_with),
+            EndsWith => map_as_slice!(strings::ends_with),
+            StartsWith => map_as_slice!(strings::starts_with),
             Extract(group_index) => map_as_slice!(strings::extract, group_index),
             ExtractAll => {
                 map_as_slice!(strings::extract_all)

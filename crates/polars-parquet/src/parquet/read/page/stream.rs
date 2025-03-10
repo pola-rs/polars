@@ -5,7 +5,7 @@ use futures::{AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, Stream};
 use polars_parquet_format::thrift::protocol::TCompactInputStreamProtocol;
 use polars_utils::mmap::MemSlice;
 
-use super::reader::{finish_page, PageMetaData};
+use super::reader::{PageMetaData, finish_page};
 use crate::parquet::compression::Compression;
 use crate::parquet::error::{ParquetError, ParquetResult};
 use crate::parquet::metadata::{ColumnChunkMetadata, Descriptor};

@@ -7,7 +7,7 @@ use crate::prelude::*;
 
 /// Replace values by different values of the same data type.
 pub fn replace(s: &Series, old: &Series, new: &Series) -> PolarsResult<Series> {
-    if old.len() == 0 {
+    if old.is_empty() {
         return Ok(s.clone());
     }
     validate_old(old)?;
@@ -45,7 +45,7 @@ pub fn replace_or_default(
     };
     let default = default.cast(&return_dtype)?;
 
-    if old.len() == 0 {
+    if old.is_empty() {
         let out = if default.len() == 1 && s.len() != 1 {
             default.new_from_index(0, s.len())
         } else {
@@ -73,7 +73,7 @@ pub fn replace_strict(
     new: &Series,
     return_dtype: Option<DataType>,
 ) -> PolarsResult<Series> {
-    if old.len() == 0 {
+    if old.is_empty() {
         polars_ensure!(
             s.len() == s.null_count(),
             InvalidOperation: "must specify which values to replace"

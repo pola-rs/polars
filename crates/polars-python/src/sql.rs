@@ -1,8 +1,8 @@
 use polars::sql::SQLContext;
 use pyo3::prelude::*;
 
-use crate::error::PyPolarsErr;
 use crate::PyLazyFrame;
+use crate::error::PyPolarsErr;
 
 #[pyclass(unsendable)]
 #[repr(transparent)]

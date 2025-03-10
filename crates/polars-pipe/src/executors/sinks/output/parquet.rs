@@ -2,7 +2,7 @@ use std::any::Any;
 use std::path::Path;
 use std::thread::JoinHandle;
 
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use polars_core::prelude::*;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::write::{

@@ -5,10 +5,10 @@ use arrow::compute::concatenate::concatenate;
 use arrow::legacy::utils::CustomIterTools;
 use arrow::offset::Offsets;
 use polars_compute::rolling::QuantileMethod;
+use polars_core::POOL;
 use polars_core::prelude::*;
 use polars_core::series::IsSorted;
-use polars_core::utils::{NoNull, _split_offsets};
-use polars_core::POOL;
+use polars_core::utils::{_split_offsets, NoNull};
 #[cfg(feature = "propagate_nans")]
 use polars_ops::prelude::nan_propagating_aggregate;
 use rayon::prelude::*;
@@ -602,7 +602,7 @@ impl PartitionedAggregation for AggregationExpr {
                     offsets.push(length_so_far);
                     values.push(s.chunks()[0].clone());
 
-                    if s.len() == 0 {
+                    if s.is_empty() {
                         can_fast_explode = false;
                     }
                     Ok(())

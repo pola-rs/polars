@@ -1,9 +1,10 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 #[cfg(any(feature = "fmt", feature = "fmt_no_tty"))]
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter, Write};
 use std::str::FromStr;
-use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::{fmt, str};
 
 #[cfg(any(
@@ -104,11 +105,7 @@ fn parse_env_var_limit(name: &str, default: usize) -> usize {
     parse_env_var(name).map_or(
         default,
         |n: i64| {
-            if n < 0 {
-                usize::MAX
-            } else {
-                n as usize
-            }
+            if n < 0 { usize::MAX } else { n as usize }
         },
     )
 }
@@ -608,7 +605,7 @@ impl Display for DataFrame {
             let padding = 2; // eg: one char either side of the value
 
             let (n_first, n_last) = if self.width() > max_n_cols {
-                ((max_n_cols + 1) / 2, max_n_cols / 2)
+                (max_n_cols.div_ceil(2), max_n_cols / 2)
             } else {
                 (self.width(), 0)
             };
@@ -839,15 +836,14 @@ fn fmt_int_string_custom(num: &str, group_size: u8, group_separator: &str) -> St
         } else {
             0
         };
-        let int_body = num[sign_offset..]
-            .as_bytes()
+        let int_body = &num.as_bytes()[sign_offset..]
             .rchunks(group_size as usize)
             .rev()
             .map(str::from_utf8)
             .collect::<Result<Vec<&str>, _>>()
             .unwrap()
             .join(group_separator);
-        out.push_str(&int_body);
+        out.push_str(int_body);
         out
     }
 }
@@ -1313,6 +1309,7 @@ fn fmt_decimal(f: &mut Formatter<'_>, v: i128, scale: usize) -> fmt::Result {
     feature = "dtype-date",
     feature = "dtype-datetime"
 ))]
+#[allow(unsafe_op_in_unsafe_fn)]
 mod test {
     use crate::prelude::*;
 
@@ -1338,7 +1335,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "10") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1350,7 +1347,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1362,7 +1359,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1374,7 +1371,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1386,7 +1383,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_long)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "4") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1408,7 +1405,7 @@ Series: 'a' [list[i32]]
         builder.append_opt_slice(None);
         let list_short = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1420,7 +1417,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "0") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1432,7 +1429,7 @@ Series: 'a' [list[i32]]
             format!("{:?}", list_short)
         );
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "-1") };
 
         assert_eq!(
             r#"shape: (2,)
@@ -1454,7 +1451,7 @@ Series: 'a' [list[i32]]
         builder.append_opt_slice(None);
         let list_empty = builder.finish().into_series();
 
-        std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "");
+        unsafe { std::env::set_var("POLARS_FMT_TABLE_CELL_LIST_LEN", "") };
 
         assert_eq!(
             r#"shape: (2,)

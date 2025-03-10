@@ -5,18 +5,18 @@ use futures::{StreamExt, TryStreamExt};
 use object_store::path::Path;
 use object_store::{ObjectMeta, ObjectStore};
 use polars_core::prelude::{InitHashMaps, PlHashMap};
-use polars_error::{to_compute_err, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, to_compute_err};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::pl_async::{
-    self, get_concurrency_limit, get_download_chunk_size, tune_with_concurrency_budget,
-    with_concurrency_budget, MAX_BUDGET_PER_REQUEST,
+    self, MAX_BUDGET_PER_REQUEST, get_concurrency_limit, get_download_chunk_size,
+    tune_with_concurrency_budget, with_concurrency_budget,
 };
 
 mod inner {
     use std::future::Future;
-    use std::sync::atomic::AtomicBool;
     use std::sync::Arc;
+    use std::sync::atomic::AtomicBool;
 
     use object_store::ObjectStore;
     use polars_core::config;
@@ -155,8 +155,8 @@ impl PolarsObjectStore {
         path: &'a Path,
         ranges: T,
     ) -> impl StreamExt<Item = PolarsResult<Bytes>>
-           + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
-           + use<'a, T> {
+    + TryStreamExt<Ok = Bytes, Error = PolarsError, Item = PolarsResult<Bytes>>
+    + use<'a, T> {
         futures::stream::iter(
             ranges
                 .map(|range| async { store.get_range(path, range).await.map_err(to_compute_err) }),

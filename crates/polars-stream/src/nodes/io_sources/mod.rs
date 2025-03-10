@@ -1,9 +1,9 @@
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use futures::stream::FuturesUnordered;
 use polars_core::config;
 use polars_error::PolarsResult;
 use polars_expr::state::ExecutionState;
@@ -12,7 +12,7 @@ use polars_utils::IdxSize;
 
 use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, TaskPriority};
 use crate::async_executor::AbortOnDropHandle;
-use crate::async_primitives::connector::{connector, Receiver, Sender};
+use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
 
 #[cfg(feature = "csv")]

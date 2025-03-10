@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 #[cfg(feature = "round_series")]
 use polars_ops::prelude::floor_div_series;
 

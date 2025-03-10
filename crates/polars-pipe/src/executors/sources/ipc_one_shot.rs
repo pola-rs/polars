@@ -2,8 +2,8 @@ use std::fs::File;
 use std::path::Path;
 
 use polars_core::prelude::*;
-use polars_io::ipc::IpcReader;
 use polars_io::SerReader;
+use polars_io::ipc::IpcReader;
 
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
 

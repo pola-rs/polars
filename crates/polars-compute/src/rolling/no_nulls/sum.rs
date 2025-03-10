@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use super::*;
 
 fn sum_kahan<
@@ -68,15 +69,15 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
 }
 
 impl<
-        'a,
-        T: NativeType
-            + IsFloat
-            + std::iter::Sum
-            + AddAssign
-            + SubAssign
-            + Sub<Output = T>
-            + Add<Output = T>,
-    > RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
+    'a,
+    T: NativeType
+        + IsFloat
+        + std::iter::Sum
+        + AddAssign
+        + SubAssign
+        + Sub<Output = T>
+        + Add<Output = T>,
+> RollingAggWindowNoNulls<'a, T> for SumWindow<'a, T>
 {
     fn new(slice: &'a [T], start: usize, end: usize, _params: Option<RollingFnParams>) -> Self {
         let (sum, err) = sum_kahan(&slice[start..end]);

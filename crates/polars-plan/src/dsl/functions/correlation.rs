@@ -40,9 +40,9 @@ pub fn pearson_corr(a: Expr, b: Expr) -> Expr {
 /// Missing data will be excluded from the computation.
 /// # Arguments
 /// * propagate_nans
-///     If `true` any `NaN` encountered will lead to `NaN` in the output.
-///     If to `false` then `NaN` are regarded as larger than any finite number
-///     and thus lead to the highest rank.
+///   If `true` any `NaN` encountered will lead to `NaN` in the output.
+///   If to `false` then `NaN` are regarded as larger than any finite number
+///   and thus lead to the highest rank.
 #[cfg(all(feature = "rank", feature = "propagate_nans"))]
 pub fn spearman_rank_corr(a: Expr, b: Expr, propagate_nans: bool) -> Expr {
     let input = vec![a, b];

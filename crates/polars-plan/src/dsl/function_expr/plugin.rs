@@ -1,7 +1,8 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::ffi::CStr;
 use std::sync::{LazyLock, RwLock};
 
-use arrow::ffi::{import_field_from_c, ArrowSchema};
+use arrow::ffi::{ArrowSchema, import_field_from_c};
 use libloading::Library;
 
 use super::*;

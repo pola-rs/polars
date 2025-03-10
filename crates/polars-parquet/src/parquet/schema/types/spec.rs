@@ -63,7 +63,7 @@ fn check_decimal_invariants(
         _ => {
             return Err(ParquetError::oos(
                 "DECIMAL can only annotate INT32, INT64, BYTE_ARRAY and FIXED_LEN_BYTE_ARRAY",
-            ))
+            ));
         },
     };
     Ok(())
@@ -170,7 +170,7 @@ pub fn check_logical_invariants(
             return Err(ParquetError::oos(format!(
                 "Cannot annotate {:?} from {:?} fields",
                 a, b
-            )))
+            )));
         },
     };
     Ok(())

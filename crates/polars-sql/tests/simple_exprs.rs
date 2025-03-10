@@ -513,10 +513,12 @@ fn test_arr_agg() {
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY a) AS a FROM df",
-            vec![col("a")
-                .sort_by(vec![col("a")], SortMultipleOptions::default())
-                .implode()
-                .alias("a")],
+            vec![
+                col("a")
+                    .sort_by(vec![col("a")], SortMultipleOptions::default())
+                    .implode()
+                    .alias("a"),
+            ],
         ),
         (
             "SELECT ARRAY_AGG(a) AS a FROM df",
@@ -528,10 +530,12 @@ fn test_arr_agg() {
         ),
         (
             "SELECT ARRAY_AGG(a ORDER BY b LIMIT 2) FROM df",
-            vec![col("a")
-                .sort_by(vec![col("b")], SortMultipleOptions::default())
-                .head(Some(2))
-                .implode()],
+            vec![
+                col("a")
+                    .sort_by(vec![col("b")], SortMultipleOptions::default())
+                    .head(Some(2))
+                    .implode(),
+            ],
         ),
     ];
 

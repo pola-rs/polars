@@ -1,10 +1,10 @@
-use polars_core::error::{polars_ensure, PolarsResult};
+use polars_core::error::{PolarsResult, polars_ensure};
 use polars_core::prelude::DataType;
 use polars_utils::arena::{Arena, Node};
 
-use super::{AExpr, OptimizationRule, IR};
-use crate::plans::conversion::get_schema;
+use super::{AExpr, IR, OptimizationRule};
 use crate::plans::Context;
+use crate::plans::conversion::get_schema;
 
 pub struct TypeCheckRule;
 

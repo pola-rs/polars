@@ -2,14 +2,14 @@
 
 use std::sync::Arc;
 
+use object_store::ObjectStore;
 use object_store::buffered::BufWriter;
 use object_store::path::Path;
-use object_store::ObjectStore;
 use polars_error::PolarsResult;
 use polars_utils::file::WriteClose;
 use tokio::io::AsyncWriteExt;
 
-use super::{object_path_from_str, CloudOptions};
+use super::{CloudOptions, object_path_from_str};
 use crate::pl_async::{get_runtime, get_upload_chunk_size};
 
 fn clone_io_err(e: &std::io::Error) -> std::io::Error {
@@ -68,10 +68,7 @@ impl BlockingCloudWriter {
     pub fn try_into_inner(mut self) -> std::io::Result<BufWriter> {
         // We can't just return self.state:
         // * cannot move out of type `adaptors::BlockingCloudWriter`, which implements the `Drop` trait
-        std::mem::replace(
-            &mut self.state,
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "")),
-        )
+        std::mem::replace(&mut self.state, Err(std::io::Error::other("")))
     }
 
     /// Closes the writer, or returns the existing error if it exists. After this function is called
@@ -79,7 +76,7 @@ impl BlockingCloudWriter {
     pub fn close(&mut self) -> std::io::Result<()> {
         match self.try_with_writer(|writer| get_runtime().block_in_place_on(writer.shutdown())) {
             Ok(_) => {
-                self.state = Err(std::io::Error::new(std::io::ErrorKind::Other, "closed"));
+                self.state = Err(std::io::Error::other("closed"));
                 Ok(())
             },
             Err(e) => Err(e),
@@ -189,9 +186,9 @@ mod tests {
     #[test]
     fn cloudwriter_from_cloudlocation_test() {
         use super::*;
+        use crate::SerReader;
         use crate::csv::write::CsvWriter;
         use crate::prelude::{CsvReadOptions, SerWriter};
-        use crate::SerReader;
 
         let mut df = example_dataframe();
 

@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::*;
 use arrow::legacy::trusted_len::TrustedLenPush;
 use hashbrown::hash_map::Entry;
@@ -6,7 +7,7 @@ use polars_utils::itertools::Itertools;
 
 use crate::hashing::_HASHMAP_INIT_SIZE;
 use crate::prelude::*;
-use crate::{using_string_cache, StringCache, POOL};
+use crate::{POOL, StringCache, using_string_cache};
 
 pub struct CategoricalChunkedBuilder {
     cat_builder: UInt32Vec,
@@ -420,7 +421,7 @@ impl CategoricalChunked {
 #[cfg(test)]
 mod test {
     use crate::prelude::*;
-    use crate::{disable_string_cache, enable_string_cache, SINGLE_LOCK};
+    use crate::{SINGLE_LOCK, disable_string_cache, enable_string_cache};
 
     #[test]
     fn test_categorical_rev() -> PolarsResult<()> {

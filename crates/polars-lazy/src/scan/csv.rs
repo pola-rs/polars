@@ -1,14 +1,14 @@
 use std::path::{Path, PathBuf};
 
 use polars_core::prelude::*;
+use polars_io::RowIndex;
 use polars_io::cloud::CloudOptions;
 use polars_io::csv::read::{
-    infer_file_schema, CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues,
+    CommentPrefix, CsvEncoding, CsvParseOptions, CsvReadOptions, NullValues, infer_file_schema,
 };
 use polars_io::path_utils::expand_paths;
 use polars_io::utils::compression::maybe_decompress_bytes;
 use polars_io::utils::get_reader_bytes;
-use polars_io::RowIndex;
 use polars_utils::mmap::MemSlice;
 
 use crate::prelude::*;
@@ -367,7 +367,6 @@ impl LazyFileListReader for LazyCsvReader {
     }
 
     /// Rechunk the memory to contiguous chunks when parsing is done.
-    #[must_use]
     fn with_rechunk(mut self, rechunk: bool) -> Self {
         self.read_options.rechunk = rechunk;
         self

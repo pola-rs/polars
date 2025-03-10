@@ -6,13 +6,13 @@ use std::fmt::Write;
 use arrow::array::StructArray;
 use arrow::bitmap::Bitmap;
 use arrow::compute::utils::combine_validities_and;
-use polars_error::{polars_ensure, PolarsResult};
+use polars_error::{PolarsResult, polars_ensure};
 use polars_utils::aliases::PlHashMap;
 use polars_utils::itertools::Itertools;
 
+use crate::chunked_array::ChunkedArray;
 use crate::chunked_array::cast::CastOptions;
 use crate::chunked_array::ops::row_encode::{_get_rows_encoded_arr, _get_rows_encoded_ca};
-use crate::chunked_array::ChunkedArray;
 use crate::prelude::*;
 use crate::series::Series;
 use crate::utils::Container;
@@ -263,9 +263,7 @@ impl StructChunked {
                 Ok(out.into_series())
             },
             DataType::String => {
-                let ca = self.clone();
-                ca.rechunk();
-
+                let ca = self.rechunk();
                 let fields = ca.fields_as_series();
                 let mut iters = fields.iter().map(|s| s.iter()).collect::<Vec<_>>();
                 let cap = ca.len();

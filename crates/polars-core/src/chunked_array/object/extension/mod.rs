@@ -12,8 +12,8 @@ use arrow::datatypes::ExtensionType;
 use polars_extension::PolarsExtension;
 use polars_utils::format_pl_smallstr;
 
-use crate::prelude::*;
 use crate::PROCESS_ID;
+use crate::prelude::*;
 
 static POLARS_ALLOW_EXTENSION: AtomicBool = AtomicBool::new(false);
 
@@ -77,7 +77,7 @@ pub(crate) fn create_extension<I: Iterator<Item = Option<T>> + TrustedLen, T: Si
     // when we transmute from &[u8] to T, T must be aligned correctly,
     // so we pad with bytes until the alignment matches
     let n_padding = (buf.as_ptr() as usize) % t_alignment;
-    buf.extend(std::iter::repeat(0).take(n_padding));
+    buf.extend(std::iter::repeat_n(0, n_padding));
 
     // transmute T as bytes and copy in buffer
     for opt_t in iter.into_iter() {

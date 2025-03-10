@@ -2,7 +2,7 @@ use bytemuck::Zeroable;
 use polars_utils::no_call_const;
 
 use crate::array::binview::BinaryViewValueIter;
-use crate::array::builder::{make_builder, ShareStrategy, StaticArrayBuilder};
+use crate::array::builder::{ShareStrategy, StaticArrayBuilder, make_builder};
 use crate::array::fixed_size_list::FixedSizeListArrayBuilder;
 use crate::array::static_array_collect::ArrayFromIterDtype;
 use crate::array::{
@@ -10,8 +10,8 @@ use crate::array::{
     FixedSizeListArray, ListArray, ListValuesIter, MutableBinaryViewArray, PrimitiveArray,
     StructArray, Utf8Array, Utf8ValuesIter, Utf8ViewArray,
 };
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::datatypes::ArrowDataType;
 use crate::trusted_len::TrustedLen;
 use crate::types::NativeType;
@@ -95,7 +95,7 @@ pub trait StaticArray:
     fn full_null(length: usize, dtype: ArrowDataType) -> Self;
 
     fn full(length: usize, value: Self::ValueT<'_>, dtype: ArrowDataType) -> Self {
-        Self::arr_from_iter_with_dtype(dtype, std::iter::repeat(value).take(length))
+        Self::arr_from_iter_with_dtype(dtype, std::iter::repeat_n(value, length))
     }
 }
 

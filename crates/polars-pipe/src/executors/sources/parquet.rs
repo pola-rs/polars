@@ -1,15 +1,16 @@
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use arrow::datatypes::ArrowSchema;
 use futures::{StreamExt, TryStreamExt};
+use polars_core::POOL;
 use polars_core::config::{self, get_file_prefetch_size};
 use polars_core::error::*;
 use polars_core::prelude::Series;
-use polars_core::POOL;
+use polars_io::SerReader;
 use polars_io::cloud::CloudOptions;
 use polars_io::parquet::metadata::FileMetadataRef;
 use polars_io::parquet::read::{BatchedParquetReader, ParquetOptions, ParquetReader};
@@ -19,13 +20,12 @@ use polars_io::predicates::ScanIOPredicate;
 #[cfg(feature = "async")]
 use polars_io::prelude::ParquetAsyncReader;
 use polars_io::utils::slice::split_slice_at_file;
-use polars_io::SerReader;
 use polars_plan::dsl::ScanSources;
 use polars_plan::plans::FileInfo;
-use polars_plan::prelude::hive::HivePartitions;
 use polars_plan::prelude::FileScanOptions;
-use polars_utils::itertools::Itertools;
+use polars_plan::prelude::hive::HivePartitions;
 use polars_utils::IdxSize;
+use polars_utils::itertools::Itertools;
 
 use crate::executors::sources::get_source_index;
 use crate::operators::{DataChunk, PExecutionContext, Source, SourceResult};
@@ -39,7 +39,7 @@ pub struct ParquetSource {
     iter: Range<usize>,
     sources: ScanSources,
     options: ParquetOptions,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     #[allow(dead_code)]
     cloud_options: Option<CloudOptions>,
     first_metadata: Option<FileMetadataRef>,
@@ -73,7 +73,7 @@ impl ParquetSource {
     ) -> PolarsResult<(
         &PathBuf,
         ParquetOptions,
-        FileScanOptions,
+        Box<FileScanOptions>,
         usize,
         Option<Vec<Series>>,
     )> {
@@ -249,7 +249,7 @@ impl ParquetSource {
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
         first_metadata: Option<FileMetadataRef>,
-        file_options: FileScanOptions,
+        file_options: Box<FileScanOptions>,
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         verbose: bool,

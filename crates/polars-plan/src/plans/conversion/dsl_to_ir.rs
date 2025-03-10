@@ -161,7 +161,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     }
                 }
 
-                let sources = match &scan_type {
+                let sources = match &*scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { cloud_options, .. } => sources
                         .expand_paths_with_hive_update(&mut file_options, cloud_options.as_ref())?,
@@ -179,7 +179,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     FileScan::Anonymous { .. } => sources,
                 };
 
-                let mut file_info = match &mut scan_type {
+                let mut file_info = match &mut *scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
@@ -291,17 +291,19 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 }
 
                 file_options.include_file_paths =
-                    file_options.include_file_paths.filter(|_| match scan_type {
-                        #[cfg(feature = "parquet")]
-                        FileScan::Parquet { .. } => true,
-                        #[cfg(feature = "ipc")]
-                        FileScan::Ipc { .. } => true,
-                        #[cfg(feature = "csv")]
-                        FileScan::Csv { .. } => true,
-                        #[cfg(feature = "json")]
-                        FileScan::NDJson { .. } => true,
-                        FileScan::Anonymous { .. } => false,
-                    });
+                    file_options
+                        .include_file_paths
+                        .filter(|_| match &*scan_type {
+                            #[cfg(feature = "parquet")]
+                            FileScan::Parquet { .. } => true,
+                            #[cfg(feature = "ipc")]
+                            FileScan::Ipc { .. } => true,
+                            #[cfg(feature = "csv")]
+                            FileScan::Csv { .. } => true,
+                            #[cfg(feature = "json")]
+                            FileScan::NDJson { .. } => true,
+                            FileScan::Anonymous { .. } => false,
+                        });
 
                 if let Some(ref file_path_col) = file_options.include_file_paths {
                     let schema = Arc::make_mut(&mut file_info.schema);
@@ -336,7 +338,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         .unwrap();
                 }
 
-                let ir = if sources.is_empty() && !matches!(scan_type, FileScan::Anonymous { .. }) {
+                let ir = if sources.is_empty() && !matches!(&*scan_type, FileScan::Anonymous { .. })
+                {
                     IR::DataFrameScan {
                         df: Arc::new(DataFrame::empty_with_schema(&file_info.schema)),
                         schema: file_info.schema,
@@ -567,8 +570,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 )
                 .map_err(|e| e.context(failed_here!(sort)))?;
 
-                nulls_last.extend(std::iter::repeat(n).take(exprs.len()));
-                descending.extend(std::iter::repeat(d).take(exprs.len()));
+                nulls_last.extend(std::iter::repeat_n(n, exprs.len()));
+                descending.extend(std::iter::repeat_n(d, exprs.len()));
                 expanded_cols.extend(exprs);
             }
             sort_options.nulls_last = nulls_last;
@@ -665,7 +668,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 ctxt,
             )
             .map_err(|e| e.context(failed_here!(join)))
-            .map(|t| t.0)
+            .map(|t| t.0);
         },
         DslPlan::HStack {
             input,
@@ -945,7 +948,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                 Ok(node.unwrap())
             } else {
                 to_alp_impl(owned(dsl), ctxt)
-            }
+            };
         },
     };
     Ok(ctxt.lp_arena.add(v))
@@ -998,11 +1001,15 @@ fn expand_filter(
                 }
 
                 let msg = if cfg!(feature = "python") {
-                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression.")
+                    format!(
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all' or `any' expression."
+                    )
                 } else {
-                    format!("The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
-                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression.")
+                    format!(
+                        "The predicate passed to 'LazyFrame.filter' expanded to multiple expressions: \n\n{expanded}\n\
+                            This is ambiguous. Try to combine the predicates with the 'all_horizontal' or `any_horizontal' expression."
+                    )
                 };
                 polars_bail!(ComputeError: msg)
             },

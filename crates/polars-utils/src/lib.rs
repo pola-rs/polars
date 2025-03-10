@@ -31,6 +31,7 @@ pub mod priority;
 pub mod select;
 pub mod slice;
 pub mod sort;
+pub mod sparse_init_vec;
 pub mod sync;
 #[cfg(feature = "sysinfo")]
 pub mod sys;

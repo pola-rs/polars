@@ -231,12 +231,14 @@ pub(crate) fn insert_streaming_nodes(
             },
             Scan {
                 scan_type,
-                file_options:
-                    FileScanOptions {
-                        pre_slice: slice, ..
-                    },
+                file_options,
                 ..
-            } if scan_type.streamable() && slice.map(|slice| slice.0 >= 0).unwrap_or(true) => {
+            } if scan_type.streamable()
+                && file_options
+                    .pre_slice
+                    .map(|slice| slice.0 >= 0)
+                    .unwrap_or(true) =>
+            {
                 if state.streamable {
                     state.sources.push(root);
                     pipeline_trees[current_idx].push(state)

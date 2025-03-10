@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use hashbrown::hash_map::Entry;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::aliases::{InitHashMaps, PlHashMap};
 use polars_utils::itertools::Itertools;
 use polars_utils::vec::PushUnchecked;

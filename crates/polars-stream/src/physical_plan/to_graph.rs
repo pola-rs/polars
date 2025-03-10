@@ -5,7 +5,7 @@ use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
 use polars_expr::groups::new_hash_grouper;
-use polars_expr::planner::{create_physical_expr, get_expr_depth_limit, ExpressionConversionState};
+use polars_expr::planner::{ExpressionConversionState, create_physical_expr, get_expr_depth_limit};
 use polars_expr::reduce::into_reduction;
 use polars_expr::state::ExecutionState;
 use polars_mem_engine::{create_physical_plan, create_scan_predicate};
@@ -439,7 +439,7 @@ fn to_graph_rec<'a>(
                 .as_ref()
                 .map(|p| p.to_io(None, file_schema.clone()));
 
-            match scan_type {
+            match &**scan_type {
                 #[cfg(feature = "parquet")]
                 polars_plan::dsl::FileScan::Parquet {
                     options,
@@ -565,7 +565,7 @@ fn to_graph_rec<'a>(
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
-                    scan_type,
+                    *scan_type,
                     polars_plan::prelude::FileScan::Parquet {
                         options: polars_io::prelude::ParquetOptions {
                             use_statistics: true,
@@ -596,7 +596,7 @@ fn to_graph_rec<'a>(
             {
                 use polars_plan::prelude::FileScan;
 
-                match scan_type {
+                match *scan_type {
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet {
                         options,
@@ -632,7 +632,7 @@ fn to_graph_rec<'a>(
                                     file_info,
                                     options,
                                     cloud_options,
-                                    file_options,
+                                    *file_options,
                                     first_metadata,
                                 )?,
                             ),

@@ -12,8 +12,8 @@ use polars_utils::pl_str::PlSmallStr;
 
 use crate::executors::operators::PlaceHolder;
 use crate::operators::{
-    chunks_to_df_unchecked, DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext,
-    Sink, SinkResult,
+    DataChunk, FinalizedSink, Operator, OperatorResult, PExecutionContext, Sink, SinkResult,
+    chunks_to_df_unchecked,
 };
 
 #[derive(Default)]

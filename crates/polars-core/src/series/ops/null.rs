@@ -102,24 +102,16 @@ impl Series {
             },
             _ => {
                 macro_rules! primitive {
-                    ($type:ty) => {{
-                        ChunkedArray::<$type>::full_null(name, size).into_series()
-                    }};
+                    ($type:ty) => {{ ChunkedArray::<$type>::full_null(name, size).into_series() }};
                 }
                 macro_rules! bool {
-                    () => {{
-                        ChunkedArray::<BooleanType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<BooleanType>::full_null(name, size).into_series() }};
                 }
                 macro_rules! string {
-                    () => {{
-                        ChunkedArray::<StringType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<StringType>::full_null(name, size).into_series() }};
                 }
                 macro_rules! binary {
-                    () => {{
-                        ChunkedArray::<BinaryType>::full_null(name, size).into_series()
-                    }};
+                    () => {{ ChunkedArray::<BinaryType>::full_null(name, size).into_series() }};
                 }
                 match_dtype_to_logical_apply_macro!(dtype, primitive, string, binary, bool)
             },

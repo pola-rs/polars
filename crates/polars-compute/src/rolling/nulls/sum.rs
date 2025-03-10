@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use super::*;
 
 pub struct SumWindow<'a, T> {

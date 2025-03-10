@@ -1,10 +1,10 @@
 use arrow::array::{PrimitiveArray, Utf8ViewArray};
 use arrow::datatypes::{ArrowDataType, TimeUnit};
-use arrow::temporal_conversions::{parse_offset, parse_offset_tz};
 pub use arrow::temporal_conversions::{
     EPOCH_DAYS_FROM_CE, MICROSECONDS, MICROSECONDS_IN_DAY, MILLISECONDS, MILLISECONDS_IN_DAY,
     NANOSECONDS, NANOSECONDS_IN_DAY, SECONDS_IN_DAY,
 };
+use arrow::temporal_conversions::{parse_offset, parse_offset_tz};
 use chrono::format::{Parsed, StrftimeItems};
 use polars_error::PolarsResult;
 use polars_utils::pl_str::PlSmallStr;

@@ -1,8 +1,8 @@
 use std::fmt::Debug;
 
+use polars_utils::IdxSize;
 use polars_utils::itertools::Itertools;
 use polars_utils::total_ord::TotalEq;
-use polars_utils::IdxSize;
 
 use crate::types::NativeType;
 

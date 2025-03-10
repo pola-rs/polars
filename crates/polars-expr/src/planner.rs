@@ -155,7 +155,9 @@ impl ExpressionConversionState {
 
             if self.local.depth_limit == 0 {
                 let depth = get_expr_depth_limit().unwrap();
-                polars_warn!(format!("encountered expression deeper than {depth} elements; this may overflow the stack, consider refactoring"))
+                polars_warn!(format!(
+                    "encountered expression deeper than {depth} elements; this may overflow the stack, consider refactoring"
+                ))
             }
         }
     }
@@ -195,11 +197,12 @@ fn create_physical_expr_inner(
     match expr_arena.get(expression) {
         Len => Ok(Arc::new(phys_expr::CountExpr::new())),
         Window {
-            mut function,
+            function,
             partition_by,
             order_by,
             options,
         } => {
+            let mut function = *function;
             state.set_window();
             let phys_function = create_physical_expr_inner(
                 function,

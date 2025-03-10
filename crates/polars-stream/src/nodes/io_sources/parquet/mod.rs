@@ -5,29 +5,29 @@ use polars_core::prelude::ArrowSchema;
 use polars_core::schema::{Schema, SchemaExt, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_core::utils::slice_offsets;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_io::predicates::ScanIOPredicate;
 use polars_io::prelude::{FileMetadata, ParquetOptions};
 use polars_io::utils::byte_source::DynByteSourceBuilder;
-use polars_io::{pl_async, RowIndex};
+use polars_io::{RowIndex, pl_async};
 use polars_parquet::read::schema::infer_schema_with_options;
 use polars_plan::dsl::{ScanSource, ScanSources};
 use polars_plan::plans::FileInfo;
 use polars_plan::prelude::FileScanOptions;
+use polars_utils::IdxSize;
 use polars_utils::index::AtomicIdxSize;
 use polars_utils::mem::prefetch::get_memory_prefetch_func;
 use polars_utils::pl_str::PlSmallStr;
-use polars_utils::IdxSize;
 
 use super::multi_scan::MultiScanable;
 use super::{MorselOutput, RowRestriction, SourceNode, SourceOutput};
 use crate::async_executor::spawn;
-use crate::async_primitives::connector::{connector, Receiver};
+use crate::async_primitives::connector::{Receiver, connector};
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::morsel::SourceToken;
-use crate::nodes::compute_node_prelude::*;
 use crate::nodes::TaskPriority;
+use crate::nodes::compute_node_prelude::*;
 use crate::utils::task_handles_ext;
 
 mod init;
@@ -47,7 +47,7 @@ pub struct ParquetSourceNode {
     predicate: Option<ScanIOPredicate>,
     options: ParquetOptions,
     cloud_options: Option<CloudOptions>,
-    file_options: FileScanOptions,
+    file_options: Box<FileScanOptions>,
     normalized_pre_slice: Option<(usize, usize)>,
     metadata: Arc<FileMetadata>,
     // Run-time vars
@@ -82,7 +82,7 @@ impl ParquetSourceNode {
         predicate: Option<ScanIOPredicate>,
         options: ParquetOptions,
         cloud_options: Option<CloudOptions>,
-        mut file_options: FileScanOptions,
+        mut file_options: Box<FileScanOptions>,
         metadata: Arc<FileMetadata>,
     ) -> Self {
         let verbose = config::verbose();
@@ -302,10 +302,10 @@ impl MultiScanable for ParquetSourceNode {
         let mut options = options.clone();
         options.schema = Some(schema.clone());
 
-        let file_options = FileScanOptions {
+        let file_options = Box::new(FileScanOptions {
             row_index: row_index.map(|name| RowIndex { name, offset: 0 }),
             ..Default::default()
-        };
+        });
 
         let file_info = FileInfo::new(
             schema.clone(),

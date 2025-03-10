@@ -10,15 +10,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use polars::io::mmap::MmapBytesReader;
-use polars_error::{polars_err, PolarsResult};
+use polars_error::{PolarsResult, polars_err};
 use polars_io::cloud::CloudOptions;
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::MemSlice;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyTypeError;
 use pyo3::prelude::*;
 use pyo3::types::{PyBytes, PyString, PyStringMethods};
-use pyo3::IntoPyObjectExt;
 
 use crate::error::PyPolarsErr;
 use crate::prelude::resolve_homedir;
@@ -108,10 +108,10 @@ fn pyerr_to_io_err(e: PyErr) -> io::Error {
 
         match e_as_object.call_method(py, "__str__", (), None) {
             Ok(repr) => match repr.extract::<String>(py) {
-                Ok(s) => io::Error::new(io::ErrorKind::Other, s),
-                Err(_e) => io::Error::new(io::ErrorKind::Other, "An unknown error has occurred"),
+                Ok(s) => io::Error::other(s),
+                Err(_e) => io::Error::other("An unknown error has occurred"),
             },
-            Err(_) => io::Error::new(io::ErrorKind::Other, "Err doesn't have __str__"),
+            Err(_) => io::Error::other("Err doesn't have __str__"),
         }
     })
 }

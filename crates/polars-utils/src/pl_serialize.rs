@@ -3,7 +3,7 @@
 //! Currently provides two serialization scheme's.
 //! - Self-describing (and thus more forward compatible) activated with `FC: true`
 //! - Compact activated with `FC: false`
-use polars_error::{to_compute_err, PolarsResult};
+use polars_error::{PolarsResult, to_compute_err};
 
 fn serialize_impl<W, T, const FC: bool>(writer: W, value: &T) -> PolarsResult<()>
 where

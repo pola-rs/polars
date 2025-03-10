@@ -10,11 +10,11 @@ use polars_core::prelude::{AnyValue, SchemaRef, Series, SortOptions};
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
 use polars_utils::pl_str::PlSmallStr;
 
-use crate::executors::sinks::io::{block_thread_until_io_thread_done, IOThread};
+use crate::executors::sinks::io::{IOThread, block_thread_until_io_thread_done};
 use crate::executors::sinks::memory::MemTracker;
 use crate::executors::sinks::sort::ooc::sort_ooc;
 use crate::operators::{DataChunk, FinalizedSink, PExecutionContext, Sink, SinkResult};
-use crate::pipeline::{morsels_per_sink, FORCE_OOC};
+use crate::pipeline::{FORCE_OOC, morsels_per_sink};
 
 pub struct SortSink {
     schema: SchemaRef,

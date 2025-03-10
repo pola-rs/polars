@@ -1,12 +1,12 @@
 use std::cmp::Reverse;
 
 use polars_core::frame::DataFrame;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_io::RowIndex;
-use polars_utils::priority::Priority;
 use polars_utils::IdxSize;
+use polars_utils::priority::Priority;
 
-use crate::async_executor::{spawn, AbortOnDropHandle, TaskPriority};
+use crate::async_executor::{AbortOnDropHandle, TaskPriority, spawn};
 use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;

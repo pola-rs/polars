@@ -12,7 +12,7 @@ mod semi_anti_join;
 use arrow::Either;
 use polars_core::datatypes::PlHashSet;
 use polars_core::prelude::*;
-use polars_io::{hive, RowIndex};
+use polars_io::{RowIndex, hive};
 use recursive::recursive;
 #[cfg(feature = "semi_anti_join")]
 use semi_anti_join::process_semi_anti_join;
@@ -442,10 +442,8 @@ impl ProjectionPushDown {
                 if self.is_count_star {
                     ctx.process_count_star_at_scan(&file_info.schema, expr_arena);
                 }
-                let do_optimization = match scan_type {
-                    FileScan::Anonymous { ref function, .. } => {
-                        function.allows_projection_pushdown()
-                    },
+                let do_optimization = match &*scan_type {
+                    FileScan::Anonymous { function, .. } => function.allows_projection_pushdown(),
                     #[cfg(feature = "json")]
                     FileScan::NDJson { .. } => true,
                     #[cfg(feature = "ipc")]
@@ -466,7 +464,7 @@ impl ProjectionPushDown {
 
                     if let Some(projection) = file_options.with_columns.as_mut() {
                         if projection.is_empty() {
-                            match &scan_type {
+                            match &*scan_type {
                                 #[cfg(feature = "parquet")]
                                 FileScan::Parquet { .. } => {},
                                 #[cfg(feature = "ipc")]

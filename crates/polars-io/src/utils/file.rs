@@ -4,7 +4,7 @@ use std::path::Path;
 #[cfg(feature = "cloud")]
 pub use async_writeable::AsyncWriteable;
 use polars_core::config;
-use polars_error::{feature_gated, PolarsError, PolarsResult};
+use polars_error::{PolarsError, PolarsResult, feature_gated};
 use polars_utils::create_file;
 use polars_utils::file::{ClosableFile, WriteClose};
 use polars_utils::mmap::ensure_not_mapped;
@@ -17,6 +17,7 @@ use crate::{is_cloud_url, resolve_homedir};
 /// This implements `DerefMut` to a trait object implementing [`std::io::Write`].
 ///
 /// Also see: `Writeable::try_into_async_writeable` and `AsyncWriteable`.
+#[allow(clippy::large_enum_variant)] // It will be boxed
 pub enum Writeable {
     Local(std::fs::File),
     #[cfg(feature = "cloud")]

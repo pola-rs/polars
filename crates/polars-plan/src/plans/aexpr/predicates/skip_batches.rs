@@ -12,7 +12,7 @@ use super::super::evaluate::{constant_evaluate, into_column};
 use super::super::{AExpr, BooleanFunction, Operator, OutputName};
 use crate::dsl::FunctionExpr;
 use crate::plans::predicates::get_binary_expr_col_and_lv;
-use crate::plans::{aexpr_to_leaf_names_iter, rename_columns, ExprIR, LiteralValue};
+use crate::plans::{ExprIR, LiteralValue, aexpr_to_leaf_names_iter, rename_columns};
 use crate::prelude::FunctionOptions;
 
 /// Return a new boolean expression determines whether a batch can be skipped based on min, max and
@@ -46,9 +46,7 @@ fn aexpr_to_skip_batch_predicate_rec(
     use Operator as O;
 
     macro_rules! rec {
-        ($node:expr) => {{
-            aexpr_to_skip_batch_predicate_rec($node, expr_arena, schema, depth + 1)
-        }};
+        ($node:expr) => {{ aexpr_to_skip_batch_predicate_rec($node, expr_arena, schema, depth + 1) }};
     }
     macro_rules! and {
         ($l:expr, $($r:expr),+ $(,)?) => {{
@@ -87,19 +85,13 @@ fn aexpr_to_skip_batch_predicate_rec(
         ($op:ident, $l:expr, $r:expr) => {{ binexpr!(op: O::$op, $l, $r) }};
     }
     macro_rules! lt {
-        ($l:expr, $r:expr) => {{
-            binexpr!(Lt, $l, $r)
-        }};
+        ($l:expr, $r:expr) => {{ binexpr!(Lt, $l, $r) }};
     }
     macro_rules! gt {
-        ($l:expr, $r:expr) => {{
-            binexpr!(Gt, $l, $r)
-        }};
+        ($l:expr, $r:expr) => {{ binexpr!(Gt, $l, $r) }};
     }
     macro_rules! eq {
-        ($l:expr, $r:expr) => {{
-            binexpr!(Eq, $l, $r)
-        }};
+        ($l:expr, $r:expr) => {{ binexpr!(Eq, $l, $r) }};
     }
     macro_rules! null_count {
         ($i:expr) => {{
@@ -170,32 +162,16 @@ fn aexpr_to_skip_batch_predicate_rec(
         }};
     }
     macro_rules! col {
-        (len) => {{
-            col!(PlSmallStr::from_static("len"))
-        }};
-        ($name:expr) => {{
-            expr_arena.add(AExpr::Column($name))
-        }};
-        (min: $name:expr) => {{
-            col!(format_pl_smallstr!("{}_min", $name))
-        }};
-        (max: $name:expr) => {{
-            col!(format_pl_smallstr!("{}_max", $name))
-        }};
-        (null_count: $name:expr) => {{
-            col!(format_pl_smallstr!("{}_nc", $name))
-        }};
+        (len) => {{ col!(PlSmallStr::from_static("len")) }};
+        ($name:expr) => {{ expr_arena.add(AExpr::Column($name)) }};
+        (min: $name:expr) => {{ col!(format_pl_smallstr!("{}_min", $name)) }};
+        (max: $name:expr) => {{ col!(format_pl_smallstr!("{}_max", $name)) }};
+        (null_count: $name:expr) => {{ col!(format_pl_smallstr!("{}_nc", $name)) }};
     }
     macro_rules! lv {
-        ($lv:expr) => {{
-            expr_arena.add(AExpr::Literal(LiteralValue::OtherScalar(Scalar::from($lv))))
-        }};
-        (idx: $lv:expr) => {{
-            expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize($lv)))
-        }};
-        (bool: $lv:expr) => {{
-            expr_arena.add(AExpr::Literal(LiteralValue::Boolean($lv)))
-        }};
+        ($lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::OtherScalar(Scalar::from($lv)))) }};
+        (idx: $lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::new_idxsize($lv))) }};
+        (bool: $lv:expr) => {{ expr_arena.add(AExpr::Literal(LiteralValue::Boolean($lv))) }};
     }
 
     if let Some(Some(lv)) = constant_evaluate(e, expr_arena, schema, 0) {

@@ -27,7 +27,7 @@ pub use time::time_to_time64ns;
 
 pub use self::conversion::*;
 #[cfg(feature = "timezones")]
-use crate::prelude::{polars_bail, PolarsResult};
+use crate::prelude::{PolarsResult, polars_bail};
 
 #[cfg(feature = "timezones")]
 static FIXED_OFFSET_PATTERN: &str = r#"(?x)

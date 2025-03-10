@@ -39,8 +39,8 @@ fn accept_as_io_predicate(e: &Expr) -> bool {
                 #[cfg(feature = "log")]
                 FunctionExpr::Entropy { .. }
                 | FunctionExpr::Log { .. }
-                | FunctionExpr::Log1p { .. }
-                | FunctionExpr::Exp { .. } => {},
+                | FunctionExpr::Log1p
+                | FunctionExpr::Exp => {},
                 #[cfg(feature = "abs")]
                 FunctionExpr::Abs => {},
                 #[cfg(feature = "trigonometry")]

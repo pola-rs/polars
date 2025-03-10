@@ -3,8 +3,8 @@ use std::sync::Arc;
 
 use polars_core::datatypes::{DataType, Field};
 use polars_core::error::*;
-use polars_core::frame::column::Column;
 use polars_core::frame::DataFrame;
+use polars_core::frame::column::Column;
 use polars_core::schema::Schema;
 use pyo3::prelude::*;
 use pyo3::pybacked::PyBackedBytes;
@@ -22,7 +22,7 @@ pub static mut CALL_DF_UDF_PYTHON: Option<
 > = None;
 
 pub use polars_utils::python_function::{
-    PythonFunction, PYTHON3_VERSION, PYTHON_SERDE_MAGIC_BYTE_MARK,
+    PYTHON_SERDE_MAGIC_BYTE_MARK, PYTHON3_VERSION, PythonFunction,
 };
 
 pub struct PythonUdfExpression {

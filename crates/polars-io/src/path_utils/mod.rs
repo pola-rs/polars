@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, LazyLock};
 
 use polars_core::config;
-use polars_core::error::{polars_bail, to_compute_err, PolarsError, PolarsResult};
+use polars_core::error::{PolarsError, PolarsResult, polars_bail, to_compute_err};
 use polars_utils::pl_str::PlSmallStr;
 use regex::Regex;
 
@@ -50,8 +50,7 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
             if let Ok(v) = id {
                 std::env::temp_dir().join(format!("polars-{}/", v))
             } else {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
+                return Err(std::io::Error::other(
                     "could not load $USER or $HOME environment variables",
                 ));
             }
@@ -84,10 +83,10 @@ pub static POLARS_TEMP_DIR_BASE_PATH: LazyLock<Box<Path>> = LazyLock::new(|| {
                 let perms = std::fs::metadata(path.as_ref())?.permissions();
 
                 if (perms.mode() % 0o1000) != 0o700 {
-                    std::io::Result::Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        format!("permission mismatch: {:?}", perms),
-                    ))
+                    std::io::Result::Err(std::io::Error::other(format!(
+                        "permission mismatch: {:?}",
+                        perms
+                    )))
                 } else {
                     std::io::Result::Ok(())
                 }
@@ -515,11 +514,7 @@ pub fn expand_paths_hive(
 pub(crate) fn ensure_directory_init(path: &Path) -> std::io::Result<()> {
     let result = std::fs::create_dir_all(path);
 
-    if path.is_dir() {
-        Ok(())
-    } else {
-        result
-    }
+    if path.is_dir() { Ok(()) } else { result }
 }
 
 #[cfg(test)]

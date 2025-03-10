@@ -4,12 +4,12 @@ use std::sync::Mutex;
 
 use polars_core::config::verbose;
 use polars_core::prelude::*;
-use polars_expr::{create_physical_expr, ExpressionConversionState};
+use polars_expr::{ExpressionConversionState, create_physical_expr};
 use polars_io::predicates::{PhysicalIoExpr, StatsEvaluator};
 use polars_pipe::expressions::PhysicalPipedExpr;
 use polars_pipe::operators::chunks::DataChunk;
 use polars_pipe::pipeline::{
-    create_pipeline, execute_pipeline, get_dummy_operator, get_operator, CallBacks, PipeLine,
+    CallBacks, PipeLine, create_pipeline, execute_pipeline, get_dummy_operator, get_operator,
 };
 use polars_plan::prelude::expr_ir::ExprIR;
 

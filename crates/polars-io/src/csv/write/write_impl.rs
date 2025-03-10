@@ -4,8 +4,8 @@ use std::io::Write;
 
 use arrow::array::NullArray;
 use arrow::legacy::time_zone::Tz;
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_error::polars_ensure;
 use rayon::prelude::*;
 use serializer::{serializer_for, string_serializer};
@@ -28,7 +28,7 @@ pub(crate) fn write<W: Write>(
             DataType::Object(_) => {
                 return Err(PolarsError::ComputeError(
                     "csv writer does not support object dtype".into(),
-                ))
+                ));
             },
             _ => false,
         };

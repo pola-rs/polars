@@ -5,9 +5,9 @@ use bytemuck::allocation::zeroed_vec;
 #[cfg(feature = "timezones")]
 use chrono_tz::Tz;
 use num_traits::{FromPrimitive, ToPrimitive};
+use polars_compute::rolling::RollingFnParams;
 use polars_compute::rolling::no_nulls::{self, RollingAggWindowNoNulls};
 use polars_compute::rolling::quantile_filter::SealedRolling;
-use polars_compute::rolling::RollingFnParams;
 
 use super::*;
 

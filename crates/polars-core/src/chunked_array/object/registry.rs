@@ -8,6 +8,7 @@ use std::ops::Deref;
 use std::sync::{Arc, LazyLock, RwLock};
 
 use arrow::array::ArrayRef;
+use arrow::array::builder::ArrayBuilder;
 use arrow::datatypes::ArrowDataType;
 use polars_utils::pl_str::PlSmallStr;
 
@@ -40,7 +41,9 @@ static GLOBAL_OBJECT_REGISTRY: LazyLock<RwLock<Option<ObjectRegistry>>> =
 
 /// This trait can be registered, after which that global registration
 /// can be used to materialize object types
-pub trait AnonymousObjectBuilder {
+pub trait AnonymousObjectBuilder: ArrayBuilder {
+    fn as_array_builder(self: Box<Self>) -> Box<dyn ArrayBuilder>;
+
     /// # Safety
     /// Expect `ObjectArray<T>` arrays.
     unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series;
@@ -73,10 +76,15 @@ pub trait AnonymousObjectBuilder {
 }
 
 impl<T: PolarsObject> AnonymousObjectBuilder for ObjectChunkedBuilder<T> {
-    // Expect ObjectArray<T> arrays.
+    /// # Safety
+    /// Expects `ObjectArray<T>` arrays.
     unsafe fn from_chunks(self: Box<Self>, chunks: Vec<ArrayRef>) -> Series {
         ObjectChunked::<T>::new_with_compute_len(Arc::new(self.field().clone()), chunks)
             .into_series()
+    }
+
+    fn as_array_builder(self: Box<Self>) -> Box<dyn ArrayBuilder> {
+        self
     }
 
     fn append_null(&mut self) {

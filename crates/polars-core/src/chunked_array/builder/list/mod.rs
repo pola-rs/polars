@@ -97,7 +97,7 @@ pub fn get_list_builder(
                 list_capacity,
                 value_capacity,
                 rev_map.clone(),
-            )
+            );
         },
         #[cfg(feature = "dtype-categorical")]
         DataType::Enum(Some(rev_map), ordering) => {

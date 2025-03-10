@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use arrow::array::{
     Array, ArrayCollectIterExt, BinaryArray, BinaryViewArray, BooleanArray, FixedSizeListArray,
     ListArray, NullArray, PrimitiveArray, StaticArray, StructArray, Utf8ViewArray,
@@ -138,10 +139,12 @@ where
     assert_eq!(widths.len(), arrays.len());
 
     debug_assert!(widths.iter().all(|x| *x > 0));
-    debug_assert!(arrays
-        .iter()
-        .zip(widths)
-        .all(|(arr, width)| arr.len() == output_height * *width || arr.len() == *width));
+    debug_assert!(
+        arrays
+            .iter()
+            .zip(widths)
+            .all(|(arr, width)| arr.len() == output_height * *width || arr.len() == *width)
+    );
 
     // We modulo the array length to support broadcasting.
     let lengths = arrays

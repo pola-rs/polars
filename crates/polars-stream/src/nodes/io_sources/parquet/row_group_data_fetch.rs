@@ -6,7 +6,7 @@ use polars_core::series::IsSorted;
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
 use polars_io::predicates::ScanIOPredicate;
-use polars_io::prelude::{create_sorting_map, FileMetadata};
+use polars_io::prelude::{FileMetadata, create_sorting_map};
 use polars_io::utils::byte_source::{ByteSource, DynByteSource};
 use polars_parquet::read::RowGroupMetadata;
 use polars_utils::mmap::MemSlice;

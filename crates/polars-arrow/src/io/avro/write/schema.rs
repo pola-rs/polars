@@ -2,7 +2,7 @@ use avro_schema::schema::{
     BytesLogical, Field as AvroField, Fixed, FixedLogical, IntLogical, LongLogical, Record,
     Schema as AvroSchema,
 };
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 
 use crate::datatypes::*;
 

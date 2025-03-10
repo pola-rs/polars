@@ -1,10 +1,10 @@
 use arrow::datatypes::{
-    ArrowDataType, ArrowSchema, Field, Metadata, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES,
+    ArrowDataType, ArrowSchema, DTYPE_CATEGORICAL, DTYPE_ENUM_VALUES, Field, Metadata,
 };
 use arrow::io::ipc::read::deserialize_schema;
-use base64::engine::general_purpose;
 use base64::Engine as _;
-use polars_error::{polars_bail, PolarsResult};
+use base64::engine::general_purpose;
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::pl_str::PlSmallStr;
 
 use super::super::super::ARROW_SCHEMA_META_KEY;

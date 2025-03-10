@@ -1,3 +1,4 @@
+#![allow(unsafe_op_in_unsafe_fn)]
 use std::marker::PhantomData;
 
 use polars_core::frame::row::AnyValueBufferTrusted;
@@ -292,7 +293,7 @@ impl<P: Policy + 'static> GroupedReduction for GenericFirstLastGroupedReduction<
         group_idx: IdxSize,
         seq_id: u64,
     ) -> PolarsResult<()> {
-        if values.len() > 0 {
+        if !values.is_empty() {
             let seq_id = seq_id + 1; // We use 0 for 'no value'.
             if P::should_replace(seq_id, self.seqs[group_idx as usize]) {
                 self.values[group_idx as usize] = values.get(P::index(values.len()))?.into_static();

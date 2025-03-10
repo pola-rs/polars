@@ -4,10 +4,11 @@ use hive::HivePartitions;
 use polars_core::config;
 use polars_core::frame::column::ScalarColumn;
 use polars_core::utils::accumulate_dataframes_vertical_unchecked;
-use polars_io::predicates::SkipBatchPredicate;
 use polars_io::RowIndex;
+use polars_io::predicates::SkipBatchPredicate;
 
 use super::Executor;
+use crate::ScanPredicate;
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
 #[cfg(feature = "ipc")]
@@ -17,7 +18,6 @@ use crate::executors::JsonExec;
 #[cfg(feature = "parquet")]
 use crate::executors::ParquetExec;
 use crate::prelude::*;
-use crate::ScanPredicate;
 
 pub struct PhysicalExprWithConstCols {
     constants: Vec<(PlSmallStr, Scalar)>,
@@ -132,7 +132,7 @@ fn source_to_exec(
                 None,
                 options,
                 cloud_options.clone(),
-                file_options.clone(),
+                Box::new(file_options.clone()),
                 metadata.cloned(),
             ))
         },
@@ -152,7 +152,7 @@ fn source_to_exec(
                 sources: source,
                 file_info,
                 options,
-                file_options,
+                file_options: Box::new(file_options),
                 predicate: None,
             })
         },
@@ -192,7 +192,7 @@ fn source_to_exec(
             Box::new(JsonExec::new(
                 source,
                 options,
-                file_options,
+                Box::new(file_options),
                 file_info,
                 None,
             ))
@@ -207,8 +207,8 @@ pub struct MultiScanExec {
     file_info: FileInfo,
     hive_parts: Option<Arc<Vec<HivePartitions>>>,
     predicate: Option<ScanPredicate>,
-    file_options: FileScanOptions,
-    scan_type: FileScan,
+    file_options: Box<FileScanOptions>,
+    scan_type: Box<FileScan>,
 }
 
 impl MultiScanExec {
@@ -217,8 +217,8 @@ impl MultiScanExec {
         file_info: FileInfo,
         hive_parts: Option<Arc<Vec<HivePartitions>>>,
         predicate: Option<ScanPredicate>,
-        file_options: FileScanOptions,
-        scan_type: FileScan,
+        file_options: Box<FileScanOptions>,
+        scan_type: Box<FileScan>,
     ) -> Self {
         Self {
             sources,
@@ -343,7 +343,7 @@ impl MultiScanExec {
         let mut dfs = Vec::with_capacity(self.sources.len());
 
         // @TODO: This should be moved outside of the FileScan::Parquet
-        let use_statistics = match &self.scan_type {
+        let use_statistics = match &*self.scan_type {
             #[cfg(feature = "parquet")]
             FileScan::Parquet { options, .. } => options.use_statistics,
             _ => true,

@@ -1,5 +1,5 @@
-use polars_utils::vec::PushUnchecked;
 use polars_utils::IdxSize;
+use polars_utils::vec::PushUnchecked;
 
 use super::PrimitiveArray;
 use crate::array::builder::{ShareStrategy, StaticArrayBuilder};
@@ -76,11 +76,12 @@ impl<T: NativeType> StaticArrayBuilder for PrimitiveArrayBuilder<T> {
         idxs: &[IdxSize],
         _share: ShareStrategy,
     ) {
-        self.values.reserve(idxs.len());
-        for idx in idxs {
-            self.values
-                .push_unchecked(other.value_unchecked(*idx as usize));
-        }
+        // TODO: SIMD gather kernels?
+        let other_values_slice = other.values().as_slice();
+        self.values.extend(
+            idxs.iter()
+                .map(|idx| *other_values_slice.get_unchecked(*idx as usize)),
+        );
         self.validity
             .gather_extend_from_opt_validity(other.validity(), idxs);
     }

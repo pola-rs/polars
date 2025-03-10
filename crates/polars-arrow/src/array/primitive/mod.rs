@@ -4,12 +4,12 @@ use either::Either;
 
 use super::{Array, Splitable};
 use crate::array::iterator::NonNullValuesIter;
-use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::bitmap::Bitmap;
+use crate::bitmap::utils::{BitmapIter, ZipValidity};
 use crate::buffer::Buffer;
 use crate::datatypes::*;
 use crate::trusted_len::TrustedLen;
-use crate::types::{days_ms, f16, i256, months_days_ns, NativeType};
+use crate::types::{NativeType, days_ms, f16, i256, months_days_ns};
 
 mod ffi;
 pub(super) mod fmt;
@@ -20,7 +20,7 @@ mod mutable;
 pub use mutable::*;
 mod builder;
 pub use builder::*;
-use polars_error::{polars_bail, PolarsResult};
+use polars_error::{PolarsResult, polars_bail};
 use polars_utils::index::{Bounded, Indexable, NullCount};
 use polars_utils::slice::SliceAble;
 

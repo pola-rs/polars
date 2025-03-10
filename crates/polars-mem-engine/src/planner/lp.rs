@@ -1,5 +1,5 @@
-use polars_core::prelude::*;
 use polars_core::POOL;
+use polars_core::prelude::*;
 use polars_expr::state::ExecutionState;
 use polars_plan::global::_set_n_rows_for_scan;
 use polars_plan::plans::expr_ir::ExprIR;
@@ -12,9 +12,9 @@ use self::predicates::{aexpr_to_column_predicates, aexpr_to_skip_batch_predicate
 use self::python_dsl::PythonScanSource;
 use super::super::executors::{self, Executor};
 use super::*;
+use crate::ScanPredicate;
 use crate::executors::CachePrefiller;
 use crate::predicate::PhysicalColumnPredicates;
-use crate::ScanPredicate;
 
 fn partitionable_gb(
     keys: &[ExprIR],
@@ -257,7 +257,7 @@ fn create_physical_plan_impl(
 
             let mut state = ExpressionConversionState::new(true, state.expr_depth);
             let do_new_multifile = (sources.len() > 1 || hive_parts.is_some())
-                && !matches!(scan_type, FileScan::Anonymous { .. })
+                && !matches!(&*scan_type, FileScan::Anonymous { .. })
                 && std::env::var("POLARS_NEW_MULTIFILE").as_deref() == Ok("1");
 
             let mut create_skip_batch_predicate = false;
@@ -265,7 +265,7 @@ fn create_physical_plan_impl(
             #[cfg(feature = "parquet")]
             {
                 create_skip_batch_predicate |= matches!(
-                    scan_type,
+                    &*scan_type,
                     FileScan::Parquet {
                         options: polars_io::prelude::ParquetOptions {
                             use_statistics: true,
@@ -300,7 +300,7 @@ fn create_physical_plan_impl(
                 )));
             }
 
-            match scan_type.clone() {
+            match *scan_type {
                 #[cfg(feature = "csv")]
                 FileScan::Csv { options, .. } => Ok(Box::new(executors::CsvExec {
                     sources,
@@ -319,7 +319,7 @@ fn create_physical_plan_impl(
                     file_info,
                     predicate,
                     options,
-                    file_options,
+                    file_options: *file_options,
                     hive_parts: hive_parts.map(|h| h.into_statistics()),
                     cloud_options,
                     metadata,

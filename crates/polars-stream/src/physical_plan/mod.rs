@@ -6,8 +6,8 @@ use polars_core::prelude::{IdxSize, InitHashMaps, PlHashMap, SortMultipleOptions
 use polars_core::schema::{Schema, SchemaRef};
 use polars_core::utils::arrow::bitmap::Bitmap;
 use polars_error::PolarsResult;
-use polars_io::cloud::CloudOptions;
 use polars_io::RowIndex;
+use polars_io::cloud::CloudOptions;
 use polars_ops::frame::JoinArgs;
 use polars_plan::dsl::{
     FileScan, JoinTypeOptionsIR, PartitionVariant, ScanSource, ScanSources, SinkOptions,
@@ -187,7 +187,7 @@ pub enum PhysNodeKind {
     MultiScan {
         scan_sources: ScanSources,
         hive_parts: Option<HivePartitionsDf>,
-        scan_type: FileScan,
+        scan_type: Box<FileScan>,
         allow_missing_columns: bool,
         include_file_paths: Option<PlSmallStr>,
 
@@ -215,8 +215,8 @@ pub enum PhysNodeKind {
         file_info: FileInfo,
         predicate: Option<ExprIR>,
         output_schema: Option<SchemaRef>,
-        scan_type: FileScan,
-        file_options: FileScanOptions,
+        scan_type: Box<FileScan>,
+        file_options: Box<FileScanOptions>,
     },
 
     GroupBy {

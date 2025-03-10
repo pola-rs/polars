@@ -11,11 +11,11 @@ use polars_utils::arena::Arena;
 use pyo3::class::basic::CompareOp;
 use pyo3::prelude::*;
 
-use crate::conversion::{parse_fill_null_strategy, vec_extract_wrapped, Wrap};
+use crate::PyExpr;
+use crate::conversion::{Wrap, parse_fill_null_strategy, vec_extract_wrapped};
 use crate::error::PyPolarsErr;
 use crate::map::lazy::map_single;
 use crate::utils::EnterPolarsExt;
-use crate::PyExpr;
 
 #[pymethods]
 impl PyExpr {

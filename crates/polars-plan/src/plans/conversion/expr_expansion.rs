@@ -177,7 +177,7 @@ fn expand_columns(
 ) -> PolarsResult<()> {
     if !expr.into_iter().all(|e| match e {
         // check for invalid expansions such as `col([a, b]) + col([c, d])`
-        Expr::Columns(ref members) => members.as_ref() == names,
+        Expr::Columns(members) => members.as_ref() == names,
         _ => true,
     }) {
         polars_bail!(ComputeError: "expanding more than one `col` is not allowed");

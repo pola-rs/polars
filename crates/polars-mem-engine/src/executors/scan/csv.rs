@@ -14,7 +14,7 @@ pub struct CsvExec {
     pub sources: ScanSources,
     pub file_info: FileInfo,
     pub options: CsvReadOptions,
-    pub file_options: FileScanOptions,
+    pub file_options: Box<FileScanOptions>,
     pub predicate: Option<ScanPredicate>,
 }
 
