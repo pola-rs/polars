@@ -20,7 +20,6 @@ fn sum_kahan<
             if val.is_finite() {
                 let y = val - err;
                 let new_sum = sum + y;
-
                 err = (new_sum - sum) - y;
                 sum = new_sum;
             } else {
@@ -49,8 +48,6 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
         if T::is_float() && val.is_finite() {
             let y = val - self.err;
             let new_sum = self.sum + y;
-
-            // Algebraically, err should always be zero, so compiler should not optimize.
             self.err = (new_sum - self.sum) - y;
             self.sum = new_sum;
         } else {
