@@ -1,0 +1,6 @@
+﻿polars.Series.cat.to_local
+==========================
+
+.. currentmodule:: polars
+
+.. autoaccessormethod:: Series.cat.to_local

@@ -1,0 +1,9 @@
+(function() {
+    var implementors = Object.fromEntries([["polars_core",[["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html\" title=\"trait core::iter::traits::collect::Extend\">Extend</a>&lt;<a class=\"struct\" href=\"polars_core/chunked_array/flags/struct.StatisticsFlags.html\" title=\"struct polars_core::chunked_array::flags::StatisticsFlags\">StatisticsFlags</a>&gt; for <a class=\"struct\" href=\"polars_core/chunked_array/flags/struct.StatisticsFlags.html\" title=\"struct polars_core::chunked_array::flags::StatisticsFlags\">StatisticsFlags</a>"],["impl <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html\" title=\"trait core::iter::traits::collect::Extend\">Extend</a>&lt;<a class=\"struct\" href=\"polars_core/utils/struct.SuperTypeFlags.html\" title=\"struct polars_core::utils::SuperTypeFlags\">SuperTypeFlags</a>&gt; for <a class=\"struct\" href=\"polars_core/utils/struct.SuperTypeFlags.html\" title=\"struct polars_core::utils::SuperTypeFlags\">SuperTypeFlags</a>"]]],["polars_utils",[["impl&lt;T&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/iter/traits/collect/trait.Extend.html\" title=\"trait core::iter::traits::collect::Extend\">Extend</a>&lt;T&gt; for <a class=\"struct\" href=\"polars_utils/idx_vec/struct.UnitVec.html\" title=\"struct polars_utils::idx_vec::UnitVec\">UnitVec</a>&lt;T&gt;"]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":57,"fragment_lengths":[1037,357]}
