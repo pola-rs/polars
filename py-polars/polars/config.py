@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     import sys
     from types import TracebackType
 
-    from polars._typing import FloatFmt
+    from polars._typing import EngineType, FloatFmt
 
     if sys.version_info >= (3, 10):
         from typing import TypeAlias
@@ -1455,7 +1455,7 @@ class Config(contextlib.ContextDecorator):
 
     @classmethod
     def set_engine_affinity(
-        cls, engine: Literal["auto", "gpu", "streaming"] | None
+        cls, engine: EngineType | None = None
     ) -> type[Config]:
         """
         Set which engine to use by default.

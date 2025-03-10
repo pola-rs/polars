@@ -1119,12 +1119,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         engine
             Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run using
-            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
-            used. Fine-grained control over the GPU engine, for
-            example which device to use on a system with multiple
-            devices, is possible by providing a :class:`~.GPUEngine` object
-            with configuration options.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
+            control over the GPU engine, for example which device to use
+            on a system with multiple devices, is possible by providing a
+            :class:`~.GPUEngine` object with configuration options.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -1165,6 +1168,9 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             )
             if tree_format:
                 format = "tree"
+
+        if engine == "auto" and get_engine_affinity() != "auto":
+            engine = get_engine_affinity()
 
         if streaming:
             engine = "old-streaming"
@@ -1260,12 +1266,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join.
         engine
             Select the engine used to process the query, optional.
-            At the moment, if set to `"auto"` (default), the query is run using
-            the polars in-memory engine. If set to `"gpu"`, the GPU engine is
-            used. Fine-grained control over the GPU engine, for
-            example which device to use on a system with multiple
-            devices, is possible by providing a :class:`~.GPUEngine` object
-            with configuration options.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
+            control over the GPU engine, for example which device to use
+            on a system with multiple devices, is possible by providing a
+            :class:`~.GPUEngine` object with configuration options.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -1292,6 +1301,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
         """
+        if engine == "auto" and get_engine_affinity() != "auto":
+            engine = get_engine_affinity()
         if streaming:
             engine = "old-streaming"
         if engine in ("streaming", "old-streaming"):
@@ -1722,7 +1733,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
         streaming: bool = False,
-        engine: None | EngineType = None,
+        engine: EngineType = "auto",
         _check_order: bool = True,
         **_kwargs: Any,
     ) -> tuple[DataFrame, DataFrame]:
@@ -1768,14 +1779,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Run parts of the query in a streaming fashion (this is in an alpha state)
         engine
             Select the engine used to process the query, optional.
-            If set to `None` (default), polars will attempt to run the query
-            using the engine set from the `POLARS_ENGINE_AFFINITY` environment
-            variable. If it cannot run the query using the selected engine,
-            the query is run using the polars in-memory engine (ie. `engine="auto"`).
-            If set to `"gpu"`, the GPU engine is used. Fine-grained control over the
-            GPU engine, for example which device to use on a system with multiple
-            devices, is possible by providing a :class:`~.GPUEngine` object
-            with configuration options.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
+            control over the GPU engine, for example which device to use
+            on a system with multiple devices, is possible by providing a
+            :class:`~.GPUEngine` object with configuration options.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -1829,7 +1841,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
-        if engine is None:
+        if engine == "auto" and get_engine_affinity() != "auto":
             engine = get_engine_affinity()
         if no_optimization:
             predicate_pushdown = False
@@ -1924,7 +1936,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: None | EngineType = None,
+        engine: EngineType = "auto",
         background: Literal[True],
         _eager: bool = False,
         _check_order: bool = True,
@@ -1946,7 +1958,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: None | EngineType = None,
+        engine: EngineType = "auto",
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -1968,7 +1980,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         collapse_joins: bool = True,
         no_optimization: bool = False,
         streaming: bool = False,
-        engine: None | EngineType = None,
+        engine: EngineType = "auto",
         background: bool = False,
         _check_order: bool = True,
         _eager: bool = False,
@@ -2016,14 +2028,15 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 mode.
         engine
             Select the engine used to process the query, optional.
-            If set to `None` (default), polars will attempt to run the query
-            using the engine set from the `POLARS_ENGINE_AFFINITY` environment
-            variable. If it cannot run the query using the selected engine,
-            the query is run using the polars in-memory engine (ie. `engine="auto"`).
-            If set to `"gpu"`, the GPU engine is used. Fine-grained control over the
-            GPU engine, for example which device to use on a system with multiple
-            devices, is possible by providing a :class:`~.GPUEngine` object
-            with configuration options.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine. If set to `"gpu"`, the GPU engine is used. Fine-grained
+            control over the GPU engine, for example which device to use
+            on a system with multiple devices, is possible by providing a
+            :class:`~.GPUEngine` object with configuration options.
 
             .. note::
                GPU mode is considered **unstable**. Not all queries will run
@@ -2131,7 +2144,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        if engine is None:
+        if engine == "auto" and get_engine_affinity() != "auto":
             engine = get_engine_affinity()
 
         new_streaming = (
@@ -2292,8 +2305,12 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         engine
             Select the engine used to process the query, optional.
-            At the moment, If set to `"auto"` (default), the query is run using
-            the polars in-memory engine.
+            At the moment, if set to `"auto"` (default), the query
+            is run using the polars in-memory engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the polars in-memory
+            engine.
 
             .. note::
                The GPU engine does not support async, or running in the
@@ -2352,7 +2369,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
             cluster_with_columns = False
             collapse_joins = False
-
+        if engine == "auto" and get_engine_affinity() != "auto":
+            engine = get_engine_affinity()
         if streaming:
             engine = "old-streaming"
         if engine in ("streaming", "old-streaming"):
@@ -2541,7 +2559,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
-            the polars old streaming engine.
+            the polars new streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the new polars streaming
+            engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2555,6 +2577,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
         """
+        if engine == "auto" and get_engine_affinity() != "auto":
+            engine = get_engine_affinity()
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
@@ -2717,7 +2741,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
-            the polars old streaming engine.
+            the polars new streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the new polars streaming
+            engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2731,6 +2759,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
         """
+        if engine == "auto" and get_engine_affinity() != "auto":
+            engine = get_engine_affinity()
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
@@ -2937,7 +2967,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
-            the polars old streaming engine.
+            the polars new streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the new polars streaming
+            engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2957,7 +2991,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
             null_value = None
-
+        if engine == "auto" and get_engine_affinity() != "auto":
+            engine = get_engine_affinity()
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
@@ -3103,7 +3138,11 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
-            the polars old streaming engine.
+            the polars new streaming engine. Polars will also
+            attempt to use the engine set by the `POLARS_ENGINE_AFFINITY`
+            environment variable. If it cannot run the query using the
+            selected engine, the query is run using the new polars streaming
+            engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -3117,6 +3156,8 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
         """
+        if engine == "auto" and get_engine_affinity() != "auto":
+            engine = get_engine_affinity()
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
