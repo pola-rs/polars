@@ -1498,11 +1498,12 @@ class Config(contextlib.ContextDecorator):
         Raises
         ------
         ValueError: if engine is not recognised.
+        NotImplementedError: if engine is a GPUEngine object
         """
-        supported_engines = set(get_args(get_args(EngineType)[0]))
         if isinstance(engine, GPUEngine):
             msg = "GPU engine with non-defaults not yet supported"
             raise NotImplementedError(msg)
+        supported_engines = get_args(get_args(EngineType)[0])
         if engine not in {*supported_engines, None}:
             msg = "Invalid engine"
             raise ValueError(msg)
