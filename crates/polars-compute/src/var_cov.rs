@@ -107,7 +107,8 @@ impl VarState {
         if self.weight <= ddof as f64 {
             None
         } else {
-            Some(self.dp / (self.weight - ddof as f64))
+            let var = self.dp / (self.weight - ddof as f64);
+            Some(var.max(0.0)) // Variance can't be negative, except through numerical instability.
         }
     }
 }
@@ -210,7 +211,8 @@ impl PearsonState {
     }
 
     pub fn finalize(&self) -> f64 {
-        let denom = (self.dp_xx * self.dp_yy).sqrt();
+        // Variances can't be negative, except through numerical instability.
+        let denom = (self.dp_xx * self.dp_yy).max(0.0).sqrt();
         if denom == 0.0 {
             f64::NAN
         } else {
