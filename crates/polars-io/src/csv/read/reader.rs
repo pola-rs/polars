@@ -187,6 +187,14 @@ where
     }
 }
 
+impl<R: MmapBytesReader> CsvReader<R> {
+    /// Sets custom CSV read options.
+    pub fn with_options(mut self, options: CsvReadOptions) -> Self {
+        self.options = options;
+        self
+    }
+}
+
 /// Splits datatypes that cannot be natively read into a `fields_to_cast` for
 /// post-read casting.
 ///
