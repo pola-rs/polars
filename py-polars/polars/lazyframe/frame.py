@@ -26,6 +26,7 @@ from polars._utils.convert import negate_duration_string, parse_as_duration_stri
 from polars._utils.deprecation import (
     deprecate_function,
     deprecate_renamed_parameter,
+    deprecate_streaming_parameter,
     issue_deprecation_warning,
 )
 from polars._utils.parse import (
@@ -1064,7 +1065,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         df_summary.insert_column(0, pl.Series("statistic", metrics))
         return df_summary
 
-    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
+    @deprecate_streaming_parameter()
     def explain(
         self,
         *,
@@ -1199,7 +1200,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         else:
             return self._ldf.describe_plan()
 
-    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
+    @deprecate_streaming_parameter()
     def show_graph(
         self,
         *,
@@ -1721,7 +1722,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         show_plot: bool = False,
         truncate_nodes: int = 0,
         figsize: tuple[int, int] = (18, 8),
-        streaming: bool = False,
         engine: EngineType = "auto",
         _check_order: bool = True,
         **_kwargs: Any,
@@ -1764,8 +1764,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             characters.
         figsize
             matplotlib figsize of the profiling plot
-        streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
@@ -1847,14 +1845,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=streaming,
+            streaming=engine == "old-streaming",
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,
         )
         callback = _gpu_engine_callback(
             engine,
-            streaming=streaming,
+            streaming=engine == "old-streaming",
             background=False,
             new_streaming=False,
             _eager=False,
@@ -1919,7 +1917,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
-        streaming: bool = False,
         engine: EngineType = "auto",
         background: Literal[True],
         _eager: bool = False,
@@ -1941,14 +1938,13 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
-        streaming: bool = False,
         engine: EngineType = "auto",
         background: Literal[False] = False,
         _check_order: bool = True,
         _eager: bool = False,
     ) -> DataFrame: ...
 
-    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
+    @deprecate_streaming_parameter()
     def collect(
         self,
         *,
@@ -1963,7 +1959,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
         no_optimization: bool = False,
-        streaming: bool = False,
         engine: EngineType = "auto",
         background: bool = False,
         _check_order: bool = True,
@@ -1998,18 +1993,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Collapse a join and filters into a faster join
         no_optimization
             Turn off (certain) optimizations.
-        streaming
-            Process the query in batches to handle larger-than-memory data.
-            If set to `False` (default), the entire query is processed in a single
-            batch.
-
-            .. warning::
-                Streaming mode is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
-
-            .. note::
-                Use :func:`explain` to see if Polars can process the query in streaming
-                mode.
         engine
             Select the engine used to process the query, optional.
             At the moment, If set to `"auto"` (default), the query is run using
@@ -2129,8 +2112,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         if new_streaming:
             engine = "streaming"
-        if streaming:
-            engine = "old-streaming"
 
         if no_optimization or _eager:
             predicate_pushdown = False
@@ -2147,7 +2128,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         callback = _gpu_engine_callback(
             engine,
-            streaming=streaming,
+            streaming=engine == "old-streaming",
             background=background,
             new_streaming=new_streaming,
             _eager=_eager,
@@ -2197,7 +2178,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
-        streaming: bool = True,
         engine: EngineType = "auto",
     ) -> _GeventDataFrameResult[DataFrame]: ...
 
@@ -2217,11 +2197,10 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
-        streaming: bool = True,
         engine: EngineType = "auto",
     ) -> Awaitable[DataFrame]: ...
 
-    @deprecate_renamed_parameter("streaming", "engine", version="1.25.0")
+    @deprecate_streaming_parameter()
     def collect_async(
         self,
         *,
@@ -2237,7 +2216,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
-        streaming: bool = False,
         engine: EngineType = "auto",
         _check_order: bool = True,
     ) -> Awaitable[DataFrame] | _GeventDataFrameResult[DataFrame]:
@@ -2342,8 +2320,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns = False
             collapse_joins = False
 
-        if streaming:
-            engine = "old-streaming"
         if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("Streaming mode is considered unstable.")
 
@@ -2530,7 +2506,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
-            the polars old streaming engine.
+            the polars streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2706,7 +2682,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
-            the polars old streaming engine.
+            the polars streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -2926,7 +2902,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         engine
             Select the engine used to process the query, optional.
             At the moment, if set to `"auto"` (default), the query is run using
-            the polars old streaming engine.
+            the polars streaming engine.
 
             .. note::
                The GPU engine is currently not supported.
@@ -3213,7 +3189,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
-        streaming: bool = False,
     ) -> DataFrame:
         """
         Collect a small number of rows for debugging purposes.
@@ -3248,7 +3223,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=streaming,
         )
 
     def _fetch(
@@ -3266,7 +3240,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         comm_subexpr_elim: bool = True,
         cluster_with_columns: bool = True,
         collapse_joins: bool = True,
-        streaming: bool = False,
         _check_order: bool = True,
     ) -> DataFrame:
         """
@@ -3299,12 +3272,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             Combine sequential independent calls to with_columns
         collapse_joins
             Collapse a join and filters into a faster join
-        streaming
-            Run parts of the query in a streaming fashion (this is in an alpha state)
-
-            .. warning::
-                Streaming mode is considered **unstable**. It may be changed
-                at any point without it being considered a breaking change.
 
         Notes
         -----
@@ -3353,9 +3320,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             cluster_with_columns = False
             collapse_joins = False
 
-        if streaming:
-            issue_unstable_warning("Streaming mode is considered unstable.")
-
         type_check = _type_check
         lf = self._ldf.optimization_toggle(
             type_coercion=type_coercion,
@@ -3368,7 +3332,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=streaming,
+            streaming=False,
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,
