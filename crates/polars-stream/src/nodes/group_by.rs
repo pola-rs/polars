@@ -178,7 +178,7 @@ impl GroupBySinkState {
 
                         // Combine everything.
                         let mut group_idxs = Vec::new();
-                        for l in 0..num_partitions {
+                        for l in 0..locals.len() {
                             combined.grouper.gather_combine(
                                 &*locals[l].grouper,
                                 &l_partitions[l].0[p],
