@@ -21,8 +21,7 @@ fn sum_kahan<
                 let y = val - err;
                 let new_sum = sum + y;
 
-                // Algebraically, err should always be zero, so compiler should not optimize.
-                err = std::hint::black_box((new_sum - sum) - y);
+                err = (new_sum - sum) - y;
                 sum = new_sum;
             } else {
                 sum += val
@@ -52,7 +51,7 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
             let new_sum = self.sum + y;
 
             // Algebraically, err should always be zero, so compiler should not optimize.
-            self.err = std::hint::black_box((new_sum - self.sum) - y);
+            self.err = (new_sum - self.sum) - y;
             self.sum = new_sum;
         } else {
             self.sum += val;
