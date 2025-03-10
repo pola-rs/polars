@@ -413,9 +413,7 @@ impl Expr {
                 collect_groups: ApplyOptions::GroupWise,
                 flags: FunctionFlags::default() | FunctionFlags::RETURNS_SCALAR,
                 fmt_str: "search_sorted",
-                cast_options: Some(CastingRules::Supertype(
-                    (SuperTypeFlags::default() & !SuperTypeFlags::ALLOW_PRIMITIVE_TO_STRING).into(),
-                )),
+                cast_options: Some(CastingRules::FirstArgLossless),
                 ..Default::default()
             },
         }
