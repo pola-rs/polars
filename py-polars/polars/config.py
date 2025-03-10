@@ -5,8 +5,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, TypedDict, get_args
 
+from polars._typing import EngineType
 from polars._utils.various import normalize_filepath
 from polars.dependencies import json
+from polars.lazyframe.engine_config import GPUEngine
 
 if TYPE_CHECKING:
     import sys
@@ -71,6 +73,7 @@ _POLARS_CFG_ENV_VARS = {
     "POLARS_TABLE_WIDTH",
     "POLARS_VERBOSE",
     "POLARS_MAX_EXPR_DEPTH",
+    "POLARS_ENGINE_AFFINITY",
 }
 
 # vars that set the rust env directly should declare themselves here as the Config
@@ -140,6 +143,7 @@ class ConfigParameters(TypedDict, total=False):
     set_trim_decimal_zeros: bool | None
     set_verbose: bool | None
     set_expr_depth_warning: int
+    set_engine_affinity: EngineType | None
 
 
 class Config(contextlib.ContextDecorator):
@@ -1449,4 +1453,62 @@ class Config(contextlib.ContextDecorator):
             raise ValueError(msg)
 
         os.environ["POLARS_MAX_EXPR_DEPTH"] = str(limit)
+        return cls
+
+    @classmethod
+    def set_engine_affinity(cls, engine: EngineType | None = None) -> type[Config]:
+        """
+        Set which engine to use by default.
+
+        Parameters
+        ----------
+        engine : {None, 'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}
+            The default execution engine Polars will attempt to use
+            when calling `.collect()`. However, the query is not
+            guaranteed to execute with the specified engine.
+
+        Examples
+        --------
+        >>> pl.Config.set_engine_affinity("streaming")  # doctest: +SKIP
+        >>> lf = pl.LazyFrame({"v": [1, 2, 3], "v2": [4, 5, 6]})  # doctest: +SKIP
+        >>> lf.max().collect()  # doctest: +SKIP
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ v   ┆ v2  │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+        >>> pl.Config.set_engine_affinity("gpu")  # doctest: +SKIP
+        >>> lf.max().collect()  # doctest: +SKIP
+        shape: (3, 2)
+        ┌─────┬─────┐
+        │ v   ┆ v2  │
+        │ --- ┆ --- │
+        │ i64 ┆ i64 │
+        ╞═════╪═════╡
+        │ 1   ┆ 4   │
+        │ 2   ┆ 5   │
+        │ 3   ┆ 6   │
+        └─────┴─────┘
+
+        Raises
+        ------
+        ValueError: if engine is not recognised.
+        NotImplementedError: if engine is a GPUEngine object
+        """
+        if isinstance(engine, GPUEngine):
+            msg = "GPU engine with non-defaults not yet supported"
+            raise NotImplementedError(msg)
+        supported_engines = get_args(get_args(EngineType)[0])
+        if engine not in {*supported_engines, None}:
+            msg = "Invalid engine"
+            raise ValueError(msg)
+        if engine is None:
+            os.environ.pop("POLARS_ENGINE_AFFINITY", None)
+        else:
+            os.environ["POLARS_ENGINE_AFFINITY"] = engine
         return cls
