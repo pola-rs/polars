@@ -204,6 +204,9 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
 ) -> BinaryViewArrayGeneric<V> {
     let dtype = arrays[0].as_ref().dtype().clone();
     let (total_len, null_count) = len_null_count(arrays);
+    if total_len == 0 {
+        return BinaryViewArrayGeneric::new_empty(dtype);
+    }
     let validity = concatenate_validities_with_len_null_count(arrays, total_len, null_count);
 
     let first_arr: &BinaryViewArrayGeneric<V> = arrays[0].as_ref().as_any().downcast_ref().unwrap();
@@ -315,6 +318,7 @@ fn concatenate_view<V: ViewType + ?Sized, A: AsRef<dyn Array>>(
         Arc::new([Buffer::from(new_buffer)]) as Arc<[_]>
     };
 
+    dbg!(buffers.len());
     unsafe {
         BinaryViewArrayGeneric::new_unchecked(
             dtype,

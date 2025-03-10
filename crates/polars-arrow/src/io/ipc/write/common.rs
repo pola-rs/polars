@@ -13,6 +13,7 @@ use crate::io::ipc::read::Dictionaries;
 use crate::legacy::prelude::LargeListArray;
 use crate::match_integer_type;
 use crate::record_batch::RecordBatchT;
+use crate::types::Index;
 
 /// Compression codec
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -258,8 +259,16 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
             }
         },
         ArrowDataType::LargeList(_) => {
+            // Subslicing can change the variadic buffer count, so we have to
+            // slice here as well.
             let array = array.as_any().downcast_ref::<LargeListArray>().unwrap();
-            set_variadic_buffer_counts(counts, array.values().as_ref())
+            let offsets = array.offsets().buffer();
+            let first = *offsets.first().unwrap();
+            let last = *offsets.last().unwrap();
+            let subslice = array
+                .values()
+                .sliced(first.to_usize(), last.to_usize() - first.to_usize());
+            set_variadic_buffer_counts(counts, &*subslice)
         },
         ArrowDataType::FixedSizeList(_, _) => {
             let array = array.as_any().downcast_ref::<FixedSizeListArray>().unwrap();
