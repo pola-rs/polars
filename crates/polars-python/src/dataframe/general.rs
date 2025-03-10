@@ -591,7 +591,10 @@ impl PyDataFrame {
 
         for (i, col) in cols.iter().enumerate() {
             let e = export_column(col);
-            core::ptr::write(location.add(i), e);
+            // SAFETY:
+            // Caller should ensure address is allocated.
+            // Be careful not to drop `e` here as that should be dropped by the ffi consumer
+            unsafe { core::ptr::write(location.add(i), e) };
         }
     }
 
