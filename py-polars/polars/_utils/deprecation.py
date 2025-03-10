@@ -71,6 +71,28 @@ def deprecate_renamed_function(
     return deprecate_function(f"It has been renamed to `{new_name}`.", version=version)
 
 
+def deprecate_streaming_parameter() -> Callable[[Callable[P, T]], Callable[P, T]]:
+    """Decorator to mark `streaming` argument as deprecated due to being renamed."""
+
+    def decorate(function: Callable[P, T]) -> Callable[P, T]:
+        @wraps(function)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
+            if kwargs["streaming"]:
+                issue_deprecation_warning(
+                    "The argument `streaming=True` is deprecated and is being replaced by the `engine` argument.",
+                    version="1.25.0",
+                )
+            del kwargs["streaming"]
+            kwargs["engine"] = "old-streaming"
+
+            return function(*args, **kwargs)
+
+        wrapper.__signature__ = inspect.signature(function)  # type: ignore[attr-defined]
+        return wrapper
+
+    return decorate
+
+
 def deprecate_renamed_parameter(
     old_name: str, new_name: str, *, version: str
 ) -> Callable[[Callable[P, T]], Callable[P, T]]:
