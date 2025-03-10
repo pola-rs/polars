@@ -579,9 +579,9 @@ impl PyDataFrame {
         py.enter_polars_df(|| Ok(self.df.clear()))
     }
 
-    // Export the columns via polars-ffi
-    // # Safety
-    // Needs a preallocated *mut SeriesExport that has allocated space for n_columns.
+    /// Export the columns via polars-ffi
+    /// # Safety
+    /// Needs a preallocated *mut SeriesExport that has allocated space for n_columns.
     pub unsafe fn _export_columns(&mut self, location: usize) {
         use polars_ffi::version_0::export_column;
 
