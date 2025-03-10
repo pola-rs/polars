@@ -348,10 +348,17 @@ pub trait DataFrameJoinOps: IntoDf {
         let rhs_keys = prepare_keys_multiple(&selected_right, args.nulls_equal)?.into_series();
 
         let drop_names = if should_coalesce {
-            selected_right
-                .iter()
-                .map(|s| s.name().clone())
-                .collect::<Vec<_>>()
+            if args.how == JoinType::Right {
+                selected_left
+                    .iter()
+                    .map(|s| s.name().clone())
+                    .collect::<Vec<_>>()
+            } else {
+                selected_right
+                    .iter()
+                    .map(|s| s.name().clone())
+                    .collect::<Vec<_>>()
+            }
         } else {
             vec![]
         };
