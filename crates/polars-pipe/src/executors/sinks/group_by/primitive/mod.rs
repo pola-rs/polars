@@ -196,7 +196,7 @@ where
                                     unsafe {
                                         let agg_fn = agg_fns.get_unchecked_mut(i);
                                         let av = agg_fn.finalize();
-                                        buffer.add(av);
+                                        buffer.add(av).ok();
                                     }
                                 }
                             },
@@ -291,7 +291,7 @@ where
         let ca: &ChunkedArray<K> = s.as_ref().as_ref();
 
         // ensure the hashes are set
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb.clone(), &mut self.hashes)?;
 
         let arr = ca.downcast_iter().next().unwrap();
         let pre_agg_len = self.pre_agg_partitions.len();
@@ -366,7 +366,7 @@ where
             return self.sink_sorted(ca, chunk);
         }
 
-        s.vec_hash(self.hb.clone(), &mut self.hashes).unwrap();
+        s.vec_hash(self.hb.clone(), &mut self.hashes)?;
 
         // this reuses the hashes buffer as [u64] as idx buffer as [idxsize]
         // write the hashes to self.hashes buffer
