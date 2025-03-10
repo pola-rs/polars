@@ -1,8 +1,7 @@
-use std::mem::ManuallyDrop;
-
 use arrow::bitmap::MutableBitmap;
 use either::Either;
 use polars::prelude::*;
+use polars_ffi::version_0::SeriesExport;
 #[cfg(feature = "pivot")]
 use polars_lazy::frame::pivot::{pivot, pivot_stable};
 use pyo3::IntoPyObjectExt;
@@ -580,17 +579,23 @@ impl PyDataFrame {
         py.enter_polars_df(|| Ok(self.df.clear()))
     }
 
-    #[allow(clippy::wrong_self_convention)]
-    pub fn into_raw_parts(&mut self) -> (usize, usize, usize) {
-        // Used for polars-lazy python node. This takes the dataframe from
-        // underneath of you, so don't use this anywhere else.
-        let df = std::mem::take(&mut self.df);
-        let cols = df.take_columns();
-        let mut md_cols = ManuallyDrop::new(cols);
-        let ptr = md_cols.as_mut_ptr();
-        let len = md_cols.len();
-        let cap = md_cols.capacity();
-        (ptr as usize, len, cap)
+    /// Export the columns via polars-ffi
+    /// # Safety
+    /// Needs a preallocated *mut SeriesExport that has allocated space for n_columns.
+    pub unsafe fn _export_columns(&mut self, location: usize) {
+        use polars_ffi::version_0::export_column;
+
+        let cols = self.df.get_columns();
+
+        let location = location as *mut SeriesExport;
+
+        for (i, col) in cols.iter().enumerate() {
+            let e = export_column(col);
+            // SAFETY:
+            // Caller should ensure address is allocated.
+            // Be careful not to drop `e` here as that should be dropped by the ffi consumer
+            unsafe { core::ptr::write(location.add(i), e) };
+        }
     }
 
     /// Internal utility function to allow direct access to the row encoding from python.

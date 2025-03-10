@@ -1,3 +1,4 @@
+use polars_core::frame::DataFrame;
 use polars_core::prelude::{Column, CompatLevel};
 
 use super::*;
@@ -111,6 +112,18 @@ pub unsafe fn import_series_buffer(e: *mut SeriesExport, len: usize) -> PolarsRe
         out.push(import_series(e)?)
     }
     Ok(out)
+}
+
+/// # Safety
+/// `SeriesExport` must be valid
+pub unsafe fn import_df(e: *mut SeriesExport, len: usize) -> PolarsResult<DataFrame> {
+    let mut out = Vec::with_capacity(len);
+    for i in 0..len {
+        let e = std::ptr::read(e.add(i));
+        let s = import_series(e)?;
+        out.push(s.into())
+    }
+    Ok(DataFrame::new_no_checks_height_from_first(out))
 }
 
 /// Passed to an expression.
