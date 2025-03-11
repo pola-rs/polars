@@ -406,8 +406,8 @@ def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
 
     a.write_parquet(f1)
     b.write_parquet(f2)
-    assert pl.scan_parquet([f1, f2]).select("b").collect(
-        engine="old-streaming" if streaming else "in-memory"  # type: ignore[arg-type]
+    assert pl.scan_parquet([f1, f2]).select("b").collect(  # type: ignore[call-overload]
+        engine="old-streaming" if streaming else "in-memory"
     ).columns == ["b"]
 
 
@@ -511,8 +511,8 @@ def test_parquet_slice_pushdown_non_zero_offset(
     assert pl.read_parquet_schema(paths[0]) == dfs[0].schema
     # * Attempting to read any data will error
     with pytest.raises(ComputeError):
-        pl.scan_parquet(paths[0]).collect(
-            engine="old-streaming" if streaming else "in-memory"  # type: ignore[arg-type]
+        pl.scan_parquet(paths[0]).collect(  # type: ignore[call-overload]
+            engine="old-streaming" if streaming else "in-memory"
         )
 
     df = dfs[1]
@@ -772,7 +772,6 @@ def test_parquet_schema_arg(
     else:
         with pytest.raises(pl.exceptions.ColumnNotFoundError):
             lf.collect(engine="in-memory")
-
 
     lf = pl.scan_parquet(
         paths, parallel=parallel, schema=schema, allow_missing_columns=True
