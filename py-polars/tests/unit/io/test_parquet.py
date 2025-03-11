@@ -2005,7 +2005,7 @@ def test_allow_missing_columns(
         match="enabling `allow_missing_columns`",
     ):
         pl.scan_parquet(paths, parallel=parallel).select(projection).collect(  # type: ignore[arg-type]
-            engine="old-streaming" if streaming else "in-memory"
+            engine="streaming" if streaming else "in-memory"
         )
 
     assert_frame_equal(
@@ -2020,7 +2020,7 @@ def test_allow_missing_columns(
     assert_frame_equal(
         pl.scan_parquet(paths, parallel=parallel, allow_missing_columns=True)  # type: ignore[arg-type]
         .select(projection)
-        .collect(engine="old-streaming" if streaming else "in-memory"),
+        .collect(engine="streaming" if streaming else "in-memory"),
         expected,
     )
 

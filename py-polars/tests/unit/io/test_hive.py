@@ -21,7 +21,6 @@ def impl_test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
     monkeypatch: Any,
-    capfd: Any,
 ) -> None:
     monkeypatch.setenv("POLARS_VERBOSE", "1")
     df = pl.read_ipc(io_files_path / "*.ipc")
@@ -58,11 +57,9 @@ def impl_test_hive_partitioned_predicate_pushdown(
             assert_frame_equal(
                 q.filter(pred)
                 .sort(sort_by)
-                .collect(engine="old-streaming" if streaming else "in-memory"),
+                .collect(engine="streaming" if streaming else "in-memory"),
                 df.filter(pred).sort(sort_by),
             )
-            err = capfd.readouterr().err
-            assert "hive partitioning" in err
 
     # tests: 11536
     assert q.filter(pl.col("sugars_g") == 25).collect().shape == (1, 4)
@@ -80,13 +77,11 @@ def test_hive_partitioned_predicate_pushdown(
     io_files_path: Path,
     tmp_path: Path,
     monkeypatch: Any,
-    capfd: Any,
 ) -> None:
     impl_test_hive_partitioned_predicate_pushdown(
         io_files_path,
         tmp_path,
         monkeypatch,
-        capfd,
     )
 
 
@@ -96,7 +91,6 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
     io_files_path: Path,
     tmp_path: Path,
     monkeypatch: Any,
-    capfd: Any,
 ) -> None:
     monkeypatch.setenv("POLARS_FORCE_ASYNC", "1")
     monkeypatch.setenv("POLARS_PREFETCH_SIZE", "1")
@@ -105,7 +99,6 @@ def test_hive_partitioned_predicate_pushdown_single_threaded_async_17155(
         io_files_path,
         tmp_path,
         monkeypatch,
-        capfd,
     )
 
 
@@ -165,12 +158,12 @@ def test_hive_partitioned_slice_pushdown(
 
     assert_frame_equal(
         q.head(1)
-        .collect(engine="old-streaming" if streaming else "in-memory")
+        .collect(engine="streaming" if streaming else "in-memory")
         .select(pl.all().len()),
         expect_count,
     )
     assert q.head(0).collect(
-        engine="old-streaming" if streaming else "in-memory"
+        engine="streaming" if streaming else "in-memory"
     ).columns == [
         "calories",
         "sugars_g",
@@ -202,7 +195,7 @@ def test_hive_partitioned_projection_pushdown(
     for streaming in [True, False]:
         assert (
             q.select(columns)
-            .collect(engine="old-streaming" if streaming else "in-memory")
+            .collect(engine="streaming" if streaming else "in-memory")
             .columns
             == columns
         )

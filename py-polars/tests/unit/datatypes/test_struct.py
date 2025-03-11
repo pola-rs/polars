@@ -1126,12 +1126,7 @@ def test_zfs_row_encoding(size: int) -> None:
 
     df = pl.DataFrame([a, pl.Series("x", list(range(size)), pl.Int8)])
 
-    gb = (
-        df.lazy()
-        .group_by(["a", "x"])
-        .agg(pl.all().min())
-        .collect(engine="old-streaming")
-    )
+    gb = df.lazy().group_by(["a", "x"]).agg(pl.all().min()).collect(engine="streaming")
 
     # We need to ignore the order because the group_by is non-deterministic
     assert_frame_equal(gb, df, check_row_order=False)
