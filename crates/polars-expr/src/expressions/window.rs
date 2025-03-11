@@ -557,7 +557,7 @@ impl PhysicalExpr for WindowExpr {
                 let update_groups = !matches!(&ac.update_groups, UpdateGroups::No);
                 match (
                     &ac.update_groups,
-                    set_by_groups(&out_column, &ac.groups, df.height(), update_groups),
+                    set_by_groups(&out_column, &ac, df.height(), update_groups),
                 ) {
                     // for aggregations that reduce like sum, mean, first and are numeric
                     // we take the group locations to directly map them to the right place
@@ -682,11 +682,11 @@ fn materialize_column(join_opt_ids: &ChunkJoinOptIds, out_column: &Column) -> Co
 /// Simple reducing aggregation can be set by the groups
 fn set_by_groups(
     s: &Column,
-    groups: &GroupsType,
+    ac: &AggregationContext,
     len: usize,
     update_groups: bool,
 ) -> Option<Column> {
-    if update_groups {
+    if update_groups || !ac.original_len {
         return None;
     }
     if s.dtype().to_physical().is_primitive_numeric() {
@@ -694,7 +694,7 @@ fn set_by_groups(
         let s = s.to_physical_repr();
 
         macro_rules! dispatch {
-            ($ca:expr) => {{ Some(set_numeric($ca, groups, len)) }};
+            ($ca:expr) => {{ Some(set_numeric($ca, &ac.groups, len)) }};
         }
         downcast_as_macro_arg_physical!(&s, dispatch)
             .map(|s| unsafe { s.from_physical_unchecked(dtype) }.unwrap())

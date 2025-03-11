@@ -92,12 +92,13 @@ where
 {
     nodes
         .iter()
-        .all(|n| is_elementwise_rec(expr_arena.get(n.into()), expr_arena))
+        .all(|n| is_elementwise_rec(n.into(), expr_arena))
 }
 
 /// Recursive variant of `is_elementwise`
-pub fn is_elementwise_rec<'a>(mut ae: &'a AExpr, expr_arena: &'a Arena<AExpr>) -> bool {
+pub fn is_elementwise_rec(node: Node, expr_arena: &Arena<AExpr>) -> bool {
     let mut stack = unitvec![];
+    let mut ae = expr_arena.get(node);
 
     loop {
         if !is_elementwise(&mut stack, ae, expr_arena) {
