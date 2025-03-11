@@ -516,9 +516,8 @@ impl PredicatePushDown<'_> {
                 let local_predicates = match options.keep_strategy {
                     UniqueKeepStrategy::Any => {
                         let condition = |e: &ExprIR| {
-                            let ae = expr_arena.get(e.node());
                             // if not elementwise -> to local
-                            !is_elementwise_rec(ae, expr_arena)
+                            !is_elementwise_rec(e.node(), expr_arena)
                         };
                         transfer_to_local_by_expr_ir(expr_arena, &mut acc_predicates, condition)
                     },
@@ -751,7 +750,7 @@ impl PredicatePushDown<'_> {
                 if let Some(predicate) = predicate {
                     // For IO plugins we only accept streamable expressions as
                     // we want to apply the predicates to the batches.
-                    if !is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena)
+                    if !is_elementwise_rec(predicate.node(), expr_arena)
                         && matches!(options.python_source, PythonScanSource::IOPlugin)
                     {
                         let lp = PythonScan { options };

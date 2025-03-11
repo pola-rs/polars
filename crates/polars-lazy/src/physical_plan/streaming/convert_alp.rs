@@ -162,9 +162,7 @@ pub(crate) fn insert_streaming_nodes(
         state.execution_id = execution_id;
         execution_id += 1;
         match lp_arena.get(root) {
-            Filter { input, predicate }
-                if is_elementwise_rec(expr_arena.get(predicate.node()), expr_arena) =>
-            {
+            Filter { input, predicate } if is_elementwise_rec(predicate.node(), expr_arena) => {
                 state.streamable = true;
                 state.operators_sinks.push(PipelineNode::Operator(root));
                 stack.push(StackFrame::new(*input, state, current_idx))
