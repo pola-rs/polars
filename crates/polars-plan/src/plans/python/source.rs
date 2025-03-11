@@ -26,6 +26,8 @@ pub struct PythonOptions {
     pub n_rows: Option<usize>,
     /// Optional predicate the reader must apply.
     pub predicate: PythonPredicate,
+    /// Validate if the source gives the proper schema.
+    pub validate_schema: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
