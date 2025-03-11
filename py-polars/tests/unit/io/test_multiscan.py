@@ -558,6 +558,30 @@ def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
     )
 
 
+def test_deadlock_stop_requested(
+    tmp_path: Path, monkeypatch: Any, scan: Any, write: Any
+) -> None:
+    df = pl.DataFrame(
+        {
+            "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        }
+    )
+
+    f = io.BytesIO()
+    df.write_parquet(f, row_group_size=1)
+
+    monkeypatch.setenv("POLARS_MAX_THREADS", "2")
+    monkeypatch.setenv("POLARS_JOIN_SAMPLE_LIMIT", "1")
+
+    left_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
+    right_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
+
+    left = pl.scan_parquet(left_fs)
+    right = pl.scan_parquet(right_fs)
+
+    left.join(right, pl.col.a == pl.col.a).collect(engine="streaming")
+
+
 @pytest.mark.parametrize(
     ("scan", "write"),
     [
