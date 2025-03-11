@@ -149,6 +149,10 @@ if TYPE_CHECKING:
     P = ParamSpec("P")
 
 
+def _select_engine(engine: EngineType) -> EngineType:
+    return get_engine_affinity() if engine == "auto" else engine
+
+
 def _gpu_engine_callback(
     engine: EngineType,
     *,
@@ -1173,8 +1177,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if tree_format:
                 format = "tree"
 
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
 
         if streaming:
             engine = "old-streaming"
@@ -1305,8 +1308,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
         """
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
         if streaming:
             engine = "old-streaming"
         if engine in ("streaming", "old-streaming"):
@@ -1845,8 +1847,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             ):
                 error_msg = f"profile() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
         if no_optimization:
             predicate_pushdown = False
             projection_pushdown = False
@@ -2148,8 +2149,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 error_msg = f"collect() got an unexpected keyword argument '{k}'"
                 raise TypeError(error_msg)
 
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
 
         new_streaming = (
             _kwargs.get("new_streaming", False) or get_engine_affinity() == "streaming"
@@ -2373,8 +2373,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim = False
             cluster_with_columns = False
             collapse_joins = False
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
         if streaming:
             engine = "old-streaming"
         if engine in ("streaming", "old-streaming"):
@@ -2581,8 +2580,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_parquet("out.parquet")  # doctest: +SKIP
         """
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
@@ -2763,8 +2761,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ipc("out.arrow")  # doctest: +SKIP
         """
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
@@ -2995,8 +2992,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         _check_arg_is_1byte("quote_char", quote_char, can_be_empty=False)
         if not null_value:
             null_value = None
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
@@ -3160,8 +3156,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         >>> lf = pl.scan_csv("/path/to/my_larger_than_ram_file.csv")  # doctest: +SKIP
         >>> lf.sink_ndjson("out.ndjson")  # doctest: +SKIP
         """
-        if engine == "auto" and get_engine_affinity() != "auto":
-            engine = get_engine_affinity()
+        engine = _select_engine(engine)
         lf = self._set_sink_optimizations(
             engine,
             type_coercion=type_coercion,
