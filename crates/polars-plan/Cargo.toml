@@ -50,7 +50,7 @@ version_check = { workspace = true }
 [features]
 # debugging utility
 debugging = []
-python = ["dep:pyo3", "polars-utils/python"]
+python = ["dep:pyo3", "polars-utils/python", "polars-ffi"]
 serde = [
   "ir_serde",
   "dep:serde",

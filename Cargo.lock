@@ -3446,6 +3446,7 @@ dependencies = [
  "polars-core",
  "polars-error",
  "polars-expr",
+ "polars-ffi",
  "polars-io",
  "polars-lazy",
  "polars-mem-engine",

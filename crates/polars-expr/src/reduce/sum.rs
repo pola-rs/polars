@@ -28,6 +28,8 @@ pub fn new_sum_reduction(dtype: DataType) -> Box<dyn GroupedReduction> {
         UInt64 => Box::new(SumReduce::<UInt64Type>::new(dtype)),
         Int32 => Box::new(SumReduce::<Int32Type>::new(dtype)),
         Int64 => Box::new(SumReduce::<Int64Type>::new(dtype)),
+        #[cfg(feature = "dtype-i128")]
+        Int128 => Box::new(SumReduce::<Int128Type>::new(dtype)),
         Float32 => Box::new(SumReduce::<Float32Type>::new(dtype)),
         Float64 => Box::new(SumReduce::<Float64Type>::new(dtype)),
         #[cfg(feature = "dtype-decimal")]

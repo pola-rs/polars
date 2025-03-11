@@ -20,9 +20,7 @@ impl<T: NativeType + IsFloat + AddAssign + SubAssign + Sub<Output = T> + Add<Out
             self.sum = self.sum.map(|sum| {
                 let y = val - self.err;
                 let new_sum = sum + y;
-
-                // Algebraically, err should always be zero, so compiler should not optimize.
-                self.err = std::hint::black_box((new_sum - sum) - y);
+                self.err = (new_sum - sum) - y;
                 new_sum
             });
         } else {

@@ -25,6 +25,7 @@ Miscellaneous
 
     align_frames
     concat
+    defer
     escape_regex
 
 Parallelization
