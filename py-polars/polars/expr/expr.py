@@ -2847,7 +2847,6 @@ class Expr:
         fill_value = parse_into_expression(value, str_as_lit=True)
         return self._from_pyexpr(self._pyexpr.fill_infinity(fill_value))
 
-
     def fill_nan(self, value: int | float | Expr | None) -> Expr:
         """
         Fill floating point NaN value with a fill value.

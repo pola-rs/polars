@@ -1566,7 +1566,15 @@ fn test_round_after_agg() -> PolarsResult<()> {
 #[cfg(feature = "dtype-date")]
 fn test_fill_infinity() -> PolarsResult<()> {
     let s0 = Column::new("date".into(), &[1, 2, 3, 4]).cast(&DataType::Date)?;
-    let s1 = Column::new("float".into(), &[Some(1.0), Some(f32::INFINITY), Some(3.0), Some(f32::NEG_INFINITY)]);
+    let s1 = Column::new(
+        "float".into(),
+        &[
+            Some(1.0),
+            Some(f32::INFINITY),
+            Some(3.0),
+            Some(f32::NEG_INFINITY),
+        ],
+    );
 
     let df = DataFrame::new(vec![s0, s1])?;
     let out = df.lazy().fill_infinity(Null {}.lit()).collect()?;

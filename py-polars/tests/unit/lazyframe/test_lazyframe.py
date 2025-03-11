@@ -672,6 +672,7 @@ def test_interpolate() -> None:
     assert df.interpolate()["a"].to_list() == [1, 2, 3]
     assert df.lazy().interpolate().collect()["a"].to_list() == [1, 2, 3]
 
+
 def test_fill_infinity() -> None:
     df = pl.DataFrame({"a": [1.0, np.inf, 3.0]})
     assert_series_equal(df.fill_infinity(2.0)["a"], pl.Series("a", [1.0, 2.0, 3.0]))
@@ -688,6 +689,7 @@ def test_fill_infinity() -> None:
     assert pl.Series([None, 1, None, None, None, -8, None, None, 10]).interpolate(
         method="nearest"
     ).to_list() == [None, 1, 1, -8, -8, -8, -8, 10, 10]
+
 
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1.0, np.nan, 3.0]})

@@ -1977,6 +1977,7 @@ def test_fill_null() -> None:
     assert s.dtype == pl.Categorical
     assert s.to_list() == ["a", "a"]
 
+
 def test_fill_infinity() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("inf")]})
     assert_frame_equal(
@@ -1995,6 +1996,7 @@ def test_fill_infinity() -> None:
         }
     )
     assert df.fill_infinity(2.0).dtypes == [pl.Float64, pl.Datetime]
+
 
 def test_fill_nan() -> None:
     df = pl.DataFrame({"a": [1, 2], "b": [3.0, float("nan")]})
