@@ -659,7 +659,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
     lf = pl.scan_parquet(paths)
 
     assert_frame_equal(
-        lf.select("a").collect(engine="old-streaming" if streaming else "in-memory"),  # type: ignore[arg-type]
+        lf.select("a").collect(engine="streaming" if streaming else "in-memory"),
         pl.DataFrame({"a": [1, 2, 3]}),
     )
 
