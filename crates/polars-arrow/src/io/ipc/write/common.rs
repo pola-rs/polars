@@ -260,7 +260,7 @@ fn set_variadic_buffer_counts(counts: &mut Vec<i64>, array: &dyn Array) {
         },
         ArrowDataType::LargeList(_) => {
             // Subslicing can change the variadic buffer count, so we have to
-            // slice here as well.
+            // slice here as well to stay synchronized.
             let array = array.as_any().downcast_ref::<LargeListArray>().unwrap();
             let offsets = array.offsets().buffer();
             let first = *offsets.first().unwrap();
