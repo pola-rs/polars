@@ -124,6 +124,7 @@ def _defer(
     --------
     Delay DataFrame execution until query is executed.
 
+    >>> import numpy as np
     >>> np.random.seed(0)
     >>> lf = pl.defer(
     ...     lambda: pl.DataFrame({"a": np.random.randn(3)}), schema={"a": pl.Float64}
