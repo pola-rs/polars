@@ -483,7 +483,7 @@ def test_scan_limit_0_does_not_panic(
     assert_frame_equal(
         scan_func(path)
         .head(0)
-        .collect(engine="old-streaming" if streaming else "in-memory"),
+        .collect(engine="streaming" if streaming else "in-memory"),
         df.clear(),
     )
 
@@ -680,7 +680,7 @@ def test_scan_include_file_paths(
         match=r'column name for file paths "x" conflicts with column name from file',
     ):
         scan_func(tmp_path, include_file_paths="x").collect(
-            engine="old-streaming" if streaming else "in-memory"
+            engine="streaming" if streaming else "in-memory"
         )
 
     f = scan_func
@@ -688,22 +688,20 @@ def test_scan_include_file_paths(
         f = partial(f, schema=df.drop("path").schema)
 
     lf: pl.LazyFrame = f(tmp_path, include_file_paths="path")
-    assert_frame_equal(
-        lf.collect(engine="old-streaming" if streaming else "in-memory"), df
-    )
+    assert_frame_equal(lf.collect(engine="streaming" if streaming else "in-memory"), df)
 
     # Test projecting only the path column
     q = lf.select("path")
     assert q.collect_schema() == {"path": pl.String}
     assert_frame_equal(
-        q.collect(engine="old-streaming" if streaming else "in-memory"),
+        q.collect(engine="streaming" if streaming else "in-memory"),
         df.select("path"),
     )
 
     q = q.select("path").head(3)
     assert q.collect_schema() == {"path": pl.String}
     assert_frame_equal(
-        q.collect(engine="old-streaming" if streaming else "in-memory"),
+        q.collect(engine="streaming" if streaming else "in-memory"),
         df.select("path").head(3),
     )
 
@@ -711,14 +709,14 @@ def test_scan_include_file_paths(
     for predicate in [pl.col("path") != pl.col("x"), pl.col("path") != ""]:
         assert_frame_equal(
             lf.filter(predicate).collect(
-                engine="old-streaming" if streaming else "in-memory"
+                engine="streaming" if streaming else "in-memory"
             ),
             df,
         )
 
     # Test codepaths that materialize empty DataFrames
     assert_frame_equal(
-        lf.head(0).collect(engine="old-streaming" if streaming else "in-memory"),
+        lf.head(0).collect(engine="streaming" if streaming else "in-memory"),
         df.head(0),
     )
 
@@ -861,7 +859,7 @@ def test_streaming_scan_csv_include_file_paths_18257(io_files_path: Path) -> Non
         include_file_paths="path",
     ).select("category", "path")
 
-    assert lf.collect(engine="old-streaming").columns == ["category", "path"]
+    assert lf.collect(engine="streaming").columns == ["category", "path"]
 
 
 def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
@@ -873,7 +871,7 @@ def test_streaming_scan_csv_with_row_index_19172(io_files_path: Path) -> None:
     )
 
     assert_frame_equal(
-        lf.collect(engine="old-streaming"),
+        lf.collect(engine="streaming"),
         pl.DataFrame(
             {"calories": "45", "index": 0},
             schema={"calories": pl.String, "index": pl.UInt32},
