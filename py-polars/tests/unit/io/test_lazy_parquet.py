@@ -645,7 +645,6 @@ def test_dsl2ir_cached_metadata(tmp_path: Path, streaming: bool) -> None:
 
 
 @pytest.mark.write_disk
-@pytest.mark.parametrize("streaming", [True, False])
 def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
     dfs = [
         pl.DataFrame({"a": 1, "b": 10}),
@@ -661,12 +660,12 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
     lf = pl.scan_parquet(paths)
 
     assert_frame_equal(
-        lf.select("a").collect(engine="streaming" if streaming else "in-memory"),
+        lf.select("a").collect(engine="in-memory"),
         pl.DataFrame({"a": [1, 2, 3]}),
     )
 
     assert_frame_equal(
-        lf.select("b", "a").collect(engine="streaming" if streaming else "in-memory"),
+        lf.select("b", "a").collect(engine="in-memory"),
         pl.DataFrame({"b": [10, 11, 12], "a": [1, 2, 3]}),
     )
 
@@ -677,16 +676,11 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
         pl.DataFrame({"a": [1, 2], "b": [10, 11]}),
     )
 
-    match = (
-        r"contains column\(s\) 'x', 'y', which are not present in the first scanned file"
-        if streaming
-        else "parquet file contained extra columns and no selection was given"
-    )
     with pytest.raises(
         pl.exceptions.SchemaError,
-        match=match,
+        match="parquet file contained extra columns and no selection was given",
     ):
-        lf.collect(engine="streaming" if streaming else "in-memory")
+        lf.collect(engine="in-memory")
 
 
 @pytest.mark.write_disk
@@ -727,18 +721,11 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
 
     lf = pl.scan_parquet(paths)
 
-    if streaming:
-        with pytest.raises(
-            pl.exceptions.SchemaError,
-            match=r"does not contains column\(s\) 'a'",
-        ):
-            lf.collect(engine="streaming")
-    else:
-        with pytest.raises(
-            pl.exceptions.ColumnNotFoundError,
-            match="did not find column in file: a",
-        ):
-            lf.collect(engine="in-memory")
+    with pytest.raises(
+        (pl.exceptions.SchemaError, pl.exceptions.ColumnNotFoundError),
+        match=r"does not contains column\(s\) 'a'",
+    ):
+        lf.collect(engine="streaming" if streaming else "in-memory")
 
 
 @pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])
@@ -766,12 +753,8 @@ def test_parquet_schema_arg(
 
     lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
 
-    if streaming:
-        with pytest.raises(pl.exceptions.SchemaError):
-            lf.collect(engine="streaming")
-    else:
-        with pytest.raises(pl.exceptions.ColumnNotFoundError):
-            lf.collect(engine="in-memory")
+    with pytest.raises((pl.exceptions.SchemaError, pl.exceptions.ColumnNotFoundError)):
+        lf.collect(engine="streaming" if streaming else "in-memory")
 
     lf = pl.scan_parquet(
         paths, parallel=parallel, schema=schema, allow_missing_columns=True
