@@ -64,7 +64,7 @@ def test_streaming_streamable_functions(monkeypatch: Any, capfd: Any) -> None:
             schema={"a": pl.Int64, "b": pl.Int64},
             streamable=True,
         )
-    ).collect(engine="streaming").to_dict(as_series=False) == {  # type: ignore[call-overload]
+    ).collect(engine="old-streaming").to_dict(as_series=False) == {  # type: ignore[arg-type]
         "a": [1, 2, 3],
         "b": [1, 2, 3],
     }
@@ -80,7 +80,7 @@ def test_cross_join_stack() -> None:
     t0 = time.time()
     # this should be instant if directly pushed into sink
     # if not the cross join will first fill the stack with all matches of a single chunk
-    assert a.join(a, how="cross").head().collect(engine="streaming").shape == (5, 2)  # type: ignore[call-overload]
+    assert a.join(a, how="cross").head().collect(engine="old-streaming").shape == (5, 2)  # type: ignore[arg-type]
     t1 = time.time()
     assert (t1 - t0) < 0.5
 
@@ -140,7 +140,7 @@ def test_streaming_ternary() -> None:
         q.with_columns(
             pl.when(pl.col("a") >= 2).then(pl.col("a")).otherwise(None).alias("b"),
         )
-        .explain(engine="old-streaming")  # type: ignore[call-overload]
+        .explain(engine="old-streaming")  # type: ignore[arg-type]
         .startswith("STREAMING")
     )
 
@@ -157,7 +157,7 @@ def test_streaming_sortedness_propagation_9494() -> None:
         .sort("when")
         .group_by_dynamic("when", every="1mo")
         .agg(pl.col("what").sum())
-        .collect(engine="streaming")  # type: ignore[call-overload]
+        .collect(engine="streaming")
     ).to_dict(as_series=False) == {
         "when": [date(2023, 5, 1), date(2023, 6, 1)],
         "what": [3, 3],
@@ -192,7 +192,7 @@ def test_streaming_generic_left_and_inner_join_from_disk(tmp_path: Path) -> None
     for how in join_strategies:
         q = lf0.join(lf1, left_on="id", right_on="id_r", how=how)
         assert_frame_equal(
-            q.collect(engine="streaming"),
+            q.collect(engine="old-streaming"),  # type: ignore[arg-type]
             q.collect(engine="in-memory"),
             check_row_order=how == "left",
         )
@@ -348,7 +348,7 @@ def test_streaming_with_hconcat(tmp_path: Path) -> None:
 
     plan_lines = [
         line.strip()
-        for line in query.explain(engine="old-streaming").splitlines()  # type: ignore[call-overload]
+        for line in query.explain(engine="old-streaming").splitlines()  # type: ignore[arg-type]
     ]
 
     # Each input of the concatenation should be a streaming section,

@@ -32,7 +32,7 @@ def test_streaming_group_by_sorted_fast_path_nulls_10273() -> None:
         .lazy()
         .group_by("x")
         .agg(pl.len())
-        .collect(engine="streaming")  # type: ignore[call-overload]
+        .collect(engine="streaming")
         .sort("x")
     ).to_dict(as_series=False) == {
         "x": [None, 0, 1, 2, 3],

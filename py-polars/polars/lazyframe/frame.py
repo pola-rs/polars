@@ -1183,7 +1183,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
                 comm_subexpr_elim=comm_subexpr_elim,
                 cluster_with_columns=cluster_with_columns,
                 collapse_joins=collapse_joins,
-                streaming=engine == "old-streaming",
+                streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
                 _eager=False,
                 _check_order=_check_order,
                 new_streaming=engine == "streaming",
@@ -1306,7 +1306,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",
+            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
             _eager=False,
             _check_order=_check_order,
             new_streaming=engine == "streaming",
@@ -1841,14 +1841,14 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",
+            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
             _eager=False,
             _check_order=_check_order,
             new_streaming=False,
         )
         callback = _gpu_engine_callback(
             engine,
-            streaming=engine == "old-streaming",
+            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
             background=False,
             new_streaming=False,
             _eager=False,
@@ -2124,7 +2124,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         callback = _gpu_engine_callback(
             engine,
-            streaming=engine == "old-streaming",
+            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
             background=background,
             new_streaming=new_streaming,
             _eager=_eager,
@@ -3159,7 +3159,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             comm_subexpr_elim=comm_subexpr_elim,
             cluster_with_columns=cluster_with_columns,
             collapse_joins=collapse_joins,
-            streaming=engine == "old-streaming",
+            streaming=engine == "old-streaming",  # type: ignore[comparison-overlap]
             _eager=False,
             _check_order=_check_order,
             new_streaming=engine in ("auto", "streaming"),

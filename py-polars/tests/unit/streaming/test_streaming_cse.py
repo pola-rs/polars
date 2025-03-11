@@ -71,9 +71,9 @@ def test_cse_expr_group_by() -> None:
     s = q.explain(
         comm_subexpr_elim=True,
         optimized=True,
-        engine="old-streaming",
+        engine="old-streaming",  # type: ignore[call-overload]
         comm_subplan_elim=False,
-    )  # type: ignore[call-overload]
+    )
     assert s.startswith("STREAMING")
 
     expected = pl.DataFrame(
