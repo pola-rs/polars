@@ -1708,7 +1708,7 @@ def test_select_after_join_where_20831() -> None:
         (pl.Array(pl.Int64, 2), [[1, 1], [2, 2], [3, 3], [4, 4]]),
     ],
 )
-def test_join_on_nested(dtype: PolarsDataType, data: list) -> None:
+def test_join_on_nested(dtype: PolarsDataType, data: list[Any]) -> None:
     lhs = pl.DataFrame(
         {
             "a": data[:3],
