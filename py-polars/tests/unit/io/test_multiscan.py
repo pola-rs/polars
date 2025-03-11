@@ -576,8 +576,8 @@ def test_deadlock_stop_requested(
     left_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
     right_fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
 
-    left = pl.scan_parquet(left_fs)
-    right = pl.scan_parquet(right_fs)
+    left = pl.scan_parquet(left_fs)  # type: ignore[arg-type]
+    right = pl.scan_parquet(right_fs)  # type: ignore[arg-type]
 
     left.join(right, pl.col.a == pl.col.a).collect(engine="streaming")
 
