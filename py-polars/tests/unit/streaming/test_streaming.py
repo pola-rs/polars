@@ -405,3 +405,15 @@ def test_streaming_temporal_17669() -> None:
         "b": pl.Date,
         "c": pl.Time,
     }
+
+
+def test_i128_sum_reduction() -> None:
+    assert (
+        pl.Series("a", [1, 2, 3], pl.Int128)
+        .to_frame()
+        .lazy()
+        .sum()
+        .collect(engine="streaming")
+        .item()
+        == 6
+    )
