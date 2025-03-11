@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
 import pytest
@@ -457,6 +457,7 @@ def test_enum_scan_21564() -> None:
     )
 
 
+@no_type_check
 def test_roundtrip_empty_str_list_21163() -> None:
     schema = {
         "s": pl.Utf8,
