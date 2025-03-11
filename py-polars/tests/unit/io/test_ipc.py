@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import io
 from decimal import Decimal
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, no_type_check
 
 import pandas as pd
 import pytest
@@ -455,3 +455,17 @@ def test_enum_scan_21564() -> None:
         pl.scan_ipc(f).collect().to_series(),
         s,
     )
+
+
+@no_type_check
+def test_roundtrip_empty_str_list_21163() -> None:
+    schema = {
+        "s": pl.Utf8,
+        "list": pl.List(pl.Utf8),
+    }
+    row1 = pl.DataFrame({"s": ["A"], "list": [[]]}, schema=schema)
+    row2 = pl.DataFrame({"s": ["B"], "list": [[]]}, schema=schema)
+    df = pl.concat([row1, row2])
+    bytes = df.serialize()
+    deserialized = pl.DataFrame.deserialize(io.BytesIO(bytes))
+    assert_frame_equal(df, deserialized)
