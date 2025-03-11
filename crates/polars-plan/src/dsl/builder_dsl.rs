@@ -267,6 +267,10 @@ impl DslBuilder {
         }
     }
 
+    pub fn fill_infinity(self, fill_value: Expr) -> Self {
+        self.map_private(DslFunction::FillInfinity(fill_value))
+    }
+
     pub fn fill_nan(self, fill_value: Expr) -> Self {
         self.map_private(DslFunction::FillNan(fill_value))
     }

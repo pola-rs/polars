@@ -45,6 +45,7 @@ pub enum DslFunction {
     Unnest(Vec<Selector>),
     Stats(StatsFunction),
     /// FillValue
+    FillInfinity(Expr),
     FillNan(Expr),
     Drop(DropFunction),
     // Function that is already converted to IR.
@@ -146,6 +147,7 @@ impl DslFunction {
             #[cfg(feature = "python")]
             DslFunction::OpaquePython(inner) => FunctionIR::OpaquePython(inner),
             DslFunction::Stats(_)
+            | DslFunction::FillInfinity(_)
             | DslFunction::FillNan(_)
             | DslFunction::Drop(_)
             | DslFunction::Explode { .. } => {

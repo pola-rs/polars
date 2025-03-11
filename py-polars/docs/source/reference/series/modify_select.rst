@@ -22,6 +22,7 @@ Manipulation/selection
     Series.explode
     Series.extend
     Series.extend_constant
+    Series.fill_infinity
     Series.fill_nan
     Series.fill_null
     Series.filter

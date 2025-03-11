@@ -15,6 +15,7 @@ Manipulation/selection
     LazyFrame.drop_nans
     LazyFrame.drop_nulls
     LazyFrame.explode
+    LazyFrame.fill_infinity
     LazyFrame.fill_nan
     LazyFrame.fill_null
     LazyFrame.filter

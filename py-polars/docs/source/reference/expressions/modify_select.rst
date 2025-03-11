@@ -20,6 +20,7 @@ Manipulation/selection
     Expr.drop_nulls
     Expr.explode
     Expr.extend_constant
+    Expr.fill_infinity
     Expr.fill_nan
     Expr.fill_null
     Expr.filter

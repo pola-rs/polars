@@ -2727,7 +2727,7 @@ class Expr:
 
         See Also
         --------
-        fill_nan
+        fill_infinity, fill_nan
 
         Examples
         --------
@@ -2811,6 +2811,43 @@ class Expr:
                 self._pyexpr.fill_null_with_strategy(strategy, limit)
             )
 
+    def fill_infinity(self, value: int | float | Expr | None) -> Expr:
+        """
+        Fill floating point INF and NEG_INF with a fill value.
+
+        Parameters
+        ----------
+        value
+            Value used to fill INF values.
+
+        See Also
+        --------
+        fill_nan, fill_null
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1.0, None, float("inf")],
+        ...         "b": [4.0, float("-inf"), 6],
+        ...     }
+        ... )
+        >>> df.with_columns(pl.col("b").fill_nan(0))
+        shape: (3, 2)
+        ┌──────┬─────┐
+        │ a    ┆ b   │
+        │ ---  ┆ --- │
+        │ f64  ┆ f64 │
+        ╞══════╪═════╡
+        │ 1.0  ┆ 4.0 │
+        │ null ┆ 0.0 │
+        │ inf  ┆ 6.0 │
+        └──────┴─────┘
+        """
+        fill_value = parse_into_expression(value, str_as_lit=True)
+        return self._from_pyexpr(self._pyexpr.fill_infinity(fill_value))
+
+
     def fill_nan(self, value: int | float | Expr | None) -> Expr:
         """
         Fill floating point NaN value with a fill value.
@@ -2827,7 +2864,7 @@ class Expr:
 
         See Also
         --------
-        fill_null
+        fill_infinity, fill_null
 
         Examples
         --------

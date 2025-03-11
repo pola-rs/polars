@@ -748,6 +748,42 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     let ir = IR::MapFunction { input, function };
                     return Ok(ctxt.lp_arena.add(ir));
                 },
+                DslFunction::FillInfinity(fill_value) => {
+                    let exprs = input_schema
+                        .iter()
+                        .filter_map(|(name, dtype)| match dtype {
+                            DataType::Float32 | DataType::Float64 => Some(
+                                col(name.clone())
+                                    .fill_infinity(fill_value.clone())
+                                    .alias(name.clone()),
+                            ),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+
+                    let (exprs, schema) = resolve_with_columns(
+                        exprs,
+                        input,
+                        ctxt.lp_arena,
+                        ctxt.expr_arena,
+                        ctxt.opt_flags,
+                    )
+                    .map_err(|e| e.context(failed_here!(fill_infinity)))?;
+
+                    ctxt.conversion_optimizer
+                        .fill_scratch(&exprs, ctxt.expr_arena);
+
+                    let lp = IR::HStack {
+                        input,
+                        exprs,
+                        schema,
+                        options: ProjectionOptions {
+                            duplicate_check: false,
+                            ..Default::default()
+                        },
+                    };
+                    return run_conversion(lp, ctxt, "fill_infinity");
+                },
                 DslFunction::FillNan(fill_value) => {
                     let exprs = input_schema
                         .iter()

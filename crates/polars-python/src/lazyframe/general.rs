@@ -1223,6 +1223,11 @@ impl PyLazyFrame {
         out.into()
     }
 
+    fn fill_infinity(&self, fill_value: PyExpr) -> Self {
+        let ldf = self.ldf.clone();
+        ldf.fill_infinity(fill_value.inner).into()
+    }
+
     fn fill_nan(&self, fill_value: PyExpr) -> Self {
         let ldf = self.ldf.clone();
         ldf.fill_nan(fill_value.inner).into()

@@ -6340,7 +6340,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        fill_nan
+        fill_infinity, fill_nan
 
         Examples
         --------
@@ -6450,6 +6450,44 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         return self.select(F.all().fill_null(value, strategy, limit))
 
+    def fill_infinity(self, value: int | float | Expr | None) -> LazyFrame:
+        """
+        Fill floating point INF and NEG_INF values.
+
+        Parameters
+        ----------
+        value
+            Value to fill the INF values with.
+
+        See Also
+        --------
+        fill_nan, fill_null
+
+        Examples
+        --------
+        >>> lf = pl.LazyFrame(
+        ...     {
+        ...         "a": [1.5, 2, float("inf"), 4],
+        ...         "b": [0.5, 4, float("-inf"), 13],
+        ...     }
+        ... )
+        >>> lf.fill_infinity(99).collect()
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ f64  ┆ f64  │
+        ╞══════╪══════╡
+        │ 1.5  ┆ 0.5  │
+        │ 2.0  ┆ 4.0  │
+        │ 99.0 ┆ 99.0 │
+        │ 4.0  ┆ 13.0 │
+        └──────┴──────┘
+        """
+        if not isinstance(value, pl.Expr):
+            value = F.lit(value)
+        return self._from_pyldf(self._ldf.fill_infinity(value._pyexpr))
+
     def fill_nan(self, value: int | float | Expr | None) -> LazyFrame:
         """
         Fill floating point NaN values.
@@ -6466,7 +6504,7 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
 
         See Also
         --------
-        fill_null
+        fill_infinity, fill_null
 
         Examples
         --------

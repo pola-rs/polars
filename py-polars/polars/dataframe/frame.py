@@ -8556,7 +8556,7 @@ class DataFrame:
 
         See Also
         --------
-        fill_nan
+        fill_infinity, fill_nan
 
         Examples
         --------
@@ -8623,6 +8623,47 @@ class DataFrame:
             .collect(_eager=True)
         )
 
+    def fill_infinity(self, value: Expr | int | float | None) -> DataFrame:
+        """
+        Fill floating point INF and NEG_INF by an Expression evaluation.
+
+        Parameters
+        ----------
+        value
+            Value with which to replace INF values.
+
+        Returns
+        -------
+        DataFrame
+            DataFrame with INF values replaced by the given value.
+
+        See Also
+        --------
+        fill_nan, fill_null
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "a": [1.5, 2, float("inf"), 4],
+        ...         "b": [0.5, 4, float("-inf"), 13],
+        ...     }
+        ... )
+        >>> df.fill_infinity(99)
+        shape: (4, 2)
+        ┌──────┬──────┐
+        │ a    ┆ b    │
+        │ ---  ┆ ---  │
+        │ f64  ┆ f64  │
+        ╞══════╪══════╡
+        │ 1.5  ┆ 0.5  │
+        │ 2.0  ┆ 4.0  │
+        │ 99.0 ┆ 99.0 │
+        │ 4.0  ┆ 13.0 │
+        └──────┴──────┘
+        """
+        return self.lazy().fill_infinity(value).collect(_eager=True)
+
     def fill_nan(self, value: Expr | int | float | None) -> DataFrame:
         """
         Fill floating point NaN values by an Expression evaluation.
@@ -8644,7 +8685,7 @@ class DataFrame:
 
         See Also
         --------
-        fill_null
+        fill_infinity, fill_null
 
         Examples
         --------

@@ -504,6 +504,12 @@ impl LazyFrame {
             col(PlSmallStr::from_static("*")).shift_and_fill(n.into(), fill_value.into()),
         ])
     }
+    /// Fill INF and NEG_INF values in the DataFrame with an expression.
+    pub fn fill_infinity<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {
+        let opt_state = self.get_opt_state();
+        let lp = self.get_plan_builder().fill_infinity(fill_value.into()).build();
+        Self::from_logical_plan(lp, opt_state)
+    }
 
     /// Fill None values in the DataFrame with an expression.
     pub fn fill_null<E: Into<Expr>>(self, fill_value: E) -> LazyFrame {

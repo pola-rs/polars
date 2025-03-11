@@ -17,6 +17,7 @@ Manipulation/selection
     DataFrame.drop_nulls
     DataFrame.explode
     DataFrame.extend
+    DataFrame.fill_infinity
     DataFrame.fill_nan
     DataFrame.fill_null
     DataFrame.filter

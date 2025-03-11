@@ -4893,6 +4893,33 @@ class Series:
         """
         return self._from_pyseries(self._s.clone())
 
+    def fill_infinity(self, value: int | float | Expr | None) -> Series:
+        """
+        Fill floating point INF and NEG_INF value with a fill value.
+
+        Parameters
+        ----------
+        value
+            Value used to fill INF values.
+
+        See Also
+        --------
+        fill_infinity, fill_null
+
+        Examples
+        --------
+        >>> s = pl.Series("a", [1.0, 2.0, 3.0, float("inf")])
+        >>> s.fill_infinity(0)
+        shape: (4,)
+        Series: 'a' [f64]
+        [
+                1.0
+                2.0
+                3.0
+                0.0
+        ]
+        """
+
     def fill_nan(self, value: int | float | Expr | None) -> Series:
         """
         Fill floating point NaN value with a fill value.
@@ -4909,7 +4936,7 @@ class Series:
 
         See Also
         --------
-        fill_null
+        fill_infinity, fill_null
 
         Examples
         --------
@@ -4946,7 +4973,7 @@ class Series:
 
         See Also
         --------
-        fill_nan
+        fill_infinity, fill_nan
 
         Examples
         --------

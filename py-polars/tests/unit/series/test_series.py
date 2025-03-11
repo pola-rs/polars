@@ -851,6 +851,11 @@ def test_str_series_min_max_10674() -> None:
     assert str_series.sort(descending=False).min() == "a"
     assert str_series.sort(descending=True).max() == "e"
 
+def test_fill_infinity() -> None:
+    inf, neg_inf= float("inf"), float("-inf")
+    a = pl.Series("a", [1.0, inf, 2.0, neg_inf, 3.0])
+    assert_series_equal(a.fill_infinity(None), pl.Series("a", [1.0, None, 2.0, None, 3.0]))
+    assert_series_equal(a.fill_infinity(0), pl.Series("a", [1.0, 0.0, 2.0, 0.0, 3.0]))
 
 def test_fill_nan() -> None:
     nan = float("nan")
