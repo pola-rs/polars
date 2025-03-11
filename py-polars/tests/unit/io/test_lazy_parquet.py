@@ -407,7 +407,7 @@ def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
     a.write_parquet(f1)
     b.write_parquet(f2)
     assert pl.scan_parquet([f1, f2]).select("b").collect(
-        engine="old-streaming" if streaming else "in-memory"  # type: ignore[arg-type]
+        engine="old-streaming" if streaming else "in-memory"
     ).columns == ["b"]
 
 
@@ -510,7 +510,7 @@ def test_parquet_slice_pushdown_non_zero_offset(
     # * Attempting to read any data will error
     with pytest.raises(ComputeError):
         pl.scan_parquet(paths[0]).collect(
-            engine="old-streaming" if streaming else "in-memory"  # type: ignore[arg-type]
+            engine="old-streaming" if streaming else "in-memory"
         )
 
     df = dfs[1]
@@ -659,7 +659,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
     lf = pl.scan_parquet(paths)
 
     assert_frame_equal(
-        lf.select("a").collect(engine="old-streaming" if streaming else "in-memory"),  # type: ignore[arg-type]
+        lf.select("a").collect(engine="old-streaming" if streaming else "in-memory"),
         pl.DataFrame({"a": [1, 2, 3]}),
     )
 
