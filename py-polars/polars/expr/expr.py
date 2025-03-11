@@ -2832,7 +2832,7 @@ class Expr:
         ...         "b": [4.0, float("-inf"), 6],
         ...     }
         ... )
-        >>> df.with_columns(pl.col("b").fill_nan(0))
+        >>> df.with_columns(pl.col("b").fill_infinity(0))
         shape: (3, 2)
         ┌──────┬─────┐
         │ a    ┆ b   │
