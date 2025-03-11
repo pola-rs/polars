@@ -260,7 +260,7 @@ def test_non_coalescing_streaming_left_join() -> None:
     df2 = pl.LazyFrame({"a": [1, 2], "c": ["j", "i"]})
 
     q = df1.join(df2, on="a", how="left", coalesce=False)
-    assert q.explain(engine="old-streaming").startswith("STREAMING")  # type: ignore[call-overload]
+    assert q.explain(engine="old-streaming").startswith("STREAMING")  # type: ignore[arg-type]
     assert q.collect(engine="streaming").to_dict(as_series=False) == {
         "a": [1, 2, 3],
         "b": ["a", "b", "c"],
