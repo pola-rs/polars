@@ -462,10 +462,17 @@ impl PyLazyFrame {
         schema: &Bound<'_, PyList>,
         scan_fn: PyObject,
         pyarrow: bool,
+        check_schema: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
-        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
+        Ok(LazyFrame::scan_from_python_function(
+            Either::Right(schema),
+            scan_fn,
+            pyarrow,
+            check_schema,
+        )
+        .into())
     }
 
     #[staticmethod]
@@ -473,21 +480,35 @@ impl PyLazyFrame {
         schema: Vec<(PyBackedStr, Wrap<DataType>)>,
         scan_fn: PyObject,
         pyarrow: bool,
+        check_schema: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(Schema::from_iter(
             schema
                 .into_iter()
                 .map(|(name, dt)| Field::new((&*name).into(), dt.0)),
         ));
-        Ok(LazyFrame::scan_from_python_function(Either::Right(schema), scan_fn, pyarrow).into())
+        Ok(LazyFrame::scan_from_python_function(
+            Either::Right(schema),
+            scan_fn,
+            pyarrow,
+            check_schema,
+        )
+        .into())
     }
 
     #[staticmethod]
     fn scan_from_python_function_schema_function(
         schema_fn: PyObject,
         scan_fn: PyObject,
+        check_schema: bool,
     ) -> PyResult<Self> {
-        Ok(LazyFrame::scan_from_python_function(Either::Left(schema_fn), scan_fn, false).into())
+        Ok(LazyFrame::scan_from_python_function(
+            Either::Left(schema_fn),
+            scan_fn,
+            false,
+            check_schema,
+        )
+        .into())
     }
 
     fn describe_plan(&self, py: Python) -> PyResult<String> {

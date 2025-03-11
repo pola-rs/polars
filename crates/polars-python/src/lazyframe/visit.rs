@@ -166,6 +166,7 @@ impl NodeTraverser {
                 python_source: PythonScanSource::Cuda,
                 predicate: Default::default(),
                 n_rows: None,
+                check_schema: false,
             },
         };
         lp_arena.replace(self.root, ir);

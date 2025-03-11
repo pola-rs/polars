@@ -19,6 +19,7 @@ pub struct PythonOptionsDsl {
     /// Either the schema fn or schema is set.
     pub schema_fn: Option<SpecialEq<Arc<Either<PythonFunction, SchemaRef>>>>,
     pub python_source: PythonScanSource,
+    pub check_schema: bool,
 }
 
 impl PythonOptionsDsl {

@@ -23,6 +23,7 @@ def register_io_source(
     ],
     *,
     schema: Callable[[], SchemaDict] | SchemaDict,
+    validate_schema: bool = False
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -57,6 +58,10 @@ def register_io_source(
     schema
         Schema or function that when called produces the schema that the reader
         will produce before projection pushdown.
+    validate_schema
+        Whether the engine should validate if the batches generated match
+        the given schema. It's an implementation error if this isn't
+        the case and can lead to bugs that are hard to solve.
 
     Returns
     -------
@@ -87,5 +92,75 @@ def register_io_source(
         ), parsed_predicate_success
 
     return pl.LazyFrame._scan_python_function(
-        schema=schema, scan_fn=wrap, pyarrow=False
+        schema=schema, scan_fn=wrap, pyarrow=False, check_schema=validate_schema
     )
+
+
+def _defer(
+    function: Callable[[], DataFrame],
+    *,
+    schema: SchemaDict | Callable[[], SchemaDict],
+    validate_schema: bool = True
+) -> LazyFrame:
+    """
+    Takes a function that produces a `DataFrame` but defers
+    it execution until the `LazyFrame` is collected.
+
+    Parameters
+    ----------
+    function
+        Function that takes no arguments and produces a `DataFrame`.
+    schema
+        Schema of the `DataFrame` the deferred function will return.
+        The caller must ensure this schema is correct.
+    validate_schema
+        Whether the engine should validate if the batches generated match
+        the given schema. It's an implementation error if this isn't
+        the case and can lead to bugs that are hard to solve.
+
+    Examples
+    --------
+    Delay DataFrame execution until query is executed.
+
+    >>> np.random.seed(0)
+    >>> lf = pl.defer(lambda: pl.DataFrame({"a": np.random.randn(3)}), schema = {"a": pl.Float64})
+    >>> lf.collect()
+    shape: (3, 1)
+    ┌──────────┐
+    │ a        │
+    │ ---      │
+    │ f64      │
+    ╞══════════╡
+    │ 1.764052 │
+    │ 0.400157 │
+    │ 0.978738 │
+    └──────────┘
+
+     Run an eager source in Polars Cloud
+
+    >>> (
+    ...     pl.defer(lambda: pl.read_database("select * from tbl"), schema = {"a": pl.Float64, "b": pl.Boolean})
+    ...     .filter("b")
+    ...     .sum("a")
+    ...     .remote()
+    ...     .collect()
+    ... ) # doctest: +SKIP
+
+
+    """
+    def source(
+        with_columns: list[str] | None,
+        predicate: Expr | None,
+        n_rows: int | None,
+        batch_size: int | None,
+    ) -> Iterator[DataFrame]:
+        lf = function().lazy()
+        if with_columns is not None:
+            lf = lf.select(with_columns)
+        if predicate is not None:
+            lf = lf.filter(predicate)
+        if n_rows is not None:
+            lf = lf.limit(n_rows)
+        yield lf.collect()
+
+    return register_io_source(io_source=source, schema=schema, validate_schema=validate_schema)

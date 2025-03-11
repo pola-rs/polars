@@ -12,8 +12,10 @@ from polars.io.ndjson import read_ndjson, scan_ndjson
 from polars.io.parquet import read_parquet, read_parquet_schema, scan_parquet
 from polars.io.pyarrow_dataset import scan_pyarrow_dataset
 from polars.io.spreadsheet import read_excel, read_ods
+from polars.io.plugins import _defer as defer
 
 __all__ = [
+    "defer",
     "read_avro",
     "read_clipboard",
     "read_csv",

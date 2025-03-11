@@ -158,6 +158,7 @@ from polars.functions import (
 )
 from polars.interchange import CompatLevel
 from polars.io import (
+    defer,
     read_avro,
     read_clipboard,
     read_csv,
@@ -258,6 +259,7 @@ __all__ = [
     "Unknown",
     "Utf8",
     # polars.io
+    "defer",
     "read_avro",
     "read_clipboard",
     "read_csv",
