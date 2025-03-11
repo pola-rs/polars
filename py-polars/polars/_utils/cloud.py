@@ -34,5 +34,5 @@ def prepare_cloud_plan(
     ComputeError
         If the given LazyFrame cannot be serialized.
     """
-    pylf = lf._set_sink_optimizations(engine="old-streaming", **optimizations)
+    pylf = lf._set_sink_optimizations(engine="old-streaming", **optimizations)  # type: ignore[call-overload]
     return plr.prepare_cloud_plan(pylf)

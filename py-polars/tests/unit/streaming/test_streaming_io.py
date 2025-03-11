@@ -22,21 +22,19 @@ def test_streaming_parquet_glob_5900(df: pl.DataFrame, tmp_path: Path) -> None:
 
     path_glob = tmp_path / "small*.parquet"
     result = (
-        pl.scan_parquet(path_glob)
-        .select(pl.all().first())
-        .collect(engine="old-streaming")
+        pl.scan_parquet(path_glob).select(pl.all().first()).collect(engine="streaming")
     )
     assert result.shape == (1, df.width)
 
 
 def test_scan_slice_streaming(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "foods1.csv"
-    df = pl.scan_csv(foods_file_path).head(5).collect(engine="old-streaming")
+    df = pl.scan_csv(foods_file_path).head(5).collect(engine="streaming")
     assert df.shape == (5, 4)
 
     # globbing
     foods_file_path = io_files_path / "foods*.csv"
-    df = pl.scan_csv(foods_file_path).head(5).collect(engine="old-streaming")
+    df = pl.scan_csv(foods_file_path).head(5).collect(engine="streaming")
     assert df.shape == (5, 4)
 
 
@@ -46,7 +44,7 @@ def test_scan_csv_overwrite_small_dtypes(
 ) -> None:
     file_path = io_files_path / "foods1.csv"
     df = pl.scan_csv(file_path, schema_overrides={"sugars_g": dtype}).collect(
-        engine="old-streaming"
+        engine="streaming"
     )
     assert df.dtypes == [pl.String, pl.Int64, pl.Float64, dtype]
 
@@ -165,15 +163,13 @@ def test_sink_csv_nested_data(tmp_path: Path) -> None:
 
 def test_scan_csv_only_header_10792(io_files_path: Path) -> None:
     foods_file_path = io_files_path / "only_header.csv"
-    df = pl.scan_csv(foods_file_path).collect(engine="old-streaming")
+    df = pl.scan_csv(foods_file_path).collect(engine="streaming")
     assert df.to_dict(as_series=False) == {"Name": [], "Address": []}
 
 
 def test_scan_empty_csv_10818(io_files_path: Path) -> None:
     empty_file_path = io_files_path / "empty.csv"
-    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(
-        engine="old-streaming"
-    )
+    df = pl.scan_csv(empty_file_path, raise_if_empty=False).collect(engine="streaming")
     assert df.is_empty()
 
 
@@ -231,7 +227,7 @@ def test_parquet_eq_statistics(
         result = (
             pl.scan_parquet(file_path)
             .filter(pred)
-            .collect(engine="old-streaming" if streaming else "in-memory")
+            .collect(engine="streaming" if streaming else "in-memory")
         )
         assert_frame_equal(result, df.filter(pred))
 
@@ -253,7 +249,7 @@ def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     df.write_parquet(file_path)
     q = pl.scan_parquet(file_path)
     q2 = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})
-    assert q.join(q2, on="a").collect(engine="old-streaming").shape == (0, 1)
+    assert q.join(q2, on="a").collect(engine="streaming").shape == (0, 1)
 
 
 @pytest.mark.may_fail_auto_streaming
@@ -277,7 +273,7 @@ def test_nyi_scan_in_memory(method: str) -> None:
         pl.exceptions.ComputeError,
         match="not yet implemented: Streaming scanning of in-memory buffers",
     ):
-        (getattr(pl, f"scan_{method}"))(f).collect(engine="old-streaming")
+        (getattr(pl, f"scan_{method}"))(f).collect(engine="streaming")
 
 
 @pytest.mark.parametrize(

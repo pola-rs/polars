@@ -58,7 +58,7 @@ def impl_test_hive_partitioned_predicate_pushdown(
             assert_frame_equal(
                 q.filter(pred)
                 .sort(sort_by)
-                .collect(engine="old-streaming" if streaming else "in-memory"),
+                .collect(engine="streaming" if streaming else "in-memory"),
                 df.filter(pred).sort(sort_by),
             )
             err = capfd.readouterr().err
@@ -165,12 +165,12 @@ def test_hive_partitioned_slice_pushdown(
 
     assert_frame_equal(
         q.head(1)
-        .collect(engine="old-streaming" if streaming else "in-memory")
+        .collect(engine="streaming" if streaming else "in-memory")
         .select(pl.all().len()),
         expect_count,
     )
     assert q.head(0).collect(
-        engine="old-streaming" if streaming else "in-memory"
+        engine="streaming" if streaming else "in-memory"
     ).columns == [
         "calories",
         "sugars_g",
@@ -202,7 +202,7 @@ def test_hive_partitioned_projection_pushdown(
     for streaming in [True, False]:
         assert (
             q.select(columns)
-            .collect(engine="old-streaming" if streaming else "in-memory")
+            .collect(engine="streaming" if streaming else "in-memory")
             .columns
             == columns
         )

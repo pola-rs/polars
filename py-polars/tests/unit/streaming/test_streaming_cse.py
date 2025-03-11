@@ -29,15 +29,13 @@ def test_cse_expr_selection_streaming(monkeypatch: Any) -> None:
         (derived2 * 10).alias("d3"),
     ]
 
-    result = q.select(exprs).collect(comm_subexpr_elim=True, engine="old-streaming")
+    result = q.select(exprs).collect(comm_subexpr_elim=True, engine="streaming")
     expected = pl.DataFrame(
         {"d1": [1, 4, 9, 16], "d2": [1, 16, 81, 256], "d3": [10, 160, 810, 2560]}
     )
     assert_frame_equal(result, expected)
 
-    result = q.with_columns(exprs).collect(
-        comm_subexpr_elim=True, engine="old-streaming"
-    )
+    result = q.with_columns(exprs).collect(comm_subexpr_elim=True, engine="streaming")
     expected = pl.DataFrame(
         {
             "a": [1, 2, 3, 4],
@@ -75,7 +73,7 @@ def test_cse_expr_group_by() -> None:
         optimized=True,
         engine="old-streaming",
         comm_subplan_elim=False,
-    )
+    )  # type: ignore[call-overload]
     assert s.startswith("STREAMING")
 
     expected = pl.DataFrame(
@@ -83,6 +81,6 @@ def test_cse_expr_group_by() -> None:
     )
     for streaming in [True, False]:
         out = q.collect(
-            comm_subexpr_elim=True, engine="old-streaming" if streaming else "in-memory"
+            comm_subexpr_elim=True, engine="streaming" if streaming else "in-memory"
         )
         assert_frame_equal(out, expected)

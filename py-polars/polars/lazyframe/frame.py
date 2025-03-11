@@ -1167,8 +1167,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
             if tree_format:
                 format = "tree"
 
-        if streaming:
-            engine = "old-streaming"
         if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("Streaming mode is considered unstable.")
 
@@ -1293,8 +1291,6 @@ naive plan: (run LazyFrame.explain(optimized=True) to see the optimized plan)
         ...     "a"
         ... ).show_graph()  # doctest: +SKIP
         """
-        if streaming:
-            engine = "old-streaming"
         if engine in ("streaming", "old-streaming"):
             issue_unstable_warning("Streaming mode is considered unstable.")
 
