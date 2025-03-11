@@ -96,6 +96,7 @@ def register_io_source(
     )
 
 
+@unstable()
 def _defer(
     function: Callable[[], DataFrame],
     *,
@@ -105,7 +106,7 @@ def _defer(
     """
     Deferred execution.
 
-    Takes a function that produces a `DataFrame` but defers it execution until the
+    Takes a function that produces a `DataFrame` but defers execution until the
     `LazyFrame` is collected.
 
     Parameters
