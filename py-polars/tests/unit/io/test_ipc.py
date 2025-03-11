@@ -462,8 +462,8 @@ def test_roundtrip_empty_str_list_21163() -> None:
         "s": pl.Utf8,
         "list": pl.List(pl.Utf8),
     }
-    row1 = pl.DataFrame({"s": ["A"], "list": [[]]}).cast(schema)
-    row2 = pl.DataFrame({"s": ["B"], "list": [[]]}).cast(schema)
+    row1 = pl.DataFrame({"s": ["A"], "list": [[]]}, schema=schema)
+    row2 = pl.DataFrame({"s": ["B"], "list": [[]]}, schema=schema)
     df = pl.concat([row1, row2])
     bytes = df.serialize()
     deserialized = pl.DataFrame.deserialize(io.BytesIO(bytes))
