@@ -371,7 +371,7 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     scan_fn,
                     schema,
                     python_source: options.python_source,
-                    check_schema: options.check_schema,
+                    validate_schema: options.validate_schema,
                     output_schema: Default::default(),
                     with_columns: Default::default(),
                     n_rows: Default::default(),

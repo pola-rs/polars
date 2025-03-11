@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import numpy as np
+import pytest
+
 import polars as pl
 from polars.io.plugins import register_io_source
 
@@ -36,3 +39,19 @@ def test_io_plugin_predicate_no_serialization_21130() -> None:
     assert lf.filter(
         pl.col("json_val").str.json_path_match("$.a").is_in(["1"])
     ).collect().to_dict(as_series=False) == {"json_val": ['{"a":"1"}']}
+
+
+def test_defer() -> None:
+    lf = pl.defer(
+        lambda: pl.DataFrame({"a": np.ones(3)}),
+        schema={"a": pl.Boolean},
+        validate_schema=False,
+    )
+    assert lf.collect().to_dict(as_series=False) == {"a": [1.0, 1.0, 1.0]}
+    lf = pl.defer(
+        lambda: pl.DataFrame({"a": np.ones(3)}),
+        schema={"a": pl.Boolean},
+        validate_schema=True,
+    )
+    with pytest.raises(pl.exceptions.SchemaError):
+        lf.collect()

@@ -462,7 +462,7 @@ impl PyLazyFrame {
         schema: &Bound<'_, PyList>,
         scan_fn: PyObject,
         pyarrow: bool,
-        check_schema: bool,
+        validate_schema: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(pyarrow_schema_to_rust(schema)?);
 
@@ -470,7 +470,7 @@ impl PyLazyFrame {
             Either::Right(schema),
             scan_fn,
             pyarrow,
-            check_schema,
+            validate_schema,
         )
         .into())
     }
@@ -480,7 +480,7 @@ impl PyLazyFrame {
         schema: Vec<(PyBackedStr, Wrap<DataType>)>,
         scan_fn: PyObject,
         pyarrow: bool,
-        check_schema: bool,
+        validate_schema: bool,
     ) -> PyResult<Self> {
         let schema = Arc::new(Schema::from_iter(
             schema
@@ -491,7 +491,7 @@ impl PyLazyFrame {
             Either::Right(schema),
             scan_fn,
             pyarrow,
-            check_schema,
+            validate_schema,
         )
         .into())
     }
@@ -500,13 +500,13 @@ impl PyLazyFrame {
     fn scan_from_python_function_schema_function(
         schema_fn: PyObject,
         scan_fn: PyObject,
-        check_schema: bool,
+        validate_schema: bool,
     ) -> PyResult<Self> {
         Ok(LazyFrame::scan_from_python_function(
             Either::Left(schema_fn),
             scan_fn,
             false,
-            check_schema,
+            validate_schema,
         )
         .into())
     }

@@ -23,7 +23,7 @@ def register_io_source(
     ],
     *,
     schema: Callable[[], SchemaDict] | SchemaDict,
-    validate_schema: bool = False
+    validate_schema: bool = False,
 ) -> LazyFrame:
     """
     Register your IO plugin and initialize a LazyFrame.
@@ -92,7 +92,7 @@ def register_io_source(
         ), parsed_predicate_success
 
     return pl.LazyFrame._scan_python_function(
-        schema=schema, scan_fn=wrap, pyarrow=False, check_schema=validate_schema
+        schema=schema, scan_fn=wrap, pyarrow=False, validate_schema=validate_schema
     )
 
 
@@ -100,11 +100,13 @@ def _defer(
     function: Callable[[], DataFrame],
     *,
     schema: SchemaDict | Callable[[], SchemaDict],
-    validate_schema: bool = True
+    validate_schema: bool = True,
 ) -> LazyFrame:
     """
-    Takes a function that produces a `DataFrame` but defers
-    it execution until the `LazyFrame` is collected.
+    Deferred execution.
+
+    Takes a function that produces a `DataFrame` but defers it execution until the
+    `LazyFrame` is collected.
 
     Parameters
     ----------
@@ -123,7 +125,9 @@ def _defer(
     Delay DataFrame execution until query is executed.
 
     >>> np.random.seed(0)
-    >>> lf = pl.defer(lambda: pl.DataFrame({"a": np.random.randn(3)}), schema = {"a": pl.Float64})
+    >>> lf = pl.defer(
+    ...     lambda: pl.DataFrame({"a": np.random.randn(3)}), schema={"a": pl.Float64}
+    ... )
     >>> lf.collect()
     shape: (3, 1)
     ┌──────────┐
@@ -139,15 +143,19 @@ def _defer(
      Run an eager source in Polars Cloud
 
     >>> (
-    ...     pl.defer(lambda: pl.read_database("select * from tbl"), schema = {"a": pl.Float64, "b": pl.Boolean})
+    ...     pl.defer(
+    ...         lambda: pl.read_database("select * from tbl"),
+    ...         schema={"a": pl.Float64, "b": pl.Boolean},
+    ...     )
     ...     .filter("b")
     ...     .sum("a")
     ...     .remote()
     ...     .collect()
-    ... ) # doctest: +SKIP
+    ... )  # doctest: +SKIP
 
 
     """
+
     def source(
         with_columns: list[str] | None,
         predicate: Expr | None,
@@ -163,4 +171,6 @@ def _defer(
             lf = lf.limit(n_rows)
         yield lf.collect()
 
-    return register_io_source(io_source=source, schema=schema, validate_schema=validate_schema)
+    return register_io_source(
+        io_source=source, schema=schema, validate_schema=validate_schema
+    )

@@ -27,7 +27,7 @@ pub struct PythonOptions {
     /// Optional predicate the reader must apply.
     pub predicate: PythonPredicate,
     /// Validate if the source gives the proper schema.
-    pub check_schema: bool,
+    pub validate_schema: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

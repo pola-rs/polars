@@ -16,12 +16,12 @@ pub(crate) struct PythonScanExec {
 
 impl PythonScanExec {
     fn check_schema(&self, df: &DataFrame) -> PolarsResult<()> {
-        if self.options.check_schema {
+        if self.options.validate_schema {
             let output_schema = self
                 .options
                 .output_schema
                 .as_ref()
-                .unwrap_or_else(|| &self.options.schema);
+                .unwrap_or(&self.options.schema);
             polars_ensure!(df.schema() == output_schema, SchemaMismatch: "user provided schema: {:?} doesn't match the DataFrame schema: {:?}", output_schema, df.schema());
         }
         Ok(())
