@@ -732,13 +732,13 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
             pl.exceptions.SchemaError,
             match=r"does not contains column\(s\) 'a'",
         ):
-            lf.collect(engine="streaming" if streaming else "in-memory")
+            lf.collect(engine="streaming")
     else:
         with pytest.raises(
             pl.exceptions.ColumnNotFoundError,
             match="did not find column in file: a",
         ):
-            lf.collect(engine="streaming" if streaming else "in-memory")
+            lf.collect(engine="in-memory")
 
 
 @pytest.mark.parametrize("parallel", ["columns", "row_groups", "prefiltered", "none"])

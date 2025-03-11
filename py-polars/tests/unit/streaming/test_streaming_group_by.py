@@ -400,7 +400,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )  # non-streamable UDF + nested_agg
     )
 
-    assert "STREAMING" in res.explain(engine="old-streaming")  # type: ignore[call-overload]
+    assert "STREAMING" in res.explain(engine="old-streaming")  # type: ignore[arg-type]
 
 
 def test_group_by_min_max_string_type() -> None:
