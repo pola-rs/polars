@@ -21,7 +21,7 @@ from polars.exceptions import (
 from polars.testing import assert_frame_equal, assert_series_equal
 
 if TYPE_CHECKING:
-    from polars._typing import JoinStrategy
+    from polars._typing import JoinStrategy, PolarsDataType
 
 
 def test_semi_anti_join() -> None:
@@ -1700,16 +1700,24 @@ def test_select_after_join_where_20831() -> None:
     assert q.select(pl.len()).collect().item() == 6
 
 
-def test_join_on_struct() -> None:
+@pytest.mark.parametrize(
+    ("dtype", "data"),
+    [
+        (pl.Struct, [{"x": 1}, {"x": 2}, {"x": 3}, {"x": 4}]),
+        (pl.List, [[1], [2, 2], [3, 3, 3], [4, 4, 4, 4]]),
+        (pl.Array(pl.Int64, 2), [[1, 1], [2, 2], [3, 3], [4, 4]]),
+    ],
+)
+def test_join_on_nested(dtype: PolarsDataType, data: list) -> None:
     lhs = pl.DataFrame(
         {
-            "a": [{"x": 1}, {"x": 2}, {"x": 3}],
+            "a": data[:3],
             "b": [1, 2, 3],
         }
     )
     rhs = pl.DataFrame(
         {
-            "a": [{"x": 4}, {"x": 2}],
+            "a": [data[3], data[1]],
             "c": [4, 2],
         }
     )
@@ -1717,7 +1725,7 @@ def test_join_on_struct() -> None:
     assert_frame_equal(
         lhs.join(rhs, on="a", how="left", maintain_order="left"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 2}, {"x": 3}]),
+            a=pl.Series(data[:3]),
             b=pl.Series([1, 2, 3]),
             c=pl.Series([None, 2, None]),
         ),
@@ -1726,14 +1734,14 @@ def test_join_on_struct() -> None:
         lhs.join(rhs, on="a", how="right", maintain_order="right"),
         pl.select(
             b=pl.Series([None, 2]),
-            a=pl.Series([{"x": 4}, {"x": 2}]),
+            a=pl.Series([data[3], data[1]]),
             c=pl.Series([4, 2]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, on="a", how="inner"),
         pl.select(
-            a=pl.Series([{"x": 2}]),
+            a=pl.Series([data[1]]),
             b=pl.Series([2]),
             c=pl.Series([2]),
         ),
@@ -1741,34 +1749,32 @@ def test_join_on_struct() -> None:
     assert_frame_equal(
         lhs.join(rhs, on="a", how="full", maintain_order="left_right"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 2}, {"x": 3}, None]),
+            a=pl.Series(data[:3] + [None]),
             b=pl.Series([1, 2, 3, None]),
-            a_right=pl.Series([None, {"x": 2}, None, {"x": 4}]),
+            a_right=pl.Series([None, data[1], None, data[3]]),
             c=pl.Series([None, 2, None, 4]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, on="a", how="semi"),
         pl.select(
-            a=pl.Series([{"x": 2}]),
+            a=pl.Series([data[1]]),
             b=pl.Series([2]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, on="a", how="anti", maintain_order="left"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 3}]),
+            a=pl.Series([data[0], data[2]]),
             b=pl.Series([1, 3]),
         ),
     )
     assert_frame_equal(
         lhs.join(rhs, how="cross", maintain_order="left_right"),
         pl.select(
-            a=pl.Series([{"x": 1}, {"x": 1}, {"x": 2}, {"x": 2}, {"x": 3}, {"x": 3}]),
+            a=pl.Series([data[0], data[0], data[1], data[1], data[2], data[2]]),
             b=pl.Series([1, 1, 2, 2, 3, 3]),
-            a_right=pl.Series(
-                [{"x": 4}, {"x": 2}, {"x": 4}, {"x": 2}, {"x": 4}, {"x": 2}]
-            ),
+            a_right=pl.Series([data[3], data[1], data[3], data[1], data[3], data[1]]),
             c=pl.Series([4, 2, 4, 2, 4, 2]),
         ),
     )
