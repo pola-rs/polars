@@ -272,6 +272,7 @@ unsafe fn to_dtype(schema: &ArrowSchema) -> PolarsResult<ArrowDataType> {
         "I" => ArrowDataType::UInt32,
         "l" => ArrowDataType::Int64,
         "L" => ArrowDataType::UInt64,
+        "_pli128" => ArrowDataType::Int128,
         "e" => ArrowDataType::Float16,
         "f" => ArrowDataType::Float32,
         "g" => ArrowDataType::Float64,
