@@ -559,7 +559,7 @@ def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
 
 
 def test_deadlock_stop_requested(
-    tmp_path: Path, monkeypatch: Any, scan: Any, write: Any
+    tmp_path: Path, monkeypatch: Any
 ) -> None:
     df = pl.DataFrame(
         {
@@ -579,7 +579,7 @@ def test_deadlock_stop_requested(
     left = pl.scan_parquet(left_fs)  # type: ignore[arg-type]
     right = pl.scan_parquet(right_fs)  # type: ignore[arg-type]
 
-    left.join(right, pl.col.a == pl.col.a).collect(engine="streaming")
+    left.join(right, pl.col.a == pl.col.a).collect(engine="streaming").height
 
 
 @pytest.mark.parametrize(
@@ -602,4 +602,8 @@ def test_deadlock_linearize(scan: Any, write: Any) -> None:
     write(df, f)
     fs = [io.BytesIO(f.getbuffer()) for _ in range(10)]
     lf = scan(fs).head(100)
-    lf.collect(engine="streaming", slice_pushdown=False)
+
+    assert_frame_equal(
+        lf.collect(engine="streaming", slice_pushdown=False),
+        pl.concat([df] * 10),
+    )

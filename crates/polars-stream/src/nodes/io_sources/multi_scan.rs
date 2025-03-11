@@ -2,7 +2,7 @@ use std::cmp::Reverse;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use futures::StreamExt;
 use futures::stream::FuturesUnordered;
@@ -962,14 +962,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
             struct PhaseSourcePass {
                 recv: Receiver<Morsel>,
-                start_morsel_seq: MorselSeq,
-
                 source_name: PlSmallStr,
                 current_scan: usize,
                 missing_columns: Option<Bitmap>,
                 row_index: Option<RowIndex>,
 
-                max_morsel_seq: Arc<AtomicU64>,
                 outcome: PhaseOutcomeToken,
                 #[expect(unused)]
                 wait_token: WaitToken,
@@ -983,13 +980,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             let include_file_paths = include_file_paths.clone();
             let hive_parts = hive_parts.clone();
             join_handles.push(spawn(TaskPriority::High, async move {
+                let mut seq = MorselSeq::default();
+
                 'phase_loop: while let Ok(mut send) = pass_phase_recv.recv().await {
                     let source_token = SourceToken::new();
                     let wait_group = WaitGroup::default();
 
                     while let Ok(mut phase_source_pass) = pass_source_recv.recv().await {
                         while let Ok(rg) = phase_source_pass.recv.recv().await {
-                            let original_seq = rg.seq();
                             let original_source_token = rg.source_token().clone();
 
                             let df = rg.into_df();
@@ -1003,23 +1001,16 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 file_schema.as_ref(),
                                 projection.as_ref(),
                                 phase_source_pass.row_index.as_ref(),
-                            );
-                            let df = match df {
-                                Ok(df) => df,
-                                Err(err) => {
-                                    return Err(err);
-                                },
-                            };
+                            )?;
 
-                            let seq = phase_source_pass.start_morsel_seq.offset_by(original_seq);
                             let mut morsel = Morsel::new(df, seq, source_token.clone());
+                            seq = seq.successor();
                             morsel.set_consume_token(wait_group.token());
 
                             if send.send(morsel).await.is_err() {
                                 return Ok(());
                             }
 
-                            phase_source_pass.max_morsel_seq.store(seq.to_u64(), Ordering::Relaxed);
                             wait_group.wait().await;
                             if source_token.stop_requested() {
                                 original_source_token.stop();
@@ -1037,7 +1028,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             let sources = sources.clone();
             let mut skipable_file_mask = skipable_file_mask.clone();
             join_handles.push(spawn(TaskPriority::High, async move {
-                let mut seq = MorselSeq::default();
                 let mut current_scan = first_scan_source;
                 let mut unrestricted_row_count_rx = None;
 
@@ -1088,17 +1078,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     let (mut tx, rx) = connector();
                                     let wg = WaitGroup::default();
                                     let outcome = PhaseOutcomeToken::new();
-                                    let max_morsel_seq = Arc::new(AtomicU64::new(0));
                                     if pass_source_send.send(PhaseSourcePass {
                                         recv: rx,
-                                        start_morsel_seq: seq,
 
                                         source_name: source_name.clone(),
                                         current_scan,
                                         missing_columns: phase.missing_columns.clone(),
                                         row_index: row_index.clone(),
 
-                                        max_morsel_seq: max_morsel_seq.clone(),
                                         outcome: outcome.clone(),
                                         wait_token: wg.token(),
                                     }).await.is_err() {
@@ -1112,11 +1099,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                               // a new source.
 
                                     wg.wait().await;
-                                    seq = seq.max(unsafe { MorselSeq::from_u64(max_morsel_seq.load(Ordering::Relaxed)) });
-                                    let did_finish = outcome.did_finish();
-                                    seq = seq.successor();
-
-                                    if !did_finish {
+                                    if !outcome.did_finish() {
                                         phase_output.outcome.stop();
                                         continue 'phase_loop;
                                     }
@@ -1125,25 +1108,26 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             SourcePhaseContent::Channels(rx) => {
                                 assert!(is_selected);
 
-                                let mut distributor: Option<FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>>> = None;
+                                let mut linearizer_tasks: FuturesUnordered<AbortOnDropHandle<PolarsResult<()>>> = FuturesUnordered::new();
                                 let rx = match rx {
                                     SourceInput::Serial(rx) => rx,
                                     SourceInput::Parallel(rxs) => {
                                         let (mut tx, rx) = connector();
                                         let (mut lin_rx, lin_txs) = Linearizer::new(num_pipelines, DEFAULT_LINEARIZER_BUFFER_SIZE);
 
-                                        let mut join_handles = FuturesUnordered::new();
-                                        join_handles.extend(rxs.into_iter().zip(lin_txs).map(|(mut rx, mut lin_tx)| AbortOnDropHandle::new(spawn(TaskPriority::High, async move {
-                                            while let Ok(mut m) = rx.recv().await {
-                                                let consume_token = m.take_consume_token();
-                                                if lin_tx.insert(Priority(Reverse(m.seq()), m)).await.is_err() {
-                                                    return Ok(());
+                                        linearizer_tasks.extend(rxs.into_iter().zip(lin_txs).map(|(mut rx, mut lin_tx)|
+                                            AbortOnDropHandle::new(spawn(TaskPriority::High, async move {
+                                                while let Ok(mut m) = rx.recv().await {
+                                                    let consume_token = m.take_consume_token();
+                                                    if lin_tx.insert(Priority(Reverse(m.seq()), m)).await.is_err() {
+                                                        return Ok(());
+                                                    }
+                                                    drop(consume_token);
                                                 }
-                                                drop(consume_token);
+                                                PolarsResult::Ok(())
                                             }
-                                            PolarsResult::Ok(())
-                                        }))));
-                                        join_handles.push(AbortOnDropHandle::new(spawn(TaskPriority::High, async move {
+                                        ))));
+                                        linearizer_tasks.push(AbortOnDropHandle::new(spawn(TaskPriority::High, async move {
                                             while let Some(Priority(_, m)) = lin_rx.get().await {
                                                 if tx.send(m).await.is_err() {
                                                     return Ok(());
@@ -1158,35 +1142,26 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                                 let wg = WaitGroup::default();
                                 let outcome = PhaseOutcomeToken::new();
-                                let max_morsel_seq = Arc::new(AtomicU64::new(0));
                                 if pass_source_send.send(PhaseSourcePass {
                                     recv: rx,
-                                    start_morsel_seq: seq,
 
                                     source_name: source_name.clone(),
                                     current_scan,
                                     missing_columns: phase.missing_columns.clone(),
                                     row_index: row_index.clone(),
 
-                                    max_morsel_seq: max_morsel_seq.clone(),
                                     outcome: outcome.clone(),
                                     wait_token: wg.token(),
                                 }).await.is_err() {
                                     return Ok(());
                                 }
 
-                                if let Some(mut distributor) = distributor.take() {
-                                    while let Some(res) = distributor.next().await {
-                                        res?
-                                    }
+                                while let Some(res) = linearizer_tasks.next().await {
+                                    res?
                                 }
-                                let mut did_finish = true;
-                                wg.wait().await;
-                                seq = seq.max(unsafe { MorselSeq::from_u64(max_morsel_seq.load(Ordering::Relaxed)) });
-                                did_finish &= outcome.did_finish();
-                                seq = seq.successor();
 
-                                if !did_finish {
+                                wg.wait().await;
+                                if !outcome.did_finish() {
                                     phase_output.outcome.stop();
                                     continue 'phase_loop;
                                 }
