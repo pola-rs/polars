@@ -407,7 +407,7 @@ def test_parquet_different_schema(tmp_path: Path, streaming: bool) -> None:
     a.write_parquet(f1)
     b.write_parquet(f2)
     assert pl.scan_parquet([f1, f2]).select("b").collect(
-        engine="streaming" if streaming else "in-memory"
+        engine="old-streaming" if streaming else "in-memory"  # type: ignore[arg-type]
     ).columns == ["b"]
 
 
@@ -451,7 +451,7 @@ def test_parquet_schema_mismatch_panic_17067(tmp_path: Path, streaming: bool) ->
     pl.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]}).write_parquet(tmp_path / "1.parquet")
     pl.DataFrame({"c": [1, 2, 3], "d": [4, 5, 6]}).write_parquet(tmp_path / "2.parquet")
 
-    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+    with pytest.raises(pl.exceptions.SchemaError):
         pl.scan_parquet(tmp_path).collect(
             engine="streaming" if streaming else "in-memory"
         )
@@ -510,7 +510,7 @@ def test_parquet_slice_pushdown_non_zero_offset(
     # * Attempting to read any data will error
     with pytest.raises(ComputeError):
         pl.scan_parquet(paths[0]).collect(
-            engine="streaming" if streaming else "in-memory"
+            engine="old-streaming" if streaming else "in-memory"  # type: ignore[arg-type]
         )
 
     df = dfs[1]
@@ -659,7 +659,7 @@ def test_parquet_unaligned_schema_read(tmp_path: Path, streaming: bool) -> None:
     lf = pl.scan_parquet(paths)
 
     assert_frame_equal(
-        lf.select("a").collect(engine="streaming" if streaming else "in-memory"),
+        lf.select("a").collect(engine="old-streaming" if streaming else "in-memory"),  # type: ignore[arg-type]
         pl.DataFrame({"a": [1, 2, 3]}),
     )
 
@@ -721,8 +721,8 @@ def test_parquet_unaligned_schema_read_missing_cols_from_first(
     lf = pl.scan_parquet(paths)
 
     with pytest.raises(
-        pl.exceptions.ColumnNotFoundError,
-        match="did not find column in file: a",
+        pl.exceptions.SchemaError,
+        match="does not contains column(s) 'a'",
     ):
         lf.collect(engine="streaming" if streaming else "in-memory")
 
@@ -752,7 +752,7 @@ def test_parquet_schema_arg(
 
     lf = pl.scan_parquet(paths, parallel=parallel, schema=schema)
 
-    with pytest.raises(pl.exceptions.ColumnNotFoundError):
+    with pytest.raises(pl.exceptions.Schema):
         lf.collect(engine="streaming" if streaming else "in-memory")
 
     lf = pl.scan_parquet(

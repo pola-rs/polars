@@ -256,7 +256,7 @@ fn resolve_source_projection(
             .join(", ");
         polars_bail!(
             SchemaMismatch:
-            "'{source_name}' does not contains column(s) {columns}, which are present in the first scanned file. Consider enabling `allow_missing_columns`."
+            "'{source_name}' does not contain column(s) {columns}, which are present in the first scanned file. Consider enabling `allow_missing_columns`."
         );
     }
 

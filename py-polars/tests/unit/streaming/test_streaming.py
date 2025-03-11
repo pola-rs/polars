@@ -315,7 +315,7 @@ def test_custom_temp_dir(tmp_path: Path, monkeypatch: Any) -> None:
 
     s = pl.arange(0, 100_000, eager=True).rename("idx")
     df = s.shuffle().to_frame()
-    df.lazy().sort("idx").collect(engine="streaming")
+    df.lazy().sort("idx").collect(engine="old-streaming")  # type: ignore[call-overload]
 
     assert os.listdir(tmp_path), f"Temp directory '{tmp_path}' is empty"
 

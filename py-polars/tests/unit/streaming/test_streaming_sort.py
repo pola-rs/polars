@@ -110,7 +110,7 @@ def test_streaming_sort(
         .to_frame("s")
         .lazy()
         .sort("s")
-        .collect(engine="streaming")["s"]
+        .collect(engine="old-streaming")["s"]  # type: ignore[call-overload]
         .is_sorted()
     )
     (_, err) = capfd.readouterr()

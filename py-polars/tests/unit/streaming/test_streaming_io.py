@@ -232,14 +232,22 @@ def test_parquet_eq_statistics(
         assert_frame_equal(result, df.filter(pred))
 
     captured = capfd.readouterr().err
-    assert (
-        "parquet row group must be read, statistics not sufficient for predicate."
-        in captured
-    )
-    assert (
-        "parquet row group can be skipped, the statistics were sufficient"
-        " to apply the predicate." in captured
-    )
+    if streaming:
+        assert (
+            "[ParquetSource]: Predicate pushdown: reading 1 / 1 row groups" in captured
+        )
+        assert (
+            "[ParquetSource]: Predicate pushdown: reading 0 / 1 row groups" in captured
+        )
+    else:
+        assert (
+            "parquet row group must be read, statistics not sufficient for predicate."
+            in captured
+        )
+        assert (
+            "parquet row group can be skipped, the statistics were sufficient"
+            " to apply the predicate." in captured
+        )
 
 
 @pytest.mark.write_disk
@@ -250,30 +258,6 @@ def test_streaming_empty_parquet_16523(tmp_path: Path) -> None:
     q = pl.scan_parquet(file_path)
     q2 = pl.LazyFrame({"a": [1]}, schema={"a": pl.Int32})
     assert q.join(q2, on="a").collect(engine="streaming").shape == (0, 1)
-
-
-@pytest.mark.may_fail_auto_streaming
-@pytest.mark.parametrize(
-    "method",
-    ["parquet", "csv"],
-)
-def test_nyi_scan_in_memory(method: str) -> None:
-    f = io.BytesIO()
-    df = pl.DataFrame(
-        {
-            "a": [1, 2, 3],
-            "b": ["x", "y", "z"],
-        }
-    )
-
-    (getattr(df, f"write_{method}"))(f)
-
-    f.seek(0)
-    with pytest.raises(
-        pl.exceptions.ComputeError,
-        match="not yet implemented: Streaming scanning of in-memory buffers",
-    ):
-        (getattr(pl, f"scan_{method}"))(f).collect(engine="streaming")
 
 
 @pytest.mark.parametrize(

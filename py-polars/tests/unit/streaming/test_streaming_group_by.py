@@ -329,7 +329,7 @@ def test_streaming_group_by_all_numeric_types_stability_8570() -> None:
                 .with_columns(pl.col("z").cast(dtype))
                 .group_by(keys)
                 .agg(pl.col("z").sum().alias("z_sum"))
-                .collect(engine="streaming")
+                .collect(engine="old-streaming")  # type: ignore[call-overload]
             )
             assert dfd["z_sum"].sum() == dfc["z"].sum()
 
@@ -400,7 +400,7 @@ def test_streaming_restart_non_streamable_group_by() -> None:
         )  # non-streamable UDF + nested_agg
     )
 
-    assert "STREAMING" in res.explain(engine="streaming")
+    assert "STREAMING" in res.explain(engine="old-streaming")  # type: ignore[call-overload]
 
 
 def test_group_by_min_max_string_type() -> None:
