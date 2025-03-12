@@ -54,6 +54,7 @@ test:  ## Run tests
 		-p polars-plan \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-testing \
 		-p polars-time \
 		-p polars-utils \
 		-- \
@@ -70,6 +71,7 @@ nextest:  ## Run tests with nextest
 		-p polars-plan \
 		-p polars-row \
 		-p polars-sql \
+		-p polars-testing \
 		-p polars-time \
 		-p polars-utils \
 
