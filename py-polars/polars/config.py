@@ -1462,7 +1462,7 @@ class Config(contextlib.ContextDecorator):
 
         Parameters
         ----------
-        engine : {None, 'auto', 'in-memory', 'streaming', 'old-streaming', 'gpu'}
+        engine : {None, 'auto', 'in-memory', 'streaming', 'gpu'}
             The default execution engine Polars will attempt to use
             when calling `.collect()`. However, the query is not
             guaranteed to execute with the specified engine.
