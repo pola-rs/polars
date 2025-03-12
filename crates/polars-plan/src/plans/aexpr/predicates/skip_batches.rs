@@ -522,6 +522,12 @@ fn aexpr_to_skip_batch_predicate_rec(
         let min_name = format_pl_smallstr!("{col}_min");
         (col, min_name)
     }));
+
+    // We cannot do proper equalities for these.
+    if live_columns.iter().any(|(c, _)| schema.get(c).is_none_or(|dt| dt.is_categorical())) {
+        return None;
+    }
+
     // Rename all uses of column names with the min value.
     let expr = rename_columns(e, expr_arena, &live_columns);
     let mut expr = expr_arena.add(AExpr::Function {
