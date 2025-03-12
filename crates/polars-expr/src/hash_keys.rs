@@ -20,7 +20,11 @@ pub enum HashKeysVariant {
 pub fn hash_keys_variant_for_dtype(dt: &DataType) -> HashKeysVariant {
     match dt {
         dt if dt.is_primitive_numeric() | dt.is_temporal() => HashKeysVariant::Single,
-        DataType::Decimal(_, _) | DataType::Enum(_, _) => HashKeysVariant::Single,
+
+        #[cfg(feature = "dtype-decimal")]
+        DataType::Decimal(_, _) => HashKeysVariant::Single,
+        #[cfg(feature = "dtype-categorical")]
+        DataType::Enum(_, _) => HashKeysVariant::Single,
 
         // TODO: more efficient encoding for these.
         DataType::String | DataType::Binary | DataType::Boolean | DataType::Null => {
