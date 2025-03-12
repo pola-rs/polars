@@ -380,10 +380,8 @@ fn create_physical_expr_inner(
                                     Context::Aggregation,
                                     expr_arena,
                                 )?;
-                                if let DataType::Categorical(_, CategoricalOrdering::Lexical) =
-                                    field.dtype
-                                {
-                                    // Lexical Categoricals cannot use multithreaded min/max algorithm.
+                                if let DataType::Categorical(_, _) = field.dtype {
+                                    // Categoricals cannot use multithreaded min/max algorithm.
                                     allow_threading = false;
                                 }
                             }
@@ -401,10 +399,8 @@ fn create_physical_expr_inner(
                                     Context::Aggregation,
                                     expr_arena,
                                 )?;
-                                if let DataType::Categorical(_, CategoricalOrdering::Lexical) =
-                                    field.dtype
-                                {
-                                    // Lexical Categoricals cannot use multithreaded min/max algorithm.
+                                if let DataType::Categorical(_, _) = field.dtype {
+                                    // Categoricals cannot use multithreaded min/max algorithm.
                                     allow_threading = false;
                                 }
                             }
