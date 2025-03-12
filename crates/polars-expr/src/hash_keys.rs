@@ -446,10 +446,8 @@ fn sketch_cardinality<T>(
 {
     if ca.has_nulls() {
         for arr in ca.downcast_iter() {
-            for opt_k in arr.iter() {
-                if let Some(k) = opt_k {
-                    sketch.insert(random_state.tot_hash_one(k));
-                }
+            for k in arr.iter().flatten() {
+                sketch.insert(random_state.tot_hash_one(k));
             }
         }
     } else {

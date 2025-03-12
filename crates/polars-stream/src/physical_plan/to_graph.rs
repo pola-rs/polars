@@ -801,9 +801,9 @@ fn to_graph_rec<'a>(
             let right_input_schema = ctx.phys_sm[input_right.node].output_schema.clone();
 
             let left_key_schema =
-                compute_output_schema(&left_input_schema, &left_on, ctx.expr_arena)?;
+                compute_output_schema(&left_input_schema, left_on, ctx.expr_arena)?;
             let right_key_schema =
-                compute_output_schema(&right_input_schema, &right_on, ctx.expr_arena)?;
+                compute_output_schema(&right_input_schema, right_on, ctx.expr_arena)?;
 
             // We use key columns entirely by position, and allow duplicate names in key selectors,
             // so just assign arbitrary unique names for the selectors.

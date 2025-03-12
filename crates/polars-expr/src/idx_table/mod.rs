@@ -91,20 +91,12 @@ pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
             DataType::Duration(_) => Box::new(SKIT::<Int64Type>::new()),
             DataType::Time => Box::new(SKIT::<Int64Type>::new()),
 
+            #[cfg(feature = "dtype-decimal")]
             DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
+            #[cfg(feature = "dtype-categorical")]
             DataType::Enum(_, _) => Box::new(SKIT::<UInt32Type>::new()),
 
-            DataType::String
-            | DataType::Binary
-            | DataType::Boolean
-            | DataType::Null
-            | DataType::BinaryOffset
-            | DataType::Array(_, _)
-            | DataType::List(_)
-            | DataType::Object(_)
-            | DataType::Categorical(_, _)
-            | DataType::Struct(_)
-            | DataType::Unknown(_) => Box::new(row_encoded::RowEncodedIdxTable::new()),
+            _ => Box::new(row_encoded::RowEncodedIdxTable::new()),
         }
     }
 }

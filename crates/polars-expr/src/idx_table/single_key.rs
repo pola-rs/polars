@@ -38,7 +38,7 @@ where
     K: TotalHash + TotalEq + Send + Sync + 'static,
 {
     #[inline(always)]
-    fn probe_one<'a, const MARK_MATCHES: bool>(
+    fn probe_one<const MARK_MATCHES: bool>(
         &self,
         key_idx: IdxSize,
         key: &K,
@@ -68,7 +68,6 @@ where
     }
 
     fn probe_impl<
-        'a,
         const MARK_MATCHES: bool,
         const EMIT_UNMATCHED: bool,
         const NULL_IS_VALID: bool,
@@ -88,10 +87,8 @@ where
                     table_match.push(*idx);
                     probe_match.push(key_idx);
                 }
-                if MARK_MATCHES {
-                    if !self.nulls_emitted.load(Ordering::Relaxed) {
-                        self.nulls_emitted.store(true, Ordering::Relaxed);
-                    }
+                if MARK_MATCHES && !self.nulls_emitted.load(Ordering::Relaxed) {
+                    self.nulls_emitted.store(true, Ordering::Relaxed);
                 }
                 !self.null_keys.is_empty()
             } else {
@@ -111,7 +108,8 @@ where
         keys_processed
     }
 
-    fn probe_dispatch<'a>(
+    #[allow(clippy::too_many_arguments)]
+    fn probe_dispatch(
         &self,
         keys: impl Iterator<Item = (IdxSize, Option<K>)>,
         table_match: &mut Vec<IdxSize>,
