@@ -373,16 +373,19 @@ fn create_physical_expr_inner(
 
                     let groupby = match agg {
                         I::Min { propagate_nans, .. } => {
-                            let field = expr_arena.get(expression).to_field(
-                                schema,
-                                Context::Aggregation,
-                                expr_arena,
-                            )?;
-                            if let DataType::Categorical(_, CategoricalOrdering::Lexical) =
-                                field.dtype
+                            #[cfg(feature = "dtype-categorical")]
                             {
-                                // Lexical Categoricals cannot use multithreaded min/max algorithm.
-                                allow_threading = false;
+                                let field = expr_arena.get(expression).to_field(
+                                    schema,
+                                    Context::Aggregation,
+                                    expr_arena,
+                                )?;
+                                if let DataType::Categorical(_, CategoricalOrdering::Lexical) =
+                                    field.dtype
+                                {
+                                    // Lexical Categoricals cannot use multithreaded min/max algorithm.
+                                    allow_threading = false;
+                                }
                             }
                             if *propagate_nans {
                                 GBM::NanMin
@@ -391,16 +394,19 @@ fn create_physical_expr_inner(
                             }
                         },
                         I::Max { propagate_nans, .. } => {
-                            let field = expr_arena.get(expression).to_field(
-                                schema,
-                                Context::Aggregation,
-                                expr_arena,
-                            )?;
-                            if let DataType::Categorical(_, CategoricalOrdering::Lexical) =
-                                field.dtype
+                            #[cfg(feature = "dtype-categorical")]
                             {
-                                // Lexical Categoricals cannot use multithreaded min/max algorithm.
-                                allow_threading = false;
+                                let field = expr_arena.get(expression).to_field(
+                                    schema,
+                                    Context::Aggregation,
+                                    expr_arena,
+                                )?;
+                                if let DataType::Categorical(_, CategoricalOrdering::Lexical) =
+                                    field.dtype
+                                {
+                                    // Lexical Categoricals cannot use multithreaded min/max algorithm.
+                                    allow_threading = false;
+                                }
                             }
                             if *propagate_nans {
                                 GBM::NanMax
