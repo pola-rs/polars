@@ -154,7 +154,8 @@ where
         );
 
         let keys: &ChunkedArray<T> = hash_keys.keys.as_phys_any().downcast_ref().unwrap();
-        for (i, key) in keys.iter().enumerate_idx() {
+        for (i, subset_idx) in subset.iter().enumerate_idx() {
+            let key = unsafe { keys.get_unchecked(*subset_idx as usize) };
             let idx = self.idx_offset + i;
             if let Some(key) = key {
                 match self.idx_map.entry(key) {
