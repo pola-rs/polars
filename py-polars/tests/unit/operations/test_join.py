@@ -663,15 +663,21 @@ def test_join_sorted_fast_paths_null() -> None:
 
 def test_full_outer_join_list_() -> None:
     schema = {"id": pl.Int64, "vals": pl.List(pl.Float64)}
-
+    join_schema = {**schema, **{k + "_right": t for (k, t) in schema.items()}}
     df1 = pl.DataFrame({"id": [1], "vals": [[]]}, schema=schema)  # type: ignore[arg-type]
     df2 = pl.DataFrame({"id": [2, 3], "vals": [[], [4]]}, schema=schema)  # type: ignore[arg-type]
-    assert df1.join(df2, on="id", how="full").to_dict(as_series=False) == {
-        "id": [None, None, 1],
-        "vals": [None, None, []],
-        "id_right": [2, 3, None],
-        "vals_right": [[], [4.0], None],
-    }
+    expected = pl.DataFrame(
+        {
+            "id": [None, None, 1],
+            "vals": [None, None, []],
+            "id_right": [2, 3, None],
+            "vals_right": [[], [4.0], None],
+        },
+        schema=join_schema,  # type: ignore[arg-type]
+    )
+    assert_frame_equal(
+        df1.join(df2, on="id", how="full"), expected, check_row_order=False
+    )
 
 
 @pytest.mark.slow
