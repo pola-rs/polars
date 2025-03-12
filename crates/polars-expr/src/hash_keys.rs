@@ -120,6 +120,7 @@ impl HashKeys {
             Self::Single(SingleKeys {
                 random_state,
                 keys: df[0].as_materialized_series().clone(),
+                null_is_valid,
             })
         }
     }
@@ -296,6 +297,7 @@ impl RowEncodedKeys {
 pub struct SingleKeys {
     pub random_state: PlRandomState,
     pub keys: Series,
+    pub null_is_valid: bool,
 }
 
 impl SingleKeys {
@@ -312,7 +314,7 @@ impl SingleKeys {
                 &self.random_state,
                 partitioner,
                 partitions,
-                partition_nulls,
+                partition_nulls | self.null_is_valid,
             );
         });
     }
@@ -331,7 +333,7 @@ impl SingleKeys {
                 partitioner,
                 partition_idxs,
                 sketches,
-                partition_nulls,
+                partition_nulls | self.null_is_valid,
             );
         });
     }

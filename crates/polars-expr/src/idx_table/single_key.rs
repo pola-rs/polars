@@ -1,7 +1,7 @@
 #![allow(clippy::unnecessary_cast)] // Clippy doesn't recognize that IdxSize and u64 can be different.
 #![allow(unsafe_op_in_unsafe_fn)]
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use polars_utils::idx_map::total_idx_map::{Entry, TotalIndexMap};
 use polars_utils::idx_vec::UnitVec;
@@ -18,6 +18,7 @@ pub struct SingleKeyIdxTable<T: PolarsDataType> {
     idx_map: TotalIndexMap<T::Physical<'static>, UnitVec<AtomicU64>>,
     idx_offset: IdxSize,
     null_keys: Vec<IdxSize>,
+    nulls_emitted: AtomicBool,
 }
 
 impl<T: PolarsDataType> SingleKeyIdxTable<T> {
@@ -26,6 +27,7 @@ impl<T: PolarsDataType> SingleKeyIdxTable<T> {
             idx_map: TotalIndexMap::default(),
             idx_offset: 0,
             null_keys: Vec::new(),
+            nulls_emitted: AtomicBool::new(false),
         }
     }
 }
@@ -50,14 +52,13 @@ where
                 probe_match.push(key_idx);
             }
 
-            // Mark if necessary. This action is idempotent so doesn't
-            // need any synchronization on the load, nor does it need a
-            // fetch_or to do it atomically.
+            // Mark if necessary. This action is idempotent so doesn't need 
+            // atomic fetch_or to do it atomically.
             if MARK_MATCHES {
                 let first_idx = unsafe { idxs.get_unchecked(0) };
                 let first_idx_val = first_idx.load(Ordering::Relaxed);
                 if first_idx_val >> 63 == 0 {
-                    first_idx.store(first_idx_val | (1 << 63), Ordering::Release);
+                    first_idx.store(first_idx_val | (1 << 63), Ordering::Relaxed);
                 }
             }
             true
@@ -66,7 +67,7 @@ where
         }
     }
 
-    fn probe_impl<'a, const MARK_MATCHES: bool, const EMIT_UNMATCHED: bool>(
+    fn probe_impl<'a, const MARK_MATCHES: bool, const EMIT_UNMATCHED: bool, const NULL_IS_VALID: bool>(
         &self,
         keys: impl Iterator<Item = (IdxSize, Option<K>)>,
         table_match: &mut Vec<IdxSize>,
@@ -77,6 +78,17 @@ where
         for (key_idx, key) in keys {
             let found_match = if let Some(key) = key {
                 self.probe_one::<MARK_MATCHES>(key_idx, &key, table_match, probe_match)
+            } else if NULL_IS_VALID {
+                for idx in &self.null_keys {
+                    table_match.push(*idx);
+                    probe_match.push(key_idx);
+                }
+                if MARK_MATCHES {
+                    if !self.nulls_emitted.load(Ordering::Relaxed) {
+                        self.nulls_emitted.store(true, Ordering::Relaxed);
+                    }
+                }
+                !self.null_keys.is_empty()
             } else {
                 false
             };
@@ -101,15 +113,22 @@ where
         probe_match: &mut Vec<IdxSize>,
         mark_matches: bool,
         emit_unmatched: bool,
+        null_is_valid: bool,
         limit: IdxSize,
     ) -> IdxSize {
-        match (mark_matches, emit_unmatched) {
-            (false, false) => {
-                self.probe_impl::<false, false>(keys, table_match, probe_match, limit)
+        match (mark_matches, emit_unmatched, null_is_valid) {
+            (false, false, false) => {
+                self.probe_impl::<false, false, false>(keys, table_match, probe_match, limit)
             },
-            (false, true) => self.probe_impl::<false, true>(keys, table_match, probe_match, limit),
-            (true, false) => self.probe_impl::<true, false>(keys, table_match, probe_match, limit),
-            (true, true) => self.probe_impl::<true, true>(keys, table_match, probe_match, limit),
+            (false, false, true) => self.probe_impl::<false, false, true>(keys, table_match, probe_match, limit),
+            (false, true, false) => self.probe_impl::<false, true, false>(keys, table_match, probe_match, limit),
+            (false, true, true) => self.probe_impl::<false, true, true>(keys, table_match, probe_match, limit),
+            (true, false, false) => {
+                self.probe_impl::<true, false, false>(keys, table_match, probe_match, limit)
+            },
+            (true, false, true) => self.probe_impl::<true, false, true>(keys, table_match, probe_match, limit),
+            (true, true, false) => self.probe_impl::<true, true, false>(keys, table_match, probe_match, limit),
+            (true, true, true) => self.probe_impl::<true, true, true>(keys, table_match, probe_match, limit),
         }
     }
 }
@@ -166,7 +185,7 @@ where
                         v.insert(unitvec![AtomicU64::new(idx as u64)]);
                     },
                 }
-            } else if track_unmatchable {
+            } else if track_unmatchable | hash_keys.null_is_valid {
                 self.null_keys.push(idx);
             }
         }
@@ -210,6 +229,7 @@ where
                 probe_match,
                 mark_matches,
                 emit_unmatched,
+                hash_keys.null_is_valid,
                 limit,
             )
         } else {
@@ -222,6 +242,7 @@ where
                 probe_match,
                 mark_matches,
                 emit_unmatched,
+                false, // Whether or not nulls are valid doesn't matter.
                 limit,
             )
         }
@@ -236,24 +257,26 @@ where
         out.clear();
 
         let mut keys_processed = 0;
-        if (offset as usize) < self.null_keys.len() {
-            out.extend(
-                self.null_keys[offset as usize..]
-                    .iter()
-                    .copied()
-                    .take(limit as usize),
-            );
-            keys_processed += out.len() as IdxSize;
-            offset += out.len() as IdxSize;
-            if out.len() >= limit as usize {
-                return keys_processed;
+        if !self.nulls_emitted.load(Ordering::Relaxed) {
+            if (offset as usize) < self.null_keys.len() {
+                out.extend(
+                    self.null_keys[offset as usize..]
+                        .iter()
+                        .copied()
+                        .take(limit as usize),
+                );
+                keys_processed += out.len() as IdxSize;
+                offset += out.len() as IdxSize;
+                if out.len() >= limit as usize {
+                    return keys_processed;
+                }
             }
+            offset -= self.null_keys.len() as IdxSize;
         }
 
-        offset -= self.null_keys.len() as IdxSize;
         while let Some((_, idxs)) = self.idx_map.get_index(offset) {
             let first_idx = unsafe { idxs.get_unchecked(0) };
-            let first_idx_val = first_idx.load(Ordering::Acquire);
+            let first_idx_val = first_idx.load(Ordering::Relaxed);
             if first_idx_val >> 63 == 0 {
                 for idx in &idxs[..] {
                     out.push((idx.load(Ordering::Relaxed) & !(1 << 63)) as IdxSize);
