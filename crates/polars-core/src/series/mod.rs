@@ -391,6 +391,7 @@ impl Series {
                 true
             },
             dt if dt.is_primitive() && dt == self.dtype() => true,
+            #[cfg(feature = "dtype-categorical")]
             D::Enum(None, _) => {
                 polars_bail!(InvalidOperation: "cannot cast to Enum without categories present");
             },
