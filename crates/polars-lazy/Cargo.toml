@@ -76,6 +76,12 @@ json = [
   "polars-mem-engine/json",
   "polars-stream?/json",
 ]
+avro = [
+  "polars-io/avro",
+  "polars-plan/avro",
+  "polars-mem-engine/avro",
+  "polars-stream?/avro",
+]
 csv = ["polars-io/csv", "polars-plan/csv", "polars-pipe?/csv", "polars-mem-engine/csv", "polars-stream?/csv"]
 temporal = [
   "dtype-datetime",
@@ -304,6 +310,7 @@ test = [
   "diff",
   "abs",
   "parquet",
+  "avro",
   "ipc",
   "dtype-date",
 ]
@@ -340,6 +347,7 @@ features = [
   "arg_where",
   "asof_join",
   "async",
+  "avro",
   "bigidx",
   "binary_encoding",
   "cloud",

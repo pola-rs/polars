@@ -40,6 +40,12 @@ pub(crate) enum PolarsTableFunctions {
     /// ```
     #[cfg(feature = "json")]
     ReadJson,
+    /// SQL 'read_avro' function.
+    /// ```sql
+    /// SELECT * FROM read_avro('path/to/file.avro')
+    /// ```
+    #[cfg(feature = "avro")]
+    ReadAvro,
 }
 
 impl FromStr for PolarsTableFunctions {
@@ -56,6 +62,8 @@ impl FromStr for PolarsTableFunctions {
             "read_ipc" => PolarsTableFunctions::ReadIpc,
             #[cfg(feature = "json")]
             "read_json" => PolarsTableFunctions::ReadJson,
+            #[cfg(feature = "avro")]
+            "read_avro" => PolarsTableFunctions::ReadAvro,
             _ => polars_bail!(SQLInterface: "'{}' is not a supported table function", s),
         })
     }
@@ -73,6 +81,8 @@ impl PolarsTableFunctions {
             PolarsTableFunctions::ReadIpc => self.read_ipc(args),
             #[cfg(feature = "json")]
             PolarsTableFunctions::ReadJson => self.read_ndjson(args),
+            #[cfg(feature = "avro")]
+            PolarsTableFunctions::ReadAvro => self.read_avro(args),
             _ => unreachable!(),
         }
     }
@@ -107,6 +117,19 @@ impl PolarsTableFunctions {
         let lf = LazyFrame::scan_ipc(&path, Default::default())?;
         Ok((path, lf))
     }
+
+    #[cfg(feature = "avro")]
+    fn read_avro(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
+        polars_ensure!(args.len() == 1, SQLSyntax: "`read_ndjson` expects a single file path; found {:?} arguments", args.len());
+
+        use polars_lazy::frame::LazyFileListReader;
+        use polars_lazy::prelude::LazyAvroReader;
+
+        let path = self.get_file_path_from_arg(&args[0])?;
+        let lf = LazyAvroReader::new(path.clone()).finish()?;
+        Ok((path, lf))
+    }
+
     #[cfg(feature = "json")]
     fn read_ndjson(&self, args: &[FunctionArg]) -> PolarsResult<(String, LazyFrame)> {
         polars_ensure!(args.len() == 1, SQLSyntax: "`read_ndjson` expects a single file path; found {:?} arguments", args.len());

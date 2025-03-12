@@ -9,6 +9,8 @@ use polars_io::predicates::SkipBatchPredicate;
 
 use super::Executor;
 use crate::ScanPredicate;
+#[cfg(feature = "avro")]
+use crate::executors::AvroExec;
 #[cfg(feature = "csv")]
 use crate::executors::CsvExec;
 #[cfg(feature = "ipc")]
@@ -197,6 +199,13 @@ fn source_to_exec(
                 None,
             ))
         },
+        #[cfg(feature = "avro")]
+        FileScan::Avro { .. } => Box::new(AvroExec::new(
+            source,
+            file_info,
+            Box::new(file_options.clone()),
+            None,
+        )),
         FileScan::Anonymous { .. } => unreachable!(),
     })
 }

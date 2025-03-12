@@ -176,6 +176,10 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                     FileScan::NDJson { cloud_options, .. } => {
                         sources.expand_paths(&file_options, cloud_options.as_ref())?
                     },
+                    #[cfg(feature = "avro")]
+                    FileScan::Avro { cloud_options, .. } => {
+                        sources.expand_paths(&file_options, cloud_options.as_ref())?
+                    },
                     FileScan::Anonymous { .. } => sources,
                 };
 
@@ -242,6 +246,11 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                         cloud_options.as_ref(),
                     )
                     .map_err(|e| e.context(failed_here!(ndjson scan)))?,
+                    #[cfg(feature = "avro")]
+                    FileScan::Avro { cloud_options } => {
+                        scans::avro_file_info(&sources, &file_options, cloud_options.as_ref())
+                            .map_err(|e| e.context(failed_here!(avro scan)))?
+                    },
                     FileScan::Anonymous { .. } => {
                         file_info.expect("FileInfo should be set for AnonymousScan")
                     },
@@ -302,6 +311,8 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
                             FileScan::Csv { .. } => true,
                             #[cfg(feature = "json")]
                             FileScan::NDJson { .. } => true,
+                            #[cfg(feature = "avro")]
+                            FileScan::Avro { .. } => true,
                             FileScan::Anonymous { .. } => false,
                         });
 

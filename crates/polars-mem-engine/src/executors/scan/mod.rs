@@ -1,3 +1,5 @@
+#[cfg(feature = "avro")]
+mod avro;
 #[cfg(feature = "csv")]
 mod csv;
 #[cfg(feature = "ipc")]
@@ -11,6 +13,8 @@ mod python_scan;
 
 use std::mem;
 
+#[cfg(feature = "avro")]
+pub(crate) use avro::AvroExec;
 #[cfg(feature = "csv")]
 pub(crate) use csv::CsvExec;
 #[cfg(feature = "ipc")]

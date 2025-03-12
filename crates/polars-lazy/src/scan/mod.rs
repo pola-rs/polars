@@ -1,4 +1,6 @@
 pub(super) mod anonymous_scan;
+#[cfg(feature = "avro")]
+pub(super) mod avro;
 #[cfg(feature = "csv")]
 pub(super) mod csv;
 pub(super) mod file_list_reader;

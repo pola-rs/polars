@@ -379,6 +379,12 @@ pub(crate) fn into_py(py: Python<'_>, plan: &IR) -> PyResult<PyObject> {
                         .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
                     ("ndjson", options).into_py_any(py)?
                 },
+                #[cfg(feature = "avro")]
+                FileScan::Avro { cloud_options, .. } => {
+                    let cloud_options = serde_json::to_string(cloud_options)
+                        .map_err(|err| PyValueError::new_err(format!("{err:?}")))?;
+                    ("avro", cloud_options).into_py_any(py)?
+                },
                 FileScan::Anonymous { .. } => {
                     return Err(PyNotImplementedError::new_err("anonymous scan"));
                 },

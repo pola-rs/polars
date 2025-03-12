@@ -347,6 +347,13 @@ fn create_physical_plan_impl(
                     file_info,
                     predicate,
                 ))),
+                #[cfg(feature = "avro")]
+                FileScan::Avro { .. } => Ok(Box::new(executors::AvroExec::new(
+                    sources,
+                    file_info,
+                    file_options,
+                    predicate,
+                ))),
                 FileScan::Anonymous { function, .. } => {
                     Ok(Box::new(executors::AnonymousScanExec {
                         function,

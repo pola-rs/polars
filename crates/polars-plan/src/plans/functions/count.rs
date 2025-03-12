@@ -69,6 +69,8 @@ pub fn count_rows(
                 options,
                 cloud_options,
             } => count_rows_ndjson(sources, cloud_options.as_ref()),
+            #[cfg(feature = "avro")]
+            FileScan::Avro { cloud_options } => count_rows_avro(sources, cloud_options.as_ref()),
             FileScan::Anonymous { .. } => {
                 unreachable!()
             },
@@ -254,6 +256,57 @@ pub(super) fn count_rows_ndjson(
                 maybe_decompress_bytes(&memslice[..], owned)?,
             ));
             reader.count()
+        })
+        .sum()
+}
+
+#[cfg(feature = "avro")]
+pub(super) fn count_rows_avro(
+    sources: &ScanSources,
+    cloud_options: Option<&CloudOptions>,
+) -> PolarsResult<usize> {
+    use std::io::Cursor;
+
+    use polars_core::config;
+    use polars_io::avro::AvroReader;
+
+    // TODO currently we download everything and read it locally, but we could
+    // use an async reader similar to count_rows_cloud_parquet
+
+    if sources.is_empty() {
+        return Ok(0);
+    }
+
+    let is_cloud_url = sources.is_cloud_url();
+    let run_async = is_cloud_url || (sources.is_paths() && config::force_async());
+
+    let cache_entries = {
+        if run_async {
+            feature_gated!("cloud", {
+                Some(polars_io::file_cache::init_entries_from_uri_list(
+                    sources
+                        .as_paths()
+                        .unwrap()
+                        .iter()
+                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                    cloud_options,
+                )?)
+            })
+        } else {
+            None
+        }
+    };
+
+    sources
+        .iter()
+        .map(|source| {
+            let memslice =
+                source.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
+
+            let reader = AvroReader::new(Cursor::new(memslice));
+            reader.unfiltered_count()
         })
         .sum()
 }

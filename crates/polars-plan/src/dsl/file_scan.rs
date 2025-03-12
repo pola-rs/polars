@@ -48,6 +48,10 @@ pub enum FileScan {
         #[cfg_attr(feature = "serde", serde(skip))]
         metadata: Option<Arc<arrow::io::ipc::read::FileMetadata>>,
     },
+    #[cfg(feature = "avro")]
+    Avro {
+        cloud_options: Option<polars_io::cloud::CloudOptions>,
+    },
     #[cfg_attr(feature = "serde", serde(skip))]
     Anonymous {
         options: Arc<AnonymousScanOptions>,
@@ -106,6 +110,10 @@ impl PartialEq for FileScan {
                     cloud_options: c_r,
                 },
             ) => l == r && c_l == c_r,
+            #[cfg(feature = "avro")]
+            (FileScan::Avro { cloud_options: c_l }, FileScan::Avro { cloud_options: c_r }) => {
+                c_l == c_r
+            },
             _ => false,
         }
     }
@@ -151,6 +159,10 @@ impl Hash for FileScan {
                 options.hash(state);
                 cloud_options.hash(state)
             },
+            #[cfg(feature = "avro")]
+            FileScan::Avro { cloud_options } => {
+                cloud_options.hash(state);
+            },
             FileScan::Anonymous { options, .. } => options.hash(state),
         }
     }
@@ -181,6 +193,8 @@ impl FileScan {
             Self::Parquet { .. } => ScanFlags::SPECIALIZED_PREDICATE_FILTER,
             #[cfg(feature = "json")]
             Self::NDJson { .. } => ScanFlags::empty(),
+            #[cfg(feature = "avro")]
+            Self::Avro { .. } => ScanFlags::empty(),
             #[allow(unreachable_patterns)]
             _ => ScanFlags::empty(),
         }

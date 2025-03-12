@@ -186,6 +186,8 @@ fn visualize_plan_rec(
                 FileScan::Ipc { .. } => "ipc-source",
                 #[cfg(feature = "json")]
                 FileScan::NDJson { .. } => "ndjson-source",
+                #[cfg(feature = "avro")]
+                FileScan::Avro { .. } => "avro-source",
                 FileScan::Anonymous { .. } => "anonymous-source",
             };
 

@@ -457,6 +457,69 @@ impl PyLazyFrame {
         Ok(lf.into())
     }
 
+    #[cfg(feature = "avro")]
+    #[staticmethod]
+    #[pyo3(signature = (
+        source, sources, n_rows, rechunk, row_index,
+        cloud_options,credential_provider, retries, file_cache_ttl,
+        include_file_paths
+    ))]
+    fn new_from_avro(
+        source: Option<PyObject>,
+        sources: Wrap<ScanSources>,
+        n_rows: Option<usize>,
+        rechunk: bool,
+        row_index: Option<(String, IdxSize)>,
+        cloud_options: Option<Vec<(String, String)>>,
+        credential_provider: Option<PyObject>,
+        retries: usize,
+        file_cache_ttl: Option<u64>,
+        include_file_paths: Option<String>,
+    ) -> PyResult<Self> {
+        use cloud::credential_provider::PlCredentialProvider;
+        let row_index = row_index.map(|(name, offset)| RowIndex {
+            name: name.into(),
+            offset,
+        });
+
+        let sources = sources.0;
+        let (first_path, sources) = match source {
+            None => (sources.first_path().map(|p| p.to_path_buf()), sources),
+            Some(source) => pyobject_to_first_path_and_scan_sources(source)?,
+        };
+
+        let mut r = LazyAvroReader::new_with_sources(sources);
+
+        #[cfg(feature = "cloud")]
+        if let Some(first_path) = first_path {
+            let first_path_url = first_path.to_string_lossy();
+
+            let mut cloud_options =
+                parse_cloud_options(&first_path_url, cloud_options.unwrap_or_default())?;
+            cloud_options = cloud_options
+                .with_max_retries(retries)
+                .with_credential_provider(
+                    credential_provider.map(PlCredentialProvider::from_python_builder),
+                );
+
+            if let Some(file_cache_ttl) = file_cache_ttl {
+                cloud_options.file_cache_ttl = file_cache_ttl;
+            }
+
+            r = r.with_cloud_options(Some(cloud_options));
+        };
+
+        let lf = r
+            .with_n_rows(n_rows)
+            .with_rechunk(rechunk)
+            .with_row_index(row_index)
+            .with_include_file_paths(include_file_paths.map(|x| x.into()))
+            .finish()
+            .map_err(PyPolarsErr::from)?;
+
+        Ok(lf.into())
+    }
+
     #[staticmethod]
     fn scan_from_python_function_arrow_schema(
         schema: &Bound<'_, PyList>,

@@ -31,6 +31,7 @@ polars-core = { workspace = true, features = ["fmt"] }
 [features]
 default = []
 nightly = []
+avro = ["polars-lazy/avro"]
 binary_encoding = ["polars-lazy/binary_encoding"]
 bitwise = ["polars-lazy/bitwise"]
 csv = ["polars-lazy/csv"]

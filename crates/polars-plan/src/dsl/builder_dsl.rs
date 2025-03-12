@@ -202,6 +202,44 @@ impl DslBuilder {
         .into())
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[cfg(feature = "avro")]
+    pub fn scan_avro(
+        sources: ScanSources,
+        n_rows: Option<usize>,
+        cache: bool,
+        row_index: Option<RowIndex>,
+        rechunk: bool,
+        cloud_options: Option<CloudOptions>,
+        glob: bool,
+        include_file_paths: Option<PlSmallStr>,
+    ) -> PolarsResult<Self> {
+        let options = Box::new(FileScanOptions {
+            with_columns: None,
+            cache,
+            pre_slice: n_rows.map(|x| (0, x)),
+            rechunk,
+            row_index,
+            file_counter: Default::default(),
+            // TODO: Support Hive partitioning.
+            hive_options: HiveOptions {
+                enabled: Some(false),
+                ..Default::default()
+            },
+            glob,
+            include_file_paths,
+            allow_missing_columns: false,
+        });
+        Ok(DslPlan::Scan {
+            sources,
+            file_info: None,
+            file_options: options,
+            scan_type: Box::new(FileScan::Avro { cloud_options }),
+            cached_ir: Default::default(),
+        }
+        .into())
+    }
+
     pub fn cache(self) -> Self {
         let input = Arc::new(self.0);
         let id = input.as_ref() as *const DslPlan as usize;
