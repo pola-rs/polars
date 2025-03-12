@@ -524,7 +524,10 @@ fn aexpr_to_skip_batch_predicate_rec(
     }));
 
     // We cannot do proper equalities for these.
-    if live_columns.iter().any(|(c, _)| schema.get(c).is_none_or(|dt| dt.is_categorical())) {
+    if live_columns
+        .iter()
+        .any(|(c, _)| schema.get(c).is_none_or(|dt| dt.is_categorical()))
+    {
         return None;
     }
 
