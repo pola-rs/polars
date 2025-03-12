@@ -83,8 +83,8 @@ impl ListFunction {
             Sum => mapper.nested_sum_type(),
             Min => mapper.map_to_list_and_array_inner_dtype(),
             Max => mapper.map_to_list_and_array_inner_dtype(),
-            Mean => mapper.nested_mean_median_type(),
-            Median => mapper.nested_mean_median_type(),
+            Mean => mapper.map_dtype(map_list_dtyoe_mean_median),
+            Median => mapper.map_dtype(map_list_dtyoe_mean_median),
             Std(_) => mapper.map_to_float_dtype(), // Need to also have this sometimes marked as float32 or duration..
             Var(_) => mapper.map_to_float_dtype(),
             ArgMin => mapper.with_dtype(IDX_DTYPE),
@@ -131,6 +131,17 @@ fn map_list_dtype_to_array_dtype(datatype: &DataType, width: usize) -> PolarsRes
         Ok(DataType::Array(inner.clone(), width))
     } else {
         polars_bail!(ComputeError: "expected List dtype")
+    }
+}
+
+fn map_list_dtyoe_mean_median(dt: &DataType) -> DataType {
+    use DataType::*;
+    match dt.inner_dtype().unwrap() {
+        #[cfg(feature = "dtype-datetime")]
+        Date => Datetime(TimeUnit::Milliseconds, None),
+        dt if dt.is_temporal() => dt.clone(),
+        Float32 => Float32,
+        _ => Float64,
     }
 }
 
