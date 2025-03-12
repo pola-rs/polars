@@ -1323,11 +1323,9 @@ impl ComputeNode for EquiJoinNode {
 
         // If we are sampling and both sides are done/filled, transition to building.
         if let EquiJoinState::Sample(sample_state) = &mut self.state {
-            if let Some(build_state) = sample_state.try_transition_to_build(
-                recv,
-                self.num_pipelines,
-                &mut self.params,
-            )? {
+            if let Some(build_state) =
+                sample_state.try_transition_to_build(recv, self.num_pipelines, &mut self.params)?
+            {
                 self.state = EquiJoinState::Build(build_state);
             }
         }

@@ -196,7 +196,7 @@ impl ExprIR {
     pub(crate) fn set_alias(&mut self, name: PlSmallStr) {
         self.output_name = OutputName::Alias(name)
     }
-    
+
     pub fn with_alias(&self, name: PlSmallStr) -> Self {
         Self {
             output_name: OutputName::Alias(name),

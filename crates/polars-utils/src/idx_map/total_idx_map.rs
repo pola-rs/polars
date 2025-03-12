@@ -41,7 +41,7 @@ impl<K: TotalHash + TotalEq, V> TotalIndexMap<K, V> {
     }
 
     pub fn get(&self, key: &K) -> Option<&V> {
-        let hash = self.random_state.tot_hash_one(&key);
+        let hash = self.random_state.tot_hash_one(key);
         let idx = self.table.find(hash, |i| unsafe {
             let t = self.tuples.get_unchecked(*i as usize);
             hash == self.random_state.tot_hash_one(&t.0) && key.tot_eq(&t.0)

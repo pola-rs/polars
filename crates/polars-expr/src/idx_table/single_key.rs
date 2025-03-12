@@ -52,7 +52,7 @@ where
                 probe_match.push(key_idx);
             }
 
-            // Mark if necessary. This action is idempotent so doesn't need 
+            // Mark if necessary. This action is idempotent so doesn't need
             // atomic fetch_or to do it atomically.
             if MARK_MATCHES {
                 let first_idx = unsafe { idxs.get_unchecked(0) };
@@ -67,7 +67,12 @@ where
         }
     }
 
-    fn probe_impl<'a, const MARK_MATCHES: bool, const EMIT_UNMATCHED: bool, const NULL_IS_VALID: bool>(
+    fn probe_impl<
+        'a,
+        const MARK_MATCHES: bool,
+        const EMIT_UNMATCHED: bool,
+        const NULL_IS_VALID: bool,
+    >(
         &self,
         keys: impl Iterator<Item = (IdxSize, Option<K>)>,
         table_match: &mut Vec<IdxSize>,
@@ -120,15 +125,27 @@ where
             (false, false, false) => {
                 self.probe_impl::<false, false, false>(keys, table_match, probe_match, limit)
             },
-            (false, false, true) => self.probe_impl::<false, false, true>(keys, table_match, probe_match, limit),
-            (false, true, false) => self.probe_impl::<false, true, false>(keys, table_match, probe_match, limit),
-            (false, true, true) => self.probe_impl::<false, true, true>(keys, table_match, probe_match, limit),
+            (false, false, true) => {
+                self.probe_impl::<false, false, true>(keys, table_match, probe_match, limit)
+            },
+            (false, true, false) => {
+                self.probe_impl::<false, true, false>(keys, table_match, probe_match, limit)
+            },
+            (false, true, true) => {
+                self.probe_impl::<false, true, true>(keys, table_match, probe_match, limit)
+            },
             (true, false, false) => {
                 self.probe_impl::<true, false, false>(keys, table_match, probe_match, limit)
             },
-            (true, false, true) => self.probe_impl::<true, false, true>(keys, table_match, probe_match, limit),
-            (true, true, false) => self.probe_impl::<true, true, false>(keys, table_match, probe_match, limit),
-            (true, true, true) => self.probe_impl::<true, true, true>(keys, table_match, probe_match, limit),
+            (true, false, true) => {
+                self.probe_impl::<true, false, true>(keys, table_match, probe_match, limit)
+            },
+            (true, true, false) => {
+                self.probe_impl::<true, true, false>(keys, table_match, probe_match, limit)
+            },
+            (true, true, true) => {
+                self.probe_impl::<true, true, true>(keys, table_match, probe_match, limit)
+            },
         }
     }
 }
