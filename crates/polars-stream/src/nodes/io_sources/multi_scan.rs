@@ -457,6 +457,7 @@ struct SourcePhase {
     content: SourcePhaseContent,
     unrestricted_row_count: Option<tokio::sync::oneshot::Receiver<IdxSize>>,
     missing_columns: Option<Bitmap>,
+    outcome: PhaseOutcomeToken,
 }
 
 impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
@@ -755,6 +756,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     content: SourcePhaseContent::OneShot(DataFrame::empty()),
                                     missing_columns: None,
                                     unrestricted_row_count: Some(unrestricted_row_count_rx),
+                                    outcome: PhaseOutcomeToken::new(),
                                 };
                                 // Wait for the orchestrator task to actually be interested in the output
                                 // of this file.
@@ -810,6 +812,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                         content: SourcePhaseContent::OneShot(df),
                                         missing_columns: missing_columns.clone(),
                                         unrestricted_row_count: Some(unrestricted_row_count_rx),
+                                        outcome: PhaseOutcomeToken::new(),
                                     };
 
                                     // Wait for the orchestrator task to actually be interested in the output
@@ -914,11 +917,13 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                     (SourceOutputPort::Serial(tx), SourceInput::Serial(rx))
                                 };
 
+                                let (outcome, wait_group, tx) = SourceOutput::from_port(tx);
                                 let phase = SourcePhase {
                                     source_idx: i,
                                     content: SourcePhaseContent::Channels(rx),
                                     missing_columns: missing_columns.clone(),
                                     unrestricted_row_count: unrestricted_row_count_rx.take(),
+                                    outcome: outcome.clone(),
                                 };
 
                                 // Wait for the orchestrator task to actually be interested in the output
@@ -926,8 +931,6 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                                 if si_send.send(phase).await.is_err() {
                                     break;
                                 };
-
-                                let (outcome, wait_group, tx) = SourceOutput::from_port(tx);
 
                                 // Start draining the source into the created channels.
                                 if output_send.send(tx).await.is_err() {
@@ -982,11 +985,12 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
             join_handles.push(spawn(TaskPriority::High, async move {
                 let mut seq = MorselSeq::default();
 
-                'phase_loop: while let Ok(mut send) = pass_phase_recv.recv().await {
+                while let Ok(mut send) = pass_phase_recv.recv().await {
                     let source_token = SourceToken::new();
                     let wait_group = WaitGroup::default();
 
                     while let Ok(mut phase_source_pass) = pass_source_recv.recv().await {
+                        let mut stopped = false;
                         while let Ok(rg) = phase_source_pass.recv.recv().await {
                             let original_source_token = rg.source_token().clone();
 
@@ -1015,9 +1019,11 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             if source_token.stop_requested() {
                                 original_source_token.stop();
                                 phase_source_pass.outcome.stop();
-
-                                continue 'phase_loop;
+                                stopped = true;
                             }
+                        }
+                        if stopped {
+                            break;
                         }
                     }
                 }
@@ -1069,7 +1075,7 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             skipable_file_mask.slice(1, skipable_file_mask.len() - 1);
                         }
 
-
+                        let mut stopped = false;
                         match phase.content {
                             // In certain cases, we don't actually need to read physical data from the
                             // file so we get back a row count.
@@ -1100,8 +1106,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                                     wg.wait().await;
                                     if !outcome.did_finish() {
+                                        stopped = true;
                                         phase_output.outcome.stop();
-                                        continue 'phase_loop;
+
+                                        // The worker actually sees whether the source is finished or
+                                        // not. So if it is finished, we advance the source counter.
+                                        if !phase.outcome.did_finish() {
+                                            continue 'phase_loop;
+                                        }
                                     }
                                 }
                             },
@@ -1162,8 +1174,14 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
 
                                 wg.wait().await;
                                 if !outcome.did_finish() {
+                                    stopped = true;
                                     phase_output.outcome.stop();
-                                    continue 'phase_loop;
+
+                                    // The worker actually sees whether the source is finished or
+                                    // not. So if it is finished, we advance the source counter.
+                                    if !phase.outcome.did_finish() {
+                                        continue 'phase_loop;
+                                    }
                                 }
                             },
                         }
@@ -1178,6 +1196,10 @@ impl<T: MultiScanable> SourceNode for MultiScanNode<T> {
                             ri.offset += source_num_rows;
                         }
                         current_scan += 1;
+
+                        if stopped {
+                            continue 'phase_loop;
+                        }
                     }
                     break;
                 }
