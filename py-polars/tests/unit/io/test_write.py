@@ -12,6 +12,7 @@ READ_WRITE_FUNC_PARAM = [
     (pl.read_parquet, pl.DataFrame.write_parquet),
     (lambda *a: pl.scan_csv(*a).collect(), pl.DataFrame.write_csv),
     (lambda *a: pl.scan_ipc(*a).collect(), pl.DataFrame.write_ipc),
+    (lambda *a: pl.scan_avro(*a).collect(), pl.DataFrame.write_avro),
     # Sink
     (pl.read_parquet, lambda df, path: pl.DataFrame.lazy(df).sink_parquet(path)),
     (

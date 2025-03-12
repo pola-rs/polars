@@ -319,8 +319,13 @@ impl PyDataFrame {
         let file = get_file_like(py_f, false)?;
         py.enter_polars_df(move || {
             AvroReader::new(file)
-                .with_projection(projection)
-                .with_columns(columns)
+                .with_projection(projection.map(|proj| proj.into_boxed_slice().into()))
+                .with_columns(columns.map(|cols| {
+                    cols.into_iter()
+                        .map(|s| s.into())
+                        .collect::<Box<[_]>>()
+                        .into()
+                }))
                 .with_n_rows(n_rows)
                 .finish()
         })

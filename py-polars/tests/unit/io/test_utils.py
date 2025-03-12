@@ -64,7 +64,7 @@ def test_looks_like_url(url: str, result: bool) -> None:
 
 
 @pytest.mark.parametrize(
-    "scan", [pl.scan_csv, pl.scan_parquet, pl.scan_ndjson, pl.scan_ipc]
+    "scan", [pl.scan_csv, pl.scan_parquet, pl.scan_ndjson, pl.scan_ipc, pl.scan_avro]
 )
 def test_filename_in_err(scan: Any) -> None:
     with pytest.raises(FileNotFoundError, match=r".*does not exist"):

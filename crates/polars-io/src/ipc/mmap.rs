@@ -43,7 +43,7 @@ impl<R: MmapBytesReader> IpcReader<R> {
                     self.n_rows,
                     predicate,
                     &schema,
-                    self.row_index.clone(),
+                    self.row_index.clone().as_mut(),
                 )
             },
             None => polars_bail!(ComputeError: "cannot memory-map, you must provide a file"),

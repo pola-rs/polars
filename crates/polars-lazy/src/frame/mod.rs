@@ -19,6 +19,8 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 pub use anonymous_scan::*;
+#[cfg(feature = "avro")]
+pub use avro::*;
 #[cfg(feature = "csv")]
 pub use csv::*;
 #[cfg(not(target_arch = "wasm32"))]

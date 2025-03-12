@@ -188,7 +188,7 @@ where
             self.n_rows,
             None,
             &schema,
-            self.row_index,
+            self.row_index.as_mut(),
         )
     }
 }

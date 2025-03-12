@@ -16,6 +16,7 @@ from polars.exceptions import ComputeError
         pl.scan_csv,
         *[pl.scan_ndjson, pl.read_ndjson],
         pl.scan_ipc,
+        pl.scan_avro,
     ],
 )
 def test_credential_provider_scan(

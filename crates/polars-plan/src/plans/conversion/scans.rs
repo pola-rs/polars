@@ -376,3 +376,55 @@ pub fn ndjson_file_info(
         (None, usize::MAX),
     ))
 }
+
+#[cfg(feature = "avro")]
+pub(super) fn avro_file_info(
+    sources: &ScanSources,
+    file_options: &FileScanOptions,
+    cloud_options: Option<&polars_io::cloud::CloudOptions>,
+) -> PolarsResult<FileInfo> {
+    use polars_core::config;
+    use polars_core::error::feature_gated;
+    use polars_io::avro::AvroReader;
+
+    // TODO we're currently lazy and just fetch the first file and read it, but
+    // ideally we'd use an async reader, which would need to be implemented
+
+    let first = sources
+        .first()
+        .ok_or_else(|| polars_err!(ComputeError: "expected at least 1 source"))?;
+
+    let run_async = sources.is_cloud_url() || (sources.is_paths() && config::force_async());
+
+    let cache_entries = {
+        if run_async {
+            feature_gated!("cloud", {
+                Some(polars_io::file_cache::init_entries_from_uri_list(
+                    sources
+                        .as_paths()
+                        .unwrap()
+                        .iter()
+                        .map(|path| Arc::from(path.to_str().unwrap()))
+                        .collect::<Vec<_>>()
+                        .as_slice(),
+                    cloud_options,
+                )?)
+            })
+        } else {
+            None
+        }
+    };
+
+    let memslice = first.to_memslice_possibly_async(run_async, cache_entries.as_ref(), 0)?;
+    let mut reader = AvroReader::new(std::io::Cursor::new(memslice));
+    let reader_schema = reader.schema()?;
+
+    let schema = prepare_output_schema(reader_schema.clone(), file_options.row_index.as_ref());
+
+    let file_info = FileInfo::new(
+        schema,
+        Some(Either::Right(reader_schema.into())),
+        (None, usize::MAX),
+    );
+    Ok(file_info)
+}

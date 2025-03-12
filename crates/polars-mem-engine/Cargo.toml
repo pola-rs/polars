@@ -35,6 +35,7 @@ python = ["pyo3", "polars-plan/python", "polars-core/python", "polars-io/python"
 ipc = ["polars-io/ipc", "polars-plan/ipc"]
 json = ["polars-io/json", "polars-plan/json", "polars-json"]
 csv = ["polars-io/csv", "polars-plan/csv"]
+avro = ["polars-io/avro", "polars-plan/avro"]
 cloud = ["async", "polars-plan/cloud", "tokio", "futures"]
 parquet = ["polars-io/parquet", "polars-plan/parquet"]
 dtype-categorical = ["polars-plan/dtype-categorical"]

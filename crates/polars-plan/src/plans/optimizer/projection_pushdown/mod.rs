@@ -450,6 +450,8 @@ impl ProjectionPushDown {
                     FileScan::Ipc { .. } => true,
                     #[cfg(feature = "csv")]
                     FileScan::Csv { .. } => true,
+                    #[cfg(feature = "avro")]
+                    FileScan::Avro { .. } => true,
                     #[cfg(feature = "parquet")]
                     FileScan::Parquet { .. } => true,
                 };

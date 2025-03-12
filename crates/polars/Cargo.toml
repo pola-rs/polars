@@ -101,7 +101,7 @@ ipc = ["polars-io", "polars-io/ipc", "polars-lazy?/ipc", "polars-sql?/ipc"]
 ipc_streaming = ["polars-io", "polars-io/ipc_streaming", "polars-lazy?/ipc"]
 
 # support for apache avro file parsing
-avro = ["polars-io", "polars-io/avro"]
+avro = ["polars-io", "polars-io/avro", "polars-lazy?/avro", "polars-sql?/avro"]
 
 # support for arrows csv file parsing
 csv = ["polars-io", "polars-io/csv", "polars-lazy?/csv", "polars-sql?/csv"]
@@ -256,6 +256,7 @@ test = [
   "ipc",
   "ipc_streaming",
   "json",
+  "avro",
 ]
 
 # all opt-in datatypes
@@ -377,6 +378,7 @@ docs-selection = [
   "csv",
   "json",
   "parquet",
+  "avro",
   "ipc",
   "ipc_streaming",
   "dtype-full",
