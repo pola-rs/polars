@@ -413,12 +413,14 @@ impl SourceNode for NDJsonSourceNode {
         join_handles.push(spawn(TaskPriority::Low, async move {
             // Every phase we are given a new send port.
             while let Ok(phase_output) = output_recv.recv().await {
+                let source_token = SourceToken::new();
                 let morsel_senders = phase_output.port.parallel();
 
                 let mut morsel_outcomes = Vec::with_capacity(morsel_senders.len());
 
                 for (phase_tx_senders, port) in phase_tx_senders.iter_mut().zip(morsel_senders) {
-                    let (outcome, wait_group, morsel_output) = MorselOutput::from_port(port);
+                    let (outcome, wait_group, morsel_output) =
+                        MorselOutput::from_port(port, source_token.clone());
                     _ = phase_tx_senders.send(morsel_output).await;
                     morsel_outcomes.push((outcome, wait_group));
                 }

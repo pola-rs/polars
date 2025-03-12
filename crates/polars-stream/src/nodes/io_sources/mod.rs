@@ -14,6 +14,7 @@ use super::{ComputeNode, JoinHandle, Morsel, PortState, RecvPort, SendPort, Task
 use crate::async_executor::AbortOnDropHandle;
 use crate::async_primitives::connector::{Receiver, Sender, connector};
 use crate::async_primitives::wait_group::{WaitGroup, WaitToken};
+use crate::morsel::SourceToken;
 
 #[cfg(feature = "csv")]
 pub mod csv;
@@ -197,6 +198,7 @@ pub struct SourceOutput {
 pub struct MorselOutput {
     pub outcome: PhaseOutcomeToken,
     pub port: Sender<Morsel>,
+    pub source_token: SourceToken,
 
     #[allow(unused)]
     /// Dropping this indicates that the morsel sender is done.
@@ -218,7 +220,10 @@ impl SourceOutput {
 }
 
 impl MorselOutput {
-    pub fn from_port(port: Sender<Morsel>) -> (PhaseOutcomeToken, WaitGroup, Self) {
+    pub fn from_port(
+        port: Sender<Morsel>,
+        source_token: SourceToken,
+    ) -> (PhaseOutcomeToken, WaitGroup, Self) {
         let outcome = PhaseOutcomeToken::new();
         let wait_group = WaitGroup::default();
 
@@ -226,6 +231,7 @@ impl MorselOutput {
             outcome: outcome.clone(),
             wait_token: wait_group.token(),
             port,
+            source_token,
         };
         (outcome, wait_group, output)
     }

@@ -11,7 +11,7 @@ use crate::async_primitives::distributor_channel::distributor_channel;
 use crate::async_primitives::linearizer::Linearizer;
 use crate::async_primitives::wait_group::WaitGroup;
 use crate::async_primitives::{connector, distributor_channel};
-use crate::morsel::{Morsel, MorselSeq, SourceToken};
+use crate::morsel::{Morsel, MorselSeq};
 use crate::nodes::io_sources::MorselOutput;
 
 pub struct ApplyRowIndexOrLimit {
@@ -115,13 +115,10 @@ fn init_morsel_distributor(
     let (tx, dist_receivers) =
         distributor_channel::<(MorselSeq, DataFrame)>(phase_tx_receivers.len(), 1);
 
-    let source_token = SourceToken::new();
-
     let join_handles = phase_tx_receivers
         .into_iter()
         .zip(dist_receivers)
         .map(|(mut phase_tx_receiver, mut morsel_rx)| {
-            let source_token = source_token.clone();
             AbortOnDropHandle::new(spawn(TaskPriority::Low, async move {
                 let Ok(mut morsel_output) = phase_tx_receiver.recv().await else {
                     return Ok(());
@@ -134,10 +131,9 @@ fn init_morsel_distributor(
                         return Ok(());
                     };
 
-                    let mut morsel = Morsel::new(df, morsel_seq, source_token.clone());
+                    let mut morsel =
+                        Morsel::new(df, morsel_seq, morsel_output.source_token.clone());
                     morsel.set_consume_token(wait_group.token());
-
-                    let source_token = morsel.source_token().clone();
 
                     if morsel_output.port.send(morsel).await.is_err() {
                         break 'outer;
@@ -145,7 +141,7 @@ fn init_morsel_distributor(
 
                     wait_group.wait().await;
 
-                    if source_token.stop_requested() {
+                    if morsel_output.source_token.stop_requested() {
                         morsel_output.outcome.stop();
                         drop(morsel_output);
 
