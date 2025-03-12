@@ -697,7 +697,13 @@ impl LazyFrame {
 
         // sink should be replaced
         let no_file_sink = if check_sink {
-            !matches!(lp_arena.get(lp_top), IR::Sink { .. })
+            !matches!(
+                lp_arena.get(lp_top),
+                IR::Sink {
+                    payload: SinkType::File { .. } | SinkType::Partition { .. },
+                    ..
+                }
+            )
         } else {
             true
         };
@@ -735,7 +741,12 @@ impl LazyFrame {
     /// `engine].
     ///
     /// The query is optimized prior to execution.
-    pub fn collect_with_engine(self, engine: Engine) -> PolarsResult<DataFrame> {
+    pub fn collect_with_engine(self, mut engine: Engine) -> PolarsResult<DataFrame> {
+        // Default engine for collect is InMemory
+        if engine == Engine::Auto {
+            engine = Engine::InMemory;
+        }
+
         self.sink(SinkType::Memory, engine, "collect")
             .map(|df| df.unwrap())
     }
@@ -1058,12 +1069,6 @@ impl LazyFrame {
         None
     }
 
-    #[cfg(any(
-        feature = "ipc",
-        feature = "parquet",
-        feature = "csv",
-        feature = "json",
-    ))]
     fn sink(
         mut self,
         payload: SinkType,
