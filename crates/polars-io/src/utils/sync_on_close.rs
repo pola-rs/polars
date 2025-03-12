@@ -21,6 +21,7 @@ pub fn sync_on_close(sync_on_close: SyncOnCloseType, file: &mut fs::File) -> io:
     }
 }
 
+#[cfg(feature = "tokio")]
 pub async fn tokio_sync_on_close(
     sync_on_close: SyncOnCloseType,
     file: &mut tokio::fs::File,
