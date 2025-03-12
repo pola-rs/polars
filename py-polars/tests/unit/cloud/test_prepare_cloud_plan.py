@@ -74,6 +74,7 @@ def test_prepare_cloud_plan_optimization_toggle() -> None:
         pl.scan_ndjson(Path("data.ndjson")),
         pl.scan_csv("data-*.csv"),
         pl.scan_ipc(["data-1.feather", "data-2.feather"]),
+        pl.scan_avro("data.avro"),
     ],
 )
 def test_prepare_cloud_plan_fail_on_local_data_source(lf: pl.LazyFrame) -> None:

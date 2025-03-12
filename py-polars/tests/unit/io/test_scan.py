@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,6 +15,8 @@ import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import SchemaDict
 
 
@@ -60,6 +62,7 @@ def _scan(
             ".parquet": pl.scan_parquet,
             ".csv": pl.scan_csv,
             ".ndjson": pl.scan_ndjson,
+            ".avro": pl.scan_avro,
         }.get(suffix)
     ) is not None:  # fmt: skip
         result = scan_func(
@@ -75,7 +78,7 @@ def _scan(
     return result  # type: ignore[no-any-return]
 
 
-def _write(df: pl.DataFrame, file_path: Path) -> None:
+def _write(df: pl.DataFrame, file_path: Path, max_rows_per_batch: int) -> None:
     suffix = file_path.suffix
 
     if (
@@ -84,17 +87,22 @@ def _write(df: pl.DataFrame, file_path: Path) -> None:
             ".parquet": pl.DataFrame.write_parquet,
             ".csv": pl.DataFrame.write_csv,
             ".ndjson": pl.DataFrame.write_ndjson,
+            ".avro": pl.DataFrame.write_avro,
         }.get(suffix)
     ) is not None:  # fmt: skip
-        return write_func(df, file_path)  # type: ignore[operator, no-any-return]
-
-    msg = f"Unknown suffix {suffix}"
-    raise NotImplementedError(msg)
+        if suffix == ".avro":
+            # df_with_chunk_size_limit creates out of spec avro
+            write_func(df, file_path)  # type: ignore[operator]
+        else:
+            write_func(df_with_chunk_size_limit(df, max_rows_per_batch), file_path)  # type: ignore[operator]
+    else:
+        msg = f"Unknown suffix {suffix}"
+        raise NotImplementedError(msg)
 
 
 @pytest.fixture(
     scope="session",
-    params=["csv", "ipc", "parquet", "ndjson"],
+    params=["csv", "ipc", "parquet", "ndjson", "avro"],
 )
 def data_file_extension(request: pytest.FixtureRequest) -> str:
     return f".{request.param}"
@@ -142,7 +150,7 @@ def data_file_single(session_tmp_dir: Path, data_file_extension: str) -> _DataFi
         }
     )
     assert max_rows_per_batch < df.height
-    _write(df_with_chunk_size_limit(df, max_rows_per_batch), file_path)
+    _write(df, file_path, max_rows_per_batch)
     return _DataFile(path=file_path, df=df)
 
 
@@ -174,12 +182,8 @@ def data_file_glob(session_tmp_dir: Path, data_file_extension: str) -> _DataFile
         file_path = (session_tmp_dir / f"data_{index:02}").with_suffix(
             data_file_extension
         )
-        _write(
-            df_with_chunk_size_limit(
-                df.slice(row_offset, row_count), max_rows_per_batch
-            ),
-            file_path,
-        )
+        part = df.slice(row_offset, row_count)
+        _write(part, file_path, max_rows_per_batch)
         row_offset += row_count
     return _DataFile(
         path=(session_tmp_dir / "data_*").with_suffix(data_file_extension), df=df
@@ -464,6 +468,7 @@ def test_scan_with_row_index_filter_and_limit(
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_csv, pl.DataFrame.write_csv),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        (pl.scan_avro, pl.DataFrame.write_avro),
     ],
 )
 @pytest.mark.parametrize(
@@ -476,6 +481,9 @@ def test_scan_limit_0_does_not_panic(
     write_func: Callable[[pl.DataFrame, Path], None],
     streaming: bool,
 ) -> None:
+    if streaming and scan_func is pl.scan_avro:
+        pytest.xfail("NYI")
+
     tmp_path.mkdir(exist_ok=True)
     path = tmp_path / "data.bin"
     df = pl.DataFrame({"x": 1})
@@ -496,6 +504,7 @@ def test_scan_limit_0_does_not_panic(
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        (pl.scan_avro, pl.DataFrame.write_avro),
     ],
 )
 @pytest.mark.parametrize(
@@ -627,7 +636,7 @@ def test_scan_single_dir_differing_file_extensions_raises_17436(tmp_path: Path) 
         pl.scan_parquet(tmp_path / "*").collect()
 
 
-@pytest.mark.parametrize("format", ["parquet", "csv", "ndjson", "ipc"])
+@pytest.mark.parametrize("format", ["parquet", "csv", "ndjson", "ipc", "avro"])
 def test_scan_nonexistent_path(format: str) -> None:
     path_str = f"my-nonexistent-data.{format}"
     path = Path(path_str)
@@ -652,6 +661,7 @@ def test_scan_nonexistent_path(format: str) -> None:
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_csv, pl.DataFrame.write_csv),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        (pl.scan_avro, pl.DataFrame.write_avro),
     ],
 )
 @pytest.mark.parametrize(
@@ -664,6 +674,9 @@ def test_scan_include_file_paths(
     write_func: Callable[[pl.DataFrame, Path], None],
     streaming: bool,
 ) -> None:
+    if streaming and scan_func is pl.scan_avro:
+        pytest.xfail("NYI")
+
     tmp_path.mkdir(exist_ok=True)
     dfs: list[pl.DataFrame] = []
 
@@ -733,7 +746,7 @@ def test_async_path_expansion_bracket_17629(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "method",
-    ["parquet", "csv", "ipc", "ndjson"],
+    ["parquet", "csv", "ipc", "ndjson", "avro"],
 )
 @pytest.mark.may_fail_auto_streaming  # unsupported negative slice offset -1 for CSV source
 def test_scan_in_memory(method: str) -> None:
@@ -822,7 +835,7 @@ def test_scan_stringio(method: str) -> None:
 
 @pytest.mark.parametrize(
     "method",
-    [pl.scan_parquet, pl.scan_csv, pl.scan_ipc, pl.scan_ndjson],
+    [pl.scan_parquet, pl.scan_csv, pl.scan_ipc, pl.scan_ndjson, pl.scan_avro],
 )
 def test_empty_list(method: Callable[[list[str]], pl.LazyFrame]) -> None:
     with pytest.raises(pl.exceptions.ComputeError, match="expected at least 1 source"):
@@ -978,17 +991,20 @@ def test_scan_csv_bytesio_memory_usage(
 
 
 @pytest.mark.parametrize(
-    "scan_type",
+    ("write", "scan"),
     [
         (pl.DataFrame.write_parquet, pl.scan_parquet),
         (pl.DataFrame.write_ipc, pl.scan_ipc),
         (pl.DataFrame.write_csv, pl.scan_csv),
         (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+        pytest.param(
+            pl.DataFrame.write_avro,
+            pl.scan_avro,
+            marks=pytest.mark.xfail(reason="NYI: write UInt32"),
+        ),
     ],
 )
-def test_only_project_row_index(scan_type: tuple[Any, Any]) -> None:
-    write, scan = scan_type
-
+def test_only_project_row_index(write: Any, scan: Any) -> None:
     f = io.BytesIO()
     df = pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)])
     write(df, f)
@@ -1004,17 +1020,20 @@ def test_only_project_row_index(scan_type: tuple[Any, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    "scan_type",
+    ("write", "scan"),
     [
         (pl.DataFrame.write_parquet, pl.scan_parquet),
         (pl.DataFrame.write_ipc, pl.scan_ipc),
         (pl.DataFrame.write_csv, pl.scan_csv),
         (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+        pytest.param(
+            pl.DataFrame.write_avro,
+            pl.scan_avro,
+            marks=pytest.mark.xfail(reason="NYI: write UInt32"),
+        ),
     ],
 )
-def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
-    write, scan = scan_type
-
+def test_only_project_include_file_paths(write: Any, scan: Any) -> None:
     f = io.BytesIO()
     df = pl.DataFrame([pl.Series("a", [1, 2, 3], pl.UInt32)])
     write(df, f)
@@ -1029,32 +1048,40 @@ def test_only_project_include_file_paths(scan_type: tuple[Any, Any]) -> None:
 
 
 @pytest.mark.parametrize(
-    "scan_type",
+    ("write", "scan"),
     [
         (pl.DataFrame.write_parquet, pl.scan_parquet),
         pytest.param(
-            (pl.DataFrame.write_ipc, pl.scan_ipc),
+            pl.DataFrame.write_ipc,
+            pl.scan_ipc,
             marks=pytest.mark.xfail(
                 reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
             ),
         ),
         pytest.param(
-            (pl.DataFrame.write_csv, pl.scan_csv),
+            pl.DataFrame.write_csv,
+            pl.scan_csv,
             marks=pytest.mark.xfail(
                 reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
             ),
         ),
         pytest.param(
-            (pl.DataFrame.write_ndjson, pl.scan_ndjson),
+            pl.DataFrame.write_ndjson,
+            pl.scan_ndjson,
+            marks=pytest.mark.xfail(
+                reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
+            ),
+        ),
+        pytest.param(
+            pl.DataFrame.write_avro,
+            pl.scan_avro,
             marks=pytest.mark.xfail(
                 reason="has no allow_missing_columns parameter. https://github.com/pola-rs/polars/issues/21166"
             ),
         ),
     ],
 )
-def test_only_project_missing(scan_type: tuple[Any, Any]) -> None:
-    write, scan = scan_type
-
+def test_only_project_missing(write: Any, scan: Any) -> None:
     f = io.BytesIO()
     g = io.BytesIO()
     write(

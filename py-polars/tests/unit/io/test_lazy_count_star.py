@@ -97,6 +97,19 @@ def test_count_ndjson(io_files_path: Path, path: str, n_rows: int) -> None:
     assert_frame_equal(lf.collect(), expected)
 
 
+@pytest.mark.parametrize(
+    ("path", "n_rows"), [("foods1.avro", 27), ("foods*.avro", 27 * 2)]
+)
+def test_count_avro(io_files_path: Path, path: str, n_rows: int) -> None:
+    lf = pl.scan_avro(io_files_path / path).select(pl.len())
+
+    expected = pl.DataFrame(pl.Series("len", [n_rows], dtype=pl.UInt32))
+
+    # Check if we are using our fast count star
+    assert "FAST COUNT" in lf.explain()
+    assert_frame_equal(lf.collect(), expected)
+
+
 def test_count_compressed_csv_18057(io_files_path: Path) -> None:
     csv_file = io_files_path / "gzipped.csv.gz"
 

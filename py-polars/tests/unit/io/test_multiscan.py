@@ -23,6 +23,7 @@ if TYPE_CHECKING:
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_csv, pl.DataFrame.write_csv),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        (pl.scan_avro, pl.DataFrame.write_avro),
     ],
 )
 def test_include_file_paths(tmp_path: Path, scan: Any, write: Any) -> None:
@@ -229,6 +230,7 @@ def test_multiscan_hive_predicate(
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
+        (pl.scan_avro, pl.DataFrame.write_avro, "avro"),
     ],
 )
 @pytest.mark.write_disk
@@ -301,6 +303,12 @@ def test_multiscan_row_index(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         pytest.param(
+            pl.scan_avro,
+            pl.DataFrame.write_avro,
+            "avro",
+            marks=pytest.mark.xfail(reason="NYI"),
+        ),
+        pytest.param(
             pl.scan_csv,
             pl.DataFrame.write_csv,
             "csv",
@@ -343,6 +351,12 @@ def test_schema_mismatch_type_mismatch(
     [
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
+        pytest.param(
+            pl.scan_avro,
+            pl.DataFrame.write_avro,
+            "avro",
+            marks=pytest.mark.xfail(reason="NYI"),
+        ),
         pytest.param(
             pl.scan_csv,
             pl.DataFrame.write_csv,
@@ -388,6 +402,11 @@ def test_schema_mismatch_order_mismatch(
             pl.DataFrame.write_csv,
         ),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
+        pytest.param(
+            pl.scan_avro,
+            pl.DataFrame.write_avro,
+            marks=pytest.mark.xfail(reason="NYI"),
+        ),
     ],
 )
 def test_multiscan_head(
@@ -412,9 +431,11 @@ def test_multiscan_head(
         (pl.scan_ipc, pl.DataFrame.write_ipc),
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-        (
-            pl.scan_csv,
-            pl.DataFrame.write_csv,
+        (pl.scan_csv, pl.DataFrame.write_csv),
+        pytest.param(
+            pl.scan_avro,
+            pl.DataFrame.write_avro,
+            marks=pytest.mark.xfail(reason="NYI"),
         ),
     ],
 )
@@ -443,6 +464,11 @@ def test_multiscan_tail(
         (
             pl.scan_csv,
             pl.DataFrame.write_csv,
+        ),
+        pytest.param(
+            pl.scan_avro,
+            pl.DataFrame.write_avro,
+            marks=pytest.mark.xfail(reason="NYI"),
         ),
     ],
 )
@@ -493,7 +519,13 @@ def test_multiscan_slice_middle(
         (pl.scan_ipc, pl.DataFrame.write_ipc, "ipc"),
         (pl.scan_parquet, pl.DataFrame.write_parquet, "parquet"),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson, "jsonl"),
-        (pl.scan_csv, pl.DataFrame.write_csv, "jsonl"),
+        (pl.scan_csv, pl.DataFrame.write_csv, "csv"),
+        pytest.param(
+            pl.scan_avro,
+            pl.DataFrame.write_avro,
+            "avro",
+            marks=pytest.mark.xfail(reason="NYI"),
+        ),
     ],
 )
 @given(offset=st.integers(-100, 100), length=st.integers(0, 101))
@@ -539,7 +571,7 @@ def test_multiscan_slice_parametric(
         (pl.scan_parquet, pl.DataFrame.write_parquet),
         (pl.scan_csv, pl.DataFrame.write_csv),
         (pl.scan_ndjson, pl.DataFrame.write_ndjson),
-        # (pl.scan_ndjson, pl.DataFrame.write_ndjson), not yet implemented for streaming
+        (pl.scan_avro, pl.DataFrame.write_avro),
     ],
 )
 def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
