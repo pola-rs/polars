@@ -339,7 +339,7 @@ def test_extend_to_an_enum() -> None:
 def test_series_init_uninstantiated_enum() -> None:
     with pytest.raises(
         ComputeError,
-        match="can not cast / initialize Enum without categories present",
+        match="cannot cast / initialize Enum without categories present",
     ):
         pl.Series(["a", "b", "a"], dtype=pl.Enum)
 
