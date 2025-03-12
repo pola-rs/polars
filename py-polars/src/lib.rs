@@ -303,6 +303,8 @@ fn polars(py: Python, m: &Bound<PyModule>) -> PyResult<()> {
         .unwrap();
     m.add_wrapped(wrap_pyfunction!(datatypes::_get_dtype_min))
         .unwrap();
+    m.add_wrapped(wrap_pyfunction!(datatypes::_known_timezones))
+        .unwrap();
 
     // Exceptions - Errors
     m.add("PolarsError", py.get_type::<exceptions::PolarsError>())
