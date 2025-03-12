@@ -1233,6 +1233,7 @@ pub struct EquiJoinNode {
 }
 
 impl EquiJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
