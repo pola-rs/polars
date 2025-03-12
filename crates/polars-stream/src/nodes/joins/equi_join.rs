@@ -138,7 +138,7 @@ async fn select_keys(
         &keys,
         params.random_state.clone(),
         params.args.nulls_equal,
-        true,
+        false,
     ))
 }
 

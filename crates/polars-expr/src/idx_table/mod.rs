@@ -6,6 +6,7 @@ use polars_utils::IdxSize;
 use crate::hash_keys::HashKeys;
 
 mod row_encoded;
+mod single_key;
 
 pub trait IdxTable: Any + Send + Sync {
     /// Creates a new empty IdxTable similar to this one.
@@ -67,6 +68,43 @@ pub trait IdxTable: Any + Send + Sync {
     fn unmarked_keys(&self, out: &mut Vec<IdxSize>, offset: IdxSize, limit: IdxSize) -> IdxSize;
 }
 
-pub fn new_idx_table(_key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
-    Box::new(row_encoded::RowEncodedIdxTable::new())
+pub fn new_idx_table(key_schema: Arc<Schema>) -> Box<dyn IdxTable> {
+    if key_schema.len() > 1 {
+        Box::new(row_encoded::RowEncodedIdxTable::new())
+    } else {
+        use single_key::SingleKeyIdxTable as SKIT;
+        match key_schema.get_at_index(0).unwrap().1 {
+            DataType::UInt8 => Box::new(SKIT::<UInt8Type>::new()),
+            DataType::UInt16 => Box::new(SKIT::<UInt16Type>::new()),
+            DataType::UInt32 => Box::new(SKIT::<UInt32Type>::new()),
+            DataType::UInt64 => Box::new(SKIT::<UInt64Type>::new()),
+            DataType::Int8 => Box::new(SKIT::<Int8Type>::new()),
+            DataType::Int16 => Box::new(SKIT::<Int16Type>::new()),
+            DataType::Int32 => Box::new(SKIT::<Int32Type>::new()),
+            DataType::Int64 => Box::new(SKIT::<Int64Type>::new()),
+            DataType::Int128 => Box::new(SKIT::<Int128Type>::new()),
+            DataType::Float32 => Box::new(SKIT::<Float32Type>::new()),
+            DataType::Float64 => Box::new(SKIT::<Float64Type>::new()),
+
+            DataType::Date => Box::new(SKIT::<Int32Type>::new()),
+            DataType::Datetime(_, _) => Box::new(SKIT::<Int64Type>::new()),
+            DataType::Duration(_) => Box::new(SKIT::<Int64Type>::new()),
+            DataType::Time => Box::new(SKIT::<Int64Type>::new()),
+
+            DataType::Decimal(_, _) => Box::new(SKIT::<Int128Type>::new()),
+            DataType::Enum(_, _) => Box::new(SKIT::<UInt32Type>::new()),
+
+            DataType::String
+            | DataType::Binary
+            | DataType::Boolean
+            | DataType::Null
+            | DataType::BinaryOffset
+            | DataType::Array(_, _)
+            | DataType::List(_)
+            | DataType::Object(_)
+            | DataType::Categorical(_, _)
+            | DataType::Struct(_)
+            | DataType::Unknown(_) => Box::new(row_encoded::RowEncodedIdxTable::new()),
+        }
+    }
 }
