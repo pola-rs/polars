@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use polars_core::POOL;
 use polars_core::prelude::PlRandomState;
 use polars_core::schema::Schema;
 use polars_error::PolarsResult;
@@ -59,6 +60,7 @@ struct GraphConversionContext<'a> {
     graph: Graph,
     phys_to_graph: SecondaryMap<PhysNodeKey, GraphNodeKey>,
     expr_conversion_state: ExpressionConversionState,
+    num_pipelines: usize,
 }
 
 pub fn physical_plan_to_graph(
@@ -66,6 +68,8 @@ pub fn physical_plan_to_graph(
     phys_sm: &SlotMap<PhysNodeKey, PhysNode>,
     expr_arena: &mut Arena<AExpr>,
 ) -> PolarsResult<(Graph, SecondaryMap<PhysNodeKey, GraphNodeKey>)> {
+    // Get the number of threads from the rayon thread-pool as that respects our config.
+    let num_pipelines = POOL.current_num_threads();
     let expr_depth_limit = get_expr_depth_limit()?;
     let mut ctx = GraphConversionContext {
         phys_sm,
@@ -73,6 +77,7 @@ pub fn physical_plan_to_graph(
         graph: Graph::with_capacity(phys_sm.len()),
         phys_to_graph: SecondaryMap::with_capacity(phys_sm.len()),
         expr_conversion_state: ExpressionConversionState::new(false, expr_depth_limit),
+        num_pipelines,
     };
 
     to_graph_rec(root, &mut ctx)?;
@@ -817,6 +822,7 @@ fn to_graph_rec<'a>(
                     left_key_selectors,
                     right_key_selectors,
                     args,
+                    ctx.num_pipelines,
                 )?,
                 [
                     (left_input_key, input_left.port),

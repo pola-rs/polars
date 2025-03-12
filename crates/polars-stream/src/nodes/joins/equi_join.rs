@@ -431,12 +431,7 @@ impl SampleState {
         }
 
         let partitioner = HashPartitioner::new(num_pipelines, 0);
-        let mut build_state = BuildState {
-            local_builders: (0..num_pipelines)
-                .map(|_| LocalBuilder::default())
-                .collect(),
-            sampled_probe_morsels,
-        };
+        let mut build_state = BuildState::new(num_pipelines, num_pipelines, sampled_probe_morsels);
 
         // Simulate the sample build morsels flowing into the build side.
         if !sampled_build_morsels.is_empty() {
@@ -489,13 +484,31 @@ struct LocalBuilder {
     morsel_idxs_offsets_per_p: Vec<usize>,
 }
 
-#[derive(Default)]
 struct BuildState {
     local_builders: Vec<LocalBuilder>,
     sampled_probe_morsels: BufferedStream,
 }
 
 impl BuildState {
+    fn new(
+        num_pipelines: usize,
+        num_partitions: usize,
+        sampled_probe_morsels: BufferedStream,
+    ) -> Self {
+        let local_builders = (0..num_pipelines)
+            .map(|_| LocalBuilder {
+                morsels: Vec::new(),
+                sketch_per_p: vec![CardinalitySketch::default(); num_partitions],
+                morsel_idxs_values_per_p: vec![Vec::new(); num_partitions],
+                morsel_idxs_offsets_per_p: vec![0; num_partitions],
+            })
+            .collect();
+        Self {
+            local_builders,
+            sampled_probe_morsels,
+        }
+    }
+
     async fn partition_and_sink(
         mut recv: Receiver<Morsel>,
         local: &mut LocalBuilder,
@@ -504,19 +517,6 @@ impl BuildState {
         state: &ExecutionState,
     ) -> PolarsResult<()> {
         let track_unmatchable = params.emit_unmatched_build();
-        local
-            .sketch_per_p
-            .resize_with(partitioner.num_partitions(), Default::default);
-        local
-            .morsel_idxs_values_per_p
-            .resize_with(partitioner.num_partitions(), Default::default);
-
-        if local.morsel_idxs_offsets_per_p.is_empty() {
-            local
-                .morsel_idxs_offsets_per_p
-                .resize(partitioner.num_partitions(), 0);
-        }
-
         let (key_selectors, payload_selector);
         if params.left_is_build.unwrap() {
             payload_selector = &params.left_payload_select;
@@ -1233,6 +1233,7 @@ pub struct EquiJoinNode {
 }
 
 impl EquiJoinNode {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         left_input_schema: Arc<Schema>,
         right_input_schema: Arc<Schema>,
@@ -1241,6 +1242,7 @@ impl EquiJoinNode {
         left_key_selectors: Vec<StreamExpr>,
         right_key_selectors: Vec<StreamExpr>,
         args: JoinArgs,
+        num_pipelines: usize,
     ) -> PolarsResult<Self> {
         let left_is_build = match args.maintain_order {
             MaintainOrderJoin::None => {
@@ -1284,7 +1286,11 @@ impl EquiJoinNode {
         )?;
 
         let state = if left_is_build.is_some() {
-            EquiJoinState::Build(BuildState::default())
+            EquiJoinState::Build(BuildState::new(
+                num_pipelines,
+                num_pipelines,
+                BufferedStream::default(),
+            ))
         } else {
             EquiJoinState::Sample(SampleState::default())
         };
@@ -1294,7 +1300,7 @@ impl EquiJoinNode {
             Arc::new(select_schema(&right_input_schema, &right_payload_select));
         Ok(Self {
             state,
-            num_pipelines: 0,
+            num_pipelines,
             params: EquiJoinParams {
                 left_is_build,
                 preserve_order_build,
@@ -1321,7 +1327,7 @@ impl ComputeNode for EquiJoinNode {
     }
 
     fn initialize(&mut self, num_pipelines: usize) {
-        self.num_pipelines = num_pipelines;
+        assert!(num_pipelines == self.num_pipelines);
     }
 
     fn update_state(&mut self, recv: &mut [PortState], send: &mut [PortState]) -> PolarsResult<()> {
@@ -1529,9 +1535,6 @@ impl ComputeNode for EquiJoinNode {
                 assert!(recv_ports[probe_idx].is_none());
                 let receivers = recv_ports[build_idx].take().unwrap().parallel();
 
-                build_state
-                    .local_builders
-                    .resize_with(self.num_pipelines, Default::default);
                 let partitioner = HashPartitioner::new(self.num_pipelines, 0);
                 for (local_builder, recv) in build_state.local_builders.iter_mut().zip(receivers) {
                     join_handles.push(scope.spawn_task(
