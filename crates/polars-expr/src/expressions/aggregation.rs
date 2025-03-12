@@ -762,7 +762,7 @@ where
     let thread_boundary = 100_000;
 
     // threading overhead/ splitting work stealing is costly..
-    if allow_threading
+    if !allow_threading
         || s.len() < thread_boundary
         || POOL.current_thread_has_pending_tasks().unwrap_or(false)
     {
