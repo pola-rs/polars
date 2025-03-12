@@ -127,14 +127,14 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
             let mut group_len = 1;
             let in_bounds = start_idx < other.len();
 
-            while group_start + group_len < idxs.len()
-                && idxs[group_start + group_len] as usize == start_idx + group_len
-                && (start_idx + group_len < other.len()) == in_bounds
-            {
-                group_len += 1;
-            }
-
             if in_bounds {
+                while group_start + group_len < idxs.len()
+                    && idxs[group_start + group_len] as usize == start_idx + group_len
+                    && start_idx + group_len < other.len()
+                {
+                    group_len += 1;
+                }
+
                 self.inner_builder.subslice_extend(
                     other_values,
                     start_idx * self.size,
@@ -142,6 +142,12 @@ impl<B: ArrayBuilder> StaticArrayBuilder for FixedSizeListArrayBuilder<B> {
                     share,
                 );
             } else {
+                while group_start + group_len < idxs.len()
+                    && idxs[group_start + group_len] as usize >= other.len()
+                {
+                    group_len += 1;
+                }
+
                 self.inner_builder.extend_nulls(group_len * self.size);
             }
             group_start += group_len;
