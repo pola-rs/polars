@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use polars::prelude::{PartitionVariant, SinkOptions, SyncOnCloseType};
+use polars::prelude::sync_on_close::SyncOnCloseType;
+use polars::prelude::{PartitionVariant, SinkOptions};
 use polars_utils::IdxSize;
 use pyo3::exceptions::PyValueError;
 use pyo3::pybacked::PyBackedStr;
