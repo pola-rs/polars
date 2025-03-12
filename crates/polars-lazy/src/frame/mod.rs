@@ -738,12 +738,16 @@ impl LazyFrame {
     }
 
     /// Execute all the lazy operations and collect them into a [`DataFrame`] using a specified
-    /// `engine].
+    /// `engine`.
     ///
     /// The query is optimized prior to execution.
     pub fn collect_with_engine(self, mut engine: Engine) -> PolarsResult<DataFrame> {
         // Default engine for collect is InMemory
         if engine == Engine::Auto {
+            engine = Engine::InMemory;
+        }
+        // Gpu uses some hacks to dispatch.
+        if engine == Engine::Gpu {
             engine = Engine::InMemory;
         }
 
