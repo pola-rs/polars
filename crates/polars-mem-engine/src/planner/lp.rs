@@ -179,6 +179,7 @@ fn create_physical_plan_impl(
                     sink_options,
                     cloud_options,
                 } => match file_type {
+                    #[cfg(feature = "parquet")]
                     FileType::Parquet(options) => Ok(Box::new(SinkExecutor {
                         input,
                         name: "parquet".to_string(),
@@ -211,6 +212,7 @@ fn create_physical_plan_impl(
                             Ok(None)
                         }),
                     })),
+                    #[cfg(feature = "ipc")]
                     FileType::Ipc(options) => Ok(Box::new(SinkExecutor {
                         input,
                         name: "ipc".to_string(),
@@ -243,6 +245,7 @@ fn create_physical_plan_impl(
                             Ok(None)
                         }),
                     })),
+                    #[cfg(feature = "csv")]
                     FileType::Csv(options) => Ok(Box::new(SinkExecutor {
                         input,
                         name: "csv".to_string(),
@@ -289,6 +292,7 @@ fn create_physical_plan_impl(
                             Ok(None)
                         }),
                     })),
+                    #[cfg(feature = "json")]
                     FileType::Json(_) => Ok(Box::new(SinkExecutor {
                         input,
                         name: "ndjson".to_string(),
