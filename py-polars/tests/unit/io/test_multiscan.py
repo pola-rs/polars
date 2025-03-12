@@ -558,9 +558,7 @@ def test_many_files(tmp_path: Path, scan: Any, write: Any) -> None:
     )
 
 
-def test_deadlock_stop_requested(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
+def test_deadlock_stop_requested(tmp_path: Path, monkeypatch: Any) -> None:
     df = pl.DataFrame(
         {
             "a": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
