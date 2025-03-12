@@ -583,7 +583,36 @@ pub fn to_alp_impl(lp: DslPlan, ctxt: &mut DslConversionContext) -> PolarsResult
 
             ctxt.conversion_optimizer
                 .fill_scratch(&expanded_cols, ctxt.expr_arena);
-            let by_column = expanded_cols;
+            let mut by_column = expanded_cols;
+
+            // Remove null columns in multi-columns sort
+            if by_column.len() > 1 {
+                let input_schema = ctxt.lp_arena.get(input).schema(ctxt.lp_arena);
+
+                let mut null_columns = vec![];
+
+                for (i, c) in by_column.iter().enumerate() {
+                    if let DataType::Null =
+                        c.dtype(&input_schema, Context::Default, ctxt.expr_arena)?
+                    {
+                        null_columns.push(i);
+                    }
+                }
+                // All null columns, only take one.
+                if null_columns.len() == by_column.len() {
+                    by_column.truncate(1);
+                    sort_options.nulls_last.truncate(1);
+                    sort_options.descending.truncate(1);
+                }
+                // Remove the null columns
+                else if !null_columns.is_empty() {
+                    for i in null_columns.into_iter().rev() {
+                        by_column.remove(i);
+                        sort_options.nulls_last.remove(i);
+                        sort_options.descending.remove(i);
+                    }
+                }
+            };
 
             let lp = IR::Sort {
                 input,
